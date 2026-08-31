@@ -151,12 +151,6 @@ parameters:
 			path: src/AgentCore/Domain/Model/ModelInvocationInput.php
 
 		-
-			message: '#^Property Ineersa\\AgentCore\\Domain\\Notification\\ModelNotificationDTO\:\:\$orderIndex is never read \(all usages excluded by tests excluder\)$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/AgentCore/Domain/Notification/ModelNotificationDTO.php
-
-		-
 			message: '#^Property Ineersa\\AgentCore\\Domain\\Run\\RunMetadata\:\:\$extensions is never read \(all usages excluded by tests excluder\)$#'
 			identifier: shipmonk.deadProperty.neverRead
 			count: 1
@@ -185,12 +179,6 @@ parameters:
 			identifier: shipmonk.deadProperty.neverRead
 			count: 1
 			path: src/AgentCore/Infrastructure/SymfonyAi/MalformedToolCallSequenceException.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Agent\\Definition\\AgentDefinitionDTO\:\:\$sourceDirectory is never read \(all usages excluded by tests excluder\)$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Agent/Definition/AgentDefinitionDTO.php
 
 		-
 			message: '#^Unused Ineersa\\CodingAgent\\Agent\\Execution\\ChildRun\\Contract\\ChildRunBatchItemSnapshotDTO\:\:markNeedsClarification$#'
@@ -295,36 +283,6 @@ parameters:
 			path: src/CodingAgent/Agent/Execution/ChildRun/Contract/PreparedAgentChildRunDTO.php
 
 		-
-			message: '#^Property Ineersa\\CodingAgent\\Agent\\Execution\\Subagent\\Batch\\Deferred\\Projection\\DeferredSubagentBatchProjectionDTO\:\:\$interruptionRequestedAt is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Agent/Execution/Subagent/Batch/Deferred/Projection/DeferredSubagentBatchProjectionDTO.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Agent\\Execution\\Subagent\\Batch\\Deferred\\Projection\\DeferredSubagentBatchProjectionDTO\:\:\$parentModel is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Agent/Execution/Subagent/Batch/Deferred/Projection/DeferredSubagentBatchProjectionDTO.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Agent\\Execution\\Subagent\\Batch\\Deferred\\Projection\\DeferredSubagentChildProjectionDTO\:\:\$startedAt is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Agent/Execution/Subagent/Batch/Deferred/Projection/DeferredSubagentChildProjectionDTO.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Agent\\Execution\\Subagent\\Batch\\Deferred\\Projection\\DeferredSubagentChildProjectionDTO\:\:\$terminalCompletedAt is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Agent/Execution/Subagent/Batch/Deferred/Projection/DeferredSubagentChildProjectionDTO.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Agent\\Execution\\Subagent\\Batch\\Deferred\\Projection\\DeferredSubagentChildProjectionDTO\:\:\$terminalStatus is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Agent/Execution/Subagent/Batch/Deferred/Projection/DeferredSubagentChildProjectionDTO.php
-
-		-
 			message: '#^Unused Ineersa\\CodingAgent\\Auth\\AuthCredentialFileStore\:\:remove \(all usages excluded by tests excluder\)$#'
 			identifier: shipmonk.deadMethod
 			count: 1
@@ -367,18 +325,6 @@ parameters:
 			path: src/CodingAgent/Compaction/ProviderContextUsageResolver.php
 
 		-
-			message: '#^Unused Ineersa\\CodingAgent\\Config\\Ai\\AiAgentRetryConfig\:\:resolveMaxAttempts \(all usages excluded by tests excluder\)$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiAgentRetryConfig.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiConfig\:\:\$agentRetry is never read \(all usages excluded by tests excluder\)$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiConfig.php
-
-		-
 			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiProviderConfig\:\:\$accountId is never read$#'
 			identifier: shipmonk.deadProperty.neverRead
 			count: 1
@@ -389,12 +335,6 @@ parameters:
 			identifier: shipmonk.deadProperty.neverRead
 			count: 1
 			path: src/CodingAgent/Config/Ai/AiProviderConfig.php
-
-		-
-			message: '#^Unused Ineersa\\CodingAgent\\Config\\AppResourceLocator\:\:getAiCatalogPath$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/CodingAgent/Config/AppResourceLocator.php
 
 		-
 			message: '#^Unused Ineersa\\CodingAgent\\Docs\\BuiltinDocsCatalog\:\:headingSlugsFromMarkdown \(all usages excluded by tests excluder\)$#'
@@ -445,24 +385,6 @@ parameters:
 			path: src/CodingAgent/Extension/Builtin/SafeGuard/Classifier/SafeGuardPathMatcher.php
 
 		-
-			message: '#^Property Ineersa\\CodingAgent\\Extension\\ChildRun\\Metadata\\RunStartedSessionMetadataDTO\:\:\$agentName is never read \(all usages excluded by tests excluder\)$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Extension/ChildRun/Metadata/RunStartedSessionMetadataDTO.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Extension\\ChildRun\\Metadata\\RunStartedSessionMetadataDTO\:\:\$artifactId is never read \(all usages excluded by tests excluder\)$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Extension/ChildRun/Metadata/RunStartedSessionMetadataDTO.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Extension\\ChildRun\\Metadata\\RunStartedToolsScopeDTO\:\:\$mcp is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Extension/ChildRun/Metadata/RunStartedToolsScopeDTO.php
-
-		-
 			message: '#^Unused Ineersa\\CodingAgent\\Extension\\ExtensionToolRegistryBridge\:\:registerToolResultHook \(all usages excluded by tests excluder\)$#'
 			identifier: shipmonk.deadMethod
 			count: 1
@@ -473,36 +395,6 @@ parameters:
 			identifier: shipmonk.deadMethod
 			count: 1
 			path: src/CodingAgent/Logging/DdtraceSpanProvider.php
-
-		-
-			message: '#^Unused Ineersa\\CodingAgent\\Mcp\\Client\\McpClientInterface\:\:connect$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/CodingAgent/Mcp/Client/McpClientInterface.php
-
-		-
-			message: '#^Unused Ineersa\\CodingAgent\\Mcp\\Client\\McpClientInterface\:\:isConnected$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/CodingAgent/Mcp/Client/McpClientInterface.php
-
-		-
-			message: '#^Unused Ineersa\\CodingAgent\\Mcp\\Client\\McpClientInterface\:\:listTools$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/CodingAgent/Mcp/Client/McpClientInterface.php
-
-		-
-			message: '#^Unused Ineersa\\CodingAgent\\Mcp\\Client\\McpConnectionManagerInterface\:\:disconnectServer$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/CodingAgent/Mcp/Client/McpConnectionManagerInterface.php
-
-		-
-			message: '#^Unused Ineersa\\CodingAgent\\Mcp\\Client\\McpConnectionManagerInterface\:\:getClient \(all usages excluded by tests excluder\)$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/CodingAgent/Mcp/Client/McpConnectionManagerInterface.php
 
 		-
 			message: '#^Unused Ineersa\\CodingAgent\\Mcp\\Client\\McpSdkClientAdapter\:\:isConnected$#'
@@ -521,72 +413,6 @@ parameters:
 			identifier: shipmonk.deadProperty.neverRead
 			count: 1
 			path: src/CodingAgent/Runtime/Contract/LoadedResourceSectionDTO.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Runtime\\Contract\\SubagentProgress\\SubagentProgressChildRowDTO\:\:\$turnNo is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Runtime/Contract/SubagentProgress/SubagentProgressChildRowDTO.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Runtime\\Contract\\SubagentProgress\\SubagentProgressParallelSnapshotDTO\:\:\$cost is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Runtime/Contract/SubagentProgress/SubagentProgressParallelSnapshotDTO.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Runtime\\Contract\\SubagentProgress\\SubagentProgressParallelSnapshotDTO\:\:\$elapsedMs is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Runtime/Contract/SubagentProgress/SubagentProgressParallelSnapshotDTO.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Runtime\\Contract\\SubagentProgress\\SubagentProgressParallelSnapshotDTO\:\:\$inputTokens is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Runtime/Contract/SubagentProgress/SubagentProgressParallelSnapshotDTO.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Runtime\\Contract\\SubagentProgress\\SubagentProgressParallelSnapshotDTO\:\:\$mode is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Runtime/Contract/SubagentProgress/SubagentProgressParallelSnapshotDTO.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Runtime\\Contract\\SubagentProgress\\SubagentProgressParallelSnapshotDTO\:\:\$outputTokens is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Runtime/Contract/SubagentProgress/SubagentProgressParallelSnapshotDTO.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Runtime\\Contract\\SubagentProgress\\SubagentProgressParallelSnapshotDTO\:\:\$reasoningTokens is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Runtime/Contract/SubagentProgress/SubagentProgressParallelSnapshotDTO.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Runtime\\Contract\\SubagentProgress\\SubagentProgressParallelSnapshotDTO\:\:\$toolCount is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Runtime/Contract/SubagentProgress/SubagentProgressParallelSnapshotDTO.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Runtime\\Contract\\SubagentProgress\\SubagentProgressParallelSnapshotDTO\:\:\$totalTokens is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Runtime/Contract/SubagentProgress/SubagentProgressParallelSnapshotDTO.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Runtime\\Contract\\SubagentProgress\\SubagentProgressSingleSnapshotDTO\:\:\$mode is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Runtime/Contract/SubagentProgress/SubagentProgressSingleSnapshotDTO.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Runtime\\Contract\\SubagentProgress\\SubagentProgressSingleSnapshotDTO\:\:\$turnNo is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Runtime/Contract/SubagentProgress/SubagentProgressSingleSnapshotDTO.php
 
 		-
 			message: '#^Unused Ineersa\\CodingAgent\\Runtime\\Controller\\ConsumerSupervisor\:\:getProcess$#'
@@ -1057,36 +883,6 @@ parameters:
 			path: src/Tui/Runtime/SubagentLiveViewState.php
 
 		-
-			message: '#^Property Ineersa\\Tui\\Runtime\\TuiSessionLifecycleEventDTO\:\:\$endReason is never read \(all usages excluded by tests excluder\)$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/Tui/Runtime/TuiSessionLifecycleEventDTO.php
-
-		-
-			message: '#^Property Ineersa\\Tui\\Runtime\\TuiSessionLifecycleEventDTO\:\:\$isDraft is never read \(all usages excluded by tests excluder\)$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/Tui/Runtime/TuiSessionLifecycleEventDTO.php
-
-		-
-			message: '#^Property Ineersa\\Tui\\Runtime\\TuiSessionLifecycleEventDTO\:\:\$previousSessionId is never read \(all usages excluded by tests excluder\)$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/Tui/Runtime/TuiSessionLifecycleEventDTO.php
-
-		-
-			message: '#^Property Ineersa\\Tui\\Runtime\\TuiSessionLifecycleEventDTO\:\:\$resuming is never read \(all usages excluded by tests excluder\)$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/Tui/Runtime/TuiSessionLifecycleEventDTO.php
-
-		-
-			message: '#^Property Ineersa\\Tui\\Runtime\\TuiSessionLifecycleEventDTO\:\:\$sessionId is never read \(all usages excluded by tests excluder\)$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/Tui/Runtime/TuiSessionLifecycleEventDTO.php
-
-		-
 			message: '#^Unused Ineersa\\Tui\\Screen\\ChatScreen\:\:extensionContext \(all usages excluded by tests excluder\)$#'
 			identifier: shipmonk.deadMethod
 			count: 1
@@ -1411,12 +1207,6 @@ parameters:
 			path: tests/CodingAgent/Extension/InMemoryExtensionApiBridge.php
 
 		-
-			message: '#^Unused Ineersa\\CodingAgent\\Tests\\Extension\\InMemoryExtensionApiBridge\:\:getDispatchedExtensionAgentJobs$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: tests/CodingAgent/Extension/InMemoryExtensionApiBridge.php
-
-		-
 			message: '#^Unused Ineersa\\CodingAgent\\Tests\\Extension\\InMemoryExtensionApiBridge\:\:getExtensionAgentJobHandlers$#'
 			identifier: shipmonk.deadMethod
 			count: 1
@@ -1469,12 +1259,6 @@ parameters:
 			identifier: shipmonk.deadMethod
 			count: 1
 			path: tests/CodingAgent/Runtime/InProcess/StartRunPersistsSessionModelTest.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Tests\\Runtime\\JsonlCodecShortWriteStreamWrapper\:\:\$context is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: tests/CodingAgent/Runtime/JsonlCodecTest.php
 
 		-
 			message: '#^Property Ineersa\\CodingAgent\\Tests\\Tool\\BashToolTest\:\:\$outputCap is never read$#'

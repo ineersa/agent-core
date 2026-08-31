@@ -8,6 +8,7 @@ parameters:
     treatPhpDocTypesAsCertain: false
     paths:
         - src/
+        - tools/phpstan/
         - castor.php
         - .castor/
         - .hatfield/extensions/
@@ -25,5 +26,14 @@ parameters:
         - .hatfield/extensions/castor-llm-mode/tests/*
         - .hatfield/extensions/file-rewind/tests/*
         - .hatfield/extensions/observational-memory/tests/*
+    # Keep these in config (not inline) so the dead-code lane never sees
+    # unmatched main-lane suppressions under customRulesetUsed=true.
+    ignoreErrors:
+        -
+            identifier: nullsafe.neverNull
+            path: src/Tui/Listener/SubmitListener.php
+        -
+            identifier: if.alwaysFalse
+            path: src/Tui/Listener/PromptHistoryListener.php
     parallel:
         maximumNumberOfProcesses: 1

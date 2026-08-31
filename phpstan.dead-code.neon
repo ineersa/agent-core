@@ -7,36 +7,57 @@ services:
         class: Ineersa\Tools\PHPStan\DeadCode\HatfieldDeadCodeUsageProvider
         tags:
             - shipmonk.deadCode.memberUsageProvider
+    -
+        class: Ineersa\Tools\PHPStan\DeadCode\SymfonyExpressionServiceCallUsageProvider
+        tags:
+            - shipmonk.deadCode.memberUsageProvider
 
 parameters:
     # Dedicated dead-code lane: only ShipMonk dead-member rules.
     customRulesetUsed: true
     level: 0
     treatPhpDocTypesAsCertain: false
-    reportUnmatchedIgnoredErrors: false
+    # Keep global unmatched reporting on so stale baseline entries fail loudly.
+    # Residual level-0 noise ignores below opt out per entry.
+    reportUnmatchedIgnoredErrors: true
     # Residual level-0 noise outside ShipMonk dead-member rules.
+    # reportUnmatched: false because these identifiers are capacity valves for
+    # the customRulesetUsed=true lane, not a reviewed baseline.
+    # Main-lane source suppressions live in phpstan.dist.neon so this lane never
+    # sees unmatched inline ignores; stale baseline entries still fail because
+    # reportUnmatchedIgnoredErrors stays true.
     ignoreErrors:
         -
             identifier: arguments.count
+            reportUnmatched: false
         -
             identifier: new.noConstructor
+            reportUnmatched: false
         -
             identifier: attribute.notFound
+            reportUnmatched: false
         -
             identifier: array.duplicateKey
+            reportUnmatched: false
         -
             identifier: method.notFound
+            reportUnmatched: false
         -
             identifier: method.abstract
+            reportUnmatched: false
         -
             identifier: class.notFound
+            reportUnmatched: false
         -
             identifier: property.notFound
+            reportUnmatched: false
         -
             identifier: staticMethod.notFound
+            reportUnmatched: false
     paths:
         - src/
         - tests/
+        - tools/phpstan/
         - castor.php
         - .castor/
         - .hatfield/extensions/
@@ -53,10 +74,6 @@ parameters:
         - var/*
         - vendor/*
         - .hatfield/extensions/vendor/*
-        - .hatfield/extensions/task-workflow/tests/*
-        - .hatfield/extensions/castor-llm-mode/tests/*
-        - .hatfield/extensions/file-rewind/tests/*
-        - .hatfield/extensions/observational-memory/tests/*
     parallel:
         maximumNumberOfProcesses: 1
     shipmonkDeadCode:
@@ -69,6 +86,8 @@ parameters:
                 neverRead: true
                 neverWritten: true
         usageProviders:
+            # Explicit enable documents required providers for this lane.
+            # Symfony needs the warmed container XML under var/phpstan-dead-code/.
             symfony:
                 enabled: true
                 configDir: %currentWorkingDirectory%/config
@@ -78,9 +97,18 @@ parameters:
                 enabled: true
             phpunit:
                 enabled: true
+            streamWrapper:
+                enabled: true
+            vendor:
+                enabled: true
+            builtin:
+                enabled: true
         usageExcluders:
             tests:
                 enabled: true
+                # Bundled extension tests are analysed (not excluded from paths)
+                # so their usages can mark production members; these still count
+                # as test-only via the tests usage excluder.
                 devPaths:
                     - %currentWorkingDirectory%/tests
                     - %currentWorkingDirectory%/.hatfield/extensions/task-workflow/tests

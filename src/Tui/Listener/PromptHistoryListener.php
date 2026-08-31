@@ -55,7 +55,8 @@ final class PromptHistoryListener implements TuiListenerRegistrar
         $recalling = false;
 
         $editor->onInput(static function (string $data) use ($state, $editor, $promptEditor, $screen, $history, &$recalling): bool {
-            // @phpstan-ignore if.alwaysFalse (re-entered synchronously by typeText()'s synthetic keys)
+            // Re-entered synchronously by typeText()'s synthetic keys.
+            // Suppressed in phpstan.dist.neon (if.alwaysFalse).
             if ($recalling) {
                 return false;
             }

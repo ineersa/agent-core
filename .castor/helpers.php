@@ -2520,6 +2520,66 @@ function check_llm_generation_ready(?float $checkWallDeadline = null): void
     throw new \RuntimeException($diagnostic);
 }
 
+/**
+ * Absolute ignored root for ShipMonk dead-code Symfony DIC warmup + PHPStan tmp.
+ *
+ * Pinned under var/ so standalone `castor dead-code` and the check lane never
+ * consume a developer `.hatfield/cache/dev` XML or a QA-run HATFIELD_CACHE_DIR.
+ */
+function dead_code_cache_root_dir(): string
+{
+    $root = project_root_dir();
+    $dir = $root.'/var/phpstan-dead-code';
+    if (!is_dir($dir) && !mkdir($dir, 0775, true) && !is_dir($dir)) {
+        throw new \RuntimeException(\sprintf('Unable to create dead-code cache directory "%s".', $dir));
+    }
+
+    return $dir;
+}
+
+/**
+ * Warm a fresh Symfony DIC XML under var/phpstan-dead-code/ and return its path.
+ *
+ * Always sets HATFIELD_CACHE_DIR to the same ignored root so Kernel writes the
+ * container beside the copied analyser input. Deletes a stale target first so a
+ * fresh checkout cannot keep an old developer XML.
+ */
+function ensure_dead_code_symfony_container_xml(): string
+{
+    $root = project_root_dir();
+    $cacheRoot = dead_code_cache_root_dir();
+    $target = $cacheRoot.'/symfony-container.xml';
+    $source = $cacheRoot.'/dev/Ineersa_CodingAgent_KernelDevDebugContainer.xml';
+
+    if (is_file($target) && !unlink($target)) {
+        throw new \RuntimeException(\sprintf('Unable to remove stale dead-code container XML "%s".', $target));
+    }
+
+    // Override after qa_observability_env_command(): that helper may export a
+    // standalone QA HATFIELD_CACHE_DIR, but dead-code warmup must stay pinned.
+    $cmd = qa_observability_env_command()
+        .' HATFIELD_CACHE_DIR='.escapeshellarg($cacheRoot)
+        .' APP_ENV=dev APP_DEBUG=1 '
+        .escapeshellarg(\PHP_BINARY).' '
+        .escapeshellarg($root.'/bin/console')
+        .' about --no-ansi --no-interaction';
+    $about = run_quiet_command($cmd);
+    if (0 !== $about->getExitCode()) {
+        $detail = trim($about->getErrorOutput()."\n".$about->getOutput());
+        throw new \RuntimeException('Failed warming Symfony container for dead-code detection under '.$cacheRoot.('' !== $detail ? ': '.$detail : '.'));
+    }
+
+    if (!is_file($source)) {
+        throw new \RuntimeException(\sprintf('Symfony container XML missing after dead-code warmup. Expected "%s" under HATFIELD_CACHE_DIR=%s.', $source, $cacheRoot));
+    }
+
+    if (!copy($source, $target)) {
+        throw new \RuntimeException(\sprintf('Unable to copy Symfony container XML to "%s".', $target));
+    }
+
+    return $target;
+}
+
 function build_idea_run_config_xml(string $commandName, string $description): string
 {
     $configurationName = 'castor '.$commandName;

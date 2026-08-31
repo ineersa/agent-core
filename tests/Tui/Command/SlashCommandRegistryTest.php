@@ -219,7 +219,6 @@ final class SlashCommandRegistryTest extends TestCase
             \Ineersa\Tui\Command\Hotkey\HotkeyTableData::class,
             $result,
         );
-        // @phpstan-ignore-next-line
         $this->assertTrue($result->isEmpty());
     }
 
@@ -257,10 +256,8 @@ final class SlashCommandRegistryTest extends TestCase
             $result,
         );
 
-        // @phpstan-ignore-next-line
         $this->assertFalse($result->isEmpty());
 
-        // @phpstan-ignore-next-line
         $groups = $result->groups;
         $this->assertArrayHasKey('Global', $groups);
         $this->assertArrayHasKey('Editor', $groups);
@@ -290,7 +287,6 @@ final class SlashCommandRegistryTest extends TestCase
             \Ineersa\Tui\Command\Hotkey\HotkeyTableData::class,
             $result,
         );
-        // @phpstan-ignore-next-line
         $this->assertTrue($result->isEmpty());
     }
 

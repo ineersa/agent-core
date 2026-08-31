@@ -332,9 +332,8 @@ final class SubmitListener implements TuiListenerRegistrar
                     // $state->request is nullable; nullsafe is required
                     // to avoid a property-access error on null during
                     // draft promotion from a plain /new without --model.
-                    // @phpstan-ignore nullsafe.neverNull
+                    // Suppressed in phpstan.dist.neon (nullsafe.neverNull).
                     cwd: $state->request?->cwd ?? '',
-                    // @phpstan-ignore nullsafe.neverNull
                     options: $state->request?->options ?? [],
                     model: $state->request?->model,
                     reasoning: $state->request?->reasoning,
