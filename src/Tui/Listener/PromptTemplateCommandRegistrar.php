@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Listener;
 
-use Ineersa\CodingAgent\Runtime\Contract\PromptTemplateCatalogInterface;
+use Ineersa\CodingAgent\PromptTemplate\PromptTemplateService;
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\DispatchRuntime;
 use Ineersa\Tui\Command\SlashCommand;
@@ -27,12 +27,11 @@ use Ineersa\Tui\Command\SlashCommandHandler;
 final class PromptTemplateCommandRegistrar implements SlashCommandCatalogRegistrar
 {
     public function __construct(
-        private readonly PromptTemplateCatalogInterface $catalog,
+        private readonly PromptTemplateService $promptTemplates,
     ) {
     }
 
-    
-    public function registerCatalog(SlashCommandCatalog $commandCatalog): void
+    public function registerCatalog(SlashCommandCatalog $catalog): void
     {
         $handler = new class implements SlashCommandHandler {
             public function handle(SlashCommand $command): DispatchRuntime
@@ -41,13 +40,13 @@ final class PromptTemplateCommandRegistrar implements SlashCommandCatalogRegistr
             }
         };
 
-        foreach ($this->catalog->allPromptTemplateCommands() as $template) {
+        foreach ($this->promptTemplates->allPromptTemplateCommands() as $template) {
             // Real/built-in commands win — skip if already registered.
-            if ($commandCatalog->has($template->name)) {
+            if ($catalog->has($template->name)) {
                 continue;
             }
 
-            $commandCatalog->register(
+            $catalog->register(
                 new CommandMetadata(
                     name: $template->name,
                     aliases: [],

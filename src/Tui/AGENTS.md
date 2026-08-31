@@ -9,3 +9,5 @@ Key types: `TuiSlotRegistry`, `TuiExtensionContext` / `SlotBasedTuiExtensionCont
 Themes: `ThemeColorEnum`, `ThemePalette`, `DefaultTheme`, `ThemeRegistry`, YAML under `config/themes/` (no separate `ThemeLoader` class). Extensions register status/working/footer state and terminal input through `TuiExtensionContext`; they must not mutate widgets directly. Hotkeys: `/hotkeys` catalog in `src/Tui/Command/Hotkey/` (display metadata, not input routing). Full design: `docs/tui-architecture.md`.
 
 `StatusPanelWidget` selects status styling by key; keep `setStatus` text plain.
+
+Dependency direction: TUI may depend on CodingAgent. CodingAgent must not depend on TUI. Prefer direct CodingAgent services for ordinary ownership (for example `PromptTemplateService`, `SkillDiscovery`) rather than inventing Runtime/Contract catalog wrappers solely for Deptrac. Direct TUI dependencies on AgentCore are allowed only where `depfile.yaml` explicitly lists them and usually indicate misplaced ownership. TUI may consume public ExtensionApi TUI contracts but must not depend on concrete extension implementations.

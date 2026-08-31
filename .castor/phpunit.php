@@ -69,10 +69,10 @@ function build_sequential_phpunit_command(string $pharEnv): string
  * --filter is used (ParaTest --filter can be unreliable with path/namespace
  * overlap).
  *
- * Each ParaTest worker gets its own compiled Symfony cache directory
- * (via TEST_TOKEN in tests/paratest-bootstrap.php).  The SQLite test DB
- * is shared — DAMA/DoctrineTestBundle provides per-test transaction
- * isolation in WAL mode.
+ * Each ParaTest worker gets its own SQLite files and compiled Symfony
+ * cache directory (via TEST_TOKEN + optional HATFIELD_QA_LANE in
+ * tests/paratest-bootstrap.php). DAMA still wraps each method in a
+ * transaction.
  *
  * MAINT-05B: ParaTest is now the default.  Sequential PHPUnit is an
  * internal fallback only.
@@ -168,7 +168,7 @@ function test(?string $filter = null, ?string $suite = null): void
     $llmFlags = is_llm_mode() ? ' --colors=never --no-progress' : '';
     $junitFlag = is_llm_mode() ? ' --log-junit='.report_path('phpunit-parallel.junit.xml') : '';
 
-    $cmd = qa_observability_env_command().' APP_ENV=test '.$pharEnv.\PHP_BINARY.' vendor/bin/paratest'
+    $cmd = qa_observability_env_command().' HATFIELD_QA_LANE=unit APP_ENV=test '.$pharEnv.\PHP_BINARY.' vendor/bin/paratest'
         .' --configuration=phpunit.xml.dist'
         .' --bootstrap='.escapeshellarg($bootstrap)
         .$suiteFlag
@@ -212,7 +212,7 @@ function build_check_paratest_command(): string
 
     $processes = check_lane_paratest_processes('unit', 4, 8);
 
-    return qa_check_run_env_command().' APP_ENV=test '.$phpBin.' vendor/bin/paratest'
+    return qa_check_run_env_command().' HATFIELD_QA_LANE=unit APP_ENV=test '.$phpBin.' vendor/bin/paratest'
         .' --processes='.$processes
         .' --configuration=phpunit.xml.dist'
         .' --bootstrap='.escapeshellarg($bootstrap)

@@ -4,23 +4,16 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\PromptTemplate;
 
-use Ineersa\CodingAgent\Runtime\Contract\PromptTemplateCatalogInterface;
-use Ineersa\CodingAgent\Runtime\Contract\PromptTemplateCommand;
-
 /**
  * Cached prompt-template service.
  *
  * Provides a lazily loaded, process-lifetime-cached template catalog and
- * single-pass template expansion. Implements PromptTemplateCatalogInterface
- * so TUI can register virtual slash commands through the deptrac-safe
- * Runtime\Contract boundary.
- *
- * There is no PromptTemplateExpanderInterface — the runtime layer injects
- * this concrete service directly for expansion.
+ * single-pass template expansion. TUI and runtime inject this concrete
+ * service directly for catalog projection and expansion.
  *
  * @internal
  */
-final class PromptTemplateService implements PromptTemplateCatalogInterface
+final class PromptTemplateService
 {
     private ?PromptTemplateLoadResult $cached = null;
 
@@ -32,17 +25,11 @@ final class PromptTemplateService implements PromptTemplateCatalogInterface
     }
 
     /**
-     * @return list<PromptTemplateCommand>
+     * @return list<LoadedPromptTemplate>
      */
     public function allPromptTemplateCommands(): array
     {
-        return array_map(
-            static fn (LoadedPromptTemplate $t): PromptTemplateCommand => new PromptTemplateCommand(
-                name: $t->name,
-                description: $t->description,
-            ),
-            $this->result()->templates,
-        );
+        return $this->result()->templates;
     }
 
     /**

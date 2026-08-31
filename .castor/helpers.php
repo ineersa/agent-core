@@ -2131,8 +2131,9 @@ function assert_castor_check_run_no_process_leaks(string $runId): void
 /**
  * Delete only the exact-run Symfony/QA cache roots for this castor check.
  *
- * Removes `.hatfield/cache-$qaRunId` and sibling worker roots
- * `.hatfield/cache-$qaRunId-paraT*` under the project root. Preserves the
+ * Removes `.hatfield/cache-$qaRunId`, legacy sibling worker roots
+ * `.hatfield/cache-$qaRunId-paraT*`, and lane-scoped worker roots
+ * `.hatfield/cache-$qaRunId-<lane>-T*` under the project root. Preserves the
  * persistent `.hatfield/cache`, generic `.hatfield/cache-paraT*`, other QA
  * run ids, absolute/external HATFIELD_CACHE_DIR values, and anything whose
  * basename is not an exact match for this run.
@@ -2167,7 +2168,8 @@ function cleanup_exact_qa_run_cache_roots(string $qaRunId, ?string $projectRoot 
     }
 
     $primaryBase = 'cache-'.$segment;
-    $workerPrefix = $primaryBase.'-paraT';
+    $legacyWorkerPattern = '/^'.preg_quote($primaryBase, '/').'-paraT[A-Za-z0-9._-]+$/';
+    $laneWorkerPattern = '/^'.preg_quote($primaryBase, '/').'-(?:unit|tui|llm-real)-T[A-Za-z0-9._-]+$/';
     $removed = [];
 
     $entries = @scandir($hatfieldDir);
@@ -2181,13 +2183,9 @@ function cleanup_exact_qa_run_cache_roots(string $qaRunId, ?string $projectRoot 
         }
 
         $isPrimary = $entry === $primaryBase;
-        $isWorker = str_starts_with($entry, $workerPrefix);
+        $isWorker = 1 === preg_match($legacyWorkerPattern, $entry)
+            || 1 === preg_match($laneWorkerPattern, $entry);
         if (!$isPrimary && !$isWorker) {
-            continue;
-        }
-
-        // Worker roots must be exactly cache-<id>-paraT<token>, not a prefix of another id.
-        if ($isWorker && !preg_match('/^'.preg_quote($primaryBase, '/').'-paraT[A-Za-z0-9._-]+$/', $entry)) {
             continue;
         }
 

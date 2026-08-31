@@ -17,8 +17,6 @@ use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateFrontmatterParser;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateLoader;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
-use Ineersa\CodingAgent\Runtime\Contract\LoadedResourcesSummaryDTO;
-use Ineersa\CodingAgent\Runtime\Contract\LoadedResourcesSummaryProviderInterface;
 use Ineersa\CodingAgent\Runtime\LoadedResources\LoadedResourcesSummaryBuilder;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
 use Ineersa\CodingAgent\Skills\SkillsConfig;
@@ -90,37 +88,6 @@ final class LoadedResourcesStartupRegistrarTest extends TestCase
         $context->ticks->dispatch(new TickEvent());
 
         $this->assertFalse($harness->screen()->hasLoadedResourcesBlock());
-    }
-
-    #[Test]
-    public function buildIsInvokedDuringRegisterOnFreshSession(): void
-    {
-        $calls = 0;
-        $provider = new class($calls) implements LoadedResourcesSummaryProviderInterface {
-            public function __construct(private int &$calls)
-            {
-            }
-
-            public function build(): LoadedResourcesSummaryDTO
-            {
-                ++$this->calls;
-
-                return new LoadedResourcesSummaryDTO([]);
-            }
-        };
-
-        $harness = new VirtualTuiHarness(sessionId: 'no-sync-build');
-        $state = new TuiSessionState('no-sync-build');
-        $state->resuming = false;
-        $context = $this->buildTuiContext()
-            ->withTui($harness->tui())
-            ->withState($state)
-            ->withScreen($harness->screen())
-            ->build();
-
-        (new LoadedResourcesStartupRegistrar($provider))->register($context);
-
-        $this->assertSame(1, $calls, 'summary build runs during register() for first paint batching');
     }
 
     private function createMinimalBuilder(): LoadedResourcesSummaryBuilder

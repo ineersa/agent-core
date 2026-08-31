@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Listener;
 
-use Ineersa\CodingAgent\Runtime\Contract\ProviderQuotaProbeServiceInterface;
+use Ineersa\CodingAgent\Infrastructure\ProviderQuota\ProviderQuotaProbeService;
 use Ineersa\Tui\Command\CommandResult;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\SlashCommandHandler;
@@ -19,15 +19,15 @@ use Symfony\Component\Tui\Tui;
 /**
  * Handler for the /usage slash command.
  *
- * Probes configured provider quotas through the runtime contract and formats
- * current-session totals from {@see TuiSessionState::$usage}.
+ * Probes configured provider quotas and formats current-session totals from
+ * {@see TuiSessionState::$usage}.
  *
  * @internal Registered by UsageCommandRegistrar
  */
 final class UsageCommandHandler implements SlashCommandHandler
 {
     public function __construct(
-        private readonly ProviderQuotaProbeServiceInterface $quotaProbe,
+        private readonly ProviderQuotaProbeService $quotaProbe,
         private readonly TuiSessionState $state,
         private readonly ChatScreen $screen,
         private readonly Tui $tui,

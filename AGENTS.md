@@ -115,7 +115,14 @@ Settings precedence: built-in defaults < `~/.hatfield/settings.yaml` < project `
 | TUI | `src/Tui/` | Terminal UI, widgets, layout, theme, input | Cross-layer leaks outside approved Deptrac edges |
 | Extension API | `.hatfield/extensions/extension-api/` | Public extension contracts | Hatfield internals (see below) |
 
-- TUI↔runtime boundary for product code: `src/CodingAgent/Runtime/Contract`, `Runtime/Protocol`, and `AgentSessionClient` (plus Deptrac-approved projection/session edges where listed).
+Dependency direction:
+
+- AgentCore must not depend on CodingAgent, TUI, ExtensionApi, or concrete extensions.
+- CodingAgent may depend on AgentCore and public ExtensionApi contracts; it must not depend on TUI or concrete extension implementations.
+- TUI may depend directly on CodingAgent. Direct TUI dependencies on AgentCore are allowed only where Deptrac explicitly lists them and are usually a design smell; prefer the owning CodingAgent service.
+- Concrete extensions depend on ExtensionApi contracts (plus explicitly approved public vendor APIs such as Symfony TUI), not AgentCore, CodingAgent internals, or in-repo `Ineersa\Tui` classes.
+- ExtensionApi must remain independent of AgentCore, CodingAgent internals, in-repo TUI, and concrete extensions. Host product code may implement or consume ExtensionApi contracts but must not depend on concrete extension implementations. App built-ins under `src/CodingAgent/Extension/Builtin` are host code, not external extensions.
+- Runtime Contract/Protocol types are for real session/runtime protocol and projection seams, not wrappers invented merely to prevent TUI from using an owning CodingAgent service.
 - This is an HTTP-less product. Do not add web-serving code.
 
 Module-specific Runtime, TUI, and Extension API rules live in their nearest local `AGENTS.md`; the table above routes to them.
