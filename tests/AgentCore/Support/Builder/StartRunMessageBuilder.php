@@ -31,33 +31,15 @@ final class StartRunMessageBuilder
 
     public static function create(string $runId = 'run-test'): self
     {
-        return (new self())->withRunId($runId);
-    }
+        $builder = new self();
+        $builder->runId = $runId;
 
-    public function withRunId(string $runId): self
-    {
-        $this->runId = $runId;
-
-        return $this;
-    }
-
-    public function withTurnNo(int $turnNo): self
-    {
-        $this->turnNo = $turnNo;
-
-        return $this;
+        return $builder;
     }
 
     public function withStepId(string $stepId): self
     {
         $this->stepId = $stepId;
-
-        return $this;
-    }
-
-    public function withAttempt(int $attempt): self
-    {
-        $this->attempt = $attempt;
 
         return $this;
     }
@@ -75,26 +57,6 @@ final class StartRunMessageBuilder
     public function withPayloadMessages(array $messages): self
     {
         $this->payloadMessages = $messages;
-
-        return $this;
-    }
-
-    public function withSystemPrompt(string $systemPrompt): self
-    {
-        $this->systemPrompt = $systemPrompt;
-
-        return $this;
-    }
-
-    /**
-     * Convenience: add a single user text message to the payload.
-     */
-    public function withUserTextMessage(string $text): self
-    {
-        $this->payloadMessages[] = new AgentMessage(
-            role: 'user',
-            content: [['type' => 'text', 'text' => $text]],
-        );
 
         return $this;
     }

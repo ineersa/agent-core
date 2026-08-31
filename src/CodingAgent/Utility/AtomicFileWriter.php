@@ -14,7 +14,7 @@ final class AtomicFileWriter
     {
         $dir = \dirname($destination);
         if (!is_dir($dir) && !@mkdir($dir, $directoryMode ?? 0o755, true) && !is_dir($dir)) {
-            throw new AtomicFileWriterException('mkdir', null, \sprintf('Failed to create directory "%s".', $dir));
+            throw new AtomicFileWriterException('mkdir', \sprintf('Failed to create directory "%s".', $dir));
         }
 
         $tmpPath = $destination.'.tmp.'.bin2hex(random_bytes(8));
@@ -23,15 +23,15 @@ final class AtomicFileWriter
             // @: Symfony's debug ErrorHandler would convert a warning into an ErrorException.
             $written = @file_put_contents($tmpPath, $contents, \LOCK_EX);
             if (false === $written || $written !== \strlen($contents)) {
-                throw new AtomicFileWriterException('write', $tmpPath, \sprintf('Failed to write temporary file "%s".', $tmpPath));
+                throw new AtomicFileWriterException('write', \sprintf('Failed to write temporary file "%s".', $tmpPath));
             }
 
             if (null !== $fileMode && !@chmod($tmpPath, $fileMode)) {
-                throw new AtomicFileWriterException('chmod', $tmpPath, \sprintf('Failed to apply mode %o to temporary file "%s".', $fileMode, $tmpPath));
+                throw new AtomicFileWriterException('chmod', \sprintf('Failed to apply mode %o to temporary file "%s".', $fileMode, $tmpPath));
             }
 
             if (!@rename($tmpPath, $destination)) {
-                throw new AtomicFileWriterException('rename', $tmpPath, \sprintf('Failed to rename temporary file "%s" to "%s".', $tmpPath, $destination));
+                throw new AtomicFileWriterException('rename', \sprintf('Failed to rename temporary file "%s" to "%s".', $tmpPath, $destination));
             }
 
             if (null !== $fileMode) {

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Tool;
 
-use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Agent\Execution\SubagentArgumentsDTO;
 use Ineersa\CodingAgent\Agent\Execution\SubagentTaskDTO;
@@ -136,24 +135,6 @@ final class SubagentToolTest extends IsolatedKernelTestCase
         $this->assertInstanceOf(
             \Ineersa\CodingAgent\Tool\HatfieldToolProviderInterface::class,
             $tool,
-        );
-    }
-
-    private function toolContext(string $toolCallId): ToolContext
-    {
-        return new ToolContext(
-            runId: 'parent-run',
-            turnNo: 0,
-            toolCallId: $toolCallId,
-            toolName: 'subagent',
-            cancellationToken: new class implements \Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface {
-                public function isCancellationRequested(): bool
-                {
-                    return false;
-                }
-            },
-            timeoutSeconds: 30,
-            orderIndex: 0,
         );
     }
 }

@@ -252,21 +252,8 @@ final class FakeCapturingAgentRunner implements AgentRunnerInterface
     /** @var list<array{runId: string, rawInput: string}> */
     public array $shellCalls = [];
 
-    /** @var list<AgentMessage> */
-    public array $appendMessages = [];
-
     /** @var list<array{questionId: string, answer: mixed}> */
     public array $answerHumanCalls = [];
-
-    /** Clear captured state between test methods. */
-    public function reset(): void
-    {
-        $this->lastStartInput = null;
-        $this->steerMessages = [];
-        $this->followUpMessages = [];
-        $this->shellCalls = [];
-        $this->answerHumanCalls = [];
-    }
 
     public function start(StartRunInput $input): string
     {
@@ -292,7 +279,6 @@ final class FakeCapturingAgentRunner implements AgentRunnerInterface
 
     public function appendMessage(string $runId, AgentMessage $message): void
     {
-        $this->appendMessages[] = $message;
     }
 
     public function cancel(string $runId, ?string $reason = null): void

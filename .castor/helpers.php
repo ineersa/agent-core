@@ -2608,6 +2608,7 @@ function dead_code_baseline_phpstan_command(): string
         escapeshellarg(dead_code_phpstan_config_path()).
         ' --no-progress --generate-baseline '.
         escapeshellarg(dead_code_baseline_path()).
+        ' --allow-empty-baseline'.
         (is_llm_mode() ? ' --no-ansi' : '');
 }
 
@@ -2668,6 +2669,13 @@ function regenerate_dead_code_baseline_at(string $baselinePath, string $phpstanC
         } elseif (is_file($baselinePath) && !unlink($baselinePath)) {
             throw new \RuntimeException(\sprintf('Dead-code baseline generation failed (exit code %d) and removing temporary "%s" also failed.', $exitCode, $baselinePath));
         }
+    } else {
+        // Zero findings must leave a valid empty include, not a missing file.
+        if (!is_file($baselinePath) || !dead_code_baseline_has_ignore_errors_key((string) file_get_contents($baselinePath))) {
+            if (false === file_put_contents($baselinePath, dead_code_empty_baseline_contents())) {
+                throw new \RuntimeException(\sprintf('Dead-code baseline generation succeeded but writing empty baseline "%s" failed.', $baselinePath));
+            }
+        }
     }
 
     if (is_file($backupPath) && !unlink($backupPath)) {
@@ -2678,6 +2686,14 @@ function regenerate_dead_code_baseline_at(string $baselinePath, string $phpstanC
         'exitCode' => $exitCode,
         'output' => $output,
     ];
+}
+
+/**
+ * True when a baseline neon file contains an ignoreErrors key (empty or not).
+ */
+function dead_code_baseline_has_ignore_errors_key(string $contents): bool
+{
+    return 1 === preg_match('/^\s*ignoreErrors\s*:/m', $contents);
 }
 
 /**

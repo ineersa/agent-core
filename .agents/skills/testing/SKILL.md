@@ -24,7 +24,6 @@ castor test:tui-update      # update TUI snapshot baselines (no Castor --filter;
 castor test:llm-real [--filter=X]   # real llama.cpp smoke (filter optional); standalone full group ParaTest 2 workers; filtered sequential; hard timeout ≤210s
 castor test:controller      # controller E2E smoke (live LLM, opt-in; fixed ControllerSmokeTest filter inside Castor — no Castor --filter option)
 castor test:controller-replay      # controller E2E smoke tests with replay fixtures (no live LLM, default controller validation)
-castor llm:fixtures:record         # Re-record LLM replay fixtures from live LLM
 castor llm:fixtures:info           # List available LLM replay fixtures
 castor deptrac              # architecture boundary validation
 castor phpstan [path]       # static analysis (optionally scoped to a path)
@@ -131,7 +130,7 @@ If `LLAMA_PROXY_ADMIN_TOKEN` is set, pass `-H 'X-Llama-Proxy-Token: <token>'` on
 | | llama-proxy | `HATFIELD_LLM_REPLAY_FIXTURE_PATH` |
 | --- | --- | --- |
 | Layer | HTTP on 9052 | Test `MockHttpClient` / `FixtureReplayModelClient` |
-| Commands | `test:llm-real`, check live lane, `test:controller`, `llm:fixtures:record` | `castor test`, `test:controller-replay`, `test:tui` |
+| Commands | `test:llm-real`, check live lane, `test:controller` | `castor test`, `test:controller-replay`, `test:tui` |
 | Offline CI | Needs 9052 + model upstream for live lane | Replay lanes need no model |
 
 Replay infrastructure is **not** removed when using the proxy; both coexist.
@@ -180,13 +179,10 @@ Most tests that would otherwise hit a live LLM endpoint use instead
 pre-recorded fixture files under `tests/AgentCore/Fixtures/traces/`.
 
 - **Replay mode** is the default for `castor test`. No live LLM calls.
-- **Live mode** is opt-in: `castor test:llm-real`,
-  `castor test:controller`, and `castor llm:fixtures:record`.
-- **Re-record fixtures** when provider behavior, prompts, or tool schemas
-  change: `castor llm:fixtures:record`.
-- Fixture format and recording/replay architecture described in
-  `docs/llm-replay.md`.  Replay test helpers live in
-  `tests/AgentCore/Infrastructure/SymfonyAi/Replay/`.
+- **Live mode** is opt-in: `castor test:llm-real` and `castor test:controller`.
+- Fixture format and replay architecture are described in `docs/llm-replay.md`.
+  Replay test helpers live in `tests/AgentCore/Infrastructure/SymfonyAi/Replay/`.
+  Committed fixtures are maintained directly; there is no supported live recording Castor task.
 
 ## Test groups
 
@@ -254,7 +250,6 @@ contend on SQLite writes under concurrent check lanes.
 | `castor test:tui` | TUI E2E journey tests (replay-backed, no live LLM) | tmux |
 | `castor run:agent-test` | Interactive tmux session for manual inspection | tmux, llama.cpp on port 9052 |
 | `castor run:agent` | Launch agent in tmux | tmux, LLM provider |
-| `castor llm:fixtures:record` | Re-record replay fixtures from live LLM | llama.cpp on port 9052 |
 | `castor llm:fixtures:info` | List available replay fixtures and metadata | Nothing (pure PHP) |
 
 ## Controller E2E testing

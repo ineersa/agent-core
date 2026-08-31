@@ -18,11 +18,13 @@ use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressChildR
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressParallelSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingleSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotInterface;
+use Ineersa\CodingAgent\Tests\Runtime\Controller\E2E\Replay\StreamPacingHttpClient;
 use Ineersa\Tui\Runtime\TuiSessionLifecycleEventDTO;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use ShipMonk\PHPStan\DeadCode\Provider\ReflectionBasedMemberUsageProvider;
 use ShipMonk\PHPStan\DeadCode\Provider\VirtualUsageData;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
+use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 /**
  * Marks Hatfield dynamic entry points that ShipMonk cannot infer from PHP alone.
@@ -94,6 +96,16 @@ final class HatfieldDeadCodeUsageProvider extends ReflectionBasedMemberUsageProv
         if (ExtensionToolRegistryBridge::class === $className
             && 'registerToolResultHook' === $method->getName()) {
             return VirtualUsageData::withNote('Published ExtensionApiInterface host implementation');
+        }
+
+        // StreamPacingHttpClient is a required HttpClientInterface decorator for
+        // controller-replay SSE pacing. request() is called from tests; stream()/
+        // withOptions() are vendor-contract methods invoked by Symfony HTTP client
+        // consumers and must remain even though the tests usage excluder hides them.
+        if (StreamPacingHttpClient::class === $className
+            && \in_array($method->getName(), ['stream', 'withOptions'], true)
+            && $method->getDeclaringClass()->implementsInterface(HttpClientInterface::class)) {
+            return VirtualUsageData::withNote('Exact HttpClientInterface contract methods on StreamPacingHttpClient');
         }
 
         return null;

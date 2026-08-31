@@ -144,30 +144,6 @@ final class RenameSessionCommandHandlerTest extends TestCase
         $this->assertSame('error', $result->role);
     }
 
-    private function createEmptySessionStore(): HatfieldSessionStore
-    {
-        // A real HatfieldSessionRepository (final class) whose findForCatalog()
-        // query chain is driven by PHPUnit public doubles — all real objects
-        // and stubs, no reflection.
-        $query = $this->createStub(\Doctrine\ORM\Query::class);
-        $query->method('getResult')->willReturn([]);
-        $qb = $this->createStub(\Doctrine\ORM\QueryBuilder::class);
-        $qb->method('select')->willReturnSelf();
-        $qb->method('from')->willReturnSelf();
-        $qb->method('orderBy')->willReturnSelf();
-        $qb->method('getQuery')->willReturn($query);
-        $em = $this->createStub(EntityManagerInterface::class);
-        $em->method('createQueryBuilder')->willReturn($qb);
-        $em->method('getClassMetadata')->willReturn(
-            new \Doctrine\ORM\Mapping\ClassMetadata(HatfieldSession::class),
-        );
-        $registry = $this->createStub(\Doctrine\Persistence\ManagerRegistry::class);
-        $registry->method('getManagerForClass')->willReturn($em);
-        $em->method('getRepository')->willReturn(new \Ineersa\CodingAgent\Entity\HatfieldSessionRepository($registry));
-
-        return new HatfieldSessionStore($this->createAppConfig(), $em, new \Symfony\Component\EventDispatcher\EventDispatcher());
-    }
-
     private function createAppConfig(): AppConfig
     {
         return new AppConfig(

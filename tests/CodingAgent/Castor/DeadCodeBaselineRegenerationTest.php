@@ -27,6 +27,16 @@ final class DeadCodeBaselineRegenerationTest extends TestCase
         $this->assertStringNotContainsString('path:', $contents);
     }
 
+    public function testBaselinePhpstanCommandAllowsEmptyBaseline(): void
+    {
+        self::requireHelpers();
+
+        $command = \CastorTasks\dead_code_baseline_phpstan_command();
+
+        $this->assertStringContainsString('--allow-empty-baseline', $command);
+        $this->assertStringContainsString('--generate-baseline', $command);
+    }
+
     public function testRegenerationRestoresPreviousBaselineWhenCommandFails(): void
     {
         self::requireHelpers();
@@ -77,12 +87,41 @@ final class DeadCodeBaselineRegenerationTest extends TestCase
         }
     }
 
+    public function testRegenerationWritesValidEmptyBaselineWhenGeneratorRemovesFile(): void
+    {
+        self::requireHelpers();
+
+        $work = TestDirectoryIsolation::createProjectTempDir('dead-code-baseline-regen-empty-');
+        $baselinePath = $work.'/phpstan.dead-code-baseline.neon';
+        $previous = "parameters:\n\tignoreErrors:\n\t\t-\n\t\t\tmessage: '#^stale$#'\n\t\t\tidentifier: shipmonk.deadMethod\n\t\t\tcount: 1\n\t\t\tpath: missing/DeletedSource.php\n";
+
+        try {
+            $this->assertNotFalse(file_put_contents($baselinePath, $previous));
+
+            $command = \sprintf('rm -f %s', escapeshellarg($baselinePath));
+            $result = \CastorTasks\regenerate_dead_code_baseline_at($baselinePath, $command, $work);
+
+            $this->assertSame(0, $result['exitCode']);
+            $this->assertFileExists($baselinePath);
+            $this->assertSame(\CastorTasks\dead_code_empty_baseline_contents(), file_get_contents($baselinePath));
+            $this->assertFileDoesNotExist($baselinePath.'.pre-regen');
+        } finally {
+            TestDirectoryIsolation::removeDirectory($work);
+        }
+    }
+
     private static function requireHelpers(): void
     {
         $root = ProjectDir::get();
         $helpersPhp = $root.'/.castor/helpers.php';
+        $sharedPhp = $root.'/.castor/shared.php';
+        $envPhp = $root.'/.castor/env.php';
         self::assertFileExists($helpersPhp);
+        self::assertFileExists($sharedPhp);
+        self::assertFileExists($envPhp);
         require_once $helpersPhp;
+        require_once $sharedPhp;
+        require_once $envPhp;
         self::assertTrue(
             \function_exists('CastorTasks\regenerate_dead_code_baseline_at'),
             'regenerate_dead_code_baseline_at must load from .castor/helpers.php',
@@ -90,6 +129,10 @@ final class DeadCodeBaselineRegenerationTest extends TestCase
         self::assertTrue(
             \function_exists('CastorTasks\dead_code_empty_baseline_contents'),
             'dead_code_empty_baseline_contents must load from .castor/helpers.php',
+        );
+        self::assertTrue(
+            \function_exists('qa_observability_env_command'),
+            'qa_observability_env_command must load from .castor/env.php for baseline command assembly',
         );
     }
 }

@@ -6,11 +6,7 @@ namespace Ineersa\Tests\Tui\Runtime;
 
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
-use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
-use Ineersa\CodingAgent\Config\AppConfig;
-use Ineersa\CodingAgent\Config\LoggingConfig;
-use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\AssistantStreamProjectionSubscriber;
@@ -22,20 +18,12 @@ use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
-use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
-use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
-use Ineersa\Tui\Application\SessionInitializer;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
 use Ineersa\Tui\Runtime\TuiSessionState;
-use Ineersa\Tui\Transcript\TranscriptBlockFactory;
 use PHPUnit\Framework\TestCase;
-use Psr\Log\NullLogger;
 use Symfony\Component\EventDispatcher\EventDispatcher;
-use Symfony\Component\Lock\LockFactory;
-use Symfony\Component\Lock\Store\FlockStore;
 
 /**
  * @covers \Ineersa\Tui\Runtime\TuiRuntimeEventApplier
@@ -156,93 +144,9 @@ final class TuiRuntimeEventApplierTest extends TestCase
         $this->assertSame('medium', $items[0]->reasoning);
     }
 
-    /** @return list<string> */
-    private function canonicalFixtureLines(string $runId): array
-    {
-        $now = (new \DateTimeImmutable())->format(\DATE_ATOM);
-        // Canonical resume needs TurnAdvanced so HistoryProjector retains tip=1.
-        // Without it, fail-closed resume uses position 0 and drops turn content/usage.
-        $rows = [
-            ['seq' => 1, 'turn_no' => 0, 'type' => 'run_started', 'payload' => ['step_id' => 's1', 'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Resume me']]]]]]],
-            ['seq' => 2, 'turn_no' => 1, 'type' => 'turn_advanced', 'payload' => ['turn_no' => 1]],
-            ['seq' => 3, 'turn_no' => 1, 'type' => 'history_position_set', 'payload' => ['position_turn_no' => 1, 'reason' => 'continue']],
-            ['seq' => 4, 'turn_no' => 1, 'type' => 'llm_step_completed', 'payload' => ['step_id' => 's2', 'assistant_message' => ['role' => 'assistant', 'content' => null, 'tool_calls' => [['id' => 'call_sub_1', 'name' => 'subagent', 'arguments' => ['task' => 'x']]]], 'usage' => ['input_tokens' => 12, 'output_tokens' => 4]]],
-            ['seq' => 5, 'turn_no' => 1, 'type' => 'tool_execution_start', 'payload' => ['tool_call_id' => 'call_sub_1', 'tool_name' => 'subagent', 'order_index' => 0]],
-            ['seq' => 6, 'turn_no' => 1, 'type' => 'tool_execution_update', 'payload' => ['tool_call_id' => 'call_sub_1', 'tool_name' => 'subagent', 'delta' => '', 'subagent_progress' => ['mode' => 'single', 'status' => 'running', 'agent_name' => 'scout', 'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'task', 'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'medium']]],
-            ['seq' => 7, 'turn_no' => 1, 'type' => 'tool_execution_end', 'payload' => [
-                'tool_result' => [
-                    'run_id' => $runId,
-                    'turn_no' => 1,
-                    'step_id' => 's2',
-                    'attempt' => 1,
-                    'idempotency_key' => 'result-call_sub_1',
-                    'tool_call_id' => 'call_sub_1',
-                    'order_index' => 0,
-                    'result' => ['tool_name' => 'subagent', 'content' => [['type' => 'text', 'text' => 'Final subagent handoff text']]],
-                    'is_error' => false,
-                    'error' => null,
-                    'pending_human_input' => null,
-                ],
-            ]],
-            ['seq' => 8, 'turn_no' => 1, 'type' => 'agent_command_applied', 'payload' => ['kind' => 'cancel']],
-            ['seq' => 9, 'turn_no' => 1, 'type' => 'agent_end', 'payload' => ['reason' => 'cancelled']],
-        ];
-        $lines = [];
-        foreach ($rows as $row) {
-            $lines[] = json_encode([
-                'schema_version' => '1.0',
-                'run_id' => $runId,
-                'seq' => $row['seq'],
-                'turn_no' => $row['turn_no'],
-                'type' => $row['type'],
-                'payload' => $row['payload'],
-                'ts' => $now,
-            ], \JSON_THROW_ON_ERROR)."\n";
-        }
-
-        return $lines;
-    }
-
     private function buildApplier(): TuiRuntimeEventApplier
     {
         return new TuiRuntimeEventApplier($this->buildProjector(), SubagentProgressSerializerTestSupport::denormalizer());
-    }
-
-    private function buildInitializer(): SessionInitializer
-    {
-        $projector = $this->buildProjector();
-        $appConfig = new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig(), cwd: $this->projectDir);
-        $sessionStore = new HatfieldSessionStore($appConfig, $this->createStub(\Doctrine\ORM\EntityManagerInterface::class), new EventDispatcher());
-        $eventStore = $this->buildEventStore();
-        $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())));
-
-        return new SessionInitializer(
-            sessionStore: $sessionStore,
-            eventStore: $eventStore,
-            blockFactory: new TranscriptBlockFactory(),
-            logger: new NullLogger(),
-            historyProvider: new \Ineersa\CodingAgent\Session\SessionHistoryProvider($eventStore, new \Ineersa\CodingAgent\Session\History\HistoryProjector()),
-            sessionTranscriptProvider: new \Ineersa\CodingAgent\Session\SessionTranscriptProvider(
-                eventStore: $eventStore,
-                replayFilter: new \Ineersa\CodingAgent\Session\History\HistoryReplayFilter(new \Ineersa\CodingAgent\Session\History\HistoryProjector()),
-                eventMapper: $mapper,
-                transcriptProjector: $projector,
-            )
-        );
-    }
-
-    private function buildEventStore(): SessionRunEventStore
-    {
-        $appConfig = new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig(), cwd: $this->projectDir);
-        $sessionStore = new HatfieldSessionStore($appConfig, $this->createStub(\Doctrine\ORM\EntityManagerInterface::class), new EventDispatcher());
-
-        return new SessionRunEventStore(
-            hatfieldSessionStore: $sessionStore,
-            eventPayloadNormalizer: new EventPayloadNormalizer(),
-            lockFactory: new LockFactory(new FlockStore()),
-            logger: new NullLogger(),
-            sequenceAllocator: new FileRunSequenceAllocator(),
-        );
     }
 
     private function buildProjector(): TranscriptProjector

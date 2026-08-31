@@ -56,20 +56,11 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
     private BgStatusTool $tool;
     private string $tmpDir;
 
-    private OutputCapConfig $outputCapCfg;
-
     protected function setUp(): void
     {
         parent::setUp();
 
         $this->tmpDir = TestDirectoryIsolation::createOsTempDir('hatfield_bgtool_test', 0o750);
-
-        // Use a high default cap so existing tests are unaffected.
-        $this->outputCapCfg = new OutputCapConfig(
-            storageDir: $this->tmpDir.'/output-cap',
-            defaultCap: 20000,
-            docCap: 50000,
-        );
 
         $this->config = new BackgroundProcessConfig(
             storageDir: $this->tmpDir,

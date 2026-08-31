@@ -9,7 +9,7 @@ declare(strict_types=1);
  * replay-backed E2E lanes do not require a live LLM.  The `test:llm-real`
  * lane runs the same ParaTest command as `castor test:llm-real` (port 9052 /
  * llama-proxy; warm cache ~22–25s).  Opt-in live controller smoke:
- *   castor test:controller, castor llm:fixtures:record
+ *   castor test:controller
  *
  * Lanes (typical shell timeouts):
  *   deptrac (30s), test ParaTest (120s), test:controller-replay (150s),

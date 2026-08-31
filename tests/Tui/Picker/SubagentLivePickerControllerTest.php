@@ -772,16 +772,7 @@ final class SubagentLivePickerControllerTest extends TestCase
         return $screen->workingMessage();
     }
 
-    /**
+    /*
      * @return array<string, string>
      */
-    private function statusEntries(ChatScreen $screen): array
-    {
-        $ref = new \ReflectionProperty(ChatScreen::class, 'statusEntries');
-
-        /** @var array<string, string> $entries */
-        $entries = $ref->getValue($screen);
-
-        return $entries;
-    }
 }

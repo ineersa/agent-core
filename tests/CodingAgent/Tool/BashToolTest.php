@@ -16,7 +16,6 @@ use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Config\BashToolConfig;
-use Ineersa\CodingAgent\Config\OutputCapConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcessRepository;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
@@ -27,7 +26,6 @@ use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Ineersa\CodingAgent\Tool\BashBackgroundPromptAdapterInterface;
 use Ineersa\CodingAgent\Tool\BashTool;
-use Ineersa\CodingAgent\Tool\OutputCap;
 use Ineersa\CodingAgent\Tool\RawAwareToolCallArgumentResolver;
 use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
@@ -40,8 +38,6 @@ use Symfony\AI\Agent\Toolbox\FaultTolerantToolbox;
 use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver;
 use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\Component\EventDispatcher\EventDispatcher;
-use Symfony\Component\Lock\LockFactory;
-use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Validator\ConstraintValidatorFactory;
 use Symfony\Component\Validator\ValidatorBuilder;
 
@@ -50,8 +46,6 @@ use Symfony\Component\Validator\ValidatorBuilder;
  * @covers \Ineersa\CodingAgent\Tool\BackgroundProcessManager
  * @covers \Ineersa\CodingAgent\Config\BashToolConfig
  * @covers \Ineersa\CodingAgent\Config\BackgroundProcessConfig
- * @covers \Ineersa\CodingAgent\Config\OutputCapConfig
- * @covers \Ineersa\CodingAgent\Tool\OutputCap
  *
  * @requires extension pdo_sqlite
  * @requires OS Linux
@@ -78,7 +72,6 @@ final class BashToolTest extends IsolatedKernelTestCase
     private TestLogger $logger;
     private string $tmpDir;
 
-    private OutputCap $outputCap;
     private bool $managerCreated = false;
 
     protected function setUp(): void
@@ -101,7 +94,6 @@ final class BashToolTest extends IsolatedKernelTestCase
 
         $this->contextAccessor = new StackToolExecutionContextAccessor();
         $this->toolRuntime = new ToolRuntime($this->contextAccessor);
-        $this->outputCap = $this->outputCap(new OutputCapConfig(storageDir: $this->tmpDir.'/output-cap'));
         $this->logger = new TestLogger();
     }
 
@@ -725,12 +717,6 @@ final class BashToolTest extends IsolatedKernelTestCase
         // Output capping is now handled centrally by OutputCapToolResultProcessor,
         // not by individual tools. This test verifies that BashTool returns raw
         // output unchanged, without embedding any cap notice in the result string.
-        $tinyCap = new OutputCapConfig(
-            storageDir: $this->tmpDir.'/output-cap-tiny',
-            defaultCap: 10,
-            docCap: 10,
-        );
-        $this->outputCap = $this->outputCap($tinyCap);
         $this->createManager();
 
         $result = $this->withContext(self::TEST_SESSION, function (): string {
@@ -1211,11 +1197,6 @@ final class BashToolTest extends IsolatedKernelTestCase
                 }
             }
         }
-    }
-
-    private function outputCap(OutputCapConfig $config): OutputCap
-    {
-        return new OutputCap($config, new LockFactory(new FlockStore($this->tmpDir)), new NullLogger());
     }
 }
 

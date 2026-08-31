@@ -23,8 +23,6 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\AssistantStreamProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Application\TuiSessionCompositionFactory;
@@ -169,16 +167,6 @@ final class TuiSessionCompositionTest extends TestCase
         $dispatcher->addSubscriber(new AssistantStreamProjectionSubscriber());
 
         return new TranscriptProjector($dispatcher, new TranscriptProjectionState());
-    }
-
-    private function userMessage(string $runId, string $text): RuntimeEvent
-    {
-        return new RuntimeEvent(
-            type: RuntimeEventTypeEnum::UserMessageSubmitted->value,
-            runId: $runId,
-            seq: 1,
-            payload: ['text' => $text]
-        );
     }
 
     private function tui(): Tui

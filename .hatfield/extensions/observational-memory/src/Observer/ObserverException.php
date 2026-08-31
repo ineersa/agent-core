@@ -9,10 +9,6 @@ namespace Ineersa\HatfieldExt\ObservationalMemory\Observer;
  */
 final class ObserverException extends \RuntimeException
 {
-    public const string CODE_CONFIG = 'observer_config_invalid';
-
-    public const string CODE_EMPTY_RANGE = 'observer_empty_range';
-
     public function __construct(
         string $message,
         ?\Throwable $previous = null,
