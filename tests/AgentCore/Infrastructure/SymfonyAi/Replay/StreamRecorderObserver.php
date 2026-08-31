@@ -93,8 +93,6 @@ final class StreamRecorderObserver implements LlmStreamObserverInterface
      * When the production PlatformInvocationResult returns null
      * stopReason (current behavior for non-tool text completions),
      * this inspects the recorded deltas to provide a concrete value.
-     *
-     * @param list<array<string, mixed>> $deltas Recorded fixture deltas
      */
     private function deltaToRecord(DeltaInterface $delta): array
     {

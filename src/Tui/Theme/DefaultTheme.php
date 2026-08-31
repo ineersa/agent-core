@@ -26,14 +26,28 @@ final class DefaultTheme implements TuiTheme
     ) {
     }
 
-    
+    public function name(): string
+    {
+        return $this->palette->name;
+    }
+
     public function color(ThemeColorEnum $color, string $text): string
     {
         return $this->buildStyleFor($color)->apply($text);
     }
 
-    
-    
+    /* ───────── Convenience aliases ───────── */
+
+    public function accent(string $text): string
+    {
+        return $this->color(ThemeColorEnum::Accent, $text);
+    }
+
+    public function text(string $text): string
+    {
+        return $this->color(ThemeColorEnum::Text, $text);
+    }
+
     public function muted(string $text): string
     {
         return $this->color(ThemeColorEnum::Muted, $text);

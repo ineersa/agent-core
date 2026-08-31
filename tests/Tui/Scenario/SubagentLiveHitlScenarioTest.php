@@ -256,3 +256,34 @@ final class SubagentLiveHitlScenarioTest extends TestCase
     }
 
     #[Test]
+    public function completedProgressClearsLiveWarningForSelectedChild(): void
+    {
+        $h = $this->newHarness();
+        $h->seedChildInCatalog(self::ARTIFACT, self::CHILD_RUN, 'waiting_human');
+        $h->enterLiveView(self::ARTIFACT, self::CHILD_RUN, RunActivityStateEnum::WaitingHuman, SubagentLiveStatusEnum::WaitingHuman);
+        $h->refreshAttentionFooter();
+        $this->assertNull($h->statusText('subagent_live'));
+
+        $h->ingestChildProgress(self::ARTIFACT, self::CHILD_RUN, 'completed');
+        $h->state->subagentLiveView->childActivity = RunActivityStateEnum::Completed;
+        $refreshed = $h->state->subagentLiveCatalog->findByArtifactId(self::ARTIFACT);
+        if (null !== $refreshed) {
+            $h->state->subagentLiveView->selected = $refreshed;
+        }
+        $h->refreshAttentionFooter();
+
+        $this->assertNull($h->state->subagentLiveCatalog->firstChildNeedingAttention());
+        $this->assertNull($h->statusText('subagent_live'));
+        $this->assertStringNotContainsString('needs input', $h->pickerLabels()[0] ?? '');
+    }
+
+    private function newHarness(): SubagentLiveScenarioHarness
+    {
+        return SubagentLiveScenarioHarness::create(
+            $this,
+            parentRunId: self::PARENT_RUN,
+            entityManager: $this->createStub(EntityManagerInterface::class),
+            switchService: $this->createStub(TuiSessionSwitchServiceInterface::class),
+        );
+    }
+}

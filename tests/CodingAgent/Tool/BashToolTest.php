@@ -77,6 +77,8 @@ final class BashToolTest extends IsolatedKernelTestCase
     private ToolRuntime $toolRuntime;
     private TestLogger $logger;
     private string $tmpDir;
+
+    private OutputCap $outputCap;
     private bool $managerCreated = false;
 
     protected function setUp(): void

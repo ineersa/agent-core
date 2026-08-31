@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Domain\Event;
 
-use Ineersa\AgentCore\Domain\Run\RunState;
-
 final readonly class EventFactory
 {
     /**
@@ -50,5 +48,4 @@ final readonly class EventFactory
 
         return $events;
     }
-
 }

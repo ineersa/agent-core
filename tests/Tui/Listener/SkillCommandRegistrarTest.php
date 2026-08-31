@@ -139,3 +139,58 @@ final class SkillCommandRegistrarTest extends TestCase
     }
 
     #[Test]
+    public function implementsSlashCommandCatalogRegistrar(): void
+    {
+        $registrar = $this->createRegistrar();
+        $this->assertInstanceOf(SlashCommandCatalogRegistrar::class, $registrar);
+    }
+
+    /**
+     * @param list<string>|null $skillsPaths
+     */
+    private function createRegistrar(?array $skillsPaths = null): SkillCommandRegistrar
+    {
+        $extractor = new MarkdownFrontmatterExtractor();
+        $discovery = new SkillDiscovery(
+            config: new SkillsConfig(
+                noSkills: true,
+                skillsPaths: $skillsPaths ?? [$this->tmpDir.'/skills'],
+            ),
+            pathResolver: new SettingsPathResolver($this->tmpDir, $this->tmpDir.'/home'),
+            appConfig: new AppConfig(
+                tui: new TuiConfig(theme: 'test'),
+                logging: new LoggingConfig(),
+                cwd: $this->tmpDir,
+            ),
+            extractor: $extractor,
+            resources: new AppResourceLocator($this->tmpDir),
+            filesystem: new Filesystem(),
+        );
+
+        $contextBuilder = new SkillsContextBuilder(
+            discovery: $discovery,
+            config: new SkillsConfig(),
+            renderer: new SkillContextRenderer(),
+            extractor: $extractor,
+        );
+
+        return new SkillCommandRegistrar($discovery, $contextBuilder);
+    }
+
+    private function createSkill(
+        string $relativeDirectory,
+        string $name,
+        string $description,
+        bool $onDemandOnly = false,
+    ): string {
+        $directory = $this->tmpDir.'/'.$relativeDirectory;
+        mkdir($directory, 0777, true);
+        $disabled = $onDemandOnly ? "disable-model-invocation: true\n" : '';
+        file_put_contents(
+            $directory.'/SKILL.md',
+            "---\nname: {$name}\ndescription: {$description}\n{$disabled}---\n\nBody",
+        );
+
+        return $directory;
+    }
+}

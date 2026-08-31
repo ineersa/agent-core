@@ -595,33 +595,53 @@ final class LoggerSpy implements LoggerInterface
     /** @var list<string> */
     public array $errors = [];
 
+    /** @var list<string> */
+    public array $logs = [];
+
     public function warning(string|\Stringable $message, array $context = []): void
     {
         $this->warnings[] = (string) $message;
+        $this->logs[] = (string) $message;
     }
 
     public function error(string|\Stringable $message, array $context = []): void
     {
         $this->errors[] = (string) $message;
+        $this->logs[] = (string) $message;
+    }
+
+    public function emergency(string|\Stringable $message, array $context = []): void
+    {
+        $this->logs[] = (string) $message;
+    }
+
+    public function alert(string|\Stringable $message, array $context = []): void
+    {
+        $this->logs[] = (string) $message;
     }
 
     public function critical(string|\Stringable $message, array $context = []): void
     {
+        $this->logs[] = (string) $message;
     }
 
     public function notice(string|\Stringable $message, array $context = []): void
     {
+        $this->logs[] = (string) $message;
     }
 
     public function info(string|\Stringable $message, array $context = []): void
     {
+        $this->logs[] = (string) $message;
     }
 
     public function debug(string|\Stringable $message, array $context = []): void
     {
+        $this->logs[] = (string) $message;
     }
 
     public function log(mixed $level, string|\Stringable $message, array $context = []): void
     {
+        $this->logs[] = (string) $message;
     }
 }

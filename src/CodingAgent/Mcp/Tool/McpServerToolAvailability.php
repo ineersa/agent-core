@@ -14,7 +14,6 @@ use Ineersa\CodingAgent\Mcp\Config\McpServerAvailabilityEnum;
  */
 final readonly class McpServerToolAvailability
 {
-    
     /**
      * @return list<string> hatfield MCP tool names from servers marked availability=specific
      */

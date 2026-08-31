@@ -29,15 +29,7 @@ use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
 use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Config\AppConfig;
-use Ineersa\CodingAgent\Config\AppResourceLocator;
-use Ineersa\CodingAgent\Config\LoggingConfig;
-use Ineersa\CodingAgent\Config\SettingsPathResolver;
-use Ineersa\CodingAgent\Config\TuiConfig;
-use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
-use Ineersa\CodingAgent\Skills\SkillContextRenderer;
-use Ineersa\CodingAgent\Skills\SkillDiscovery;
-use Ineersa\CodingAgent\Skills\SkillsConfig;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
 use Ineersa\CodingAgent\Tests\Agent\Execution\Support\SubagentExecutionServiceFactory;
@@ -46,7 +38,6 @@ use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use PHPUnit\Framework\Attributes\CoversClass;
 use Symfony\Component\Clock\NativeClock;
-use Symfony\Component\Filesystem\Filesystem;
 
 #[CoversClass(SubagentExecutionService::class)]
 final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
@@ -236,14 +227,12 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
 final class ProgressAppendInputRecordingEventStore implements EventStoreInterface
 {
     /** @var list<RunEvent> */
-
     public function __construct(private readonly InMemoryEventStore $inner)
     {
     }
 
     public function append(RunEvent $event): RunEvent
     {
-
         return $this->inner->append($event);
     }
 

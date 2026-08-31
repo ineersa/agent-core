@@ -27,7 +27,13 @@ parameters:
         -
             identifier: method.notFound
         -
+            identifier: method.abstract
+        -
             identifier: class.notFound
+        -
+            identifier: property.notFound
+        -
+            identifier: staticMethod.notFound
     paths:
         - src/
         - tests/

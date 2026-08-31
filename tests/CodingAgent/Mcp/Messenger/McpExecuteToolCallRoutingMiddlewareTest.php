@@ -34,8 +34,8 @@ use Symfony\Component\Messenger\Stamp\TransportNamesStamp;
 final class McpExecuteToolCallRoutingMiddlewareTest extends TestCase
 {
     private TestLogger $logger;
-    /** @var array<string, McpToolCatalogDTO> */
 
+    /** @var array<string, McpToolCatalogDTO> */
     protected function setUp(): void
     {
         $this->logger = new TestLogger();

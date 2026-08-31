@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\Tests\Tui\Completion;
 
-use Ineersa\Tui\Completion\FileMentionIndexEntryDTO;
 use Ineersa\Tui\Completion\FileMentionIndexReader;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
@@ -129,4 +128,19 @@ final class FileMentionIndexReaderTest extends TestCase
         $this->assertSame(['foobar.php'], $basenamesLower);
     }
 
-    #[Test]
+    private function removeDir(string $dir): void
+    {
+        if (!is_dir($dir)) {
+            return;
+        }
+        $files = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($dir, \RecursiveDirectoryIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::CHILD_FIRST,
+        );
+        foreach ($files as $fileinfo) {
+            $op = $fileinfo->isDir() ? 'rmdir' : 'unlink';
+            $op($fileinfo->getRealPath());
+        }
+        rmdir($dir);
+    }
+}

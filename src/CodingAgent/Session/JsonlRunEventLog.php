@@ -77,7 +77,6 @@ final class JsonlRunEventLog
         }
     }
 
-    
     /**
      * Streams non-empty lines from the file tail toward its head. A partial final
      * line is yielded unchanged so callers preserve their normal corruption policy.

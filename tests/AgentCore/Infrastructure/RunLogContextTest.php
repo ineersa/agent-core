@@ -11,10 +11,12 @@ final class RunLogContextTest extends TestCase
 {
     protected function setUp(): void
     {
+        $this->clearDefaultContext();
     }
 
     protected function tearDown(): void
     {
+        $this->clearDefaultContext();
     }
 
     public function testEmptyOutsideAnyScope(): void
@@ -215,5 +217,12 @@ final class RunLogContextTest extends TestCase
         // Fiber finished. Main thread should be empty.
         $this->assertSame([], RunLogContext::current());
         $this->assertTrue($fiber->isTerminated());
+    }
+
+    private function clearDefaultContext(): void
+    {
+        while ([] !== RunLogContext::current()) {
+            RunLogContext::leave();
+        }
     }
 }

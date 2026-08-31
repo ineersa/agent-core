@@ -221,7 +221,14 @@ final class PromptEditor
         $this->widget->setText('');
     }
 
-    
+    /**
+     * True when the editor contains no user-visible text.
+     */
+    public function isEmpty(): bool
+    {
+        return '' === $this->widget->getText();
+    }
+
     /**
      * Extract the current text and clear the editor.
      *
@@ -235,7 +242,18 @@ final class PromptEditor
         return $text;
     }
 
-    
+    // ─── Snapshot ────────────────────────────────────────────────
+
+    /**
+     * Take an immutable snapshot of the current editor state.
+     *
+     * Useful for test assertions and session persistence.
+     */
+    public function getState(): EditorState
+    {
+        return EditorState::fromText($this->widget->getText());
+    }
+
     // ─── Widget access ───────────────────────────────────────────
 
     /**

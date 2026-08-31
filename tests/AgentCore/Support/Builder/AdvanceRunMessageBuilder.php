@@ -58,9 +58,6 @@ final class AdvanceRunMessageBuilder
         return $this;
     }
 
-    /**
-     * @param Payload $payload
-     */
     public function build(): AdvanceRun
     {
         $idempotencyKey = $this->idempotencyKey ?? hash('sha256', \sprintf(

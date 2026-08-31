@@ -34,7 +34,11 @@ final class SettingsTextInputWidget extends SelectListWidget
         $this->prompt = $prompt;
     }
 
-    
+    public function getValue(): string
+    {
+        return $this->line->getText();
+    }
+
     public function handleInput(string $data): void
     {
         // Do not touch parent KeybindingsTrait::$onInput (private to SelectListWidget).

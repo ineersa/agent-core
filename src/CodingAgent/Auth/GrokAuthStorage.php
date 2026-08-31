@@ -92,5 +92,4 @@ final class GrokAuthStorage
             $this->store->set($providerKey, $record->toArray());
         });
     }
-
 }

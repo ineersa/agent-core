@@ -35,8 +35,8 @@ final class McpToolRegistrarTest extends TestCase
     private ToolRegistry $registry;
     private TestLogger $logger;
     private \Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor $contextAccessor;
-    /** @var array<string, McpToolCatalogDTO> */
 
+    /** @var array<string, McpToolCatalogDTO> */
     protected function setUp(): void
     {
         $this->registry = new ToolRegistry();

@@ -167,3 +167,23 @@ final class FileRewindService
         }
     }
 
+    private function pruneRetainedRefs(RewindProjectIdentity $identity): void
+    {
+        $byTurn = $this->ledgerProjector->checkpointsByTurn(
+            $this->ledgerStore->readCheckpoints($identity),
+            $this->config->maxRetainedTurns,
+        );
+        $keep = [];
+        foreach ($byTurn as $entry) {
+            if (!$entry->pruned && '' !== $entry->snapshotCommitSha) {
+                $keep[] = $entry->snapshotCommitSha;
+            }
+        }
+        $undo = $this->ledgerProjector->findUndoCheckpoint($this->ledgerStore->readRestores($identity));
+        if (null !== $undo && '' !== $undo->snapshotCommitSha) {
+            $keep[] = $undo->snapshotCommitSha;
+        }
+        $gitDir = $this->paths->hiddenGitDir($identity);
+        $this->backend->pruneCommitRefs($gitDir, $this->projectCwd, $keep);
+    }
+}

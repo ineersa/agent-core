@@ -76,7 +76,6 @@ class ModelSelectionServiceTest extends IsolatedKernelTestCase
         $this->entityManager->persist($entity);
         $this->entityManager->flush();
         $this->sessionId = (string) $entity->id;
-
     }
 
     protected function tearDown(): void

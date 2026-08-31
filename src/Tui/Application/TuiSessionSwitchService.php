@@ -139,7 +139,6 @@ class TuiSessionSwitchService implements TuiSessionSwitchServiceInterface
         return $target;
     }
 
-    
     public function selectHistoryTurn(int $targetTurnNo): void
     {
         if (null === $this->state->handle) {

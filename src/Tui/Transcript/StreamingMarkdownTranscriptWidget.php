@@ -31,8 +31,16 @@ final class StreamingMarkdownTranscriptWidget extends ContainerWidget implements
         return TranscriptVisualNode::KIND_MARKDOWN === $node->kind;
     }
 
-    
-    
+    public function node(): ?TranscriptVisualNode
+    {
+        return $this->node;
+    }
+
+    public function markdown(): ?MarkdownWidget
+    {
+        return $this->markdown;
+    }
+
     public function apply(TranscriptVisualNode $node): void
     {
         if (TranscriptVisualNode::KIND_MARKDOWN !== $node->kind || null === $node->primary) {

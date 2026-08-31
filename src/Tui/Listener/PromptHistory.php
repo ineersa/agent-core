@@ -31,7 +31,14 @@ final class PromptHistory
 
     private ?int $cursor = null;
 
-    
+    /**
+     * @return list<string>
+     */
+    public function prompts(): array
+    {
+        return $this->prompts;
+    }
+
     /**
      * Reset and rebuild from transcript UserMessage blocks (order preserved).
      *
@@ -98,4 +105,11 @@ final class PromptHistory
         $this->cursor = null;
     }
 
+    /**
+     * @internal
+     */
+    public function cursor(): ?int
+    {
+        return $this->cursor;
     }
+}

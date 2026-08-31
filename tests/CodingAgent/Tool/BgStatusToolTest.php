@@ -56,6 +56,8 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
     private BgStatusTool $tool;
     private string $tmpDir;
 
+    private OutputCapConfig $outputCapCfg;
+
     protected function setUp(): void
     {
         parent::setUp();

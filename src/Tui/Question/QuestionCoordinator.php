@@ -85,7 +85,14 @@ final class QuestionCoordinator
         return $this->active;
     }
 
-    
+    /**
+     * Return the status of the currently active request, or null.
+     */
+    public function activeStatus(): ?QuestionStatus
+    {
+        return $this->activeStatus;
+    }
+
     /**
      * True when a question request is active and awaiting resolution.
      */

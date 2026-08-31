@@ -28,7 +28,6 @@ final class SkillCommandRegistrar implements SlashCommandCatalogRegistrar, Slash
     ) {
     }
 
-    
     public function registerCatalog(SlashCommandCatalog $catalog): void
     {
         foreach ($this->discovery->discover() as $skill) {

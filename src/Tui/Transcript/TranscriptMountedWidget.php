@@ -47,7 +47,6 @@ final class TranscriptMountedWidget extends ContainerWidget
         $this->setStyle(new Style(direction: Direction::Vertical, gap: 1));
     }
 
-    
     /**
      * Full replacement path: bootstrap, resume, history position, preview invalidation,
      * non-tail insertion/reorder.

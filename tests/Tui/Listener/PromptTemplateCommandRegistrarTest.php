@@ -173,4 +173,32 @@ final class PromptTemplateCommandRegistrarTest extends TestCase
         $this->assertInstanceOf(SlashCommandCatalogRegistrar::class, $registrar);
     }
 
-    #[Test]
+    private function createRegistrar(): PromptTemplateCommandRegistrar
+    {
+        $loader = new PromptTemplateLoader(
+            promptsConfig: new PromptsConfig(),
+            runtimeConfig: new PromptTemplatesRuntimeConfig(),
+            pathResolver: new SettingsPathResolver('/app', $this->homeDir),
+            cwd: $this->cwd,
+            frontmatterParser: new PromptTemplateFrontmatterParser(new MarkdownFrontmatterExtractor()),
+            logger: new TestLogger(),
+        );
+
+        return new PromptTemplateCommandRegistrar(
+            new PromptTemplateService(
+                $loader,
+                new PromptTemplateArgumentParser(),
+                new PromptTemplateSubstitutor(),
+            ),
+        );
+    }
+
+    private function writeTemplate(string $name, string $contents): void
+    {
+        $directory = $this->homeDir.'/.hatfield/prompts';
+        if (!is_dir($directory)) {
+            mkdir($directory, 0777, true);
+        }
+        file_put_contents($directory.'/'.$name.'.md', $contents);
+    }
+}

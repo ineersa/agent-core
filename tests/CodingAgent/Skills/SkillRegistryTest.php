@@ -134,4 +134,4 @@ final class SkillRegistryTest extends TestCase
 
         $this->assertSame('', $body);
     }
-
+}

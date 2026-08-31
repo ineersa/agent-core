@@ -434,7 +434,29 @@ final class BackgroundProcessManager
         return $this->lifecycle->readLogTail($entity->logPath, $entity->pid, $maxChars);
     }
 
-    
+    /**
+     * Read the full log for a background process by immutable record ID.
+     *
+     * Foreground BashTool uses this path so completed invocations never
+     * re-resolve output through a reusable OS PID.
+     *
+     * @throws \RuntimeException when process not found or session mismatches
+     */
+    public function readLogFullForRecord(int $recordId, ?string $sessionId = null): LogTailResult
+    {
+        $entity = $this->store->fetchByRecordId($recordId);
+
+        if (null === $entity) {
+            throw new \RuntimeException(\sprintf('No background process found with record ID %d.', $recordId));
+        }
+
+        if (null !== $sessionId && $entity->sessionId !== $sessionId) {
+            throw new \RuntimeException(\sprintf('No background process found with record ID %d for this session.', $recordId));
+        }
+
+        return $this->lifecycle->readLogFile($entity->logPath, $entity->pid);
+    }
+
     /**
      * Stop a background process: TERM → grace → KILL.
      *

@@ -21,4 +21,8 @@ final readonly class SlashCommand implements CommandParseResult
     ) {
     }
 
+    public function originalText(): string
+    {
+        return $this->originalText;
     }
+}

@@ -91,14 +91,22 @@ final class HistoryPickerController
         $this->overlay->mount($tui, $screen, $listWidget, $header);
     }
 
-    
+    public function isOpen(): bool
+    {
+        return $this->overlay?->isOpen() ?? false;
+    }
+
     public function closePicker(bool $requestRender = true): void
     {
         $this->overlay?->close($requestRender);
         $this->overlay = null;
     }
 
-    
+    public function overlay(): ?PickerOverlay
+    {
+        return $this->overlay;
+    }
+
     /**
      * @return list<array{value: string, label: string}>
      */

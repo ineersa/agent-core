@@ -57,8 +57,24 @@ final readonly class EditorState
         return new self($lines);
     }
 
-    
-    
+    /**
+     * Create empty state.
+     */
+    public static function empty(): self
+    {
+        return new self(['']);
+    }
+
+    /**
+     * Return the logical lines.
+     *
+     * @return list<string>
+     */
+    public function getLines(): array
+    {
+        return $this->lines;
+    }
+
     /**
      * Return the full text by joining logical lines with \n.
      */
@@ -67,4 +83,12 @@ final readonly class EditorState
         return implode("\n", $this->lines);
     }
 
+    /**
+     * True when the editor contains only a single empty line.
+     */
+    public function isEmpty(): bool
+    {
+        return 1 === \count($this->lines)
+            && '' === $this->lines[0];
     }
+}

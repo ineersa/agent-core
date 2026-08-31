@@ -34,8 +34,6 @@ final class ProviderContextUsageResolverTest extends TestCase
         $this->resolver = new ProviderContextUsageResolver($this->eventStore);
     }
 
-    // ── getLatestInputTokens (raw, no eligibility check) ──────────
-
     public function testEligibleWhenNoAutoCompactionAttemptExists(): void
     {
         $this->mockEvents([$this->makeLlmStepCompleted(5, 30755)]);
@@ -186,8 +184,6 @@ final class ProviderContextUsageResolverTest extends TestCase
         $this->assertSame(15000, $this->resolver->getLatestEligibleInputTokens('run-1'));
     }
 
-    // ── Structural failure-only marker tests (session 3 class) ─────
-
     /**
      * Thesis: when a provider measurement is followed by an auto
      * context_compaction_failed WITHOUT a preceding started event
@@ -313,5 +309,106 @@ final class ProviderContextUsageResolverTest extends TestCase
     }
 
     /**
-     * Thesis: usage with zero input_tokens is not a valid measurement.
+     * Configure the mock to stream canonical events from newest to oldest.
+     *
+     * @param list<RunEvent> $events
      */
+    private function mockEvents(array $events): void
+    {
+        $this->eventStore->method('reverseFor')
+            ->willReturn(array_reverse($events));
+    }
+
+    /**
+     * @param list<RunEvent> $events newest-first events ending at the decisive provider measurement
+     */
+    private function mockBoundedReverseEvents(array $events): void
+    {
+        $this->eventStore->expects($this->once())
+            ->method('reverseFor')
+            ->with('run-1')
+            ->willReturnCallback(static function () use ($events): \Generator {
+                yield from $events;
+
+                throw new \LogicException('Resolver read past the decisive provider measurement.');
+            });
+    }
+
+    private function makeLlmStepCompleted(int $seq, int $inputTokens): RunEvent
+    {
+        return new RunEvent(
+            runId: 'run-1',
+            seq: $seq,
+            turnNo: 1,
+            type: RunEventTypeEnum::LlmStepCompleted->value,
+            payload: [
+                'step_id' => 'step-'.$seq,
+                'stop_reason' => 'stop',
+                'usage' => [
+                    'input_tokens' => $inputTokens,
+                    'output_tokens' => 100,
+                    'total_tokens' => $inputTokens + 100,
+                ],
+            ],
+        );
+    }
+
+    private function makeLlmStepAborted(int $seq, int $inputTokens): RunEvent
+    {
+        return new RunEvent(
+            runId: 'run-1',
+            seq: $seq,
+            turnNo: 1,
+            type: RunEventTypeEnum::LlmStepAborted->value,
+            payload: [
+                'step_id' => 'step-'.$seq,
+                'stop_reason' => 'aborted',
+                'usage' => [
+                    'input_tokens' => $inputTokens,
+                ],
+            ],
+        );
+    }
+
+    private function makeAutoCompactionStarted(int $seq): RunEvent
+    {
+        return new RunEvent(
+            runId: 'run-1',
+            seq: $seq,
+            turnNo: 1,
+            type: RunEventTypeEnum::ContextCompactionStarted->value,
+            payload: [
+                'step_id' => 'compact-'.$seq,
+                'trigger' => 'auto',
+                'estimated_tokens' => 1000,
+                'keep_recent_tokens' => 500,
+                'messages_before' => 10,
+                'messages_to_summarize' => 5,
+                'messages_retained' => 5,
+                'first_retained_index' => 5,
+                'prior_summary_present' => false,
+            ],
+        );
+    }
+
+    private function makeManualCompactionStarted(int $seq): RunEvent
+    {
+        return new RunEvent(
+            runId: 'run-1',
+            seq: $seq,
+            turnNo: 1,
+            type: RunEventTypeEnum::ContextCompactionStarted->value,
+            payload: [
+                'step_id' => 'compact-manual-'.$seq,
+                'trigger' => 'manual',
+                'estimated_tokens' => 1000,
+                'keep_recent_tokens' => 500,
+                'messages_before' => 10,
+                'messages_to_summarize' => 5,
+                'messages_retained' => 5,
+                'first_retained_index' => 5,
+                'prior_summary_present' => false,
+            ],
+        );
+    }
+}

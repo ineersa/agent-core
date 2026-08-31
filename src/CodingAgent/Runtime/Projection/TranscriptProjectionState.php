@@ -180,7 +180,6 @@ final class TranscriptProjectionState
         return TranscriptChangeSet::incremental($upserts, $removals);
     }
 
-    
     /**
      * Reset all internal state so a fresh replay produces the same output.
      */

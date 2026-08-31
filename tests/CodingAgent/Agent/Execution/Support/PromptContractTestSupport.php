@@ -8,7 +8,6 @@ use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
-use Symfony\AI\Platform\Message\MessageBag;
 
 /**
  * Shared assertions for GF-05 prompt/message contract RED specifications.

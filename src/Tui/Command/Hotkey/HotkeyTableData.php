@@ -30,4 +30,8 @@ final readonly class HotkeyTableData implements CommandResult
     ) {
     }
 
+    public function isEmpty(): bool
+    {
+        return [] === $this->groups;
     }
+}

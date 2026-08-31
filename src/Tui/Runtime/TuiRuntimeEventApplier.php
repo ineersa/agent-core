@@ -87,7 +87,6 @@ final readonly class TuiRuntimeEventApplier
         $this->projector->accept($event);
     }
 
-    
     /**
      * Drain projector dirty changes for ordinary live polls.
      *

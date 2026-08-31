@@ -10,29 +10,44 @@ use Psr\Log\LoggerInterface;
 /**
  * Holds discovered skills and provides lookup, filtering, and body reading.
  *
+ * Collision diagnostics track skipped skill directories when a name
+ * collision occurs (first-discovered wins).
  */
 final class SkillRegistry
 {
     /** @var array<string, SkillDefinition> name → definition */
     private array $skills = [];
 
+    /** @var list<array{winner: string, ignored: string, name: string}> */
+    private array $collisions = [];
 
     /**
      * @param list<SkillDefinition>                                      $skills
+     * @param list<array{winner: string, ignored: string, name: string}> $collisions
      */
     public function __construct(
         array $skills,
         private readonly MarkdownFrontmatterExtractor $extractor,
+        array $collisions = [],
         private ?LoggerInterface $logger = null,
     ) {
         foreach ($skills as $skill) {
             $this->skills[$skill->name] = $skill;
         }
+        $this->collisions = $collisions;
     }
 
     public function get(string $name): ?SkillDefinition
     {
         return $this->skills[$name] ?? null;
+    }
+
+    /**
+     * @return list<SkillDefinition> All registered skills
+     */
+    public function all(): array
+    {
+        return array_values($this->skills);
     }
 
     /**
@@ -46,6 +61,14 @@ final class SkillRegistry
                 static fn (SkillDefinition $s): bool => $s->modelInvocationEnabled && '' !== $s->description,
             ),
         );
+    }
+
+    /**
+     * @return list<array{winner: string, ignored: string, name: string}>
+     */
+    public function collisions(): array
+    {
+        return $this->collisions;
     }
 
     /**

@@ -32,9 +32,6 @@ use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Export\SessionEventsExportService;
 use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
 use Ineersa\Tui\Question\QuestionOverlayPromptRenderer;
-use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
-use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
-use Ineersa\Tui\Runtime\SubagentLiveViewState;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Tests\Command\FixedMessageTestHandler;
@@ -165,4 +162,38 @@ final class TuiSessionCompositionTest extends TestCase
         $this->assertFalse($scope2->promptHistory->isNavigating());
     }
 
-    #[Test]
+    private function makeProjector(): TranscriptProjector
+    {
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addSubscriber(new UserMessageProjectionSubscriber());
+        $dispatcher->addSubscriber(new AssistantStreamProjectionSubscriber());
+
+        return new TranscriptProjector($dispatcher, new TranscriptProjectionState());
+    }
+
+    private function userMessage(string $runId, string $text): RuntimeEvent
+    {
+        return new RuntimeEvent(
+            type: RuntimeEventTypeEnum::UserMessageSubmitted->value,
+            runId: $runId,
+            seq: 1,
+            payload: ['text' => $text],
+        );
+    }
+
+    private function tui(): Tui
+    {
+        return new Tui();
+    }
+
+    private function screen(string $sessionId): ChatScreen
+    {
+        return new ChatScreen(
+            new DefaultTheme(new ThemePalette('test')),
+            $sessionId,
+            new PromptEditor(),
+            new TranscriptDisplayConfig(),
+            new TranscriptDisplayState(),
+        );
+    }
+}

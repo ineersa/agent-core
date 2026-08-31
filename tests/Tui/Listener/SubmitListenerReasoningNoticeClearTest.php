@@ -31,6 +31,71 @@ final class SubmitListenerReasoningNoticeClearTest extends TestCase
     use TuiRuntimeContextBuilderTrait;
 
     #[Test]
+    public function testSubmitClearsTransientReasoningNoticeButKeepsSelectedReasoning(): void
+    {
+        $state = new TuiSessionState('reasoning-clear-session');
+        $state->handle = new RunHandle('run-1');
+        $state->activity = RunActivityStateEnum::Completed;
+        $state->footerReasoning = 'minimal';
+
+        $client = $this->createMock(AgentSessionClient::class);
+        $client->expects($this->once())
+            ->method('send')
+            ->with('run-1', $this->callback(static function (UserCommand $cmd): bool {
+                return 'follow_up' === $cmd->type && 'next turn' === $cmd->text;
+            }));
+
+        $harness = new VirtualTuiHarness(sessionId: $state->sessionId);
+        $screen = $harness->screen();
+        $screen->addFooterProvider(new FooterStateSegmentProvider($state));
+
+        // Mirror ModelControlListener: panel-only reasoning entry (not footer status map).
+        $screen->setStatus('reasoning', 'minimal');
+        $harness->render();
+        $before = $harness->plainScreenText();
+        $this->assertStringContainsString('reasoning', $before);
+        $this->assertStringContainsString('minimal', $before);
+
+        $tui = $harness->tui();
+        $this->registerSubmitListener($client, $state, $screen, $tui);
+
+        $screen->promptEditor()->setText('next turn');
+        $this->fireSubmit($screen, $tui);
+
+        $this->assertSame('minimal', $state->footerReasoning);
+        $this->assertArrayNotHasKey('reasoning', $this->statusEntries($screen));
+
+        $harness->render();
+        $after = $harness->plainScreenText();
+        $this->assertStringNotContainsString('  reasoning', $after, 'Transient status-panel notice should be gone');
+        $this->assertStringContainsString('◆', $after, 'Footer should still render');
+    }
+
+    #[Test]
+    public function testAbortedImagePromotionLeavesTransientReasoningNotice(): void
+    {
+        $state = new TuiSessionState('reasoning-abort-session');
+        $state->handle = new RunHandle('run-1');
+        $state->activity = RunActivityStateEnum::Completed;
+        $state->pastedImagePasteInProgressIndex = 1;
+
+        $client = $this->createMock(AgentSessionClient::class);
+        $client->expects($this->never())->method('send');
+
+        $harness = new VirtualTuiHarness(sessionId: $state->sessionId);
+        $screen = $harness->screen();
+        $screen->setStatus('reasoning', 'high');
+
+        $tui = $harness->tui();
+        $this->registerSubmitListener($client, $state, $screen, $tui);
+
+        $screen->promptEditor()->setText('describe [Image #1]');
+        $this->fireSubmit($screen, $tui, 'describe [Image #1]');
+
+        $this->assertArrayHasKey('reasoning', $this->statusEntries($screen));
+        $this->assertSame('high', $this->statusEntries($screen)['reasoning']);
+    }
+
     private function registerSubmitListener(
         AgentSessionClient $client,
         TuiSessionState $state,
@@ -85,3 +150,13 @@ final class SubmitListenerReasoningNoticeClearTest extends TestCase
     }
 
     /** @return array<string, string> */
+    private function statusEntries(ChatScreen $screen): array
+    {
+        $ref = new \ReflectionProperty(ChatScreen::class, 'statusEntries');
+
+        /** @var array<string, string> $entries */
+        $entries = $ref->getValue($screen);
+
+        return $entries;
+    }
+}

@@ -379,5 +379,4 @@ final class ProcessLifecycle
 
         return true;
     }
-
-    }
+}

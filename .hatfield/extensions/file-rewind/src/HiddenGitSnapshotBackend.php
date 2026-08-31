@@ -196,6 +196,9 @@ final class HiddenGitSnapshotBackend
         throw new \RuntimeException('Failed to pin commit ref after retries.');
     }
 
+    /**
+     * @param list<string> $keepCommitShas full commit SHAs to retain refs for
+     */
     public function pruneCommitRefs(string $hiddenGitDir, string $workTree, array $keepCommitShas): void
     {
         $keep = [];

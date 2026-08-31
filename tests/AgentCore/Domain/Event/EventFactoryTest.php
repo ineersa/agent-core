@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Tests\Domain\Event;
 
 use Ineersa\AgentCore\Domain\Event\EventFactory;
-use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
 use PHPUnit\Framework\TestCase;
 
 final class EventFactoryTest extends TestCase
@@ -32,8 +30,6 @@ final class EventFactoryTest extends TestCase
         $this->assertSame(['turn' => 2], $event->payload);
     }
 
-    /* ─── EventFactory::eventsFromSpecs() ─── */
-
     public function testEventsFromSpecsSequencesSeqFromStartSeq(): void
     {
         $factory = new EventFactory();
@@ -53,3 +49,22 @@ final class EventFactoryTest extends TestCase
         $this->assertSame(6, $events[1]->seq);
     }
 
+    public function testEventsFromSpecsRespectsTurnNoOverride(): void
+    {
+        $factory = new EventFactory();
+
+        $events = $factory->eventsFromSpecs(
+            runId: 'run-spec',
+            turnNo: 1,
+            startSeq: 0,
+            eventSpecs: [
+                ['type' => 'run_started', 'payload' => [], 'turn_no' => 2],
+                ['type' => 'tool_execution_start', 'payload' => ['tool_call_id' => 'call-1']],
+            ],
+        );
+
+        $this->assertCount(2, $events);
+        $this->assertSame(2, $events[0]->turnNo);
+        $this->assertSame(1, $events[1]->turnNo);
+    }
+}

@@ -16,6 +16,9 @@ final class GitExecutor
     ) {
     }
 
+    /**
+     * @param list<string> $args
+     */
     public function git(
         array $args,
         string $cwd,

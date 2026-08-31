@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Editor;
 
-use Ineersa\Tui\Editor\EditorState;
 use Ineersa\Tui\Editor\PromptEditor;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;

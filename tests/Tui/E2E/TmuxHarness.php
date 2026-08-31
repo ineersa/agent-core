@@ -426,9 +426,7 @@ final class TmuxHarness
      * model output) but you still need to assert it exists.
      *
      * @param TmuxPane $pane    the pane to poll
-     * @param string   $needle  substring to look for
      * @param float    $timeout seconds to wait (default 10.0)
-     * @param int      $history Maximum history lines to search
      *
      * @return string the history capture that finally matched
      *

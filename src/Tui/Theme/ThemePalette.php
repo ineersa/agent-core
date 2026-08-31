@@ -47,7 +47,22 @@ final readonly class ThemePalette
         return '' !== $this->get($color);
     }
 
-    
+    /**
+     * Create a palette with overridden colors.
+     *
+     * Merges the given overrides on top of the current palette.
+     * Useful for user customizations.
+     *
+     * @param array<string, string> $overrides
+     */
+    public function withOverrides(array $overrides): self
+    {
+        return new self(
+            name: $this->name,
+            colors: array_merge($this->colors, $overrides),
+        );
+    }
+
     /**
      * Create a palette from a raw associative array (e.g. parsed YAML).
      *

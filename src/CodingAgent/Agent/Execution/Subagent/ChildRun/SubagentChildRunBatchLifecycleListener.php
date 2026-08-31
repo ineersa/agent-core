@@ -21,10 +21,7 @@ final class SubagentChildRunBatchLifecycleListener implements ChildRunBatchLifec
     public function finalizeTerminalOutcome(ChildRunTerminalFinalizationRequestDTO $request): void
     {
         if (ChildRunTerminalFinalizationKindEnum::PersistOnly !== $request->kind) {
-            throw new \InvalidArgumentException(sprintf(
-                'Unsupported child-run terminal finalization kind "%s".',
-                $request->kind->value,
-            ));
+            throw new \InvalidArgumentException(\sprintf('Unsupported child-run terminal finalization kind "%s".', $request->kind->value));
         }
 
         $this->persistArtifactOutcome($request->artifactOutcome);

@@ -132,7 +132,14 @@ final class SessionPickerController
         );
     }
 
-    
+    /**
+     * Whether the picker is currently visible.
+     */
+    public function isOpen(): bool
+    {
+        return $this->overlay?->isOpen() ?? false;
+    }
+
     /**
      * Build picker items from session list rows (static, testable).
      *

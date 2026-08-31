@@ -138,4 +138,22 @@ final class SubagentToolTest extends IsolatedKernelTestCase
             $tool,
         );
     }
+
+    private function toolContext(string $toolCallId): ToolContext
+    {
+        return new ToolContext(
+            runId: 'parent-run',
+            turnNo: 0,
+            toolCallId: $toolCallId,
+            toolName: 'subagent',
+            cancellationToken: new class implements \Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface {
+                public function isCancellationRequested(): bool
+                {
+                    return false;
+                }
+            },
+            timeoutSeconds: 30,
+            orderIndex: 0,
+        );
+    }
 }

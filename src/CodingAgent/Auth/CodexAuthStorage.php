@@ -107,5 +107,4 @@ final class CodexAuthStorage
             $this->store->set($providerKey, $record->toArray());
         });
     }
-
-    }
+}

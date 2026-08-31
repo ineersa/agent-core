@@ -44,7 +44,6 @@ final class FooterDataProvider
         }
     }
 
-    
     /** @return list<FooterSegment> */
     public function getSegments(): array
     {

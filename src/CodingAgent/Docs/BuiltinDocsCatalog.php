@@ -47,7 +47,6 @@ final class BuiltinDocsCatalog
         ];
     }
 
-    
     /**
      * Discover marked built-in documents under the approved roots.
      *

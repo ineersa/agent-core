@@ -17,7 +17,6 @@ final class InMemoryEventStore implements EventStoreInterface
 
     public int $rangeForCalls = 0;
 
-
     /** @var array<string, list<RunEvent>> */
     private array $eventsByRun = [];
 

@@ -31,8 +31,16 @@ final class ToolExchangeTranscriptWidget extends ContainerWidget implements Muta
         return TranscriptVisualNode::KIND_TOOL_EXCHANGE === $node->kind;
     }
 
-    
-    
+    public function node(): ?TranscriptVisualNode
+    {
+        return $this->node;
+    }
+
+    public function content(): ?AbstractWidget
+    {
+        return $this->content;
+    }
+
     public function apply(TranscriptVisualNode $node): void
     {
         if (TranscriptVisualNode::KIND_TOOL_EXCHANGE !== $node->kind || null === $node->primary) {

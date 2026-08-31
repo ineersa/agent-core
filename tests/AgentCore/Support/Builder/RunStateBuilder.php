@@ -81,6 +81,13 @@ final class RunStateBuilder
         return new self(runId: $runId, status: RunStatus::Queued);
     }
 
+    public function withRunId(string $runId): self
+    {
+        $this->runId = $runId;
+
+        return $this;
+    }
+
     public function withStatus(RunStatus $status): self
     {
         $this->status = $status;
@@ -149,6 +156,13 @@ final class RunStateBuilder
     public function withMessages(array $messages): self
     {
         $this->messages = $messages;
+
+        return $this;
+    }
+
+    public function withAppendMessage(AgentMessage $message): self
+    {
+        $this->messages[] = $message;
 
         return $this;
     }

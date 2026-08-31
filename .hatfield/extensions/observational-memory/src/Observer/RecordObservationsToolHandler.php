@@ -42,7 +42,6 @@ final class RecordObservationsToolHandler implements ExtensionToolHandlerInterfa
     {
         $observations = $arguments['observations'] ?? null;
         if (!\is_array($observations)) {
-
             return $this->receipt(
                 added: 0,
                 duplicates: 0,

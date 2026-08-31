@@ -53,5 +53,4 @@ interface TuiSessionSwitchServiceInterface
      * @throws \RuntimeException if there is no active session or run handle
      */
     public function selectHistoryTurn(int $targetTurnNo): void;
-
-    }
+}

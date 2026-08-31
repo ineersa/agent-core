@@ -62,7 +62,18 @@ final class FileMentionIndexReader
         return $this->entries;
     }
 
-    
+    /**
+     * Direct children of a given directory path.
+     *
+     * @return list<FileMentionIndexEntryDTO>
+     */
+    public function getChildren(string $directory): array
+    {
+        $this->ensureLoaded();
+
+        return $this->childrenByDirectory[$directory] ?? [];
+    }
+
     /**
      * Flat list of lowercased paths for cheap substring/prefix
      * matching in providers.
@@ -92,8 +103,23 @@ final class FileMentionIndexReader
         return $this->basenamesLower;
     }
 
-    
-    
+    /**
+     * Whether the index has been loaded at least once (even if empty).
+     */
+    public function isLoaded(): bool
+    {
+        return $this->loaded;
+    }
+
+    /**
+     * Unix timestamp of the currently loaded index file, or -1 if
+     * never loaded.
+     */
+    public function loadedMtime(): int
+    {
+        return $this->loadedMtime;
+    }
+
     // ─── Internal ──────────────────────────────────────────────────
 
     private function ensureLoaded(): void

@@ -41,7 +41,6 @@ final class SessionSwitchServiceTest extends TestCase
 
         $service->requestResume('42');
 
-
         $target = $service->consumePendingSwitch();
         $this->assertNotNull($target);
         $this->assertFalse($target->isDraft);
@@ -58,7 +57,6 @@ final class SessionSwitchServiceTest extends TestCase
         $service = $this->createService();
 
         $service->requestNewDraft();
-
 
         $target = $service->consumePendingSwitch();
         $this->assertNotNull($target);
@@ -129,6 +127,7 @@ final class SessionSwitchServiceTest extends TestCase
 
         // Should not throw
         $service->requestResume('42');
+        $this->addToAssertionCount(1);
     }
 
     /**
