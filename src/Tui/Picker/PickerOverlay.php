@@ -74,8 +74,4 @@ final class PickerOverlay
         return $this->listWidget;
     }
 
-    public function screen(): ?ChatScreen
-    {
-        return $this->screen;
     }
-}

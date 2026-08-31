@@ -44,14 +44,7 @@ final class BrowserLauncher
         }
     }
 
-    /**
-     * Whether this platform supports browser auto-open.
-     */
-    public static function isSupported(): bool
-    {
-        return null !== self::detectCommand('http://localhost');
-    }
-
+    
     /**
      * @return list<string>|null Shell command with arguments, or null if undetectable
      */

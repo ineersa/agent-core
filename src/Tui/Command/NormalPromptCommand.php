@@ -14,8 +14,4 @@ final readonly class NormalPromptCommand implements CommandParseResult
     ) {
     }
 
-    public function originalText(): string
-    {
-        return $this->text;
     }
-}

@@ -101,13 +101,4 @@ final class SafeGuardPathMatcher
         return false;
     }
 
-    /**
-     * Get the default protected read patterns from SafeGuardConfig.
-     *
-     * @return list<string>
-     */
-    public function defaultProtectedReadPatterns(): array
-    {
-        return SafeGuardConfig::DEFAULT_PROTECTED_READ_PATTERNS;
     }
-}

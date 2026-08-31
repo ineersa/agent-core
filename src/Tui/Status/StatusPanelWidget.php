@@ -43,14 +43,7 @@ final class StatusPanelWidget extends AbstractWidget
         $this->invalidate();
     }
 
-    /**
-     * @return array<string, string>
-     */
-    public function getEntries(): array
-    {
-        return $this->entries;
-    }
-
+    
     /** @return string[] */
     public function render(RenderContext $context): array
     {

@@ -93,10 +93,4 @@ final class GrokAuthStorage
         });
     }
 
-    public function removeCredentials(string $providerKey): void
-    {
-        $this->store->withLock(function () use ($providerKey): void {
-            $this->store->remove($providerKey);
-        });
-    }
 }

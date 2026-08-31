@@ -15,11 +15,7 @@ namespace Ineersa\Tui\Theme;
  */
 interface TuiTheme
 {
-    /**
-     * Human-readable theme name from the resolved theme palette.
-     */
-    public function name(): string;
-
+    
     /**
      * Apply a semantic color to the given text.
      *
@@ -30,12 +26,8 @@ interface TuiTheme
      */
     public function color(ThemeColorEnum $color, string $text): string;
 
-    /* ───────── Convenience aliases ───────── */
-
-    public function accent(string $text): string;
-
-    public function text(string $text): string;
-
+    
+    
     public function muted(string $text): string;
 
     public function success(string $text): string;

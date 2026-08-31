@@ -53,14 +53,4 @@ final class SubagentParallelAggregateResultFormatter
         return $body."\n\nUse agent_retrieve (metadata/events/history) for partial child details.";
     }
 
-    public function hasFailures(ChildRunBatchSupervisionResultDTO $result): bool
-    {
-        foreach ($result->items as $item) {
-            if (AgentArtifactStatusEnum::Completed !== $item->artifactStatus) {
-                return true;
-            }
-        }
-
-        return false;
-    }
 }

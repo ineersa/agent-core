@@ -380,13 +380,4 @@ final class ProcessLifecycle
         return true;
     }
 
-    // ─── Helpers ─────────────────────────────────────────────────────
-
-    /**
-     * Coerce a mixed value to ?int, handling numeric strings from SQLite.
-     */
-    public function coerceNullableInt(mixed $value): ?int
-    {
-        return null !== $value && (\is_int($value) || (\is_string($value) && ctype_digit($value))) ? (int) $value : null;
     }
-}

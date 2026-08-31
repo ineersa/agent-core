@@ -61,17 +61,7 @@ final class SubagentLiveCatalog
         return $items;
     }
 
-    public function firstChildNeedingAttention(): ?SubagentLiveChildDTO
-    {
-        foreach ($this->all() as $child) {
-            if ($child->needsAttention()) {
-                return $child;
-            }
-        }
-
-        return null;
-    }
-
+    
     public function findByArtifactId(string $artifactId): ?SubagentLiveChildDTO
     {
         return $this->byArtifactId[$artifactId] ?? null;

@@ -97,23 +97,7 @@ final class ThemeRegistry implements ThemeLoadedResourcesProviderInterface
         return $conflicts;
     }
 
-    /**
-     * Register a palette in the registry (runtime additions only).
-     *
-     * Registration at construction time is handled by the constructor
-     * loading from Hatfield theme paths. This method exists for
-     * programmatic registration post-construction — e.g. when a test
-     * or extension wants to add a palette without writing a YAML file.
-     *
-     * Duplicate names are first-wins: the existing palette is kept and a
-     * collision row is recorded ({@see getThemeCollisions()}); later
-     * registrations with the same name are ignored.
-     */
-    public function register(ThemePalette $palette, string $sourcePath = ''): void
-    {
-        $this->registerPalette($palette, $sourcePath, userSource: true);
-    }
-
+    
     /**
      * Look up a palette by name.
      *

@@ -570,18 +570,7 @@ final class ChatScreen
         $this->tui?->requestRender($force);
     }
 
-    /* ────────── Slot access ────────── */
-
-    /**
-     * Current status-panel entries (keyed by section name).
-     *
-     * @return array<string, string>
-     */
-    public function statusEntries(): array
-    {
-        return $this->statusEntries;
-    }
-
+    
     /**
      * Current working message ('' when idle).
      */

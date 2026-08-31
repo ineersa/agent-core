@@ -47,16 +47,7 @@ final class TranscriptMountedWidget extends ContainerWidget
         $this->setStyle(new Style(direction: Direction::Vertical, gap: 1));
     }
 
-    /**
-     * Canonical blocks retained by the presentation model.
-     *
-     * @return list<TranscriptBlock>
-     */
-    public function getBlocks(): array
-    {
-        return $this->projector->exportBlocks();
-    }
-
+    
     /**
      * Full replacement path: bootstrap, resume, history position, preview invalidation,
      * non-tail insertion/reorder.

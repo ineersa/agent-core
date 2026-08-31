@@ -32,12 +32,7 @@ final class PendingMessagesWidget extends AbstractWidget
         $this->invalidate();
     }
 
-    public function addMessage(string $message): void
-    {
-        $this->messages[] = $message;
-        $this->invalidate();
-    }
-
+    
     public function clear(): void
     {
         $this->messages = [];

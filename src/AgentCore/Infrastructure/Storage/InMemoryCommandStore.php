@@ -61,22 +61,6 @@ final class InMemoryCommandStore implements CommandStoreInterface
         return \count($this->pending($runId));
     }
 
-    public function rejectPendingByKind(string $runId, string $kind, string $reason): array
-    {
-        $rejected = [];
-
-        foreach ($this->pending($runId) as $command) {
-            if ($command->kind !== $kind) {
-                continue;
-            }
-
-            $this->markRejected($runId, $command->idempotencyKey, $reason);
-            $rejected[] = $command;
-        }
-
-        return $rejected;
-    }
-
     public function markApplied(string $runId, string $idempotencyKey): void
     {
         $this->statusesByRun[$runId][$idempotencyKey] = 'applied';

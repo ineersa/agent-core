@@ -71,35 +71,7 @@ class Factory
         );
     }
 
-    /**
-     * @param non-empty-string $name
-     */
-    public static function createPlatform(
-        string $baseUrl = 'https://chatgpt.com/backend-api',
-        #[\SensitiveParameter] string $accessToken = '',
-        string $accountId = '',
-        ?HttpClientInterface $httpClient = null,
-        ModelCatalogInterface $modelCatalog = new CodexModelCatalog(),
-        ?Contract $contract = null,
-        ?EventDispatcherInterface $eventDispatcher = null,
-        string $responsesPath = '/codex/responses',
-        string $originator = 'hatfield',
-        string $name = 'openai-codex',
-        ?ModelRouterInterface $modelRouter = null,
-        ?LoggerInterface $logger = null,
-        ?\Closure $accessTokenRefresher = null,
-        CodexTransportEnum $transport = CodexTransportEnum::Websocket,
-        ?CodexWebSocketConnectorInterface $websocketConnector = null,
-        ?CodexWebSocketConnectionCache $websocketConnectionCache = null,
-        CodexWebSocketCacheSettings $websocketCacheSettings = new CodexWebSocketCacheSettings(),
-    ): Platform {
-        return new Platform(
-            [self::createProvider($baseUrl, $accessToken, $accountId, $httpClient, $modelCatalog, $contract, $eventDispatcher, $responsesPath, $originator, $name, $logger, $accessTokenRefresher, $transport, $websocketConnector, $websocketConnectionCache, $websocketCacheSettings)],
-            $modelRouter ?? new CatalogBasedModelRouter(),
-            $eventDispatcher,
-        );
-    }
-
+    
     private static function createModelClient(
         CodexTransportEnum $transport,
         HttpClientInterface $httpClient,

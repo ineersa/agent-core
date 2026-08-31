@@ -34,14 +34,7 @@ final readonly class AppResourceLocator
         return $this->appRoot.'/config/hatfield.defaults.yaml';
     }
 
-    /**
-     * Absolute path to the curated AI provider catalog YAML.
-     */
-    public function getAiCatalogPath(): string
-    {
-        return $this->appRoot.'/config/ai-catalog.yaml';
-    }
-
+    
     /**
      * Absolute path to the built-in themes directory.
      */

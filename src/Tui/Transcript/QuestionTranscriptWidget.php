@@ -28,16 +28,8 @@ final class QuestionTranscriptWidget extends ContainerWidget implements MutableT
         return TranscriptVisualNode::KIND_QUESTION === $node->kind;
     }
 
-    public function node(): ?TranscriptVisualNode
-    {
-        return $this->node;
-    }
-
-    public function content(): ?AbstractWidget
-    {
-        return $this->content;
-    }
-
+    
+    
     public function apply(TranscriptVisualNode $node): void
     {
         if (TranscriptVisualNode::KIND_QUESTION !== $node->kind || null === $node->primary) {

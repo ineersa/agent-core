@@ -47,21 +47,7 @@ final class BuiltinDocsCatalog
         ];
     }
 
-    /**
-     * Absolute approved documentation roots for $appRoot.
-     *
-     * @return list<string>
-     */
-    public function absoluteRoots(string $appRoot): array
-    {
-        $appRoot = rtrim($appRoot, '/');
-
-        return array_map(
-            static fn (string $relative): string => $appRoot.'/'.$relative,
-            self::approvedRelativeRoots(),
-        );
-    }
-
+    
     /**
      * Discover marked built-in documents under the approved roots.
      *

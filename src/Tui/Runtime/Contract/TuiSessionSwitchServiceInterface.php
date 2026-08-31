@@ -54,8 +54,4 @@ interface TuiSessionSwitchServiceInterface
      */
     public function selectHistoryTurn(int $targetTurnNo): void;
 
-    /**
-     * True when a pending switch has been requested but not yet consumed.
-     */
-    public function hasPendingSwitch(): bool;
-}
+    }

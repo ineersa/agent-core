@@ -41,25 +41,7 @@ final class ProviderContextUsageResolver
     ) {
     }
 
-    /**
-     * Returns the latest provider input/prompt token count for a run,
-     * or null when no provider measurement exists yet.
-     *
-     * Only input_tokens / prompt_tokens are considered (not output/
-     * completion tokens).  Measurement must be a positive integer.
-     *
-     * This method does NOT check eligibility — it returns the raw
-     * latest measurement regardless of whether auto-compaction has
-     * already acted on it.  Prefer {@see getLatestEligibleInputTokens}
-     * for auto-compaction trigger decisions.
-     */
-    public function getLatestInputTokens(string $runId): ?int
-    {
-        $measurement = $this->findLatestProviderMeasurement($runId);
-
-        return $measurement['tokens'] ?? null;
-    }
-
+    
     /**
      * Returns the latest provider token count that is ELIGIBLE for
      * auto-compaction — i.e. a provider usage measurement whose event

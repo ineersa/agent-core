@@ -13,6 +13,4 @@ namespace Ineersa\Tui\Command;
  */
 interface CommandParseResult
 {
-    /** The original submitted text after trimming. */
-    public function originalText(): string;
-}
+    }

@@ -108,13 +108,4 @@ final class CodexAuthStorage
         });
     }
 
-    /**
-     * Remove stored credentials for a provider key.
-     */
-    public function removeCredentials(string $providerKey): void
-    {
-        $this->store->withLock(function () use ($providerKey): void {
-            $this->store->remove($providerKey);
-        });
     }
-}

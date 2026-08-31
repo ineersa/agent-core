@@ -44,14 +44,7 @@ final class FooterDataProvider
         }
     }
 
-    /**
-     * Remove a keyed provider (convenience alias).
-     */
-    public function removeProvider(string $key): void
-    {
-        unset($this->providers[$key]);
-    }
-
+    
     /** @return list<FooterSegment> */
     public function getSegments(): array
     {

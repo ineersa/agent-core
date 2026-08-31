@@ -51,18 +51,6 @@ final class SubagentLaunchPreparationService
         return $this->definitionPolicy->requireForegroundDefinition($agentName);
     }
 
-    public function prepareSingle(
-        string $parentRunId,
-        string $agentName,
-        string $task,
-        ?string $parentModel = null,
-    ): PreparedAgentChildRunDTO {
-        $definition = $this->definitionPolicy->requireForegroundDefinition($agentName);
-        $this->definitionPolicy->assertDepthAllowed($parentRunId);
-
-        return $this->prepareFromDefinition($parentRunId, $definition, $agentName, $task, parentModel: $parentModel);
-    }
-
     public function prepareFromDefinition(
         string $parentRunId,
         AgentDefinitionDTO $definition,
