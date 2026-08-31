@@ -12,9 +12,9 @@ use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
  * Decorates the normal ToolSetResolver chain with per-run tool policy
  * filtering for child agent runs.
  *
- * When a runId resolves to a child agent run (identified by RunStarted
- * metadata.session.kind === 'agent_child'), this resolver:
- *  1. Reads the RunStarted event via SubagentRunMetadataReader.
+ * When RunStarted launch metadata identifies a child run, this resolver:
+ *  1. Reads immutable RunStarted metadata via RunStartedMetadataReader
+ *     (hot child/parent classification uses RunRelationshipReader elsewhere).
  *  2. Extracts the resolved tool policy from
  *     metadata.tools_scope.allowed_tools.
  *  3. Intersects the inner resolver's ActiveToolSet with the child's
@@ -33,7 +33,7 @@ final readonly class SubagentToolSetResolver implements ToolSetResolverInterface
 {
     public function __construct(
         private ToolSetResolverInterface $inner,
-        private SubagentRunMetadataReader $metadataReader,
+        private RunStartedMetadataReader $metadataReader,
         private ToolRegistryInterface $toolRegistry,
     ) {
     }

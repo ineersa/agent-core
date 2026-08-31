@@ -18,13 +18,11 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
-use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
-use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Compaction\AutoCompactionHookSubscriber;
 use Ineersa\CodingAgent\Compaction\ProviderContextUsageResolver;
 use Ineersa\CodingAgent\Config\CompactionConfig;
+use Ineersa\CodingAgent\Tests\Support\StubRunRelationshipReader;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\TestCase;
 
@@ -50,7 +48,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
     /** @var CompactionServiceInterface&\PHPUnit\Framework\MockObject\MockObject */
     private $compactionService;
     private TestMessageBus $commandBus;
-    private SubagentRunMetadataReader $metadataReader;
+    private StubRunRelationshipReader $metadataReader;
 
     protected function setUp(): void
     {
@@ -83,9 +81,9 @@ final class AutoCompactionHookSubscriberTest extends TestCase
                 priorSummaryPresent: false,
             ));
         $this->commandBus = new TestMessageBus();
-        // Parent by default: empty event store so isAgentChild() is false.
+        // Parent by default: known top-level operational relationship.
         // Provider usage stays on the separate $this->eventStore mock.
-        $this->metadataReader = new SubagentRunMetadataReader(new InMemoryEventStore(), AttributeSerializerValidatorTestFactory::denormalizer());
+        $this->metadataReader = StubRunRelationshipReader::topLevel('run-1');
 
         $this->subscriber = new AutoCompactionHookSubscriber(
             $this->providerUsageResolver,
@@ -1094,7 +1092,8 @@ final class AutoCompactionHookSubscriberTest extends TestCase
                 ],
             ],
         ));
-        $childReader = new SubagentRunMetadataReader($childEventStore, AttributeSerializerValidatorTestFactory::denormalizer());
+        // createHookContext() defaults to run-1; classify that run as a child.
+        $childReader = StubRunRelationshipReader::child('run-1', 'parent-1');
 
         // Fresh mock: child gate must return before prepare().
         $compactionService = $this->createMock(CompactionServiceInterface::class);

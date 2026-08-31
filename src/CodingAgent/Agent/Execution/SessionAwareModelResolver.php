@@ -37,7 +37,7 @@ final class SessionAwareModelResolver implements ModelResolverInterface
         private readonly ModelSelectionService $selectionService,
         private readonly HatfieldModelCatalog $catalog,
         private readonly HatfieldSessionStore $sessionMetadataStore,
-        private readonly ?SubagentRunMetadataReader $childMetadataReader = null,
+        private readonly ?RunStartedMetadataReader $childMetadataReader = null,
     ) {
     }
 

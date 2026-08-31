@@ -7,10 +7,10 @@ namespace Ineersa\CodingAgent\Tool;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
-use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Config\BashToolConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
+use Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface;
 use Ineersa\CodingAgent\Tool\Arguments\BashArgumentsDTO;
 use Psr\Log\LoggerInterface;
 
@@ -71,7 +71,7 @@ final class BashTool implements HatfieldToolProviderInterface
         private readonly StackToolExecutionContextAccessor $contextAccessor,
         private readonly ToolRuntime $toolRuntime,
         private readonly LoggerInterface $logger,
-        private readonly SubagentRunMetadataReader $runMetadataReader,
+        private readonly RunRelationshipReaderInterface $runMetadataReader,
         private readonly BashToolConfig $config = new BashToolConfig(),
         private readonly BashBackgroundPromptAdapterInterface $promptAdapter = new BashBackgroundPromptDeclineAdapter(),
     ) {
@@ -293,9 +293,9 @@ final class BashTool implements HatfieldToolProviderInterface
     }
 
     /**
-     * Parent/missing/no-context runs keep normal background prompting.
-     * Canonical agent_child metadata disables it for this invocation.
-     * Lookup/malformed failures degrade locally by disabling the optional prompt.
+     * Known top-level / no-context runs keep normal background prompting.
+     * Known agent_child rows disable it for this invocation.
+     * Missing operational identity fails closed by disabling the optional prompt.
      */
     private function resolveBackgroundPromptAllowed(?string $sessionId): bool
     {

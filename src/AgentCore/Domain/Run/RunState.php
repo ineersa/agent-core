@@ -51,6 +51,11 @@ final readonly class RunState
          * Scheduling and compaction must use this field, never re-resolve session/default.
          */
         public ?string $model = null,
+        /**
+         * Immediate parent run id from run_started.metadata.session.parent_run_id
+         * when session.kind=agent_child; null for top-level runs.
+         */
+        public ?string $parentRunId = null,
     ) {
     }
 
@@ -96,7 +101,8 @@ final readonly class RunState
      *     retryableFailure?: bool,
      *     retryAttempts?: int,
      *     pendingHumanInputRequests?: list<PendingHumanInputRequestDTO>,
-     *     model?: string|null
+     *     model?: string|null,
+     *     parentRunId?: string|null
      * } $overrides
      */
     public function with(array $overrides = []): self
@@ -122,6 +128,7 @@ final readonly class RunState
             retryAttempts: \array_key_exists('retryAttempts', $overrides) ? (int) $overrides['retryAttempts'] : $this->retryAttempts,
             pendingHumanInputRequests: \array_key_exists('pendingHumanInputRequests', $overrides) ? $overrides['pendingHumanInputRequests'] : $this->pendingHumanInputRequests,
             model: \array_key_exists('model', $overrides) ? $overrides['model'] : $this->model,
+            parentRunId: \array_key_exists('parentRunId', $overrides) ? $overrides['parentRunId'] : $this->parentRunId,
         );
     }
 

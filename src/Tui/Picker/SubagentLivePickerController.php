@@ -32,6 +32,9 @@ final class SubagentLivePickerController
     private ?PickerOverlay $overlay = null;
     private ?TextWidget $headerWidget = null;
 
+    /** @var list<array{value: string, label: string}> */
+    private array $openItems = [];
+
     /**
      * Invoked with the previous child run id when leaving/switching away from it.
      * Listener layer wires question cleanup here (Deptrac: picker must not import TuiQuestion).
@@ -95,12 +98,11 @@ final class SubagentLivePickerController
 
     public function refreshPickerFeedbackIfOpen(): void
     {
-        $state = $this->state;
-        $screen = $this->screen;
         if (!$this->isOpen()) {
             return;
         }
 
+        $state = $this->state;
         $feedback = $state->subagentLiveView->pickerFeedbackMessage;
         if (null === $feedback || '' === trim($feedback)) {
             return;
@@ -120,6 +122,7 @@ final class SubagentLivePickerController
         $this->overlay?->close($requestRender);
         $this->overlay = null;
         $this->headerWidget = null;
+        $this->openItems = [];
     }
 
     /**
@@ -182,7 +185,9 @@ final class SubagentLivePickerController
 
         $kb = SelectListKeybindings::standard();
 
+        // Picker rows are an open-time snapshot. Catalog updates appear after reopening.
         $items = self::buildItems($children);
+        $this->openItems = $items;
         $listWidget = new SelectListWidget(
             items: $items,
             maxVisible: SelectListKeybindings::MAX_VISIBLE,
@@ -212,7 +217,7 @@ final class SubagentLivePickerController
             $picker->closePicker();
         });
 
-        $listWidget->onInput(static function (string $data) use ($picker, $listWidget, &$children, $screen, $state): bool {
+        $listWidget->onInput(static function (string $data) use ($picker, $listWidget, $screen, $state): bool {
             if ('e' === $data || 'E' === $data) {
                 $picker->exportSelected($listWidget, $screen, $state);
 
@@ -223,7 +228,7 @@ final class SubagentLivePickerController
                 return false;
             }
 
-            $picker->dismissSelected($listWidget, $children, $screen, $state);
+            $picker->dismissSelected($listWidget, $screen, $state);
 
             return true;
         });
@@ -328,12 +333,8 @@ final class SubagentLivePickerController
         }
     }
 
-    /**
-     * @param list<SubagentLiveChildDTO> $children
-     */
     private function dismissSelected(
         SelectListWidget $listWidget,
-        array &$children,
         ChatScreen $screen,
         TuiSessionState $state,
     ): void {
@@ -374,12 +375,12 @@ final class SubagentLivePickerController
             SubagentLiveMainReturn::returnToMain($state, $screen, $this->client, requestRender: false);
         }
 
-        $children = array_values(array_filter(
-            $children,
-            static fn (SubagentLiveChildDTO $child): bool => $child->artifactId !== $artifactId,
+        // Remove only the dismissed snapshot row; do not import other catalog updates mid-open.
+        $this->openItems = array_values(array_filter(
+            $this->openItems,
+            static fn (array $item): bool => $item['value'] !== $artifactId,
         ));
-
-        if ([] === $children) {
+        if ([] === $this->openItems) {
             $this->closePicker();
             $screen->setWorkingMessage(null);
             $screen->setStatus('agents-live', null);
@@ -388,8 +389,7 @@ final class SubagentLivePickerController
             return;
         }
 
-        // Selected artifact was just removed; previous dead search always resolved to 0.
-        $listWidget->setItems(self::buildItems($children));
+        $listWidget->setItems($this->openItems);
         $listWidget->setSelectedIndex(0);
 
         $this->showPickerFeedback(\sprintf('Removed %s from /agents-live.', $removed->agentName));

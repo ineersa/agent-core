@@ -19,12 +19,12 @@ use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
-use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Compaction\CompactionHookContextDTO;
 use Ineersa\CodingAgent\Compaction\CompactionHookDispatcher;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\CompactionRuntimeSettingsDTO;
 use Ineersa\CodingAgent\Extension\ExtensionCompactionHookDispatcher;
+use Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
@@ -48,7 +48,7 @@ final readonly class CompactRunHandler implements RunMessageHandler, RunMessageH
         private EventFactory $eventFactory,
         private CompactionHookDispatcher $hookDispatcher,
         private ExtensionCompactionHookDispatcher $extensionHookDispatcher,
-        private SubagentRunMetadataReader $metadataReader,
+        private RunRelationshipReaderInterface $relationshipReader,
         private NormalizerInterface $normalizer,
         private LoggerInterface $logger = new NullLogger(),
     ) {
@@ -92,7 +92,21 @@ final readonly class CompactRunHandler implements RunMessageHandler, RunMessageH
         // (no lifecycle events, no preparation, no worker) so manual/API
         // CompactRun and any leak past scheduling paths produce no noise.
         // Parent-side fork snapshot compaction does not use CompactRun.
-        if ($this->metadataReader->isAgentChild($runId)) {
+        // Missing operational identity fails closed as a logged no-op.
+        try {
+            if ($this->relationshipReader->isAgentChild($runId)) {
+                return new HandlerResult(nextState: $state, events: [], effects: []);
+            }
+        } catch (\RuntimeException $e) {
+            $this->logger->warning('Compaction skipped because operational run relationship is unavailable.', [
+                'component' => 'compaction',
+                'event_type' => 'compaction.relationship_unavailable',
+                'run_id' => $runId,
+                'session_id' => $runId,
+                'error_class' => $e::class,
+                'error_message' => $e->getMessage(),
+            ]);
+
             return new HandlerResult(nextState: $state, events: [], effects: []);
         }
 

@@ -14,7 +14,7 @@ use Ineersa\CodingAgent\Agent\Execution\AgentPromptBuilder;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\AgentChildLaunchContextDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\PreparedAgentChildRunDTO;
-use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
+use Ineersa\CodingAgent\Agent\Execution\RunStartedMetadataReader;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ModelResolver;
@@ -30,7 +30,7 @@ final class SubagentChildLaunchInputFactory
         private readonly AppConfig $appConfig,
         private readonly ChildExtensionSelectionService $childExtensionSelection,
         private readonly ToolRegistryInterface $toolRegistry,
-        private readonly SubagentRunMetadataReader $metadataReader,
+        private readonly RunStartedMetadataReader $metadataReader,
         private readonly ModelResolver $modelResolver,
     ) {
     }

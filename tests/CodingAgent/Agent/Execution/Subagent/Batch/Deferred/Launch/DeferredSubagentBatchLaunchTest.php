@@ -561,7 +561,7 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
             new AgentDefinitionCatalog($definitions),
             self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\AgentDepthGuard::class),
             self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\AgentToolPolicyResolver::class),
-            self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader::class),
+            self::getContainer()->get(\Ineersa\CodingAgent\Repository\RunRelationshipReader::class),
         );
         $appConfig = self::getContainer()->get(\Ineersa\CodingAgent\Config\AppConfig::class);
         $launchInputFactory = new \Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Preparation\SubagentChildLaunchInputFactory(
@@ -571,7 +571,7 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
             $appConfig,
             self::getContainer()->get(\Ineersa\CodingAgent\Agent\ChildExtensionSelectionService::class),
             self::getContainer()->get(\Ineersa\CodingAgent\Tool\ToolRegistryInterface::class),
-            self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader::class),
+            self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\RunStartedMetadataReader::class),
             self::getContainer()->get(\Ineersa\CodingAgent\Config\ModelResolver::class),
         );
         $launchPreparation = new SubagentLaunchPreparationService(
@@ -634,6 +634,9 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
      */
     private function withToolContext(string $parentRunId, string $toolCallId, callable $callback): mixed
     {
+        self::getContainer()->get(\Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository::class)->replace(
+            new RunState($parentRunId, RunStatus::Running),
+        );
         $accessor = self::getContainer()->get(StackToolExecutionContextAccessor::class);
         $context = new ToolContext(
             runId: $parentRunId,

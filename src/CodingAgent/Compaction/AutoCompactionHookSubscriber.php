@@ -10,8 +10,10 @@ use Ineersa\AgentCore\Contract\Model\RunModelResolverInterface;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
-use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Config\CompactionConfig;
+use Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 
@@ -30,7 +32,7 @@ use Symfony\Component\Messenger\MessageBusInterface;
  *
  * Guards:
  *  - Agent child runs (fork/subagent; session.kind=agent_child) via
- *    SubagentRunMetadataReader — children never auto-compact
+ *    RunRelationshipReader — children never auto-compact
  *  - Auto disabled via compaction.auto_enabled (per-provider/per-model overrides)
  *  - In-flight compaction (activeStepId starts with compact-)
  *  - Commit contains compaction lifecycle events (avoids loops)
@@ -54,7 +56,8 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
         private readonly RunModelResolverInterface $modelResolver,
         private readonly MessageBusInterface $commandBus,
         private readonly CompactionServiceInterface $compactionService,
-        private readonly SubagentRunMetadataReader $metadataReader,
+        private readonly RunRelationshipReaderInterface $relationshipReader,
+        private readonly LoggerInterface $logger = new NullLogger(),
     ) {
     }
 
@@ -64,7 +67,21 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
 
         // Guard: fork/subagent child runs never compact (auto or manual).
         // Parent-side fork snapshot compaction is separate and unchanged.
-        if ($this->metadataReader->isAgentChild($runId)) {
+        // Missing operational identity fails closed (skip auto-compaction).
+        try {
+            if ($this->relationshipReader->isAgentChild($runId)) {
+                return $context;
+            }
+        } catch (\RuntimeException $e) {
+            $this->logger->warning('Auto-compaction skipped because operational run relationship is unavailable.', [
+                'component' => 'compaction',
+                'event_type' => 'auto_compaction.relationship_unavailable',
+                'run_id' => $runId,
+                'session_id' => $runId,
+                'error_class' => $e::class,
+                'error_message' => $e->getMessage(),
+            ]);
+
             return $context;
         }
 
