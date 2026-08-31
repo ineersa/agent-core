@@ -110,7 +110,7 @@ final class TuiVirtualInputTest extends TestCase
 
         $this->assertInstanceOf(HotkeyTableData::class, $result);
         $this->assertNotInstanceOf(DispatchRuntime::class, $result);
-        $this->assertFalse($result->isEmpty());
+        $this->assertNotSame([], $result->groups);
 
         $this->applyHotkeyTableToScreen($result, $state, $harness);
 

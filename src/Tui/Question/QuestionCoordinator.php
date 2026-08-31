@@ -21,8 +21,6 @@ namespace Ineersa\Tui\Question;
 final class QuestionCoordinator
 {
     private ?QuestionRequest $active = null;
-    private ?QuestionStatus $activeStatus = null;
-
     /** @var \SplQueue<QuestionRequest> */
     private \SplQueue $queue;
 
@@ -86,14 +84,6 @@ final class QuestionCoordinator
     }
 
     /**
-     * Return the status of the currently active request, or null.
-     */
-    public function activeStatus(): ?QuestionStatus
-    {
-        return $this->activeStatus;
-    }
-
-    /**
      * True when a question request is active and awaiting resolution.
      */
     public function actionRequired(): bool
@@ -129,8 +119,6 @@ final class QuestionCoordinator
             return;
         }
 
-        $this->activeStatus = QuestionStatus::Answered;
-
         $callback = $this->callbacks[$this->active->requestId] ?? null;
         if (null !== $callback) {
             try {
@@ -156,7 +144,6 @@ final class QuestionCoordinator
             return;
         }
 
-        $this->activeStatus = QuestionStatus::Rejected;
         $this->advance();
     }
 
@@ -176,8 +163,6 @@ final class QuestionCoordinator
         if (null === $this->active) {
             return;
         }
-
-        $this->activeStatus = QuestionStatus::Cancelled;
 
         $cancelCallback = $this->cancelCallbacks[$this->active->requestId] ?? null;
         if (null !== $cancelCallback) {
@@ -225,7 +210,6 @@ final class QuestionCoordinator
             $this->forgetRequest($this->active->requestId);
             if ($this->queue->isEmpty()) {
                 $this->active = null;
-                $this->activeStatus = null;
 
                 return;
             }
@@ -247,7 +231,6 @@ final class QuestionCoordinator
 
         if ($this->queue->isEmpty()) {
             $this->active = null;
-            $this->activeStatus = null;
 
             return;
         }
@@ -256,11 +239,10 @@ final class QuestionCoordinator
     }
 
     /**
-     * Set a request as the active one with Pending status.
+     * Set a request as the active one.
      */
     private function activate(QuestionRequest $request): void
     {
         $this->active = $request;
-        $this->activeStatus = QuestionStatus::Pending;
     }
 }

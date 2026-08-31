@@ -363,9 +363,7 @@ class CancelListenerTest extends TestCase
                 source: QuestionSource::AgentCore,
                 kind: QuestionKind::Text,
                 prompt: 'Stale child question',
-                runId: 'child-run-stale',
-                questionId: 'q_stale',
-            ),
+                runId: 'child-run-stale'),
             onCancel: static function () use (&$cancelled): void {
                 $cancelled = true;
             },
@@ -409,10 +407,7 @@ class CancelListenerTest extends TestCase
                 source: QuestionSource::AgentCore,
                 kind: QuestionKind::Text,
                 prompt: 'Which file should the scout inspect next?',
-                schema: ['type' => 'string'],
-                runId: 'child-run-text-question',
-                questionId: 'q_text',
-            ),
+                runId: 'child-run-text-question'),
             onCancel: static function () use (&$cancelled): void {
                 $cancelled = true;
             },
@@ -459,11 +454,8 @@ class CancelListenerTest extends TestCase
                 source: QuestionSource::AgentCore,
                 kind: QuestionKind::Choice,
                 prompt: 'Which file should the scout inspect next?',
-                schema: ['type' => 'string', 'enum' => ['A', 'B']],
                 runId: 'child-run-overlay',
-                questionId: 'q_overlay',
-                allowOther: true,
-            ),
+                allowOther: true),
         );
         $this->assertTrue($coordinator->actionRequired());
 

@@ -13,6 +13,7 @@ use Castor\Attribute\AsTask;
 
 use function CastorTasks\ensure_dead_code_symfony_container_xml;
 use function CastorTasks\is_llm_mode;
+use function CastorTasks\regenerate_dead_code_baseline;
 use function CastorTasks\summarize_deptrac_json;
 use function CastorTasks\summarize_php_cs_fixer_json;
 use function CastorTasks\summarize_phpstan_json;
@@ -111,18 +112,17 @@ function dead_code_baseline(): void
 {
     try {
         ensure_dead_code_symfony_container_xml();
+        $result = regenerate_dead_code_baseline();
     } catch (Throwable $e) {
         fail_quality($e->getMessage());
     }
 
-    // Always suppress PHPStan progress. Baseline generation cannot use
-    // --error-format=json (it would conflict with --generate-baseline), but
-    // LLM_MODE still needs quiet, non-TTY output.
-    $cmd = qa_observability_env_command().' '.\PHP_BINARY.' vendor/bin/phpstan analyse -c phpstan.dead-code.neon --no-progress --generate-baseline phpstan.dead-code-baseline.neon'
-        .(is_llm_mode() ? ' --no-ansi' : '');
-    passthru($cmd, $exitCode);
-    if (0 !== $exitCode) {
-        fail_quality(sprintf('Dead-code baseline generation failed with exit code %d', $exitCode));
+    echo $result['output'];
+    if ('' !== $result['output'] && !str_ends_with($result['output'], "\n")) {
+        echo \PHP_EOL;
+    }
+    if (0 !== $result['exitCode']) {
+        fail_quality(sprintf('Dead-code baseline generation failed with exit code %d', $result['exitCode']));
     }
 }
 

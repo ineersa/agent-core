@@ -198,11 +198,8 @@ final class TickPollListenerChildHitlTest extends TestCase
                 source: QuestionSource::Tui,
                 kind: QuestionKind::Confirm,
                 prompt: 'Parent?',
-                schema: ['type' => 'boolean'],
                 runId: 'parent-run',
-                questionId: 'rq_parent',
                 toolCallId: 'tc_shared',
-                transcript: false,
             ),
         );
 

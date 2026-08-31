@@ -37,7 +37,7 @@ final class SessionPickerControllerTest extends TestCase
         );
         $controller = new SessionPickerController($this->tui(), $this->screen(), $sessionStore, $switch);
 
-        $this->assertFalse($controller->isOpen());
+        $this->assertFalse(self::pickerOpen($controller));
     }
 
     #[Test]
@@ -172,7 +172,7 @@ final class SessionPickerControllerTest extends TestCase
         // Should not throw when no picker is open
         $controller->closePicker();
 
-        $this->assertFalse($controller->isOpen());
+        $this->assertFalse(self::pickerOpen($controller));
     }
 
     #[Test]
@@ -195,5 +195,13 @@ final class SessionPickerControllerTest extends TestCase
             new TranscriptDisplayConfig(),
             new TranscriptDisplayState(),
         );
+    }
+
+    private static function pickerOpen(SessionPickerController $controller): bool
+    {
+        $overlayRef = new \ReflectionProperty($controller, 'overlay');
+        $overlay = $overlayRef->getValue($controller);
+
+        return null !== $overlay && $overlay->isOpen();
     }
 }

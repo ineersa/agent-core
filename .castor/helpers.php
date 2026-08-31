@@ -2579,6 +2579,121 @@ function ensure_dead_code_symfony_container_xml(): string
     return $target;
 }
 
+/**
+ * Absolute path of the ShipMonk dead-code baseline file.
+ */
+function dead_code_baseline_path(): string
+{
+    return project_root_dir().'/phpstan.dead-code-baseline.neon';
+}
+
+/**
+ * Absolute path of the dedicated dead-code PHPStan config.
+ */
+function dead_code_phpstan_config_path(): string
+{
+    return project_root_dir().'/phpstan.dead-code.neon';
+}
+
+/**
+ * Build the PHPStan command that regenerates phpstan.dead-code-baseline.neon.
+ *
+ * Baseline generation cannot use --error-format=json (conflicts with
+ * --generate-baseline). LLM_MODE still needs quiet, non-TTY output.
+ */
+function dead_code_baseline_phpstan_command(): string
+{
+    return qa_observability_env_command().' '.
+        \PHP_BINARY.' vendor/bin/phpstan analyse -c '.
+        escapeshellarg(dead_code_phpstan_config_path()).
+        ' --no-progress --generate-baseline '.
+        escapeshellarg(dead_code_baseline_path()).
+        (is_llm_mode() ? ' --no-ansi' : '');
+}
+
+/**
+ * Valid empty ShipMonk baseline include used only while regenerating.
+ *
+ * PHPStan rejects --generate-baseline when the current baseline still points at
+ * deleted source paths and reportUnmatchedIgnoredErrors remains true. The
+ * maintenance command therefore swaps in this empty include for the duration of
+ * generation, then restores the previous baseline if generation fails.
+ */
+function dead_code_empty_baseline_contents(): string
+{
+    return "parameters:\n\tignoreErrors: []\n";
+}
+
+/**
+ * Regenerate a ShipMonk dead-code baseline file after source deletions.
+ *
+ * Keeps reportUnmatchedIgnoredErrors: true for ordinary detector runs. Temporarily
+ * replaces the baseline include with a valid empty baseline, runs $phpstanCommand,
+ * and restores the previous baseline file if generation fails.
+ *
+ * @return array{exitCode: int, output: string}
+ */
+function regenerate_dead_code_baseline_at(string $baselinePath, string $phpstanCommand, ?string $workingDirectory = null): array
+{
+    $backupPath = $baselinePath.'.pre-regen';
+    $hadBaseline = is_file($baselinePath);
+    $previousContents = $hadBaseline ? file_get_contents($baselinePath) : null;
+    if ($hadBaseline && false === $previousContents) {
+        throw new \RuntimeException(\sprintf('Unable to read dead-code baseline "%s".', $baselinePath));
+    }
+
+    if ($hadBaseline) {
+        if (!copy($baselinePath, $backupPath)) {
+            throw new \RuntimeException(\sprintf('Unable to back up dead-code baseline to "%s".', $backupPath));
+        }
+    } elseif (is_file($backupPath) && !unlink($backupPath)) {
+        throw new \RuntimeException(\sprintf('Unable to remove stale dead-code baseline backup "%s".', $backupPath));
+    }
+
+    if (false === file_put_contents($baselinePath, dead_code_empty_baseline_contents())) {
+        throw new \RuntimeException(\sprintf('Unable to write temporary empty dead-code baseline "%s".', $baselinePath));
+    }
+
+    $process = Process::fromShellCommandline($phpstanCommand, $workingDirectory ?? project_root_dir());
+    $process->setTimeout(null);
+    $process->run();
+    $exitCode = $process->getExitCode() ?? 1;
+    $output = $process->getOutput().$process->getErrorOutput();
+
+    if (0 !== $exitCode) {
+        if ($hadBaseline) {
+            if (false === file_put_contents($baselinePath, $previousContents)) {
+                throw new \RuntimeException(\sprintf('Dead-code baseline generation failed (exit code %d) and restoring "%s" also failed.', $exitCode, $baselinePath));
+            }
+        } elseif (is_file($baselinePath) && !unlink($baselinePath)) {
+            throw new \RuntimeException(\sprintf('Dead-code baseline generation failed (exit code %d) and removing temporary "%s" also failed.', $exitCode, $baselinePath));
+        }
+    }
+
+    if (is_file($backupPath) && !unlink($backupPath)) {
+        throw new \RuntimeException(\sprintf('Unable to remove dead-code baseline backup "%s".', $backupPath));
+    }
+
+    return [
+        'exitCode' => $exitCode,
+        'output' => $output,
+    ];
+}
+
+/**
+ * Regenerate phpstan.dead-code-baseline.neon after source deletions.
+ *
+ * @return array{exitCode: int, output: string}
+ */
+function regenerate_dead_code_baseline(): array
+{
+    return regenerate_dead_code_baseline_at(
+        dead_code_baseline_path(),
+        dead_code_baseline_phpstan_command(),
+        project_root_dir(),
+    );
+}
+
 function build_idea_run_config_xml(string $commandName, string $description): string
 {
     $configurationName = 'castor '.$commandName;

@@ -58,7 +58,10 @@ final class TuiSessionPickerDeleteVirtualTest extends IsolatedKernelTestCase
 
             $harness->sendInput("\x1b"); // Esc
             $after = $harness->plainScreenText();
-            $this->assertTrue($picker->isOpen());
+            $overlayRef = new \ReflectionProperty(SessionPickerController::class, 'overlay');
+            $overlay = $overlayRef->getValue($picker);
+            $this->assertInstanceOf(PickerOverlay::class, $overlay);
+            $this->assertTrue($overlay->isOpen());
             $this->assertTrue($this->store->exists($deleteId));
             $this->assertStringContainsString('d deletes', $after);
             $this->assertStringContainsString('#'.$deleteId.' — Maybe delete', $after);

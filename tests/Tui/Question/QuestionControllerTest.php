@@ -101,8 +101,7 @@ class QuestionControllerTest extends TestCase
             requestId: 'text-banner',
             source: QuestionSource::AgentCore,
             kind: QuestionKind::Text,
-            prompt: $longPrompt,
-        );
+            prompt: $longPrompt);
 
         $container = new ContainerWidget();
         // Constructor-valid controller bound to a real screen carrying the
@@ -161,8 +160,7 @@ class QuestionControllerTest extends TestCase
                 new QuestionOption(label: 'LONG_OPTION_BEGIN keep every word visible past thirty columns LONG_OPTION_TAIL_UNIQUE'),
                 new QuestionOption(label: 'WITH_DESC', description: 'Visible description remains mapped'),
             ],
-            allowOther: false,
-        );
+            allowOther: false);
 
         $palette = new ThemePalette(
             name: 'test',
@@ -229,8 +227,7 @@ class QuestionControllerTest extends TestCase
             requestId: 'confirm-1',
             source: QuestionSource::Tui,
             kind: QuestionKind::Confirm,
-            prompt: 'Are you sure?',
-        );
+            prompt: 'Are you sure?');
 
         $items = $this->invokeBuildItems($request);
 
@@ -250,8 +247,7 @@ class QuestionControllerTest extends TestCase
             source: QuestionSource::Tui,
             kind: QuestionKind::Confirm,
             prompt: 'Proceed?',
-            allowOther: false,
-        );
+            allowOther: false);
 
         $items = $this->invokeBuildItems($request);
 
@@ -271,8 +267,7 @@ class QuestionControllerTest extends TestCase
             choices: [
                 new QuestionOption(label: 'Alpha', description: 'First option'),
                 new QuestionOption(label: 'Beta', description: 'Second option'),
-            ],
-        );
+            ]);
 
         $items = $this->invokeBuildItems($request);
 
@@ -296,8 +291,7 @@ class QuestionControllerTest extends TestCase
             choices: [
                 new QuestionOption(label: 'Only'),
             ],
-            allowOther: false,
-        );
+            allowOther: false);
 
         $items = $this->invokeBuildItems($request);
 
@@ -317,8 +311,7 @@ class QuestionControllerTest extends TestCase
                 new QuestionOption(label: 'NoDesc'),
                 new QuestionOption(label: 'WhitespaceDesc', description: " \t\n "),
             ],
-            allowOther: false,
-        );
+            allowOther: false);
 
         $items = $this->invokeBuildItems($request);
 
@@ -349,8 +342,7 @@ class QuestionControllerTest extends TestCase
                 new QuestionOption('Option A'),
                 new QuestionOption('Option B'),
                 new QuestionOption('Option C'),
-            ],
-        );
+            ]);
 
         $items = $this->invokeBuildItems($request);
 
@@ -377,8 +369,7 @@ class QuestionControllerTest extends TestCase
                 new QuestionOption('✅ Allow'),
                 new QuestionOption('❌ Deny'),
             ],
-            allowOther: false,
-        );
+            allowOther: false);
 
         $items = $this->invokeBuildItems($request);
 
@@ -402,8 +393,7 @@ class QuestionControllerTest extends TestCase
                 new QuestionOption('✅ Allow', 'Approves the exact call'),
                 new QuestionOption('❌ Deny', 'Blocks the call'),
             ],
-            allowOther: false,
-        );
+            allowOther: false);
 
         $items = $this->invokeBuildItems($request);
 
@@ -426,8 +416,7 @@ class QuestionControllerTest extends TestCase
             kind: QuestionKind::Choice,
             prompt: 'Pick?',
             choices: [],
-            allowOther: false,
-        );
+            allowOther: false);
 
         $items = $this->invokeBuildItems($request);
 
@@ -442,8 +431,7 @@ class QuestionControllerTest extends TestCase
             requestId: 'text-1',
             source: QuestionSource::Tui,
             kind: QuestionKind::Text,
-            prompt: 'Enter your name:',
-        );
+            prompt: 'Enter your name:');
 
         // Text kind never builds list items; the controller uses a TextWidget banner
         // instead of SelectListWidget. This test verifies the buildItems path
@@ -464,8 +452,7 @@ class QuestionControllerTest extends TestCase
             source: QuestionSource::Tui,
             kind: QuestionKind::Confirm,
             prompt: 'Test?',
-            allowOther: false,
-        );
+            allowOther: false);
 
         $items = $this->invokeBuildItems($request);
         $this->assertCount(2, $items);
@@ -548,8 +535,7 @@ class QuestionControllerTest extends TestCase
             requestId: 'cb-test',
             source: QuestionSource::Tui,
             kind: QuestionKind::Text,
-            prompt: 'Test:',
-        );
+            prompt: 'Test:');
 
         $this->coordinator->enqueue($request, static function (mixed $value) use (&$calledWith): void {
             $calledWith = $value;
@@ -568,8 +554,7 @@ class QuestionControllerTest extends TestCase
             requestId: 'cancel-test',
             source: QuestionSource::Tui,
             kind: QuestionKind::Confirm,
-            prompt: 'Cancel test?',
-        );
+            prompt: 'Cancel test?');
 
         $this->coordinator->enqueue($request);
         $this->assertTrue($this->coordinator->actionRequired());

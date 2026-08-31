@@ -548,8 +548,7 @@ final class QuestionCoordinatorTest extends TestCase
             requestId: $id,
             source: QuestionSource::Tui,
             kind: QuestionKind::Text,
-            prompt: $prompt,
-        );
+            prompt: $prompt);
     }
 
     private function agentCoreRequest(string $id, string $prompt = 'Test?'): QuestionRequest
@@ -558,8 +557,7 @@ final class QuestionCoordinatorTest extends TestCase
             requestId: $id,
             source: QuestionSource::AgentCore,
             kind: QuestionKind::Text,
-            prompt: $prompt,
-        );
+            prompt: $prompt);
     }
 
     private function agentCoreRequestForRun(string $id, string $runId, string $prompt = 'Test?'): QuestionRequest
@@ -569,7 +567,6 @@ final class QuestionCoordinatorTest extends TestCase
             source: QuestionSource::AgentCore,
             kind: QuestionKind::Text,
             prompt: $prompt,
-            runId: $runId,
-        );
+            runId: $runId);
     }
 }

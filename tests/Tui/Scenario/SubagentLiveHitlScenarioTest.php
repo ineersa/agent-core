@@ -272,7 +272,7 @@ final class SubagentLiveHitlScenarioTest extends TestCase
         }
         $h->refreshAttentionFooter();
 
-        $this->assertNull($h->state->subagentLiveCatalog->firstChildNeedingAttention());
+        $this->assertNull(self::firstNeeding($h->state->subagentLiveCatalog));
         $this->assertNull($h->statusText('subagent_live'));
         $this->assertStringNotContainsString('needs input', $h->pickerLabels()[0] ?? '');
     }
@@ -285,5 +285,16 @@ final class SubagentLiveHitlScenarioTest extends TestCase
             entityManager: $this->createStub(EntityManagerInterface::class),
             switchService: $this->createStub(TuiSessionSwitchServiceInterface::class),
         );
+    }
+
+    private static function firstNeeding(\Ineersa\Tui\Runtime\SubagentLiveCatalog $catalog): ?\Ineersa\Tui\Runtime\SubagentLiveChildDTO
+    {
+        foreach ($catalog->all() as $child) {
+            if ($child->needsAttention()) {
+                return $child;
+            }
+        }
+
+        return null;
     }
 }

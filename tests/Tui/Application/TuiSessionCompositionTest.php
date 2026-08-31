@@ -68,12 +68,12 @@ final class TuiSessionCompositionTest extends TestCase
             tui: new TuiConfig(theme: 'default'),
             logging: new LoggingConfig(),
             sessions: new SessionsConfig(),
-            cwd: '/tmp',
+            cwd: '/tmp'
         );
         $sessionStore = new HatfieldSessionStore(
             $appConfig,
             $this->createStub(EntityManagerInterface::class),
-            dispatcher: new EventDispatcher(),
+            dispatcher: new EventDispatcher()
         );
         $modelService = new ModelSelectionService(
             $appConfig,
@@ -81,9 +81,9 @@ final class TuiSessionCompositionTest extends TestCase
             new SettingsOverrideWriter(
                 new SettingsPathResolver('/tmp'),
                 PropertyAccess::createPropertyAccessor(),
-                new Filesystem(),
+                new Filesystem()
             ),
-            $sessionStore,
+            $sessionStore
         );
 
         $this->factory = new TuiSessionCompositionFactory(
@@ -104,7 +104,7 @@ final class TuiSessionCompositionTest extends TestCase
             childEventsPathResolver: $this->createStub(ChildAgentEventsPathResolverInterface::class),
             exportService: new SessionEventsExportService(),
             runtimeQuestionEventHandler: new RuntimeQuestionEventHandler(),
-            questionPromptRenderer: new QuestionOverlayPromptRenderer(),
+            questionPromptRenderer: new QuestionOverlayPromptRenderer()
         );
     }
 
@@ -135,11 +135,11 @@ final class TuiSessionCompositionTest extends TestCase
         $scope1->commandRegistry->bind('clear', new FixedMessageTestHandler('scope-one'));
         $this->assertSame(
             'scope-one',
-            $scope1->commandRegistry->execute(new \Ineersa\Tui\Command\SlashCommand('clear', '', '/clear'))->text,
+            $scope1->commandRegistry->execute(new \Ineersa\Tui\Command\SlashCommand('clear', '', '/clear'))->text
         );
         $this->assertInstanceOf(
             \Ineersa\Tui\Command\ClearTranscript::class,
-            $scope2->commandRegistry->execute(new \Ineersa\Tui\Command\SlashCommand('clear', '', '/clear')),
+            $scope2->commandRegistry->execute(new \Ineersa\Tui\Command\SlashCommand('clear', '', '/clear'))
         );
 
         // Question state is independent.
@@ -147,15 +147,15 @@ final class TuiSessionCompositionTest extends TestCase
             requestId: 'q1',
             source: \Ineersa\Tui\Question\QuestionSource::AgentCore,
             kind: \Ineersa\Tui\Question\QuestionKind::Text,
-            prompt: 'Scope one question?',
+            prompt: 'Scope one question?'
         ));
         $this->assertTrue($scope1->questionCoordinator->actionRequired());
         $this->assertFalse($scope2->questionCoordinator->actionRequired());
 
         // Prompt history is independent (list + navigation cursor).
         $scope1->promptHistory->append('scope one prompt');
-        $this->assertSame(['scope one prompt'], $scope1->promptHistory->prompts());
-        $this->assertSame([], $scope2->promptHistory->prompts());
+        $this->assertSame(['scope one prompt'], self::historyPrompts($scope1->promptHistory));
+        $this->assertSame([], self::historyPrompts($scope2->promptHistory));
         $this->assertSame('scope one prompt', $scope1->promptHistory->previous());
         $this->assertNull($scope2->promptHistory->previous());
         $this->assertTrue($scope1->promptHistory->isNavigating());
@@ -177,7 +177,7 @@ final class TuiSessionCompositionTest extends TestCase
             type: RuntimeEventTypeEnum::UserMessageSubmitted->value,
             runId: $runId,
             seq: 1,
-            payload: ['text' => $text],
+            payload: ['text' => $text]
         );
     }
 
@@ -193,7 +193,15 @@ final class TuiSessionCompositionTest extends TestCase
             $sessionId,
             new PromptEditor(),
             new TranscriptDisplayConfig(),
-            new TranscriptDisplayState(),
+            new TranscriptDisplayState()
         );
+    }
+
+    /** @return list<string> */
+    private static function historyPrompts(\Ineersa\Tui\Listener\PromptHistory $history): array
+    {
+        $ref = new \ReflectionProperty($history, 'prompts');
+
+        return $ref->getValue($history);
     }
 }

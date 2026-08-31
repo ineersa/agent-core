@@ -20,7 +20,7 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
  *   rebuild; the list may stay ahead of a repositioned transcript until the
  *   next {@see seedFrom()}.
  *
- * Navigation uses O(1) indexing into {@see prompts()} — no transcript scan per
+ * Navigation uses O(1) indexing into the prompt list — no transcript scan per
  * keypress. {@see previous()} walks toward older prompts; {@see next()} toward
  * newer; past newest returns null (caller clears editor and exits navigation).
  */
@@ -30,14 +30,6 @@ final class PromptHistory
     private array $prompts = [];
 
     private ?int $cursor = null;
-
-    /**
-     * @return list<string>
-     */
-    public function prompts(): array
-    {
-        return $this->prompts;
-    }
 
     /**
      * Reset and rebuild from transcript UserMessage blocks (order preserved).
@@ -103,13 +95,5 @@ final class PromptHistory
     public function exitNavigation(): void
     {
         $this->cursor = null;
-    }
-
-    /**
-     * @internal
-     */
-    public function cursor(): ?int
-    {
-        return $this->cursor;
     }
 }
