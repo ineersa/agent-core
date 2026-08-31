@@ -121,24 +121,6 @@ parameters:
 			path: src/CodingAgent/Agent/Execution/ChildRun/Contract/PreparedAgentChildRunDTO.php
 
 		-
-			message: '#^Unused Ineersa\\CodingAgent\\Auth\\AuthCredentialFileStore\:\:remove \(all usages excluded by tests excluder\)$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/CodingAgent/Auth/AuthCredentialFileStore.php
-
-		-
-			message: '#^Unused Ineersa\\CodingAgent\\Auth\\BrowserLauncher\:\:isSupported$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/CodingAgent/Auth/BrowserLauncher.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Build\\ApplicationBuildIdentity\:\:\$channel is never read \(all usages excluded by tests excluder\)$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Build/ApplicationBuildIdentity.php
-
-		-
 			message: '#^Property Ineersa\\CodingAgent\\Compaction\\CompactResultDTO\:\:\$summaryMessage is never read \(all usages excluded by tests excluder\)$#'
 			identifier: shipmonk.deadProperty.neverRead
 			count: 1
@@ -173,24 +155,6 @@ parameters:
 			identifier: shipmonk.deadMethod
 			count: 1
 			path: src/CodingAgent/Compaction/ProviderContextUsageResolver.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiProviderConfig\:\:\$accountId is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiProviderConfig.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiProviderConfig\:\:\$api is never read \(all usages excluded by tests excluder\)$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiProviderConfig.php
-
-		-
-			message: '#^Unused Ineersa\\CodingAgent\\Docs\\BuiltinDocsCatalog\:\:headingSlugsFromMarkdown \(all usages excluded by tests excluder\)$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/CodingAgent/Docs/BuiltinDocsCatalog.php
 
 		-
 			message: '#^Unused Ineersa\\CodingAgent\\Entity\\BackgroundProcess\:\:shouldNotifyOnCompletion$#'
@@ -239,18 +203,6 @@ parameters:
 			identifier: shipmonk.deadMethod
 			count: 1
 			path: src/CodingAgent/Extension/ExtensionToolRegistryBridge.php
-
-		-
-			message: '#^Unused Ineersa\\CodingAgent\\Mcp\\Client\\McpSdkClientAdapter\:\:isConnected$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/CodingAgent/Mcp/Client/McpSdkClientAdapter.php
-
-		-
-			message: '#^Unused Ineersa\\CodingAgent\\Mcp\\Tool\\McpToolRegistrar\:\:registerForRun \(all usages excluded by tests excluder\)$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/CodingAgent/Mcp/Tool/McpToolRegistrar.php
 
 		-
 			message: '#^Property Ineersa\\CodingAgent\\Runtime\\Contract\\LoadedResourceSectionDTO\:\:\$key is never read \(all usages excluded by tests excluder\)$#'
@@ -377,114 +329,6 @@ parameters:
 			identifier: shipmonk.deadProperty.neverRead
 			count: 1
 			path: src/CodingAgent/Session/SessionToolBatchStoreException.php
-
-		-
-			message: '#^Unused Ineersa\\CodingAgent\\Skills\\SkillRegistry\:\:all$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/CodingAgent/Skills/SkillRegistry.php
-
-		-
-			message: '#^Unused Ineersa\\CodingAgent\\Skills\\SkillRegistry\:\:collisions$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/CodingAgent/Skills/SkillRegistry.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Tool\\BackgroundProcess\\LogTailResult\:\:\$pid is never read \(all usages excluded by tests excluder\)$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Tool/BackgroundProcess/LogTailResult.php
-
-		-
-			message: '#^Unused Ineersa\\CodingAgent\\Tool\\BackgroundProcess\\ProcessStore\:\:markFinished \(all usages excluded by tests excluder\)$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/CodingAgent/Tool/BackgroundProcess/ProcessStore.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Tool\\BackgroundProcess\\StartResult\:\:\$command is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Tool/BackgroundProcess/StartResult.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Tool\\BackgroundProcess\\StartResult\:\:\$pgid is never read \(all usages excluded by tests excluder\)$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Tool/BackgroundProcess/StartResult.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Tool\\BackgroundProcess\\StartResult\:\:\$sessionId is never read \(all usages excluded by tests excluder\)$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Tool/BackgroundProcess/StartResult.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Tool\\BackgroundProcess\\StartResult\:\:\$startedAt is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Tool/BackgroundProcess/StartResult.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Tool\\BackgroundProcess\\StopResult\:\:\$pid is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Tool/BackgroundProcess/StopResult.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Tool\\BackgroundProcess\\StopResult\:\:\$stoppedByUser is never read \(all usages excluded by tests excluder\)$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Tool/BackgroundProcess/StopResult.php
-
-		-
-			message: '#^Unused Ineersa\\CodingAgent\\Tool\\BackgroundProcessManager\:\:readLogFullForRecord \(all usages excluded by tests excluder\)$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/CodingAgent/Tool/BackgroundProcessManager.php
-
-		-
-			message: '#^Unused Ineersa\\CodingAgent\\Tool\\ImageProcessing\\ImageAttachmentProcessor\:\:cleanCache \(all usages excluded by tests excluder\)$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/CodingAgent/Tool/ImageProcessing/ImageAttachmentProcessor.php
-
-		-
-			message: '#^Unused Ineersa\\CodingAgent\\Tool\\ToolRegistry\:\:excludedToolNames \(all usages excluded by tests excluder\)$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/CodingAgent/Tool/ToolRegistry.php
-
-		-
-			message: '#^Unused Ineersa\\CodingAgent\\Tool\\ToolRegistry\:\:permanentGuidelines \(all usages excluded by tests excluder\)$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/CodingAgent/Tool/ToolRegistry.php
-
-		-
-			message: '#^Unused Ineersa\\CodingAgent\\Tool\\ToolRegistry\:\:permanentGuidelinesForNames \(all usages excluded by tests excluder\)$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/CodingAgent/Tool/ToolRegistry.php
-
-		-
-			message: '#^Unused Ineersa\\CodingAgent\\Tool\\ToolRegistryInterface\:\:excludedToolNames$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/CodingAgent/Tool/ToolRegistryInterface.php
-
-		-
-			message: '#^Unused Ineersa\\CodingAgent\\Tool\\ToolRegistryInterface\:\:permanentGuidelines$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/CodingAgent/Tool/ToolRegistryInterface.php
-
-		-
-			message: '#^Unused Ineersa\\CodingAgent\\Tool\\ToolRegistryInterface\:\:permanentGuidelinesForNames$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/CodingAgent/Tool/ToolRegistryInterface.php
 
 		-
 			message: '#^Unused Ineersa\\Tui\\Command\\CommandParseResult\:\:originalText$#'

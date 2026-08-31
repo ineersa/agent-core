@@ -41,24 +41,6 @@ final class AuthCredentialFileStoreTest extends TestCase
         $this->assertSame([], glob($this->tmpDir.'/.hatfield/*.tmp.*') ?: []);
     }
 
-    public function testRemoveDeletesOnlyItsKey(): void
-    {
-        $store = $this->store();
-
-        $store->withLock(static function () use ($store): void {
-            $store->set('openai-codex', ['access' => 'codex']);
-            $store->set('grok-cli', ['access' => 'grok']);
-        });
-
-        $store->withLock(static function () use ($store): void {
-            $store->remove('openai-codex');
-        });
-
-        $all = $store->readAll();
-        $this->assertArrayNotHasKey('openai-codex', $all);
-        $this->assertSame('grok', $all['grok-cli']['access']);
-    }
-
     public function testLockKeyIsFileScopedNotProviderScoped(): void
     {
         $seen = new \stdClass();

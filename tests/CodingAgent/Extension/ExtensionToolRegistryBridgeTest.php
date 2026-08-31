@@ -80,7 +80,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
         $lines = $registry->permanentToolLines();
         $this->assertContains('ext_tool: do extension stuff', $lines);
 
-        $guidelines = $registry->permanentGuidelines();
+        $guidelines = $this->flattenGuidelines($registry->permanentGuidelinesByTool());
         $this->assertContains('Use ext_tool for extension operations.', $guidelines);
     }
 
@@ -114,7 +114,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
         ));
 
         $this->assertContains('simple_tool', $registry->activeToolNames());
-        $this->assertSame([], $registry->permanentGuidelines());
+        $this->assertSame([], $this->flattenGuidelines($registry->permanentGuidelinesByTool()));
     }
 
     public function testMultipleRegistrationsOrderPreserved(): void
@@ -225,7 +225,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
         // Deduped, first occurrence position preserved
         $this->assertSame(
             ['Guideline A', 'Guideline B', 'Guideline C'],
-            $registry->permanentGuidelines(),
+            $this->flattenGuidelines($registry->permanentGuidelinesByTool()),
         );
     }
 
@@ -811,5 +811,27 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
                 $this->registered[] = ['definition' => $definition, 'handler' => $handler];
             }
         };
+    }
+
+    /**
+     * @param array<string, list<string>> $grouped
+     *
+     * @return list<string>
+     */
+    private function flattenGuidelines(array $grouped): array
+    {
+        $flat = [];
+        $seen = [];
+        foreach ($grouped as $guidelines) {
+            foreach ($guidelines as $guideline) {
+                if (isset($seen[$guideline])) {
+                    continue;
+                }
+                $seen[$guideline] = true;
+                $flat[] = $guideline;
+            }
+        }
+
+        return $flat;
     }
 }

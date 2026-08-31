@@ -12,12 +12,7 @@ final readonly class StartResult
     public function __construct(
         public int $id,
         public int $pid,
-        public ?int $pgid,
-        public string $command,
         public string $logPath,
-        public \DateTimeImmutable $startedAt,
-        public string $sessionId,
-        public string $status,
     ) {
     }
 }

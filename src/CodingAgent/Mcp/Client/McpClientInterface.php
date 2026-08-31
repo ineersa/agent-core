@@ -33,11 +33,6 @@ interface McpClientInterface
     public function disconnect(): void;
 
     /**
-     * Whether the client is currently connected and initialized.
-     */
-    public function isConnected(): bool;
-
-    /**
      * List available tools from the connected MCP server.
      *
      * Returns an array of tool definitions as associative arrays,

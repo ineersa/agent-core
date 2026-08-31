@@ -19,7 +19,6 @@ final class ApplicationBuildIdentity
     public function __construct(
         public readonly string $version,
         public readonly string $commit,
-        public readonly string $channel,
     ) {
     }
 
@@ -36,14 +35,12 @@ final class ApplicationBuildIdentity
             return new self(
                 version: $envVersion ?? 'dev',
                 commit: self::normalizeCommit($envCommit ?? self::detectGitCommit($projectDir)),
-                channel: 'env',
             );
         }
 
         return new self(
             version: 'dev',
             commit: self::detectGitCommit($projectDir),
-            channel: 'source',
         );
     }
 
@@ -63,11 +60,10 @@ final class ApplicationBuildIdentity
     /**
      * PHP source for the generated identity file embedded into packaged artifacts.
      */
-    public static function generatePhpSource(string $version, string $commit, string $channel = 'release'): string
+    public static function generatePhpSource(string $version, string $commit): string
     {
         $versionExport = var_export($version, true);
         $commitExport = var_export(self::normalizeCommit($commit), true);
-        $channelExport = var_export($channel, true);
 
         return <<<PHP
 <?php
@@ -78,7 +74,6 @@ declare(strict_types=1);
 return [
     'version' => {$versionExport},
     'commit' => {$commitExport},
-    'channel' => {$channelExport},
 ];
 
 PHP;
@@ -103,7 +98,6 @@ PHP;
             }
             $version = $data['version'] ?? null;
             $commit = $data['commit'] ?? null;
-            $channel = $data['channel'] ?? 'release';
             if (!\is_string($version) || '' === $version || !\is_string($commit) || '' === $commit) {
                 continue;
             }
@@ -111,7 +105,6 @@ PHP;
             return new self(
                 version: $version,
                 commit: self::normalizeCommit($commit),
-                channel: \is_string($channel) && '' !== $channel ? $channel : 'release',
             );
         }
 

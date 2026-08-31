@@ -59,7 +59,12 @@ final class ControllerReplayBackgroundProcessSeeder
                 'status_path' => $statusPath,
                 'started_at' => new \DateTimeImmutable(),
             ]);
-            $store->markFinished($id, 0, new \DateTimeImmutable());
+            $entity = $store->fetchByRecordId($id);
+            if (null === $entity) {
+                throw new \RuntimeException(\sprintf('Seeded background process %d missing after insert.', $id));
+            }
+            $entity->finish(0, new \DateTimeImmutable());
+            $store->flush();
 
             /** @var BackgroundProcessManager $manager */
             $manager = $container->get(BackgroundProcessManager::class);

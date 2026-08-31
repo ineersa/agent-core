@@ -225,16 +225,6 @@ final class BuiltinDocsCatalog
     }
 
     /**
-     * Collect GitHub-style heading slugs from Markdown body via the shared AST scanner.
-     *
-     * @return list<string>
-     */
-    public static function headingSlugsFromMarkdown(string $markdown): array
-    {
-        return (new BuiltinDocsMarkdownScanner())->headingSlugs($markdown);
-    }
-
-    /**
      * Separator-boundary containment: root match or root + '/' prefix only.
      */
     public static function pathIsUnderRoot(string $path, string $root): bool

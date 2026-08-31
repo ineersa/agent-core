@@ -193,26 +193,6 @@ final class ToolRegistry implements ToolRegistryInterface
         return $lines;
     }
 
-    public function permanentGuidelines(): array
-    {
-        $guidelines = [];
-        $seen = [];
-
-        foreach ($this->permanentOrder as $name) {
-            if (!$this->isToolVisible($name)) {
-                continue;
-            }
-            foreach ($this->permanentTools[$name]->promptGuidelines as $guideline) {
-                if (!isset($seen[$guideline])) {
-                    $seen[$guideline] = true;
-                    $guidelines[] = $guideline;
-                }
-            }
-        }
-
-        return $guidelines;
-    }
-
     public function permanentToolLinesForNames(array $names): array
     {
         $requested = $this->normalizeRequestedPermanentNames($names);
@@ -238,35 +218,6 @@ final class ToolRegistry implements ToolRegistryInterface
         }
 
         return $lines;
-    }
-
-    public function permanentGuidelinesForNames(array $names): array
-    {
-        $requested = $this->normalizeRequestedPermanentNames($names);
-        if ([] === $requested) {
-            return [];
-        }
-
-        $guidelines = [];
-        $seen = [];
-
-        foreach ($this->permanentOrder as $name) {
-            if (!isset($requested[$name]) || !$this->isToolVisible($name)) {
-                continue;
-            }
-
-            foreach ($this->permanentTools[$name]->promptGuidelines as $guideline) {
-                $guideline = trim($guideline);
-                if ('' === $guideline || isset($seen[$guideline])) {
-                    continue;
-                }
-
-                $seen[$guideline] = true;
-                $guidelines[] = $guideline;
-            }
-        }
-
-        return $guidelines;
     }
 
     public function permanentGuidelinesByTool(?array $names = null): array
@@ -358,11 +309,6 @@ final class ToolRegistry implements ToolRegistryInterface
         }
 
         $this->excludedNames = $excluded;
-    }
-
-    public function excludedToolNames(): array
-    {
-        return array_keys($this->excludedNames);
     }
 
     /**

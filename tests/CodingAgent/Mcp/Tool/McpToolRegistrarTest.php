@@ -71,7 +71,7 @@ final class McpToolRegistrarTest extends TestCase
         $store = $this->makeCatalogStore(['run-abc' => $catalog]);
         $registrar = new McpToolRegistrar($store, $this->registry, $this->makeHandlerFactory(), $this->logger);
 
-        $registrar->registerForRun('run-abc');
+        $registrar->registerUsingCatalogFrom('run-abc', 'run-abc');
 
         $names = $this->registry->activeToolNames();
         $this->assertContains('my_server_read', $names, 'MCP tool should appear in active names');
@@ -156,7 +156,7 @@ final class McpToolRegistrarTest extends TestCase
         $store = $this->makeCatalogStore(['run-x' => $catalog]);
         $registrar = new McpToolRegistrar($store, $this->registry, $this->makeHandlerFactory(), $this->logger);
 
-        $registrar->registerForRun('run-x');
+        $registrar->registerUsingCatalogFrom('run-x', 'run-x');
 
         $defs = $this->registry->activeToolDefinitions();
         $this->assertCount(1, $defs);
@@ -198,7 +198,7 @@ final class McpToolRegistrarTest extends TestCase
         $store = $this->makeCatalogStore(['run-fail' => $catalog]);
         $registrar = new McpToolRegistrar($store, $this->registry, $this->makeHandlerFactory(), $this->logger);
 
-        $registrar->registerForRun('run-fail');
+        $registrar->registerUsingCatalogFrom('run-fail', 'run-fail');
 
         $names = $this->registry->activeToolNames();
         $this->assertCount(1, $names, 'Only connected server tools should register');
@@ -212,7 +212,7 @@ final class McpToolRegistrarTest extends TestCase
         $store = $this->makeCatalogStore([]); // empty — read returns null
         $registrar = new McpToolRegistrar($store, $this->registry, $this->makeHandlerFactory(), $this->logger);
 
-        $registrar->registerForRun('nonexistent');
+        $registrar->registerUsingCatalogFrom('nonexistent', 'nonexistent');
 
         $this->assertSame([], $this->registry->activeToolNames());
         $this->assertCount(0, $this->logger->records);
@@ -245,7 +245,7 @@ final class McpToolRegistrarTest extends TestCase
         $storeData = ['run-1' => $catalog1];
         $store = $this->makeMutableStore($storeData);
         $registrar = new McpToolRegistrar($store, $this->registry, $this->makeHandlerFactory(), $this->logger);
-        $registrar->registerForRun('run-1');
+        $registrar->registerUsingCatalogFrom('run-1', 'run-1');
         $this->assertContains('srv_x', $this->registry->activeToolNames());
 
         // Add an unrelated dynamic tool directly to the registry
@@ -279,7 +279,7 @@ final class McpToolRegistrarTest extends TestCase
             ],
         );
         $storeData['run-2'] = $catalog2;
-        $registrar->registerForRun('run-2');
+        $registrar->registerUsingCatalogFrom('run-2', 'run-2');
 
         $names = $this->registry->activeToolNames();
         $this->assertNotContains('srv_x', $names, 'Stale MCP-owned tool should be removed');
@@ -330,7 +330,7 @@ final class McpToolRegistrarTest extends TestCase
         $store = $this->makeCatalogStore(['run-collide' => $catalog]);
         $registrar = new McpToolRegistrar($store, $this->registry, $this->makeHandlerFactory(), $this->logger);
 
-        $registrar->registerForRun('run-collide');
+        $registrar->registerUsingCatalogFrom('run-collide', 'run-collide');
 
         $names = $this->registry->activeToolNames();
         $this->assertContains('collision_target', $names, 'Permanent tool should remain');
@@ -385,7 +385,7 @@ final class McpToolRegistrarTest extends TestCase
         $store = $this->makeCatalogStore(['run-dyn-collide' => $catalog]);
         $registrar = new McpToolRegistrar($store, $this->registry, $this->makeHandlerFactory(), $this->logger);
 
-        $registrar->registerForRun('run-dyn-collide');
+        $registrar->registerUsingCatalogFrom('run-dyn-collide', 'run-dyn-collide');
 
         // Only the unrelated dynamic should be present
         $names = $this->registry->activeToolNames();
@@ -457,7 +457,7 @@ final class McpToolRegistrarTest extends TestCase
         $store = $this->makeCatalogStore(['run-hidden' => $catalog]);
         $registrar = new McpToolRegistrar($store, $this->registry, $this->makeHandlerFactory(), $this->logger);
 
-        $registrar->registerForRun('run-hidden');
+        $registrar->registerUsingCatalogFrom('run-hidden', 'run-hidden');
 
         // hidden_perm should NOT be registered as a dynamic tool
         // (the collision was caught); but srv_good should be registered.
@@ -508,12 +508,12 @@ final class McpToolRegistrarTest extends TestCase
         $store = $this->makeMutableStore($storeData);
         $registrar = new McpToolRegistrar($store, $this->registry, $this->makeHandlerFactory(), $this->logger);
 
-        $registrar->registerForRun('run-1');
+        $registrar->registerUsingCatalogFrom('run-1', 'run-1');
         $firstHandler = $this->registry->toolDefinition('srv_x')?->handler;
         $this->assertNotNull($firstHandler);
 
         // Same catalog on the next LLM step: no remove/re-register churn.
-        $registrar->registerForRun('run-1');
+        $registrar->registerUsingCatalogFrom('run-1', 'run-1');
         $secondHandler = $this->registry->toolDefinition('srv_x')?->handler;
 
         $this->assertSame($firstHandler, $secondHandler, 'Unchanged catalog must preserve the registered handler object');
@@ -564,11 +564,11 @@ final class McpToolRegistrarTest extends TestCase
         $store = $this->makeMutableStore($storeData);
         $registrar = new McpToolRegistrar($store, $this->registry, $this->makeHandlerFactory(), $this->logger);
 
-        $registrar->registerForRun('run-1');
+        $registrar->registerUsingCatalogFrom('run-1', 'run-1');
         $firstHandler = $this->registry->toolDefinition('srv_x')?->handler;
 
         $storeData['run-2'] = $catalog2;
-        $registrar->registerForRun('run-2');
+        $registrar->registerUsingCatalogFrom('run-2', 'run-2');
         $secondHandler = $this->registry->toolDefinition('srv_x')?->handler;
 
         $this->assertNotSame($firstHandler, $secondHandler, 'Changed catalog must re-create the handler');
@@ -601,13 +601,13 @@ final class McpToolRegistrarTest extends TestCase
         $store = $this->makeMutableStore($storeData);
         $registrar = new McpToolRegistrar($store, $this->registry, $this->makeHandlerFactory(), $this->logger);
 
-        $registrar->registerForRun('run-1');
+        $registrar->registerUsingCatalogFrom('run-1', 'run-1');
         $this->assertContains('srv_x', $this->registry->activeToolNames());
 
         // Catalog disappears (e.g. run switch to a run without a catalog):
         // stale MCP tools must be removed, not silently retained.
         unset($storeData['run-1']);
-        $registrar->registerForRun('run-1');
+        $registrar->registerUsingCatalogFrom('run-1', 'run-1');
 
         $this->assertSame([], $this->registry->activeToolNames());
     }

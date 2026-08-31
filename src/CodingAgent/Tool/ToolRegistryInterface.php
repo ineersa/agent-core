@@ -105,14 +105,6 @@ interface ToolRegistryInterface
     public function permanentToolLines(): array;
 
     /**
-     * Return deduped permanent tool prompt guidelines in registration order
-     * (first occurrence determines position for duplicates).
-     *
-     * @return list<string>
-     */
-    public function permanentGuidelines(): array;
-
-    /**
      * Return deduped permanent tool prompt lines for the requested tool names only.
      *
      * Iterates permanent registration order. Only names that are registered permanent
@@ -125,17 +117,6 @@ interface ToolRegistryInterface
      * @return list<string>
      */
     public function permanentToolLinesForNames(array $names): array;
-
-    /**
-     * Return deduped permanent tool prompt guidelines for the requested tool names only.
-     *
-     * Same structural rules as {@see permanentToolLinesForNames()}.
-     *
-     * @param list<string> $names
-     *
-     * @return list<string>
-     */
-    public function permanentGuidelinesForNames(array $names): array;
 
     /**
      * Return permanent tool guidelines grouped by owning tool name.
@@ -158,8 +139,7 @@ interface ToolRegistryInterface
      * Set the allowed tool names (allowlist).
      *
      * When non-empty, only tools whose name is in this set are visible
-     * through activeToolDefinitions(), activeToolNames(), permanentToolLines(),
-     * and permanentGuidelines(). When empty (default), all tools are visible.
+     * through activeToolDefinitions(), activeToolNames(), and permanentToolLines(). When empty (default), all tools are visible.
      *
      * Combined with setExcludedToolNames(), final visibility is:
      *   (empty allowlist OR name in allowlist) AND (name NOT in exclusions).
@@ -176,7 +156,7 @@ interface ToolRegistryInterface
      * Set the excluded tool names (denylist).
      *
      * Excluded tools are hidden from activeToolDefinitions(), activeToolNames(),
-     * permanentToolLines(), and permanentGuidelines().
+     * permanentToolLines().
      *
      * Unknown tool names are rejected with \InvalidArgumentException.
      *
@@ -185,13 +165,6 @@ interface ToolRegistryInterface
      * @throws \InvalidArgumentException if any name is not a registered permanent or dynamic tool
      */
     public function setExcludedToolNames(array $names): void;
-
-    /**
-     * Get the current excluded tool names.
-     *
-     * @return list<string>
-     */
-    public function excludedToolNames(): array;
 
     /**
      * Return all active tool names (permanent + dynamic) in deterministic

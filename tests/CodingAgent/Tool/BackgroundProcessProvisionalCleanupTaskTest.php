@@ -195,7 +195,10 @@ final class BackgroundProcessProvisionalCleanupTaskTest extends IsolatedKernelTe
             'status_path' => $paths['status'],
             'started_at' => $finishedAt->modify('-1 minute'),
         ]);
-        $this->store->markFinished($id, 0, $finishedAt);
+        $entity = $this->store->fetchByRecordId($id);
+        $this->assertNotNull($entity);
+        $entity->finish(0, $finishedAt);
+        $this->store->flush();
         if ($accepted) {
             $this->manager->markBackgroundedForRecord($id, 'run-'.$prefix);
         }
@@ -227,7 +230,10 @@ final class BackgroundProcessProvisionalCleanupTaskTest extends IsolatedKernelTe
             'status_path' => $statusPath,
             'started_at' => $finishedAt->modify('-1 minute'),
         ]);
-        $this->store->markFinished($id, 0, $finishedAt);
+        $entity = $this->store->fetchByRecordId($id);
+        $this->assertNotNull($entity);
+        $entity->finish(0, $finishedAt);
+        $this->store->flush();
 
         return $id;
     }

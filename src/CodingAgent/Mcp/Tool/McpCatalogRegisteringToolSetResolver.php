@@ -15,7 +15,7 @@ use Psr\Log\LoggerInterface;
  * registered from the session catalog before the active tool
  * snapshot is built.
  *
- * When runId is non-empty, calls McpToolRegistrar::registerForRun()
+ * When runId is non-empty, calls McpToolRegistrar::registerUsingCatalogFrom()
  * before delegating to the inner resolver.  Missing catalog is a
  * no-op — only tools from a successfully written catalog are
  * registered.

@@ -63,12 +63,6 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $this->assertInstanceOf(StartResult::class, $result);
         $this->assertGreaterThan(0, $result->id);
         $this->assertGreaterThan(0, $result->pid);
-        if (null !== $result->pgid) {
-            $this->assertGreaterThan(0, $result->pgid);
-            $this->assertSame($result->pid, $result->pgid);
-        }
-        $this->assertSame('running', $result->status);
-        $this->assertStringContainsString(self::TEST_SESSION, $result->sessionId);
         $this->assertFileExists($result->logPath);
 
         $this->manager->shutdownCleanup();
@@ -152,7 +146,6 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $logResult = $this->manager->readLogTail(self::TEST_SESSION, $result->pid);
 
         $this->assertInstanceOf(LogTailResult::class, $logResult);
-        $this->assertSame($result->pid, $logResult->pid);
         $this->assertFalse($logResult->truncated);
         $this->assertStringContainsString('line1', $logResult->content);
         $this->assertStringContainsString('line2', $logResult->content);
@@ -201,7 +194,6 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $elapsedSeconds = (hrtime(true) - $startedNs) / 1_000_000_000;
 
         $this->assertInstanceOf(StopResult::class, $stopResult);
-        $this->assertTrue($stopResult->stoppedByUser);
         $this->assertFalse($stopResult->alreadyFinished);
         $this->assertSame('term', $stopResult->signalSent);
         $this->assertFileExists($sentinel);
@@ -217,7 +209,6 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
 
         $stopResult = $this->manager->stop($result->pid);
 
-        $this->assertTrue($stopResult->stoppedByUser);
         $this->assertFalse($stopResult->alreadyFinished);
         $this->assertSame('term+kill', $stopResult->signalSent);
     }
@@ -232,7 +223,6 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $stopResult = $this->manager->stop($result->pid);
 
         $this->assertTrue($stopResult->alreadyFinished);
-        $this->assertFalse($stopResult->stoppedByUser);
     }
 
     public function testStopThrowsOnUnknownPid(): void

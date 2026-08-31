@@ -1702,7 +1702,6 @@ function phar_build(): string
     $generatedSource = \Ineersa\CodingAgent\Build\ApplicationBuildIdentity::generatePhpSource(
         $identity['version'],
         $identity['commit'],
-        'release',
     );
     write_file_checked($stagingDir.'/'.$generatedRelative, $generatedSource);
 

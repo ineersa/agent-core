@@ -1024,30 +1024,6 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->assertNotSame($byId[$staleId]->logPath, $current->logPath);
     }
 
-    public function testReadLogFullForRecordEnforcesSessionOwnership(): void
-    {
-        $this->createManager();
-
-        $store = self::getContainer()->get(ProcessStore::class);
-        $logPath = $this->tmpDir.'/session-owned.log';
-        file_put_contents($logPath, 'session-owned-output');
-
-        $recordId = $store->insertRecord([
-            'pid' => 515151,
-            'session_id' => self::TEST_SESSION,
-            'command' => 'echo owned',
-            'log_path' => $logPath,
-            'status_path' => $this->tmpDir.'/owned.status',
-            'started_at' => new \DateTimeImmutable(),
-        ]);
-
-        $owned = $this->manager->readLogFullForRecord($recordId, self::TEST_SESSION);
-        $this->assertStringContainsString('session-owned-output', $owned->content);
-
-        $this->expectException(\RuntimeException::class);
-        $this->manager->readLogFullForRecord($recordId, 'other-session');
-    }
-
     /* ── Helpers ── */
 
     /**
