@@ -37,7 +37,6 @@ final class PharSmokeTest extends TestCase
      * Castor resolves this relative to the project root so each worktree
      * gets its own local PHAR.
      */
-    private const string DEFAULT_PHAR_PATH = 'var/tmp/phar/hatfield.phar';
     /** @var list<string> */
     private array $isolatedHomeDirs = [];
 

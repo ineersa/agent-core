@@ -35,12 +35,10 @@ final class McpExecuteToolCallRoutingMiddlewareTest extends TestCase
 {
     private TestLogger $logger;
     /** @var array<string, McpToolCatalogDTO> */
-    private array $catalogStoreData = [];
 
     protected function setUp(): void
     {
         $this->logger = new TestLogger();
-        $this->catalogStoreData = [];
     }
 
     // ── Test thesis 1: MCP tool gets stamped ──

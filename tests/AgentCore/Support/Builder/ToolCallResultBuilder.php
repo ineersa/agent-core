@@ -80,13 +80,6 @@ final class ToolCallResultBuilder
         return $this;
     }
 
-    public function withAttempt(int $attempt): self
-    {
-        $this->attempt = $attempt;
-
-        return $this;
-    }
-
     public function withIdempotencyKey(string $idempotencyKey): self
     {
         $this->idempotencyKey = $idempotencyKey;

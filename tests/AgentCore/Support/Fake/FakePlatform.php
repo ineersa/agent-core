@@ -12,8 +12,6 @@ use Symfony\AI\Platform\Message\Content\Text;
 
 final class FakePlatform implements PlatformInterface
 {
-    /** @var list<ModelInvocationRequest> */
-    public array $invocations = [];
     /** @var list<PlatformInvocationResult|\Throwable> */
     private array $responses;
 
@@ -25,15 +23,8 @@ final class FakePlatform implements PlatformInterface
         $this->responses = array_values($responses);
     }
 
-    public function push(PlatformInvocationResult|\Throwable $response): void
-    {
-        $this->responses[] = $response;
-    }
-
     public function invoke(ModelInvocationRequest $request): PlatformInvocationResult
     {
-        $this->invocations[] = $request;
-
         if ([] === $this->responses) {
             return new PlatformInvocationResult(
                 assistantMessage: new AssistantMessage(new Text('fake-platform-default')),

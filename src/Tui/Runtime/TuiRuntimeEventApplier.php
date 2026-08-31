@@ -91,7 +91,7 @@ final readonly class TuiRuntimeEventApplier
     /**
      * Drain projector dirty changes for ordinary live polls.
      *
-     * Prefer this over {@see projectedBlocks()} on the hot path so finalized
+     * Prefer drainProjectedChanges() on the hot path so finalized
      * history is not re-materialized every tick.
      */
     public function drainProjectedChanges(): TranscriptChangeSet

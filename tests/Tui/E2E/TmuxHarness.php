@@ -177,8 +177,6 @@ final class TmuxHarness
         return new TmuxPane(
             session: $session,
             paneId: $paneId,
-            width: $width,
-            height: $height,
         );
     }
 
@@ -436,49 +434,6 @@ final class TmuxHarness
      *
      * @throws \RuntimeException if the timeout expires without finding the needle
      */
-    public function waitForHistoryContains(
-        TmuxPane $pane,
-        string $needle,
-        float $timeout = 10.0,
-        int $history = 1000,
-    ): string {
-        $deadline = microtime(true) + $timeout;
-        $lastCapture = '';
-
-        while (microtime(true) < $deadline) {
-            $lastCapture = $this->capturePlainWithHistory($pane, $history);
-
-            if (str_contains($lastCapture, $needle)) {
-                return $lastCapture;
-            }
-
-            usleep(100_000); // 100ms
-        }
-
-        throw new \RuntimeException(\sprintf('Timed out after %.1fs waiting for needle "%s" in pane %s history. Last capture (%d lines):'."\n%s", $timeout, $needle, $pane->paneId, substr_count($lastCapture, "\n") + 1, $lastCapture));
-    }
-
-    /**
-     * Poll full terminal history until a callback predicate returns true, or
-     * timeout expires.
-     *
-     * Unlike waitForHistoryContains() which checks for a fixed substring,
-     * this accepts an arbitrary predicate — useful for counting occurrences
-     * (e.g. second `❯` or `◇` in a multi-turn conversation).
-     *
-     * @param TmuxPane $pane    the pane to poll
-     * @param float    $timeout seconds to wait (default 10.0)
-     *
-     * @return string the history capture that satisfied the callback
-     *
-     * @throws \RuntimeException if the timeout expires without the callback returning true
-     */
-    /**
-     * After the Hatfield logo (█) is visible, poll until idle/work status and footer render.
-     * Replaces fixed post-logo sleeps; exits early when the TUI finishes init.
-     * Default timeout matches {@see self::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL} so parallel
-     * castor-check contention does not blank-capture flake at a 3s hard stop.
-     */
     public function waitForTuiReadyAfterLogo(TmuxPane $pane, float $timeout = self::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL): string
     {
         return $this->waitForCallback(
@@ -532,67 +487,6 @@ final class TmuxHarness
      *   - Wrapped footer lines rejoined
      *   - Date/timestamps → <timestamp>  (future; not yet applied)
      *   - Trailing blank lines trimmed
-     */
-    public function normalizeSnapshot(string $snapshot): string
-    {
-        // Replace run IDs (UUID v4 format)
-        $snapshot = preg_replace(
-            '/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i',
-            '<run-id>',
-            $snapshot,
-        );
-
-        // Replace arbitrary hex-looking IDs that appear as Run ID: ... (already
-        // handled above, but also covers the "Started run ..." line)
-        $snapshot = preg_replace(
-            '/Started run <run-id>/',
-            'Started run <run-id>',
-            $snapshot,
-        );
-
-        // Replace session IDs (numeric, DB-issued)
-        $snapshot = preg_replace(
-            '/\bsession \b\d+\b/',
-            'session <session-id>',
-            $snapshot,
-        );
-
-        // Normalize dynamic footer segments (CWD, branch) and rejoin wrapped lines
-        $snapshot = $this->normalizeFooterSegments($snapshot);
-
-        // Replace absolute project root paths
-        $snapshot = str_replace($this->root, '<root>', $snapshot);
-
-        // Collapse to at most one trailing newline
-        $snapshot = rtrim($snapshot)."\n";
-
-        return $snapshot;
-    }
-
-    // ── teardown ───────────────────────────────────────────
-
-    /**
-     * Kill a specific session.
-     */
-    public function killSession(TmuxPane $pane): void
-    {
-        $this->runTmux(
-            \sprintf(
-                'tmux kill-session -t %s 2>/dev/null',
-                escapeshellarg($pane->session),
-            ),
-            self::TMUX_CMD_TIMEOUT,
-            throwOnTimeout: false,
-        );
-        $this->sessionNames = array_values(
-            array_filter($this->sessionNames, static fn (string $n) => $n !== $pane->session),
-        );
-    }
-
-    /**
-     * Kill all sessions created by this harness instance.
-     *
-     * Bounded and non-throwing so destructor cleanup never hangs.
      */
     public function killAll(): void
     {

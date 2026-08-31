@@ -146,20 +146,6 @@ final class TuiRuntimeContextBuilder
         return $this;
     }
 
-    public function withSwitch(object $switchService): self
-    {
-        $this->switchService = $switchService;
-
-        return $this;
-    }
-
-    public function withLifecycle(TuiSessionLifecycleDispatcher $lifecycle): self
-    {
-        $this->lifecycle = $lifecycle;
-
-        return $this;
-    }
-
     public function withHistoryProvider(HistoryProviderInterface $historyProvider): self
     {
         $this->historyProvider = $historyProvider;

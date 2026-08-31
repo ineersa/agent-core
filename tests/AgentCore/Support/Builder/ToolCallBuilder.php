@@ -77,13 +77,6 @@ final class ToolCallBuilder
         return $this;
     }
 
-    public function withMode(?ToolExecutionMode $mode): self
-    {
-        $this->mode = $mode;
-
-        return $this;
-    }
-
     public function withTimeoutSeconds(?int $timeoutSeconds): self
     {
         $this->timeoutSeconds = $timeoutSeconds;

@@ -30,7 +30,6 @@ use PHPUnit\Framework\TestCase;
 final class TuiProviderErrorE2eTest extends TestCase
 {
     private TmuxHarness $tmux;
-    private string $projectRoot;
     private string $testProjectDir;
 
     protected function setUp(): void
@@ -40,7 +39,6 @@ final class TuiProviderErrorE2eTest extends TestCase
         }
 
         $this->tmux = new TmuxHarness();
-        $this->projectRoot = ProjectDir::get();
         $this->testProjectDir = $this->createIsolatedProjectDir();
         $this->tmux->setSnapshotDir($this->testProjectDir);
     }
@@ -193,19 +191,5 @@ final class TuiProviderErrorE2eTest extends TestCase
         TuiE2eDatabaseEnv::writeReplaySettings($dir, $settings);
 
         return $dir;
-    }
-
-    private function savePlainSnapshot(TmuxPane $pane, string $tag): void
-    {
-        $plain = $this->tmux->capturePlainWithHistory($pane, 2000);
-        $ts = date('Ymd-His');
-        $path = \sprintf(
-            '%s/.hatfield/tmp/tui/smoke/%s-%s.txt',
-            $this->testProjectDir,
-            $tag,
-            $ts,
-        );
-        @mkdir(\dirname($path), 0o777, true);
-        file_put_contents($path, $plain);
     }
 }

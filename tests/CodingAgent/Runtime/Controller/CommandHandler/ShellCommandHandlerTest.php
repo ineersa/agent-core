@@ -127,14 +127,10 @@ final class ShellCommandSpyBus implements MessageBusInterface
 {
     public ?object $lastMessage = null;
 
-    /** @var list<Envelope> */
-    public array $dispatched = [];
-
     public function dispatch(object $message, array $stamps = []): Envelope
     {
         $this->lastMessage = $message;
         $envelope = new Envelope($message, $stamps);
-        $this->dispatched[] = $envelope;
 
         return $envelope;
     }

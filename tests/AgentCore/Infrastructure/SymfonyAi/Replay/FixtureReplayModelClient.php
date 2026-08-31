@@ -24,7 +24,6 @@ final class FixtureReplayModelClient implements ModelClientInterface
     public ?string $capturedModel = null;
 
     /** @var array<string, mixed> */
-    public array $capturedOptions = [];
 
     /**
      * @param array<string, mixed> $fixture The loaded fixture data
@@ -42,7 +41,6 @@ final class FixtureReplayModelClient implements ModelClientInterface
     public function request(Model $model, array|string $payload, array $options = []): RawResultInterface
     {
         $this->capturedModel = $model->getName();
-        $this->capturedOptions = $options;
 
         return new InMemoryRawResult([
             'token_usage' => new FixtureTokenUsage(

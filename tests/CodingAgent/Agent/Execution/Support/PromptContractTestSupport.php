@@ -97,15 +97,6 @@ final class PromptContractTestSupport
     }
 
     /**
-     * @param list<AgentMessage> $canonical
-     * @param list<AgentMessage> $fromStartRunInput
-     */
-    public static function assertCanonicalMatchesStartRunInput(array $canonical, array $fromStartRunInput): void
-    {
-        self::assertMessageListsEquivalent($canonical, $fromStartRunInput);
-    }
-
-    /**
      * @param list<AgentMessage> $left
      * @param list<AgentMessage> $right
      */
@@ -229,10 +220,5 @@ final class PromptContractTestSupport
         if (1 !== $hits) {
             throw new \PHPUnit\Framework\AssertionFailedError(\sprintf('Expected sentinel in exactly one provider user message, hits=%d', $hits));
         }
-    }
-
-    public static function providerBag(array $messages): MessageBag
-    {
-        return (new AgentMessageConverter())->toMessageBag($messages);
     }
 }

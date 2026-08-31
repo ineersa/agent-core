@@ -36,14 +36,12 @@ final class McpToolRegistrarTest extends TestCase
     private TestLogger $logger;
     private \Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor $contextAccessor;
     /** @var array<string, McpToolCatalogDTO> */
-    private array $catalogStoreData = [];
 
     protected function setUp(): void
     {
         $this->registry = new ToolRegistry();
         $this->logger = new TestLogger();
         $this->contextAccessor = new \Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor();
-        $this->catalogStoreData = [];
     }
 
     /* ── Test thesis 1: Catalog tools become dynamic registry tools ── */

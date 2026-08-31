@@ -75,7 +75,6 @@ final class BashToolTest extends IsolatedKernelTestCase
     private BashToolConfig $bashConfig;
     private StackToolExecutionContextAccessor $contextAccessor;
     private ToolRuntime $toolRuntime;
-    private OutputCap $outputCap;
     private TestLogger $logger;
     private string $tmpDir;
     private bool $managerCreated = false;

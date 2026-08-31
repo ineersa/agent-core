@@ -61,7 +61,6 @@ final class InMemoryExtensionApiBridge implements ExtensionApiInterface
     private array $toolResultHooks = [];
 
     /** @var list<AfterTurnCommitHookInterface> */
-    private array $afterTurnCommitHooks = [];
 
     /** @var array<string, ExtensionAgentJobHandlerInterface> */
     private array $extensionAgentJobHandlers = [];
@@ -170,7 +169,6 @@ final class InMemoryExtensionApiBridge implements ExtensionApiInterface
 
     public function registerAfterTurnCommitHook(AfterTurnCommitHookInterface $hook): void
     {
-        $this->afterTurnCommitHooks[] = $hook;
     }
 
     public function registerBeforeCompactionHook(BeforeCompactionHookInterface $hook): void
@@ -215,21 +213,5 @@ final class InMemoryExtensionApiBridge implements ExtensionApiInterface
     public function dispatchExtensionAgentJob(ExtensionAgentJobRequestDTO $request): void
     {
         $this->dispatchedExtensionAgentJobs[] = $request;
-    }
-
-    /**
-     * @return array<string, ExtensionAgentJobHandlerInterface>
-     */
-    public function getExtensionAgentJobHandlers(): array
-    {
-        return $this->extensionAgentJobHandlers;
-    }
-
-    /**
-     * @return list<ExtensionAgentJobRequestDTO>
-     */
-    public function getDispatchedExtensionAgentJobs(): array
-    {
-        return $this->dispatchedExtensionAgentJobs;
     }
 }
