@@ -13,6 +13,7 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\Defer
 use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedMetadataDTO;
 use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedSessionMetadataDTO;
 use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedToolsScopeDTO;
+use Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressChildRowDTO;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressParallelSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingleSnapshotDTO;
@@ -85,6 +86,14 @@ final class HatfieldDeadCodeUsageProvider extends ReflectionBasedMemberUsageProv
 
         if (\in_array($className, self::PRODUCTION_INTERFACE_CONTRACTS, true)) {
             return VirtualUsageData::withNote('Production interface contract invoked over interface type / test doubles');
+        }
+
+        // Host adapter for published ExtensionApiInterface::registerToolResultHook().
+        // Concrete extensions currently register only call hooks, but the method is
+        // part of the stable public API and must remain available on the host bridge.
+        if (ExtensionToolRegistryBridge::class === $className
+            && 'registerToolResultHook' === $method->getName()) {
+            return VirtualUsageData::withNote('Published ExtensionApiInterface host implementation');
         }
 
         return null;

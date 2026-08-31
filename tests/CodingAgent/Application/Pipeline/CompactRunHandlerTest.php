@@ -189,7 +189,7 @@ final class CompactRunHandlerTest extends TestCase
             {
                 ++$this->calls;
 
-                return CompactionHookResultDTO::continue();
+                return new CompactionHookResultDTO();
             }
         };
         $handler = new CompactRunHandler(
@@ -511,7 +511,7 @@ final class CompactRunHandlerTest extends TestCase
         $cancelHook = new class implements BeforeCompactionHookInterface {
             public function beforeCompaction(CompactionHookContextDTO $context): CompactionHookResultDTO
             {
-                return CompactionHookResultDTO::cancel('SafeGuard: session blocked.');
+                return new CompactionHookResultDTO(cancelReason: 'SafeGuard: session blocked.');
             }
         };
 
@@ -594,7 +594,7 @@ final class CompactRunHandlerTest extends TestCase
 
             public function beforeCompaction(CompactionHookContextDTO $context): CompactionHookResultDTO
             {
-                return CompactionHookResultDTO::replaceSummary($this->text);
+                return new CompactionHookResultDTO(replacementSummary: $this->text);
             }
         };
 
@@ -697,7 +697,7 @@ final class CompactRunHandlerTest extends TestCase
 
                 public function beforeCompaction(CompactionHookContextDTO $context): CompactionHookResultDTO
                 {
-                    return CompactionHookResultDTO::replaceSummary($this->text);
+                    return new CompactionHookResultDTO(replacementSummary: $this->text);
                 }
             };
 
@@ -1220,7 +1220,7 @@ final class CompactRunHandlerTest extends TestCase
         $cancelHook = new class implements BeforeCompactionHookInterface {
             public function beforeCompaction(CompactionHookContextDTO $context): CompactionHookResultDTO
             {
-                return CompactionHookResultDTO::cancel('SafeGuard: session blocked.');
+                return new CompactionHookResultDTO(cancelReason: 'SafeGuard: session blocked.');
             }
         };
 

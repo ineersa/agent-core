@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Classifier;
 
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Policy\SafeGuardPolicy;
-use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardConfig;
 use Ineersa\CodingAgent\Path\PathResolver;
 
 /**
@@ -99,15 +98,5 @@ final class SafeGuardPathMatcher
         }
 
         return false;
-    }
-
-    /**
-     * Get the default protected read patterns from SafeGuardConfig.
-     *
-     * @return list<string>
-     */
-    public function defaultProtectedReadPatterns(): array
-    {
-        return SafeGuardConfig::DEFAULT_PROTECTED_READ_PATTERNS;
     }
 }

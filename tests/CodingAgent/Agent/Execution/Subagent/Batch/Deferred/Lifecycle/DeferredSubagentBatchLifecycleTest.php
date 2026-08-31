@@ -1285,8 +1285,6 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             artifactId: 'artifact-canonical-outcome',
             displayName: 'scout',
             taskSummary: 'inspect',
-            launchModel: 'test/model',
-            launchReasoning: 'medium',
             artifactKind: AgentArtifactKindEnum::Subagent,
             batchIndex: 1,
         );
@@ -1324,8 +1322,6 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             artifactId: 'artifact-canonical-failure',
             displayName: 'scout',
             taskSummary: 'inspect',
-            launchModel: 'test/model',
-            launchReasoning: 'medium',
             artifactKind: AgentArtifactKindEnum::Subagent,
             batchIndex: 1,
         );
@@ -1463,9 +1459,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             artifactId: $artifactId,
             displayName: $agentName,
             taskSummary: $task,
-            launchModel: 'deepseek/deepseek-v4-flash', launchReasoning: 'medium',
             artifactKind: $artifactKind,
-            batchIndex: 1,
-        ));
+            batchIndex: 1));
     }
 }

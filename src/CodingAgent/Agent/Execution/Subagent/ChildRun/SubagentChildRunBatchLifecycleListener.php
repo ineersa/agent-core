@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun;
 
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunTerminalFinalizationKindEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunTerminalFinalizationRequestDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunTerminalOutcomeDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunBatchLifecycleListenerInterface;
@@ -20,10 +19,6 @@ final class SubagentChildRunBatchLifecycleListener implements ChildRunBatchLifec
 
     public function finalizeTerminalOutcome(ChildRunTerminalFinalizationRequestDTO $request): void
     {
-        if (ChildRunTerminalFinalizationKindEnum::PersistOnly !== $request->kind) {
-            throw new \InvalidArgumentException(\sprintf('Unsupported child-run terminal finalization kind "%s".', $request->kind->value));
-        }
-
         $this->persistArtifactOutcome($request->artifactOutcome);
     }
 

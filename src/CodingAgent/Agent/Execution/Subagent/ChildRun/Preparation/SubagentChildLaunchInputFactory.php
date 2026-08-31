@@ -108,8 +108,6 @@ final class SubagentChildLaunchInputFactory
             artifactId: $identity->artifactId,
             displayName: $identity->displayName,
             taskSummary: $identity->taskSummary,
-            launchModel: $effectiveModel,
-            launchReasoning: $effectiveReasoning,
             artifactKind: $identity->artifactKind,
             batchIndex: $identity->batchIndex,
         );

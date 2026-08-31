@@ -43,7 +43,7 @@ final class CompactionHookDispatcherTest extends TestCase
         $cancelHook = new class implements BeforeCompactionHookInterface {
             public function beforeCompaction(CompactionHookContextDTO $context): CompactionHookResultDTO
             {
-                return CompactionHookResultDTO::cancel('test reason');
+                return new CompactionHookResultDTO(cancelReason: 'test reason');
             }
         };
 
@@ -54,7 +54,7 @@ final class CompactionHookDispatcherTest extends TestCase
             {
                 $this->called = true;
 
-                return CompactionHookResultDTO::continue();
+                return new CompactionHookResultDTO();
             }
         };
 
@@ -71,14 +71,14 @@ final class CompactionHookDispatcherTest extends TestCase
         $firstReplacement = new class implements BeforeCompactionHookInterface {
             public function beforeCompaction(CompactionHookContextDTO $context): CompactionHookResultDTO
             {
-                return CompactionHookResultDTO::replaceSummary('First replacement summary.');
+                return new CompactionHookResultDTO(replacementSummary: 'First replacement summary.');
             }
         };
 
         $secondReplacement = new class implements BeforeCompactionHookInterface {
             public function beforeCompaction(CompactionHookContextDTO $context): CompactionHookResultDTO
             {
-                return CompactionHookResultDTO::replaceSummary('Second replacement — should be ignored.');
+                return new CompactionHookResultDTO(replacementSummary: 'Second replacement — should be ignored.');
             }
         };
 

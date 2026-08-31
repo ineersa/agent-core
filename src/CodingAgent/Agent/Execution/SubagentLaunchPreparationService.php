@@ -158,8 +158,6 @@ final class SubagentLaunchPreparationService
             artifactId: $artifactId,
             displayName: $agentName,
             taskSummary: $task,
-            launchModel: $launch['model'],
-            launchReasoning: $launch['reasoning'],
             artifactKind: AgentArtifactKindEnum::Subagent,
         );
     }
@@ -185,8 +183,6 @@ final class SubagentLaunchPreparationService
             artifactId: $artifactId,
             displayName: $profile->displayAgentName,
             taskSummary: $task,
-            launchModel: $launch['model'],
-            launchReasoning: $launch['reasoning'],
             artifactKind: $profile->artifactKind,
         );
     }

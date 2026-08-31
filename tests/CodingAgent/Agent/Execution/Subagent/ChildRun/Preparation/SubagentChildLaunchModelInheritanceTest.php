@@ -116,7 +116,6 @@ final class SubagentChildLaunchModelInheritanceTest extends IsolatedKernelTestCa
         $this->assertSame('deepseek/deepseek-v4-flash', $prepared->startRunInput->metadata?->model);
         // Canonical ModelResolver product default when run_started omits reasoning.
         $this->assertSame('medium', $prepared->startRunInput->metadata?->reasoning);
-        $this->assertSame('medium', $prepared->identity->launchReasoning);
     }
 
     /**
@@ -151,7 +150,6 @@ final class SubagentChildLaunchModelInheritanceTest extends IsolatedKernelTestCa
             artifactId: 'agent_child1',
             displayName: 'scout',
             taskSummary: 'task',
-            launchModel: $model ?? 'deepseek/deepseek-v4-flash', launchReasoning: 'medium',
             artifactKind: AgentArtifactKindEnum::Subagent,
         );
     }
