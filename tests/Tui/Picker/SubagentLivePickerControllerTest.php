@@ -94,11 +94,13 @@ final class SubagentLivePickerControllerTest extends TestCase
         $this->assertInstanceOf(SelectListWidget::class, $listWidget);
         $this->assertSame('agent_running', $listWidget->getSelectedItem()['value'] ?? null);
         $this->assertStringContainsString('[running]', $harness->plainScreenText());
+        $listWidget->setSelectedIndex(1);
+        $this->assertSame('agent_done', $listWidget->getSelectedItem()['value'] ?? null);
 
         $state->subagentLiveCatalog->applyChildStatus('agent_running', SubagentLiveStatusEnum::Completed);
         $picker->refreshIfOpen();
 
-        $this->assertSame('agent_running', $listWidget->getSelectedItem()['value'] ?? null);
+        $this->assertSame('agent_done', $listWidget->getSelectedItem()['value'] ?? null);
         $screen = $harness->plainScreenText();
         $this->assertStringContainsString('agent_running', $screen);
         $this->assertStringNotContainsString('[running]', $screen);

@@ -85,6 +85,14 @@ final class ConsumerStdoutPollerTest extends TestCase
                 'tool_call_id' => 'tc-parallel',
                 'subagent_progress' => [
                     'mode' => 'parallel',
+                    'status' => 'running',
+                    'completed_count' => 1,
+                    'total_count' => 2,
+                ],
+            ]).$this->line('tool_execution.output_delta', [
+                'tool_call_id' => 'tc-parallel',
+                'subagent_progress' => [
+                    'mode' => 'parallel',
                     'status' => 'completed',
                     'completed_count' => 2,
                     'total_count' => 2,
@@ -104,10 +112,16 @@ final class ConsumerStdoutPollerTest extends TestCase
         $poller->pollOnce();
 
         $events = $this->eventsFromStdout($emitter);
-        $this->assertCount(1, $events);
-        $this->assertSame(53, $events[0]->seq);
-        $this->assertSame('completed', $events[0]->payload['subagent_progress']['status'] ?? null);
-        $this->assertSame(2, $events[0]->payload['subagent_progress']['completed_count'] ?? null);
+        $this->assertCount(2, $events);
+        $this->assertSame([0, 53], array_map(
+            static fn (RuntimeEvent $event): int => $event->seq,
+            $events,
+        ));
+        $this->assertSame(['running', 'completed'], array_map(
+            static fn (RuntimeEvent $event): ?string => $event->payload['subagent_progress']['status'] ?? null,
+            $events,
+        ));
+        $this->assertSame(2, $events[1]->payload['subagent_progress']['completed_count'] ?? null);
     }
 
     public function testDoesNotReorderDistinctStreamKeysOrRetainFramesBetweenPolls(): void
