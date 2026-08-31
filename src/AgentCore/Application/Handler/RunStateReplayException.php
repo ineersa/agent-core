@@ -19,11 +19,8 @@ use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
  */
 class RunStateReplayException extends \RuntimeException
 {
-    public const REASON_DUPLICATE_SEQUENCES = 'duplicate_sequences';
-
     public function __construct(
         string $message,
-        public readonly ?string $reason = null,
         ?\Throwable $previous = null,
     ) {
         parent::__construct($message, 0, $previous);

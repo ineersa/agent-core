@@ -275,10 +275,6 @@ final class FakeCapturingAgentRunner implements AgentRunnerInterface
         return 'test-run-id';
     }
 
-    public function continue(string $runId): void
-    {
-    }
-
     public function shell(string $runId, string $rawInput): void
     {
         $this->shellCalls[] = ['runId' => $runId, 'rawInput' => $rawInput];

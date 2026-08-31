@@ -50,10 +50,6 @@ final class SessionRunStateReplayServiceTest extends TestCase
     {
         $state = RunState::queued($this->runId);
         $result = $this->service->rebuildIfStale($state, $this->runId);
-
-        $this->assertFalse($result->hadEvents);
-        $this->assertFalse($result->rebuilt);
-        $this->assertFalse($result->wasStale);
         $this->assertNull($result->rebuiltState);
     }
 
@@ -70,9 +66,6 @@ final class SessionRunStateReplayServiceTest extends TestCase
         );
 
         $result = $this->service->rebuildIfStale($state, $this->runId);
-
-        $this->assertFalse($result->rebuilt);
-        $this->assertTrue($result->hadEvents);
         $this->assertNull($result->rebuiltState);
         $this->assertSame(1, $this->eventStore->latestSequenceForCalls);
         $this->assertSame(0, $this->eventStore->allForCalls);
@@ -91,8 +84,6 @@ final class SessionRunStateReplayServiceTest extends TestCase
         );
 
         $result = $this->service->rebuildIfStale($state, $this->runId);
-
-        $this->assertTrue($result->rebuilt);
         $this->assertNotNull($result->rebuiltState);
         $this->assertSame(RunStatus::Running, $result->rebuiltState->status);
         $this->assertSame(1, $result->rebuiltState->lastSeq);
@@ -106,8 +97,6 @@ final class SessionRunStateReplayServiceTest extends TestCase
         $state = RunState::queued($this->runId); // lastSeq = 0, no stored state
 
         $result = $this->service->rebuildIfStale($state, $this->runId);
-
-        $this->assertTrue($result->rebuilt);
         $this->assertNotNull($result->rebuiltState);
         $this->assertSame(RunStatus::Running, $result->rebuiltState->status);
     }
@@ -142,8 +131,6 @@ final class SessionRunStateReplayServiceTest extends TestCase
 
         $state = RunState::queued($this->runId);
         $result = $this->service->rebuildIfStale($state, $this->runId);
-
-        $this->assertTrue($result->rebuilt);
         $this->assertNotNull($result->rebuiltState);
         $this->assertSame(RunStatus::Running, $result->rebuiltState->status);
         $this->assertSame(1, $result->rebuiltState->turnNo);
@@ -179,8 +166,6 @@ final class SessionRunStateReplayServiceTest extends TestCase
 
         $state = RunState::queued($this->runId);
         $result = $this->service->rebuildIfStale($state, $this->runId);
-
-        $this->assertTrue($result->rebuilt);
         $messages = $result->rebuiltState->messages;
         $this->assertCount(1, $messages);
         $this->assertSame('user', $messages[0]->role);
@@ -224,8 +209,6 @@ final class SessionRunStateReplayServiceTest extends TestCase
 
         $state = RunState::queued($this->runId);
         $result = $this->service->rebuildIfStale($state, $this->runId);
-
-        $this->assertTrue($result->rebuilt);
         $rebuiltState = $result->rebuiltState;
         $this->assertNotNull($rebuiltState);
         $messages = $rebuiltState->messages;
@@ -416,8 +399,6 @@ final class SessionRunStateReplayServiceTest extends TestCase
 
         $state = RunState::queued($this->runId);
         $result = $this->service->rebuildIfStale($state, $this->runId);
-
-        $this->assertTrue($result->rebuilt);
         $messages = $result->rebuiltState->messages;
         $this->assertCount(2, $messages);
         $this->assertSame('assistant', $messages[0]->role);
@@ -461,8 +442,6 @@ final class SessionRunStateReplayServiceTest extends TestCase
 
         $state = RunState::queued($this->runId);
         $result = $this->service->rebuildIfStale($state, $this->runId);
-
-        $this->assertTrue($result->rebuilt, 'Expected state rebuild when events exist.');
         $rebuilt = $result->rebuiltState;
         $this->assertNotNull($rebuilt);
 
@@ -513,8 +492,6 @@ final class SessionRunStateReplayServiceTest extends TestCase
 
         $state = RunState::queued($this->runId);
         $result = $this->service->rebuildIfStale($state, $this->runId);
-
-        $this->assertTrue($result->rebuilt);
         $rebuiltState = $result->rebuiltState;
         $this->assertSame(RunStatus::Running, $rebuiltState->status);
         $this->assertCount(1, $rebuiltState->messages);
@@ -553,8 +530,6 @@ final class SessionRunStateReplayServiceTest extends TestCase
 
         $state = RunState::queued($this->runId);
         $result = $this->service->rebuildIfStale($state, $this->runId);
-
-        $this->assertTrue($result->rebuilt);
         $rebuiltState = $result->rebuiltState;
         $this->assertSame(RunStatus::Cancelling, $rebuiltState->status);
         $this->assertSame('User cancelled.', $rebuiltState->errorMessage);
@@ -576,8 +551,6 @@ final class SessionRunStateReplayServiceTest extends TestCase
 
         $state = RunState::queued($this->runId);
         $result = $this->service->rebuildIfStale($state, $this->runId);
-
-        $this->assertTrue($result->rebuilt);
         $this->assertSame(RunStatus::Cancelled, $result->rebuiltState->status);
         $this->assertNull($result->rebuiltState->activeStepId);
         $this->assertNull($result->rebuiltState->currentOperation);
@@ -600,8 +573,6 @@ final class SessionRunStateReplayServiceTest extends TestCase
 
         $state = RunState::queued($this->runId);
         $result = $this->service->rebuildIfStale($state, $this->runId);
-
-        $this->assertTrue($result->rebuilt);
         $rebuiltState = $result->rebuiltState;
         $this->assertSame(RunStatus::Failed, $rebuiltState->status);
         $this->assertSame('API timeout', $rebuiltState->errorMessage);
@@ -632,9 +603,6 @@ final class SessionRunStateReplayServiceTest extends TestCase
         $state = RunState::queued($this->runId);
         $result1 = $this->service->rebuildIfStale($state, $this->runId);
         $result2 = $this->service->rebuildIfStale($state, $this->runId);
-
-        $this->assertTrue($result1->rebuilt);
-        $this->assertTrue($result2->rebuilt);
         $this->assertNotNull($result1->rebuiltState);
         $this->assertNotNull($result2->rebuiltState);
 
@@ -666,8 +634,6 @@ final class SessionRunStateReplayServiceTest extends TestCase
         );
 
         $result = $this->service->rebuildIfStale($state, $this->runId);
-
-        $this->assertTrue($result->rebuilt);
         $this->assertNotNull($result->rebuiltState);
         $this->assertSame(3, $result->rebuiltState->lastSeq);
     }
@@ -687,8 +653,6 @@ final class SessionRunStateReplayServiceTest extends TestCase
         );
 
         $result = $this->service->rebuildIfStale($state, $this->runId);
-
-        $this->assertTrue($result->rebuilt);
         $this->assertSame(5, $result->rebuiltState->version);
     }
 
@@ -698,8 +662,6 @@ final class SessionRunStateReplayServiceTest extends TestCase
         $state = RunState::queued($this->runId);
 
         $result = $this->service->rebuildIfStale($state, $this->runId);
-
-        $this->assertTrue($result->rebuilt);
         $this->assertSame(0, $result->rebuiltState->version);
     }
 
@@ -745,8 +707,6 @@ final class SessionRunStateReplayServiceTest extends TestCase
 
         $state = RunState::queued($this->runId);
         $result = $this->service->rebuildIfStale($state, $this->runId);
-
-        $this->assertTrue($result->rebuilt);
         $pendingCalls = $result->rebuiltState->pendingToolCalls;
         $this->assertCount(1, $pendingCalls, 'Only tc-3 should survive; tc-1 and tc-2 must be dropped.');
         $this->assertArrayHasKey('tc-3', $pendingCalls);
@@ -771,8 +731,6 @@ final class SessionRunStateReplayServiceTest extends TestCase
 
         $state = RunState::queued($this->runId);
         $result = $this->service->rebuildIfStale($state, $this->runId);
-
-        $this->assertTrue($result->rebuilt);
         $messages = $result->rebuiltState->messages;
         $this->assertCount(2, $messages);
         $this->assertSame('system', $messages[0]->role);
@@ -803,8 +761,6 @@ final class SessionRunStateReplayServiceTest extends TestCase
 
         $state = RunState::queued($this->runId);
         $result = $this->service->rebuildIfStale($state, $this->runId);
-
-        $this->assertTrue($result->rebuilt);
         $messages = $result->rebuiltState->messages;
         $this->assertCount(1, $messages, 'Tool-call-only assistant message must be replayed.');
         $this->assertSame('assistant', $messages[0]->role);
@@ -867,8 +823,6 @@ final class SessionRunStateReplayServiceTest extends TestCase
 
         $state = RunState::queued($this->runId);
         $result = $this->service->rebuildIfStale($state, $this->runId);
-
-        $this->assertTrue($result->rebuilt);
         $this->assertSame(RunStatus::Running, $result->rebuiltState->status, 'Rejected command must not change status.');
         $this->assertSame('Run already cancelling.', $result->rebuiltState->errorMessage);
     }
@@ -896,8 +850,6 @@ final class SessionRunStateReplayServiceTest extends TestCase
 
         $state = RunState::queued($this->runId);
         $result = $this->service->rebuildIfStale($state, $this->runId);
-
-        $this->assertTrue($result->rebuilt);
         $this->assertSame(RunStatus::Running, $result->rebuiltState->status, 'Continue command must restore Running status.');
         $this->assertNull($result->rebuiltState->errorMessage);
     }
@@ -924,8 +876,6 @@ final class SessionRunStateReplayServiceTest extends TestCase
 
         $state = RunState::queued($this->runId);
         $result = $this->service->rebuildIfStale($state, $this->runId);
-
-        $this->assertTrue($result->rebuilt);
         // Only the initial user message should be present.
         $this->assertCount(1, $result->rebuiltState->messages, 'llm_step_aborted must not append a message.');
         $this->assertSame('user', $result->rebuiltState->messages[0]->role);
@@ -1030,8 +980,6 @@ final class SessionRunStateReplayServiceTest extends TestCase
 
         $state = RunState::queued($this->runId);
         $result = $this->service->rebuildIfStale($state, $this->runId);
-
-        $this->assertTrue($result->rebuilt);
         $this->assertNotNull($result->rebuiltState);
 
         $messages = $result->rebuiltState->messages;
@@ -1089,8 +1037,6 @@ final class SessionRunStateReplayServiceTest extends TestCase
 
         $state = RunState::queued($this->runId);
         $result = $this->service->rebuildIfStale($state, $this->runId);
-
-        $this->assertTrue($result->rebuilt);
         $this->assertSame(8, $result->rebuiltState->lastSeq, 'lastSeq must be the full canonical max');
         $this->assertSame(3, $result->rebuiltState->turnNo);
     }
@@ -1174,8 +1120,6 @@ final class SessionRunStateReplayServiceTest extends TestCase
         );
 
         $result = $this->service->rebuildAtPosition($state, $this->runId, 1);
-
-        $this->assertTrue($result->rebuilt);
         $this->assertNotNull($result->rebuiltState);
         $this->assertSame(RunStatus::Completed, $result->rebuiltState->status,
             'History-select replay must end at Completed (turn1 agent_end), not Running from discarded follow_up');
@@ -1304,8 +1248,6 @@ final class SessionRunStateReplayServiceTest extends TestCase
         );
 
         $result = $this->service->rebuildAtPosition($state, $this->runId, 3);
-
-        $this->assertTrue($result->rebuilt);
         $this->assertNotNull($result->rebuiltState);
         $this->assertSame(RunStatus::Completed, $result->rebuiltState->status);
         $this->assertSame(3, $result->rebuiltState->turnNo);
@@ -1340,8 +1282,6 @@ final class SessionRunStateReplayServiceTest extends TestCase
 
         $state = RunState::queued($this->runId);
         $result = $this->service->rebuildIfStale($state, $this->runId);
-
-        $this->assertTrue($result->rebuilt);
         // Status should remain the same as after run_started (Running)
         $this->assertSame(RunStatus::Running, $result->rebuiltState->status);
         $this->assertSame(0, $result->rebuiltState->turnNo, 'history_position_set must not advance turn');
@@ -1388,8 +1328,6 @@ final class SessionRunStateReplayServiceTest extends TestCase
 
         $state = RunState::queued($this->runId);
         $result = $this->service->rebuildIfStale($state, $this->runId);
-
-        $this->assertTrue($result->rebuilt);
         $this->assertCount(2, $result->rebuiltState->messages, 'Should have summary + new user message after compaction');
         $this->assertSame('user', $result->rebuiltState->messages[0]->role);
         $this->assertTrue($result->rebuiltState->messages[0]->metadata['compact_summary'] ?? false, 'First message should be compact summary');
@@ -1428,8 +1366,6 @@ final class SessionRunStateReplayServiceTest extends TestCase
 
         $state = RunState::queued($this->runId);
         $result = $this->service->rebuildIfStale($state, $this->runId);
-
-        $this->assertTrue($result->rebuilt);
         $this->assertCount(2, $result->rebuiltState->messages, 'Original message should survive + new follow-up');
         $this->assertSame('Original message', $result->rebuiltState->messages[0]->content[0]['text']);
         $this->assertSame('Follow-up', $result->rebuiltState->messages[1]->content[0]['text']);
@@ -1465,8 +1401,6 @@ final class SessionRunStateReplayServiceTest extends TestCase
 
         $state = RunState::queued($this->runId);
         $result = $this->service->rebuildIfStale($state, $this->runId);
-
-        $this->assertTrue($result->rebuilt);
         $this->assertCount(1, $result->rebuiltState->messages, 'Messages should not be mutated by started event');
         $this->assertSame('Original', $result->rebuiltState->messages[0]->content[0]['text']);
         $this->assertSame('compaction-step-42', $result->rebuiltState->activeStepId, 'Started event MUST restore activeStepId for result staleness guard');
@@ -1509,8 +1443,6 @@ final class SessionRunStateReplayServiceTest extends TestCase
 
         $state = RunState::queued($this->runId);
         $result = $this->service->rebuildIfStale($state, $this->runId);
-
-        $this->assertTrue($result->rebuilt);
         $this->assertNull($result->rebuiltState->activeStepId, 'Matching step_id failure must clear activeStepId');
         $this->assertCount(1, $result->rebuiltState->messages, 'Messages preserved');
         $this->assertSame('Original', $result->rebuiltState->messages[0]->content[0]['text']);
@@ -1556,8 +1488,6 @@ final class SessionRunStateReplayServiceTest extends TestCase
 
         $state = RunState::queued($this->runId);
         $result = $this->service->rebuildIfStale($state, $this->runId);
-
-        $this->assertTrue($result->rebuilt);
         $this->assertSame('compaction-X', $result->rebuiltState->activeStepId, 'Stale result must preserve activeStepId even when step_id matches');
         $this->assertCount(1, $result->rebuiltState->messages, 'Messages preserved');
         $this->assertSame('Original', $result->rebuiltState->messages[0]->content[0]['text']);
@@ -1601,8 +1531,6 @@ final class SessionRunStateReplayServiceTest extends TestCase
 
         $state = RunState::queued($this->runId);
         $result = $this->service->rebuildIfStale($state, $this->runId);
-
-        $this->assertTrue($result->rebuilt);
         $this->assertSame('compaction-B', $result->rebuiltState->activeStepId, 'Different step_id failure must preserve current activeStepId');
         $this->assertCount(1, $result->rebuiltState->messages, 'Messages preserved');
         $this->assertSame(RunStatus::Running, $result->rebuiltState->status, 'Stale failure with different step_id must resolve Compacting → Running');
@@ -1645,8 +1573,6 @@ final class SessionRunStateReplayServiceTest extends TestCase
 
         $state = RunState::queued($this->runId);
         $result = $this->service->rebuildIfStale($state, $this->runId);
-
-        $this->assertTrue($result->rebuilt);
         $this->assertSame('compaction-B', $result->rebuiltState->activeStepId, 'No step_id failure must preserve activeStepId');
         $this->assertCount(1, $result->rebuiltState->messages, 'Messages preserved');
         $this->assertSame(RunStatus::Compacting, $result->rebuiltState->status, 'Structural failure must preserve prior status — Compacting was set by started event');
@@ -1692,8 +1618,6 @@ final class SessionRunStateReplayServiceTest extends TestCase
 
         $state = RunState::queued($this->runId);
         $result = $this->service->rebuildIfStale($state, $this->runId);
-
-        $this->assertTrue($result->rebuilt);
         $this->assertSame(RunStatus::Running, $result->rebuiltState->status, 'Pre-LLM auto context_compacted must resolve Compacting → Running');
         $this->assertNull($result->rebuiltState->activeStepId, 'Completed compaction must clear activeStepId');
         $this->assertCount(1, $result->rebuiltState->messages, 'Messages replaced by compacted checkpoint');
@@ -1741,8 +1665,6 @@ final class SessionRunStateReplayServiceTest extends TestCase
 
         $state = RunState::queued($this->runId);
         $result = $this->service->rebuildIfStale($state, $this->runId);
-
-        $this->assertTrue($result->rebuilt);
         $this->assertSame(RunStatus::Completed, $result->rebuiltState->status, 'After-turn auto context_compacted must resolve Compacting → Completed (maintenance, not continuation)');
         $this->assertNull($result->rebuiltState->activeStepId, 'Completed compaction must clear activeStepId');
         $this->assertCount(1, $result->rebuiltState->messages, 'Messages replaced by compacted checkpoint');
@@ -1784,8 +1706,6 @@ final class SessionRunStateReplayServiceTest extends TestCase
 
         $state = RunState::queued($this->runId);
         $result = $this->service->rebuildIfStale($state, $this->runId);
-
-        $this->assertTrue($result->rebuilt);
         $this->assertSame(RunStatus::Running, $result->rebuiltState->status, 'Pre-LLM auto context_compaction_failed must resolve Compacting → Running');
         $this->assertNull($result->rebuiltState->activeStepId, 'Matching step_id must clear activeStepId');
         $this->assertCount(1, $result->rebuiltState->messages, 'Messages preserved on failure');
@@ -1828,8 +1748,6 @@ final class SessionRunStateReplayServiceTest extends TestCase
 
         $state = RunState::queued($this->runId);
         $result = $this->service->rebuildIfStale($state, $this->runId);
-
-        $this->assertTrue($result->rebuilt);
         $this->assertSame(RunStatus::Completed, $result->rebuiltState->status, 'After-turn auto context_compaction_failed must resolve Compacting → Completed');
         $this->assertNull($result->rebuiltState->activeStepId, 'Matching step_id must clear activeStepId');
         $this->assertCount(1, $result->rebuiltState->messages, 'Messages preserved on failure');
@@ -1871,8 +1789,6 @@ final class SessionRunStateReplayServiceTest extends TestCase
 
         $state = RunState::queued($this->runId);
         $result = $this->service->rebuildIfStale($state, $this->runId);
-
-        $this->assertTrue($result->rebuilt);
         $this->assertSame('compaction-auto', $result->rebuiltState->activeStepId, 'Stale result must preserve activeStepId');
         $this->assertSame(RunStatus::Running, $result->rebuiltState->status, 'Auto stale_result must resolve Compacting → Running');
         $this->assertCount(1, $result->rebuiltState->messages, 'Messages preserved');
@@ -1918,8 +1834,6 @@ final class SessionRunStateReplayServiceTest extends TestCase
 
         $state = RunState::queued($this->runId);
         $result = $this->service->rebuildIfStale($state, $this->runId);
-
-        $this->assertTrue($result->rebuilt);
         $this->assertSame(RunStatus::Completed, $result->rebuiltState->status, 'Manual context_compacted must resolve Compacting → Completed');
         $this->assertNull($result->rebuiltState->activeStepId, 'Completed compaction must clear activeStepId');
     }
@@ -1961,8 +1875,6 @@ final class SessionRunStateReplayServiceTest extends TestCase
 
         $state = RunState::queued($this->runId);
         $result = $this->service->rebuildIfStale($state, $this->runId);
-
-        $this->assertTrue($result->rebuilt);
 
         // No assistant message must appear in state messages.
         $messages = $result->rebuiltState->messages;
@@ -2006,8 +1918,6 @@ final class SessionRunStateReplayServiceTest extends TestCase
 
         $state = RunState::queued($this->runId);
         $result = $this->service->rebuildIfStale($state, $this->runId);
-
-        $this->assertTrue($result->rebuilt);
         $messages = $result->rebuiltState->messages;
         $this->assertCount(1, $messages, 'Tool-call-only assistant message must be replayed.');
         $this->assertSame('assistant', $messages[0]->role);
@@ -2044,8 +1954,6 @@ final class SessionRunStateReplayServiceTest extends TestCase
 
         $state = RunState::queued($this->runId);
         $result = $this->service->rebuildIfStale($state, $this->runId);
-
-        $this->assertTrue($result->rebuilt);
         $messages = $result->rebuiltState->messages;
         $this->assertCount(1, $messages, 'Text+thinking message must be replayed.');
         $this->assertSame('assistant', $messages[0]->role);
@@ -2099,8 +2007,6 @@ final class SessionRunStateReplayServiceTest extends TestCase
         );
 
         $result = $this->service->rebuildIfStale($state, $this->runId);
-
-        $this->assertTrue($result->rebuilt);
         $this->assertNotNull($result->rebuiltState);
         $this->assertSame(RunStatus::Running, $result->rebuiltState->status);
         $this->assertSame(2, $result->rebuiltState->turnNo);

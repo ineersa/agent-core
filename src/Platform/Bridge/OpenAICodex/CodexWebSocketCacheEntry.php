@@ -22,7 +22,6 @@ final class CodexWebSocketCacheEntry
         public readonly WebsocketConnection $connection,
         public readonly CodexWebSocketCompatibilityFingerprint $identity,
         public readonly int $createdAt,
-        public readonly CodexWebSocketCacheSettings $settings,
     ) {
     }
 }

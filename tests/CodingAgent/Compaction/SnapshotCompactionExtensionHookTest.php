@@ -136,7 +136,6 @@ final class SnapshotCompactionExtensionHookTest extends TestCase
             );
 
             $this->assertFalse($result->isFailure());
-            $this->assertTrue($result->compacted);
             $this->assertSame(0, $platform->invokes);
             $found = false;
             foreach ($result->messages as $message) {

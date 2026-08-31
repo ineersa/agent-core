@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\Tools\PHPStan\DeadCode;
 
+use Ineersa\AgentCore\Contract\RunOperationalStatusDTO;
 use Ineersa\AgentCore\Domain\Notification\ModelNotificationDTO;
+use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildProjectionDTO;
@@ -45,6 +47,8 @@ final class HatfieldDeadCodeUsageProvider extends ReflectionBasedMemberUsageProv
         AgentDefinitionDTO::class,
         DeferredSubagentBatchProjectionDTO::class,
         DeferredSubagentChildProjectionDTO::class,
+        RunMetadata::class,
+        RunOperationalStatusDTO::class,
         RunStartedMetadataDTO::class,
         RunStartedSessionMetadataDTO::class,
         RunStartedToolsScopeDTO::class,

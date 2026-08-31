@@ -63,27 +63,6 @@ final class DdtraceSpanProvider implements SpanProviderInterface
         \DDTrace\close_span();
     }
 
-    public function currentContext(): array
-    {
-        if (!\function_exists('DDTrace\\current_context')) {
-            return [];
-        }
-
-        $ctx = \DDTrace\current_context();
-
-        $result = [];
-
-        if (null !== ($ctx['trace_id'] ?? null)) {
-            $result['trace_id'] = (string) $ctx['trace_id'];
-        }
-
-        if (null !== ($ctx['span_id'] ?? null)) {
-            $result['span_id'] = (string) $ctx['span_id'];
-        }
-
-        return $result;
-    }
-
     /**
      * Normalize a tag value to a string for ddtrace meta.
      */

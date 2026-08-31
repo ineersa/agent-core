@@ -715,7 +715,6 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
                 stepId: $operation->stepId,
                 attempt: $operation->attempt,
                 idempotencyKey: $operation->idempotencyKey,
-                contextRef: \sprintf('hot:run:%s', $runId),
                 toolsRef: \sprintf('toolset:run:%s:turn:%d', $runId, $operation->turnNo),
                 messages: $state->messages,
             );

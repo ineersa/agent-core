@@ -35,7 +35,7 @@ final readonly class SessionRunStateReplayService implements RunStateRebuilderIn
 
         // Stored state is current — avoid decoding the full canonical history.
         if ($state->lastSeq >= $maxEventSeq) {
-            return RunStateReplayResult::current($maxEventSeq, 0);
+            return RunStateReplayResult::current();
         }
 
         $events = $this->eventStore->allFor($runId);
@@ -93,14 +93,9 @@ final readonly class SessionRunStateReplayService implements RunStateRebuilderIn
                 'rebuilt_turn_no' => $rebuiltState->turnNo,
             ]);
 
-            // Contiguity fields on RunStateReplayResult are legacy defaults; gaps in seq are valid
-            // (cursor may advance before JSONL append). rebuilt=true means state was refreshed from events.
-            return RunStateReplayResult::rebuilt(
-                $rebuiltState,
-                $maxEventSeq,
-                \count($sortedEvents),
-                true,
-            );
+            // Gaps in seq are valid (cursor may advance before JSONL append).
+            // A non-null rebuiltState means state was refreshed from events.
+            return RunStateReplayResult::rebuilt($rebuiltState);
         } finally {
             RunLogContext::leave();
         }
@@ -163,12 +158,7 @@ final readonly class SessionRunStateReplayService implements RunStateRebuilderIn
                 'rebuilt_turn_no' => $rebuiltState->turnNo,
             ]);
 
-            return RunStateReplayResult::rebuilt(
-                $rebuiltState,
-                $maxEventSeq,
-                \count($sortedEvents),
-                true,
-            );
+            return RunStateReplayResult::rebuilt($rebuiltState);
         } finally {
             RunLogContext::leave();
         }

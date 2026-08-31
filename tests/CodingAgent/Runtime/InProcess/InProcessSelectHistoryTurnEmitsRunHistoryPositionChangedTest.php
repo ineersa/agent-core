@@ -80,7 +80,7 @@ final class InProcessSelectHistoryTurnEmitsRunHistoryPositionChangedTest extends
         $rebuilder->expects($this->once())
             ->method('rebuildAtPosition')
             ->with($this->isInstanceOf(RunState::class), self::RUN_ID, 0)
-            ->willReturn(RunStateReplayResult::rebuilt($rebuiltState, 4, 4, true));
+            ->willReturn(RunStateReplayResult::rebuilt($rebuiltState));
 
         $historySelectionService = new HistorySelectionService(
             eventStore: $eventStore,

@@ -23,11 +23,6 @@ final class CodexWebSocketContinuationState
         }
     }
 
-    public function lastResponseId(): string
-    {
-        return $this->lastResponseId;
-    }
-
     /**
      * @param array<string, mixed> $currentRequestBody
      *

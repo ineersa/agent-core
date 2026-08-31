@@ -85,7 +85,6 @@ final class CodexWebSocketConnectionCache
             $connection,
             $identity,
             $this->clock->now()->getTimestamp(),
-            $settings,
         );
         $this->entries[$sessionKey] = $entry;
 

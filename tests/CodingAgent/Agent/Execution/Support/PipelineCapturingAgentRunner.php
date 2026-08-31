@@ -88,10 +88,6 @@ final class PipelineCapturingAgentRunner implements AgentRunnerInterface
         return $runId;
     }
 
-    public function continue(string $runId): void
-    {
-    }
-
     public function shell(string $runId, string $rawInput): void
     {
     }
