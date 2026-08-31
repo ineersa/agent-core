@@ -52,21 +52,6 @@ final class QaSessionEnvSanitizationTest extends TestCase
         foreach (self::DSN_VARS as $var) {
             $this->assertStringContainsString('-u '.$var, $cmd, $var.' must be unset in the check unit lane');
         }
-        $this->assertStringContainsString("HATFIELD_QA_LANE='unit'", $cmd);
-    }
-
-    public function testParatestPoolsReceiveDistinctLaneIdentities(): void
-    {
-        self::requireCastorFiles();
-
-        $unit = qa_check_run_env_command('unit');
-        $tui = qa_check_run_env_command('tui');
-        $llmReal = qa_check_run_env_command('llm-real');
-
-        $this->assertStringContainsString("HATFIELD_QA_LANE='unit'", $unit);
-        $this->assertStringContainsString("HATFIELD_QA_LANE='tui'", $tui);
-        $this->assertStringContainsString("HATFIELD_QA_LANE='llm-real'", $llmReal);
-        $this->assertCount(3, array_unique([$unit, $tui, $llmReal]));
     }
 
     public function testChildProcessDoesNotInheritSessionTransportDsns(): void

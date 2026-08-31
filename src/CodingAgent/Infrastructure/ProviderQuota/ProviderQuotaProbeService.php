@@ -7,7 +7,6 @@ namespace Ineersa\CodingAgent\Infrastructure\ProviderQuota;
 use Ineersa\CodingAgent\Auth\CodexAuthStorage;
 use Ineersa\CodingAgent\Auth\CodexOAuthConfig;
 use Ineersa\CodingAgent\Config\AppConfig;
-use Ineersa\CodingAgent\Runtime\Contract\ProviderQuotaProbeServiceInterface;
 use Ineersa\CodingAgent\Runtime\Contract\ProviderQuotaReportDTO;
 use Ineersa\CodingAgent\Runtime\Contract\ProviderQuotaSectionDTO;
 use Psr\Log\LoggerInterface;
@@ -16,7 +15,7 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
 use Symfony\Contracts\HttpClient\ResponseInterface;
 
 /** App-owned `/usage` probe for configured OpenAI Codex and z.ai only. */
-final class ProviderQuotaProbeService implements ProviderQuotaProbeServiceInterface
+final class ProviderQuotaProbeService
 {
     private const string OPENAI_USAGE = 'https://chatgpt.com/backend-api/wham/usage';
     private const string ZAI_QUOTA = 'https://api.z.ai/api/monitor/usage/quota/limit';

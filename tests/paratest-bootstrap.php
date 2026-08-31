@@ -3,15 +3,15 @@
 declare(strict_types=1);
 
 /**
- * ParaTest per-lane, per-worker bootstrap.
+ * ParaTest per-worker bootstrap.
  *
- * ParaTest spawns N worker processes and assigns each pool a repeated integer
- * TEST_TOKEN sequence. This bootstrap runs early in each worker — before
- * PHPUnit discovery / Symfony container compilation — and uses both the
- * Castor lane and token to isolate:
+ * ParaTest spawns N worker processes and assigns each a unique integer
+ * TEST_TOKEN.  This bootstrap runs early in each worker — before
+ * PHPUnit discovery / Symfony container compilation — and uses the
+ * token to isolate:
  *
- *   1. The compiled Symfony cache directory (per lane and worker).
- *   2. The SQLite test database (per lane and worker).
+ *   1. The compiled Symfony cache directory (per worker).
+ *   2. The SQLite test database (per worker).
  *
  * WHY PER-WORKER DBs ARE REQUIRED (not just WAL + DAMA):
  *   Even though DAMA/DoctrineTestBundle wraps each test method in a
@@ -20,60 +20,43 @@ declare(strict_types=1);
  *   the kernel boot) that acquire SQLite RESERVED locks.  Two workers
  *   trying to write to the same DB file simultaneously get
  *   "database is locked" because SQLite allows at most ONE writer.
- *   Per-lane, per-worker DB files eliminate this contention entirely.
+ *   Per-worker DB files eliminate this contention entirely.
  *
  * ── Environment overrides ──
  *   TEST_TOKEN              — set by ParaTest (empty string for main)
- *   HATFIELD_QA_LANE        — Castor lane (unit, tui, or llm-real)
  *   HATFIELD_QA_RUN_ID      — castor check run id (optional)
- *   HATFIELD_TEST_DATABASE_PATH — per-lane, per-worker SQLite path
- *   HATFIELD_CACHE_DIR      — per-lane, per-worker container cache
+ *   HATFIELD_QA_LANE        — castor check / test lane id (unit|tui|llm-real)
+ *   HATFIELD_TEST_DATABASE_PATH — per-worker SQLite path
+ *   HATFIELD_CACHE_DIR      — per-worker container cache
  *   HATFIELD_QA_TEST_HOME   — isolated HOME for bin/console migrations (from Castor parent)
  */
-$token = getenv('TEST_TOKEN') ?: '0';
-$lane = getenv('HATFIELD_QA_LANE');
-if (!is_string($lane) || !in_array($lane, ['unit', 'tui', 'llm-real'], true)) {
-    fwrite(\STDERR, "ParaTest bootstrap: HATFIELD_QA_LANE must be unit, tui, or llm-real\n");
-    exit(1);
-}
+require_once __DIR__.'/CodingAgent/Support/ParaTestWorkerIsolation.php';
 
+use Ineersa\CodingAgent\Tests\Support\ParaTestWorkerIsolation;
+
+$token = getenv('TEST_TOKEN') ?: '0';
 $qaRunId = getenv('HATFIELD_QA_RUN_ID') ?: '';
-$qaRunSegment = '' !== $qaRunId
-    ? preg_replace('/[^a-zA-Z0-9._-]/', '', $qaRunId) ?? 'qa-run'
-    : '';
+$lane = getenv('HATFIELD_QA_LANE') ?: '';
 
 $root = dirname(__DIR__);
 
-// ── Per-worker DB path ──
-if ('' !== $qaRunSegment) {
-    $dbPath = 'app_test-'.$qaRunSegment.'-'.$lane.'-T'.$token.'.sqlite';
-} else {
-    $dbPath = 'app_test-'.$lane.'-T'.$token.'.sqlite';
-}
+// ── Per-worker (+ per-lane) DB / cache paths ──
+$dbPath = ParaTestWorkerIsolation::appDatabaseFilename($qaRunId, $lane, $token);
 putenv("HATFIELD_TEST_DATABASE_PATH={$dbPath}");
 $_ENV['HATFIELD_TEST_DATABASE_PATH'] = $dbPath;
 
-if ('' !== $qaRunSegment) {
-    $transportDbPath = 'messenger_transport_test-'.$qaRunSegment.'-'.$lane.'-T'.$token.'.sqlite';
-} else {
-    $transportDbPath = 'messenger_transport_test-'.$lane.'-T'.$token.'.sqlite';
-}
+$transportDbPath = ParaTestWorkerIsolation::messengerTransportDatabaseFilename($qaRunId, $lane, $token);
 putenv("HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH={$transportDbPath}");
 $_ENV['HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH'] = $transportDbPath;
 
-// ── Per-worker cache dir ──
-if ('' !== $qaRunSegment) {
-    $cacheDir = '.hatfield/cache-'.$qaRunSegment.'-paraT'.$lane.'-'.$token;
-} else {
-    $cacheDir = '.hatfield/cache-paraT'.$lane.'-'.$token;
-}
+$cacheDir = ParaTestWorkerIsolation::cacheDirectory($qaRunId, $lane, $token);
 putenv("HATFIELD_CACHE_DIR={$cacheDir}");
 $_ENV['HATFIELD_CACHE_DIR'] = $cacheDir;
 
 // ── Isolated HOME for Symfony kernel (never use developer ~/.hatfield) ──
 $qaTestHome = getenv('HATFIELD_QA_TEST_HOME') ?: '';
 if ('' === $qaTestHome) {
-    $qaTestHome = $root.'/var/tmp/qa-home/paratest-'.$lane.'-T'.$token;
+    $qaTestHome = $root.'/var/tmp/qa-home/paratest-T'.$token;
     $hatfieldDir = $qaTestHome.'/.hatfield';
     if (!is_dir($hatfieldDir) && !mkdir($hatfieldDir, 0777, true) && !is_dir($hatfieldDir)) {
         fwrite(\STDERR, "ParaTest bootstrap (token={$token}): unable to create QA test HOME\n");

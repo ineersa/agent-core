@@ -133,33 +133,33 @@ function qa_observability_env_command(): string
 }
 
 /**
- * Shell env prefix for QA lanes: optional ParaTest lane identity, run-scoped
- * paths when HATFIELD_QA_RUN_ID is set, and deterministic observability.
+ * Shell env prefix for castor check lanes: QA run-scoped paths plus observability.
+ *
+ * When HATFIELD_QA_RUN_ID is unset (non-check commands), this degrades to
+ * qa_observability_env_command() only.
  */
-function qa_check_run_env_command(?string $paratestLane = null): string
+function qa_check_run_env_command(): string
 {
     $obs = qa_observability_env_command();
-    $pairs = [];
-    if (null !== $paratestLane) {
-        $pairs[] = 'HATFIELD_QA_LANE='.escapeshellarg($paratestLane);
+    $runId = getenv('HATFIELD_QA_RUN_ID');
+    if (false === $runId || '' === trim((string) $runId)) {
+        return $obs;
     }
 
-    $runId = getenv('HATFIELD_QA_RUN_ID');
-    if (false !== $runId && '' !== trim((string) $runId)) {
-        foreach ([
-            'HATFIELD_QA_RUN_ID',
-            'HATFIELD_QA_REPORTS_DIR',
-            'HATFIELD_QA_TMP_DIR',
-            'HATFIELD_CACHE_DIR',
-            'HATFIELD_TEST_DATABASE_PATH',
-            'HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH',
-        ] as $name) {
-            $value = getenv($name);
-            if (false === $value || '' === trim((string) $value)) {
-                continue;
-            }
-            $pairs[] = $name.'='.escapeshellarg((string) $value);
+    $pairs = [];
+    foreach ([
+        'HATFIELD_QA_RUN_ID',
+        'HATFIELD_QA_REPORTS_DIR',
+        'HATFIELD_QA_TMP_DIR',
+        'HATFIELD_CACHE_DIR',
+        'HATFIELD_TEST_DATABASE_PATH',
+        'HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH',
+    ] as $name) {
+        $value = getenv($name);
+        if (false === $value || '' === trim((string) $value)) {
+            continue;
         }
+        $pairs[] = $name.'='.escapeshellarg((string) $value);
     }
 
     if ([] === $pairs) {
