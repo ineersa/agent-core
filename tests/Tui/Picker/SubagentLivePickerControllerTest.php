@@ -99,6 +99,37 @@ final class SubagentLivePickerControllerTest extends TestCase
     }
 
     #[Test]
+    public function testDismissLastSnapshotRowDoesNotImportChildAddedAfterOpen(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: 'picker-dismiss-snapshot');
+        $state = new TuiSessionState('picker-dismiss-snapshot');
+        $this->seedCatalogChild($state, 'agent_snapshot', 'child-run-snapshot', 'completed');
+
+        $picker = $this->picker($harness, $state);
+        $picker->open();
+
+        $overlayProperty = new \ReflectionProperty(SubagentLivePickerController::class, 'overlay');
+        $overlay = $overlayProperty->getValue($picker);
+        $this->assertInstanceOf(PickerOverlay::class, $overlay);
+        $listWidget = $overlay->listWidget();
+        $this->assertInstanceOf(SelectListWidget::class, $listWidget);
+
+        $this->seedCatalogChild($state, 'agent_after_open', 'child-run-after-open', 'completed');
+
+        $harness->startInputLoop();
+        try {
+            $harness->tui()->setFocus($listWidget);
+            $harness->sendInput('d');
+        } finally {
+            $harness->stopInputLoop();
+        }
+
+        $this->assertFalse($picker->isOpen());
+        $this->assertNull($state->subagentLiveCatalog->findByArtifactId('agent_snapshot'));
+        $this->assertNotNull($state->subagentLiveCatalog->findByArtifactId('agent_after_open'));
+    }
+
+    #[Test]
     public function dismissKeyDoesNotRemoveRunningChild(): void
     {
         $harness = new VirtualTuiHarness(sessionId: 'picker-dismiss');

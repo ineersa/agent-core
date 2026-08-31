@@ -375,8 +375,12 @@ final class SubagentLivePickerController
             SubagentLiveMainReturn::returnToMain($state, $screen, $this->client, requestRender: false);
         }
 
-        $children = $state->subagentLiveCatalog->all();
-        if ([] === $children) {
+        // Remove only the dismissed snapshot row; do not import other catalog updates mid-open.
+        $this->openItems = array_values(array_filter(
+            $this->openItems,
+            static fn (array $item): bool => $item['value'] !== $artifactId,
+        ));
+        if ([] === $this->openItems) {
             $this->closePicker();
             $screen->setWorkingMessage(null);
             $screen->setStatus('agents-live', null);
@@ -385,11 +389,6 @@ final class SubagentLivePickerController
             return;
         }
 
-        // Remove only the dismissed snapshot row; do not import other catalog updates mid-open.
-        $this->openItems = array_values(array_filter(
-            $this->openItems,
-            static fn (array $item): bool => $item['value'] !== $artifactId,
-        ));
         $listWidget->setItems($this->openItems);
         $listWidget->setSelectedIndex(0);
 
