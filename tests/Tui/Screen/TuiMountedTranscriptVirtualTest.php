@@ -133,7 +133,7 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
         $toolWrapper = $childrenAfterMount[1];
         $this->assertInstanceOf(StreamingMarkdownTranscriptWidget::class, $assistantWrapper);
         $this->assertInstanceOf(ToolExchangeTranscriptWidget::class, $toolWrapper);
-        $assistantMarkdown = $assistantWrapper->markdown();
+        $assistantMarkdown = $this->streamingMarkdown($assistantWrapper);
         $this->assertInstanceOf(MarkdownWidget::class, $assistantMarkdown);
 
         $assistantUpdated = $assistantStreaming->with(text: 'Hello world', streaming: true);
@@ -159,7 +159,7 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
         $this->assertCount(2, $childrenAfterUpdate, 'Tool call+result must remain one visual exchange node');
         $this->assertSame($assistantWrapper, $childrenAfterUpdate[0], 'Assistant visual wrapper identity must be stable');
         $this->assertSame($toolWrapper, $childrenAfterUpdate[1], 'Tool exchange wrapper identity must be stable across result arrival');
-        $this->assertSame($assistantMarkdown, $assistantWrapper->markdown(), 'Assistant MarkdownWidget instance must be preserved across streaming updates');
+        $this->assertSame($assistantMarkdown, $this->streamingMarkdown($assistantWrapper), 'Assistant MarkdownWidget instance must be preserved across streaming updates');
         $this->assertStringContainsString('Hello world', $assistantMarkdown->getText());
 
         // Render through ChatScreen production path as product smoke for visible result text.
@@ -225,7 +225,7 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
         $assistantWrapper = $before[1];
         $this->assertInstanceOf(ToolExchangeTranscriptWidget::class, $exchangeWrapper);
         $this->assertInstanceOf(StreamingMarkdownTranscriptWidget::class, $assistantWrapper);
-        $exchangeNodeBefore = $exchangeWrapper->node();
+        $exchangeNodeBefore = $this->semanticNode($exchangeWrapper);
         $this->assertNotNull($exchangeNodeBefore);
         $this->assertSame(TranscriptVisualNode::KIND_TOOL_EXCHANGE, $exchangeNodeBefore->kind);
         $this->assertSame($toolResult, $exchangeNodeBefore->secondary);
@@ -237,12 +237,12 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
         $this->assertCount(2, $after, 'Child count must stay exchange + assistant');
         $this->assertSame($exchangeWrapper, $after[0], 'Exchange widget identity must survive adjacent stream');
         $this->assertSame($assistantWrapper, $after[1], 'Assistant widget identity must survive stream');
-        $exchangeNodeAfter = $exchangeWrapper->node();
+        $exchangeNodeAfter = $this->semanticNode($exchangeWrapper);
         $this->assertNotNull($exchangeNodeAfter);
         $this->assertSame(TranscriptVisualNode::KIND_TOOL_EXCHANGE, $exchangeNodeAfter->kind);
         $this->assertSame($toolResult, $exchangeNodeAfter->secondary, 'Exchange secondary must remain the same ToolResult');
         $this->assertSame($toolCall, $exchangeNodeAfter->primary);
-        $md = $assistantWrapper->markdown();
+        $md = $this->streamingMarkdown($assistantWrapper);
         $this->assertInstanceOf(MarkdownWidget::class, $md);
         $this->assertStringContainsString('partial after tool more tokens', $md->getText());
     }
@@ -333,11 +333,11 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
         $streamWrapper = $children[1];
         $this->assertInstanceOf(StreamingMarkdownTranscriptWidget::class, $historyWrapper);
         $this->assertInstanceOf(StreamingMarkdownTranscriptWidget::class, $streamWrapper);
-        $historyMarkdown = $historyWrapper->markdown();
-        $streamMarkdown = $streamWrapper->markdown();
+        $historyMarkdown = $this->streamingMarkdown($historyWrapper);
+        $streamMarkdown = $this->streamingMarkdown($streamWrapper);
         $this->assertInstanceOf(MarkdownWidget::class, $historyMarkdown);
         $this->assertInstanceOf(MarkdownWidget::class, $streamMarkdown);
-        $historyNode = $historyWrapper->node();
+        $historyNode = $this->semanticNode($historyWrapper);
         $this->assertNotNull($historyNode);
 
         $streamed = $streaming->with(text: 'partial more tokens');
@@ -348,10 +348,10 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
         $this->assertCount(2, $after);
         $this->assertSame($historyWrapper, $after[0], 'Finalized history wrapper must keep identity on tail stream');
         $this->assertSame($streamWrapper, $after[1], 'Streaming wrapper must keep identity on tail stream');
-        $this->assertSame($historyMarkdown, $historyWrapper->markdown(), 'Finalized history Markdown instance must not rebuild');
-        $this->assertSame($streamMarkdown, $streamWrapper->markdown(), 'Streaming Markdown instance must mutate in place');
-        $this->assertSame($historyNode, $historyWrapper->node(), 'History visual node sources unchanged (object identity skip)');
-        $this->assertSame($history, $historyWrapper->node()?->primary);
+        $this->assertSame($historyMarkdown, $this->streamingMarkdown($historyWrapper), 'Finalized history Markdown instance must not rebuild');
+        $this->assertSame($streamMarkdown, $this->streamingMarkdown($streamWrapper), 'Streaming Markdown instance must mutate in place');
+        $this->assertSame($historyNode, $this->semanticNode($historyWrapper), 'History visual node sources unchanged (object identity skip)');
+        $this->assertSame($history, $this->semanticNode($historyWrapper)?->primary);
         $this->assertStringContainsString('partial more tokens', $streamMarkdown->getText());
     }
 
@@ -459,18 +459,28 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
         $this->assertCount(1, $after, 'Wrong-kind replacement must keep one mounted child');
         $this->assertNotSame($before[0], $after[0], 'Wrong-kind stable key must re-create the widget, not reuse the old one');
         $this->assertInstanceOf(ToolExchangeTranscriptWidget::class, $after[0], 'Stable key re-bound to tool exchange must mount a tool-exchange widget');
-        $this->assertSame(TranscriptVisualNode::KIND_TOOL_EXCHANGE, $after[0]->node()?->kind, 'Re-created widget must receive its node data via the semantic apply contract');
+        $this->assertSame(TranscriptVisualNode::KIND_TOOL_EXCHANGE, $this->semanticNode($after[0])?->kind, 'Re-created widget must receive its node data via the semantic apply contract');
     }
 
     /**
      * @return list<MarkdownWidget>
      */
+    private function semanticNode(object $widget): ?TranscriptVisualNode
+    {
+        return (new \ReflectionProperty($widget, 'node'))->getValue($widget);
+    }
+
+    private function streamingMarkdown(StreamingMarkdownTranscriptWidget $widget): ?MarkdownWidget
+    {
+        return (new \ReflectionProperty($widget, 'markdown'))->getValue($widget);
+    }
+
     private function findMarkdownWidgets(TranscriptMountedWidget $transcript): array
     {
         $found = [];
         foreach ($transcript->all() as $child) {
             if ($child instanceof StreamingMarkdownTranscriptWidget) {
-                $md = $child->markdown();
+                $md = $this->streamingMarkdown($child);
                 if ($md instanceof MarkdownWidget) {
                     $found[] = $md;
                 }

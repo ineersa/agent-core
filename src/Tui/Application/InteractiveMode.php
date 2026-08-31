@@ -279,9 +279,6 @@ final readonly class InteractiveMode
             // Install single Symfony tick callback that multiplexes to all registered handlers
             $tui->onTick(static fn (TickEvent $event): ?bool => $ticks->dispatch($event));
 
-            // Also register slot input handlers as native InputEvent listeners
-            $screen->registerSlotInputListeners();
-
             // ── Dispatch session lifecycle start event ──
             // Must happen AFTER listener registrars have run so that
             // subscribers to $context->lifecycle are already wired.

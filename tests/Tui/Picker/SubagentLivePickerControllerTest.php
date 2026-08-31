@@ -31,6 +31,7 @@ use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Tests\Support\ChildAgentExportEventsFixture;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\ThemeColorEnum;
+use Ineersa\Tui\Theme\ThemePalette;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -310,9 +311,11 @@ final class SubagentLivePickerControllerTest extends TestCase
     #[Test]
     public function testArrowNavigationMovesSingleNativeHighlight(): void
     {
-        $palette = VirtualTuiHarness::defaultVirtualPalette()->withOverrides([
-            ThemeColorEnum::Accent->value => 'magenta',
-        ]);
+        $base = VirtualTuiHarness::defaultVirtualPalette();
+        $palette = new ThemePalette(
+            $base->name,
+            array_merge($base->colors, [ThemeColorEnum::Accent->value => 'magenta']),
+        );
         $harness = new VirtualTuiHarness(
             sessionId: 'picker-native-highlight',
             palette: $palette,

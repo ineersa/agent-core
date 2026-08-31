@@ -42,22 +42,7 @@ class ChatScreenTest extends TestCase
         $this->tui = new Tui(terminal: $terminal);
 
         $theme = new readonly class implements TuiTheme {
-            public function name(): string
-            {
-                return 'test';
-            }
-
             public function color(ThemeColorEnum $color, string $text): string
-            {
-                return $text;
-            }
-
-            public function accent(string $text): string
-            {
-                return $text;
-            }
-
-            public function text(string $text): string
             {
                 return $text;
             }
@@ -285,22 +270,7 @@ class ChatScreenTest extends TestCase
     private function getTestTheme(): TuiTheme
     {
         return new readonly class implements TuiTheme {
-            public function name(): string
-            {
-                return 'test';
-            }
-
             public function color(ThemeColorEnum $color, string $text): string
-            {
-                return $text;
-            }
-
-            public function accent(string $text): string
-            {
-                return $text;
-            }
-
-            public function text(string $text): string
             {
                 return $text;
             }
