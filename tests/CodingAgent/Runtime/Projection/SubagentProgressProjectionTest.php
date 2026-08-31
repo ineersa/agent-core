@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Projection;
 
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressParallelSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingleSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber;
@@ -113,6 +114,27 @@ final class SubagentProgressProjectionTest extends TestCase
         $this->assertStringNotContainsString('completed Step 1: reviewer', $text);
         $this->assertStringNotContainsString('running Step 2: scout', $text);
         $this->assertStringNotContainsString('| artifact agent_b', $text);
+
+        $completed = $progress;
+        $completed['status'] = 'completed';
+        $completed['completed_count'] = 2;
+        $completed['children'][1]['status'] = 'completed';
+        unset($completed['children'][1]['active_tool']);
+        $this->accept('tool_execution.output_delta', [
+            'tool_call_id' => 'tc_par', 'tool_name' => 'subagent', 'subagent_progress' => $completed,
+        ]);
+        $this->accept('tool_execution.completed', [
+            'tool_call_id' => 'tc_par', 'result' => 'Parallel subagents completed.',
+        ]);
+
+        $terminalBlock = $this->projector->blocks()[0];
+        $this->assertStringContainsString('parallel subagents (2/2 completed)', $terminalBlock->text);
+        $this->assertStringNotContainsString('parallel subagents running (1/2 completed)', $terminalBlock->text);
+        $terminalProgress = $terminalBlock->meta['subagent_progress'] ?? null;
+        $this->assertInstanceOf(SubagentProgressParallelSnapshotDTO::class, $terminalProgress);
+        $this->assertSame('completed', $terminalProgress->status);
+        $this->assertSame(2, $terminalProgress->completedCount);
+        $this->assertTrue($terminalBlock->meta['subagent_final'] ?? false);
     }
 
     public function testRichSubagentProgressCoalescesWithoutDeltaSpam(): void

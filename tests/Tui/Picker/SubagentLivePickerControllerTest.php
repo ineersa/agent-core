@@ -77,6 +77,35 @@ final class SubagentLivePickerControllerTest extends TestCase
     }
 
     #[Test]
+    public function testOpenPickerRefreshesTerminalStatusWithoutLosingSelection(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: 'picker-terminal-refresh');
+        $state = new TuiSessionState('picker-terminal-refresh');
+        $this->seedCatalogChild($state, 'agent_running', 'child-run-running', 'running');
+        $this->seedCatalogChild($state, 'agent_done', 'child-run-done', 'completed');
+
+        $picker = $this->picker($harness, $state);
+        $picker->open();
+
+        $overlayProperty = new \ReflectionProperty(SubagentLivePickerController::class, 'overlay');
+        $overlay = $overlayProperty->getValue($picker);
+        $this->assertInstanceOf(PickerOverlay::class, $overlay);
+        $listWidget = $overlay->listWidget();
+        $this->assertInstanceOf(SelectListWidget::class, $listWidget);
+        $this->assertSame('agent_running', $listWidget->getSelectedItem()['value'] ?? null);
+        $this->assertStringContainsString('[running]', $harness->plainScreenText());
+
+        $state->subagentLiveCatalog->applyChildStatus('agent_running', SubagentLiveStatusEnum::Completed);
+        $picker->refreshIfOpen();
+
+        $this->assertSame('agent_running', $listWidget->getSelectedItem()['value'] ?? null);
+        $screen = $harness->plainScreenText();
+        $this->assertStringContainsString('agent_running', $screen);
+        $this->assertStringNotContainsString('[running]', $screen);
+        $this->assertSame(2, substr_count($screen, '[completed]'));
+    }
+
+    #[Test]
     public function dismissKeyDoesNotRemoveRunningChild(): void
     {
         $harness = new VirtualTuiHarness(sessionId: 'picker-dismiss');
@@ -442,9 +471,10 @@ final class SubagentLivePickerControllerTest extends TestCase
                     'agent_name' => 'scout',
                     'artifact_id' => 'agent_scout',
                     'agent_run_id' => 'scout-run',
-                    'task_summary' => 'list docs', 'model' => 'test/model', 'reasoning' => 'medium',
+                    'task_summary' => 'list docs',
                     'model' => 'deepseek/deepseek-v4-flash',
-                    'reasoning' => 'medium', ],
+                    'reasoning' => 'medium',
+                ],
             ],
         );
 
@@ -629,8 +659,7 @@ final class SubagentLivePickerControllerTest extends TestCase
         $listWidget->setSelectedIndex(0);
 
         $method = new \ReflectionMethod(SubagentLivePickerController::class, 'dismissSelected');
-        $children = $state->subagentLiveCatalog->all();
-        $method->invokeArgs($picker, [&$listWidget, &$children, $screen, $state]);
+        $method->invoke($picker, $listWidget, $screen, $state);
     }
 
     private function seedCatalogChild(

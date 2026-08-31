@@ -102,7 +102,10 @@ final class ConsumerStdoutPoller
 
             try {
                 $event = RuntimeEvent::fromArray($data);
-                if ('' === $event->runId || !RuntimeEventPerRunCompactBuffer::isCoalescableStreamEvent($event)) {
+                // Canonical events are already complete snapshots. Sending a committed
+                // tool progress event through the transient compact buffer drops it as
+                // replayable backlog, leaving live subagent status behind canonical replay.
+                if ($event->seq > 0 || '' === $event->runId || !RuntimeEventPerRunCompactBuffer::isCoalescableStreamEvent($event)) {
                     if ('' !== $pendingRunId) {
                         $this->flushStreamBuffer($streamBuffer, $pendingRunId);
                         $pendingRunId = '';
