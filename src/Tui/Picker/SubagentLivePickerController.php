@@ -32,9 +32,6 @@ final class SubagentLivePickerController
     private ?PickerOverlay $overlay = null;
     private ?TextWidget $headerWidget = null;
 
-    /** @var list<array{value: string, label: string}> */
-    private array $pickerItems = [];
-
     /**
      * Invoked with the previous child run id when leaving/switching away from it.
      * Listener layer wires question cleanup here (Deptrac: picker must not import TuiQuestion).
@@ -102,8 +99,6 @@ final class SubagentLivePickerController
             return;
         }
 
-        $this->refreshPickerItems();
-
         $state = $this->state;
         $feedback = $state->subagentLiveView->pickerFeedbackMessage;
         if (null === $feedback || '' === trim($feedback)) {
@@ -124,7 +119,6 @@ final class SubagentLivePickerController
         $this->overlay?->close($requestRender);
         $this->overlay = null;
         $this->headerWidget = null;
-        $this->pickerItems = [];
     }
 
     /**
@@ -188,7 +182,6 @@ final class SubagentLivePickerController
         $kb = SelectListKeybindings::standard();
 
         $items = self::buildItems($children);
-        $this->pickerItems = $items;
         $listWidget = new SelectListWidget(
             items: $items,
             maxVisible: SelectListKeybindings::MAX_VISIBLE,
@@ -236,32 +229,6 @@ final class SubagentLivePickerController
 
         $this->overlay = new PickerOverlay();
         $this->overlay->mount($tui, $screen, $listWidget, $header);
-    }
-
-    private function refreshPickerItems(): void
-    {
-        $listWidget = $this->overlay?->listWidget();
-        if (null === $listWidget) {
-            return;
-        }
-
-        $items = self::buildItems($this->state->subagentLiveCatalog->all());
-        if ($items === $this->pickerItems) {
-            return;
-        }
-
-        $selectedArtifactId = (string) ($listWidget->getSelectedItem()['value'] ?? '');
-        $this->pickerItems = $items;
-        $listWidget->setItems($items);
-
-        foreach ($items as $index => $item) {
-            if ($item['value'] === $selectedArtifactId) {
-                $listWidget->setSelectedIndex($index);
-                break;
-            }
-        }
-
-        $this->screen->requestRender(true);
     }
 
     private function buildPickerHeaderText(TuiTheme $theme): string
@@ -413,8 +380,7 @@ final class SubagentLivePickerController
         }
 
         // Selected artifact was just removed; previous dead search always resolved to 0.
-        $this->pickerItems = self::buildItems($children);
-        $listWidget->setItems($this->pickerItems);
+        $listWidget->setItems(self::buildItems($children));
         $listWidget->setSelectedIndex(0);
 
         $this->showPickerFeedback(\sprintf('Removed %s from /agents-live.', $removed->agentName));

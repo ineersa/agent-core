@@ -77,34 +77,25 @@ final class SubagentLivePickerControllerTest extends TestCase
     }
 
     #[Test]
-    public function testOpenPickerRefreshesTerminalStatusWithoutLosingSelection(): void
+    public function testOpenPickerKeepsSnapshotUntilReopened(): void
     {
-        $harness = new VirtualTuiHarness(sessionId: 'picker-terminal-refresh');
-        $state = new TuiSessionState('picker-terminal-refresh');
+        $harness = new VirtualTuiHarness(sessionId: 'picker-status-snapshot');
+        $state = new TuiSessionState('picker-status-snapshot');
         $this->seedCatalogChild($state, 'agent_running', 'child-run-running', 'running');
-        $this->seedCatalogChild($state, 'agent_done', 'child-run-done', 'completed');
 
         $picker = $this->picker($harness, $state);
         $picker->open();
-
-        $overlayProperty = new \ReflectionProperty(SubagentLivePickerController::class, 'overlay');
-        $overlay = $overlayProperty->getValue($picker);
-        $this->assertInstanceOf(PickerOverlay::class, $overlay);
-        $listWidget = $overlay->listWidget();
-        $this->assertInstanceOf(SelectListWidget::class, $listWidget);
-        $this->assertSame('agent_running', $listWidget->getSelectedItem()['value'] ?? null);
         $this->assertStringContainsString('[running]', $harness->plainScreenText());
-        $listWidget->setSelectedIndex(1);
-        $this->assertSame('agent_done', $listWidget->getSelectedItem()['value'] ?? null);
 
         $state->subagentLiveCatalog->applyChildStatus('agent_running', SubagentLiveStatusEnum::Completed);
         $picker->refreshIfOpen();
+        $this->assertStringContainsString('[running]', $harness->plainScreenText());
 
-        $this->assertSame('agent_done', $listWidget->getSelectedItem()['value'] ?? null);
+        $picker->closePicker();
+        $picker->open();
         $screen = $harness->plainScreenText();
-        $this->assertStringContainsString('agent_running', $screen);
         $this->assertStringNotContainsString('[running]', $screen);
-        $this->assertSame(2, substr_count($screen, '[completed]'));
+        $this->assertStringContainsString('[completed]', $screen);
     }
 
     #[Test]
