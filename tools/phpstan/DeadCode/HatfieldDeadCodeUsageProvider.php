@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\Tools\PHPStan\DeadCode;
 
-use Ineersa\AgentCore\Contract\RunOperationalStatusDTO;
 use Ineersa\AgentCore\Domain\Notification\ModelNotificationDTO;
 use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
@@ -50,7 +49,6 @@ final class HatfieldDeadCodeUsageProvider extends ReflectionBasedMemberUsageProv
         DeferredSubagentBatchProjectionDTO::class,
         DeferredSubagentChildProjectionDTO::class,
         RunMetadata::class,
-        RunOperationalStatusDTO::class,
         RunStartedMetadataDTO::class,
         RunStartedSessionMetadataDTO::class,
         RunStartedToolsScopeDTO::class,
@@ -81,14 +79,12 @@ final class HatfieldDeadCodeUsageProvider extends ReflectionBasedMemberUsageProv
             return VirtualUsageData::withNote('Published ExtensionApiInterface host implementation');
         }
 
-        // Measured: without this exact rule, castor dead-code reports
-        // StreamPacingHttpClient::{stream,withOptions} as unused because the
-        // tests usage excluder hides test-declared HttpClientInterface methods
-        // even though they are required decorator contract members.
+        // Measured with this rule removed: ShipMonk reports both required
+        // HttpClientInterface methods as "all usages excluded by tests excluder".
         if (StreamPacingHttpClient::class === $className
             && \in_array($method->getName(), ['stream', 'withOptions'], true)
             && $method->getDeclaringClass()->implementsInterface(HttpClientInterface::class)) {
-            return VirtualUsageData::withNote('Exact HttpClientInterface contract methods on StreamPacingHttpClient (measured after rule removal)');
+            return VirtualUsageData::withNote('Required HttpClientInterface methods reported unused after test-usage exclusion');
         }
 
         return null;

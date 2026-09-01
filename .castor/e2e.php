@@ -63,13 +63,13 @@ function build_test_llm_real_phpunit_command(?string $filter = null): string
             .' --configuration=phpunit.xml.dist'
             .' --bootstrap='.escapeshellarg($bootstrap)
             .' --group=llm-real'
-                        .' --processes='.check_lane_paratest_processes('llm-real', 1, 4)
+            .' --processes='.check_lane_paratest_processes('llm-real', 1, 4)
             .' '.$strictFlags.$llmFlags;
     }
 
     return $envPrefix.\PHP_BINARY.' vendor/bin/phpunit'
         .$filterArg
-                .' '.$strictFlags.$llmFlags;
+        .' '.$strictFlags.$llmFlags;
 }
 
 /**
