@@ -56,7 +56,7 @@ final class LlmProviderErrorClassifier
         [$category, $retryable, $userMessage] = $this->classifyPermanentException($errorType)
             ?? $this->classifyStatus($statusCode)
             ?? $this->classifyTransientStreamException($errorType)
-            ?? [self::CATEGORY_PROVIDER, false, 'LLM provider request failed.'];
+            ?? [self::CATEGORY_PROVIDER, true, 'LLM provider request failed.'];
 
         $result = array_replace($error, [
             'retryable' => $retryable,

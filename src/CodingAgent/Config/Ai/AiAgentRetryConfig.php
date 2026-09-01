@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Config\Ai;
 
-/** Agent-level retry count for typed mid-stream provider failures. */
+/** Agent-level retry count for unknown/provider-operation and mid-stream failures. */
 final readonly class AiAgentRetryConfig
 {
     public function __construct(public ?int $maxAttempts = null)
@@ -16,7 +16,7 @@ final readonly class AiAgentRetryConfig
 
     public function resolveMaxAttempts(): int
     {
-        return $this->maxAttempts ?? 2;
+        return $this->maxAttempts ?? 3;
     }
 
     /** @param array<string, mixed> $data */

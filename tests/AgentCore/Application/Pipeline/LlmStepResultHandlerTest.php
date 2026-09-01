@@ -28,9 +28,11 @@ use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use Ineersa\AgentCore\Tests\Support\SymfonyAiTestMessages;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Exception\ExceedContextSizeException;
 use Symfony\AI\Platform\Exception\ServerException;
+use Symfony\Component\Messenger\Stamp\DelayStamp;
 
 final class LlmStepResultHandlerTest extends TestCase
 {
@@ -485,7 +487,7 @@ final class LlmStepResultHandlerTest extends TestCase
             normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
             commandBus: $commandBus,
             errorClassifier: $classifier,
-            agentRetryMaxAttempts: 2,
+            agentRetryMaxAttempts: 3,
             logger: $logger,
         );
 
@@ -542,7 +544,11 @@ final class LlmStepResultHandlerTest extends TestCase
         $this->assertNotNull($failed);
         $this->assertTrue($failed->payload['retryable'] ?? false);
         $this->assertSame(1, $failed->payload['retry_attempt'] ?? null);
-        $this->assertSame(2, $failed->payload['max_retries'] ?? null);
+        $this->assertSame(3, $failed->payload['max_retries'] ?? null);
+        $this->assertSame(
+            [RunEventTypeEnum::LlmStepFailed->value],
+            array_map(static fn ($event): string => $event->type, $result->events),
+        );
 
         $this->assertNotEmpty($result->postCommit);
         foreach ($result->postCommit as $callback) {
@@ -555,6 +561,9 @@ final class LlmStepResultHandlerTest extends TestCase
         $this->assertTrue($commandBus->messages[0]->payload['auto_retry'] ?? false);
         $this->assertSame(1, $commandBus->messages[0]->payload['retry_attempt'] ?? null);
         $this->assertSame([], $commandBus->messages[0]->options);
+        $delay = $commandBus->envelopes[0]->last(DelayStamp::class);
+        $this->assertInstanceOf(DelayStamp::class, $delay);
+        $this->assertSame(1000, $delay->getDelay());
         $this->assertCount(1, $logger->records);
         $this->assertSame('info', $logger->records[0]['level']);
         $this->assertSame('llm.retry.scheduled', $logger->records[0]['message']);
@@ -567,11 +576,82 @@ final class LlmStepResultHandlerTest extends TestCase
             'error_type' => ServerException::class,
             'http_status_code' => null,
             'retry_attempt' => 1,
-            'max_retries' => 2,
+            'max_retries' => 3,
         ], $logger->records[0]['context']);
 
         $routed = (new CommandRouter([]))->route($commandBus->messages[0]);
         $this->assertSame('core', $routed->status, (string) $routed->reason);
+    }
+
+    #[DataProvider('agentRetryDelayProvider')]
+    public function testRetryableErrorSchedulesExponentialDelayStampBackoff(int $currentAttempts, int $expectedDelayMs): void
+    {
+        $commandBus = new TestMessageBus();
+        $classifier = new \Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier();
+
+        $handler = new LlmStepResultHandler(
+            toolBatchCollector: new ToolBatchCollector(),
+            commandMailboxPolicy: new CommandMailboxPolicy(
+                commandStore: new InMemoryCommandStore(),
+                commandRouter: new CommandRouter([]),
+            ),
+            eventFactory: new EventFactory(),
+            toolCallExtractor: new ToolCallExtractor(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
+            normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
+            commandBus: $commandBus,
+            errorClassifier: $classifier,
+            agentRetryMaxAttempts: 5,
+        );
+
+        $state = new RunState(
+            runId: 'run-retry-delay',
+            status: RunStatus::Running,
+            version: 2,
+            turnNo: 1,
+            lastSeq: 3,
+            activeStepId: 'step-delay',
+            currentOperation: new CurrentOperationDTO(1, 'step-delay', 1, 'llm-delay-1'),
+            messages: [
+                new \Ineersa\AgentCore\Domain\Message\AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'Hi']]),
+            ],
+            retryAttempts: $currentAttempts,
+            model: 'test-model',
+        );
+
+        $result = $handler->handle(new LlmStepResult(
+            runId: 'run-retry-delay',
+            turnNo: 1,
+            stepId: 'step-delay',
+            attempt: 1,
+            idempotencyKey: 'llm-delay-1',
+            assistantMessage: null,
+            usage: [],
+            stopReason: null,
+            error: $classifier->classify([
+                'type' => \RuntimeException::class,
+                'message' => 'Codex WebSocket idle timeout.',
+            ]),
+        ), $state);
+
+        foreach ($result->postCommit as $callback) {
+            $callback();
+        }
+
+        $delay = $commandBus->envelopes[0]->last(DelayStamp::class);
+        $this->assertInstanceOf(DelayStamp::class, $delay);
+        $this->assertSame($expectedDelayMs, $delay->getDelay());
+    }
+
+    public static function agentRetryDelayProvider(): array
+    {
+        return [
+            'first retry' => [0, 1000],
+            'second retry' => [1, 2000],
+            'third retry' => [2, 4000],
+            'fourth retry capped' => [3, 8000],
+        ];
     }
 
     public function testRetryableErrorAtCapDoesNotDispatchRetry(): void
@@ -595,7 +675,7 @@ final class LlmStepResultHandlerTest extends TestCase
             normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
             commandBus: $commandBus,
             errorClassifier: $classifier,
-            agentRetryMaxAttempts: 2,
+            agentRetryMaxAttempts: 3,
             logger: $logger,
         );
 
@@ -610,7 +690,7 @@ final class LlmStepResultHandlerTest extends TestCase
             messages: [
                 new \Ineersa\AgentCore\Domain\Message\AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'Hi']]),
             ],
-            retryAttempts: 2,
+            retryAttempts: 3,
             model: 'test-model');
 
         $message = new LlmStepResult(
@@ -637,9 +717,17 @@ final class LlmStepResultHandlerTest extends TestCase
         $this->assertFalse($result->nextState->retryableFailure);
         $errorMessage = (string) $result->nextState->errorMessage;
         $this->assertSame(
-            'Automatic LLM retry attempts exhausted after 2 retry attempt(s): LLM provider server error interrupted the response stream.',
+            'Automatic LLM retry attempts exhausted after 3 retry attempt(s): LLM provider server error interrupted the response stream.',
             $errorMessage,
         );
+        $this->assertNull($result->nextState->activeStepId);
+        $this->assertNull($result->nextState->currentOperation);
+        $this->assertSame(0, $result->nextState->retryAttempts);
+        $this->assertSame(
+            [RunEventTypeEnum::LlmStepFailed->value, RunEventTypeEnum::AgentEnd->value],
+            array_map(static fn ($event): string => $event->type, $result->events),
+        );
+        $this->assertSame('failed', $result->events[1]->payload['reason'] ?? null);
 
         $failed = null;
         foreach ($result->events as $event) {
@@ -649,9 +737,8 @@ final class LlmStepResultHandlerTest extends TestCase
         }
         $this->assertNotNull($failed);
         $this->assertTrue($failed->payload['retries_exhausted'] ?? false);
-        $this->assertSame(2, $failed->payload['retry_attempt'] ?? null);
-        $this->assertSame(2, $failed->payload['max_retries'] ?? null);
-        $this->assertSame(2, $result->nextState->retryAttempts);
+        $this->assertSame(3, $failed->payload['retry_attempt'] ?? null);
+        $this->assertSame(3, $failed->payload['max_retries'] ?? null);
         $this->assertFalse($failed->payload['retryable'] ?? true);
         $this->assertFalse($failed->payload['error']['retryable'] ?? true);
         foreach ($result->postCommit as $callback) {
@@ -661,8 +748,8 @@ final class LlmStepResultHandlerTest extends TestCase
         $this->assertCount(1, $logger->records);
         $this->assertSame('error', $logger->records[0]['level']);
         $this->assertSame('llm.retry.exhausted', $logger->records[0]['message']);
-        $this->assertSame(2, $logger->records[0]['context']['retry_attempt'] ?? null);
-        $this->assertSame(2, $logger->records[0]['context']['max_retries'] ?? null);
+        $this->assertSame(3, $logger->records[0]['context']['retry_attempt'] ?? null);
+        $this->assertSame(3, $logger->records[0]['context']['max_retries'] ?? null);
         $this->assertSame(ServerException::class, $logger->records[0]['context']['error_type'] ?? null);
 
         $duplicate = $handler->handle($message, $result->nextState);
@@ -746,7 +833,7 @@ final class LlmStepResultHandlerTest extends TestCase
             normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
             commandBus: $commandBus,
             errorClassifier: $classifier,
-            agentRetryMaxAttempts: 2,
+            agentRetryMaxAttempts: 3,
         );
 
         $error = $classifier->classify([
@@ -785,6 +872,13 @@ final class LlmStepResultHandlerTest extends TestCase
         $this->assertSame(RunStatus::Failed, $result->nextState->status);
         $this->assertFalse($result->nextState->retryableFailure);
         $this->assertNotNull($result->nextState->errorMessage);
+        $this->assertNull($result->nextState->activeStepId);
+        $this->assertNull($result->nextState->currentOperation);
+        $this->assertSame(0, $result->nextState->retryAttempts);
+        $this->assertSame(
+            [RunEventTypeEnum::LlmStepFailed->value, RunEventTypeEnum::AgentEnd->value],
+            array_map(static fn ($event): string => $event->type, $result->events),
+        );
 
         $failed = null;
         foreach ($result->events as $event) {
@@ -804,6 +898,77 @@ final class LlmStepResultHandlerTest extends TestCase
                 'Provider context overflow must not schedule CompactRun recovery.');
             $this->assertNotInstanceOf(\Ineersa\AgentCore\Domain\Message\ApplyCommand::class, $dispatched,
                 'Provider context overflow must not auto-retry via Continue.');
+        }
+        $this->assertCount(0, $commandBus->messages);
+    }
+
+    public function testNonRetryableErrorEmitsTerminalAgentEndWithoutRetry(): void
+    {
+        $commandBus = new TestMessageBus();
+        $classifier = new \Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier();
+
+        $handler = new LlmStepResultHandler(
+            toolBatchCollector: new ToolBatchCollector(),
+            commandMailboxPolicy: new CommandMailboxPolicy(
+                commandStore: new InMemoryCommandStore(),
+                commandRouter: new CommandRouter([]),
+            ),
+            eventFactory: new EventFactory(),
+            toolCallExtractor: new ToolCallExtractor(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
+            normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
+            commandBus: $commandBus,
+            errorClassifier: $classifier,
+            agentRetryMaxAttempts: 3,
+        );
+
+        $error = $classifier->classify([
+            'type' => \RuntimeException::class,
+            'message' => 'server overloaded',
+            'http_status_code' => 500,
+        ]);
+        $this->assertFalse($error['retryable'] ?? true);
+
+        $state = new RunState(
+            runId: 'run-nonretryable',
+            status: RunStatus::Running,
+            version: 2,
+            turnNo: 1,
+            lastSeq: 3,
+            activeStepId: 'step-1',
+            currentOperation: new CurrentOperationDTO(1, 'step-1', 1, 'llm-nonretryable-1'),
+            messages: [
+                new \Ineersa\AgentCore\Domain\Message\AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'Hi']]),
+            ],
+            model: 'test-model',
+        );
+
+        $result = $handler->handle(new LlmStepResult(
+            runId: 'run-nonretryable',
+            turnNo: 1,
+            stepId: 'step-1',
+            attempt: 1,
+            idempotencyKey: 'llm-nonretryable-1',
+            assistantMessage: null,
+            usage: [],
+            stopReason: null,
+            error: $error,
+        ), $state);
+
+        $this->assertSame(RunStatus::Failed, $result->nextState->status);
+        $this->assertFalse($result->nextState->retryableFailure);
+        $this->assertNull($result->nextState->activeStepId);
+        $this->assertNull($result->nextState->currentOperation);
+        $this->assertSame(0, $result->nextState->retryAttempts);
+        $this->assertSame(
+            [RunEventTypeEnum::LlmStepFailed->value, RunEventTypeEnum::AgentEnd->value],
+            array_map(static fn ($event): string => $event->type, $result->events),
+        );
+        $this->assertSame('failed', $result->events[1]->payload['reason'] ?? null);
+
+        foreach ($result->postCommit as $callback) {
+            $callback();
         }
         $this->assertCount(0, $commandBus->messages);
     }

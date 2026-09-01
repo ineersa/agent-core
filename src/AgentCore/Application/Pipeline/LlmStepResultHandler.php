@@ -34,10 +34,15 @@ use Symfony\AI\Platform\Message\AssistantMessage;
 use Symfony\AI\Platform\Tool\Tool;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
+use Symfony\Component\Messenger\Stamp\DelayStamp;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
 final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandlerLogComponentInterface
 {
+    private const int AGENT_RETRY_BASE_DELAY_MS = 1000;
+
+    private const int AGENT_RETRY_MAX_DELAY_MS = 8000;
+
     public function __construct(
         private ToolBatchCollector $toolBatchCollector,
         private CommandMailboxPolicy $commandMailboxPolicy,
@@ -52,7 +57,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
         private ?MessageBusInterface $commandBus = null,
         private ?LlmProviderErrorClassifier $errorClassifier = null,
         private ?ToolExecutionSettingsInterface $toolExecutionSettings = null,
-        private int $agentRetryMaxAttempts = 2,
+        private int $agentRetryMaxAttempts = 3,
         private int $maxParallelism = 1,
         private LoggerInterface $logger = new NullLogger(),
     ) {
@@ -223,6 +228,19 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
                 $eventSpecs[] = $notifSpec;
             }
 
+            // Still-retryable failures stay Failed+retryableFailure so Continue can
+            // recover and deferred child projection can treat the commit as nonterminal.
+            // Terminal failures append AgentEnd(reason=failed) so runtime emits run.failed.
+            if (!$canAutoRetry) {
+                $eventSpecs[] = [
+                    'type' => RunEventTypeEnum::AgentEnd->value,
+                    'payload' => [
+                        'reason' => 'failed',
+                        'error' => $userMessage,
+                    ],
+                ];
+            }
+
             $nextState = $state->with([
                 'status' => RunStatus::Failed,
                 'version' => $state->version + 1,
@@ -231,10 +249,11 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
                 'streamingMessage' => null,
                 'pendingToolCalls' => [],
                 'currentToolCalls' => [],
+                'activeStepId' => $canAutoRetry ? $state->activeStepId : null,
                 'currentOperation' => null,
                 'errorMessage' => $userMessage,
                 'retryableFailure' => $canAutoRetry,
-                'retryAttempts' => $canAutoRetry ? $nextRetryAttempt : $currentAttempts,
+                'retryAttempts' => $canAutoRetry ? $nextRetryAttempt : 0,
             ]);
 
             $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
@@ -578,6 +597,11 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
         return function () use ($runId, $turnNo, $stepId, $retryAttempt, $maxRetries, $error): void {
             $continueStepId = \sprintf('auto-retry-%s-%d', $stepId, $retryAttempt);
             $idempotencyKey = hash('sha256', \sprintf('%s|auto-retry|%s|%d', $runId, $stepId, $retryAttempt));
+            $exponent = max(0, $retryAttempt - 1);
+            $delayMs = min(
+                self::AGENT_RETRY_BASE_DELAY_MS * (2 ** $exponent),
+                self::AGENT_RETRY_MAX_DELAY_MS,
+            );
 
             try {
                 $this->commandBus->dispatch(
@@ -594,6 +618,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
                         ],
                         options: [],
                     ),
+                    [new DelayStamp($delayMs)],
                 );
             } catch (ExceptionInterface $exception) {
                 throw new \RuntimeException(\sprintf('Failed to dispatch auto-retry Continue for run %s.', $runId), previous: $exception);

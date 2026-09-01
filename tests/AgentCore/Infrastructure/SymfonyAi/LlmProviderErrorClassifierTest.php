@@ -104,14 +104,27 @@ final class LlmProviderErrorClassifierTest extends TestCase
         $this->assertSame(LlmProviderErrorClassifier::CATEGORY_AUTH, $result['error_category']);
     }
 
-    public function testUnknownFailureDoesNotBecomeRetryableFromMessageText(): void
+    public function testUnknownProviderOperationFailureIsRetryableWithoutMessageMatching(): void
+    {
+        $result = $this->classifier->classify([
+            'type' => \RuntimeException::class,
+            'message' => 'Codex WebSocket idle timeout.',
+        ]);
+
+        $this->assertTrue($result['retryable']);
+        $this->assertSame(LlmProviderErrorClassifier::CATEGORY_PROVIDER, $result['error_category']);
+        $this->assertSame('LLM provider request failed.', $result['user_message']);
+        $this->assertSame('Codex WebSocket idle timeout.', $result['message']);
+    }
+
+    public function testUnknownFailureDoesNotInspectMessageTextForClassification(): void
     {
         $result = $this->classifier->classify([
             'type' => \RuntimeException::class,
             'message' => '[server_error/server_error] overloaded timeout please try again',
         ]);
 
-        $this->assertFalse($result['retryable']);
+        $this->assertTrue($result['retryable']);
         $this->assertSame(LlmProviderErrorClassifier::CATEGORY_PROVIDER, $result['error_category']);
         $this->assertSame('LLM provider request failed.', $result['user_message']);
     }

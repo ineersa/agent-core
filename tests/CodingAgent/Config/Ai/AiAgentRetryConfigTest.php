@@ -12,7 +12,7 @@ final class AiAgentRetryConfigTest extends TestCase
 {
     public function testFromArrayResolvesDefaultAndExplicitValues(): void
     {
-        $this->assertSame(2, AiAgentRetryConfig::fromArray([])->resolveMaxAttempts());
+        $this->assertSame(3, AiAgentRetryConfig::fromArray([])->resolveMaxAttempts());
         $this->assertSame(5, AiAgentRetryConfig::fromArray(['max_attempts' => 5])->resolveMaxAttempts());
         $this->assertSame(3, AiAgentRetryConfig::fromArray(['max_attempts' => '3'])->resolveMaxAttempts());
     }

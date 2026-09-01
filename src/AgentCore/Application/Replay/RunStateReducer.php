@@ -565,6 +565,7 @@ final readonly class RunStateReducer
         $status = match ($reason) {
             'completed' => RunStatus::Completed,
             'cancelled' => RunStatus::Cancelled,
+            'failed' => RunStatus::Failed,
             default => RunStatus::Completed,
         };
 

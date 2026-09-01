@@ -72,7 +72,7 @@ If unset, the app injects a safe default HTTP timeout so requests cannot hang fo
 
 ## Agent retry (`ai.agent_retry`)
 
-Controls the bounded retry count for typed mid-stream provider failures. HTTP status, transport, backoff, and Retry-After handling belong to Symfony HttpClient under `ai.http`.
+Controls the bounded agent-level retry count for unknown provider-operation and mid-stream failures (`max_attempts`, default `3` retries after the initial request). Explicit permanent errors, cancellations, programming errors, context overflow, and HTTP failures already exhausted by Symfony HttpClient remain terminal. Agent retries schedule `ApplyCommand` Continue with Messenger `DelayStamp` backoff `1000ms` → `2000ms` → `4000ms` (capped at `8000ms`). HTTP status, transport, and Retry-After handling belong to Symfony HttpClient under `ai.http`.
 
 ## Model reference format
 
