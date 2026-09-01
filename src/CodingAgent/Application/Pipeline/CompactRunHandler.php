@@ -468,8 +468,6 @@ final readonly class CompactRunHandler implements RunMessageHandler, RunMessageH
             'activeStepId' => null,
             'currentOperation' => null,
             'lastAppliedCompactionKey' => $message->idempotencyKey(),
-            // Compaction replaces the conversation: the retry episode dies
-            // with the summarized context (reset is explicit, not a drop).
         ]);
 
         // Pre-LLM guard replacement must continue the LLM turn.
@@ -539,7 +537,6 @@ final readonly class CompactRunHandler implements RunMessageHandler, RunMessageH
             'version' => $state->version + 1,
             'lastSeq' => $state->lastSeq + $count,
             'activeStepId' => $activeStepId ?? $state->activeStepId,
-            // Compaction events restart the retry episode (context replaced).
         ]);
     }
 

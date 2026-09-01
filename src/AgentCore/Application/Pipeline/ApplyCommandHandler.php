@@ -326,8 +326,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             $noopState = $state->with([
                 'version' => $state->version + 1,
                 'lastSeq' => $state->lastSeq + \count($events),
-                // Cancelling ends the retry episode once the run terminalizes;
-                // keep the counter reset explicit instead of a silent field drop.
             ]);
 
             return new HandlerResult(

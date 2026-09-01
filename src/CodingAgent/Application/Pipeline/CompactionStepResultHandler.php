@@ -446,7 +446,6 @@ final class CompactionStepResultHandler implements RunMessageHandler, RunMessage
             'activeStepId' => $clearActiveStepId ? null : $state->activeStepId,
             'currentOperation' => $clearActiveStepId ? null : $state->currentOperation,
             'lastAppliedCompactionKey' => $completedRequestKey ?? $state->lastAppliedCompactionKey,
-            // Compaction events restart the retry episode (context replaced).
         ]);
     }
 }

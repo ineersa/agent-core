@@ -16,6 +16,7 @@ use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Event\WorkerMessageFailedEvent;
 use Symfony\Component\Messenger\Exception\HandlerFailedException;
 use Symfony\Component\Messenger\Exception\TransportException;
+use Symfony\Component\Messenger\Exception\UnrecoverableMessageHandlingException;
 
 final class LlmWorkerFailedEventSubscriberTest extends TestCase
 {
@@ -70,7 +71,7 @@ final class LlmWorkerFailedEventSubscriberTest extends TestCase
     }
 
     #[Test]
-    public function skipsWhenThrowableIsNotRetryableLlmFailure(): void
+    public function dispatchesGenericTerminalResultForFinalNonProviderFailure(): void
     {
         $commandBus = new TestMessageBus();
         $logger = new TestLogger();
@@ -79,17 +80,26 @@ final class LlmWorkerFailedEventSubscriberTest extends TestCase
         $subscriber->onWorkerMessageFailed(new WorkerMessageFailedEvent(
             new Envelope($this->executeLlmStep()),
             'llm',
-            new \RuntimeException(self::RAW_MARKER),
+            new UnrecoverableMessageHandlingException(self::RAW_MARKER),
         ));
 
-        $this->assertSame([], $commandBus->messages);
+        $this->assertCount(1, $commandBus->messages);
+        $result = $commandBus->messages[0];
+        $this->assertInstanceOf(LlmStepResult::class, $result);
+        $this->assertSame(self::RUN_ID, $result->runId());
+        $this->assertSame('tools-ref-1', $result->toolsRef);
+        $this->assertSame('', $result->model);
+        $this->assertSame('llm_step_delivery_failed', $result->error['type'] ?? null);
+        $this->assertSame('messenger', $result->error['error_category'] ?? null);
+        $this->assertSame('LLM step result could not be delivered.', $result->error['user_message'] ?? null);
+        $this->assertFalse($result->error['retryable'] ?? true);
+        $this->assertStringNotContainsString(self::RAW_MARKER, json_encode($result->error, \JSON_THROW_ON_ERROR));
+
         $records = array_values(array_filter(
             $logger->records,
-            static fn (array $record): bool => 'llm.worker_failed.ignored_non_retryable_exception' === $record['message'],
+            static fn (array $record): bool => 'llm.worker_failed.terminal_result_dispatched' === $record['message'],
         ));
         $this->assertCount(1, $records);
-        $this->assertSame(\RuntimeException::class, $records[0]['context']['exception_class'] ?? null);
-        $this->assertArrayNotHasKey('exception_message', $records[0]['context']);
         $this->assertStringNotContainsString(self::RAW_MARKER, json_encode($records[0], \JSON_THROW_ON_ERROR));
     }
 

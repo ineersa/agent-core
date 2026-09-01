@@ -14,11 +14,13 @@ use Symfony\Component\Messenger\Exception\WrappedExceptionsInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
- * After the llm transport exhausts retries for {@see ExecuteLlmStep}, dispatch
- * exactly one sanitized non-retryable {@see LlmStepResult} to run_control.
+ * After final llm transport failure for {@see ExecuteLlmStep}, dispatch exactly
+ * one sanitized non-retryable {@see LlmStepResult} to run_control. Exhausted
+ * provider failures retain approved structural diagnostics; other failures use
+ * a generic delivery error so every final worker path terminalizes the run.
  *
  * Intermediate retries dispatch nothing. Canonical mutation remains owned by
- * run_control handlers; this subscriber only bridges exhausted transport failure.
+ * run_control handlers; this subscriber only bridges final transport failure.
  */
 final readonly class LlmWorkerFailedEventSubscriber implements EventSubscriberInterface
 {
@@ -70,22 +72,11 @@ final readonly class LlmWorkerFailedEventSubscriber implements EventSubscriberIn
             return;
         }
 
-        $throwable = $event->getThrowable();
-        $providerFailure = $this->findProviderFailure($throwable);
-        if (null === $providerFailure) {
-            $this->logger->warning('llm.worker_failed.ignored_non_retryable_exception', [
-                'run_id' => $message->runId(),
-                'session_id' => $message->runId(),
-                'component' => 'messenger.worker',
-                'event_type' => 'llm.worker_failed.ignored_non_retryable_exception',
-                'message_type' => $message::class,
-                'exception_class' => $throwable::class,
-            ]);
+        $providerFailure = $this->findProviderFailure($event->getThrowable());
+        $error = null === $providerFailure
+            ? $this->genericTerminalError()
+            : $this->sanitizeTerminalError($providerFailure->error);
 
-            return;
-        }
-
-        $error = $this->sanitizeTerminalError($providerFailure->error);
         $result = new LlmStepResult(
             runId: $message->runId(),
             turnNo: $message->turnNo(),
@@ -96,12 +87,12 @@ final readonly class LlmWorkerFailedEventSubscriber implements EventSubscriberIn
             usage: [],
             stopReason: 'error',
             error: $error,
-            toolsRef: $providerFailure->toolsRef,
-            model: $providerFailure->model,
-            reasoning: $providerFailure->reasoning,
-            modelNotifications: $providerFailure->modelNotifications,
-            availableTools: $providerFailure->availableTools,
-            availableToolsSchemaTokensEstimate: $providerFailure->availableToolsSchemaTokensEstimate,
+            toolsRef: $providerFailure->toolsRef ?? $message->toolsRef,
+            model: $providerFailure->model ?? '',
+            reasoning: $providerFailure->reasoning ?? '',
+            modelNotifications: $providerFailure->modelNotifications ?? [],
+            availableTools: $providerFailure->availableTools ?? [],
+            availableToolsSchemaTokensEstimate: $providerFailure->availableToolsSchemaTokensEstimate ?? 0,
         );
 
         try {
@@ -149,6 +140,20 @@ final readonly class LlmWorkerFailedEventSubscriber implements EventSubscriberIn
         }
 
         return null;
+    }
+
+    /** @return array<string, mixed> */
+    private function genericTerminalError(): array
+    {
+        $userMessage = 'LLM step result could not be delivered.';
+
+        return [
+            'type' => 'llm_step_delivery_failed',
+            'message' => $userMessage,
+            'retryable' => false,
+            'error_category' => 'messenger',
+            'user_message' => $userMessage,
+        ];
     }
 
     /**
