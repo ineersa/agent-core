@@ -465,12 +465,7 @@ final class SubmitListener implements TuiListenerRegistrar
 
         $state->sessionId = $sessionStore->createSession($seedPrompt);
         $screen->updateSessionId($state->sessionId);
-        $lifecycle->dispatch(new \Ineersa\Tui\Runtime\TuiSessionLifecycleEventDTO(
-            type: \Ineersa\Tui\Runtime\TuiSessionLifecycleEventTypeEnum::SessionStarted,
-            sessionId: $state->sessionId,
-            isDraft: false,
-            resuming: false,
-        ));
+        $lifecycle->dispatch(\Ineersa\Tui\Runtime\TuiSessionLifecycleEventTypeEnum::SessionStarted);
         $logger->info('Draft session promoted to real session', [
             'component' => 'SubmitListener',
             'event_type' => $eventType,
@@ -541,12 +536,7 @@ final class SubmitListener implements TuiListenerRegistrar
             if ('' === $state->sessionId) {
                 $state->sessionId = $sessionStore->createSession($shellCommand->rawInput);
                 $screen->updateSessionId($state->sessionId);
-                $lifecycle->dispatch(new \Ineersa\Tui\Runtime\TuiSessionLifecycleEventDTO(
-                    type: \Ineersa\Tui\Runtime\TuiSessionLifecycleEventTypeEnum::SessionStarted,
-                    sessionId: $state->sessionId,
-                    isDraft: false,
-                    resuming: false,
-                ));
+                $lifecycle->dispatch(\Ineersa\Tui\Runtime\TuiSessionLifecycleEventTypeEnum::SessionStarted);
                 $logger->info('Draft session promoted for shell command', [
                     'component' => 'SubmitListener',
                     'event_type' => 'draft_promoted_shell',

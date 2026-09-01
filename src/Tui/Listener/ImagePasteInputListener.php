@@ -11,7 +11,6 @@ use Ineersa\Tui\ImagePaste\PastedImagePlaceholderFormatter;
 use Ineersa\Tui\ImagePaste\PastedImageValidationService;
 use Ineersa\Tui\Layout\InputPriority;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
-use Ineersa\Tui\Runtime\TuiSessionLifecycleEventDTO;
 use Ineersa\Tui\Runtime\TuiSessionLifecycleEventTypeEnum;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
 use Psr\Log\LoggerInterface;
@@ -45,8 +44,8 @@ final class ImagePasteInputListener implements TuiListenerRegistrar
         $blockFactory = $this->blockFactory;
         $logger = $this->logger;
 
-        $context->lifecycle->subscribe(static function (TuiSessionLifecycleEventDTO $event) use ($clipboardReader, $state): void {
-            if (TuiSessionLifecycleEventTypeEnum::SessionEnded !== $event->type) {
+        $context->lifecycle->subscribe(static function (TuiSessionLifecycleEventTypeEnum $eventType) use ($clipboardReader, $state): void {
+            if (TuiSessionLifecycleEventTypeEnum::SessionEnded !== $eventType) {
                 return;
             }
 

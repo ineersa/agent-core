@@ -16,8 +16,6 @@ use Ineersa\Tui\Listener\SlashCommandCatalogRegistrar;
 use Ineersa\Tui\Listener\TuiListenerRegistrar;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher;
-use Ineersa\Tui\Runtime\TuiSessionLifecycleEndReasonEnum;
-use Ineersa\Tui\Runtime\TuiSessionLifecycleEventDTO;
 use Ineersa\Tui\Runtime\TuiSessionLifecycleEventTypeEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Runtime\TuiTickDispatcher;
@@ -145,12 +143,6 @@ final readonly class InteractiveMode
         $targetSessionId = $sessionId;
         $targetRequest = $request;
         $isDraft = ('' === $sessionId && null === $request);
-        // Track the session id from the previous iteration so the
-        // next start/resume/draft-start lifecycle event can carry it
-        // as previousSessionId — useful for extensions tracking which
-        // session the user switched from.  Null for the very first
-        // iteration (no prior session).
-        $previousSessionIdForLifecycle = null;
 
         // Set true once per session switch and intentionally never reset
         // to false — every later switch iteration also needs a fresh
@@ -282,32 +274,15 @@ final readonly class InteractiveMode
             // ── Dispatch session lifecycle start event ──
             // Must happen AFTER listener registrars have run so that
             // subscribers to $context->lifecycle are already wired.
-            $this->dispatchSessionLifecycleStart(
-                $lifecycle,
-                $state,
-                $isDraft,
-                $targetSessionId,
-                $previousSessionIdForLifecycle,
-            );
+            $this->dispatchSessionLifecycleStart($lifecycle, $isDraft, $targetSessionId);
 
             $tui->setFocus($screen->editorWidget());
             $tui->run();
 
-            // ── Determine exit reason and dispatch session ended ──
+            // ── Consume exit intent and dispatch session ended ──
             $reloadIntent = $services->switch->consumePendingReload();
             $switchTarget = $services->switch->consumePendingSwitch();
-            $endReason = (null !== $reloadIntent)
-                ? TuiSessionLifecycleEndReasonEnum::Reload
-                : ((null !== $switchTarget)
-                    ? TuiSessionLifecycleEndReasonEnum::Switch
-                    : TuiSessionLifecycleEndReasonEnum::Quit);
-            $lifecycle->dispatch(new TuiSessionLifecycleEventDTO(
-                type: TuiSessionLifecycleEventTypeEnum::SessionEnded,
-                sessionId: $state->sessionId,
-                isDraft: $isDraft,
-                resuming: $state->resuming,
-                endReason: $endReason,
-            ));
+            $lifecycle->dispatch(TuiSessionLifecycleEventTypeEnum::SessionEnded);
 
             // ── Full-process settings reload (/reload) ──
             //
@@ -349,10 +324,6 @@ final readonly class InteractiveMode
                 $client->shutdown();
 
                 $needsTerminalClear = true;
-                // Record the session id we're leaving so the next
-                // iteration's lifecycle start event can reference
-                // it as previousSessionId.
-                $previousSessionIdForLifecycle = ('' !== $state->sessionId) ? $state->sessionId : null;
                 if ($switchTarget->isDraft) {
                     $isDraft = true;
                     $targetSessionId = '';
@@ -408,47 +379,21 @@ final readonly class InteractiveMode
     }
 
     /**
-     * Dispatch the session lifecycle startup event.
-     *
-     * Must be called AFTER listener registrars have wired their
-     * subscriptions to $lifecycle, but BEFORE the TUI event loop
-     * starts so subscribers can initialise state synchronously.
-     *
-     * @param string|null $previousSessionId session ID of the iteration just
-     *                                       ended, or null for the first iteration
+     * Dispatch the session lifecycle startup event after listeners are registered
+     * and before the TUI event loop starts.
      */
     private function dispatchSessionLifecycleStart(
         TuiSessionLifecycleDispatcher $lifecycle,
-        TuiSessionState $state,
         bool $isDraft,
         string $targetSessionId,
-        ?string $previousSessionId,
     ): void {
-        if ($isDraft) {
-            $lifecycle->dispatch(new TuiSessionLifecycleEventDTO(
-                type: TuiSessionLifecycleEventTypeEnum::SessionDraftStarted,
-                sessionId: '',
-                isDraft: true,
-                resuming: false,
-                previousSessionId: $previousSessionId,
-            ));
-        } elseif ('' !== $targetSessionId) {
-            $lifecycle->dispatch(new TuiSessionLifecycleEventDTO(
-                type: TuiSessionLifecycleEventTypeEnum::SessionResumed,
-                sessionId: $state->sessionId,
-                isDraft: false,
-                resuming: true,
-                previousSessionId: $previousSessionId,
-            ));
-        } else {
-            $lifecycle->dispatch(new TuiSessionLifecycleEventDTO(
-                type: TuiSessionLifecycleEventTypeEnum::SessionStarted,
-                sessionId: $state->sessionId,
-                isDraft: false,
-                resuming: false,
-                previousSessionId: $previousSessionId,
-            ));
-        }
+        $eventType = $isDraft
+            ? TuiSessionLifecycleEventTypeEnum::SessionDraftStarted
+            : ('' !== $targetSessionId
+                ? TuiSessionLifecycleEventTypeEnum::SessionResumed
+                : TuiSessionLifecycleEventTypeEnum::SessionStarted);
+
+        $lifecycle->dispatch($eventType);
     }
 
     /**

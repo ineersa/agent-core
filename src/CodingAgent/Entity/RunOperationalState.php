@@ -50,22 +50,6 @@ final class RunOperationalState
     #[Assert\Length(min: 1, max: self::ID_MAX_LENGTH)]
     public ?string $activeStepId;
 
-    #[ORM\Column(name: 'operation_turn_no', type: 'integer', nullable: true)]
-    #[Assert\GreaterThanOrEqual(0)]
-    public ?int $operationTurnNo;
-
-    #[ORM\Column(name: 'operation_step_id', type: 'string', length: self::ID_MAX_LENGTH, nullable: true)]
-    #[Assert\Length(min: 1, max: self::ID_MAX_LENGTH)]
-    public ?string $operationStepId;
-
-    #[ORM\Column(name: 'operation_attempt', type: 'integer', nullable: true)]
-    #[Assert\GreaterThanOrEqual(1)]
-    public ?int $operationAttempt;
-
-    #[ORM\Column(name: 'operation_key', type: 'string', length: self::ID_MAX_LENGTH, nullable: true)]
-    #[Assert\Length(min: 1, max: self::ID_MAX_LENGTH)]
-    public ?string $operationKey;
-
     #[ORM\Column(name: 'last_applied_advance_key', type: 'string', length: self::ID_MAX_LENGTH, nullable: true)]
     #[Assert\Length(min: 1, max: self::ID_MAX_LENGTH)]
     public ?string $lastAppliedAdvanceKey;

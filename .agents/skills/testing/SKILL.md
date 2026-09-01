@@ -16,7 +16,7 @@ snapshot-update command without a Castor `--filter` option).
 
 ```bash
 castor check                # Full QA gate: deptrac, unit/integration (ParaTest), controller replay E2E, TUI replay E2E, live llm-real smoke (ParaTest, port 9052 / llama-proxy), phpstan, dead-code, cs-check, docs:validate; lanes parallel; logs under per-run `var/reports/qa-<id>/check-*.log`. Absolute 210s wall from task entry (lock wait + setup/preflight + lanes + finalizers). Deterministic mode: Symfony Lock across sibling worktrees (60s acquire timeout clamped by remaining wall, `HATFIELD_CASTOR_CHECK_LOCK_TIMEOUT`), cache-growth guard, post-run `HATFIELD_QA_RUN_ID` leak assertion (no auto-kill), lane log integrity. Stress overrides (`HATFIELD_CASTOR_CHECK_LOCK=0`, `HATFIELD_LLM_CACHE_GUARD=0`, concurrency envs) are investigation-only — not CODE-REVIEW evidence. Worker budgets under check: unit=4 (max 8, `HATFIELD_CHECK_UNIT_PARATEST_PROCESSES`), TUI=2 (max 4, `HATFIELD_CHECK_TUI_PARATEST_PROCESSES` / legacy `HATFIELD_TUI_PARATEST_PROCESSES`), llm-real=1 (max 4, `HATFIELD_CHECK_LLM_REAL_PARATEST_PROCESSES`); controller-replay sequential. Warm proxy before gate: `castor test:llm-real`.
-castor test                 # unit/integration tests (ParaTest parallel by default); excludes tui-e2e-replay, llm-real, recording, and controller-replay groups; internal hard timeout ≤210s with process-tree reaping
+castor test                 # unit/integration tests (ParaTest parallel by default); excludes tui-e2e-replay, llm-real, and controller-replay groups; internal hard timeout ≤210s with process-tree reaping
 castor test --filter=X      # filter tests by name
 castor test --suite=X       # target a specific phpunit.xml test suite (ParaTest parallel)
 castor test:tui [--filter=X]    # TUI E2E journey tests (replay-backed, no live LLM); full group uses ParaTest (default 2 workers; under `castor check` uses `HATFIELD_CHECK_TUI_PARATEST_PROCESSES`, legacy `HATFIELD_TUI_PARATEST_PROCESSES` still honored, max 4); --filter stays sequential PHPUnit; hard timeout ≤210s
@@ -243,7 +243,7 @@ contend on SQLite writes under concurrent check lanes.
 |---|---|---|
 | `castor check` | Full QA gate: deptrac, unit/integration (ParaTest), controller replay E2E, TUI replay E2E, live llm-real (ParaTest, port 9052), phpstan, dead-code, cs-check, docs:validate. No PHAR. | tmux, llama.cpp/proxy on 9052 |
 | `castor test` | Unit/integration tests (ParaTest parallel by default) | Nothing (pure PHP) |
-| `castor test:llm-real` | Real LLM smoke: `ControllerSmokeTest`, `LlamaCppSmokeTest` (excludes `recording` group). Run as focused opt-in validation when changes touch provider/LLM-visible code — NOT required for every normal task. | llama.cpp on port 9052 |
+| `castor test:llm-real` | Real LLM smoke: `ControllerSmokeTest`, `LlamaCppSmokeTest`. Run as focused opt-in validation when changes touch provider/LLM-visible code — NOT required for every normal task. | llama.cpp on port 9052 |
 | `castor test:controller-replay` | Controller replay E2E: spawns `--controller`, JSONL protocol, replay fixtures (no live LLM) | Nothing (pure PHP) |
 | `castor test:controller` | Controller E2E: spawns `--controller`, JSONL protocol (live LLM, opt-in) | llama.cpp on port 9052 |
 | `castor test:tui` | TUI E2E journey tests (replay-backed, no live LLM) | tmux |

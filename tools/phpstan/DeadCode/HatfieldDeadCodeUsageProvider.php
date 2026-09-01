@@ -16,7 +16,6 @@ use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressChildR
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressParallelSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingleSnapshotDTO;
 use Ineersa\CodingAgent\Tests\Runtime\Controller\E2E\Replay\StreamPacingHttpClient;
-use Ineersa\Tui\Runtime\TuiSessionLifecycleEventDTO;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use ShipMonk\PHPStan\DeadCode\Provider\ReflectionBasedMemberUsageProvider;
 use ShipMonk\PHPStan\DeadCode\Provider\VirtualUsageData;
@@ -55,7 +54,6 @@ final class HatfieldDeadCodeUsageProvider extends ReflectionBasedMemberUsageProv
         SubagentProgressChildRowDTO::class,
         SubagentProgressParallelSnapshotDTO::class,
         SubagentProgressSingleSnapshotDTO::class,
-        TuiSessionLifecycleEventDTO::class,
     ];
 
     protected function shouldMarkMethodAsUsed(\ReflectionMethod $method): ?VirtualUsageData
