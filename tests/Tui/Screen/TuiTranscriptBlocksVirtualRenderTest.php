@@ -7,6 +7,7 @@ namespace Ineersa\Tui\Tests\Screen;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
+use Ineersa\CodingAgent\Runtime\ProjectionPipeline\AssistantStreamProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
@@ -211,6 +212,48 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
 
         $this->assertStringContainsString('⋯', $text, 'Thinking glyph missing');
         $this->assertStringContainsString('reasoning step 1', $text, 'Thinking text missing');
+    }
+
+    #[Test]
+    public function testRepeatedThinkingSegmentsRemainVisibleWhileStreamingAndAfterCompletion(): void
+    {
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addSubscriber(new AssistantStreamProjectionSubscriber());
+        $projector = new TranscriptProjector($dispatcher, new TranscriptProjectionState());
+        $blockId = self::SESSION_ID.'_step-1_thinking';
+        $accept = static function (string $type, array $payload) use ($projector): void {
+            $projector->accept(new RuntimeEvent($type, self::SESSION_ID, 0, $payload));
+        };
+
+        $accept('assistant.thinking_started', ['step_id' => 'step-1', 'block_id' => $blockId]);
+        $accept('assistant.thinking_delta', ['block_id' => $blockId, 'thinking' => "First reasoning summary.\n"]);
+        $accept('assistant.thinking_completed', [
+            'block_id' => $blockId,
+            'thinking' => "First reasoning summary.\n",
+        ]);
+        $accept('assistant.thinking_started', ['step_id' => 'step-1', 'block_id' => $blockId]);
+        $accept('assistant.thinking_delta', ['block_id' => $blockId, 'thinking' => 'Second reasoning summary.']);
+
+        $streamingHarness = new VirtualTuiHarness(sessionId: self::SESSION_ID.'-streaming');
+        $streamingHarness->screen()->setTranscriptBlocks($projector->blocks());
+        $streamingHarness->screen()->setWorkingVisible(false);
+        $streamingText = $streamingHarness->plainScreenText();
+        $this->assertStringContainsString('First reasoning summary.', $streamingText);
+        $this->assertStringContainsString('Second reasoning summary.', $streamingText);
+
+        $accept('assistant.thinking_completed', [
+            'block_id' => $blockId,
+            'thinking' => "First reasoning summary.\nSecond reasoning summary.",
+        ]);
+
+        $completedHarness = new VirtualTuiHarness(sessionId: self::SESSION_ID.'-completed');
+        $completedHarness->screen()->setTranscriptBlocks($projector->blocks());
+        $completedHarness->screen()->setWorkingVisible(false);
+        $completedText = $completedHarness->plainScreenText();
+        $this->assertStringContainsString('First reasoning summary.', $completedText);
+        $this->assertStringContainsString('Second reasoning summary.', $completedText);
+        $this->assertCount(1, $projector->blocks());
+        $this->assertFalse($projector->blocks()[0]->streaming);
     }
 
     #[Test]

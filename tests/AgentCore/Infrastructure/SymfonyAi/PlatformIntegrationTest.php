@@ -38,7 +38,11 @@ use Symfony\AI\Platform\Provider;
 use Symfony\AI\Platform\Result\InMemoryRawResult;
 use Symfony\AI\Platform\Result\RawResultInterface;
 use Symfony\AI\Platform\Result\ResultInterface;
+use Symfony\AI\Platform\Result\Stream\Delta\DeltaInterface;
 use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
+use Symfony\AI\Platform\Result\Stream\Delta\ThinkingComplete;
+use Symfony\AI\Platform\Result\Stream\Delta\ThinkingDelta;
+use Symfony\AI\Platform\Result\Stream\Delta\ThinkingStart;
 use Symfony\AI\Platform\Result\StreamResult;
 use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\AI\Platform\ResultConverterInterface;
@@ -472,6 +476,38 @@ final class PlatformIntegrationTest extends TestCase
         $this->assertSame('aborted', $response->stopReason);
         $this->assertSame('A', $response->assistantMessage?->asText());
         $this->assertSame(15, $response->usage['total_tokens']);
+    }
+
+    public function testRepeatedThinkingSegmentsRemainCumulativeInStreamAndCanonicalMessage(): void
+    {
+        $adapter = $this->createAdapter(streamFactory: static fn (): iterable => [
+            new ThinkingStart(),
+            new ThinkingDelta("First reasoning summary.\n"),
+            new ThinkingComplete("First reasoning summary.\n"),
+            new ThinkingStart(),
+            new ThinkingDelta('Second reasoning summary.'),
+            new ThinkingComplete('Second reasoning summary.'),
+        ]);
+
+        $response = $adapter->invoke(new ModelInvocationRequest(
+            model: 'gpt-test',
+            input: new ModelInvocationInput(
+                runId: 'run-reasoning-segments',
+                messages: [new AgentMessage('user', [['type' => 'text', 'text' => 'reason']])],
+            ),
+        ));
+
+        $completions = array_values(array_filter(
+            $response->deltas,
+            static fn (mixed $delta): bool => $delta instanceof ThinkingComplete,
+        ));
+        $this->assertCount(2, $completions);
+        $this->assertSame("First reasoning summary.\n", $completions[0]->getThinking());
+        $this->assertSame("First reasoning summary.\nSecond reasoning summary.", $completions[1]->getThinking());
+
+        $thinking = $response->assistantMessage?->getThinking() ?? [];
+        $this->assertCount(1, $thinking);
+        $this->assertSame("First reasoning summary.\nSecond reasoning summary.", $thinking[0]->getContent());
     }
 
     public function testTransformHookNotificationsFlowToPlatformInvocationResult(): void
@@ -958,7 +994,7 @@ final readonly class FakeStreamResultConverter implements ResultConverterInterfa
 
         return new StreamResult((static function () use ($streamFactory): \Generator {
             foreach ($streamFactory() as $delta) {
-                if ($delta instanceof TextDelta) {
+                if ($delta instanceof DeltaInterface) {
                     yield $delta;
                 }
             }

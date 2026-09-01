@@ -371,6 +371,8 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
     ): PlatformInvocationResult {
         $aborted = false;
         $deltas = [];
+        $accumulatedThinking = '';
+        $thinkingSegmentStart = null;
 
         if ($streamObserverEnabled) {
             $this->notifyStreamStart($runId, $stepId);
@@ -384,6 +386,26 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
                 }
 
                 if ($delta instanceof DeltaInterface) {
+                    if ($delta instanceof ThinkingDelta) {
+                        $thinkingSegmentStart ??= \strlen($accumulatedThinking);
+                        $accumulatedThinking .= $delta->getThinking();
+                    } elseif ($delta instanceof ThinkingComplete) {
+                        // ThinkingComplete finalizes one reasoning segment, while one model
+                        // stream may contain several segments. Normalize completion payloads
+                        // to the cumulative stream text before live observers and canonical
+                        // message construction consume them.
+                        $thinkingSegmentStart ??= \strlen($accumulatedThinking);
+                        $completedThinking = $delta->getThinking();
+                        $completedIsCumulative = $thinkingSegmentStart > 0
+                            && str_starts_with($completedThinking, substr($accumulatedThinking, 0, $thinkingSegmentStart));
+
+                        $accumulatedThinking = $completedIsCumulative
+                            ? $completedThinking
+                            : substr($accumulatedThinking, 0, $thinkingSegmentStart).$completedThinking;
+                        $thinkingSegmentStart = null;
+                        $delta = new ThinkingComplete($accumulatedThinking, $delta->getSignature());
+                    }
+
                     $deltas[] = $delta;
                     if ($streamObserverEnabled) {
                         $this->notifyDelta($runId, $stepId, $delta);
