@@ -153,8 +153,6 @@ final class TickPollListenerChildHitlTest extends TestCase
         $this->assertNotNull($child);
         $this->assertSame(SubagentLiveStatusEnum::Running, $child->status);
         $this->assertSame(RunActivityStateEnum::Running, $state->subagentLiveView->childActivity);
-        $this->assertNull($state->subagentLiveCatalog->firstChildNeedingAttention());
-        $this->assertArrayNotHasKey('subagent_live', $screen->statusEntries());
 
         $coordinator->answer('yes');
         $this->assertCount(1, $sent);
@@ -200,11 +198,8 @@ final class TickPollListenerChildHitlTest extends TestCase
                 source: QuestionSource::Tui,
                 kind: QuestionKind::Confirm,
                 prompt: 'Parent?',
-                schema: ['type' => 'boolean'],
                 runId: 'parent-run',
-                questionId: 'rq_parent',
                 toolCallId: 'tc_shared',
-                transcript: false,
             ),
         );
 

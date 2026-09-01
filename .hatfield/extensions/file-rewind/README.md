@@ -36,7 +36,6 @@ extensions:
     file_rewind:
       enabled: true
       max_retained_turns: 100
-      max_file_bytes: 2097152
       git_timeout_seconds: 30
 ```
 

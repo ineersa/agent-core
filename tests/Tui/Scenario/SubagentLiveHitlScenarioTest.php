@@ -45,7 +45,6 @@ final class SubagentLiveHitlScenarioTest extends TestCase
         $this->assertNotNull($last);
         $this->assertSame(self::CHILD_RUN, $last['runId']);
         $this->assertSame('answer_human', $last['command']->type);
-        $this->assertNull($h->state->subagentLiveCatalog->firstChildNeedingAttention());
         $this->assertNull($h->statusText('subagent_live'));
 
         $h->ingestChildProgress(self::ARTIFACT, self::CHILD_RUN, 'completed');
@@ -57,7 +56,6 @@ final class SubagentLiveHitlScenarioTest extends TestCase
         $child = $h->state->subagentLiveCatalog->findByArtifactId(self::ARTIFACT);
         $this->assertNotNull($child);
         $this->assertSame(SubagentLiveStatusEnum::Completed, $child->status);
-        $this->assertNull($h->state->subagentLiveCatalog->firstChildNeedingAttention());
     }
 
     #[Test]
@@ -72,7 +70,6 @@ final class SubagentLiveHitlScenarioTest extends TestCase
         $h->pressEsc();
 
         $this->assertFalse($h->questionCoordinator->actionRequired());
-        $this->assertNull($h->state->subagentLiveCatalog->firstChildNeedingAttention());
         $this->assertNull($h->statusText('subagent_live'));
         $this->assertSame(0, \count(array_filter($h->client->ops, static fn (array $o): bool => 'cancel' === $o['op'])));
 
@@ -170,7 +167,6 @@ final class SubagentLiveHitlScenarioTest extends TestCase
         $child = $h->state->subagentLiveCatalog->findByArtifactId(self::ARTIFACT);
         $this->assertNotNull($child);
         $this->assertSame(SubagentLiveStatusEnum::Cancelled, $child->status);
-        $this->assertNull($h->state->subagentLiveCatalog->firstChildNeedingAttention());
 
         $h->ingestChildProgress(self::ARTIFACT, self::CHILD_RUN, 'waiting_human');
         $child = $h->state->subagentLiveCatalog->findByArtifactId(self::ARTIFACT);
@@ -276,7 +272,7 @@ final class SubagentLiveHitlScenarioTest extends TestCase
         }
         $h->refreshAttentionFooter();
 
-        $this->assertNull($h->state->subagentLiveCatalog->firstChildNeedingAttention());
+        $this->assertNull(self::firstNeeding($h->state->subagentLiveCatalog));
         $this->assertNull($h->statusText('subagent_live'));
         $this->assertStringNotContainsString('needs input', $h->pickerLabels()[0] ?? '');
     }
@@ -289,5 +285,16 @@ final class SubagentLiveHitlScenarioTest extends TestCase
             entityManager: $this->createStub(EntityManagerInterface::class),
             switchService: $this->createStub(TuiSessionSwitchServiceInterface::class),
         );
+    }
+
+    private static function firstNeeding(\Ineersa\Tui\Runtime\SubagentLiveCatalog $catalog): ?\Ineersa\Tui\Runtime\SubagentLiveChildDTO
+    {
+        foreach ($catalog->all() as $child) {
+            if ($child->needsAttention()) {
+                return $child;
+            }
+        }
+
+        return null;
     }
 }

@@ -19,7 +19,6 @@ final readonly class ExecuteLlmStep extends AbstractAgentBusMessage
         string $stepId,
         int $attempt,
         string $idempotencyKey,
-        public string $contextRef,
         public string $toolsRef,
         /** @var list<AgentMessage> */
         public array $messages = [],

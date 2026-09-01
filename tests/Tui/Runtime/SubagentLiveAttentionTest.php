@@ -53,7 +53,7 @@ final class SubagentLiveAttentionTest extends TestCase
 
         SubagentLiveAttention::clearWaitingHumanForRun($state, $screen, 'child-run-1');
 
-        $this->assertNull($state->subagentLiveCatalog->firstChildNeedingAttention());
+        $this->assertNull(self::firstNeeding($state->subagentLiveCatalog));
         $this->assertNull($this->statusText($screen, 'subagent_live'));
     }
 
@@ -79,7 +79,7 @@ final class SubagentLiveAttentionTest extends TestCase
         $child = $state->subagentLiveCatalog->findByArtifactId('agent_a');
         $this->assertNotNull($child);
         $this->assertSame(SubagentLiveStatusEnum::Cancelled, $child->status);
-        $this->assertNull($state->subagentLiveCatalog->firstChildNeedingAttention());
+        $this->assertNull(self::firstNeeding($state->subagentLiveCatalog));
         $this->assertNull($this->statusText($screen, 'subagent_live'));
     }
 
@@ -182,7 +182,9 @@ final class SubagentLiveAttentionTest extends TestCase
 
     private function statusText(ChatScreen $screen, string $key): ?string
     {
-        $entries = $screen->statusEntries();
+        $ref = new \ReflectionProperty(ChatScreen::class, 'statusEntries');
+        /** @var array<string, string> $entries */
+        $entries = $ref->getValue($screen);
 
         return $entries[$key] ?? null;
     }
@@ -203,5 +205,16 @@ final class SubagentLiveAttentionTest extends TestCase
             seq: 1,
             payload: ['tool_call_id' => 'tc1', 'tool_name' => 'subagent', 'delta' => '', 'subagent_progress' => $progress],
         );
+    }
+
+    private static function firstNeeding(\Ineersa\Tui\Runtime\SubagentLiveCatalog $catalog): ?SubagentLiveChildDTO
+    {
+        foreach ($catalog->all() as $child) {
+            if ($child->needsAttention()) {
+                return $child;
+            }
+        }
+
+        return null;
     }
 }

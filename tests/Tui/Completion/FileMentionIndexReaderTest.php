@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\Tests\Tui\Completion;
 
-use Ineersa\Tui\Completion\FileMentionIndexEntryDTO;
 use Ineersa\Tui\Completion\FileMentionIndexReader;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
@@ -116,29 +115,6 @@ final class FileMentionIndexReaderTest extends TestCase
     }
 
     #[Test]
-    public function providesChildrenByDirectory(): void
-    {
-        $path = $this->tmpDir.'/index.jsonl';
-        file_put_contents($path, implode("\n", [
-            '{"path":"src/Tui/Completion/Foo.php","dir":false}',
-            '{"path":"src/Tui/Completion/Bar.php","dir":false}',
-            '{"path":"src/Tui/Other.php","dir":false}',
-            '{"path":"tests/Test.php","dir":false}',
-        ]));
-
-        $reader = new FileMentionIndexReader($path);
-        $children = $reader->getChildren('src/Tui/Completion');
-
-        $this->assertCount(2, $children);
-        $names = array_map(static fn (FileMentionIndexEntryDTO $e) => $e->path, $children);
-        sort($names);
-        $this->assertSame(
-            ['src/Tui/Completion/Bar.php', 'src/Tui/Completion/Foo.php'],
-            $names,
-        );
-    }
-
-    #[Test]
     public function providesLowercasePathsAndBasenames(): void
     {
         $path = $this->tmpDir.'/index.jsonl';
@@ -150,20 +126,6 @@ final class FileMentionIndexReaderTest extends TestCase
 
         $this->assertSame(['src/tui/foobar.php'], $pathsLower);
         $this->assertSame(['foobar.php'], $basenamesLower);
-    }
-
-    #[Test]
-    public function tracksLoadedState(): void
-    {
-        $reader = new FileMentionIndexReader($this->tmpDir.'/nonexistent.jsonl');
-
-        $this->assertFalse($reader->isLoaded());
-        $this->assertSame(-1, $reader->loadedMtime());
-
-        // Trigger a load
-        $reader->getEntries();
-
-        $this->assertTrue($reader->isLoaded());
     }
 
     private function removeDir(string $dir): void

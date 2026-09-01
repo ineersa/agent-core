@@ -15,8 +15,8 @@ Not every Castor task adds those flags (for example `test:tui-update` runs a fix
 snapshot-update command without a Castor `--filter` option).
 
 ```bash
-castor check                # Full QA gate: deptrac, unit/integration (ParaTest), controller replay E2E, TUI replay E2E, live llm-real smoke (ParaTest, port 9052 / llama-proxy), phpstan, cs-check, docs:validate; lanes parallel; logs under per-run `var/reports/qa-<id>/check-*.log`. Absolute 210s wall from task entry (lock wait + setup/preflight + lanes + finalizers). Deterministic mode: Symfony Lock across sibling worktrees (60s acquire timeout clamped by remaining wall, `HATFIELD_CASTOR_CHECK_LOCK_TIMEOUT`), cache-growth guard, post-run `HATFIELD_QA_RUN_ID` leak assertion (no auto-kill), lane log integrity. Stress overrides (`HATFIELD_CASTOR_CHECK_LOCK=0`, `HATFIELD_LLM_CACHE_GUARD=0`, concurrency envs) are investigation-only — not CODE-REVIEW evidence. Worker budgets under check: unit=4 (max 8, `HATFIELD_CHECK_UNIT_PARATEST_PROCESSES`), TUI=2 (max 4, `HATFIELD_CHECK_TUI_PARATEST_PROCESSES` / legacy `HATFIELD_TUI_PARATEST_PROCESSES`), llm-real=1 (max 4, `HATFIELD_CHECK_LLM_REAL_PARATEST_PROCESSES`); controller-replay sequential. Warm proxy before gate: `castor test:llm-real`.
-castor test                 # unit/integration tests (ParaTest parallel by default); excludes tui-e2e-replay, llm-real, recording, and controller-replay groups; internal hard timeout ≤210s with process-tree reaping
+castor check                # Full QA gate: deptrac, unit/integration (ParaTest), controller replay E2E, TUI replay E2E, live llm-real smoke (ParaTest, port 9052 / llama-proxy), phpstan, dead-code, cs-check, docs:validate; lanes parallel; logs under per-run `var/reports/qa-<id>/check-*.log`. Absolute 210s wall from task entry (lock wait + setup/preflight + lanes + finalizers). Deterministic mode: Symfony Lock across sibling worktrees (60s acquire timeout clamped by remaining wall, `HATFIELD_CASTOR_CHECK_LOCK_TIMEOUT`), cache-growth guard, post-run `HATFIELD_QA_RUN_ID` leak assertion (no auto-kill), lane log integrity. Stress overrides (`HATFIELD_CASTOR_CHECK_LOCK=0`, `HATFIELD_LLM_CACHE_GUARD=0`, concurrency envs) are investigation-only — not CODE-REVIEW evidence. Worker budgets under check: unit=4 (max 8, `HATFIELD_CHECK_UNIT_PARATEST_PROCESSES`), TUI=2 (max 4, `HATFIELD_CHECK_TUI_PARATEST_PROCESSES` / legacy `HATFIELD_TUI_PARATEST_PROCESSES`), llm-real=1 (max 4, `HATFIELD_CHECK_LLM_REAL_PARATEST_PROCESSES`); controller-replay sequential. Warm proxy before gate: `castor test:llm-real`.
+castor test                 # unit/integration tests (ParaTest parallel by default); excludes tui-e2e-replay, llm-real, and controller-replay groups; internal hard timeout ≤210s with process-tree reaping
 castor test --filter=X      # filter tests by name
 castor test --suite=X       # target a specific phpunit.xml test suite (ParaTest parallel)
 castor test:tui [--filter=X]    # TUI E2E journey tests (replay-backed, no live LLM); full group uses ParaTest (default 2 workers; under `castor check` uses `HATFIELD_CHECK_TUI_PARATEST_PROCESSES`, legacy `HATFIELD_TUI_PARATEST_PROCESSES` still honored, max 4); --filter stays sequential PHPUnit; hard timeout ≤210s
@@ -24,11 +24,11 @@ castor test:tui-update      # update TUI snapshot baselines (no Castor --filter;
 castor test:llm-real [--filter=X]   # real llama.cpp smoke (filter optional); standalone full group ParaTest 2 workers; filtered sequential; hard timeout ≤210s
 castor test:controller      # controller E2E smoke (live LLM, opt-in; fixed ControllerSmokeTest filter inside Castor — no Castor --filter option)
 castor test:controller-replay      # controller E2E smoke tests with replay fixtures (no live LLM, default controller validation)
-castor llm:fixtures:record         # Re-record LLM replay fixtures from live LLM
 castor llm:fixtures:info           # List available LLM replay fixtures
 castor deptrac              # architecture boundary validation
 castor phpstan [path]       # static analysis (optionally scoped to a path)
-castor phpstan:baseline     # regenerate phpstan baseline
+castor dead-code            # ShipMonk dead-code detector (dedicated phpstan.dead-code.neon)
+castor dead-code:baseline   # regenerate phpstan.dead-code-baseline.neon after reviewing findings (empty baseline accepted)
 castor cs-fix [path]        # auto-fix coding style
 castor cs-check             # check coding style (dry-run)
 castor docs:validate        # built-in docs catalog, package-safe links, ≤25k chars (also a castor check lane)
@@ -129,7 +129,7 @@ If `LLAMA_PROXY_ADMIN_TOKEN` is set, pass `-H 'X-Llama-Proxy-Token: <token>'` on
 | | llama-proxy | `HATFIELD_LLM_REPLAY_FIXTURE_PATH` |
 | --- | --- | --- |
 | Layer | HTTP on 9052 | Test `MockHttpClient` / `FixtureReplayModelClient` |
-| Commands | `test:llm-real`, check live lane, `test:controller`, `llm:fixtures:record` | `castor test`, `test:controller-replay`, `test:tui` |
+| Commands | `test:llm-real`, check live lane, `test:controller` | `castor test`, `test:controller-replay`, `test:tui` |
 | Offline CI | Needs 9052 + model upstream for live lane | Replay lanes need no model |
 
 Replay infrastructure is **not** removed when using the proxy; both coexist.
@@ -178,13 +178,10 @@ Most tests that would otherwise hit a live LLM endpoint use instead
 pre-recorded fixture files under `tests/AgentCore/Fixtures/traces/`.
 
 - **Replay mode** is the default for `castor test`. No live LLM calls.
-- **Live mode** is opt-in: `castor test:llm-real`,
-  `castor test:controller`, and `castor llm:fixtures:record`.
-- **Re-record fixtures** when provider behavior, prompts, or tool schemas
-  change: `castor llm:fixtures:record`.
-- Fixture format and recording/replay architecture described in
-  `docs/llm-replay.md`.  Replay test helpers live in
-  `tests/AgentCore/Infrastructure/SymfonyAi/Replay/`.
+- **Live mode** is opt-in: `castor test:llm-real` and `castor test:controller`.
+- Fixture format and replay architecture are described in `docs/llm-replay.md`.
+  Replay test helpers live in `tests/AgentCore/Infrastructure/SymfonyAi/Replay/`.
+  Committed fixtures are maintained directly; there is no supported live recording Castor task.
 
 ## Test groups
 
@@ -244,15 +241,14 @@ contend on SQLite writes under concurrent check lanes.
 
 | Command | What it tests | Requires |
 |---|---|---|
-| `castor check` | Full QA gate: deptrac, unit/integration (ParaTest), controller replay E2E, TUI replay E2E, live llm-real (ParaTest, port 9052), phpstan, cs-check, docs:validate. No PHAR. | tmux, llama.cpp/proxy on 9052 |
+| `castor check` | Full QA gate: deptrac, unit/integration (ParaTest), controller replay E2E, TUI replay E2E, live llm-real (ParaTest, port 9052), phpstan, dead-code, cs-check, docs:validate. No PHAR. | tmux, llama.cpp/proxy on 9052 |
 | `castor test` | Unit/integration tests (ParaTest parallel by default) | Nothing (pure PHP) |
-| `castor test:llm-real` | Real LLM smoke: `ControllerSmokeTest`, `LlamaCppSmokeTest` (excludes `recording` group). Run as focused opt-in validation when changes touch provider/LLM-visible code — NOT required for every normal task. | llama.cpp on port 9052 |
+| `castor test:llm-real` | Real LLM smoke: `ControllerSmokeTest`, `LlamaCppSmokeTest`. Run as focused opt-in validation when changes touch provider/LLM-visible code — NOT required for every normal task. | llama.cpp on port 9052 |
 | `castor test:controller-replay` | Controller replay E2E: spawns `--controller`, JSONL protocol, replay fixtures (no live LLM) | Nothing (pure PHP) |
 | `castor test:controller` | Controller E2E: spawns `--controller`, JSONL protocol (live LLM, opt-in) | llama.cpp on port 9052 |
 | `castor test:tui` | TUI E2E journey tests (replay-backed, no live LLM) | tmux |
 | `castor run:agent-test` | Interactive tmux session for manual inspection | tmux, llama.cpp on port 9052 |
 | `castor run:agent` | Launch agent in tmux | tmux, LLM provider |
-| `castor llm:fixtures:record` | Re-record replay fixtures from live LLM | llama.cpp on port 9052 |
 | `castor llm:fixtures:info` | List available replay fixtures and metadata | Nothing (pure PHP) |
 
 ## Controller E2E testing

@@ -283,23 +283,6 @@ final class SlashCommandCompletionProviderTest extends TestCase
         $this->assertSame($expected, $displays);
     }
 
-    // ── Cursor offset MVP behaviour ───────────────────────────────
-
-    #[Test]
-    public function midTextCursorStillOperatesCursorAtEndForMvp(): void
-    {
-        // EDITOR-08 only triggers when text starts with "/".
-        // Non-start slash contexts are ignored until live cursor
-        // state is exposed in a future phase.
-        $context = new CompletionContext('/he', 1); // cursor between '/' and 'h'
-        $suggestions = $this->provider->getSuggestions($context);
-
-        // MVP still sees the full prefix "he" → suggests /help
-        $this->assertNotEmpty($suggestions);
-        $displays = array_map(static fn (CompletionSuggestion $s) => $s->display, $suggestions);
-        $this->assertContains('/help', $displays);
-    }
-
     // ── Helpers ────────────────────────────────────────────────────
 
     /** @param list<CompletionSuggestion> $suggestions */

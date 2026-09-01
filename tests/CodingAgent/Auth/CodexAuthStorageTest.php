@@ -141,16 +141,6 @@ final class CodexAuthStorageTest extends TestCase
         $this->assertSame('tok2', $loaded2?->access);
     }
 
-    public function testRemoveCredentials(): void
-    {
-        $record = new CodexAuthRecord('tok', 'ref', time() + 3600, 'acct');
-        $this->storage->saveCredentials('openai-codex', $record);
-        $this->storage->removeCredentials('openai-codex');
-
-        $loaded = $this->storage->loadCredentials('openai-codex');
-        $this->assertNull($loaded);
-    }
-
     public function testCorruptJsonThrowsRuntimeException(): void
     {
         $dir = $this->tmpDir.'/.hatfield';

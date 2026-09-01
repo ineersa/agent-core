@@ -53,7 +53,7 @@ final class PastedImageSubmissionServiceTest extends IsolatedKernelTestCase
         file_put_contents($staged, $png);
 
         $state = new TuiSessionState($sessionId);
-        $state->pastedImagePendingByIndex[1] = new PastedImagePendingDTO(1, '[Image #1]', $staged);
+        $state->pastedImagePendingByIndex[1] = new PastedImagePendingDTO($staged);
 
         /** @var AppConfig $appConfig */
         $appConfig = self::getContainer()->get(AppConfig::class);
@@ -101,7 +101,7 @@ final class PastedImageSubmissionServiceTest extends IsolatedKernelTestCase
         file_put_contents($staged1, $png);
 
         $state = new TuiSessionState($sessionId);
-        $state->pastedImagePendingByIndex[1] = new PastedImagePendingDTO(1, '[Image #1]', $staged1);
+        $state->pastedImagePendingByIndex[1] = new PastedImagePendingDTO($staged1);
 
         /** @var AppConfig $appConfig */
         $appConfig = self::getContainer()->get(AppConfig::class);
@@ -146,7 +146,7 @@ final class PastedImageSubmissionServiceTest extends IsolatedKernelTestCase
         file_put_contents($staged, $png);
 
         $state = new TuiSessionState('');
-        $state->pastedImagePendingByIndex[1] = new PastedImagePendingDTO(1, '[Image #1]', $staged);
+        $state->pastedImagePendingByIndex[1] = new PastedImagePendingDTO($staged);
 
         /** @var AppConfig $appConfig */
         $appConfig = self::getContainer()->get(AppConfig::class);
@@ -187,7 +187,7 @@ final class PastedImageSubmissionServiceTest extends IsolatedKernelTestCase
         file_put_contents($staged1, $png);
 
         $state = new TuiSessionState($sessionId);
-        $state->pastedImagePendingByIndex[1] = new PastedImagePendingDTO(1, '[Image #1]', $staged1);
+        $state->pastedImagePendingByIndex[1] = new PastedImagePendingDTO($staged1);
         // No pending entry for [Image #2] — preflight must fail before promoting #1.
 
         /** @var AppConfig $appConfig */

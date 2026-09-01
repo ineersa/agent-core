@@ -290,11 +290,8 @@ final class TickPollListenerTest extends TestCase
         $this->assertNotNull($active);
         $this->assertSame(QuestionKind::Text, $active->kind);
         $this->assertSame('Custom Rich Header', $active->header);
-        $this->assertSame('default text', $active->default);
         $this->assertTrue($active->allowOther, 'Model-turn HITL free-form remains available');
         $this->assertSame('hitl_'.substr(hash('sha256', 'run-rich|q_rich'), 0, 16), $active->requestId);
-        $this->assertSame('q_rich', $active->questionId);
-        $this->assertTrue($active->transcript);
     }
 
     public function testHandleHumanInputRequestedConfirmAnswerYesNormalizesToBoolean(): void
@@ -613,11 +610,8 @@ final class TickPollListenerTest extends TestCase
                 source: QuestionSource::AgentCore,
                 kind: QuestionKind::Choice,
                 prompt: 'Test prompt',
-                schema: ['type' => 'string', 'enum' => ['A', 'B']],
                 runId: 'run-guard',
-                questionId: 'q_guard',
-                allowOther: true,
-            ),
+                allowOther: true),
         );
         $this->assertTrue($coordinator->actionRequired());
 
@@ -689,11 +683,8 @@ final class TickPollListenerTest extends TestCase
                 source: QuestionSource::AgentCore,
                 kind: QuestionKind::Choice,
                 prompt: 'Orphan test',
-                schema: ['type' => 'string', 'enum' => ['A', 'B']],
                 runId: 'run-orphan',
-                questionId: 'q_orphan',
-                allowOther: true,
-            ),
+                allowOther: true),
         );
         $this->assertTrue($coordinator->actionRequired());
 
@@ -759,10 +750,7 @@ final class TickPollListenerTest extends TestCase
                 source: QuestionSource::AgentCore,
                 kind: QuestionKind::Text,
                 prompt: 'Which docs file would you like me to inspect and summarize?',
-                schema: ['type' => 'string'],
-                runId: $parentRunId,
-                questionId: 'q_parent_docs',
-            ),
+                runId: $parentRunId),
         );
 
         $state = new TuiSessionState($parentRunId);
@@ -789,10 +777,7 @@ final class TickPollListenerTest extends TestCase
                 source: QuestionSource::AgentCore,
                 kind: QuestionKind::Text,
                 prompt: 'Which docs file would you like me to inspect and summarize?',
-                schema: ['type' => 'string'],
-                runId: $parentRunId,
-                questionId: 'q_parent_docs_chrome',
-            ),
+                runId: $parentRunId),
         );
 
         $state = new TuiSessionState($parentRunId);
@@ -989,7 +974,9 @@ final class TickPollListenerTest extends TestCase
     /** @return array<string, string> */
     private function statusEntries(ChatScreen $screen): array
     {
-        return $screen->statusEntries();
+        $ref = new \ReflectionProperty(ChatScreen::class, 'statusEntries');
+
+        return $ref->getValue($screen);
     }
 
     private function workingMessage(ChatScreen $screen): string

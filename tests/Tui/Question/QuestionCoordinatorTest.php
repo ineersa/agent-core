@@ -8,7 +8,6 @@ use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Question\QuestionKind;
 use Ineersa\Tui\Question\QuestionRequest;
 use Ineersa\Tui\Question\QuestionSource;
-use Ineersa\Tui\Question\QuestionStatus;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
@@ -26,7 +25,8 @@ final class QuestionCoordinatorTest extends TestCase
 
         $this->assertSame($request, $coordinator->activeRequest());
         $this->assertTrue($coordinator->actionRequired());
-        $this->assertSame(QuestionStatus::Pending, $coordinator->activeStatus());
+        $this->assertNotNull($coordinator->activeRequest());
+        $this->assertTrue($coordinator->actionRequired());
     }
 
     public function testEnqueueSecondRequestQueuesBehindActive(): void
@@ -48,7 +48,7 @@ final class QuestionCoordinatorTest extends TestCase
 
         $this->assertFalse($coordinator->actionRequired());
         $this->assertNull($coordinator->activeRequest());
-        $this->assertNull($coordinator->activeStatus());
+        $this->assertNull($coordinator->activeRequest());
     }
 
     // ─── Answer / advance ──────────────────────────────────────────────
@@ -65,7 +65,8 @@ final class QuestionCoordinatorTest extends TestCase
         $coordinator->answer('foo');
 
         $this->assertSame($r2, $coordinator->activeRequest());
-        $this->assertSame(QuestionStatus::Pending, $coordinator->activeStatus());
+        $this->assertNotNull($coordinator->activeRequest());
+        $this->assertTrue($coordinator->actionRequired());
     }
 
     public function testFifoOrderPreservedWithThreeRequests(): void
@@ -106,7 +107,8 @@ final class QuestionCoordinatorTest extends TestCase
         $coordinator->reject();
 
         $this->assertSame($r2, $coordinator->activeRequest());
-        $this->assertSame(QuestionStatus::Pending, $coordinator->activeStatus());
+        $this->assertNotNull($coordinator->activeRequest());
+        $this->assertTrue($coordinator->actionRequired());
     }
 
     public function testCancelAdvancesQueue(): void
@@ -121,7 +123,8 @@ final class QuestionCoordinatorTest extends TestCase
         $coordinator->cancel();
 
         $this->assertSame($r2, $coordinator->activeRequest());
-        $this->assertSame(QuestionStatus::Pending, $coordinator->activeStatus());
+        $this->assertNotNull($coordinator->activeRequest());
+        $this->assertTrue($coordinator->actionRequired());
     }
 
     public function testRejectEmptyIsNoOp(): void
@@ -364,7 +367,7 @@ final class QuestionCoordinatorTest extends TestCase
     public function testActiveStatusIsNullWhenEmpty(): void
     {
         $coordinator = new QuestionCoordinator();
-        $this->assertNull($coordinator->activeStatus());
+        $this->assertNull($coordinator->activeRequest());
     }
 
     public function testActiveStatusAfterAnswerLastRequest(): void
@@ -374,7 +377,7 @@ final class QuestionCoordinatorTest extends TestCase
 
         $coordinator->answer('ok');
 
-        $this->assertNull($coordinator->activeStatus());
+        $this->assertNull($coordinator->activeRequest());
     }
 
     // ─── Answer with no active is no-op ────────────────────────────────
@@ -452,7 +455,7 @@ final class QuestionCoordinatorTest extends TestCase
         $coordinator = new QuestionCoordinator();
 
         $this->assertNull($coordinator->activeRequest());
-        $this->assertNull($coordinator->activeStatus());
+        $this->assertNull($coordinator->activeRequest());
         $this->assertFalse($coordinator->actionRequired());
     }
 
@@ -545,8 +548,7 @@ final class QuestionCoordinatorTest extends TestCase
             requestId: $id,
             source: QuestionSource::Tui,
             kind: QuestionKind::Text,
-            prompt: $prompt,
-        );
+            prompt: $prompt);
     }
 
     private function agentCoreRequest(string $id, string $prompt = 'Test?'): QuestionRequest
@@ -555,8 +557,7 @@ final class QuestionCoordinatorTest extends TestCase
             requestId: $id,
             source: QuestionSource::AgentCore,
             kind: QuestionKind::Text,
-            prompt: $prompt,
-        );
+            prompt: $prompt);
     }
 
     private function agentCoreRequestForRun(string $id, string $runId, string $prompt = 'Test?'): QuestionRequest
@@ -566,7 +567,6 @@ final class QuestionCoordinatorTest extends TestCase
             source: QuestionSource::AgentCore,
             kind: QuestionKind::Text,
             prompt: $prompt,
-            runId: $runId,
-        );
+            runId: $runId);
     }
 }

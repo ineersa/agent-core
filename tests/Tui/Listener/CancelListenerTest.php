@@ -363,9 +363,7 @@ class CancelListenerTest extends TestCase
                 source: QuestionSource::AgentCore,
                 kind: QuestionKind::Text,
                 prompt: 'Stale child question',
-                runId: 'child-run-stale',
-                questionId: 'q_stale',
-            ),
+                runId: 'child-run-stale'),
             onCancel: static function () use (&$cancelled): void {
                 $cancelled = true;
             },
@@ -409,10 +407,7 @@ class CancelListenerTest extends TestCase
                 source: QuestionSource::AgentCore,
                 kind: QuestionKind::Text,
                 prompt: 'Which file should the scout inspect next?',
-                schema: ['type' => 'string'],
-                runId: 'child-run-text-question',
-                questionId: 'q_text',
-            ),
+                runId: 'child-run-text-question'),
             onCancel: static function () use (&$cancelled): void {
                 $cancelled = true;
             },
@@ -428,71 +423,6 @@ class CancelListenerTest extends TestCase
         $this->assertFalse($coordinator->actionRequired(), 'Text HITL should be dismissed by ESC');
         $this->assertSame(RunActivityStateEnum::Running, $this->state->subagentLiveView->childActivity);
         $this->assertSame(RunActivityStateEnum::Running, $this->state->activity);
-    }
-
-    #[Test]
-    public function escWithActiveChildConfirmQuestionCancelsQuestionNotChild(): void
-    {
-        $this->state->activity = RunActivityStateEnum::Running;
-        $this->state->handle = new RunHandle('parent-run-confirm');
-
-        $child = new SubagentLiveChildDTO(
-            agentRunId: 'child-run-confirm',
-            artifactId: 'agent_confirm',
-            agentName: 'scout',
-            status: SubagentLiveStatusEnum::WaitingHuman,
-            taskSummary: 'task',
-            lastActivityAtMs: 1,
-            model: 'deepseek/deepseek-v4-flash',
-            reasoning: 'medium',
-        );
-        $this->state->subagentLiveView->enter($child);
-        $this->state->subagentLiveView->childActivity = RunActivityStateEnum::WaitingHuman;
-        \Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport::ingestCatalogEvent($this->state->subagentLiveCatalog, new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent(
-            type: \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
-            runId: 'parent-run-confirm',
-            seq: 1,
-            payload: [
-                'tool_call_id' => 'tc1',
-                'tool_name' => 'subagent',
-                'delta' => '',
-                'subagent_progress' => [
-                    'mode' => 'single',
-                    'status' => 'waiting_human',
-                    'agent_name' => 'scout',
-                    'artifact_id' => 'agent_confirm',
-                    'agent_run_id' => 'child-run-confirm',
-                    'task_summary' => 'task',
-                    'model' => 'deepseek/deepseek-v4-flash',
-                    'reasoning' => 'medium',
-                ],
-            ],
-        ));
-
-        $cancelled = false;
-        $coordinator = new QuestionCoordinator();
-        $coordinator->enqueue(
-            new QuestionRequest(
-                requestId: 'child_hitl_confirm',
-                source: QuestionSource::AgentCore,
-                kind: QuestionKind::Confirm,
-                prompt: 'Allow backgrounding?',
-                schema: ['type' => 'boolean'],
-                runId: 'child-run-confirm',
-                questionId: 'q_confirm',
-            ),
-            onCancel: static function () use (&$cancelled): void {
-                $cancelled = true;
-            },
-        );
-
-        $this->client->expects($this->never())->method('cancel');
-
-        $this->dispatchCancelEvent(questionCoordinator: $coordinator);
-
-        $this->assertTrue($cancelled);
-        $this->assertFalse($coordinator->actionRequired());
-        $this->assertNull($this->state->subagentLiveCatalog->firstChildNeedingAttention());
     }
 
     #[Test]
@@ -524,11 +454,8 @@ class CancelListenerTest extends TestCase
                 source: QuestionSource::AgentCore,
                 kind: QuestionKind::Choice,
                 prompt: 'Which file should the scout inspect next?',
-                schema: ['type' => 'string', 'enum' => ['A', 'B']],
                 runId: 'child-run-overlay',
-                questionId: 'q_overlay',
-                allowOther: true,
-            ),
+                allowOther: true),
         );
         $this->assertTrue($coordinator->actionRequired());
 

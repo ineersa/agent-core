@@ -13,11 +13,11 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass(DefaultTheme::class)]
 final class DefaultThemeTest extends TestCase
 {
-    public function testAccentAppliesAnsiStyle(): void
+    public function testAccentColorAppliesAnsiStyle(): void
     {
         $theme = $this->createTheme();
 
-        $result = $theme->accent('Hello');
+        $result = $theme->color(ThemeColorEnum::Accent, 'Hello');
 
         $this->assertStringContainsString('Hello', $result);
         // ANSI-styled text should differ from plain text
@@ -48,7 +48,7 @@ final class DefaultThemeTest extends TestCase
     {
         $theme = $this->createTheme();
 
-        $result = $theme->text('plain');
+        $result = $theme->color(ThemeColorEnum::Text, 'plain');
 
         // Text with empty spec should be plain (or just ANSI wrapped with no color change)
         // At minimum, the text is present

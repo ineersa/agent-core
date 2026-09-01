@@ -212,15 +212,14 @@ final class SlashCommandRegistryTest extends TestCase
     #[Test]
     public function executeHotkeysReturnsHotkeyTableDataForEmptyRegistry(): void
     {
-        // Default catalog has an empty HotkeyRegistry → HotkeyTableData with isEmpty=true
+        // Default catalog has an empty HotkeyRegistry.
         $result = $this->registry->execute(new SlashCommand('hotkeys', '', '/hotkeys'));
 
         $this->assertInstanceOf(
             \Ineersa\Tui\Command\Hotkey\HotkeyTableData::class,
             $result,
         );
-        // @phpstan-ignore-next-line
-        $this->assertTrue($result->isEmpty());
+        $this->assertSame([], $result->groups);
     }
 
     #[Test]
@@ -257,10 +256,8 @@ final class SlashCommandRegistryTest extends TestCase
             $result,
         );
 
-        // @phpstan-ignore-next-line
-        $this->assertFalse($result->isEmpty());
+        $this->assertNotSame([], $result->groups);
 
-        // @phpstan-ignore-next-line
         $groups = $result->groups;
         $this->assertArrayHasKey('Global', $groups);
         $this->assertArrayHasKey('Editor', $groups);
@@ -290,8 +287,7 @@ final class SlashCommandRegistryTest extends TestCase
             \Ineersa\Tui\Command\Hotkey\HotkeyTableData::class,
             $result,
         );
-        // @phpstan-ignore-next-line
-        $this->assertTrue($result->isEmpty());
+        $this->assertSame([], $result->groups);
     }
 
     // ─── Built-in: /clear ────────────────────────────────────────────

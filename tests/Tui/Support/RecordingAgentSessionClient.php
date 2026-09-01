@@ -85,13 +85,4 @@ final class RecordingAgentSessionClient implements AgentSessionClient
 
         return null;
     }
-
-    /** @return list<array{op: string, runId: ?string, command: ?UserCommand}> */
-    public function sendsTo(string $runId): array
-    {
-        return array_values(array_filter(
-            $this->ops,
-            static fn (array $op): bool => 'send' === $op['op'] && $op['runId'] === $runId,
-        ));
-    }
 }

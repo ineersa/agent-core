@@ -29,9 +29,4 @@ final readonly class HotkeyTableData implements CommandResult
         public string $emptyMessage = '',
     ) {
     }
-
-    public function isEmpty(): bool
-    {
-        return [] === $this->groups;
-    }
 }

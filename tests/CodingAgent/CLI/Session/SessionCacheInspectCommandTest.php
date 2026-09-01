@@ -329,11 +329,6 @@ final class SessionCacheInspectCommandTest extends IsolatedKernelTestCase
         ], $logger->records[0]['context']);
     }
 
-    /** @phpstan-ignore-next-line intentional no-op tool target for Tool construction */
-    public static function noop(): void
-    {
-    }
-
     private function dispatchPreparedRequest(
         EventDispatcher $dispatcher,
         string $runId,
@@ -348,7 +343,9 @@ final class SessionCacheInspectCommandTest extends IsolatedKernelTestCase
     ): ProviderRequestPreparedEvent {
         $bag = new MessageBag(new SystemMessage($system), new UserMessage(new Text($user)));
         $tool = new Tool(
-            new ExecutionReference(self::class, 'noop'),
+            // Class/method strings are metadata only for this inspect fixture;
+            // the prepared-request path never invokes the referenced callable.
+            new ExecutionReference(\stdClass::class, '__invoke'),
             $toolName,
             'tool description must not leak',
             ['type' => 'object', 'properties' => new \stdClass()],

@@ -31,7 +31,7 @@ final class CodexMessageBagNormalizer extends ModelContractNormalizer implements
 
     /**
      * @return array{
-     *     input: array<string, mixed>,
+     *     input: list<mixed>,
      *     instructions?: string,
      * }
      *
@@ -39,7 +39,12 @@ final class CodexMessageBagNormalizer extends ModelContractNormalizer implements
      */
     public function normalize(mixed $data, ?string $format = null, array $context = []): array
     {
-        $messages = ['input' => []];
+        if (!$data instanceof MessageBag) {
+            throw new \InvalidArgumentException(\sprintf('Expected %s, got %s.', MessageBag::class, get_debug_type($data)));
+        }
+
+        /** @var list<mixed> $input */
+        $input = [];
 
         foreach ($data->withoutSystemMessage()->getMessages() as $message) {
             $normalized = $this->normalizer->normalize($message, $format, $context);
@@ -55,18 +60,21 @@ final class CodexMessageBagNormalizer extends ModelContractNormalizer implements
             //   - Tool-call assistant messages (return a list of function_call items)
             //   - Thinking+text assistant messages (return [reasoning_item, message_item])
             if (\is_array($normalized) && array_is_list($normalized)) {
-                $messages['input'] = array_merge($messages['input'], $normalized);
-            } elseif (\is_array($normalized)) {
-                // Single associative item — append as-is (standard message shape)
-                $messages['input'][] = $normalized;
+                foreach ($normalized as $item) {
+                    $input[] = $item;
+                }
             } else {
-                // Unexpected type — append as-is (defensive)
-                $messages['input'][] = $normalized;
+                // Single associative item or unexpected scalar — append as-is.
+                $input[] = $normalized;
             }
         }
 
-        if (null !== $data->getSystemMessage()) {
-            $messages['instructions'] = $data->getSystemMessage()->getContent();
+        $messages = ['input' => $input];
+
+        $systemMessage = $data->getSystemMessage();
+        if (null !== $systemMessage) {
+            $content = $systemMessage->getContent();
+            $messages['instructions'] = \is_string($content) ? $content : (string) $content;
         }
 
         return $messages;

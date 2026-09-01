@@ -179,43 +179,6 @@ final class McpConnectionManager implements McpConnectionManagerInterface
         return $results;
     }
 
-    public function getClient(string $runId, string $serverName): ?McpClientInterface
-    {
-        return $this->clients[$this->clientKey($runId, $serverName)] ?? null;
-    }
-
-    public function disconnectServer(string $runId, string $serverName): void
-    {
-        $key = $this->clientKey($runId, $serverName);
-        if (isset($this->clients[$key])) {
-            try {
-                $this->clients[$key]->disconnect();
-                $this->logger->debug('MCP server disconnected', [
-                    'component' => 'mcp',
-                    'event_type' => 'server.disconnected',
-                    'mcp_event' => 'server.disconnected',
-                    'run_id' => $runId,
-                    'session_id' => $runId,
-                    'server_name' => $serverName,
-                ]);
-            } catch (\Throwable $e) {
-                // Disconnect failure is non-fatal — log and continue cleanup.
-                $this->logger->warning('MCP server disconnect error', [
-                    'component' => 'mcp',
-                    'event_type' => 'server.disconnect_failed',
-                    'mcp_event' => 'server.disconnect_failed',
-                    'run_id' => $runId,
-                    'session_id' => $runId,
-                    'server_name' => $serverName,
-                    'error_class' => $e::class,
-                    'error_message' => self::sanitizeLogMessage($e->getMessage()),
-                ]);
-            }
-
-            unset($this->clients[$key]);
-        }
-    }
-
     public function disconnectAll(string $runId): void
     {
         $prefix = $runId.':';
@@ -324,6 +287,43 @@ final class McpConnectionManager implements McpConnectionManagerInterface
             // Use sanitized error text so secrets/credentials never
             // appear in LLM-visible exception messages.
             throw new McpClientInvocationException(self::sanitizeLogMessage($e->getMessage()), (int) $e->getCode(), $e);
+        }
+    }
+
+    private function getClient(string $runId, string $serverName): ?McpClientInterface
+    {
+        return $this->clients[$this->clientKey($runId, $serverName)] ?? null;
+    }
+
+    private function disconnectServer(string $runId, string $serverName): void
+    {
+        $key = $this->clientKey($runId, $serverName);
+        if (isset($this->clients[$key])) {
+            try {
+                $this->clients[$key]->disconnect();
+                $this->logger->debug('MCP server disconnected', [
+                    'component' => 'mcp',
+                    'event_type' => 'server.disconnected',
+                    'mcp_event' => 'server.disconnected',
+                    'run_id' => $runId,
+                    'session_id' => $runId,
+                    'server_name' => $serverName,
+                ]);
+            } catch (\Throwable $e) {
+                // Disconnect failure is non-fatal — log and continue cleanup.
+                $this->logger->warning('MCP server disconnect error', [
+                    'component' => 'mcp',
+                    'event_type' => 'server.disconnect_failed',
+                    'mcp_event' => 'server.disconnect_failed',
+                    'run_id' => $runId,
+                    'session_id' => $runId,
+                    'server_name' => $serverName,
+                    'error_class' => $e::class,
+                    'error_message' => self::sanitizeLogMessage($e->getMessage()),
+                ]);
+            }
+
+            unset($this->clients[$key]);
         }
     }
 

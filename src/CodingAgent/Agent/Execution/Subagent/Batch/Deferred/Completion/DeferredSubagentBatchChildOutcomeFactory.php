@@ -41,8 +41,6 @@ final readonly class DeferredSubagentBatchChildOutcomeFactory
             artifactId: $child->artifactId,
             displayName: $child->agentName,
             taskSummary: $child->task,
-            launchModel: $child->launchModel,
-            launchReasoning: $child->launchReasoning,
             artifactKind: AgentArtifactKindEnum::Subagent,
             batchIndex: $child->batchIndex,
         );

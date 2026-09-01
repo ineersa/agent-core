@@ -16,7 +16,6 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
@@ -35,7 +34,6 @@ use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
-use Ineersa\Tui\Transcript\TranscriptMountedWidget;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Tui\Tui;
@@ -44,82 +42,6 @@ use Symfony\Component\Tui\Tui;
 final class TickPollListenerSubagentLiveTest extends TestCase
 {
     use TuiRuntimeContextBuilderTrait;
-
-    public function testParentPollUpdatesStateWhileLiveViewKeepsChildTranscriptOnScreen(): void
-    {
-        $parentRun = 'session-100';
-        $client = new ParentEventClient($parentRun, new RuntimeEvent(
-            RuntimeEventTypeEnum::AssistantMessageCompleted->value,
-            $parentRun,
-            2,
-            ['text' => 'new parent block'],
-        ));
-
-        $parentProjector = new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState());
-        $poller = new RuntimeEventPoller(
-            new TuiRuntimeEventApplier($parentProjector, SubagentProgressSerializerTestSupport::denormalizer()),
-            new TestLogger(),
-            new RuntimeExceptionBoundary(new EventDispatcher()),
-            $this->createStub(SessionTranscriptProviderInterface::class),
-        );
-
-        $state = new TuiSessionState($parentRun);
-        $state->handle = new RunHandle($parentRun, 'running');
-        $state->lastSeq = 1;
-        $state->activity = RunActivityStateEnum::Running;
-        $state->transcript = [new TranscriptBlock('p1', TranscriptBlockKindEnum::UserMessage, $parentRun, 1, 'parent line')];
-
-        $child = new SubagentLiveChildDTO('child-200', 'art1', 'scout', SubagentLiveStatusEnum::Running, 'task', 1, 'deepseek/deepseek-v4-flash', 'medium');
-        $state->subagentLiveView->enter($child);
-        $state->subagentLiveView->childTranscript = [
-            new TranscriptBlock('c1', TranscriptBlockKindEnum::Progress, 'child-200', 1, 'child live'),
-        ];
-
-        $childPoller = new SubagentLiveChildViewPoller(
-            new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
-            new \Psr\Log\NullLogger(),
-            SubagentProgressSerializerTestSupport::denormalizer(),
-        );
-
-        $tui = new Tui();
-        $screen = new ChatScreen(new DefaultTheme(new ThemePalette('test')), $parentRun, new PromptEditor(), new TranscriptDisplayConfig(), new TranscriptDisplayState());
-        $screen->setTranscriptBlocks($state->subagentLiveView->childTranscript);
-
-        $services = $this->createSessionServices(
-            tui: $tui,
-            state: $state,
-            screen: $screen,
-            parentPoller: $poller,
-            childPoller: $childPoller,
-            subagentLivePicker: $this->closedSubagentLivePicker(),
-        );
-        $context = $this->buildTuiContext()
-            ->withTui($tui)
-            ->withClient($client)
-            ->withState($state)
-            ->withScreen($screen)
-            ->withSessionServices($services)
-            ->build();
-        $listener = new TickPollListener(new RuntimeQuestionEventHandler());
-        $listener->register($context);
-        $handlerRef = new \ReflectionProperty(TuiTickDispatcher::class, 'handlers');
-        ($handlerRef->getValue($context->ticks)[0])();
-
-        $this->assertSame(2, $state->lastSeq, 'Parent poller must advance lastSeq while live view is active');
-
-        // Production ChatScreen owns a private TranscriptMountedWidget; reflect only to reach
-        // its existing public getBlocks() contract — no ChatScreen test getter.
-        $transcriptWidget = (new \ReflectionClass($screen))
-            ->getProperty('transcriptWidget')
-            ->getValue($screen);
-        $this->assertInstanceOf(TranscriptMountedWidget::class, $transcriptWidget);
-        $text = implode(' ', array_map(
-            static fn ($b) => $b->text,
-            $transcriptWidget->getBlocks(),
-        ));
-        $this->assertStringContainsString('child live', $text);
-        $this->assertStringNotContainsString('new parent block', $text);
-    }
 
     public function testCompletedCatalogChildMapsToIdleWorkingMessage(): void
     {

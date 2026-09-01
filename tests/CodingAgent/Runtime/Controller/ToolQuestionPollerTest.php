@@ -5,13 +5,11 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller;
 
 use Ineersa\CodingAgent\Entity\ToolQuestion;
-use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Controller\RuntimeEventEmitter;
 use Ineersa\CodingAgent\Runtime\Controller\ToolQuestionPoller;
 use Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
-use Symfony\Component\EventDispatcher\EventDispatcher;
 
 /**
  * @covers \Ineersa\CodingAgent\Runtime\Controller\ToolQuestionPoller
@@ -185,8 +183,6 @@ final class ToolQuestionPollerTest extends TestCase
     private function createEmitter(): RuntimeEventEmitter
     {
         return new RuntimeEventEmitter(
-            eventClient: null,
-            boundary: new RuntimeExceptionBoundary(new EventDispatcher()),
             logger: $this->createStub(LoggerInterface::class),
         );
     }

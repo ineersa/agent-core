@@ -61,7 +61,7 @@ final class LlmStreamDispatchObserver implements LlmStreamObserverInterface
     public function onStreamError(string $runId, ?string $stepId, \Throwable $error): void
     {
         $this->dispatcher->dispatch(
-            new RuntimeStreamLifecycleEvent($runId, $stepId, $error),
+            new RuntimeStreamLifecycleEvent($runId, $stepId),
             self::EVENT_ERROR,
         );
     }

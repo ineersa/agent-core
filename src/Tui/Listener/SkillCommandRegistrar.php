@@ -28,11 +28,6 @@ final class SkillCommandRegistrar implements SlashCommandCatalogRegistrar, Slash
     ) {
     }
 
-    public static function getPriority(): int
-    {
-        return -100;
-    }
-
     public function registerCatalog(SlashCommandCatalog $catalog): void
     {
         foreach ($this->discovery->discover() as $skill) {

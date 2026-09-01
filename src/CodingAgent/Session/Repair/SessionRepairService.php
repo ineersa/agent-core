@@ -81,10 +81,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             return new RepairResult(
                 repairableStaleCancellationDetected: false,
                 staleCancellationRepaired: false,
-                terminalEventsAppended: 0,
-                replayOk: null,
                 message: 'Session repair refused: duplicate event sequences detected.',
-                duplicateSeqs: $duplicateSeqs,
                 refusalReason: SessionRepairRefusalReasonEnum::DuplicateSequences,
             );
         }
@@ -96,12 +93,8 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             return new RepairResult(
                 repairableStaleCancellationDetected: false,
                 staleCancellationRepaired: false,
-                terminalEventsAppended: 0,
-                replayOk: null,
                 message: 'Session repair refused: missing event sequences detected.',
-                duplicateSeqs: [],
                 refusalReason: SessionRepairRefusalReasonEnum::MissingSequences,
-                missingSeqs: $missingSeqs,
             );
         }
 
@@ -113,8 +106,6 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             return new RepairResult(
                 repairableStaleCancellationDetected: false,
                 staleCancellationRepaired: false,
-                terminalEventsAppended: 0,
-                replayOk: null,
                 message: 'Session repair refused: active streaming detected.',
                 refusalReason: SessionRepairRefusalReasonEnum::ActiveStreaming,
             );
@@ -153,8 +144,6 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             return new RepairResult(
                 repairableStaleCancellationDetected: true,
                 staleCancellationRepaired: false,
-                terminalEventsAppended: 0,
-                replayOk: null,
                 message: 'Stale non-terminal cancellation detected; repair available.',
             );
         }
@@ -267,8 +256,6 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             return new RepairResult(
                 repairableStaleCancellationDetected: true,
                 staleCancellationRepaired: false,
-                terminalEventsAppended: 0,
-                replayOk: null,
                 message: 'Terminal cancelled session has unmatched assistant tool calls; repair available.',
             );
         }
@@ -362,8 +349,6 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             return new RepairResult(
                 repairableStaleCancellationDetected: false,
                 staleCancellationRepaired: false,
-                terminalEventsAppended: 0,
-                replayOk: false,
                 message: 'Session repair refused: hypothetical replay did not reach Cancelled.',
                 refusalReason: SessionRepairRefusalReasonEnum::ReplayValidationFailed,
             );
@@ -384,8 +369,6 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
                 return new RepairResult(
                     repairableStaleCancellationDetected: false,
                     staleCancellationRepaired: false,
-                    terminalEventsAppended: 0,
-                    replayOk: false,
                     message: 'Session repair refused: repaired message sequence remains malformed.',
                     refusalReason: SessionRepairRefusalReasonEnum::ReplayValidationFailed,
                 );
@@ -431,8 +414,6 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         return new RepairResult(
             repairableStaleCancellationDetected: true,
             staleCancellationRepaired: true,
-            terminalEventsAppended: \count($proposedEvents),
-            replayOk: true,
             message: $successMessage,
         );
     }
@@ -715,7 +696,6 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
                 stepId: $operation->stepId,
                 attempt: $operation->attempt,
                 idempotencyKey: $operation->idempotencyKey,
-                contextRef: \sprintf('hot:run:%s', $runId),
                 toolsRef: \sprintf('toolset:run:%s:turn:%d', $runId, $operation->turnNo),
                 messages: $state->messages,
             );
@@ -748,12 +728,12 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         }
 
         if (!$apply) {
-            return new RepairResult(false, false, 0, null, 'Active operation repair available.');
+            return new RepairResult(false, false, 'Active operation repair available.');
         }
 
         $this->stepDispatcher->dispatchEffects($effects);
 
-        return new RepairResult(false, false, 0, true, 'Active operation redriven.', activeOperationsRedriven: \count($effects));
+        return new RepairResult(false, false, 'Active operation redriven.', activeOperationsRedriven: \count($effects));
     }
 
     /**
@@ -906,8 +886,6 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         return new RepairResult(
             repairableStaleCancellationDetected: false,
             staleCancellationRepaired: false,
-            terminalEventsAppended: 0,
-            replayOk: null,
             message: 'Session repair refused: ambiguous pending work.',
             refusalReason: SessionRepairRefusalReasonEnum::AmbiguousPendingWork,
         );
@@ -918,8 +896,6 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         return new RepairResult(
             repairableStaleCancellationDetected: false,
             staleCancellationRepaired: false,
-            terminalEventsAppended: 0,
-            replayOk: null,
             message: $message,
         );
     }
@@ -931,8 +907,6 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         return new RepairResult(
             repairableStaleCancellationDetected: false,
             staleCancellationRepaired: false,
-            terminalEventsAppended: 0,
-            replayOk: SessionRepairRefusalReasonEnum::ReplayValidationFailed === $reason ? false : null,
             message: $message,
             refusalReason: $reason,
         );

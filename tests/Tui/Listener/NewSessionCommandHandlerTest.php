@@ -39,11 +39,6 @@ final class NewSessionCommandHandlerTest extends TestCase
             public function requestReload(string $sessionId): void
             {
             }
-
-            public function hasPendingSwitch(): bool
-            {
-                return false;
-            }
         };
 
         $handler = new NewSessionCommandHandler($switch);

@@ -94,7 +94,6 @@ final readonly class ExecuteLlmStepWorker
                     runId: $message->runId(),
                     turnNo: $message->turnNo(),
                     stepId: $message->stepId(),
-                    contextRef: $message->contextRef,
                     toolsRef: $message->toolsRef,
                     messages: $message->messages,
                 ),

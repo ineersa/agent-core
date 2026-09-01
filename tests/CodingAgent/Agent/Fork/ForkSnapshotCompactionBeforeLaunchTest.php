@@ -72,7 +72,7 @@ final class ForkSnapshotCompactionBeforeLaunchTest extends PerMethodIsolatedKern
         $runStateRebuilder->expects($this->once())
             ->method('rebuildIfStale')
             ->with(RunState::queued($parentRunId), $parentRunId)
-            ->willReturn(RunStateReplayResult::rebuilt($parentState, $parentState->lastSeq, 1, true));
+            ->willReturn(RunStateReplayResult::rebuilt($parentState));
 
         $compactCalls = 0;
         $compactedMessages = [
@@ -231,7 +231,7 @@ final class ForkSnapshotCompactionBeforeLaunchTest extends PerMethodIsolatedKern
                 string $trigger = 'manual',
                 ?string $customInstructions = null,
             ): MessageSnapshotCompactionResult {
-                return MessageSnapshotCompactionResult::structuralNoOp($messages, 'too_few_messages');
+                return MessageSnapshotCompactionResult::structuralNoOp($messages);
             });
 
         $agentRunner = $this->createMock(AgentRunnerInterface::class);

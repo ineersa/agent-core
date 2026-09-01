@@ -8,9 +8,8 @@ namespace Ineersa\Tui\Footer;
  * Aggregates footer segment providers and exposes footer data.
  *
  * The FooterBarWidget calls getSegments() at render time to collect
- * all registered segment data. Providers can be added by internal
- * listener code (auto-keyed) or by extensions via the TuiExtensionContext
- * setFooterProvider() API (explicitly keyed, nullable for removal).
+ * all registered segment data. Providers are added by internal
+ * listener code (auto-keyed) or keyed via {@see setProvider()}.
  */
 final class FooterDataProvider
 {
@@ -42,14 +41,6 @@ final class FooterDataProvider
         } else {
             $this->providers[$key] = $provider;
         }
-    }
-
-    /**
-     * Remove a keyed provider (convenience alias).
-     */
-    public function removeProvider(string $key): void
-    {
-        unset($this->providers[$key]);
     }
 
     /** @return list<FooterSegment> */

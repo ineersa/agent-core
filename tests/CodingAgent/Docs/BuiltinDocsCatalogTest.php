@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Docs;
 
 use Ineersa\CodingAgent\Docs\BuiltinDocsCatalog;
 use Ineersa\CodingAgent\Docs\BuiltinDocsCatalogException;
+use Ineersa\CodingAgent\Docs\BuiltinDocsMarkdownScanner;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 
@@ -210,7 +211,7 @@ final class BuiltinDocsCatalogTest extends TestCase
     public function testHeadingSlugsUseGitHubStyleWithDuplicateSuffixes(): void
     {
         $md = "# Hello World\n\n## Hello World\n\n### API / Overview!\n";
-        $slugs = BuiltinDocsCatalog::headingSlugsFromMarkdown($md);
+        $slugs = (new BuiltinDocsMarkdownScanner())->headingSlugs($md);
         $this->assertSame(['hello-world', 'hello-world-1', 'api-overview'], $slugs);
     }
 

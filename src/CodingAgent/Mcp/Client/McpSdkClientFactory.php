@@ -43,7 +43,7 @@ final class McpSdkClientFactory
      *
      * @param McpServerDefinitionDTO $server Resolved server definition with interpolated values
      */
-    public function create(McpServerDefinitionDTO $server): McpSdkClientAdapter
+    public function create(McpServerDefinitionDTO $server): McpClientInterface
     {
         $transport = $this->createTransport($server);
         $client = $this->createSdkClient($server);

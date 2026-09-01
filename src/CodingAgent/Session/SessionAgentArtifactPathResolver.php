@@ -27,7 +27,7 @@ final class SessionAgentArtifactPathResolver
     private readonly string $sessionsBasePath;
 
     public function __construct(
-        private readonly HatfieldSessionStore $hatfieldSessionStore,
+        HatfieldSessionStore $hatfieldSessionStore,
     ) {
         $this->sessionsBasePath = $hatfieldSessionStore->resolveSessionsBasePath();
     }

@@ -17,7 +17,6 @@ use Symfony\AI\Platform\Tool\Tool;
 final class DynamicToolDescriptionProcessorTest extends TestCase
 {
     private ToolboxInterface $toolbox;
-    private DynamicToolDescriptionProcessor $processor;
 
     protected function setUp(): void
     {

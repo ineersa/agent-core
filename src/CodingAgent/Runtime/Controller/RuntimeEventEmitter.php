@@ -4,20 +4,18 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Controller;
 
-use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
-use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeTransportException;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Psr\Log\LoggerInterface;
 use Revolt\EventLoop;
 
 /**
- * Owns the controller stdout emit pipeline and optional recovery backfill from events.jsonl.
+ * Owns the controller stdout emit pipeline for live runtime events.
  *
- * Live canonical events arrive on messenger consumer stdout and are forwarded via emit().
- * drainRegisteredRunsOnce() is for explicit recovery/backfill only — not a hot poll loop.
+ * Live canonical and transient events arrive on messenger consumer stdout and
+ * are forwarded via emit(). Recovery/backfill from events.jsonl is not part of
+ * the live controller path.
  */
 final class RuntimeEventEmitter
 {
@@ -26,18 +24,10 @@ final class RuntimeEventEmitter
 
     private bool $shuttingDown = false;
 
-    /** @var array<string, int> runId => lastForwardedSeq */
-    private array $runEventCursors = [];
-
-    /** @var array<string, int> runId => consecutive drain failures without a successful poll */
-    private array $runDrainFailureCounts = [];
-
     /** @var (\Closure(): void)|null Callback invoked on fatal stdout write failure before event loop stop. */
     private ?\Closure $onFatalShutdown = null;
 
     public function __construct(
-        private readonly ?AgentSessionClient $eventClient,
-        private readonly RuntimeExceptionBoundary $boundary,
         private readonly LoggerInterface $logger,
     ) {
     }
@@ -55,8 +45,7 @@ final class RuntimeEventEmitter
     /**
      * Open the stdout resource for writing.
      *
-     * Must be called before emit() or startDrainLoop(). The controller
-     * calls this once at startup.
+     * Must be called before emit(). The controller calls this once at startup.
      */
     public function openStdout(): void
     {
@@ -67,44 +56,11 @@ final class RuntimeEventEmitter
     }
 
     /**
-     * Emit a runtime event to stdout with auto cursor register.
-     *
-     * Cursor lifecycle events:
-     * - Register on: RunStarted, RunResumed (passive attach — same drain registration)
-     * - Cursors are NEVER released — a completed/failed/cancelled run may
-     *   receive follow-up commands that produce new canonical events
-     *   (issue #183). The drain loop continues polling at the recorded
-     *   cursor position and simply yields no new events for idle runs.
+     * Emit a runtime event to stdout.
      */
     public function emit(RuntimeEvent $event): void
     {
-        // Auto-register event drain cursors based on event type.
-        if (
-            RuntimeEventTypeEnum::RunStarted->value === $event->type
-            || RuntimeEventTypeEnum::RunResumed->value === $event->type
-        ) {
-            $this->runEventCursors[$event->runId] = $this->runEventCursors[$event->runId] ?? 0;
-        }
-
-        // Cursor removal on terminal events has been removed (issue #183).
-        // When a run completes, the resulting run.completed event would unset
-        // the cursor, preventing follow-up AdvanceRun events from being
-        // forwarded. Keeping cursors alive has trivial overhead (polling
-        // completed runs returns 0 events) and prevents the drain loop from
-        // silently dropping follow-up events.
-
-        $this->registerChildRunsFromSubagentProgress($event);
-
-        if (!$this->emitInternal($event)) {
-            return;
-        }
-
-        if ($event->seq > 0 && '' !== $event->runId) {
-            $this->runEventCursors[$event->runId] = max(
-                $this->runEventCursors[$event->runId] ?? 0,
-                $event->seq,
-            );
-        }
+        $this->emitInternal($event);
     }
 
     /**
@@ -116,173 +72,12 @@ final class RuntimeEventEmitter
     }
 
     /**
-     * Signal the emitter to stop. The drain loop checks this before each tick.
+     * Signal the emitter to stop.
      */
     public function shutdown(): void
     {
         $this->shuttingDown = true;
     }
-
-    /**
-     * Register a recovery/backfill drain loop (not used in live controller mode).
-     *
-     * Polls InProcessAgentSessionClient for each registered run and forwards
-     * unseen canonical events to stdout.
-     */
-    public function startDrainLoop(float $interval = 0.05): void
-    {
-        EventLoop::repeat($interval, function (): void {
-            $this->drainRegisteredRunsOnce();
-        });
-    }
-
-    /**
-     * Poll each registered run once and forward unseen canonical events to stdout.
-     *
-     * A transient failure while draining must not unregister the run; the cursor
-     * is preserved so the next tick can resume from the last successfully forwarded seq.
-     */
-    public function drainRegisteredRunsOnce(): void
-    {
-        if ($this->shuttingDown || null === $this->eventClient) {
-            return;
-        }
-
-        // Snapshot active run IDs to avoid modification during iteration.
-        // PHP auto-casts numeric-string array keys to ints, so cast back
-        // to string before passing to string-typed methods like events().
-        $activeRuns = array_keys($this->runEventCursors);
-
-        foreach ($activeRuns as $runId) {
-            $runId = (string) $runId;
-            $cursor = $this->runEventCursors[$runId] ?? null;
-            if (null === $cursor) {
-                continue;
-            }
-
-            try {
-                foreach ($this->eventClient->events($runId, $cursor) as $event) {
-                    // Skip transient streaming deltas (seq=0) — these are
-                    // delivered via LLM consumer stdout pipe, not canonical events.
-                    if (0 === $event->seq) {
-                        continue;
-                    }
-
-                    if ($event->seq <= $cursor) {
-                        continue;
-                    }
-
-                    $this->registerChildRunsFromSubagentProgress($event);
-                    if (!$this->emitInternal($event)) {
-                        break;
-                    }
-
-                    if ($event->seq > 0) {
-                        $this->runEventCursors[$runId] = max($cursor, $event->seq);
-                        $cursor = $this->runEventCursors[$runId];
-                    }
-                }
-
-                unset($this->runDrainFailureCounts[$runId]);
-            } catch (\Throwable $e) {
-                $failures = ($this->runDrainFailureCounts[$runId] ?? 0) + 1;
-                $this->runDrainFailureCounts[$runId] = $failures;
-
-                // Delegate capture=0 rethrow to boundary. If we reach here, capture mode is enabled.
-                $this->boundary->catch($e, 'headless_controller.event_drain_failed', [
-                    'run_id' => $runId,
-                ]);
-
-                $logContext = [
-                    'component' => 'RuntimeEventEmitter',
-                    'event_type' => 'headless_controller.event_drain_failed',
-                    'run_id' => $runId,
-                    'exception_class' => $e::class,
-                    'exception_message' => $e->getMessage(),
-                    'consecutive_failures' => $failures,
-                    'last_forwarded_seq' => $this->runEventCursors[$runId] ?? 0,
-                ];
-
-                if (1 === $failures || 0 === $failures % 10) {
-                    $this->logger->warning('Canonical event drain failed; will retry on next tick', $logContext);
-                }
-
-                if (1 === $failures) {
-                    $this->emitInternal(new RuntimeEvent(
-                        type: RuntimeEventTypeEnum::ProtocolError->value,
-                        runId: $runId,
-                        seq: 0,
-                        payload: [
-                            'error' => 'Event drain failed: '.$e->getMessage(),
-                            'run_id' => $runId,
-                        ],
-                    ));
-                }
-
-                // Keep runEventCursors[$runId] — abandoning the run after one failure
-                // left the TUI stuck in Cancelling while backend events continued (issue #205).
-            }
-        }
-    }
-
-    /**
-     * Subagent live view registers child runs discovered through parent
-     * subagent_progress so their canonical events can be forwarded over JSONL.
-     */
-    private function registerChildRunsFromSubagentProgress(RuntimeEvent $event): void
-    {
-        if (!str_contains($event->type, 'tool_execution')) {
-            return;
-        }
-
-        $progress = $event->payload['subagent_progress'] ?? null;
-        if (!\is_array($progress)) {
-            return;
-        }
-
-        foreach ($this->extractChildAgentRunIdsFromProgress($progress) as $childRunId) {
-            if ('' === $childRunId || $childRunId === $event->runId) {
-                continue;
-            }
-
-            $this->runEventCursors[$childRunId] = $this->runEventCursors[$childRunId] ?? 0;
-        }
-    }
-
-    /**
-     * @param array<string, mixed> $progress
-     *
-     * @return list<string>
-     */
-    private function extractChildAgentRunIdsFromProgress(array $progress): array
-    {
-        $mode = (string) ($progress['mode'] ?? 'single');
-        if ('parallel' === $mode) {
-            $children = $progress['children'] ?? [];
-            if (!\is_array($children)) {
-                return [];
-            }
-
-            $ids = [];
-            foreach ($children as $child) {
-                if (!\is_array($child)) {
-                    continue;
-                }
-                $id = trim((string) ($child['agent_run_id'] ?? ''));
-                if ('' !== $id) {
-                    $ids[] = $id;
-                }
-            }
-
-            return $ids;
-        }
-
-        $id = trim((string) ($progress['agent_run_id'] ?? ''));
-
-        return '' !== $id ? [$id] : [];
-    }
-
-    // ── Internal ────────────────────────────────────────────────────────
 
     private function emitInternal(RuntimeEvent $event): bool
     {

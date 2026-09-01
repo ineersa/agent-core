@@ -31,11 +31,6 @@ final class PromptTemplateCommandRegistrar implements SlashCommandCatalogRegistr
     ) {
     }
 
-    public static function getPriority(): int
-    {
-        return -100;
-    }
-
     public function registerCatalog(SlashCommandCatalog $catalog): void
     {
         $handler = new class implements SlashCommandHandler {

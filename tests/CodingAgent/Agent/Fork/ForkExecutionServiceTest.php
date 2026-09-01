@@ -51,7 +51,7 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
                     $this->assertSame('fork', $trigger);
                     $this->assertSame('deepseek/deepseek-v4-flash', $activeModel);
 
-                    return MessageSnapshotCompactionResult::structuralNoOp($messages, 'too_few_messages');
+                    return MessageSnapshotCompactionResult::structuralNoOp($messages);
                 },
             );
 

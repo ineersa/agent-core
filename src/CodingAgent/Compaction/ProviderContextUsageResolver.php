@@ -42,25 +42,6 @@ final class ProviderContextUsageResolver
     }
 
     /**
-     * Returns the latest provider input/prompt token count for a run,
-     * or null when no provider measurement exists yet.
-     *
-     * Only input_tokens / prompt_tokens are considered (not output/
-     * completion tokens).  Measurement must be a positive integer.
-     *
-     * This method does NOT check eligibility — it returns the raw
-     * latest measurement regardless of whether auto-compaction has
-     * already acted on it.  Prefer {@see getLatestEligibleInputTokens}
-     * for auto-compaction trigger decisions.
-     */
-    public function getLatestInputTokens(string $runId): ?int
-    {
-        $measurement = $this->findLatestProviderMeasurement($runId);
-
-        return $measurement['tokens'] ?? null;
-    }
-
-    /**
      * Returns the latest provider token count that is ELIGIBLE for
      * auto-compaction — i.e. a provider usage measurement whose event
      * sequence number is greater than the latest auto compaction
@@ -114,37 +95,5 @@ final class ProviderContextUsageResolver
         }
 
         return null;
-    }
-
-    /**
-     * Returns the latest provider measurement metadata:
-     *   seq   — event sequence number
-     *   tokens — input_tokens or prompt_tokens (positive int)
-     *   event — the RunEvent (for callers that need the full payload)
-     *
-     * @return array{seq: int, tokens: int, event: \Ineersa\AgentCore\Domain\Event\RunEvent}|array{}
-     */
-    private function findLatestProviderMeasurement(string $runId): array
-    {
-        foreach ($this->eventStore->reverseFor($runId) as $event) {
-            if (
-                RunEventTypeEnum::LlmStepCompleted->value !== $event->type
-                && RunEventTypeEnum::LlmStepAborted->value !== $event->type
-            ) {
-                continue;
-            }
-
-            $usage = $event->payload['usage'] ?? [];
-            $tokens = $usage['input_tokens'] ?? $usage['prompt_tokens'] ?? null;
-            if (\is_int($tokens) && $tokens > 0) {
-                return [
-                    'seq' => $event->seq,
-                    'tokens' => $tokens,
-                    'event' => $event,
-                ];
-            }
-        }
-
-        return [];
     }
 }

@@ -233,11 +233,12 @@ class McpConnectionManagerTest extends TestCase
 
         $this->manager->discover('test-run');
 
-        // Disconnect should not throw
+        // Disconnect should not throw; rediscovery after cleanup should reconnect.
         $this->manager->disconnectAll('test-run');
 
-        // After disconnect, getClient should return null
-        $this->assertNull($this->manager->getClient('test-run', 'fixture'));
+        $results = $this->manager->discover('test-run');
+        $this->assertArrayHasKey('fixture', $results);
+        $this->assertSame('connected', $results['fixture']['status']);
     }
 
     public function testDiscoverHttpServerReturnsConnectedWithTools(): void

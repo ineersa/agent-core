@@ -107,7 +107,8 @@ final class PickerOverlayTest extends TestCase
     public function testScreenReturnsNullBeforeMount(): void
     {
         $overlay = new PickerOverlay();
-        $this->assertNull($overlay->screen());
+        $screenRef = new \ReflectionProperty($overlay, 'screen');
+        $this->assertNull($screenRef->getValue($overlay));
     }
 
     public function testScreenReturnsChatScreenAfterMount(): void
@@ -129,7 +130,8 @@ final class PickerOverlayTest extends TestCase
 
         $overlay->mount($tui, $screen, $listWidget, $header);
 
-        $this->assertSame($screen, $overlay->screen());
+        $screenRef = new \ReflectionProperty($overlay, 'screen');
+        $this->assertSame($screen, $screenRef->getValue($overlay));
     }
 
     public function testIsOpenFalseByDefault(): void
@@ -144,7 +146,8 @@ final class PickerOverlayTest extends TestCase
         $overlay->close(); // should not throw
         $this->assertFalse($overlay->isOpen());
         $this->assertNull($overlay->listWidget());
-        $this->assertNull($overlay->screen());
+        $screenRef = new \ReflectionProperty($overlay, 'screen');
+        $this->assertNull($screenRef->getValue($overlay));
     }
 
     public function testDefaultMountInsertsOverlayAfterEditor(): void

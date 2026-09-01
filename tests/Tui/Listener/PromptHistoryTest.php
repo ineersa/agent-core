@@ -35,7 +35,7 @@ final class PromptHistoryTest extends TestCase
 
         $this->history->seedFrom($transcript);
 
-        $this->assertSame(['hello', '!ls -1'], $this->history->prompts());
+        $this->assertSame(['hello', '!ls -1'], self::historyPrompts($this->history));
     }
 
     #[Test]
@@ -44,7 +44,7 @@ final class PromptHistoryTest extends TestCase
         $this->history->append('a');
         $this->history->append('b');
 
-        $this->assertSame(['a', 'b'], $this->history->prompts());
+        $this->assertSame(['a', 'b'], self::historyPrompts($this->history));
     }
 
     #[Test]
@@ -55,7 +55,7 @@ final class PromptHistoryTest extends TestCase
             self::block(TranscriptBlockKindEnum::UserMessage, 'from-transcript'),
         ]);
 
-        $this->assertSame(['from-transcript'], $this->history->prompts());
+        $this->assertSame(['from-transcript'], self::historyPrompts($this->history));
     }
 
     // ─── Empty state ──────────────────────────────────────────
@@ -186,21 +186,21 @@ final class PromptHistoryTest extends TestCase
 
         $this->assertSame('c', $this->history->previous());
         $this->assertTrue($this->history->isNavigating());
-        $this->assertSame(2, $this->history->cursor());
+        $this->assertSame(2, self::historyCursor($this->history));
 
         $this->history->append('d');
 
         $this->assertTrue($this->history->isNavigating());
-        $this->assertSame(2, $this->history->cursor());
+        $this->assertSame(2, self::historyCursor($this->history));
 
         $this->assertSame('b', $this->history->previous());
-        $this->assertSame(1, $this->history->cursor());
+        $this->assertSame(1, self::historyCursor($this->history));
 
         $this->assertSame('c', $this->history->next());
-        $this->assertSame(2, $this->history->cursor());
+        $this->assertSame(2, self::historyCursor($this->history));
 
         $this->assertSame('d', $this->history->next());
-        $this->assertSame(3, $this->history->cursor());
+        $this->assertSame(3, self::historyCursor($this->history));
     }
 
     // ─── Non-user blocks are skipped ──────────────────────────
@@ -296,12 +296,12 @@ final class PromptHistoryTest extends TestCase
         $this->history->previous(); // index 2 (newer)
         $this->history->previous(); // index 0 (oldest)
 
-        $this->assertSame(0, $this->history->cursor());
+        $this->assertSame(0, self::historyCursor($this->history));
 
         // Up again — no older message, cursor stays at 0
         $result = $this->history->previous();
         $this->assertNull($result);
-        $this->assertSame(0, $this->history->cursor());
+        $this->assertSame(0, self::historyCursor($this->history));
         $this->assertTrue($this->history->isNavigating());
     }
 
@@ -327,7 +327,7 @@ final class PromptHistoryTest extends TestCase
     #[Test]
     public function cursorIsNullWhenNotNavigating(): void
     {
-        $this->assertNull($this->history->cursor());
+        $this->assertNull(self::historyCursor($this->history));
     }
 
     #[Test]
@@ -341,7 +341,7 @@ final class PromptHistoryTest extends TestCase
         $this->history->seedFrom($blocks);
         $this->history->previous(); // index 1 (newest)
 
-        $this->assertSame(1, $this->history->cursor());
+        $this->assertSame(1, self::historyCursor($this->history));
     }
 
     #[Test]
@@ -450,5 +450,20 @@ final class PromptHistoryTest extends TestCase
             seq: $seq,
             text: $text,
         );
+    }
+
+    /** @return list<string> */
+    private static function historyPrompts(PromptHistory $history): array
+    {
+        $ref = new \ReflectionProperty($history, 'prompts');
+
+        return $ref->getValue($history);
+    }
+
+    private static function historyCursor(PromptHistory $history): ?int
+    {
+        $ref = new \ReflectionProperty($history, 'cursor');
+
+        return $ref->getValue($history);
     }
 }

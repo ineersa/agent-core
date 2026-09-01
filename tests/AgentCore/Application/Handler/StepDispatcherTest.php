@@ -21,7 +21,7 @@ final class StepDispatcherTest extends TestCase
         $dispatcher = new StepDispatcher($commandBus, $executionBus);
 
         $advance = new AdvanceRun('run-1', 1, 'advance-1', 1, 'advance-key');
-        $llm = new ExecuteLlmStep('run-1', 1, 'llm-1', 1, 'llm-key', 'context-1', 'tools-1');
+        $llm = new ExecuteLlmStep('run-1', 1, 'llm-1', 1, 'llm-key', 'tools-1');
         $compact = new CompactRun('run-1', 1, 'compact-1', 1, 'compact-key');
         $tool = new ExecuteToolCall('run-1', 1, 'tool-1', 1, 'tool-key', 'call-1', 'read', [], 0);
 

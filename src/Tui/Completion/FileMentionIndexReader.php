@@ -35,9 +35,6 @@ final class FileMentionIndexReader
 
     private bool $loaded = false;
 
-    /** @var array<string, list<FileMentionIndexEntryDTO>> */
-    private array $childrenByDirectory = [];
-
     /** @var list<string> */
     private array $pathsLower = [];
 
@@ -60,18 +57,6 @@ final class FileMentionIndexReader
         $this->ensureLoaded();
 
         return $this->entries;
-    }
-
-    /**
-     * Direct children of a given directory path.
-     *
-     * @return list<FileMentionIndexEntryDTO>
-     */
-    public function getChildren(string $directory): array
-    {
-        $this->ensureLoaded();
-
-        return $this->childrenByDirectory[$directory] ?? [];
     }
 
     /**
@@ -103,23 +88,6 @@ final class FileMentionIndexReader
         return $this->basenamesLower;
     }
 
-    /**
-     * Whether the index has been loaded at least once (even if empty).
-     */
-    public function isLoaded(): bool
-    {
-        return $this->loaded;
-    }
-
-    /**
-     * Unix timestamp of the currently loaded index file, or -1 if
-     * never loaded.
-     */
-    public function loadedMtime(): int
-    {
-        return $this->loadedMtime;
-    }
-
     // ─── Internal ──────────────────────────────────────────────────
 
     private function ensureLoaded(): void
@@ -142,7 +110,6 @@ final class FileMentionIndexReader
             // or start empty.
             if ($this->loadedMtime < 0) {
                 $this->entries = [];
-                $this->childrenByDirectory = [];
                 $this->pathsLower = [];
                 $this->basenamesLower = [];
             }
@@ -179,17 +146,10 @@ final class FileMentionIndexReader
         $this->entries = $entries;
 
         // Build lookup structures
-        $this->childrenByDirectory = [];
         $this->pathsLower = [];
         $this->basenamesLower = [];
 
         foreach ($entries as $entry) {
-            $dir = \dirname($entry->path);
-            if ('.' === $dir) {
-                $dir = '';
-            }
-            $this->childrenByDirectory[$dir][] = $entry;
-
             $this->pathsLower[] = mb_strtolower($entry->path);
             $this->basenamesLower[] = mb_strtolower(basename($entry->path));
         }

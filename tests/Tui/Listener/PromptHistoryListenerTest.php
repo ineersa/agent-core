@@ -56,7 +56,7 @@ final class PromptHistoryListenerTest extends TestCase
         $this->editor->getWidget()->handleInput("\x1b[A");
 
         $this->assertSame('second prompt', $this->editor->getText());
-        $this->assertFalse($this->editor->isEmpty());
+        $this->assertNotSame('', $this->editor->getText());
     }
 
     #[Test]
@@ -125,7 +125,7 @@ final class PromptHistoryListenerTest extends TestCase
 
         // Down past newest — clears
         $this->editor->getWidget()->handleInput("\x1b[B");
-        $this->assertTrue($this->editor->isEmpty());
+        $this->assertSame('', $this->editor->getText());
         $this->assertSame('', $this->editor->getText());
     }
 
@@ -176,7 +176,7 @@ final class PromptHistoryListenerTest extends TestCase
         // Down on empty editor with no history — falls through to editor
         $this->editor->getWidget()->handleInput("\x1b[B");
 
-        $this->assertTrue($this->editor->isEmpty());
+        $this->assertSame('', $this->editor->getText());
         $this->assertSame('', $this->editor->getText());
     }
 
@@ -250,7 +250,7 @@ final class PromptHistoryListenerTest extends TestCase
 
         $this->editor->getWidget()->handleInput("\x1b[A");
 
-        $this->assertTrue($this->editor->isEmpty());
+        $this->assertSame('', $this->editor->getText());
     }
 
     // ─── Down variant escape sequence ─────────────────────────
@@ -269,7 +269,7 @@ final class PromptHistoryListenerTest extends TestCase
 
         // Alternate down sequence \x1bOB
         $this->editor->getWidget()->handleInput("\x1bOB");
-        $this->assertTrue($this->editor->isEmpty());
+        $this->assertSame('', $this->editor->getText());
     }
 
     // ─── Up with alternate escape sequence ────────────────────
@@ -404,7 +404,7 @@ final class PromptHistoryListenerTest extends TestCase
 
         $this->registerListener();
 
-        $this->assertSame(['seeded one', 'seeded two'], $this->history->prompts());
+        $this->assertSame(['seeded one', 'seeded two'], self::historyPrompts($this->history));
     }
 
     private function registerListener(): void
@@ -457,5 +457,13 @@ final class PromptHistoryListenerTest extends TestCase
             seq: $seq,
             text: $text,
         );
+    }
+
+    /** @return list<string> */
+    private static function historyPrompts(PromptHistory $history): array
+    {
+        $ref = new \ReflectionProperty($history, 'prompts');
+
+        return $ref->getValue($history);
     }
 }

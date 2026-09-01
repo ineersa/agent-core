@@ -138,7 +138,7 @@ final class TuiFileRewindPickerExtensionVirtualTest extends TestCase
             paths: new RewindStoragePaths($projectDir),
             ledgerStore: new FileRewindLedgerStore($projectDir),
             ledgerProjector: new FileRewindLedgerProjector(),
-            config: new FileRewindConfig(enabled: true, maxRetainedTurns: 10, maxFileBytes: 1_048_576),
+            config: new FileRewindConfig(enabled: true, maxRetainedTurns: 10),
             logger: new NullLogger(),
             projectCwd: $projectDir,
         );

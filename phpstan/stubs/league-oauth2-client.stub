@@ -1,0 +1,29 @@
+<?php
+
+namespace League\OAuth2\Client\Provider;
+
+/**
+ * Vendor parent methods ship untyped `array` parameters. Project overrides
+ * use array<string, mixed>, which PHPStan otherwise reports as
+ * method.childParameterType. This stub only narrows those two signatures.
+ */
+abstract class AbstractProvider
+{
+    /**
+     * @param array<string, mixed> $options
+     *
+     * @return array<string, mixed>
+     */
+    protected function getAuthorizationParameters(array $options)
+    {
+    }
+
+    /**
+     * @param array<string, mixed> $params
+     *
+     * @return object
+     */
+    protected function getAccessTokenRequest(array $params)
+    {
+    }
+}

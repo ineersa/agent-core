@@ -124,8 +124,6 @@ final class AgentResumeExecutionService
                 artifactId: $entry->artifactId,
                 displayName: $entry->agentName,
                 taskSummary: $item['task'],
-                launchModel: $launchModel,
-                launchReasoning: $launchReasoning,
                 artifactKind: $entry->kind,
                 batchIndex: $item['batchIndex'],
             );

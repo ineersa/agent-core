@@ -87,16 +87,10 @@ final readonly class TuiRuntimeEventApplier
         $this->projector->accept($event);
     }
 
-    /** @return list<\Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock> */
-    public function projectedBlocks(): array
-    {
-        return $this->projector->blocks();
-    }
-
     /**
      * Drain projector dirty changes for ordinary live polls.
      *
-     * Prefer this over {@see projectedBlocks()} on the hot path so finalized
+     * Prefer drainProjectedChanges() on the hot path so finalized
      * history is not re-materialized every tick.
      */
     public function drainProjectedChanges(): TranscriptChangeSet

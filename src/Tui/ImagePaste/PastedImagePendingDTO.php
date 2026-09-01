@@ -10,8 +10,6 @@ namespace Ineersa\Tui\ImagePaste;
 final readonly class PastedImagePendingDTO
 {
     public function __construct(
-        public int $index,
-        public string $placeholder,
         public string $stagedPath,
     ) {
     }

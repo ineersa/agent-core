@@ -143,7 +143,6 @@ final class SkillCommandRegistrarTest extends TestCase
     {
         $registrar = $this->createRegistrar();
         $this->assertInstanceOf(SlashCommandCatalogRegistrar::class, $registrar);
-        $this->assertSame(-100, SkillCommandRegistrar::getPriority());
     }
 
     /**

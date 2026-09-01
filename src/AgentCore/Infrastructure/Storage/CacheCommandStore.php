@@ -115,37 +115,6 @@ final class CacheCommandStore implements CommandStoreInterface
         return \count($this->pending($runId));
     }
 
-    public function rejectPendingByKind(string $runId, string $kind, string $reason): array
-    {
-        $lock = $this->lockFactory->createLock(self::LOCK_KEY_PREFIX.$runId);
-        $lock->acquire(true);
-
-        try {
-            $data = $this->load($runId);
-            $rejected = [];
-
-            foreach ($data['order'] ?? [] as $idempotencyKey) {
-                if ('pending' !== ($data['statuses'][$idempotencyKey] ?? null)) {
-                    continue;
-                }
-
-                $command = $data['commands'][$idempotencyKey] ?? null;
-                if (null === $command || $command->kind !== $kind) {
-                    continue;
-                }
-
-                $data['statuses'][$idempotencyKey] = 'rejected: '.$reason;
-                $rejected[] = $command;
-            }
-
-            $this->save($runId, $data);
-
-            return $rejected;
-        } finally {
-            $lock->release();
-        }
-    }
-
     public function markApplied(string $runId, string $idempotencyKey): void
     {
         $this->markStatus($runId, $idempotencyKey, 'applied');

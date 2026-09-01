@@ -83,7 +83,7 @@ final class RunResultMessagesRouteToRunControlTest extends IsolatedKernelTestCas
 
         /** @var MessageBusInterface $executionBus */
         $executionBus = self::getContainer()->get('agent.execution.bus');
-        $message = new ExecuteLlmStep('run-execution-route', 1, 'step-execution', 1, 'key-execution', 'context', 'tools');
+        $message = new ExecuteLlmStep('run-execution-route', 1, 'step-execution', 1, 'key-execution', 'tools');
         $executionBus->dispatch($message);
 
         $sent = $transport->getSent();

@@ -25,7 +25,6 @@ final class LoadedResourcesWidgetTest extends TestCase
     {
         $summary = new LoadedResourcesSummaryDTO([
             new LoadedResourceSectionDTO(
-                key: 'skills',
                 label: 'Skills',
                 items: [
                     new LoadedResourceItemDTO('alpha', '/a/SKILL.md'),
@@ -55,7 +54,6 @@ final class LoadedResourcesWidgetTest extends TestCase
     {
         $summary = new LoadedResourcesSummaryDTO([
             new LoadedResourceSectionDTO(
-                key: 'prompts',
                 label: 'Prompts',
                 items: [],
                 conflicts: [
@@ -82,7 +80,6 @@ final class LoadedResourcesWidgetTest extends TestCase
     {
         $summary = new LoadedResourcesSummaryDTO([
             new LoadedResourceSectionDTO(
-                key: 'extensions',
                 label: 'Extensions',
                 items: [],
                 conflicts: [
@@ -111,7 +108,6 @@ final class LoadedResourcesWidgetTest extends TestCase
     {
         $summary = new LoadedResourcesSummaryDTO([
             new LoadedResourceSectionDTO(
-                key: 'prompts',
                 label: 'Prompts',
                 items: [new LoadedResourceItemDTO('fix-bug', '/prompts/fix-bug.md')],
             ),
@@ -119,7 +115,7 @@ final class LoadedResourcesWidgetTest extends TestCase
 
         $widget = new LoadedResourcesWidget($this->theme());
         $widget->setSummary($summary);
-        $widget->setExpanded(true);
+        $widget->toggleExpanded();
         $lines = $this->renderWidget($widget, 120);
 
         $joined = implode("\n", $lines);
@@ -132,7 +128,6 @@ final class LoadedResourcesWidgetTest extends TestCase
     {
         $summary = new LoadedResourcesSummaryDTO([
             new LoadedResourceSectionDTO(
-                key: 'skills',
                 label: 'Skills',
                 items: [
                     new LoadedResourceItemDTO('very-long-skill-name-one', '/a/SKILL.md'),
@@ -147,7 +142,7 @@ final class LoadedResourcesWidgetTest extends TestCase
 
         $widget = new LoadedResourcesWidget($this->theme());
         $widget->setSummary($summary);
-        $widget->setExpanded(true);
+        $widget->toggleExpanded();
 
         foreach ([30, 50, 80, 120] as $width) {
             $lines = $this->renderWidget($widget, $width);

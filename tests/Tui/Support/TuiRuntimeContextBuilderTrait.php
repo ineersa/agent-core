@@ -50,7 +50,7 @@ trait TuiRuntimeContextBuilderTrait
         \assert($this instanceof \PHPUnit\Framework\TestCase,
             'TuiRuntimeContextBuilderTrait can only be used in PHPUnit TestCase classes');
 
-        $builder = new TuiRuntimeContextBuilder();
+        $builder = new TuiRuntimeContextBuilder($this);
         $builder->client = $this->createStub(AgentSessionClient::class);
         $builder->sessionStore = self::createSessionStore($this);
         $builder->switchService = $this->createStub(TuiSessionSwitchServiceInterface::class);
@@ -104,6 +104,11 @@ final class TuiRuntimeContextBuilder
     private ?object $state = null;
     private ?object $screen = null;
 
+    public function __construct(
+        private readonly \PHPUnit\Framework\TestCase $testCase,
+    ) {
+    }
+
     public function withTui(object $tui): self
     {
         $this->tui = $tui;
@@ -146,20 +151,6 @@ final class TuiRuntimeContextBuilder
         return $this;
     }
 
-    public function withSwitch(object $switchService): self
-    {
-        $this->switchService = $switchService;
-
-        return $this;
-    }
-
-    public function withLifecycle(TuiSessionLifecycleDispatcher $lifecycle): self
-    {
-        $this->lifecycle = $lifecycle;
-
-        return $this;
-    }
-
     public function withHistoryProvider(HistoryProviderInterface $historyProvider): self
     {
         $this->historyProvider = $historyProvider;
@@ -185,7 +176,7 @@ final class TuiRuntimeContextBuilder
             ticks: $this->ticks,
             switch: $this->switchService,
             lifecycle: $this->lifecycle,
-            historyProvider: $this->historyProvider ?? $this->createStub(HistoryProviderInterface::class),
+            historyProvider: $this->historyProvider ?? $this->testCase->createStub(HistoryProviderInterface::class),
             sessionServices: $this->sessionServices,
         );
     }

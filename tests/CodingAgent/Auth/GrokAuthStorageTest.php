@@ -175,17 +175,6 @@ final class GrokAuthStorageTest extends TestCase
         $this->assertSame('expired-access-raw', $raw->access);
     }
 
-    public function testRemoveCredentials(): void
-    {
-        $this->storage->saveCredentials('grok-cli', new GrokAuthRecord(
-            access: 'a',
-            refresh: 'r',
-            expires: time() + 100,
-        ));
-        $this->storage->removeCredentials('grok-cli');
-        $this->assertNull($this->storage->loadCredentials('grok-cli'));
-    }
-
     public function testCoexistsWithCodexKeyInSameFile(): void
     {
         $path = $this->tmpDir.'/'.GrokOAuthConfig::AUTH_FILE;

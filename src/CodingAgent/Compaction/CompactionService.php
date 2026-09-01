@@ -103,8 +103,6 @@ final readonly class CompactionService implements CompactionServiceInterface
         $compacted = $this->sessionCompactor->buildCompactedMessages($summaryText, $preparation);
 
         return new CompactResult(
-            summaryText: $compacted->summaryText,
-            summaryMessage: $compacted->summaryMessage,
             compactedMessages: $compacted->compactedMessages,
             tokenEstimateBefore: $compacted->tokenEstimateBefore,
             tokenEstimateAfter: $compacted->tokenEstimateAfter,
@@ -178,7 +176,7 @@ final readonly class CompactionService implements CompactionServiceInterface
                 'trigger' => $trigger,
             ]);
 
-            return MessageSnapshotCompactionResult::structuralNoOp($messages, $skipReason);
+            return MessageSnapshotCompactionResult::structuralNoOp($messages);
         }
 
         $resolvedModel = $runtimeSettings->model ?? $activeModelStr;
@@ -331,10 +329,7 @@ final readonly class CompactionService implements CompactionServiceInterface
             // Reject the larger summary and continue with the exact original messages
             // (same semantics as prepare structural skips). Async /compact still emits
             // context_compaction_failed via CompactionStepResultHandler.
-            return MessageSnapshotCompactionResult::structuralNoOp(
-                $originalMessages,
-                'ineffective_compaction',
-            );
+            return MessageSnapshotCompactionResult::structuralNoOp($originalMessages);
         }
 
         $this->logger->info('Compaction snapshot applied.', [

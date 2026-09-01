@@ -206,7 +206,6 @@ final class AgentDefinitionParser
             parallelAllowed: $dto->parallelAllowed,
             instructions: $body,
             sourcePath: $filePath,
-            sourceDirectory: \dirname($filePath),
         );
     }
 }

@@ -15,7 +15,6 @@ final readonly class ModelInvocationInput
         public ?string $runId = null,
         public ?int $turnNo = null,
         public ?string $stepId = null,
-        public ?string $contextRef = null,
         public ?string $toolsRef = null,
         public ?array $messages = null,
     ) {

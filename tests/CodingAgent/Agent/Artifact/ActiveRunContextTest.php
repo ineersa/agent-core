@@ -27,7 +27,7 @@ final class ActiveRunContextTest extends IsolatedKernelTestCase
     {
         $state = new RunState('run-1', RunStatus::Running, lastSeq: 4);
         $rebuilder = $this->createMock(RunStateRebuilderInterface::class);
-        $rebuilder->expects($this->once())->method('rebuildIfStale')->willReturn(RunStateReplayResult::rebuilt($state, 4, 4, true));
+        $rebuilder->expects($this->once())->method('rebuildIfStale')->willReturn(RunStateReplayResult::rebuilt($state));
         $context = new ActiveRunContext($rebuilder, $this->repository);
 
         $this->assertSame($state, $context->stateFor('run-1'));
@@ -40,7 +40,7 @@ final class ActiveRunContextTest extends IsolatedKernelTestCase
         $old = new RunState('run-1', RunStatus::Running, lastSeq: 1);
         $next = new RunState('run-1', RunStatus::Completed, lastSeq: 2);
         $rebuilder = $this->createMock(RunStateRebuilderInterface::class);
-        $rebuilder->expects($this->once())->method('rebuildIfStale')->willReturn(RunStateReplayResult::rebuilt($old, 1, 1, true));
+        $rebuilder->expects($this->once())->method('rebuildIfStale')->willReturn(RunStateReplayResult::rebuilt($old));
         $context = new ActiveRunContext($rebuilder, $this->repository);
 
         $context->stateFor('run-1');
@@ -56,8 +56,8 @@ final class ActiveRunContextTest extends IsolatedKernelTestCase
         $replayed = new RunState('run-1', RunStatus::Failed, lastSeq: 3);
         $rebuilder = $this->createMock(RunStateRebuilderInterface::class);
         $rebuilder->expects($this->exactly(2))->method('rebuildIfStale')->willReturnOnConsecutiveCalls(
-            RunStateReplayResult::rebuilt($old, 1, 1, true),
-            RunStateReplayResult::rebuilt($replayed, 3, 3, true),
+            RunStateReplayResult::rebuilt($old),
+            RunStateReplayResult::rebuilt($replayed),
         );
         $context = new ActiveRunContext($rebuilder, $this->repository);
 

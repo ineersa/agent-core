@@ -215,8 +215,7 @@ final class SessionCompactor
      * front for prompt-cache locality.
      *
      * Returns a CompactResultDTO containing:
-     *   - The full compacted message list
-     *   - The injected summary message with compact_summary metadata
+     *   - The full compacted message list (summary included)
      *   - Before/after token estimates
      *
      * @param string                   $summaryText Raw summary text from the model
@@ -259,8 +258,6 @@ final class SessionCompactor
         $tokenEstimateAfter = $this->tokenEstimator->estimateTokens($compactedMessages);
 
         return new CompactResultDTO(
-            summaryText: $summaryText,
-            summaryMessage: $summaryMessage,
             compactedMessages: $compactedMessages,
             tokenEstimateBefore: $preparation->tokenEstimateBefore,
             tokenEstimateAfter: $tokenEstimateAfter,

@@ -9,12 +9,12 @@ declare(strict_types=1);
  * replay-backed E2E lanes do not require a live LLM.  The `test:llm-real`
  * lane runs the same ParaTest command as `castor test:llm-real` (port 9052 /
  * llama-proxy; warm cache ~22–25s).  Opt-in live controller smoke:
- *   castor test:controller, castor llm:fixtures:record
+ *   castor test:controller
  *
  * Lanes (typical shell timeouts):
  *   deptrac (30s), test ParaTest (120s), test:controller-replay (150s),
- *   test:tui (210s), test:llm-real (210s), phpstan (90s), cs-check (30s),
- *   docs:validate (30s).
+ *   test:tui (210s), test:llm-real (210s), phpstan (90s), dead-code (150s),
+ *   cs-check (30s), docs:validate (30s).
  *   Absolute castor check wall clock: castor_test_runner_max_seconds() (210s)
  *   from check() entry — lock wait, QA init, preflight, lanes, and finalizers
  *   all consume the same budget. Per-lane Castor hard timeouts and preflight
@@ -227,6 +227,15 @@ function _run_castor_check_body(string $root, string $qaRunId, float $checkWallD
                 qa_check_run_env_command().' '.$phpBin.' vendor/bin/phpstan analyse -c phpstan.dist.neon --no-progress'
                     .(is_llm_mode() ? ' --error-format=json --no-ansi' : ''),
                 90,
+            ),
+        ],
+        'dead-code' => [
+            'cmd' => timeout_check_command(
+                // Shared warmup pins HATFIELD_CACHE_DIR under var/phpstan-dead-code/
+                // then analyses with the dedicated ShipMonk config.
+                qa_check_run_env_command()
+                    .' '.escapeshellarg($castorBin).' dead-code',
+                150,
             ),
         ],
         'cs-check' => [

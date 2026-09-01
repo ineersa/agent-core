@@ -208,12 +208,7 @@ final class BackgroundProcessManager
         return new StartResult(
             id: $dbId,
             pid: $pid,
-            pgid: $pgid,
-            command: $command,
             logPath: $logFile,
-            startedAt: $now,
-            sessionId: $resolvedSessionId,
-            status: BackgroundProcessStatusEnum::Running->value,
         );
     }
 
@@ -411,7 +406,7 @@ final class BackgroundProcessManager
             throw new \RuntimeException(\sprintf('No background process found with PID %d for this session.', $pid));
         }
 
-        return $this->lifecycle->readLogTail($entity->logPath, $pid, $maxChars);
+        return $this->lifecycle->readLogTail($entity->logPath, $maxChars);
     }
 
     /**
@@ -431,30 +426,7 @@ final class BackgroundProcessManager
             throw new \RuntimeException(\sprintf('No background process found with record ID %d for this session.', $recordId));
         }
 
-        return $this->lifecycle->readLogTail($entity->logPath, $entity->pid, $maxChars);
-    }
-
-    /**
-     * Read the full log for a background process by immutable record ID.
-     *
-     * Foreground BashTool uses this path so completed invocations never
-     * re-resolve output through a reusable OS PID.
-     *
-     * @throws \RuntimeException when process not found or session mismatches
-     */
-    public function readLogFullForRecord(int $recordId, ?string $sessionId = null): LogTailResult
-    {
-        $entity = $this->store->fetchByRecordId($recordId);
-
-        if (null === $entity) {
-            throw new \RuntimeException(\sprintf('No background process found with record ID %d.', $recordId));
-        }
-
-        if (null !== $sessionId && $entity->sessionId !== $sessionId) {
-            throw new \RuntimeException(\sprintf('No background process found with record ID %d for this session.', $recordId));
-        }
-
-        return $this->lifecycle->readLogFile($entity->logPath, $entity->pid);
+        return $this->lifecycle->readLogTail($entity->logPath, $maxChars);
     }
 
     /**
@@ -606,9 +578,7 @@ final class BackgroundProcessManager
 
         if (null !== $entity->finishedAt) {
             return new StopResult(
-                pid: $pid,
                 pgid: $entity->pgid,
-                stoppedByUser: false,
                 alreadyFinished: true,
                 signalSent: 'none',
             );
@@ -668,9 +638,7 @@ final class BackgroundProcessManager
         $this->store->flush();
 
         return new StopResult(
-            pid: $pid,
             pgid: $pgid,
-            stoppedByUser: true,
             alreadyFinished: false,
             signalSent: $signalSent,
         );

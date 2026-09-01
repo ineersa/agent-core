@@ -19,7 +19,6 @@ final readonly class InvocationControl
         public ?ToolCancellationTokenInterface $cancellationToken,
         public ?int $timeoutSeconds,
         public ?int $deadlineNs,
-        public int $startedNs,
     ) {
     }
 
@@ -36,7 +35,6 @@ final readonly class InvocationControl
             cancellationToken: $context->cancellationToken,
             timeoutSeconds: $timeoutSeconds,
             deadlineNs: $deadlineNs,
-            startedNs: $startedNs,
         );
     }
 
@@ -63,15 +61,6 @@ final readonly class InvocationControl
         return null;
     }
 
-    public function isInterrupted(): bool
-    {
-        return null !== $this->interrupted();
-    }
-
-    /**
-     * Remaining seconds for a subprocess, min(explicit op timeout, remaining budget).
-     * Null means no timeout constraint from either source.
-     */
     public function remainingTimeoutSeconds(?float $explicitTimeout = null): ?float
     {
         $remaining = null;

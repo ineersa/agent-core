@@ -58,9 +58,8 @@ final class SubagentLiveViewStateTest extends TestCase
         $view->enter($child);
         $view->childQueuedUserMessages = ['k1' => 'steer next'];
         $view->persistCurrentChildCache();
-        $view->childQueuedUserMessages = [];
-        $view->restoreChildCacheFor($child);
-        $this->assertSame(['k1' => 'steer next'], $view->childQueuedUserMessages);
+
+        $this->assertSame(['k1' => 'steer next'], $view->childCaches['run-q']['queuedUserMessages']);
     }
 
     private function child(string $runId, string $artifactId): SubagentLiveChildDTO

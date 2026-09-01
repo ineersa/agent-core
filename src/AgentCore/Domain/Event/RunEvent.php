@@ -45,37 +45,4 @@ readonly class RunEvent
             createdAt: $createdAt ?? new \DateTimeImmutable(),
         );
     }
-
-    public function isExtensionEvent(string $prefix = 'ext_'): bool
-    {
-        return str_starts_with($this->type, $prefix);
-    }
-
-    /**
-     * Factory method creating a new RunEvent instance with the provided parameters.
-     *
-     * @param array<string, mixed> $payload
-     */
-    public static function extension(
-        string $runId,
-        int $seq,
-        int $turnNo,
-        string $type,
-        array $payload = [],
-        string $prefix = 'ext_',
-        ?\DateTimeImmutable $createdAt = null,
-    ): self {
-        if (!str_starts_with($type, $prefix)) {
-            throw new \InvalidArgumentException(\sprintf('Custom event type "%s" must use "%s" prefix.', $type, $prefix));
-        }
-
-        return new self(
-            runId: $runId,
-            seq: $seq,
-            turnNo: $turnNo,
-            type: $type,
-            payload: $payload,
-            createdAt: $createdAt ?? new \DateTimeImmutable(),
-        );
-    }
 }

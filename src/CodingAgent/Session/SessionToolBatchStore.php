@@ -185,7 +185,7 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
     {
         $json = file_get_contents($path);
         if (false === $json || '' === trim($json)) {
-            throw new SessionToolBatchStoreException('Tool batch snapshot is empty or unreadable.', ['path' => $path, 'component' => 'session_tool_batch_store']);
+            throw new SessionToolBatchStoreException('Tool batch snapshot is empty or unreadable.');
         }
 
         try {
@@ -196,20 +196,20 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
                 self::SERIALIZER_CONTEXT,
             );
         } catch (SerializerExceptionInterface|\TypeError|\ValueError $exception) {
-            throw new SessionToolBatchStoreException('Tool batch snapshot is invalid.', ['path' => $path, 'component' => 'session_tool_batch_store', 'run_id' => $expectedRunId, 'turn_no' => $expectedTurnNo, 'step_id' => $expectedStepId], $exception);
+            throw new SessionToolBatchStoreException('Tool batch snapshot is invalid.', $exception);
         }
 
         if (!$envelope instanceof ToolBatchSnapshotEnvelopeDTO) {
-            throw new SessionToolBatchStoreException(\sprintf('Tool batch snapshot is invalid: expected %s.', ToolBatchSnapshotEnvelopeDTO::class), ['path' => $path, 'component' => 'session_tool_batch_store', 'run_id' => $expectedRunId, 'turn_no' => $expectedTurnNo, 'step_id' => $expectedStepId]);
+            throw new SessionToolBatchStoreException(\sprintf('Tool batch snapshot is invalid: expected %s.', ToolBatchSnapshotEnvelopeDTO::class));
         }
 
         $violations = $this->validator->validate($envelope);
         if ($violations->count() > 0) {
-            throw new SessionToolBatchStoreException('Tool batch snapshot is invalid.', ['path' => $path, 'component' => 'session_tool_batch_store', 'run_id' => $expectedRunId, 'turn_no' => $expectedTurnNo, 'step_id' => $expectedStepId], new ValidationFailedException($envelope, $violations));
+            throw new SessionToolBatchStoreException('Tool batch snapshot is invalid.', new ValidationFailedException($envelope, $violations));
         }
 
         if ($envelope->runId !== $expectedRunId || $envelope->turnNo !== $expectedTurnNo || $envelope->stepId !== $expectedStepId) {
-            throw new SessionToolBatchStoreException('Tool batch snapshot identity mismatch.', ['path' => $path, 'component' => 'session_tool_batch_store', 'run_id' => $expectedRunId, 'turn_no' => $expectedTurnNo, 'step_id' => $expectedStepId, 'embedded_run_id' => $envelope->runId, 'embedded_turn_no' => $envelope->turnNo, 'embedded_step_id' => $envelope->stepId]);
+            throw new SessionToolBatchStoreException('Tool batch snapshot identity mismatch.');
         }
 
         return $envelope;
@@ -226,13 +226,13 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
         try {
             $json = $this->serializer->serialize($envelope, 'json', self::SERIALIZER_CONTEXT);
         } catch (SerializerExceptionInterface $exception) {
-            throw new SessionToolBatchStoreException('Tool batch snapshot write failed.', ['run_id' => $runId, 'turn_no' => $turnNo, 'step_id' => $stepId, 'component' => 'session_tool_batch_store'], $exception);
+            throw new SessionToolBatchStoreException('Tool batch snapshot write failed.', $exception);
         }
 
         try {
             AtomicFileWriter::write($path, $json);
         } catch (AtomicFileWriterException $exception) {
-            throw new SessionToolBatchStoreException('rename' === $exception->stage ? 'Failed to atomic-rename tool batch snapshot.' : 'Failed to write tool batch snapshot temp file.', ['run_id' => $runId, 'turn_no' => $turnNo, 'step_id' => $stepId, 'path' => 'rename' === $exception->stage ? $path : ($exception->tempPath ?? $path), 'component' => 'session_tool_batch_store'], $exception);
+            throw new SessionToolBatchStoreException('rename' === $exception->stage ? 'Failed to atomic-rename tool batch snapshot.' : 'Failed to write tool batch snapshot temp file.', $exception);
         }
     }
 
@@ -308,14 +308,14 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
     private function unlinkOrThrow(string $path, string $runId, ?int $turnNo, ?string $stepId): void
     {
         if (!unlink($path)) {
-            throw new SessionToolBatchStoreException('Failed to delete tool batch snapshot file.', ['run_id' => $runId, 'turn_no' => $turnNo, 'step_id' => $stepId, 'path' => $path, 'component' => 'session_tool_batch_store']);
+            throw new SessionToolBatchStoreException('Failed to delete tool batch snapshot file.');
         }
     }
 
     private function sanitizeRunId(string $runId): void
     {
         if ('' === $runId || \strlen($runId) !== strcspn($runId, "/\\\0") || str_contains($runId, '..')) {
-            throw new SessionToolBatchStoreException(\sprintf('Invalid tool batch run ID: "%s".', $runId), ['run_id' => $runId, 'component' => 'session_tool_batch_store']);
+            throw new SessionToolBatchStoreException(\sprintf('Invalid tool batch run ID: "%s".', $runId));
         }
     }
 
@@ -326,11 +326,11 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
         }
 
         if (file_exists($dir)) {
-            throw new SessionToolBatchStoreException(\sprintf('Cannot create tool batch directory: non-directory at "%s".', $dir), ['path' => $dir, 'component' => 'session_tool_batch_store']);
+            throw new SessionToolBatchStoreException(\sprintf('Cannot create tool batch directory: non-directory at "%s".', $dir));
         }
 
         if (!mkdir($dir, recursive: true) && !is_dir($dir)) {
-            throw new SessionToolBatchStoreException(\sprintf('Failed to create tool batch directory "%s".', $dir), ['path' => $dir, 'component' => 'session_tool_batch_store']);
+            throw new SessionToolBatchStoreException(\sprintf('Failed to create tool batch directory "%s".', $dir));
         }
     }
 }

@@ -196,14 +196,6 @@ final class HiddenGitSnapshotBackend
         throw new \RuntimeException('Failed to pin commit ref after retries.');
     }
 
-    public function commitShaReachable(string $hiddenGitDir, string $workTree, string $commitSha): bool
-    {
-        $env = $this->env($hiddenGitDir, $workTree);
-        $r = $this->git->run(['rev-parse', '--verify', $commitSha.'^{commit}'], $env);
-
-        return 0 === $r->exitCode && '' !== $r->stdoutTrimmed();
-    }
-
     /**
      * @param list<string> $keepCommitShas full commit SHAs to retain refs for
      */

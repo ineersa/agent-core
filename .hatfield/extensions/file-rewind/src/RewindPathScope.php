@@ -25,11 +25,6 @@ final class RewindPathScope
         $this->projectRoot = str_replace('\\', '/', rtrim(false !== realpath($projectRoot) ? realpath($projectRoot) : $projectRoot, '/'));
     }
 
-    public function projectRoot(): string
-    {
-        return $this->projectRoot;
-    }
-
     public function isInsideProjectRoot(string $relativePath): bool
     {
         $relativePath = str_replace('\\', '/', ltrim($relativePath, '/'));

@@ -30,7 +30,6 @@ final class ReadFileToolTest extends TestCase
 {
     private StackToolExecutionContextAccessor $contextAccessor;
     private ToolRuntime $toolRuntime;
-    private OutputCap $outputCap;
     private string $tmpDir;
     private ReadFileTool $readFileTool;
 

@@ -23,13 +23,6 @@ final class FileRunSequenceAllocator implements RunSequenceAllocatorInterface
 {
     public const COUNTER_BASENAME = 'sequence.cursor';
 
-    public function allocateNext(string $counterPath, ?callable $bootstrapMaxSeq = null): int
-    {
-        $block = $this->allocateBlock($counterPath, 1, $bootstrapMaxSeq);
-
-        return $block[0];
-    }
-
     public function allocateBlock(string $counterPath, int $count, ?callable $bootstrapMaxSeq = null): array
     {
         if ($count < 1) {

@@ -28,7 +28,6 @@ final class CommandParserTest extends TestCase
         $result = $this->parser->parse('');
 
         $this->assertInstanceOf(NormalPromptCommand::class, $result);
-        $this->assertSame('', $result->text);
     }
 
     public function testWhitespaceOnlyReturnsNormalPrompt(): void
@@ -36,7 +35,6 @@ final class CommandParserTest extends TestCase
         $result = $this->parser->parse('   ');
 
         $this->assertInstanceOf(NormalPromptCommand::class, $result);
-        $this->assertSame('', $result->text);
     }
 
     public function testNormalTextReturnsNormalPrompt(): void
@@ -44,7 +42,6 @@ final class CommandParserTest extends TestCase
         $result = $this->parser->parse('hello world');
 
         $this->assertInstanceOf(NormalPromptCommand::class, $result);
-        $this->assertSame('hello world', $result->text);
     }
 
     public function testTextWithSurroundingWhitespaceIsTrimmed(): void
@@ -52,7 +49,6 @@ final class CommandParserTest extends TestCase
         $result = $this->parser->parse('  hello world  ');
 
         $this->assertInstanceOf(NormalPromptCommand::class, $result);
-        $this->assertSame('hello world', $result->text);
     }
 
     // ─── SlashCommand cases ────────────────────────────────────────────
@@ -91,7 +87,6 @@ final class CommandParserTest extends TestCase
         $result = $this->parser->parse('/');
 
         $this->assertInstanceOf(NormalPromptCommand::class, $result);
-        $this->assertSame('/', $result->text);
     }
 
     public function testSlashSpaceReturnsNormalPrompt(): void
@@ -100,7 +95,6 @@ final class CommandParserTest extends TestCase
 
         $this->assertInstanceOf(NormalPromptCommand::class, $result);
         // After trim: "/ " → "/", which is a lone slash → NormalPrompt
-        $this->assertSame('/', $result->text);
     }
 
     public function testDoubleSlashEscapedReturnsNormalPrompt(): void
@@ -108,7 +102,6 @@ final class CommandParserTest extends TestCase
         $result = $this->parser->parse('//escaped');
 
         $this->assertInstanceOf(NormalPromptCommand::class, $result);
-        $this->assertSame('//escaped', $result->text);
     }
 
     public function testSlashCommandNameIsLowercased(): void
@@ -226,7 +219,5 @@ final class CommandParserTest extends TestCase
         $result = $this->parser->parse('  some text  ');
 
         $this->assertInstanceOf(NormalPromptCommand::class, $result);
-        $this->assertSame('some text', $result->text);
-        $this->assertSame('some text', $result->originalText());
     }
 }

@@ -4,18 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller;
 
-use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
-use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
-use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
-use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
-use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Controller\RuntimeEventEmitter;
-use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
-use Symfony\Component\EventDispatcher\EventDispatcher;
 
 /**
  * @covers \Ineersa\CodingAgent\Runtime\Controller\RuntimeEventEmitter
@@ -60,208 +53,30 @@ final class RuntimeEventEmitterTest extends TestCase
         $this->assertTrue($emitter->isShuttingDown());
     }
 
-    public function testEmitWithNullPersisterDoesNotThrow(): void
+    public function testEmitWritesJsonlToStdout(): void
     {
         $emitter = $this->createEmitter();
-
-        $emitter->emit(new RuntimeEvent(
-            type: RuntimeEventTypeEnum::RunStarted->value,
-            runId: 'test-run',
-            seq: 1,
-            payload: [],
-        ));
-
-        $this->assertFalse($emitter->isShuttingDown());
-    }
-
-    public function testDrainRetriesAfterTransientFailureAndForwardsLaterEvents(): void
-    {
-        $runId = '4';
-        $client = new FlakySeqDrainAgentSessionClient(
-            throwOnCall: 2,
-            eventsByCall: [
-                1 => [
-                    new RuntimeEvent(RuntimeEventTypeEnum::CancellationRequested->value, $runId, 148, []),
-                ],
-                3 => [
-                    new RuntimeEvent(RuntimeEventTypeEnum::ToolExecutionCancelled->value, $runId, 151, []),
-                    new RuntimeEvent(RuntimeEventTypeEnum::ToolExecutionCancelled->value, $runId, 155, []),
-                    new RuntimeEvent(RuntimeEventTypeEnum::RunCancelled->value, $runId, 159, []),
-                ],
-            ],
-        );
-
-        $logger = $this->createMock(LoggerInterface::class);
-        $logger->expects($this->atLeastOnce())
-            ->method('warning')
-            ->with(
-                'Canonical event drain failed; will retry on next tick',
-                $this->callback(static function (array $context) use ($runId): bool {
-                    return ($context['run_id'] ?? null) === $runId
-                        && ($context['component'] ?? null) === 'RuntimeEventEmitter'
-                        && isset($context['exception_class'], $context['last_forwarded_seq']);
-                }),
-            );
-
-        $boundary = new RuntimeExceptionBoundary(new EventDispatcher());
-        $emitter = new RuntimeEventEmitter($client, $boundary, $logger);
         $emitter->openStdout();
         $this->replaceStdoutWithMemory($emitter);
 
         $emitter->emit(new RuntimeEvent(
             type: RuntimeEventTypeEnum::RunStarted->value,
-            runId: $runId,
+            runId: 'stdout-run-1',
             seq: 1,
             payload: [],
         ));
-
-        $emitter->drainRegisteredRunsOnce();
-        $this->assertSame(1, $client->eventsCallCount);
-
-        $emitter->drainRegisteredRunsOnce();
-        $this->assertSame(2, $client->eventsCallCount);
-
-        $emitter->drainRegisteredRunsOnce();
-        $this->assertSame(3, $client->eventsCallCount);
-        $this->assertSame([1, 148, 148], $client->afterSeqByCall);
 
         $stdout = $this->stdoutHandle($emitter);
         rewind($stdout);
         $raw = stream_get_contents($stdout) ?: '';
-        $lines = array_values(array_filter(array_map('trim', explode("\n", $raw))));
-        $decoded = array_map(static fn (string $line): RuntimeEvent => JsonlCodec::decodeEvent($line), $lines);
 
-        $seqs = array_map(static fn (RuntimeEvent $e): int => $e->seq, $decoded);
-        $this->assertContains(148, $seqs);
-        $this->assertContains(151, $seqs);
-        $this->assertContains(155, $seqs);
-        $this->assertContains(159, $seqs);
-    }
-
-    public function testDrainRegistersCursorOnRunResumedAndForwardsCanonicalEvents(): void
-    {
-        $runId = 'resumed-session-7';
-        $client = new FlakySeqDrainAgentSessionClient(
-            throwOnCall: 0,
-            eventsByCall: [
-                1 => [
-                    new RuntimeEvent(RuntimeEventTypeEnum::ToolExecutionCompleted->value, $runId, 5, ['tool_name' => 'bash']),
-                ],
-            ],
-        );
-
-        $emitter = new RuntimeEventEmitter($client, new RuntimeExceptionBoundary(new EventDispatcher()), $this->createStub(LoggerInterface::class));
-        $emitter->openStdout();
-        $this->replaceStdoutWithMemory($emitter);
-
-        $emitter->emit(new RuntimeEvent(
-            type: RuntimeEventTypeEnum::RunResumed->value,
-            runId: $runId,
-            seq: 1,
-            payload: ['status' => 'attached'],
-        ));
-
-        $emitter->drainRegisteredRunsOnce();
-
-        $this->assertSame(1, $client->eventsCallCount);
-
-        $stdout = $this->stdoutHandle($emitter);
-        rewind($stdout);
-        $raw = stream_get_contents($stdout) ?: '';
-        $lines = array_values(array_filter(array_map('trim', explode("\n", $raw))));
-        $decoded = array_map(static fn (string $line): RuntimeEvent => JsonlCodec::decodeEvent($line), $lines);
-
-        $types = array_map(static fn (RuntimeEvent $e): string => $e->type, $decoded);
-        $this->assertContains(RuntimeEventTypeEnum::RunResumed->value, $types);
-        $this->assertContains(RuntimeEventTypeEnum::ToolExecutionCompleted->value, $types);
-    }
-
-    public function testEmitRegistersChildRunFromSubagentProgressAndDrainForwardsChildEvents(): void
-    {
-        $parentRunId = 'parent-42';
-        $childRunId = 'child-99';
-        $client = new FlakySeqDrainAgentSessionClient(
-            throwOnCall: 0,
-            eventsByCall: [
-                2 => [
-                    new RuntimeEvent(RuntimeEventTypeEnum::TurnStarted->value, $childRunId, 3, []),
-                ],
-            ],
-        );
-
-        $emitter = new RuntimeEventEmitter($client, new RuntimeExceptionBoundary(new EventDispatcher()), $this->createStub(LoggerInterface::class));
-        $emitter->openStdout();
-        $this->replaceStdoutWithMemory($emitter);
-
-        $emitter->emit(new RuntimeEvent(
-            type: RuntimeEventTypeEnum::RunStarted->value,
-            runId: $parentRunId,
-            seq: 1,
-            payload: [],
-        ));
-
-        $emitter->emit(new RuntimeEvent(
-            type: RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
-            runId: $parentRunId,
-            seq: 2,
-            payload: [
-                'tool_call_id' => 'tc',
-                'subagent_progress' => [
-                    'mode' => 'single',
-                    'agent_run_id' => $childRunId,
-                    'artifact_id' => 'a1',
-                    'agent_name' => 'scout',
-                    'status' => 'running',
-                    'task_summary' => 't', 'model' => 'test/model', 'reasoning' => 'medium',
-                ],
-            ],
-        ));
-
-        $emitter->drainRegisteredRunsOnce();
-
-        $stdout = $this->stdoutHandle($emitter);
-        rewind($stdout);
-        $raw = stream_get_contents($stdout) ?: '';
-        $this->assertStringContainsString($childRunId, $raw);
-        $this->assertStringContainsString('turn.started', $raw);
-    }
-
-    public function testEmitAdvancesCursorForCanonicalEvents(): void
-    {
-        $runId = 'stdout-run-1';
-        $emitter = $this->createEmitter();
-        $emitter->openStdout();
-        $this->replaceStdoutWithMemory($emitter);
-
-        $emitter->emit(new RuntimeEvent(
-            type: RuntimeEventTypeEnum::RunStarted->value,
-            runId: $runId,
-            seq: 1,
-            payload: [],
-        ));
-        $emitter->emit(new RuntimeEvent(
-            type: RuntimeEventTypeEnum::TurnStarted->value,
-            runId: $runId,
-            seq: 42,
-            payload: [],
-        ));
-
-        $ref = new \ReflectionClass($emitter);
-        $prop = $ref->getProperty('runEventCursors');
-        $cursors = $prop->getValue($emitter);
-        $this->assertSame(42, $cursors[$runId]);
+        $this->assertStringContainsString('run.started', $raw);
+        $this->assertStringContainsString('stdout-run-1', $raw);
     }
 
     private function createEmitter(): RuntimeEventEmitter
     {
-        $boundary = new RuntimeExceptionBoundary(new EventDispatcher());
-        $logger = $this->createStub(LoggerInterface::class);
-
-        return new RuntimeEventEmitter(
-            eventClient: null,
-            boundary: $boundary,
-            logger: $logger,
-        );
+        return new RuntimeEventEmitter($this->createStub(LoggerInterface::class));
     }
 
     private function replaceStdoutWithMemory(RuntimeEventEmitter $emitter): void
@@ -282,86 +97,5 @@ final class RuntimeEventEmitterTest extends TestCase
         $this->assertIsResource($stdout);
 
         return $stdout;
-    }
-}
-
-/**
- * @internal
- */
-final class FlakySeqDrainAgentSessionClient implements AgentSessionClient
-{
-    public int $eventsCallCount = 0;
-
-    /** @var list<int> */
-    public array $afterSeqByCall = [];
-
-    /** @var array<int, list<RuntimeEvent>> */
-    private array $eventsByCall;
-
-    /**
-     * @param array<int, list<RuntimeEvent>> $eventsByCall 1-based call index => events to yield
-     */
-    public function __construct(
-        private readonly int $throwOnCall,
-        array $eventsByCall,
-    ) {
-        $this->eventsByCall = $eventsByCall;
-    }
-
-    public function start(StartRunRequest $request): RunHandle
-    {
-        throw new \BadMethodCallException('not used');
-    }
-
-    public function attach(string $runId): RunHandle
-    {
-        throw new \BadMethodCallException('not used');
-    }
-
-    public function send(string $runId, UserCommand $command): void
-    {
-    }
-
-    public function beginObservingChildRun(string $childRunId): void
-    {
-    }
-
-    public function endObservingChildRun(string $childRunId): void
-    {
-    }
-
-    public function events(string $runId, int $afterSeq = 0): iterable
-    {
-        ++$this->eventsCallCount;
-        $this->afterSeqByCall[] = $afterSeq;
-        if ($this->eventsCallCount === $this->throwOnCall) {
-            throw new \RuntimeException('transient event store read failure');
-        }
-
-        yield from $this->eventsByCall[$this->eventsCallCount] ?? [];
-    }
-
-    /**
-     * No-op shutdown: this spy owns no runtime to tear down.
-     */
-    public function shutdown(): void
-    {
-    }
-
-    public function refreshMcpCatalog(string $runId): void
-    {
-    }
-
-    public function cancel(string $runId): void
-    {
-    }
-
-    public function shellExecute(string $command, string $sessionId, string $cwd): RunHandle
-    {
-        throw new \BadMethodCallException('not used');
-    }
-
-    public function compact(string $runId, ?string $customInstructions = null): void
-    {
     }
 }

@@ -239,28 +239,6 @@ final class ImageAttachmentProcessorTest extends TestCase
 
     /* ── Cache cleanup ── */
 
-    public function testCleanCacheRemovesExpiredFiles(): void
-    {
-        if (!\extension_loaded('imagick') && !\extension_loaded('gd')) {
-            $this->markTestSkipped('No image processing library available');
-        }
-
-        // Use a moderate size image to trigger cache write
-        $path = $this->tmpDir.'/cache_clean.png';
-        $this->createPng(2500, 2000, $path);
-
-        $result = $this->processor->process($path, 'image/png', 2500, 2000);
-
-        $this->assertTrue($result['processed']);
-        $this->assertFileExists($result['path']);
-
-        // Clean with null (delete all) — should remove the cached file
-        $deleted = $this->processor->cleanCache(null);
-
-        $this->assertGreaterThanOrEqual(1, $deleted, 'Should delete at least one cached file');
-        $this->assertFileDoesNotExist($result['path']);
-    }
-
     private function createPng(int $width, int $height, string $path): void
     {
         $img = imagecreatetruecolor($width, $height);

@@ -95,21 +95,6 @@ final class SubagentLiveViewState
         ];
     }
 
-    public function restoreChildCacheFor(SubagentLiveChildDTO $child): void
-    {
-        $cached = $this->childCaches[$child->agentRunId] ?? null;
-        if (null === $cached) {
-            return;
-        }
-
-        $this->childTranscript = $cached['transcript'];
-        $this->childLastSeq = $cached['lastSeq'];
-        $this->childLastPoll = $cached['lastPoll'];
-        $this->childActivity = $cached['activity'];
-        $this->childQueuedUserMessages = $cached['queuedUserMessages'] ?? [];
-        $this->childReplayEvents = $cached['replayEvents'] ?? [];
-    }
-
     public function enter(SubagentLiveChildDTO $child): void
     {
         $this->active = true;

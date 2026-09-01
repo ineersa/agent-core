@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Tests\Domain\Event;
 
 use Ineersa\AgentCore\Domain\Event\EventFactory;
-use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
 use PHPUnit\Framework\TestCase;
 
 final class EventFactoryTest extends TestCase
@@ -31,8 +29,6 @@ final class EventFactoryTest extends TestCase
         $this->assertSame('run_started', $event->type);
         $this->assertSame(['turn' => 2], $event->payload);
     }
-
-    /* ─── EventFactory::eventsFromSpecs() ─── */
 
     public function testEventsFromSpecsSequencesSeqFromStartSeq(): void
     {
@@ -70,50 +66,5 @@ final class EventFactoryTest extends TestCase
         $this->assertCount(2, $events);
         $this->assertSame(2, $events[0]->turnNo);
         $this->assertSame(1, $events[1]->turnNo);
-    }
-
-    /* ─── EventFactory::incrementStateVersion() ─── */
-
-    public function testIncrementStateVersionOnlyIncrementsVersionAndLastSeq(): void
-    {
-        $state = RunStateBuilder::running('run-version')
-            ->withVersion(5)
-            ->withTurnNo(3)
-            ->withLastSeq(10)
-            ->withIsStreaming(true)
-            ->withStreamingMessage(['delta' => 'abc'])
-            ->withPendingToolCalls(['call-1' => true])
-            ->withErrorMessage('prev error')
-            ->withActiveStepId('step-99')
-            ->withRetryableFailure(true)
-            ->withRetryAttempts(4)
-            ->build();
-
-        $factory = new EventFactory();
-        $newState = $factory->incrementStateVersion($state, 3);
-
-        $this->assertSame('run-version', $newState->runId);
-        $this->assertSame(RunStatus::Running, $newState->status);
-        $this->assertSame(6, $newState->version);       // 5 + 1
-        $this->assertSame(3, $newState->turnNo);          // unchanged
-        $this->assertSame(13, $newState->lastSeq);        // 10 + 3
-        $this->assertTrue($newState->isStreaming);         // unchanged
-        $this->assertSame(['delta' => 'abc'], $newState->streamingMessage);  // unchanged
-        $this->assertSame(['call-1' => true], $newState->pendingToolCalls);   // unchanged
-        $this->assertSame('prev error', $newState->errorMessage);             // unchanged
-        $this->assertSame([], $newState->messages);                           // unchanged (was empty)
-        $this->assertSame('step-99', $newState->activeStepId);                // unchanged
-        $this->assertTrue($newState->retryableFailure);                        // unchanged
-        $this->assertSame(4, $newState->retryAttempts);                        // unchanged: stale-result/version bump must not reset the retry counter
-    }
-
-    public function testIncrementStateVersionWithZeroEventCount(): void
-    {
-        $state = RunStateBuilder::running('run-version')->withVersion(3)->withLastSeq(7)->build();
-        $factory = new EventFactory();
-        $newState = $factory->incrementStateVersion($state, 0);
-
-        $this->assertSame(4, $newState->version);   // 3 + 1 always
-        $this->assertSame(7, $newState->lastSeq);    // 7 + 0
     }
 }

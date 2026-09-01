@@ -8,7 +8,6 @@ final class AtomicFileWriterException extends \RuntimeException
 {
     public function __construct(
         public readonly string $stage,
-        public readonly ?string $tempPath,
         string $message,
         ?\Throwable $previous = null,
     ) {

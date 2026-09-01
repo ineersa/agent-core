@@ -101,7 +101,6 @@ class AiConfigTest extends TestCase
         $this->assertSame('generic', $provider->type);
         $this->assertTrue($provider->enabled);
         $this->assertSame('https://api.deepseek.com', $provider->baseUrl);
-        $this->assertSame('openai-completions', $provider->api);
         $this->assertSame('env:DEEPSEEK_API_KEY', $provider->apiKey);
         $this->assertSame('/chat/completions', $provider->completionsPath);
         $this->assertTrue($provider->supportsCompletions);

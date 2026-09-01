@@ -41,6 +41,8 @@ final class CodexOAuthProvider extends GenericProvider
      * that is not part of the OAuth 2.0 or OpenID Connect specifications
      * and is not expected by Hydra.
      *
+     * @param array<string, mixed> $options
+     *
      * @return array<string, mixed>
      */
     protected function getAuthorizationParameters(array $options)
@@ -59,6 +61,8 @@ final class CodexOAuthProvider extends GenericProvider
      * request body, which OpenAI's Hydra OAuth server rejects as an
      * unrecognised/invalid parameter. We omit the field entirely when the
      * value is empty.
+     *
+     * @param array<string, mixed> $params
      *
      * @return RequestInterface
      */

@@ -60,7 +60,6 @@ final class SetupScreen
     /** Where action-menu Cancel returns: picker or servers submenu. */
     private string $actionReturn = self::PHASE_PICKER;
     private ?string $error = null;
-    private bool $finished = false;
     private int $exitCode = 0;
 
     public function __construct(
@@ -112,51 +111,6 @@ final class SetupScreen
         $this->tui->run();
 
         return $this->exitCode;
-    }
-
-    public function phase(): string
-    {
-        return $this->phase;
-    }
-
-    public function finished(): bool
-    {
-        return $this->finished;
-    }
-
-    /**
-     * Drive one selection without a live TTY (virtual tests).
-     */
-    public function selectValue(string $value): void
-    {
-        $this->onListSelect($value);
-        $this->tui->requestRender(force: true);
-        $this->tui->processRender();
-    }
-
-    /**
-     * Drive one input submit without a live TTY (virtual tests).
-     */
-    public function submitInput(string $value): void
-    {
-        $this->onInputSubmit(trim($value));
-        $this->tui->requestRender(force: true);
-        $this->tui->processRender();
-    }
-
-    /**
-     * Drive a SettingsList change without a live TTY (virtual tests).
-     */
-    public function changeSetting(string $id, string $value): void
-    {
-        $this->onCustomSettingChange($id, $value);
-        $this->tui->requestRender(force: true);
-        $this->tui->processRender();
-    }
-
-    public function errorText(): string
-    {
-        return $this->errorWidget->getText();
     }
 
     private function wireListListeners(): void
@@ -973,7 +927,6 @@ final class SetupScreen
         $this->showList([
             ['value' => 'ok', 'label' => 'Done'],
         ]);
-        $this->finished = true;
         $this->exitCode = 0;
         if ($this->tui->isRunning()) {
             $this->tui->stop();

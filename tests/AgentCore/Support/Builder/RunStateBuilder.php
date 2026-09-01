@@ -83,13 +83,6 @@ final class RunStateBuilder
         return new self(runId: $runId, status: RunStatus::Queued);
     }
 
-    public function withRunId(string $runId): self
-    {
-        $this->runId = $runId;
-
-        return $this;
-    }
-
     public function withStatus(RunStatus $status): self
     {
         $this->status = $status;
@@ -162,13 +155,6 @@ final class RunStateBuilder
         return $this;
     }
 
-    public function withAppendMessage(AgentMessage $message): self
-    {
-        $this->messages[] = $message;
-
-        return $this;
-    }
-
     public function withActiveStepId(?string $activeStepId): self
     {
         $this->activeStepId = $activeStepId;
@@ -179,13 +165,6 @@ final class RunStateBuilder
     public function withRetryableFailure(bool $retryableFailure): self
     {
         $this->retryableFailure = $retryableFailure;
-
-        return $this;
-    }
-
-    public function withRetryAttempts(int $retryAttempts): self
-    {
-        $this->retryAttempts = $retryAttempts;
 
         return $this;
     }
@@ -203,13 +182,6 @@ final class RunStateBuilder
     public function withModel(?string $model): self
     {
         $this->model = $model;
-
-        return $this;
-    }
-
-    public function withParentRunId(?string $parentRunId): self
-    {
-        $this->parentRunId = $parentRunId;
 
         return $this;
     }

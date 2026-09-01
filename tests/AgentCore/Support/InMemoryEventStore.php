@@ -17,8 +17,6 @@ final class InMemoryEventStore implements EventStoreInterface
 
     public int $rangeForCalls = 0;
 
-    public int $reverseForCalls = 0;
-
     /** @var array<string, list<RunEvent>> */
     private array $eventsByRun = [];
 
@@ -94,7 +92,6 @@ final class InMemoryEventStore implements EventStoreInterface
 
     public function reverseFor(string $runId): iterable
     {
-        ++$this->reverseForCalls;
         $events = $this->allFor($runId);
         for ($index = \count($events) - 1; $index >= 0; --$index) {
             yield $events[$index];

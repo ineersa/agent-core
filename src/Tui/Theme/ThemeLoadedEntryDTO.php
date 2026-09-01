@@ -12,7 +12,6 @@ final readonly class ThemeLoadedEntryDTO
     public function __construct(
         public string $name,
         public string $sourcePath,
-        public bool $userSource,
     ) {
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Extension;
 
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ExtensionsConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
@@ -21,7 +22,6 @@ use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultDecisionDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultHookInterface;
 use Monolog\Level;
 use PHPUnit\Framework\TestCase;
-use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 
 final class ExtensionManagerTest extends TestCase
@@ -201,14 +201,15 @@ PHP;
             extensions: ['NoSuch\\NonExistentExtension']
         );
         $bridge = new InMemoryExtensionApiBridge();
-        $logger = new LoggerSpy();
+        $logger = new TestLogger();
 
         $manager = new ExtensionManager($config, $bridge, $logger, new \Symfony\Component\EventDispatcher\EventDispatcher());
         $manager->loadExtensions();
 
         $this->assertCount(0, $bridge->getRegistrations());
-        $this->assertCount(1, $logger->warnings);
-        $this->assertStringContainsString('not found', $logger->warnings[0]);
+        $this->assertCount(1, $logger->records);
+        $this->assertSame('warning', $logger->records[0]['level']);
+        $this->assertStringContainsString('not found', $logger->records[0]['message']);
     }
 
     public function testLoadExtensionsSkipsNonHatfieldExtension(): void
@@ -237,14 +238,15 @@ PHP
             extensions: ['HatfieldExtTest\\PlainClass']
         );
         $bridge = new InMemoryExtensionApiBridge();
-        $logger = new LoggerSpy();
+        $logger = new TestLogger();
 
         $manager = new ExtensionManager($config, $bridge, $logger, new \Symfony\Component\EventDispatcher\EventDispatcher());
         $manager->loadExtensions();
 
         $this->assertCount(0, $bridge->getRegistrations());
-        $this->assertCount(1, $logger->warnings);
-        $this->assertStringContainsString('does not implement HatfieldExtensionInterface', $logger->warnings[0]);
+        $this->assertCount(1, $logger->records);
+        $this->assertSame('warning', $logger->records[0]['level']);
+        $this->assertStringContainsString('does not implement HatfieldExtensionInterface', $logger->records[0]['message']);
     }
 
     public function testLoadExtensionsContinuesAfterSingleFailure(): void
@@ -337,7 +339,7 @@ PHP
             ]
         );
         $bridge = new InMemoryExtensionApiBridge();
-        $logger = new LoggerSpy();
+        $logger = new TestLogger();
 
         $manager = new ExtensionManager($config, $bridge, $logger, new \Symfony\Component\EventDispatcher\EventDispatcher());
         $manager->loadExtensions();
@@ -348,7 +350,11 @@ PHP
         $this->assertContains('good_tool', $names);
         $this->assertContains('another_tool', $names);
         $this->assertCount(2, $bridge->getRegistrations());
-        $this->assertGreaterThanOrEqual(1, $logger->errors);
+        $errorRecords = array_values(array_filter(
+            $logger->records,
+            static fn (array $record): bool => 'error' === $record['level'],
+        ));
+        $this->assertGreaterThanOrEqual(1, \count($errorRecords));
     }
 
     public function testLoadExtensionsEmptyListLoadsNothing(): void
@@ -517,9 +523,13 @@ PHP
         $manager = new ExtensionManager($config, $bridge, $logger, $dispatcher);
         $manager->loadExtensions();
 
-        $this->assertSame($logger, \HatfieldExtTest\SubscriberAwareExtension::$injectedLogger);
+        // Autoload the generated fixture class before asserting on its static state.
+        $extensionClass = 'HatfieldExtTest\SubscriberAwareExtension';
+        $this->assertTrue(class_exists($extensionClass));
+        $extensionReflection = new \ReflectionClass($extensionClass);
+        $this->assertSame($logger, $extensionReflection->getStaticPropertyValue('injectedLogger'));
         $dispatcher->dispatch(new \stdClass(), 'om.test.event');
-        $this->assertSame(1, \HatfieldExtTest\SubscriberAwareExtension::$subscriberCalls);
+        $this->assertSame(1, $extensionReflection->getStaticPropertyValue('subscriberCalls'));
     }
 
     // ── Helpers ──
@@ -578,70 +588,5 @@ PHP
             extensions: new ExtensionsConfig(enabled: $extensions),
             cwd: $cwd,
         );
-    }
-}
-
-/**
- * Simple logger spy for testing — avoids PHPUnit mock compatibility
- * issues with PHP 8.5.
- *
- * @internal
- */
-final class LoggerSpy implements LoggerInterface
-{
-    /** @var list<string> */
-    public array $warnings = [];
-
-    /** @var list<string> */
-    public array $errors = [];
-
-    /** @var list<string> */
-    public array $logs = [];
-
-    public function warning(string|\Stringable $message, array $context = []): void
-    {
-        $this->warnings[] = (string) $message;
-        $this->logs[] = (string) $message;
-    }
-
-    public function error(string|\Stringable $message, array $context = []): void
-    {
-        $this->errors[] = (string) $message;
-        $this->logs[] = (string) $message;
-    }
-
-    public function emergency(string|\Stringable $message, array $context = []): void
-    {
-        $this->logs[] = (string) $message;
-    }
-
-    public function alert(string|\Stringable $message, array $context = []): void
-    {
-        $this->logs[] = (string) $message;
-    }
-
-    public function critical(string|\Stringable $message, array $context = []): void
-    {
-        $this->logs[] = (string) $message;
-    }
-
-    public function notice(string|\Stringable $message, array $context = []): void
-    {
-        $this->logs[] = (string) $message;
-    }
-
-    public function info(string|\Stringable $message, array $context = []): void
-    {
-        $this->logs[] = (string) $message;
-    }
-
-    public function debug(string|\Stringable $message, array $context = []): void
-    {
-        $this->logs[] = (string) $message;
-    }
-
-    public function log(mixed $level, string|\Stringable $message, array $context = []): void
-    {
-        $this->logs[] = (string) $message;
     }
 }

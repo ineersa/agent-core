@@ -48,21 +48,6 @@ final class BuiltinDocsCatalog
     }
 
     /**
-     * Absolute approved documentation roots for $appRoot.
-     *
-     * @return list<string>
-     */
-    public function absoluteRoots(string $appRoot): array
-    {
-        $appRoot = rtrim($appRoot, '/');
-
-        return array_map(
-            static fn (string $relative): string => $appRoot.'/'.$relative,
-            self::approvedRelativeRoots(),
-        );
-    }
-
-    /**
      * Discover marked built-in documents under the approved roots.
      *
      * @return list<array{
@@ -237,16 +222,6 @@ final class BuiltinDocsCatalog
         $slug = trim($slug, '-');
 
         return $slug;
-    }
-
-    /**
-     * Collect GitHub-style heading slugs from Markdown body via the shared AST scanner.
-     *
-     * @return list<string>
-     */
-    public static function headingSlugsFromMarkdown(string $markdown): array
-    {
-        return (new BuiltinDocsMarkdownScanner())->headingSlugs($markdown);
     }
 
     /**

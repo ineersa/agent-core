@@ -23,9 +23,6 @@ final readonly class MessageSnapshotCompactionResult
      */
     private function __construct(
         public array $messages,
-        public bool $compacted,
-        public bool $structuralNoOp,
-        public ?string $skipReason,
         public ?string $failureReason,
         public ?string $failureMessage,
     ) {
@@ -38,9 +35,6 @@ final readonly class MessageSnapshotCompactionResult
     {
         return new self(
             messages: $messages,
-            compacted: true,
-            structuralNoOp: false,
-            skipReason: null,
             failureReason: null,
             failureMessage: null,
         );
@@ -51,13 +45,10 @@ final readonly class MessageSnapshotCompactionResult
      *
      * @param list<AgentMessage> $messages
      */
-    public static function structuralNoOp(array $messages, string $skipReason): self
+    public static function structuralNoOp(array $messages): self
     {
         return new self(
             messages: $messages,
-            compacted: false,
-            structuralNoOp: true,
-            skipReason: $skipReason,
             failureReason: null,
             failureMessage: null,
         );
@@ -67,9 +58,6 @@ final readonly class MessageSnapshotCompactionResult
     {
         return new self(
             messages: [],
-            compacted: false,
-            structuralNoOp: false,
-            skipReason: null,
             failureReason: $reason,
             failureMessage: $message,
         );

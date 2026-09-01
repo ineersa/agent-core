@@ -22,12 +22,4 @@ enum RunStatus: string
             default => false,
         };
     }
-
-    public function isActive(): bool
-    {
-        return match ($this) {
-            self::Queued, self::Running, self::Compacting, self::WaitingHuman, self::Cancelling => true,
-            default => false,
-        };
-    }
 }

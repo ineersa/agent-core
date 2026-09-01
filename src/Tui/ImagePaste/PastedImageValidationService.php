@@ -75,9 +75,7 @@ final class PastedImageValidationService
             throw new \RuntimeException(\sprintf('Pasted image dimensions (%dx%d) exceed maximum allowed (%dx%d).', $width, $height, $this->imageConfig->maxWidth, $this->imageConfig->maxHeight));
         }
 
-        $extension = self::extensionForMime($mediaType);
-
-        return new PastedImageValidatedDTO($mediaType, $extension, $fileSize, $width, $height);
+        return new PastedImageValidatedDTO(self::extensionForMime($mediaType));
     }
 
     /**

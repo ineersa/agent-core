@@ -19,7 +19,7 @@ namespace Ineersa\Tui\Runtime;
  */
 final class TuiSessionLifecycleDispatcher
 {
-    /** @var list<callable(TuiSessionLifecycleEventDTO): void> */
+    /** @var list<callable(TuiSessionLifecycleEventTypeEnum): void> */
     private array $subscribers = [];
 
     /**
@@ -42,10 +42,10 @@ final class TuiSessionLifecycleDispatcher
      * degradation; otherwise the error surfaces as a TUI error and
      * short-circuits remaining handlers.
      */
-    public function dispatch(TuiSessionLifecycleEventDTO $event): void
+    public function dispatch(TuiSessionLifecycleEventTypeEnum $eventType): void
     {
         foreach ($this->subscribers as $subscriber) {
-            $subscriber($event);
+            $subscriber($eventType);
         }
     }
 }

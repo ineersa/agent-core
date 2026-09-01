@@ -157,7 +157,10 @@ final class BackgroundProcessControllerSessionLifecycleListenerTest extends Isol
             'status_path' => $statusPath,
             'started_at' => new \DateTimeImmutable(),
         ]);
-        $this->store->markFinished($id, 0, new \DateTimeImmutable());
+        $entity = $this->store->fetchByRecordId($id);
+        $this->assertNotNull($entity);
+        $entity->finish(0, new \DateTimeImmutable());
+        $this->store->flush();
         $this->manager->markBackgroundedForRecord($id, $sessionId);
 
         return ['id' => $id, 'log' => $logPath];

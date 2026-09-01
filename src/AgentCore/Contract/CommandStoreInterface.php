@@ -21,13 +21,6 @@ interface CommandStoreInterface
 
     public function countPending(string $runId): int;
 
-    /**
-     * Marks pending commands of a specific kind as rejected with a reason.
-     *
-     * @return list<PendingCommand>
-     */
-    public function rejectPendingByKind(string $runId, string $kind, string $reason): array;
-
     public function markApplied(string $runId, string $idempotencyKey): void;
 
     public function markRejected(string $runId, string $idempotencyKey, string $reason): void;

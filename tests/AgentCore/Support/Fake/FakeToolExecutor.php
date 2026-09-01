@@ -23,11 +23,6 @@ final class FakeToolExecutor implements ToolExecutorInterface
         $this->handlersByTool = $handlersByTool;
     }
 
-    public function on(string $toolName, callable $handler): void
-    {
-        $this->handlersByTool[$toolName] = $handler;
-    }
-
     public function execute(ToolCall $toolCall): ToolResult
     {
         $this->calls[] = $toolCall;

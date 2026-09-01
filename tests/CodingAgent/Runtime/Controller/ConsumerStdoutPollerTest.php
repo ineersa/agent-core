@@ -172,8 +172,6 @@ final class ConsumerStdoutPollerTest extends TestCase
     private function createEmitter(): RuntimeEventEmitter
     {
         return new RuntimeEventEmitter(
-            eventClient: null,
-            boundary: new RuntimeExceptionBoundary(new EventDispatcher()),
             logger: $this->createStub(LoggerInterface::class),
         );
     }

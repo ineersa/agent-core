@@ -15,7 +15,7 @@ use Psr\Log\LoggerInterface;
  * path so discovered MCP tools are visible to the LLM before schema
  * resolution.
  *
- * Call registerForRun() from the tool-set resolver hook before
+ * Call registerUsingCatalogFrom() from the tool-set resolver hook before
  * CodingAgentToolSetResolver builds the active snapshot.  Missing or
  * not-yet-written catalogs are a no-op — MCP tools register only when
  * the catalog exists.
@@ -54,7 +54,10 @@ final class McpToolRegistrar
     }
 
     /**
-     * Synchronize MCP dynamic tools for a run from the session catalog.
+     * Synchronize MCP dynamic tools for a run from a catalog snapshot.
+     *
+     * Child agent runs typically reuse the parent session catalog (parent_run_id)
+     * while tool invocation context remains the active run id.
      *
      * An unchanged catalog (matching fingerprint) is a no-op — previously
      * registered MCP tools stay in place with their handler identities
@@ -72,17 +75,6 @@ final class McpToolRegistrar
      * Every caught exception is either propagated forward or logged
      * with structured diagnostics — empty catch blocks are forbidden
      * per AGENTS.md.
-     */
-    public function registerForRun(string $runId): void
-    {
-        $this->registerUsingCatalogFrom($runId, $runId);
-    }
-
-    /**
-     * Register MCP dynamic tools for a run using a catalog snapshot from another run id.
-     *
-     * Child agent runs typically reuse the parent session catalog (parent_run_id)
-     * while tool invocation context remains the active run id.
      */
     public function registerUsingCatalogFrom(string $runId, string $catalogRunId): void
     {

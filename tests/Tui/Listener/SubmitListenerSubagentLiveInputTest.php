@@ -144,10 +144,7 @@ final class SubmitListenerSubagentLiveInputTest extends TestCase
                 source: QuestionSource::AgentCore,
                 kind: QuestionKind::Text,
                 prompt: 'Which file should the scout inspect next?',
-                schema: ['type' => 'string'],
-                runId: 'child-run-1',
-                questionId: 'q_submit_bypass',
-            ),
+                runId: 'child-run-1'),
             onAnswer: static function (mixed $answer) use (&$answered): void {
                 $answered = true;
             },

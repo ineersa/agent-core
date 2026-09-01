@@ -167,28 +167,6 @@ final class FileRewindService
         }
     }
 
-    public function undoLastRestore(string $runId): void
-    {
-        if (!$this->isOperational()) {
-            throw new \RuntimeException('File rewind is unavailable.');
-        }
-        $identity = RewindProjectIdentity::fromProjectRoot($this->projectCwd);
-        $undo = $this->ledgerProjector->findUndoCheckpoint($this->ledgerStore->readRestores($identity));
-        if (null === $undo) {
-            throw new \RuntimeException('No file rewind undo checkpoint available.');
-        }
-        $scope = new RewindPathScope($this->projectCwd);
-        $gitDir = $this->paths->hiddenGitDir($identity);
-        $this->backend->restoreCommitToWorktree(
-            $gitDir,
-            $this->projectCwd,
-            $undo->snapshotCommitSha,
-            $scope,
-            $this->paths->tmpDir($identity),
-        );
-        unset($this->lastTreeShaByRunProject[$runId.'|'.$identity->projectHash]);
-    }
-
     private function pruneRetainedRefs(RewindProjectIdentity $identity): void
     {
         $byTurn = $this->ledgerProjector->checkpointsByTurn(

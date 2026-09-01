@@ -333,19 +333,30 @@ final class DurableResultConverter extends ResultConverter
         array $data,
     ): void {
         foreach ($data['choices'][0]['delta']['tool_calls'] ?? [] as $chunk) {
-            $index = $chunk['index'] ?? 0;
+            if (!\is_array($chunk)) {
+                continue;
+            }
 
-            if (isset($chunk['id'])) {
-                $stableKey = $this->resolveBlockKey($blocks, $blockByIndex, $blockById, $index, $chunk['id'], $chunk['function']['name'] ?? '');
+            $index = \is_int($chunk['index'] ?? null) ? $chunk['index'] : 0;
+            $id = \is_string($chunk['id'] ?? null) ? $chunk['id'] : null;
+            $name = \is_string($chunk['function']['name'] ?? null) ? $chunk['function']['name'] : '';
+            $arguments = \is_string($chunk['function']['arguments'] ?? null) ? $chunk['function']['arguments'] : null;
 
-                if (isset($chunk['function']['arguments'])) {
-                    $blocks[$stableKey]['partialJson'] .= $chunk['function']['arguments'];
+            if (null !== $id) {
+                $stableKey = $this->resolveBlockKey($blocks, $blockByIndex, $blockById, $index, $id, $name);
+
+                if (null !== $arguments) {
+                    $block = $blocks[$stableKey];
+                    $block['partialJson'] .= $arguments;
+                    $blocks[$stableKey] = $block;
                 }
-            } elseif (isset($chunk['function']['arguments'])) {
+            } elseif (null !== $arguments) {
                 $stableKey = $blockByIndex[$index] ?? null;
 
                 if (null !== $stableKey && isset($blocks[$stableKey])) {
-                    $blocks[$stableKey]['partialJson'] .= $chunk['function']['arguments'];
+                    $block = $blocks[$stableKey];
+                    $block['partialJson'] .= $arguments;
+                    $blocks[$stableKey] = $block;
                 } else {
                     // Orphan argument chunk: no id yet — hold in a placeholder block
                     // so phantom/incomplete tool calls never surface in ToolCallComplete.
@@ -353,7 +364,7 @@ final class DurableResultConverter extends ResultConverter
                     $blocks[$stableKey] = [
                         'id' => '',
                         'name' => '',
-                        'partialJson' => $chunk['function']['arguments'],
+                        'partialJson' => $arguments,
                         'index' => $index,
                     ];
                     $blockByIndex[$index] = $stableKey;
@@ -380,7 +391,9 @@ final class DurableResultConverter extends ResultConverter
         if ('' !== $id && isset($blockById[$id])) {
             $stableKey = $blockById[$id];
             $blockByIndex[$index] = $stableKey;
-            $blocks[$stableKey]['index'] = $index;
+            $block = $blocks[$stableKey];
+            $block['index'] = $index;
+            $blocks[$stableKey] = $block;
 
             return $stableKey;
         }
@@ -392,12 +405,14 @@ final class DurableResultConverter extends ResultConverter
             if ('' !== $id && '' !== $existingId && $id !== $existingId) {
                 // New tool call at a reused index — create a fresh block below.
             } else {
-                $blocks[$existingKey]['name'] = $name;
-                $blocks[$existingKey]['index'] = $index;
+                $block = $blocks[$existingKey];
+                $block['name'] = $name;
+                $block['index'] = $index;
                 if ('' !== $id) {
-                    $blocks[$existingKey]['id'] = $id;
+                    $block['id'] = $id;
                     $blockById[$id] = $existingKey;
                 }
+                $blocks[$existingKey] = $block;
 
                 return $existingKey;
             }

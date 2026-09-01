@@ -17,9 +17,7 @@ final readonly class AiProviderConfig
      * @param string                           $type                         Provider type (generic for OpenAI-completions-style)
      * @param bool                             $enabled                      Whether this provider is active
      * @param string                           $baseUrl                      Base URL for the provider's API
-     * @param string                           $api                          API flavor (e.g. openai-completions)
      * @param string|null                      $apiKey                       API key (plain or env:VAR format; resolved by SecretResolver)
-     * @param string|null                      $accountId                    Account ID for provider (e.g. Codex chatgpt-account-id header)
      * @param string|null                      $authKey                      Auth storage key for Codex OAuth credentials (defaults to 'openai-codex' when null)
      * @param string|null                      $completionsPath              Chat completions endpoint path (e.g. /chat/completions)
      * @param string|null                      $embeddingsPath               Embeddings endpoint path (e.g. /embeddings)
@@ -37,9 +35,7 @@ final readonly class AiProviderConfig
         public string $type = 'generic',
         public bool $enabled = true,
         public string $baseUrl = '',
-        public string $api = 'openai-completions',
         public ?string $apiKey = null,
-        public ?string $accountId = null,
         public ?string $authKey = null,
         public ?string $completionsPath = null,
         public ?string $embeddingsPath = null,
@@ -75,9 +71,7 @@ final readonly class AiProviderConfig
             type: (string) ($data['type'] ?? 'generic'),
             enabled: (bool) ($data['enabled'] ?? true),
             baseUrl: (string) ($data['base_url'] ?? ''),
-            api: (string) ($data['api'] ?? 'openai-completions'),
             apiKey: isset($data['api_key']) ? (string) $data['api_key'] : null,
-            accountId: isset($data['account_id']) ? (string) $data['account_id'] : null,
             authKey: isset($data['auth_key']) ? (string) $data['auth_key'] : null,
             completionsPath: isset($data['completions_path']) ? (string) $data['completions_path'] : null,
             embeddingsPath: isset($data['embeddings_path']) ? (string) $data['embeddings_path'] : null,

@@ -198,8 +198,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
 
     public function attach(string $runId): RunHandle
     {
-        // Passive attach only — do not call runner->continue(); opening a session
-        // must not reanimate or advance AgentCore state.
+        // Passive attach only — opening a session must not reanimate or advance AgentCore state.
 
         // Attaching is a new parent lifetime: existing artifacts stay retrievable
         // but agent_resume must not continue children launched before /resume.
