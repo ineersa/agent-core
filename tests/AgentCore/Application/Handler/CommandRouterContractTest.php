@@ -6,7 +6,6 @@ namespace Ineersa\AgentCore\Tests\Application\Handler;
 
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Contract\Extension\CommandHandlerInterface;
-use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Extension\CommandCancellationOptions;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use PHPUnit\Framework\TestCase;
@@ -128,59 +127,6 @@ final class CommandRouterContractTest extends TestCase
 
         $this->assertSame('extension', $routed->status);
         $this->assertSame(['cancel_safe' => false], $routed->options);
-    }
-
-    public function testRoutesCoreContinueWithAutoRetryMetadataInPayloadOnly(): void
-    {
-        $router = new CommandRouter([]);
-
-        $command = new ApplyCommand(
-            runId: 'run-auto-retry-route',
-            turnNo: 1,
-            stepId: 'auto-retry-step-1-1',
-            attempt: 1,
-            idempotencyKey: 'auto-retry-continue',
-            kind: CoreCommandKind::Continue,
-            payload: [
-                'auto_retry' => true,
-                'retry_attempt' => 1,
-            ],
-            options: [],
-        );
-
-        $routed = $router->route($command);
-
-        $this->assertSame('core', $routed->status);
-        $this->assertNull($routed->reason);
-        $this->assertTrue($routed->payload['auto_retry'] ?? false);
-        $this->assertSame(1, $routed->payload['retry_attempt'] ?? null);
-    }
-
-    public function testRejectsAutoRetryMetadataInOptionsForCoreContinue(): void
-    {
-        $router = new CommandRouter([]);
-
-        $command = new ApplyCommand(
-            runId: 'run-auto-retry-reject',
-            turnNo: 1,
-            stepId: 'auto-retry-step-1-1',
-            attempt: 1,
-            idempotencyKey: 'auto-retry-continue-bad',
-            kind: CoreCommandKind::Continue,
-            payload: [
-                'auto_retry' => true,
-                'retry_attempt' => 1,
-            ],
-            options: [
-                'auto_retry' => true,
-                'retry_attempt' => 1,
-            ],
-        );
-
-        $routed = $router->route($command);
-
-        $this->assertSame('rejected', $routed->status);
-        $this->assertStringContainsString('Unknown command options', (string) $routed->reason);
     }
 
     public function testRejectsCancelSafeOptionForCoreCommands(): void

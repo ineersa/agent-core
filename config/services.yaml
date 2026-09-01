@@ -724,7 +724,6 @@ services:
   Ineersa\AgentCore\Application\Pipeline\LlmStepResultHandler:
     arguments:
       $toolExecutionSettings: '@Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface'
-      $agentRetryMaxAttempts: '@=null !== service("Ineersa\\CodingAgent\\Config\\AppConfig").ai ? service("Ineersa\\CodingAgent\\Config\\AppConfig").ai.agentRetry.resolveMaxAttempts() : 3'
       $maxParallelism: '@=max(1, service("Ineersa\\CodingAgent\\Config\\AppConfig").tools.execution.maxParallelism)'
 
   # ─── System prompt builder ───

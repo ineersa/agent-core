@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Tests\Application\Handler;
 
 use Ineersa\AgentCore\Application\Handler\ExecuteLlmStepWorker;
+use Ineersa\AgentCore\Application\Handler\RetryableLlmStepFailureException;
 use Ineersa\AgentCore\Contract\Model\PlatformInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
@@ -17,6 +18,8 @@ use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Message\AssistantMessage;
 use Symfony\AI\Platform\Message\Content\Text;
 use Symfony\AI\Platform\Message\Content\Thinking;
+use Symfony\Component\Messenger\Exception\TransportException;
+use Symfony\Component\Messenger\Exception\UnrecoverableMessageHandlingException;
 
 /**
  * Contract tests for {@see ExecuteLlmStepWorker}.
@@ -141,13 +144,13 @@ final class ExecuteLlmStepWorkerTest extends TestCase
         $this->assertCount(0, $retryLogs, 'No retry warning when first attempt succeeds.');
     }
 
-    public function testProviderErrorOnFirstAttemptIsNotRetried(): void
+    public function testNonRetryableProviderErrorDispatchesTerminalResultWithoutMessengerRetrySignal(): void
     {
         $errorResult = new PlatformInvocationResult(
             assistantMessage: null,
             usage: [],
             stopReason: null,
-            error: ['type' => 'provider_error', 'message' => 'HTTP 500'],
+            error: ['type' => 'provider_error', 'message' => 'HTTP 500', 'retryable' => false],
         );
 
         $platform = $this->createAlternatingPlatform([$errorResult]);
@@ -171,13 +174,93 @@ final class ExecuteLlmStepWorkerTest extends TestCase
         $result = $testBus->messages[0];
         $this->assertNotNull($result->error, 'Provider error must be propagated.');
         $this->assertSame('provider_error', $result->error['type'] ?? null);
+        $this->assertFalse($result->error['retryable'] ?? true);
 
-        // Provider errors are NOT retried: only thinking-only responses are.
         $this->assertSame(1, $platform->invocationCount);
-
-        // No retry warning.
         $retryLogs = $this->filterLogsByEventType($testLogger, 'llm.request.retrying_thinking_only');
-        $this->assertCount(0, $retryLogs, 'No retry on provider error.');
+        $this->assertCount(0, $retryLogs, 'No thinking-only retry on provider error.');
+    }
+
+    public function testCommandBusDispatchFailureIsUnrecoverable(): void
+    {
+        $ok = new PlatformInvocationResult(
+            assistantMessage: new AssistantMessage(new Text('ok')),
+            usage: [],
+            stopReason: 'stop',
+        );
+        $platform = $this->createAlternatingPlatform([$ok]);
+        $commandBus = new class implements \Symfony\Component\Messenger\MessageBusInterface {
+            public function dispatch(object $message, array $stamps = []): \Symfony\Component\Messenger\Envelope
+            {
+                throw new TransportException('command bus unavailable');
+            }
+        };
+        $worker = new ExecuteLlmStepWorker($platform, $commandBus, logger: new TestLogger());
+
+        try {
+            $worker(new ExecuteLlmStep(
+                runId: 'run-dispatch-fail',
+                turnNo: 1,
+                stepId: 'step-dispatch-fail',
+                attempt: 1,
+                idempotencyKey: 'key-dispatch-fail',
+                toolsRef: 'tools-dispatch-fail',
+            ));
+            $this->fail('Command-bus dispatch failure must throw UnrecoverableMessageHandlingException.');
+        } catch (UnrecoverableMessageHandlingException $exception) {
+            $this->assertStringContainsString('Failed to dispatch LLM result to command bus.', $exception->getMessage());
+            $this->assertInstanceOf(TransportException::class, $exception->getPrevious());
+        }
+
+        $this->assertSame(1, $platform->invocationCount);
+    }
+
+    public function testRetryableProviderErrorThrowsRecoverableMessengerException(): void
+    {
+        $errorResult = new PlatformInvocationResult(
+            assistantMessage: null,
+            usage: [],
+            stopReason: null,
+            error: [
+                'type' => 'provider_error',
+                'message' => 'Codex WebSocket idle timeout.',
+                'retryable' => true,
+                'error_category' => 'provider',
+                'user_message' => 'LLM provider request failed.',
+            ],
+            model: 'openai-codex/gpt-5.6-luna',
+            reasoning: 'medium',
+            availableTools: ['bash', 'edit'],
+            availableToolsSchemaTokensEstimate: 12,
+        );
+
+        $platform = $this->createAlternatingPlatform([$errorResult]);
+        $testBus = new TestMessageBus();
+        $worker = new ExecuteLlmStepWorker($platform, $testBus, logger: new TestLogger());
+
+        try {
+            $worker(new ExecuteLlmStep(
+                runId: 'run-retryable',
+                turnNo: 2,
+                stepId: 'step-retryable',
+                attempt: 1,
+                idempotencyKey: 'key-retryable',
+                toolsRef: 'tools-ref',
+            ));
+            $this->fail('Retryable provider failure must throw RetryableLlmStepFailureException.');
+        } catch (RetryableLlmStepFailureException $exception) {
+            $this->assertFalse($exception->forceRetry());
+            $this->assertNull($exception->getRetryDelay());
+            $this->assertTrue($exception->error['retryable'] ?? false);
+            $this->assertSame('tools-ref', $exception->toolsRef);
+            $this->assertSame('openai-codex/gpt-5.6-luna', $exception->model);
+            $this->assertSame('medium', $exception->reasoning);
+            $this->assertSame(['bash', 'edit'], $exception->availableTools);
+            $this->assertSame(12, $exception->availableToolsSchemaTokensEstimate);
+        }
+
+        $this->assertSame([], $testBus->messages);
+        $this->assertSame(1, $platform->invocationCount);
     }
 
     public function testThinkingOnlyRetryReusesMessageModel(): void

@@ -27,8 +27,6 @@ final class RunStateReducerAgentEndTest extends TestCase
             lastSeq: 7,
             activeStepId: 'step-failed',
             currentOperation: new CurrentOperationDTO(1, 'step-failed', 1, 'llm-failed-1'),
-            retryableFailure: true,
-            retryAttempts: 3,
             model: 'test-model',
         );
 
@@ -70,7 +68,5 @@ final class RunStateReducerAgentEndTest extends TestCase
         $this->assertSame(RunStatus::Failed, $replayed->status);
         $this->assertNull($replayed->activeStepId);
         $this->assertNull($replayed->currentOperation);
-        $this->assertFalse($replayed->retryableFailure);
-        $this->assertSame(0, $replayed->retryAttempts);
     }
 }

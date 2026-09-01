@@ -103,8 +103,6 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                 'activeStepId' => null,
                 'currentOperation' => null,
                 'lastAppliedAdvanceKey' => $message->idempotencyKey(),
-                'retryableFailure' => false,
-                'retryAttempts' => 0,
             ]);
 
             $postCommit = [];
@@ -158,7 +156,6 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                 $preparedState = $preparedState->with([
                     'status' => RunStatus::Running,
                     'errorMessage' => null,
-                    'retryableFailure' => false,
                 ]);
             // Fall through to the turn-advance code below.
             } else {
@@ -415,7 +412,6 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                 $effect->idempotencyKey(),
             ),
             'lastAppliedAdvanceKey' => $message->idempotencyKey(),
-            'retryableFailure' => false,
         ]);
 
         return new HandlerResult(

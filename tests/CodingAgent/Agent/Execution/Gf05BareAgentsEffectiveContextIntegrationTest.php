@@ -179,7 +179,6 @@ final class Gf05BareAgentsEffectiveContextIntegrationTest extends PerMethodIsola
             errorMessage: null,
             messages: $messages,
             activeStepId: 'parent-step',
-            retryableFailure: false,
             model: 'test-model',
         );
     }

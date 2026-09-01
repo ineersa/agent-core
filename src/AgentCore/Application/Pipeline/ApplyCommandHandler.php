@@ -33,7 +33,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
     private const REJECT_ON_CANCEL_KINDS = [
         CoreCommandKind::Steer,
         CoreCommandKind::FollowUp,
-        CoreCommandKind::Continue,
     ];
 
     public function __construct(
@@ -102,17 +101,13 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         }
 
         if (CoreCommandKind::Cancel === $message->kind) {
-            // Guard: cancelling an already-terminated run (Completed / Failed
-            // without retryable failure) would transition to Cancelling with
-            // no subsequent transition event (no RunCancelled or TurnCancelled
-            // is emitted for a completed/failed run), leaving the
-            // ActivityStateMachine permanently stuck in Cancelling (issue #183).
-            //
-            // Failed-with-retryableFailure is an exception: the run is recoverable
-            // via Continue, and Cancel may be used to clean up stale state before
-            // retry.  Reject the cancel for truly terminal states so the UI
-            // reflects the correct state.
-            if (\in_array($state->status, [RunStatus::Completed, RunStatus::Failed], true) && !$state->retryableFailure) {
+            // Guard: cancelling an already-terminated run (Completed / Failed)
+            // would transition to Cancelling with no subsequent transition event
+            // (no RunCancelled or TurnCancelled is emitted for a completed/failed
+            // run), leaving the ActivityStateMachine permanently stuck in
+            // Cancelling (issue #183). Reject the cancel for terminal states so
+            // the UI reflects the correct state.
+            if (\in_array($state->status, [RunStatus::Completed, RunStatus::Failed], true)) {
                 return $this->rejectCommand(
                     $state,
                     $message,
@@ -121,10 +116,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             }
 
             return $this->applyCancelCommand($state, $message);
-        }
-
-        if (CoreCommandKind::Continue === $message->kind) {
-            return $this->applyContinueCommand($state, $message, $routedCommand->options);
         }
 
         if (CoreCommandKind::HumanResponse === $message->kind) {
@@ -317,8 +308,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                         'errorMessage' => $reason,
                         'activeStepId' => null,
                         'currentOperation' => null,
-                        'retryableFailure' => false,
-                        'retryAttempts' => 0,
                     ]),
                     events: $events,
                     postCommit: $postCommit,
@@ -339,7 +328,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 'lastSeq' => $state->lastSeq + \count($events),
                 // Cancelling ends the retry episode once the run terminalizes;
                 // keep the counter reset explicit instead of a silent field drop.
-                'retryAttempts' => 0,
             ]);
 
             return new HandlerResult(
@@ -375,8 +363,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 'currentToolCalls' => [],
                 'activeStepId' => null,
                 'currentOperation' => null,
-                'retryableFailure' => false,
-                'retryAttempts' => 0,
             ]);
 
             $postCommit = [];
@@ -403,8 +389,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 static fn (CurrentToolCallDTO $toolCall): CurrentToolCallDTO => $toolCall->withStatus(RunOperationalToolCallStatusEnum::Cancelled),
                 $state->currentToolCalls,
             ),
-            'retryableFailure' => false,
-            'retryAttempts' => 0,
         ]);
 
         return new HandlerResult(
@@ -474,57 +458,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         return new HandlerResult(
             nextState: $nextState,
             events: [$queuedEvent],
-        );
-    }
-
-    /**
-     * @param array<string, mixed> $options
-     */
-    private function applyContinueCommand(RunState $state, ApplyCommand $message, array $options): HandlerResult
-    {
-        $reason = $this->commandMailboxPolicy->continueRejectionReason($state);
-        if (null !== $reason) {
-            return $this->rejectCommand($state, $message, $reason);
-        }
-
-        $runId = $message->runId();
-        $this->commandStore->markApplied($runId, $message->idempotencyKey());
-
-        $isAutoRetry = true === ($message->payload['auto_retry'] ?? false);
-        $retryAttempts = $isAutoRetry ? $state->retryAttempts : 0;
-
-        $nextState = $state->with([
-            'status' => RunStatus::Running,
-            'version' => $state->version + 1,
-            'lastSeq' => $state->lastSeq + 1,
-            'errorMessage' => null,
-            'retryableFailure' => false,
-            'retryAttempts' => $retryAttempts,
-        ]);
-
-        $event = $this->eventFactory->event(
-            runId: $runId,
-            seq: $nextState->lastSeq,
-            turnNo: $nextState->turnNo,
-            type: RunEventTypeEnum::AgentCommandApplied->value,
-            payload: [
-                'kind' => $message->kind,
-                'idempotency_key' => $message->idempotencyKey(),
-                'options' => $options,
-                'payload' => $message->payload,
-            ],
-        );
-
-        $postCommit = [];
-        $followUpAdvance = $this->followUpAdvanceCallback($runId, $state->turnNo, 'continue');
-        if (null !== $followUpAdvance) {
-            $postCommit[] = $followUpAdvance;
-        }
-
-        return new HandlerResult(
-            nextState: $nextState,
-            events: [$event],
-            postCommit: $postCommit,
         );
     }
 
@@ -622,8 +555,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             'lastSeq' => $state->lastSeq + 1,
             'errorMessage' => null,
             'messages' => $messages,
-            'retryableFailure' => false,
-            'retryAttempts' => 0,
             'pendingHumanInputRequests' => $remainingRequests,
         ]);
 
@@ -731,8 +662,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             'version' => $state->version + 1,
             'lastSeq' => $state->lastSeq + 1,
             'errorMessage' => null,
-            'retryableFailure' => false,
-            'retryAttempts' => 0,
             'currentToolCalls' => array_map(
                 static fn (CurrentToolCallDTO $toolCall): CurrentToolCallDTO => $toolCall->toolCallId === $toolCallId
                     ? $toolCall->withStatus(RunOperationalToolCallStatusEnum::Running)
@@ -884,7 +813,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
      * Queued): mark applied immediately and dispatch CompactRun via
      * post-commit callback.  No enqueue so the command cannot be
      * drained again on a future mailbox cycle — mirroring
-     * applyContinueCommand / applyHumanResponseCommand.
+     * applyHumanResponseCommand.
      */
     private function applyCompactCommand(RunState $state, ApplyCommand $message): HandlerResult
     {

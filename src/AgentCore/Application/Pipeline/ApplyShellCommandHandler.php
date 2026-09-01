@@ -191,10 +191,8 @@ final readonly class ApplyShellCommandHandler implements RunMessageHandler
                 RunOperationalToolCallStatusEnum::Pending,
                 $message->attempt(),
             )],
-            'retryableFailure' => $startsChildTurn ? false : $state->retryableFailure,
             // A child turn starts a fresh retry episode; an in-place shell on
             // an active run keeps the episode counter intact.
-            'retryAttempts' => $startsChildTurn ? 0 : $state->retryAttempts,
         ]);
 
         return new HandlerResult(

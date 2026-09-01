@@ -129,15 +129,6 @@ final class LlmProviderErrorClassifierTest extends TestCase
         $this->assertSame('LLM provider request failed.', $result['user_message']);
     }
 
-    public function testContextOverflowUsesExceptionContractOnly(): void
-    {
-        $this->assertTrue($this->classifier->isContextOverflow(['type' => ExceedContextSizeException::class]));
-        $this->assertFalse($this->classifier->isContextOverflow([
-            'type' => BadRequestException::class,
-            'message' => 'maximum context length exceeded',
-        ]));
-    }
-
     public function testClassifierPreservesStructuredDiagnosticsAndStripsFreeTextHelpers(): void
     {
         $result = $this->classifier->classify([
