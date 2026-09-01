@@ -61,7 +61,6 @@ final class AgentDefinitionParserTest extends TestCase
         $this->assertTrue($dto->parallelAllowed);
         $this->assertSame('You are a scout. Explore and report findings.', $dto->instructions);
         $this->assertSame('/test/agent.md', $dto->sourcePath);
-        $this->assertSame('/test', $dto->sourceDirectory);
     }
 
     public function testMinimalValidDefinitionAppliesDefaults(): void
@@ -666,7 +665,6 @@ Body
             $dto = $this->parser->parseFile($filePath);
             $this->assertSame('real-file', $dto->name);
             $this->assertSame($filePath, $dto->sourcePath);
-            $this->assertSame($tmpDir, $dto->sourceDirectory);
             $this->assertSame('body', $dto->instructions);
         } finally {
             TestDirectoryIsolation::removeDirectory($tmpDir);

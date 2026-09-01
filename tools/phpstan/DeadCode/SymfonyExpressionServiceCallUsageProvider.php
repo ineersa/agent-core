@@ -93,12 +93,12 @@ final class SymfonyExpressionServiceCallUsageProvider extends ReflectionBasedMem
 
         $this->memberIndex = [];
         if (!is_file(self::CONTAINER_XML)) {
-            return $this->memberIndex;
+            throw new \RuntimeException(\sprintf('ShipMonk expression usage provider requires readable Symfony container XML at %s. Run castor dead-code / dead-code:baseline so ensure_dead_code_symfony_container_xml() can materialize it.', self::CONTAINER_XML));
         }
 
         $xml = file_get_contents(self::CONTAINER_XML);
         if (false === $xml) {
-            return $this->memberIndex;
+            throw new \RuntimeException(\sprintf('ShipMonk expression usage provider could not read Symfony container XML at %s.', self::CONTAINER_XML));
         }
 
         if (!preg_match_all('/<argument type="expression">(.*?)<\\/argument>/s', $xml, $matches)) {

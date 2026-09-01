@@ -71,15 +71,6 @@ function phpstan(?string $path = null): void
     }
 }
 
-#[AsTask(name: 'phpstan:baseline', description: 'Regenerate PHPStan baseline')]
-function phpstan_baseline(): void
-{
-    passthru(qa_observability_env_command().' '.\PHP_BINARY.' vendor/bin/phpstan analyse -c phpstan.dist.neon --generate-baseline phpstan-baseline.neon', $exitCode);
-    if (0 !== $exitCode) {
-        fail_quality(sprintf('PHPStan baseline generation failed with exit code %d', $exitCode));
-    }
-}
-
 #[AsTask(name: 'dead-code', description: 'Run ShipMonk dead-code detector')]
 function dead_code(): void
 {

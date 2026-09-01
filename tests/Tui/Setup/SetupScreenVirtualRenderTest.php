@@ -82,7 +82,6 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $tui->handleInput("\x04");
 
         $this->assertSame('summary', $this->phase($screen));
-        $this->assertSame('summary', $this->phase($screen));
         $this->assertStringContainsString('AI Provider Setup', $this->plain($terminal));
     }
 
@@ -98,7 +97,6 @@ final class SetupScreenVirtualRenderTest extends TestCase
 
         $tui->handleInput("\x04");
 
-        $this->assertSame('summary', $this->phase($screen));
         $this->assertSame('summary', $this->phase($screen));
         $text = $this->plain($terminal);
         $this->assertStringContainsString('AI Provider Setup', $text);
@@ -436,7 +434,6 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $tui->handleInput("\x04"); // Ctrl+D
 
         $this->assertSame('summary', $this->phase($screen));
-        $this->assertSame('summary', $this->phase($screen));
         $text = $this->plain($terminal);
         $this->assertStringContainsString('AI Provider Setup', $text);
         $this->assertStringNotContainsString('Add your own server', $text);
@@ -643,7 +640,6 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $this->selectValue($screen, 'no'); // Exit
 
         $this->assertSame('summary', $this->phase($screen));
-        $this->assertSame('summary', $this->phase($screen));
         $text = $this->plain($terminal);
         $this->assertStringNotContainsString('Set as your default model?', $text);
         $this->assertStringNotContainsString('Add another?', $text);
@@ -657,7 +653,6 @@ final class SetupScreenVirtualRenderTest extends TestCase
 
         $this->selectValue($screen, 'done');
 
-        $this->assertSame('summary', $this->phase($screen));
         $this->assertSame('summary', $this->phase($screen));
         $collapsed = str_replace(["\n", ' '], '', $this->plain($terminal));
         $this->assertStringContainsString(str_replace(' ', '', 'Nothing changed.'), $collapsed);

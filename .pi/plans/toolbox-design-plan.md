@@ -166,7 +166,7 @@ Implementation:
   - cwd = project working directory
   - Output goes through OutputCap using settings-backed caps (default 20K chars)
   - Full output persisted to .hatfield/tmp/output-cap/ when truncated
-  - Use ToolRuntime::runCancellableProcess() / Process::start() + polling
+  - Use Process::start() + polling against ToolContext cancellation/timeout
   - On timeout or run cancellation, Bash stops its own foreground process with Process::stop($graceSeconds)
   - Cancellation is a structured result, not a generic tool failure
 
@@ -332,8 +332,7 @@ src/CodingAgent/Tool/
   HatfieldToolProviderInterface.php # Built-in tool definition provider contract (TOOLS-R02)
   RegistryBackedToolbox.php   # Symfony ToolboxInterface adapter backed by ToolRegistry definitions (TOOLS-R03)
   ToolRuntime.php             # Tool-author helper: cancellation checkpoints and cancellable Process polling (TOOLS-R03)
-  CancellableProcessResult.php # DTO returned by ToolRuntime::runCancellableProcess()
-  OutputCap.php               # Output capping + temp file persistence
+    OutputCap.php               # Output capping + temp file persistence
   PatchRunner.php             # Wraps GNU patch subprocess using ToolRuntime process polling
   BackgroundProcessManager.php  # Holds bg process map, log paths, cleanup (TOOLS-08)
 
@@ -698,7 +697,7 @@ Tasks are intentionally small and prefixed with `TOOLS-` so smaller models can i
 
 - **TOOLS-R03** — Registry-backed Symfony Toolbox, execution allowlist enforcement, and initial tool execution documentation.
   - Depends on: TOOLS-R02 and TOOLS-00.
-  - Documents the concrete handler/process contract: handlers execute synchronously in a tool worker; simple handlers can use `ToolRuntime::run()` for cancellation checkpoints; process-owning tools use `ToolRuntime::runCancellableProcess()` / local `Process::start()` + polling against `ToolContext` cancellation/timeout; no shared foreground process registry/runner.
+  - Documents the concrete handler/process contract: handlers execute synchronously in a tool worker; simple handlers can use `ToolRuntime::run()` for cancellation checkpoints; process-owning tools use local `Process::start()` + polling against `ToolContext` cancellation/timeout; no shared foreground process registry/runner.
   - Can parallelize with: TOOLS-01, TOOLS-02.
 
 - **TOOLS-R04** — Tool settings hydration verification closeout.
@@ -865,14 +864,13 @@ Process-owning tools use foreground process polling:
 
 ```php
 $process = new Process([...], $cwd);
-$result = $this->toolRuntime->runCancellableProcess($process, timeoutSeconds: $timeout);
+$process->start();
+// Poll until completion; check ToolContext cancellation/timeout and stop the process on cancel.
 ```
-
-`runCancellableProcess()` starts the process, disables Symfony's built-in timeout/idle timeout, polls until completion, checks the ambient `ToolContext` cancellation token and timeout deadline, calls `Process::stop($graceSeconds)` on cancellation/timeout, and returns `CancellableProcessResult` with stdout/stderr/exit/cancelled/timedOut metadata.
 
 ### Bash cancellation contract
 
-Bash is the first tool that must support true mid-execution interruption. It should use `ToolRuntime::runCancellableProcess()` for foreground execution, then format `CancellableProcessResult` into the model-facing tool result.
+Bash is the first tool that must support true mid-execution interruption. It should own a local `Process::start()` loop that polls `ToolContext` cancellation/timeout, then format stdout/stderr/exit/cancelled/timedOut metadata into the model-facing tool result.
 
 Structured cancellation details from bash should include:
 
@@ -895,7 +893,7 @@ Background process management remains a separate concern owned by TOOLS-08. Fore
 Not every Symfony Toolbox callable is automatically interruptible. For app-owned tools:
 
 - short pure-PHP tools use `ToolRuntime::run()` or direct checks before starting and at safe boundaries;
-- foreground subprocess tools use `ToolRuntime::runCancellableProcess()` / `Process::start()` + polling;
+- foreground subprocess tools use `Process::start()` + polling against `ToolContext`;
 - background processes use `BackgroundProcessManager` and are not killed by ordinary run cancellation;
 - unknown third-party tools remain pre/post cancellable only unless they opt into `ToolRuntime` or `StackToolExecutionContextAccessor`.
 

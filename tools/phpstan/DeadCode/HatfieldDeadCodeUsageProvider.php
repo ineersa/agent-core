@@ -7,7 +7,6 @@ namespace Ineersa\Tools\PHPStan\DeadCode;
 use Ineersa\AgentCore\Contract\RunOperationalStatusDTO;
 use Ineersa\AgentCore\Domain\Notification\ModelNotificationDTO;
 use Ineersa\AgentCore\Domain\Run\RunMetadata;
-use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildProjectionDTO;
 use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedMetadataDTO;
@@ -17,7 +16,6 @@ use Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressChildRowDTO;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressParallelSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingleSnapshotDTO;
-use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotInterface;
 use Ineersa\CodingAgent\Tests\Runtime\Controller\E2E\Replay\StreamPacingHttpClient;
 use Ineersa\Tui\Runtime\TuiSessionLifecycleEventDTO;
 use Ineersa\Tui\Theme\ThemeColorEnum;
@@ -35,7 +33,9 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
  * - published ExtensionApi contracts
  * - theme YAML palette tokens
  * - proven Symfony Serializer / durable projection / event payload types
- * - verified MCP / subagent progress interface contracts
+ *
+ * No class-wide internal-interface exemptions. Native call analysis covers
+ * production interface methods; test-only interface members stay deletable.
  */
 final class HatfieldDeadCodeUsageProvider extends ReflectionBasedMemberUsageProvider
 {
@@ -47,7 +47,6 @@ final class HatfieldDeadCodeUsageProvider extends ReflectionBasedMemberUsageProv
      */
     private const array SERIALIZED_PROPERTY_CLASSES = [
         ModelNotificationDTO::class,
-        AgentDefinitionDTO::class,
         DeferredSubagentBatchProjectionDTO::class,
         DeferredSubagentChildProjectionDTO::class,
         RunMetadata::class,
@@ -59,18 +58,6 @@ final class HatfieldDeadCodeUsageProvider extends ReflectionBasedMemberUsageProv
         SubagentProgressParallelSnapshotDTO::class,
         SubagentProgressSingleSnapshotDTO::class,
         TuiSessionLifecycleEventDTO::class,
-    ];
-
-    /**
-     * Exact internal interfaces whose methods are invoked over the interface
-     * type in production (or only via test doubles typed as the interface).
-     *
-     * @var list<class-string>
-     */
-    private const array PRODUCTION_INTERFACE_CONTRACTS = [
-        SubagentProgressSnapshotInterface::class,
-        \Ineersa\CodingAgent\Mcp\Client\McpClientInterface::class,
-        \Ineersa\CodingAgent\Mcp\Client\McpConnectionManagerInterface::class,
     ];
 
     protected function shouldMarkMethodAsUsed(\ReflectionMethod $method): ?VirtualUsageData
@@ -86,10 +73,6 @@ final class HatfieldDeadCodeUsageProvider extends ReflectionBasedMemberUsageProv
             return VirtualUsageData::withNote('Published Hatfield ExtensionApi contract');
         }
 
-        if (\in_array($className, self::PRODUCTION_INTERFACE_CONTRACTS, true)) {
-            return VirtualUsageData::withNote('Production interface contract invoked over interface type / test doubles');
-        }
-
         // Host adapter for published ExtensionApiInterface::registerToolResultHook().
         // Concrete extensions currently register only call hooks, but the method is
         // part of the stable public API and must remain available on the host bridge.
@@ -98,14 +81,14 @@ final class HatfieldDeadCodeUsageProvider extends ReflectionBasedMemberUsageProv
             return VirtualUsageData::withNote('Published ExtensionApiInterface host implementation');
         }
 
-        // StreamPacingHttpClient is a required HttpClientInterface decorator for
-        // controller-replay SSE pacing. request() is called from tests; stream()/
-        // withOptions() are vendor-contract methods invoked by Symfony HTTP client
-        // consumers and must remain even though the tests usage excluder hides them.
+        // Measured: without this exact rule, castor dead-code reports
+        // StreamPacingHttpClient::{stream,withOptions} as unused because the
+        // tests usage excluder hides test-declared HttpClientInterface methods
+        // even though they are required decorator contract members.
         if (StreamPacingHttpClient::class === $className
             && \in_array($method->getName(), ['stream', 'withOptions'], true)
             && $method->getDeclaringClass()->implementsInterface(HttpClientInterface::class)) {
-            return VirtualUsageData::withNote('Exact HttpClientInterface contract methods on StreamPacingHttpClient');
+            return VirtualUsageData::withNote('Exact HttpClientInterface contract methods on StreamPacingHttpClient (measured after rule removal)');
         }
 
         return null;
@@ -121,10 +104,6 @@ final class HatfieldDeadCodeUsageProvider extends ReflectionBasedMemberUsageProv
 
         if (\in_array($className, self::SERIALIZED_PROPERTY_CLASSES, true)) {
             return VirtualUsageData::withNote('Symfony Serializer / durable projection / event payload property');
-        }
-
-        if ($property->getDeclaringClass()->implementsInterface(SubagentProgressSnapshotInterface::class)) {
-            return VirtualUsageData::withNote('Subagent progress wire snapshot property');
         }
 
         // PHP stream wrappers expose a public $context filled by the engine.

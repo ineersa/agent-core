@@ -34,7 +34,6 @@ final readonly class AgentDefinitionDTO
         public bool $parallelAllowed = true,
         public string $instructions = '',
         public string $sourcePath = '',
-        public string $sourceDirectory = '',
     ) {
     }
 }

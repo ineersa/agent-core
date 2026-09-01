@@ -635,15 +635,6 @@ final class McpToolRegistrarTest extends TestCase
                 return [];
             }
 
-            public function getClient(string $runId, string $serverName): ?\Ineersa\CodingAgent\Mcp\Client\McpClientInterface
-            {
-                return null;
-            }
-
-            public function disconnectServer(string $runId, string $serverName): void
-            {
-            }
-
             public function disconnectAll(string $runId): void
             {
             }

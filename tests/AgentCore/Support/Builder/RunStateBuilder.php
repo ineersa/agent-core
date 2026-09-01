@@ -186,13 +186,6 @@ final class RunStateBuilder
         return $this;
     }
 
-    public function withParentRunId(?string $parentRunId): self
-    {
-        $this->parentRunId = $parentRunId;
-
-        return $this;
-    }
-
     public function build(): RunState
     {
         return new RunState(

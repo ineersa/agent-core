@@ -27,9 +27,8 @@ castor test:controller-replay      # controller E2E smoke tests with replay fixt
 castor llm:fixtures:info           # List available LLM replay fixtures
 castor deptrac              # architecture boundary validation
 castor phpstan [path]       # static analysis (optionally scoped to a path)
-castor phpstan:baseline     # regenerate phpstan baseline
 castor dead-code            # ShipMonk dead-code detector (dedicated phpstan.dead-code.neon)
-castor dead-code:baseline   # regenerate phpstan.dead-code-baseline.neon after reviewing findings
+castor dead-code:baseline   # regenerate phpstan.dead-code-baseline.neon after reviewing findings (empty baseline accepted)
 castor cs-fix [path]        # auto-fix coding style
 castor cs-check             # check coding style (dry-run)
 castor docs:validate        # built-in docs catalog, package-safe links, ≤25k chars (also a castor check lane)
