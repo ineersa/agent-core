@@ -59,10 +59,6 @@ final class DeferredChildRunEventProjector
         /** @var array<string, DeferredPendingToolCallRowDTO> $pendingById */
         $pendingById = $current->pendingToolCalls;
 
-        // When the processed tail ends on a still-retryable llm_step_failed, child lifecycle
-        // must stay nonterminal even though RunCommit also writes committedStatus=Failed.
-        // Track a flag rather than re-inspecting the literal last summary: LlmStepResultHandler
-
         foreach ($summaries as $summary) {
             $lastSeq = $summary->seq;
             $payload = $summary->payload;
