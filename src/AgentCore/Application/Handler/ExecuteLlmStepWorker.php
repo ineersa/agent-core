@@ -15,6 +15,7 @@ use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
+use Symfony\Component\Messenger\Exception\UnrecoverableMessageHandlingException;
 use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
@@ -55,7 +56,9 @@ final readonly class ExecuteLlmStepWorker
                 try {
                     $this->commandBus->dispatch($result);
                 } catch (ExceptionInterface $exception) {
-                    throw new \RuntimeException('Failed to dispatch LLM result to command bus.', previous: $exception);
+                    // Local command-bus delivery failure is not a provider-operation
+                    // retry signal. Do not let Messenger redeliver ExecuteLlmStep.
+                    throw new UnrecoverableMessageHandlingException('Failed to dispatch LLM result to command bus.', previous: $exception);
                 }
             };
 
@@ -226,6 +229,14 @@ final readonly class ExecuteLlmStepWorker
                 }
 
                 $this->logger->warning('llm.request.failed', $logCtx);
+
+                // Retryable provider-operation failures (including Codex WebSocket
+                // idle/buffer timeouts) fail handling so the llm transport's
+                // Symfony retry strategy redelivers the same ExecuteLlmStep.
+                // Terminal/HTTP-exhausted failures still dispatch LlmStepResult.
+                if (true === ($response->error['retryable'] ?? false)) {
+                    throw new RetryableLlmStepFailureException(runId: $message->runId(), stepId: $message->stepId(), error: $response->error, toolsRef: $message->toolsRef, model: $response->model, reasoning: $response->reasoning, modelNotifications: $response->modelNotifications, availableTools: $response->availableTools, availableToolsSchemaTokensEstimate: $response->availableToolsSchemaTokensEstimate);
+                }
             } else {
                 $this->logger->info('llm.request.completed', [
                     'duration_ms' => round($durationMs, 3),
@@ -252,6 +263,9 @@ final readonly class ExecuteLlmStepWorker
                 availableTools: $response->availableTools,
                 availableToolsSchemaTokensEstimate: $response->availableToolsSchemaTokensEstimate,
             );
+        } catch (RetryableLlmStepFailureException $exception) {
+            // Must escape the worker so Messenger can redeliver ExecuteLlmStep.
+            throw $exception;
         } catch (\Throwable $exception) {
             $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
 
@@ -277,6 +291,7 @@ final readonly class ExecuteLlmStepWorker
                 error: [
                     'type' => $exception::class,
                     'message' => $exception->getMessage(),
+                    'retryable' => false,
                 ],
                 toolsRef: $message->toolsRef,
                 modelNotifications: [],

@@ -157,26 +157,16 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             new TestMessageBus(),
         );
 
-        // Observe child 1 completed while child 2 has a provider failure with an
-        // AgentCore retry pending. The committed child state is Failed, but deferred
-        // projection and aggregate delivery must remain running until retry recovery
-        // or terminal exhaustion.
+        // Observe child 1 completed while child 2 is still actively running.
+        // Aggregate progress must stay running, revision-deduped, and must not
+        // enqueue terminal parent-tool completion until every child is terminal.
         $handler(new ObserveDeferredSubagentBatchChildTurnMessage($lifecycle, 1, $c1['childRunId'], RunStatus::Completed, 2, [
             new AfterTurnCommitEventSummary(1, RunEventTypeEnum::LlmStepCompleted->value, ['assistant_message' => ['content' => [['type' => 'text', 'text' => 'done-a']]]]),
             new AfterTurnCommitEventSummary(2, RunEventTypeEnum::AgentEnd->value, ['reason' => 'completed']),
         ]));
-        $handler(new ObserveDeferredSubagentBatchChildTurnMessage($lifecycle, 2, $c2['childRunId'], RunStatus::Failed, 1, [
-            new AfterTurnCommitEventSummary(1, RunEventTypeEnum::LlmStepFailed->value, [
-                'error' => [
-                    'type' => \Symfony\AI\Platform\Exception\ServerException::class,
-                    'message' => 'Server error.',
-                    'user_message' => 'LLM provider server error interrupted the response stream.',
-                    'retryable' => true,
-                    'error_category' => 'server',
-                ],
-                'retryable' => true,
-                'retry_attempt' => 1,
-                'max_retries' => 2,
+        $handler(new ObserveDeferredSubagentBatchChildTurnMessage($lifecycle, 2, $c2['childRunId'], RunStatus::Running, 1, [
+            new AfterTurnCommitEventSummary(1, RunEventTypeEnum::LlmStepCompleted->value, [
+                'assistant_message' => ['content' => [['type' => 'text', 'text' => 'still working']]],
             ]),
         ]));
 
@@ -206,7 +196,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $this->assertCount(0, $appendedSp);
 
         // Verify delivered_revision is in sync and the lifecycle does not enqueue
-        // terminal parent-tool completion while the provider retry remains pending.
+        // terminal parent-tool completion while a child remains nonterminal.
         $batchFinal = $repo->findByLifecycleId($lifecycle);
         $this->assertSame($batchFinal->aggregateProgressRevision, $batchFinal->deliveredProgressRevision);
 

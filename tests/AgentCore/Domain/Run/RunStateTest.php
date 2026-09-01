@@ -70,6 +70,5 @@ final class RunStateTest extends TestCase
         $this->assertNull($state->errorMessage);
         $this->assertSame([], $state->messages);
         $this->assertNull($state->activeStepId);
-        $this->assertFalse($state->retryableFailure);
     }
 }

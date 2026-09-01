@@ -90,8 +90,6 @@ final class RunOperationalProjectionRepository extends ServiceEntityRepository i
         $projection->activeStepId = $state->activeStepId;
         $projection->lastAppliedAdvanceKey = $state->lastAppliedAdvanceKey;
         $projection->lastAppliedCompactionKey = $state->lastAppliedCompactionKey;
-        $projection->retryableFailure = $state->retryableFailure;
-        $projection->retryAttempts = $state->retryAttempts;
         $projection->lastEventSequence = $state->lastSeq;
         $projection->transitionVersion = $state->version;
 
@@ -134,8 +132,8 @@ final class RunOperationalProjectionRepository extends ServiceEntityRepository i
     {
         foreach ([
             'parentRunId', 'ownerSessionId',
-            'status', 'turnNo', 'activeStepId', 'lastAppliedAdvanceKey', 'lastAppliedCompactionKey', 'retryableFailure',
-            'retryAttempts', 'lastEventSequence', 'transitionVersion',
+            'status', 'turnNo', 'activeStepId', 'lastAppliedAdvanceKey', 'lastAppliedCompactionKey',
+            'lastEventSequence', 'transitionVersion',
         ] as $property) {
             $state->{$property} = $replacement->{$property};
         }

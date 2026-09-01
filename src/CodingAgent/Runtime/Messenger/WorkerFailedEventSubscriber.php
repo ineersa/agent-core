@@ -143,9 +143,6 @@ final readonly class WorkerFailedEventSubscriber implements EventSubscriberInter
                 'streamingMessage' => null,
                 'pendingToolCalls' => [],
                 'errorMessage' => $errorMessage,
-                'retryableFailure' => false,
-                // Terminal worker failure: retry episode ends with the run.
-                'retryAttempts' => 0,
             ]);
 
             $this->activeRunContext->remember($failedState);

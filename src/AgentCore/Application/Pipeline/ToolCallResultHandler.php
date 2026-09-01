@@ -205,8 +205,6 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
                 'messages' => $messages,
                 'activeStepId' => null,
                 'currentOperation' => null,
-                'retryableFailure' => false,
-                'retryAttempts' => 0,
             ]);
 
             $postCommit = [];
@@ -320,7 +318,6 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
             'pendingToolCalls' => $pendingToolCalls,
             'currentToolCalls' => $currentToolCalls,
             'messages' => $messages,
-            'retryableFailure' => false,
             'pendingHumanInputRequests' => $pendingHumanInputRequests,
         ]);
 
@@ -372,8 +369,6 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
                 'currentOperation' => $standalone ? null : $state->currentOperation,
                 'isStreaming' => false,
                 'streamingMessage' => null,
-                'retryableFailure' => $standalone ? false : $state->retryableFailure,
-                'retryAttempts' => $standalone ? 0 : $state->retryAttempts,
             ]),
             events: $events,
             postCommit: $standalone ? [$this->shellCompletionAdvanceCallback($message->runId(), $state->turnNo)] : [],
@@ -441,7 +436,6 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
                 'lastSeq' => $state->lastSeq + \count($events),
                 'isStreaming' => false,
                 'streamingMessage' => null,
-                'retryableFailure' => false,
                 'currentToolCalls' => $this->withToolStatus($state->currentToolCalls, $message->toolCallId, RunOperationalToolCallStatusEnum::WaitingHuman),
                 'pendingHumanInputRequests' => $pendingHumanInputRequests,
             ]),

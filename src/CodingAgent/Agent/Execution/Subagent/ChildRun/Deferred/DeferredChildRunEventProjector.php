@@ -60,14 +60,6 @@ final class DeferredChildRunEventProjector
         /** @var array<string, DeferredPendingToolCallRowDTO> $pendingById */
         $pendingById = $current->pendingToolCalls;
 
-        // When the processed tail ends on a still-retryable llm_step_failed, child lifecycle
-        // must stay nonterminal even though RunCommit also writes committedStatus=Failed.
-        // Track a flag rather than re-inspecting the literal last summary: LlmStepResultHandler
-        // appends ModelNotification events after LlmStepFailed, so the last summary may be a
-        // non-status event while retry is still pending. The flag survives ignored/non-status
-        // events and clears only on later recognized status-setting events.
-        $endsWithRetryPendingLlmFailure = false;
-
         // A resumed child is rebound as Running before follow_up is dispatched.
         // The first post-resume commit only queues that command, so RunState still
         // carries the child's previous terminal status. Preserve the wake boundary
@@ -91,7 +83,6 @@ final class DeferredChildRunEventProjector
                     $turnNo = (int) $payload['turn_no'];
                 }
                 $status = RunStatus::Running;
-                $endsWithRetryPendingLlmFailure = false;
                 $endsWithQueuedFollowUpWake = false;
                 continue;
             }
@@ -103,7 +94,6 @@ final class DeferredChildRunEventProjector
                 $reasoning = $metadata->reasoning ?? $reasoning;
                 $contextWindow = $metadata->contextWindow ?? $contextWindow;
                 $status = RunStatus::Running;
-                $endsWithRetryPendingLlmFailure = false;
                 $endsWithQueuedFollowUpWake = false;
                 continue;
             }
@@ -149,7 +139,6 @@ final class DeferredChildRunEventProjector
                     }
                 }
                 $status = RunStatus::Running;
-                $endsWithRetryPendingLlmFailure = false;
                 $endsWithQueuedFollowUpWake = false;
                 continue;
             }
@@ -174,7 +163,6 @@ final class DeferredChildRunEventProjector
                     $recentTools = \array_slice($recentTools, -self::MAX_RECENT_TOOLS);
                 }
                 $status = RunStatus::Running;
-                $endsWithRetryPendingLlmFailure = false;
                 $endsWithQueuedFollowUpWake = false;
                 continue;
             }
@@ -185,18 +173,13 @@ final class DeferredChildRunEventProjector
                 $errorMessage = \is_string($error['user_message'] ?? null)
                     ? $error['user_message']
                     : (\is_string($error['message'] ?? null) ? $error['message'] : 'LLM worker failed.');
-                // Top-level payload.retryable=true means auto-retry is still pending; keep Running
-                // so deferred child/fork completion does not terminalize before the retry runs.
-                $retryable = true === ($payload['retryable'] ?? false);
-                $status = $retryable ? RunStatus::Running : RunStatus::Failed;
-                $endsWithRetryPendingLlmFailure = $retryable;
+                $status = RunStatus::Failed;
                 $endsWithQueuedFollowUpWake = false;
                 continue;
             }
 
             if (RunEventTypeEnum::WaitingHuman->value === $type) {
                 $status = RunStatus::WaitingHuman;
-                $endsWithRetryPendingLlmFailure = false;
                 $endsWithQueuedFollowUpWake = false;
                 continue;
             }
@@ -205,9 +188,9 @@ final class DeferredChildRunEventProjector
                 $reason = \is_string($payload['reason'] ?? null) ? $payload['reason'] : null;
                 $status = match ($reason) {
                     'cancelled' => RunStatus::Cancelled,
+                    'failed' => RunStatus::Failed,
                     default => RunStatus::Completed,
                 };
-                $endsWithRetryPendingLlmFailure = false;
                 $endsWithQueuedFollowUpWake = false;
                 continue;
             }
@@ -225,16 +208,8 @@ final class DeferredChildRunEventProjector
         }
 
         if (null !== $committedStatus) {
-            // Same commit that records a still-retryable llm_step_failed also writes
-            // committedStatus=Failed. Do not let that override the nonterminal projection.
-            // Rely on endsWithRetryPendingLlmFailure (not "last summary is LlmStepFailed"):
-            // trailing ModelNotification specs keep the flag set without being status events.
-            // Deferred children cannot accept unrelated commands while this retry is pending;
-            // their next commit is the retry start, success, or exhausted failure, which clears
-            // the per-apply flag and applies committed status normally.
             $staleTerminalBeforeFollowUpDrain = $endsWithQueuedFollowUpWake && $committedStatus->isTerminal();
-            if (!(RunStatus::Failed === $committedStatus && $endsWithRetryPendingLlmFailure)
-                && !$staleTerminalBeforeFollowUpDrain) {
+            if (!$staleTerminalBeforeFollowUpDrain) {
                 $status = $committedStatus;
             }
             $turnNo = $committedTurnNo;

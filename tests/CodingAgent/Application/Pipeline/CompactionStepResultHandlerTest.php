@@ -795,7 +795,6 @@ final class CompactionStepResultHandlerTest extends TestCase
             messages: [$this->userMsg('q')],
             activeStepId: 'step-1',
             currentOperation: new CurrentOperationDTO(5, 'step-1', 1, 'key-1'),
-            retryableFailure: false,
             model: 'test-model');
 
         $handler = new CompactionStepResultHandler($this->createNoOpStub(), new EventFactory());
@@ -989,7 +988,6 @@ final class CompactionStepResultHandlerTest extends TestCase
             messages: $originalMessages,
             activeStepId: 'step-1',
             currentOperation: new CurrentOperationDTO(5, 'step-1', 1, 'key-1'),
-            retryableFailure: false,
             model: 'test-model');
 
         $summaryMsg = $this->userMsg('summary');
@@ -1278,7 +1276,6 @@ final class CompactionStepResultHandlerTest extends TestCase
             messages: $messages,
             activeStepId: $activeStepId,
             currentOperation: new CurrentOperationDTO(5, $activeStepId, 1, 'key-1'),
-            retryableFailure: false,
             model: 'test-model');
     }
 
