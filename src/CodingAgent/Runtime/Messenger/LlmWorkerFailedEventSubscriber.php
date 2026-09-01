@@ -107,7 +107,6 @@ final readonly class LlmWorkerFailedEventSubscriber implements EventSubscriberIn
                 'error_category' => \is_string($error['error_category'] ?? null) ? $error['error_category'] : null,
             ]);
         } catch (\Throwable $exception) {
-            // Local degradation only: never throw from Messenger failure middleware.
             $this->logger->error('llm.worker_failed.terminal_result_dispatch_failed', [
                 'run_id' => $message->runId(),
                 'session_id' => $message->runId(),
@@ -116,6 +115,11 @@ final readonly class LlmWorkerFailedEventSubscriber implements EventSubscriberIn
                 'step_id' => $message->stepId(),
                 'exception_class' => $exception::class,
             ]);
+
+            // Symfony dispatches WorkerMessageFailedEvent before rejecting the
+            // original envelope. Rethrowing keeps ExecuteLlmStep in the transport
+            // so it can be reclaimed after run_control delivery recovers.
+            throw $exception;
         }
     }
 
