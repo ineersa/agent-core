@@ -28,7 +28,7 @@ use Symfony\Contracts\HttpClient\ResponseInterface;
  */
 final class LlmPlatformAdapterTest extends TestCase
 {
-    public function testSynchronousUnknownExceptionDoesNotBecomeRetryableFromMessageText(): void
+    public function testSynchronousUnknownExceptionUsesDefaultRetryWithoutMessageMatching(): void
     {
         $platform = $this->createStub(SymfonyPlatformInterface::class);
         $platform->method('invoke')->willThrowException(
@@ -52,7 +52,7 @@ final class LlmPlatformAdapterTest extends TestCase
         $this->assertSame([], $result->deltas);
         $this->assertSame([], $result->usage);
         $this->assertIsArray($result->error);
-        $this->assertFalse($result->error['retryable'] ?? true);
+        $this->assertTrue($result->error['retryable'] ?? false);
         $this->assertSame(LlmProviderErrorClassifier::CATEGORY_PROVIDER, $result->error['error_category'] ?? null);
         $this->assertSame(\RuntimeException::class, $result->error['type'] ?? null);
         $this->assertSame(
