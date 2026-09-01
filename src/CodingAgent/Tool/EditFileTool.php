@@ -12,7 +12,7 @@ use Ineersa\CodingAgent\Tool\Edit\PatchFailureFormatter;
 use Symfony\Component\Lock\LockFactory;
 
 /**
- * Edit an existing file by applying Codex-style @@ hunks.
+ * Edit an existing file by applying @@ hunks.
  */
 final class EditFileTool implements HatfieldToolProviderInterface
 {
@@ -74,12 +74,12 @@ final class EditFileTool implements HatfieldToolProviderInterface
             promptLine: 'edit path patch — apply @@ hunks to an existing file',
             promptGuidelines: [
                 'Use the latest exact file context you already have. For a first edit on a file, or when your context is missing/stale, use a targeted `read` with both `offset` and `limit` for the relevant region.',
-                'Patches are hunk bodies only — no ---/+++ headers, no numbered @@ -N,M +N,M @@ headers, and no *** Begin Patch envelope.',
+                'Patches are hunk bodies only: no ---/+++ headers, no numbered @@ -N,M +N,M @@ headers, and no *** Begin Patch or *** Update File markers.',
                 'Each plain or seek-hinted `@@` begins a new sequential, non-overlapping hunk applied after earlier hunks. Stacked `@@` headers (multiple headers before body lines) narrow one hunk; a later `@@` after body lines starts a separate hunk. Overlapping changes must be combined into one hunk.',
                 'Seek hints are literal source-text anchors, not line numbers. Do not use `@@ line N`; use nearby unique source text or omit the hint and rely on exact context lines.',
                 'Use 3 lines above and 3 lines below unchanged context by default. Share context between adjacent edits in one patch.',
                 'Every hunk body line after `@@` must start with one diff prefix: leading space for unchanged context, `-` to remove, `+` to add. Unchanged source or documentation lines are still context and need the leading space. Empty physical lines inside a hunk are unchanged blank context; a single leading-space line is equivalent.',
-                'Compact example: `@@\n unchanged context\n-old line\n+new line` — the first character of each body line must be space, `-`, or `+`.',
+                'JSON example: `{"path":"example.txt","patch":"@@\\n unchanged context\\n-old line\\n+new line"}`. The patch string ends after the final hunk; do not append `*** End Patch`.',
                 'Optional `*** End of File` prefers matching the old block at the physical end of the file; if no EOF match exists, falls back to a unique forward match from the current hunk cursor (ambiguous non-EOF matches still fail).',
                 'Make ONE edit call at a time per file and wait for the result before another edit on the same file.',
                 'On success, the tool returns stats and bounded updated-file context around changed lines.',

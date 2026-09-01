@@ -63,10 +63,12 @@ final class EditFileToolTest extends TestCase
         // EditFileArgumentsDTO (native schema generation source of truth).
         $patchProperty = new \ReflectionProperty(EditFileArgumentsDTO::class, 'patch');
         $patchSchema = $patchProperty->getAttributes(Schema::class)[0]->newInstance()->description ?? '';
-        $this->assertStringContainsString('Codex-style', $patchSchema);
+        $this->assertStringNotContainsString('Codex-style', $patchSchema);
+        $this->assertStringNotContainsString('Codex', $patchSchema);
         $this->assertStringContainsString('@@', $patchSchema);
         $this->assertStringContainsString('space for unchanged context', $patchSchema);
         $this->assertStringContainsString('sequential, non-overlapping', strtolower($patchSchema));
+        $this->assertStringContainsString('do not append `*** End Patch`', $patchSchema);
 
         $guidelines = implode(' ', $definition->promptGuidelines);
         $this->assertStringNotContainsString('Codex-style', $guidelines);
@@ -75,7 +77,9 @@ final class EditFileToolTest extends TestCase
         $this->assertStringContainsString('diff prefix', $guidelines);
         $this->assertStringContainsString('Empty physical lines inside a hunk', $guidelines);
         $this->assertStringContainsString('literal source-text anchors', $guidelines);
-        $this->assertStringContainsString('Compact example', $guidelines);
+        $this->assertStringContainsString('JSON example', $guidelines);
+        $this->assertStringContainsString('"patch":"@@\\n unchanged context\\n-old line\\n+new line"', $guidelines);
+        $this->assertStringContainsString('do not append `*** End Patch`', $guidelines);
         $this->assertStringContainsString('no ---/+++', strtolower($guidelines));
         $this->assertStringNotContainsString('cat -n', $guidelines);
         $this->assertStringContainsString('numbered @@', strtolower($guidelines));

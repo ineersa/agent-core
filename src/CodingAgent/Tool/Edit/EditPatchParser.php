@@ -7,10 +7,11 @@ namespace Ineersa\CodingAgent\Tool\Edit;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 
 /**
- * Parses single-file Codex-style hunk bodies (no ---/+++ envelope).
+ * Parses single-file @@ hunk bodies (no ---/+++ envelope).
  */
 final class EditPatchParser
 {
+    private const string END_PATCH_MARKER = '*** End Patch';
     private const string EOF_MARKER = '*** End of File';
 
     /**
@@ -19,6 +20,7 @@ final class EditPatchParser
     public function parse(string $rawPatch): array
     {
         $patch = $this->stripOuterMarkdownFence(trim($rawPatch));
+        $patch = $this->stripOptionalTrailingEndPatch($patch);
         if ('' === $patch) {
             throw $this->formatError('Patch is empty.');
         }
@@ -61,10 +63,20 @@ final class EditPatchParser
         return $chunks;
     }
 
+    private function stripOptionalTrailingEndPatch(string $patch): string
+    {
+        $suffix = "\n".self::END_PATCH_MARKER;
+        if (!str_ends_with($patch, $suffix)) {
+            return $patch;
+        }
+
+        return substr($patch, 0, -\strlen($suffix));
+    }
+
     private function rejectLegacySyntax(string $patch): void
     {
         if (preg_match('/^\*\*\* Begin Patch/m', $patch)) {
-            throw $this->formatError('Codex patch envelope is not supported. Use hunk bodies with @@ only.');
+            throw $this->formatError('The *** Begin Patch envelope is not supported. Use hunk bodies with @@ only.');
         }
         if (preg_match('/^\*\*\* (Add|Delete|Update|Move) File:/m', $patch)) {
             throw $this->formatError('Multi-file patch markers are not supported.');
