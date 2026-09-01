@@ -397,7 +397,6 @@ final class CompactionStepResultHandler implements RunMessageHandler, RunMessage
             'activeStepId' => null,
             'currentOperation' => null,
             'lastAppliedCompactionKey' => $message->idempotencyKey(),
-            // Compaction replaces the conversation: explicit retry-episode reset.
         ]);
 
         // Continue the LLM turn ONLY when the compaction was holding a

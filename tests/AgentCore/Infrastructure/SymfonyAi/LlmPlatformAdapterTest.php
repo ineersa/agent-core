@@ -62,7 +62,7 @@ final class LlmPlatformAdapterTest extends TestCase
         $this->assertSame('openai-codex/gpt-5.6-sol', $result->error['request_model'] ?? null);
     }
 
-    public function testTypedStreamServerFailureUsesBoundedAgentRetry(): void
+    public function testTypedStreamServerFailureIsRetryableByMessengerTransport(): void
     {
         $platform = $this->createStub(SymfonyPlatformInterface::class);
         $platform->method('invoke')->willThrowException(new ServerException());

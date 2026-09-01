@@ -77,7 +77,7 @@ final class LlmProviderErrorClassifierTest extends TestCase
     }
 
     #[DataProvider('transientStreamExceptionProvider')]
-    public function testTypedMidStreamFailuresUseBoundedAgentRetry(string $type, string $category): void
+    public function testTypedMidStreamFailuresAreRetryableByMessengerTransport(string $type, string $category): void
     {
         $result = $this->classifier->classify(['type' => $type, 'message' => 'provider prose is not inspected']);
 
