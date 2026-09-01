@@ -106,6 +106,48 @@ final class RegistryBackedToolboxTest extends TestCase
         $this->assertTrue($tools[0]->getMetadataValue('raw_arguments', false));
     }
 
+    public function testGetToolsPreservesEmptyJsonSchemaObjectShapes(): void
+    {
+        $registry = new ToolRegistry();
+        $registry->addDynamicTool(
+            name: 'get_widget',
+            description: 'Get a dashboard widget',
+            parametersJsonSchema: [
+                'type' => 'object',
+                'properties' => [
+                    'widget_definition' => [
+                        'type' => 'object',
+                        'properties' => [],
+                    ],
+                ],
+            ],
+            handler: $this->dummyHandler('widget'),
+        );
+
+        $parameters = $this->createToolbox($registry)->getTools()[0]->getParameters();
+        $encoded = json_encode($parameters, \JSON_THROW_ON_ERROR);
+
+        $this->assertSame(
+            '{"type":"object","properties":{"widget_definition":{"type":"object","properties":{}}}}',
+            $encoded,
+        );
+    }
+
+    public function testGetToolsNormalizesMissingRawSchemaToEmptyObjectSchema(): void
+    {
+        $registry = new ToolRegistry();
+        $registry->addDynamicTool(
+            name: 'no_arguments',
+            description: 'Run without arguments',
+            parametersJsonSchema: [],
+            handler: $this->dummyHandler('done'),
+        );
+
+        $parameters = $this->createToolbox($registry)->getTools()[0]->getParameters();
+
+        $this->assertSame('{"type":"object","properties":{}}', json_encode($parameters, \JSON_THROW_ON_ERROR));
+    }
+
     public function testGetToolsForDtoToolUsesNativeGeneratedSchema(): void
     {
         $handler = new class {
