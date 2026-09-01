@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred;
 
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
+use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
@@ -67,10 +68,23 @@ final class DeferredChildRunEventProjector
         // events and clears only on later recognized status-setting events.
         $endsWithRetryPendingLlmFailure = false;
 
+        // A resumed child is rebound as Running before follow_up is dispatched.
+        // The first post-resume commit only queues that command, so RunState still
+        // carries the child's previous terminal status. Preserve the wake boundary
+        // until a later status-setting event proves the resumed lifecycle state.
+        $endsWithQueuedFollowUpWake = false;
+
         foreach ($summaries as $summary) {
             $lastSeq = $summary->seq;
             $payload = $summary->payload;
             $type = $summary->type;
+
+            if (RunEventTypeEnum::AgentCommandQueued->value === $type
+                && CoreCommandKind::FollowUp === ($payload['kind'] ?? null)) {
+                $status = RunStatus::Running;
+                $endsWithQueuedFollowUpWake = true;
+                continue;
+            }
 
             if (RunEventTypeEnum::TurnAdvanced->value === $type) {
                 if (isset($payload['turn_no']) && is_numeric($payload['turn_no'])) {
@@ -78,6 +92,7 @@ final class DeferredChildRunEventProjector
                 }
                 $status = RunStatus::Running;
                 $endsWithRetryPendingLlmFailure = false;
+                $endsWithQueuedFollowUpWake = false;
                 continue;
             }
 
@@ -89,6 +104,7 @@ final class DeferredChildRunEventProjector
                 $contextWindow = $metadata->contextWindow ?? $contextWindow;
                 $status = RunStatus::Running;
                 $endsWithRetryPendingLlmFailure = false;
+                $endsWithQueuedFollowUpWake = false;
                 continue;
             }
 
@@ -134,6 +150,7 @@ final class DeferredChildRunEventProjector
                 }
                 $status = RunStatus::Running;
                 $endsWithRetryPendingLlmFailure = false;
+                $endsWithQueuedFollowUpWake = false;
                 continue;
             }
 
@@ -158,6 +175,7 @@ final class DeferredChildRunEventProjector
                 }
                 $status = RunStatus::Running;
                 $endsWithRetryPendingLlmFailure = false;
+                $endsWithQueuedFollowUpWake = false;
                 continue;
             }
 
@@ -172,12 +190,14 @@ final class DeferredChildRunEventProjector
                 $retryable = true === ($payload['retryable'] ?? false);
                 $status = $retryable ? RunStatus::Running : RunStatus::Failed;
                 $endsWithRetryPendingLlmFailure = $retryable;
+                $endsWithQueuedFollowUpWake = false;
                 continue;
             }
 
             if (RunEventTypeEnum::WaitingHuman->value === $type) {
                 $status = RunStatus::WaitingHuman;
                 $endsWithRetryPendingLlmFailure = false;
+                $endsWithQueuedFollowUpWake = false;
                 continue;
             }
 
@@ -188,6 +208,7 @@ final class DeferredChildRunEventProjector
                     default => RunStatus::Completed,
                 };
                 $endsWithRetryPendingLlmFailure = false;
+                $endsWithQueuedFollowUpWake = false;
                 continue;
             }
         }
@@ -211,7 +232,9 @@ final class DeferredChildRunEventProjector
             // Deferred children cannot accept unrelated commands while this retry is pending;
             // their next commit is the retry start, success, or exhausted failure, which clears
             // the per-apply flag and applies committed status normally.
-            if (!(RunStatus::Failed === $committedStatus && $endsWithRetryPendingLlmFailure)) {
+            $staleTerminalBeforeFollowUpDrain = $endsWithQueuedFollowUpWake && $committedStatus->isTerminal();
+            if (!(RunStatus::Failed === $committedStatus && $endsWithRetryPendingLlmFailure)
+                && !$staleTerminalBeforeFollowUpDrain) {
                 $status = $committedStatus;
             }
             $turnNo = $committedTurnNo;
