@@ -21,6 +21,8 @@ final class OmSourceBlockBuilder
 
     private const int TOOL_DIGEST_SUFFIX_CHARS = 200;
 
+    private const array IMMUTABLE_PROMPT_ROLES = ['system', 'developer', 'user-context'];
+
     /**
      * @param list<SessionEventDTO> $events
      *
@@ -55,6 +57,9 @@ final class OmSourceBlockBuilder
                                 continue;
                             }
                             $role = (string) ($message['role'] ?? 'user');
+                            if (\in_array($role, self::IMMUTABLE_PROMPT_ROLES, true)) {
+                                continue;
+                            }
                             $text = $this->messageText($message);
                             $blocks[] = $this->singleBlock(
                                 $event,

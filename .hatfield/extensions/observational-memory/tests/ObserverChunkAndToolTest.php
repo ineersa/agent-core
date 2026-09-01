@@ -29,6 +29,82 @@ final class ObserverChunkAndToolTest extends TestCase
         $this->assertSame(3250, OmTokenEstimator::characterBudget(1000));
     }
 
+    public function testRunStartedExcludesImmutablePromptContextFromObserverChunks(): void
+    {
+        $excludedText = [
+            'system' => 'SYSTEM INSTRUCTION MUST NOT BE OBSERVED',
+            'developer' => 'DEVELOPER INSTRUCTION MUST NOT BE OBSERVED',
+            'user-context' => 'PROJECT CONTEXT MUST NOT BE OBSERVED',
+        ];
+        $userText = 'Retain this real initial user request.';
+        $messages = [];
+        foreach ($excludedText as $role => $text) {
+            $messages[] = [
+                'role' => $role,
+                'content' => [['type' => 'text', 'text' => $text]],
+            ];
+        }
+        $messages[] = [
+            'role' => 'user',
+            'content' => [['type' => 'text', 'text' => $userText]],
+        ];
+
+        $blocks = (new OmSourceBlockBuilder())->build([
+            new SessionEventDTO(
+                'run-started-filtered',
+                1,
+                0,
+                'run_started',
+                ['payload' => ['messages' => $messages]],
+                '2026-09-01T10:00:00+00:00',
+            ),
+        ]);
+
+        $this->assertCount(1, $blocks);
+        $this->assertSame('message', $blocks[0]['kind']);
+        $this->assertStringContainsString($userText, $blocks[0]['rendered_text']);
+        foreach ($excludedText as $text) {
+            $this->assertStringNotContainsString($text, $blocks[0]['rendered_text']);
+        }
+
+        $parts = (new OmChunkPacker())->pack(
+            runId: 'run-started-filtered',
+            rendererVersion: '1',
+            observerSchemaVersion: '1',
+            blocks: $blocks,
+            memoryReflections: [],
+            memoryObservations: [],
+            envelopeTokens: 4_000,
+            localTimeFallback: '2026-09-01 10:00',
+            fixedOverheadTokens: OmTokenEstimator::estimate(ObserverSystemPrompt::text()) + 50,
+        );
+        $this->assertCount(1, $parts);
+        $this->assertStringContainsString($userText, $parts[0]['user_message']);
+        foreach ($excludedText as $text) {
+            $this->assertStringNotContainsString($text, $parts[0]['user_message']);
+        }
+    }
+
+    public function testRunStartedWithOnlyImmutablePromptContextBuildsNoObserverBlocks(): void
+    {
+        $blocks = (new OmSourceBlockBuilder())->build([
+            new SessionEventDTO(
+                'run-started-empty',
+                1,
+                0,
+                'run_started',
+                ['payload' => ['messages' => [
+                    ['role' => 'system', 'content' => 'system instruction'],
+                    ['role' => 'developer', 'content' => 'developer instruction'],
+                    ['role' => 'user-context', 'content' => 'project context'],
+                ]]],
+                '2026-09-01T10:00:00+00:00',
+            ),
+        ]);
+
+        $this->assertSame([], $blocks);
+    }
+
     public function testToolResultsRemainCompleteThroughFiveThousandEstimatedTokens(): void
     {
         $complete = str_repeat('a', 16_250);
