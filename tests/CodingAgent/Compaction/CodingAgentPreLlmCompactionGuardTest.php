@@ -10,11 +10,10 @@ use Ineersa\AgentCore\Contract\Model\RunModelResolverInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
-use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
-use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Compaction\CodingAgentPreLlmCompactionGuard;
 use Ineersa\CodingAgent\Compaction\ProviderContextUsageResolver;
 use Ineersa\CodingAgent\Config\CompactionConfig;
+use Ineersa\CodingAgent\Tests\Support\StubRunRelationshipReader;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\TestCase;
 
@@ -36,7 +35,7 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
     private CompactionConfig $compactionConfig;
     /** @var RunModelResolverInterface&\PHPUnit\Framework\MockObject\MockObject */
     private $modelResolver;
-    private SubagentRunMetadataReader $metadataReader;
+    private StubRunRelationshipReader $metadataReader;
 
     protected function setUp(): void
     {
@@ -50,7 +49,7 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
         // Most tests don't care about the model; return null by default.
         $this->modelResolver->method('resolveActiveModel')->willReturn(null);
 
-        $this->metadataReader = new SubagentRunMetadataReader($this->eventStore, AttributeSerializerValidatorTestFactory::denormalizer());
+        $this->metadataReader = StubRunRelationshipReader::topLevel('run-1');
 
         $this->guard = new CodingAgentPreLlmCompactionGuard(
             $this->compactionConfig,
@@ -383,33 +382,12 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
      */
     public function testReturnsFalseForAgentChildRunAboveThreshold(): void
     {
-        // Child gate reads RunStarted; usage resolver would also see this store,
-        // but the child check short-circuits before threshold evaluation.
-        $runStarted = new RunEvent(
-            runId: 'child-run',
-            seq: 1,
-            turnNo: 0,
-            type: RunEventTypeEnum::RunStarted->value,
-            payload: [
-                'step_id' => 'start-1',
-                'payload' => [
-                    'system_prompt' => 'child',
-                    'messages' => [],
-                    'metadata' => [
-                        'session' => [
-                            'kind' => 'agent_child',
-                            'parent_run_id' => 'parent-1',
-                            'agent_name' => 'scout',
-                            'artifact_id' => 'agent_child1',
-                        ],
-                        'model' => 'deepseek/deepseek-v4-flash',
-                        'reasoning' => 'medium',
-                        'tools_scope' => ['allowed_tools' => []],
-                    ],
-                ],
-            ],
+        $this->guard = new CodingAgentPreLlmCompactionGuard(
+            $this->compactionConfig,
+            $this->providerUsageResolver,
+            $this->modelResolver,
+            StubRunRelationshipReader::child('child-run', 'parent-1'),
         );
-        $this->eventStore->method('firstFor')->willReturn($runStarted);
         $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(12000)]);
 
         $messages = [$this->makeTextMessage('user', 'Hello')];

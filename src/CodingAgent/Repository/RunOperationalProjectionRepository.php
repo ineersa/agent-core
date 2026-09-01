@@ -10,7 +10,6 @@ use Ineersa\AgentCore\Contract\RunOperationalStatusDTO;
 use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
-use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Entity\RunOperationalHumanInput;
 use Ineersa\CodingAgent\Entity\RunOperationalState;
 use Ineersa\CodingAgent\Entity\RunOperationalToolCall;
@@ -27,7 +26,6 @@ final class RunOperationalProjectionRepository extends ServiceEntityRepository i
     public function __construct(
         ManagerRegistry $registry,
         private readonly ValidatorInterface $validator,
-        private readonly SubagentRunMetadataReader $metadataReader,
     ) {
         parent::__construct($registry, RunOperationalState::class);
     }
@@ -46,7 +44,7 @@ final class RunOperationalProjectionRepository extends ServiceEntityRepository i
             if (!$state instanceof RunOperationalState) {
                 $entityManager->persist($replacement);
             } else {
-                // Parent/owner identity was resolved at the first canonical projection.
+                // Canonical RunState carries parent/owner identity; keep the managed row aligned.
                 $this->replaceManagedGraph($state, $replacement);
             }
 
@@ -86,6 +84,8 @@ final class RunOperationalProjectionRepository extends ServiceEntityRepository i
     {
         $projection = new RunOperationalState();
         $projection->runId = $state->runId;
+        $projection->parentRunId = $state->parentRunId;
+        $projection->ownerSessionId = $this->ownerSessionIdFor($state);
         $projection->status = $state->status;
         $projection->turnNo = $state->turnNo;
         $projection->activeStepId = $state->activeStepId;
@@ -99,7 +99,6 @@ final class RunOperationalProjectionRepository extends ServiceEntityRepository i
         $projection->retryAttempts = $state->retryAttempts;
         $projection->lastEventSequence = $state->lastSeq;
         $projection->transitionVersion = $state->version;
-        $this->resolveOwnership($projection, []);
 
         foreach ($state->currentToolCalls as $descriptor) {
             $toolCall = new RunOperationalToolCall();
@@ -125,37 +124,21 @@ final class RunOperationalProjectionRepository extends ServiceEntityRepository i
         return $projection;
     }
 
-    /** @param array<string, true> $visited */
-    private function resolveOwnership(RunOperationalState $projection, array $visited): void
+    private function ownerSessionIdFor(RunState $state): string
     {
-        if (isset($visited[$projection->runId])) {
-            throw new \LogicException(\sprintf('Child run ownership cycle detected for "%s".', $projection->runId));
-        }
-        $visited[$projection->runId] = true;
-
-        $projection->parentRunId = $this->metadataReader->readParentRunId($projection->runId);
-        if (null === $projection->parentRunId) {
-            $projection->ownerSessionId = $projection->runId;
-
-            return;
+        if (null === $state->parentRunId) {
+            return $state->runId;
         }
 
-        $parent = $this->find($projection->parentRunId);
-        if ($parent instanceof RunOperationalState) {
-            $projection->ownerSessionId = $parent->ownerSessionId;
-
-            return;
-        }
-
-        $parentProjection = new RunOperationalState();
-        $parentProjection->runId = $projection->parentRunId;
-        $this->resolveOwnership($parentProjection, $visited);
-        $projection->ownerSessionId = $parentProjection->ownerSessionId;
+        // Product policy: nested agent children are unsupported. Ownership is
+        // the immediate parent session id carried on the child RunState.
+        return $state->parentRunId;
     }
 
     private function replaceManagedGraph(RunOperationalState $state, RunOperationalState $replacement): void
     {
         foreach ([
+            'parentRunId', 'ownerSessionId',
             'status', 'turnNo', 'activeStepId', 'operationTurnNo', 'operationStepId', 'operationAttempt',
             'operationKey', 'lastAppliedAdvanceKey', 'lastAppliedCompactionKey', 'retryableFailure',
             'retryAttempts', 'lastEventSequence', 'transitionVersion',

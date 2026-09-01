@@ -9,16 +9,17 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
-use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
+use Ineersa\CodingAgent\Agent\Execution\RunStartedMetadataReader;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Serializer\Exception\ExceptionInterface as SerializerExceptionInterface;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
 /**
  * Thesis: successful immutable RunStarted metadata is cached process-locally;
- * missing/malformed results are not cached.
+ * missing/malformed results are not cached. Hot child/parent classification is
+ * owned by RunRelationshipReader and is not covered here.
  */
-final class SubagentRunMetadataReaderCacheTest extends TestCase
+final class RunStartedMetadataReaderCacheTest extends TestCase
 {
     private DenormalizerInterface $denormalizer;
 
@@ -32,13 +33,12 @@ final class SubagentRunMetadataReaderCacheTest extends TestCase
         $inner = new InMemoryEventStore();
         $inner->seed($this->runStarted('child-1', child: true));
         $store = new CountingEventStore($inner);
-        $reader = new SubagentRunMetadataReader($store, $this->denormalizer);
+        $reader = new RunStartedMetadataReader($store, $this->denormalizer);
 
-        $this->assertTrue($reader->isAgentChild('child-1'));
-        $this->assertSame('parent-1', $reader->readParentRunId('child-1'));
         $this->assertSame(['bash'], $reader->readAllowedTools('child-1'));
         $this->assertSame([], $reader->readAllowedExtensions('child-1'));
         $this->assertNotNull($reader->readRunStartedMetadata('child-1'));
+        $this->assertSame('deepseek/deepseek-v4-flash', $reader->readRunStartedMetadata('child-1')?->model);
 
         $this->assertSame(1, $store->firstForCounts['child-1'] ?? 0);
     }
@@ -49,12 +49,12 @@ final class SubagentRunMetadataReaderCacheTest extends TestCase
         $inner->seed($this->runStarted('parent-1', child: false));
         $inner->seed($this->runStarted('child-2', child: true, parentRunId: 'parent-1'));
         $store = new CountingEventStore($inner);
-        $reader = new SubagentRunMetadataReader($store, $this->denormalizer);
+        $reader = new RunStartedMetadataReader($store, $this->denormalizer);
 
-        $this->assertFalse($reader->isAgentChild('parent-1'));
-        $this->assertTrue($reader->isAgentChild('child-2'));
-        $this->assertFalse($reader->isAgentChild('parent-1'));
-        $this->assertTrue($reader->isAgentChild('child-2'));
+        $this->assertNull($reader->readAllowedTools('parent-1'));
+        $this->assertSame(['bash'], $reader->readAllowedTools('child-2'));
+        $this->assertNull($reader->readAllowedTools('parent-1'));
+        $this->assertSame(['bash'], $reader->readAllowedTools('child-2'));
 
         $this->assertSame(1, $store->firstForCounts['parent-1'] ?? 0);
         $this->assertSame(1, $store->firstForCounts['child-2'] ?? 0);
@@ -64,19 +64,17 @@ final class SubagentRunMetadataReaderCacheTest extends TestCase
     {
         $inner = new InMemoryEventStore();
         $store = new CountingEventStore($inner);
-        $reader = new SubagentRunMetadataReader($store, $this->denormalizer);
+        $reader = new RunStartedMetadataReader($store, $this->denormalizer);
 
         $this->assertNull($reader->readRunStartedMetadata('late-child'));
-        $this->assertFalse($reader->isAgentChild('late-child'));
+        $this->assertNull($reader->readAllowedTools('late-child'));
         $this->assertSame(2, $store->firstForCounts['late-child'] ?? 0);
 
         $inner->seed($this->runStarted('late-child', child: true));
 
-        $this->assertTrue($reader->isAgentChild('late-child'));
         $this->assertSame(['bash'], $reader->readAllowedTools('late-child'));
         $this->assertSame(3, $store->firstForCounts['late-child'] ?? 0);
-        // Successful decode is now cached.
-        $this->assertTrue($reader->isAgentChild('late-child'));
+        $this->assertSame(['bash'], $reader->readAllowedTools('late-child'));
         $this->assertSame(3, $store->firstForCounts['late-child'] ?? 0);
     }
 
@@ -103,7 +101,7 @@ final class SubagentRunMetadataReaderCacheTest extends TestCase
             createdAt: new \DateTimeImmutable(),
         ));
         $store = new CountingEventStore($inner);
-        $reader = new SubagentRunMetadataReader($store, $this->denormalizer);
+        $reader = new RunStartedMetadataReader($store, $this->denormalizer);
 
         try {
             $reader->readRunStartedMetadata('broken-child');
@@ -116,12 +114,11 @@ final class SubagentRunMetadataReaderCacheTest extends TestCase
         }
         $this->assertSame(1, $store->firstForCounts['broken-child'] ?? 0);
 
-        // Simulate repair by replacing the store contents with a valid event.
         $repaired = new InMemoryEventStore();
         $repaired->seed($this->runStarted('broken-child', child: true));
         $store->replaceInner($repaired);
 
-        $this->assertTrue($reader->isAgentChild('broken-child'));
+        $this->assertSame(['bash'], $reader->readAllowedTools('broken-child'));
         $this->assertSame(2, $store->firstForCounts['broken-child'] ?? 0);
     }
 
@@ -132,19 +129,17 @@ final class SubagentRunMetadataReaderCacheTest extends TestCase
             $inner->seed($this->runStarted('run-'.$i, child: 0 === $i % 2, parentRunId: 'parent-'.$i));
         }
         $store = new CountingEventStore($inner);
-        $reader = new SubagentRunMetadataReader($store, $this->denormalizer);
+        $reader = new RunStartedMetadataReader($store, $this->denormalizer);
 
         for ($i = 0; $i < 65; ++$i) {
-            $reader->isAgentChild('run-'.$i);
+            $reader->readRunStartedMetadata('run-'.$i);
         }
         $this->assertSame(1, $store->firstForCounts['run-0'] ?? 0);
         $this->assertSame(1, $store->firstForCounts['run-64'] ?? 0);
 
-        // run-0 should have been FIFO-evicted by inserting run-64.
-        $this->assertTrue($reader->isAgentChild('run-0'));
+        $this->assertNotNull($reader->readRunStartedMetadata('run-0'));
         $this->assertSame(2, $store->firstForCounts['run-0'] ?? 0);
-        // Still-cached entry should not reread.
-        $this->assertTrue($reader->isAgentChild('run-64'));
+        $this->assertNotNull($reader->readRunStartedMetadata('run-64'));
         $this->assertSame(1, $store->firstForCounts['run-64'] ?? 0);
     }
 

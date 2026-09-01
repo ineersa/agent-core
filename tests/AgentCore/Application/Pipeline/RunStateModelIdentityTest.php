@@ -7,6 +7,7 @@ namespace Ineersa\AgentCore\Tests\Application\Pipeline;
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
+use Ineersa\AgentCore\Application\Pipeline\StartRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Contract\Compaction\PreLlmCompactionGuardInterface;
@@ -16,10 +17,13 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
+use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
+use Ineersa\AgentCore\Tests\Support\Builder\StartRunMessageBuilder;
+use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -53,6 +57,7 @@ final class RunStateModelIdentityTest extends TestCase
 
         $state = (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())))->replay(RunState::queued($runId), $events);
         $this->assertSame('deepseek/deepseek-v4-flash', $state->model, 'Historical model still replays for diagnostics.');
+        $this->assertNull($state->parentRunId);
 
         $commandStore = new InMemoryCommandStore();
         $handler = new AdvanceRunHandler(
@@ -76,6 +81,100 @@ final class RunStateModelIdentityTest extends TestCase
         $this->assertInstanceOf(ExecuteLlmStep::class, $step);
         $this->assertFalse(property_exists($step, 'model'), 'Scheduling must not snapshot RunState model.');
         $this->assertSame('deepseek/deepseek-v4-flash', $result->nextState?->model, 'Replay projection stays intact.');
+    }
+
+    public function testRunStartedChildParentRunIdReplaysIntoState(): void
+    {
+        $runId = 'child-model-1';
+        $events = [
+            new RunEvent(
+                runId: $runId,
+                seq: 1,
+                turnNo: 0,
+                type: RunEventTypeEnum::RunStarted->value,
+                payload: [
+                    'step_id' => 'start',
+                    'payload' => [
+                        'messages' => [],
+                        'metadata' => [
+                            'model' => 'deepseek/deepseek-v4-flash',
+                            'session' => [
+                                'kind' => 'agent_child',
+                                'parent_run_id' => 'parent-9',
+                                'agent_name' => 'scout',
+                                'artifact_id' => 'agent_child1',
+                            ],
+                        ],
+                    ],
+                ],
+            ),
+        ];
+
+        $state = (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())))->replay(RunState::queued($runId), $events);
+        $this->assertSame('parent-9', $state->parentRunId);
+        $this->assertSame('deepseek/deepseek-v4-flash', $state->model);
+    }
+
+    public function testReplayRejectsChildWithoutParentRunId(): void
+    {
+        $event = new RunEvent(
+            runId: 'child-replay-invalid',
+            seq: 1,
+            turnNo: 0,
+            type: RunEventTypeEnum::RunStarted->value,
+            payload: [
+                'step_id' => 'start',
+                'payload' => [
+                    'messages' => [],
+                    'metadata' => [
+                        'model' => 'deepseek/deepseek-v4-flash',
+                        'session' => ['kind' => 'agent_child'],
+                    ],
+                ],
+            ],
+        );
+        $reducer = new RunStateReducer(
+            AttributeSerializerValidatorTestFactory::denormalizer(),
+            new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()),
+        );
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('agent_child session.parent_run_id is required and must be non-blank');
+
+        $reducer->replay(RunState::queued('child-replay-invalid'), [$event]);
+    }
+
+    public function testLiveStartAndReplayAgreeOnChildParentRunId(): void
+    {
+        $handler = new StartRunHandler(
+            eventFactory: new EventFactory(),
+            normalizer: TestSerializerFactory::normalizer(),
+        );
+        $message = StartRunMessageBuilder::create('child-parity-1')
+            ->withMetadata(new RunMetadata(
+                session: [
+                    'kind' => 'agent_child',
+                    'parent_run_id' => 'parent-parity-9',
+                    'agent_name' => 'scout',
+                    'artifact_id' => 'agent_child1',
+                ],
+                model: 'deepseek/deepseek-v4-flash',
+                reasoning: 'medium',
+                toolsScope: ['allowed_tools' => ['read']],
+            ))
+            ->build();
+
+        $live = $handler->handle($message, RunState::queued('child-parity-1'));
+        $this->assertNotNull($live->nextState);
+        $this->assertSame('parent-parity-9', $live->nextState->parentRunId);
+
+        $replayed = (new RunStateReducer(
+            AttributeSerializerValidatorTestFactory::denormalizer(),
+            new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()),
+        ))->replay(RunState::queued('child-parity-1'), $live->events);
+
+        $this->assertSame($live->nextState->parentRunId, $replayed->parentRunId);
+        $this->assertSame($live->nextState->model, $replayed->model);
     }
 
     public function testTurnAdvancedReplaysCommittedAdvanceToken(): void

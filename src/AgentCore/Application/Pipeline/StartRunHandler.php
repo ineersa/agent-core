@@ -59,6 +59,7 @@ final readonly class StartRunHandler implements RunMessageHandler
         $messages = [] === $message->payload->messages ? $state->messages : $message->payload->messages;
 
         $canonicalModel = $this->requireCanonicalModel($message);
+        $parentRunId = $this->parentRunIdFromStartPayload($message);
 
         $nextState = new RunState(
             runId: $state->runId,
@@ -74,6 +75,7 @@ final readonly class StartRunHandler implements RunMessageHandler
             activeStepId: $message->stepId(),
             retryableFailure: false,
             model: $canonicalModel,
+            parentRunId: $parentRunId,
         );
 
         $event = $this->eventFactory->event(
@@ -122,6 +124,27 @@ final readonly class StartRunHandler implements RunMessageHandler
         }
 
         return $model;
+    }
+
+    /**
+     * Live StartRun must carry the same bounded parent identity that
+     * {@see \Ineersa\AgentCore\Application\Replay\RunStateReducer} derives from
+     * run_started.metadata.session so the operational projection is never
+     * written as a top-level row for a newly launched child.
+     */
+    private function parentRunIdFromStartPayload(StartRun $message): ?string
+    {
+        $session = $message->payload->metadata?->session;
+        if (!\is_array($session) || 'agent_child' !== ($session['kind'] ?? null)) {
+            return null;
+        }
+
+        $rawParent = $session['parent_run_id'] ?? null;
+        if (!\is_string($rawParent) || '' === trim($rawParent)) {
+            throw new \RuntimeException(\sprintf('Cannot start run_id=%s: agent_child session.parent_run_id is required and must be non-blank.', $message->runId()));
+        }
+
+        return trim($rawParent);
     }
 
     /**

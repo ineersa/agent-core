@@ -6,9 +6,9 @@ namespace Ineersa\CodingAgent\Mcp\Tool;
 
 use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
-use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
 use Ineersa\CodingAgent\Mcp\Config\McpConfigLoader;
+use Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface;
 
 /**
  * Hides MCP tools from availability=specific servers on parent/main runs.
@@ -20,7 +20,7 @@ final readonly class McpParentAvailabilityToolSetResolver implements ToolSetReso
 {
     public function __construct(
         private ToolSetResolverInterface $inner,
-        private SubagentRunMetadataReader $metadataReader,
+        private RunRelationshipReaderInterface $relationshipReader,
         private McpToolCatalogStoreInterface $catalogStore,
         private McpConfigLoader $configLoader,
         private McpServerToolAvailability $availability,
@@ -35,13 +35,13 @@ final readonly class McpParentAvailabilityToolSetResolver implements ToolSetReso
             return $inner;
         }
 
-        if ($this->metadataReader->isAgentChild($runId)) {
+        $parentRunId = $this->relationshipReader->readParentRunId($runId);
+        if (null !== $parentRunId) {
             return $inner;
         }
 
-        $catalogRunId = $this->resolveCatalogRunId($runId);
         $config = $this->configLoader->load();
-        $catalog = $this->catalogStore->read($catalogRunId);
+        $catalog = $this->catalogStore->read($runId);
         $hidden = $this->availability->specificRuntimeToolNames($catalog, $config);
         if ([] === $hidden) {
             return $inner;
@@ -79,15 +79,5 @@ final readonly class McpParentAvailabilityToolSetResolver implements ToolSetReso
             executionModes: $executionModes,
             timeoutSeconds: $timeoutSeconds,
         );
-    }
-
-    private function resolveCatalogRunId(string $runId): string
-    {
-        $parentRunId = $this->metadataReader->readParentRunId($runId);
-        if (null !== $parentRunId) {
-            return $parentRunId;
-        }
-
-        return $runId;
     }
 }

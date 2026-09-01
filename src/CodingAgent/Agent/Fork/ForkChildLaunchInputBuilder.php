@@ -10,7 +10,7 @@ use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\CodingAgent\Agent\ChildExtensionSelectionService;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\PreparedAgentChildRunDTO;
-use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
+use Ineersa\CodingAgent\Agent\Execution\RunStartedMetadataReader;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
@@ -21,7 +21,7 @@ final class ForkChildLaunchInputBuilder
     public function __construct(
         private readonly ForkChildMessageComposer $messageComposer,
         private readonly ForkRuntimeConfigResolver $configResolver,
-        private readonly SubagentRunMetadataReader $metadataReader,
+        private readonly RunStartedMetadataReader $metadataReader,
         private readonly SkillsContextBuilder $skillsContextBuilder,
         private readonly AppConfig $appConfig,
         private readonly ChildExtensionSelectionService $childExtensionSelection,

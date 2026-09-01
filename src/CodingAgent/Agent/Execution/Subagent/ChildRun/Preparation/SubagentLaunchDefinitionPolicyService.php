@@ -9,7 +9,7 @@ use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Execution\AgentDepthGuard;
 use Ineersa\CodingAgent\Agent\Execution\AgentToolPolicyResolver;
-use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
+use Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface;
 
 final class SubagentLaunchDefinitionPolicyService
 {
@@ -17,14 +17,18 @@ final class SubagentLaunchDefinitionPolicyService
         private readonly AgentDefinitionCatalog $catalog,
         private readonly AgentDepthGuard $depthGuard,
         private readonly AgentToolPolicyResolver $policyResolver,
-        private readonly SubagentRunMetadataReader $metadataReader,
+        private readonly RunRelationshipReaderInterface $relationshipReader,
     ) {
     }
 
     public function assertDepthAllowed(string $parentRunId): void
     {
-        $parentIsAgentChild = $this->metadataReader->isAgentChild($parentRunId);
-        $blockReason = $this->depthGuard->checkLaunchAllowed($parentIsAgentChild);
+        try {
+            $this->relationshipReader->requireKnownTopLevel($parentRunId);
+        } catch (\RuntimeException $e) {
+            throw new ToolCallException($e->getMessage(), retryable: false);
+        }
+        $blockReason = $this->depthGuard->checkLaunchAllowed();
         if (null !== $blockReason) {
             throw new ToolCallException($blockReason, retryable: false);
         }

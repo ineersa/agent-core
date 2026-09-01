@@ -49,7 +49,7 @@ final class SubagentProgressEventsFixture
                 'messages' => [
                     ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Run a scout subagent.']]],
                 ],
-                // Parent (non-child) RunStarted requires typed metadata for SubagentRunMetadataReader.
+                // Parent (non-child) RunStarted requires typed metadata for RunStartedMetadataReader.
                 'metadata' => [
                     'session' => [],
                     'model' => 'deepseek/deepseek-v4-flash',

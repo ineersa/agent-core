@@ -19,10 +19,10 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchService;
-use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Agent\Fork\ForkExecutionService;
 use Ineersa\CodingAgent\Agent\Fork\ForkSnapshotSanitizer;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
+use Ineersa\CodingAgent\Repository\RunRelationshipReader;
 use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\Group;
 
@@ -147,7 +147,7 @@ final class ForkSnapshotCompactionBeforeLaunchTest extends PerMethodIsolatedKern
         // accidentally fall back to a stale secondary snapshot.
         $forkExecution = new ForkExecutionService(
             $container->get(DeferredSubagentBatchLaunchService::class),
-            $container->get(SubagentRunMetadataReader::class),
+            $container->get(RunRelationshipReader::class),
             $runStateRebuilder,
             $container->get(ForkSnapshotSanitizer::class),
             $compaction,
@@ -294,6 +294,9 @@ final class ForkSnapshotCompactionBeforeLaunchTest extends PerMethodIsolatedKern
      */
     private function withToolContext(string $parentRunId, string $toolCallId, callable $callback): mixed
     {
+        self::getContainer()->get(\Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository::class)->replace(
+            new RunState($parentRunId, RunStatus::Running),
+        );
         $accessor = self::getContainer()->get(StackToolExecutionContextAccessor::class);
         $context = new ToolContext(
             runId: $parentRunId,

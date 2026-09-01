@@ -28,6 +28,7 @@ final class StartRunMessageBuilder
     /** @var MessagesList */
     private array $payloadMessages = [];
     private string $systemPrompt = '';
+    private ?RunMetadata $metadata = null;
 
     public static function create(string $runId = 'run-test'): self
     {
@@ -61,6 +62,13 @@ final class StartRunMessageBuilder
         return $this;
     }
 
+    public function withMetadata(RunMetadata $metadata): self
+    {
+        $this->metadata = $metadata;
+
+        return $this;
+    }
+
     public function build(): StartRun
     {
         $idempotencyKey = $this->idempotencyKey ?? hash('sha256', \sprintf(
@@ -80,7 +88,7 @@ final class StartRunMessageBuilder
             payload: new StartRunPayload(
                 systemPrompt: $this->systemPrompt,
                 messages: $this->payloadMessages,
-                metadata: new RunMetadata(model: 'test-model'),
+                metadata: $this->metadata ?? new RunMetadata(model: 'test-model'),
             ),
         );
     }

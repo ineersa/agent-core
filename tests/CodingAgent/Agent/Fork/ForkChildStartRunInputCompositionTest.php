@@ -5,10 +5,13 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Agent\Fork;
 
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Fork\ForkChildLaunchInputBuilder;
 use Ineersa\CodingAgent\Agent\Fork\ForkLaunchTaskDTO;
+use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\Group;
 
@@ -250,6 +253,11 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
                     ],
                 ],
             ],
+        ));
+        self::getContainer()->get(RunOperationalProjectionRepository::class)->replace(new RunState(
+            runId: $identity->childRunId,
+            status: RunStatus::Running,
+            parentRunId: $parentRunId,
         ));
         $active = $toolSetResolver->resolve('default', runId: $identity->childRunId);
         $this->assertNotContains('fork', $active->toolNames);

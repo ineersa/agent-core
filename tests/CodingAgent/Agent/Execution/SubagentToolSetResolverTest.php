@@ -11,14 +11,14 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
-use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
+use Ineersa\CodingAgent\Agent\Execution\RunStartedMetadataReader;
 use Ineersa\CodingAgent\Agent\Execution\SubagentToolSetResolver;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
 #[CoversClass(SubagentToolSetResolver::class)]
-#[CoversClass(SubagentRunMetadataReader::class)]
+#[CoversClass(RunStartedMetadataReader::class)]
 final class SubagentToolSetResolverTest extends TestCase
 {
     public function testPassThroughWhenNoRunId(): void
@@ -31,7 +31,7 @@ final class SubagentToolSetResolverTest extends TestCase
 
         $eventStore = $this->createStub(EventStoreInterface::class);
 
-        $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer()), new ToolRegistry());
+        $resolver = new SubagentToolSetResolver($inner, new RunStartedMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer()), new ToolRegistry());
         $result = $resolver->resolve('ref');
 
         $this->assertSame(['read', 'write'], $result->toolNames);
@@ -50,7 +50,7 @@ final class SubagentToolSetResolverTest extends TestCase
             ->with('parent-run')
             ->willReturn(null); // No RunStarted event at all
 
-        $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer()), new ToolRegistry());
+        $resolver = new SubagentToolSetResolver($inner, new RunStartedMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer()), new ToolRegistry());
         $result = $resolver->resolve('ref', runId: 'parent-run');
 
         $this->assertSame(['read', 'write'], $result->toolNames);
@@ -84,7 +84,7 @@ final class SubagentToolSetResolverTest extends TestCase
                 payload: $this->childRunStartedPayload(['read', 'bash']),
             ));
 
-        $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer()), new ToolRegistry());
+        $resolver = new SubagentToolSetResolver($inner, new RunStartedMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer()), new ToolRegistry());
         $result = $resolver->resolve('ref', runId: 'child-run');
 
         $this->assertSame(['read', 'bash'], $result->toolNames);
@@ -119,7 +119,7 @@ final class SubagentToolSetResolverTest extends TestCase
                 payload: $this->childRunStartedPayload(['bash_only']),
             ));
 
-        $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer()), new ToolRegistry());
+        $resolver = new SubagentToolSetResolver($inner, new RunStartedMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer()), new ToolRegistry());
         $result = $resolver->resolve('ref', runId: 'child-run');
 
         $this->assertSame([], $result->toolNames);
@@ -149,7 +149,7 @@ final class SubagentToolSetResolverTest extends TestCase
                 payload: $this->childRunStartedPayload(['read', 'write']),
             ));
 
-        $resolver = new SubagentToolSetResolver($inner, new SubagentRunMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer()), new ToolRegistry());
+        $resolver = new SubagentToolSetResolver($inner, new RunStartedMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer()), new ToolRegistry());
         $result = $resolver->resolve('ref', runId: 'child-run');
 
         $this->assertNotContains('subagent', $result->toolNames);

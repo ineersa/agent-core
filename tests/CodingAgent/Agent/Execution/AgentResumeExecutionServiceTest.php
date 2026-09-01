@@ -26,16 +26,17 @@ use Ineersa\CodingAgent\Agent\Execution\AgentDepthGuard;
 use Ineersa\CodingAgent\Agent\Execution\AgentResumeExecutionService;
 use Ineersa\CodingAgent\Agent\Execution\AgentResumeTaskDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
+use Ineersa\CodingAgent\Agent\Execution\RunStartedMetadataReader;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchIdentityFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
-use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChild;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
+use Ineersa\CodingAgent\Tests\Support\StubRunRelationshipReader;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\CoversClass;
 use Psr\Log\NullLogger;
@@ -306,13 +307,14 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         });
 
         $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('Nested subagent launches are not supported');
+        $this->expectExceptionMessage('is an agent child; nested launches are not supported');
 
         $this->resume(
             parentRunId: $parent,
             tasks: [new AgentResumeTaskDTO(artifact_id: $artifactId, task: 'continue')],
             childRunId: $childRunId,
             eventStore: $parentEventStore,
+            relationshipReader: StubRunRelationshipReader::child($parent, 'grandparent'),
         );
     }
 
@@ -478,6 +480,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         ChildRunBatchExecutionModeEnum $executionMode = ChildRunBatchExecutionModeEnum::Single,
         ?TestLogger $logger = null,
         ?RunStateRebuilderInterface $runStateRebuilder = null,
+        ?\Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface $relationshipReader = null,
     ): \Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome {
         $contextAccessor = new StackToolExecutionContextAccessor();
         if (null === $runStateRebuilder) {
@@ -490,7 +493,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         }
 
         $eventStore ??= $this->createStub(EventStoreInterface::class);
-        $metadataReader = new SubagentRunMetadataReader(
+        $metadataReader = new RunStartedMetadataReader(
             $eventStore,
             AttributeSerializerValidatorTestFactory::denormalizer(),
         );
@@ -503,6 +506,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
             agentRunner: $agentRunner ?? $this->createStub(AgentRunnerInterface::class),
             runStateRebuilder: $runStateRebuilder,
             metadataReader: $metadataReader,
+            relationshipReader: $relationshipReader ?? StubRunRelationshipReader::topLevel($parentRunId),
             depthGuard: new AgentDepthGuard(),
             contextAccessor: $contextAccessor,
             agentsConfig: new AgentsConfig(maxAgents: 4),

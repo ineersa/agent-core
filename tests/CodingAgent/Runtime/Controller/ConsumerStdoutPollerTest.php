@@ -78,6 +78,52 @@ final class ConsumerStdoutPollerTest extends TestCase
         $this->assertSame('Hello world', $events[0]->payload['text']);
     }
 
+    public function testForwardsCanonicalToolProgressInsteadOfDroppingItAsTransientBacklog(): void
+    {
+        $source = new FakeConsumerStdoutSource([
+            'run_control#0' => $this->line('tool_execution.output_delta', [
+                'tool_call_id' => 'tc-parallel',
+                'subagent_progress' => [
+                    'mode' => 'parallel',
+                    'status' => 'running',
+                    'completed_count' => 1,
+                    'total_count' => 2,
+                ],
+            ]).$this->line('tool_execution.output_delta', [
+                'tool_call_id' => 'tc-parallel',
+                'subagent_progress' => [
+                    'mode' => 'parallel',
+                    'status' => 'completed',
+                    'completed_count' => 2,
+                    'total_count' => 2,
+                ],
+            ], seq: 53),
+        ]);
+        $emitter = $this->createEmitter();
+        $emitter->openStdout();
+        $this->replaceStdoutWithMemory($emitter);
+        $poller = new ConsumerStdoutPoller(
+            $source,
+            $emitter,
+            new RuntimeExceptionBoundary(new EventDispatcher()),
+            $this->createStub(LoggerInterface::class),
+        );
+
+        $poller->pollOnce();
+
+        $events = $this->eventsFromStdout($emitter);
+        $this->assertCount(2, $events);
+        $this->assertSame([0, 53], array_map(
+            static fn (RuntimeEvent $event): int => $event->seq,
+            $events,
+        ));
+        $this->assertSame(['running', 'completed'], array_map(
+            static fn (RuntimeEvent $event): ?string => $event->payload['subagent_progress']['status'] ?? null,
+            $events,
+        ));
+        $this->assertSame(2, $events[1]->payload['subagent_progress']['completed_count'] ?? null);
+    }
+
     public function testDoesNotReorderDistinctStreamKeysOrRetainFramesBetweenPolls(): void
     {
         $source = new FakeConsumerStdoutSource([
@@ -109,9 +155,9 @@ final class ConsumerStdoutPollerTest extends TestCase
     }
 
     /** @param array<string, mixed> $payload */
-    private function line(string $type, array $payload): string
+    private function line(string $type, array $payload, int $seq = 0): string
     {
-        return JsonlCodec::encodeEvent(new RuntimeEvent($type, 'run-1', 0, $payload));
+        return JsonlCodec::encodeEvent(new RuntimeEvent($type, 'run-1', $seq, $payload));
     }
 
     /** @return list<RuntimeEvent> */

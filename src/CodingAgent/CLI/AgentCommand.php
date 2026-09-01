@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\CLI;
 
-use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Migrations\StartupDatabaseMigrator;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
@@ -25,9 +24,7 @@ use Psr\Log\LoggerInterface;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Attribute\Option;
 use Symfony\Component\Console\Command\Command;
-use Symfony\Component\Console\Input\ArgvInput;
 use Symfony\Component\Console\Output\OutputInterface;
-use Symfony\Component\Console\Style\SymfonyStyle;
 
 /**
  * Unified agent command — interactive TUI by default, plus headless/controller modes.
@@ -61,7 +58,6 @@ final class AgentCommand
         private PromptTemplatesRuntimeConfig $promptTemplatesConfig,
         private ToolFilterRuntimeConfig $toolFilterConfig,
         private LoggerInterface $logger,
-        private readonly AppConfig $appConfig,
         private readonly ?StartupDatabaseMigrator $startupDatabaseMigrator = null,
         private ?HeadlessController $controller = null,
         private readonly ?ToolRegistryInterface $toolRegistry = null,
@@ -123,13 +119,6 @@ final class AgentCommand
     ): int {
         if (null === $output) {
             throw new \RuntimeException('AgentCommand requires OutputInterface');
-        }
-
-        if (!$this->hasEnabledAiProvider()) {
-            $io = new SymfonyStyle(new ArgvInput(), $output);
-            $io->error('No AI providers configured. Run `hatfield providers:setup` to enable one.');
-
-            return Command::FAILURE;
         }
 
         try {
@@ -403,21 +392,5 @@ final class AgentCommand
             'process' => $this->processClient,
             default => $this->inProcessClient,
         };
-    }
-
-    private function hasEnabledAiProvider(): bool
-    {
-        $ai = $this->appConfig->ai;
-        if (null === $ai) {
-            return false;
-        }
-
-        foreach ($ai->providers as $provider) {
-            if ($provider->enabled) {
-                return true;
-            }
-        }
-
-        return false;
     }
 }
