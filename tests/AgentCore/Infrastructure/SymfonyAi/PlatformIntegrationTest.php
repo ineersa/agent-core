@@ -485,8 +485,9 @@ final class PlatformIntegrationTest extends TestCase
             new ThinkingDelta("First reasoning summary.\n"),
             new ThinkingComplete("First reasoning summary.\n"),
             new ThinkingStart(),
-            new ThinkingDelta('Second reasoning summary.'),
-            new ThinkingComplete('Second reasoning summary.'),
+            // Segment-local text may happen to repeat the prior segment's prefix.
+            new ThinkingDelta("First reasoning summary.\nRefined independently."),
+            new ThinkingComplete("First reasoning summary.\nRefined independently."),
         ]);
 
         $response = $adapter->invoke(new ModelInvocationRequest(
@@ -503,11 +504,12 @@ final class PlatformIntegrationTest extends TestCase
         ));
         $this->assertCount(2, $completions);
         $this->assertSame("First reasoning summary.\n", $completions[0]->getThinking());
-        $this->assertSame("First reasoning summary.\nSecond reasoning summary.", $completions[1]->getThinking());
+        $expectedThinking = "First reasoning summary.\nFirst reasoning summary.\nRefined independently.";
+        $this->assertSame($expectedThinking, $completions[1]->getThinking());
 
         $thinking = $response->assistantMessage?->getThinking() ?? [];
         $this->assertCount(1, $thinking);
-        $this->assertSame("First reasoning summary.\nSecond reasoning summary.", $thinking[0]->getContent());
+        $this->assertSame($expectedThinking, $thinking[0]->getContent());
     }
 
     public function testTransformHookNotificationsFlowToPlatformInvocationResult(): void

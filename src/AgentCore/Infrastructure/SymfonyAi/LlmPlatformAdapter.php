@@ -396,12 +396,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
                         // message construction consume them.
                         $thinkingSegmentStart ??= \strlen($accumulatedThinking);
                         $completedThinking = $delta->getThinking();
-                        $completedIsCumulative = $thinkingSegmentStart > 0
-                            && str_starts_with($completedThinking, substr($accumulatedThinking, 0, $thinkingSegmentStart));
-
-                        $accumulatedThinking = $completedIsCumulative
-                            ? $completedThinking
-                            : substr($accumulatedThinking, 0, $thinkingSegmentStart).$completedThinking;
+                        $accumulatedThinking = substr($accumulatedThinking, 0, $thinkingSegmentStart).$completedThinking;
                         $thinkingSegmentStart = null;
                         $delta = new ThinkingComplete($accumulatedThinking, $delta->getSignature());
                     }
