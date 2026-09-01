@@ -73,7 +73,6 @@ final readonly class StartRunHandler implements RunMessageHandler
             errorMessage: null,
             messages: $messages,
             activeStepId: $message->stepId(),
-            retryableFailure: false,
             model: $canonicalModel,
             parentRunId: $parentRunId,
         );

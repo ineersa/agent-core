@@ -21,11 +21,12 @@ use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Exception\TransportException;
+use Symfony\Component\Messenger\Exception\UnrecoverableMessageHandlingException;
 use Symfony\Component\Messenger\MessageBusInterface;
 
 final class ExecutionFailureDrillTest extends TestCase
 {
-    public function testLlmWorkerCanBeRetriedAfterCommandBusDispatchCrash(): void
+    public function testLlmWorkerDispatchCrashIsUnrecoverableAndLaterInvocationCanComplete(): void
     {
         $platform = new FakePlatform([
             new PlatformInvocationResult(
@@ -58,8 +59,8 @@ final class ExecutionFailureDrillTest extends TestCase
 
         try {
             $failingWorker($message);
-            $this->fail('Expected dispatch crash to bubble as RuntimeException.');
-        } catch (\RuntimeException $exception) {
+            $this->fail('Expected dispatch crash to be marked unrecoverable.');
+        } catch (UnrecoverableMessageHandlingException $exception) {
             $this->assertSame('Failed to dispatch LLM result to command bus.', $exception->getMessage());
         }
 

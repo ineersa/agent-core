@@ -24,73 +24,6 @@ use PHPUnit\Framework\TestCase;
 
 final class ApplyCommandHandlerTest extends TestCase
 {
-    public function testAutoRetryContinuePreservesAttemptAndProducesFollowUpAdvance(): void
-    {
-        $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
-            commandStore: $commandStore,
-            commandRouter: $commandRouter,
-        );
-
-        $commandBus = new TestMessageBus();
-
-        $handler = new ApplyCommandHandler(
-            commandStore: $commandStore,
-            commandRouter: $commandRouter,
-            commandMailboxPolicy: $commandMailboxPolicy,
-            eventFactory: new EventFactory(),
-            messageNormalizer: new AgentMessageNormalizer(),
-            maxPendingCommands: 10,
-            commandBus: $commandBus,
-        );
-
-        $state = new RunState(
-            runId: 'run-apply-handler-1',
-            status: RunStatus::Failed,
-            version: 2,
-            turnNo: 4,
-            lastSeq: 5,
-            messages: [new AgentMessage(role: 'tool', content: [])],
-            retryableFailure: true,
-            retryAttempts: 1,
-            model: 'test-model');
-
-        $message = new ApplyCommand(
-            runId: 'run-apply-handler-1',
-            turnNo: 4,
-            stepId: 'continue-step-1',
-            attempt: 1,
-            idempotencyKey: 'continue-idempotency-1',
-            kind: CoreCommandKind::Continue,
-            payload: ['auto_retry' => true, 'retry_attempt' => 1],
-        );
-
-        $result = $handler->handle($message, $state);
-
-        $this->assertNotNull($result->nextState);
-        $this->assertSame(RunStatus::Running, $result->nextState->status);
-        $this->assertSame(3, $result->nextState->version);
-        $this->assertSame(6, $result->nextState->lastSeq);
-        $this->assertNull($result->nextState->errorMessage);
-        $this->assertFalse($result->nextState->retryableFailure);
-        $this->assertSame(1, $result->nextState->retryAttempts);
-
-        $this->assertCount(1, $result->events);
-        $this->assertSame('agent_command_applied', $result->events[0]->type);
-        $this->assertSame(CoreCommandKind::Continue, $result->events[0]->payload['kind']);
-
-        $this->assertSame([], $result->effects);
-        $this->assertSame([], $result->postCommitEffects);
-        $this->assertCount(1, $result->postCommit);
-
-        ($result->postCommit[0])();
-
-        $this->assertCount(1, $commandBus->messages);
-        $this->assertInstanceOf(AdvanceRun::class, $commandBus->messages[0]);
-        $this->assertTrue($commandStore->has('run-apply-handler-1', 'continue-idempotency-1'));
-    }
-
     public function testFollowUpAllowedAfterCancelledRun(): void
     {
         $commandStore = new InMemoryCommandStore();
@@ -119,7 +52,6 @@ final class ApplyCommandHandlerTest extends TestCase
             turnNo: 1,
             lastSeq: 10,
             messages: [new AgentMessage(role: 'assistant', content: [['type' => 'text', 'text' => 'Hello']])],
-            retryableFailure: false,
             model: 'test-model');
 
         $message = new ApplyCommand(
@@ -175,7 +107,6 @@ final class ApplyCommandHandlerTest extends TestCase
             turnNo: 1,
             lastSeq: 10,
             messages: [],
-            retryableFailure: false,
             model: 'test-model');
 
         $message = new ApplyCommand(
@@ -223,7 +154,6 @@ final class ApplyCommandHandlerTest extends TestCase
             turnNo: 1,
             lastSeq: 10,
             messages: [],
-            retryableFailure: false,
             model: 'test-model');
 
         $message = new ApplyCommand(
@@ -271,7 +201,6 @@ final class ApplyCommandHandlerTest extends TestCase
             turnNo: 1,
             lastSeq: 10,
             messages: [new AgentMessage(role: 'assistant', content: [['type' => 'text', 'text' => 'Hello']])],
-            retryableFailure: false,
             model: 'test-model');
 
         $message = new ApplyCommand(
@@ -290,54 +219,6 @@ final class ApplyCommandHandlerTest extends TestCase
         $this->assertNotNull($result->nextState);
         $this->assertSame(RunStatus::Cancelling, $result->nextState->status);
         $this->assertStringContainsString('rejected because cancellation is in progress', $result->nextState->errorMessage ?? '');
-        $this->assertCount(1, $result->events);
-        $this->assertSame('agent_command_rejected', $result->events[0]->type);
-    }
-
-    public function testContinueRejectedAfterCancelledRun(): void
-    {
-        $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
-            commandStore: $commandStore,
-            commandRouter: $commandRouter,
-        );
-
-        $handler = new ApplyCommandHandler(
-            commandStore: $commandStore,
-            commandRouter: $commandRouter,
-            commandMailboxPolicy: $commandMailboxPolicy,
-            eventFactory: new EventFactory(),
-            messageNormalizer: new AgentMessageNormalizer(),
-            maxPendingCommands: 10,
-        );
-
-        $state = new RunState(
-            runId: 'run-cancel-continue',
-            status: RunStatus::Cancelled,
-            version: 3,
-            turnNo: 1,
-            lastSeq: 10,
-            messages: [new AgentMessage(role: 'tool', content: [])],
-            retryableFailure: false,
-            model: 'test-model');
-
-        $message = new ApplyCommand(
-            runId: 'run-cancel-continue',
-            turnNo: 1,
-            stepId: 'continue-step-1',
-            attempt: 1,
-            idempotencyKey: 'continue-idempotency-1',
-            kind: CoreCommandKind::Continue,
-            payload: [],
-        );
-
-        $result = $handler->handle($message, $state);
-
-        // Continue should be rejected when run is Cancelled
-        $this->assertNotNull($result->nextState);
-        $this->assertSame(RunStatus::Cancelled, $result->nextState->status);
-        $this->assertSame('Run is already cancelled.', $result->nextState->errorMessage);
         $this->assertCount(1, $result->events);
         $this->assertSame('agent_command_rejected', $result->events[0]->type);
     }
@@ -367,7 +248,6 @@ final class ApplyCommandHandlerTest extends TestCase
             turnNo: 1,
             lastSeq: 10,
             messages: [],
-            retryableFailure: false,
             model: 'test-model');
 
         $message = new ApplyCommand(
@@ -532,7 +412,6 @@ final class ApplyCommandHandlerTest extends TestCase
             turnNo: 1,
             lastSeq: 10,
             messages: [new AgentMessage(role: 'assistant', content: [['type' => 'text', 'text' => 'Hello']])],
-            retryableFailure: false,
             model: 'test-model');
 
         $message = new ApplyCommand(
@@ -777,7 +656,6 @@ final class ApplyCommandHandlerTest extends TestCase
             pendingToolCalls: [],
             messages: [new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'prior']])],
             activeStepId: null,
-            retryableFailure: false,
             model: 'test-model');
 
         $cancelMessage = new ApplyCommand(
@@ -1200,7 +1078,6 @@ final class ApplyCommandHandlerTest extends TestCase
             ],
             activeStepId: null,  // idle: no active step
             currentOperation: new CurrentOperationDTO(2, 'advance-after-tools-stale', 1, 'stale-op-key'),
-            retryableFailure: false,
             model: 'test-model');
 
         $cancelMessage = new ApplyCommand(
@@ -1276,7 +1153,6 @@ final class ApplyCommandHandlerTest extends TestCase
             ],
             activeStepId: 'stale-step',
             currentOperation: new CurrentOperationDTO(3, 'stale-step', 1, 'stale-cancelling-op'),
-            retryableFailure: false,
             model: 'test-model');
 
         $cancelMessage = new ApplyCommand(
@@ -1346,7 +1222,6 @@ final class ApplyCommandHandlerTest extends TestCase
                 1,
                 'advance-after-tools-op',
             ),
-            retryableFailure: false,
             model: 'test-model');
 
         $cancelMessage = new ApplyCommand(
@@ -1480,7 +1355,6 @@ final class ApplyCommandHandlerTest extends TestCase
             pendingToolCalls: ['call_00' => false],
             messages: [],
             activeStepId: 'step-tools',
-            retryableFailure: false,
             model: 'test-model');
 
         $cancelMessage = new ApplyCommand(
@@ -1528,7 +1402,6 @@ final class ApplyCommandHandlerTest extends TestCase
             pendingToolCalls: ['call_00' => true, 'call_01' => true],
             messages: [],
             activeStepId: 'advance-after-tools-33525236701801',
-            retryableFailure: false,
             model: 'test-model');
 
         $cancelMessage = new ApplyCommand(

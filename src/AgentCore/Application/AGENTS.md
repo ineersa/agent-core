@@ -28,12 +28,12 @@ Topology map for AgentCore application handlers. Authoritative routing: `config/
 | `ExecuteShellToolCall` | `tool` | `Ineersa\CodingAgent\Runtime\Controller\CommandHandler\ExecuteShellToolCallWorker` |
 | `ExecuteCompactionStep` | `llm` | `ExecuteCompactionStepWorker` |
 
-Workers post results (`LlmStepResult`, `ToolCallResult`, `CompactionStepResult`) back onto `agent.command.bus` → `run_control`.
+Workers post results (`LlmStepResult`, `ToolCallResult`, `CompactionStepResult`) back onto `agent.command.bus` → `run_control`. Retryable provider-operation failures from `ExecuteLlmStepWorker` use the `llm` transport retry strategy; `LlmWorkerFailedEventSubscriber` posts one sanitized terminal `LlmStepResult` after final `ExecuteLlmStep` failure.
 
 ## Dispatch ownership (producers)
 
 - `StartRun` — `AgentRunner::start()`
-- `ApplyCommand` — `AgentRunner` continue/steer/followUp/cancel/answerHuman via `applyCoreCommand()`
+- `ApplyCommand` — `AgentRunner` steer/followUp/cancel/answerHuman via `applyCoreCommand()`
 - `ApplyShellCommand` — `AgentRunner::shell()`, controller shell path, in-process shell send
 - `AdvanceRun` — post-commit kickoffs (`StartRunHandler`, apply/LLM/shell follow-up callbacks), stale-run resume command
 - `AdvanceRun` / `CompactRun` — state-transition effects through `RunMessageProcessor` / `RunCommit` → `agent.command.bus` → `run_control`

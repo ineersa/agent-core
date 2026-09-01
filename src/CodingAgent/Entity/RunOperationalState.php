@@ -58,13 +58,6 @@ final class RunOperationalState
     #[Assert\Length(min: 1, max: self::ID_MAX_LENGTH)]
     public ?string $lastAppliedCompactionKey;
 
-    #[ORM\Column(name: 'retryable_failure', type: 'boolean')]
-    public bool $retryableFailure;
-
-    #[ORM\Column(name: 'retry_attempts', type: 'integer')]
-    #[Assert\GreaterThanOrEqual(0)]
-    public int $retryAttempts;
-
     #[ORM\Column(name: 'last_event_sequence', type: 'integer')]
     #[Assert\GreaterThanOrEqual(0)]
     public int $lastEventSequence;

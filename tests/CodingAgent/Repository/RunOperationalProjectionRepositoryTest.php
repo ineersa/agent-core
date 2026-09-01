@@ -143,8 +143,6 @@ final class RunOperationalProjectionRepositoryTest extends IsolatedKernelTestCas
             currentOperation: new CurrentOperationDTO(3, 'step-3', 2, 'operation-3'),
             lastAppliedAdvanceKey: 'advance-3',
             lastAppliedCompactionKey: 'compact-3',
-            retryableFailure: true,
-            retryAttempts: 2,
             currentToolCalls: $toolCalls,
             pendingHumanInputRequests: $humanInputs,
         );

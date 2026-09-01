@@ -77,7 +77,7 @@ final class LlmProviderErrorClassifierTest extends TestCase
     }
 
     #[DataProvider('transientStreamExceptionProvider')]
-    public function testTypedMidStreamFailuresUseBoundedAgentRetry(string $type, string $category): void
+    public function testTypedMidStreamFailuresAreRetryableByMessengerTransport(string $type, string $category): void
     {
         $result = $this->classifier->classify(['type' => $type, 'message' => 'provider prose is not inspected']);
 
@@ -104,25 +104,29 @@ final class LlmProviderErrorClassifierTest extends TestCase
         $this->assertSame(LlmProviderErrorClassifier::CATEGORY_AUTH, $result['error_category']);
     }
 
-    public function testUnknownFailureDoesNotBecomeRetryableFromMessageText(): void
+    public function testUnknownProviderOperationFailureIsRetryableWithoutMessageMatching(): void
+    {
+        $result = $this->classifier->classify([
+            'type' => \RuntimeException::class,
+            'message' => 'Codex WebSocket idle timeout.',
+        ]);
+
+        $this->assertTrue($result['retryable']);
+        $this->assertSame(LlmProviderErrorClassifier::CATEGORY_PROVIDER, $result['error_category']);
+        $this->assertSame('LLM provider request failed.', $result['user_message']);
+        $this->assertSame('Codex WebSocket idle timeout.', $result['message']);
+    }
+
+    public function testUnknownFailureDoesNotInspectMessageTextForClassification(): void
     {
         $result = $this->classifier->classify([
             'type' => \RuntimeException::class,
             'message' => '[server_error/server_error] overloaded timeout please try again',
         ]);
 
-        $this->assertFalse($result['retryable']);
+        $this->assertTrue($result['retryable']);
         $this->assertSame(LlmProviderErrorClassifier::CATEGORY_PROVIDER, $result['error_category']);
         $this->assertSame('LLM provider request failed.', $result['user_message']);
-    }
-
-    public function testContextOverflowUsesExceptionContractOnly(): void
-    {
-        $this->assertTrue($this->classifier->isContextOverflow(['type' => ExceedContextSizeException::class]));
-        $this->assertFalse($this->classifier->isContextOverflow([
-            'type' => BadRequestException::class,
-            'message' => 'maximum context length exceeded',
-        ]));
     }
 
     public function testClassifierPreservesStructuredDiagnosticsAndStripsFreeTextHelpers(): void

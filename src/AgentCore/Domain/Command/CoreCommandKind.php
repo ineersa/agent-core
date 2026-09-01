@@ -11,7 +11,6 @@ final class CoreCommandKind
     public const string AppendMessage = 'append_message';
     public const string Cancel = 'cancel';
     public const string HumanResponse = 'human_response';
-    public const string Continue = 'continue';
     public const string Compact = 'compact';
 
     /** @var list<string> */
@@ -21,7 +20,6 @@ final class CoreCommandKind
         self::AppendMessage,
         self::Cancel,
         self::HumanResponse,
-        self::Continue,
         self::Compact,
     ];
 

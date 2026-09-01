@@ -158,11 +158,18 @@ final class ApplicationMigrationExecutorTest extends TestCase
             ['Version20260901015440'],
         );
         $this->assertNotFalse($recordedOperationColumnDrop);
+        $recordedRetryColumnDrop = $connection->fetchOne(
+            'SELECT 1 FROM doctrine_migration_versions WHERE version = ?',
+            ['Version20260901163503'],
+        );
+        $this->assertNotFalse($recordedRetryColumnDrop);
         $operationalStateColumns = array_keys($schemaManager->listTableColumns('run_operational_state'));
         $this->assertNotContains('operation_turn_no', $operationalStateColumns);
         $this->assertNotContains('operation_step_id', $operationalStateColumns);
         $this->assertNotContains('operation_attempt', $operationalStateColumns);
         $this->assertNotContains('operation_key', $operationalStateColumns);
+        $this->assertNotContains('retryable_failure', $operationalStateColumns);
+        $this->assertNotContains('retry_attempts', $operationalStateColumns);
 
         $recordedDeferredSingleDrop = $connection->fetchOne(
             'SELECT 1 FROM doctrine_migration_versions WHERE version = ?',
@@ -210,9 +217,9 @@ final class ApplicationMigrationExecutorTest extends TestCase
         $this->assertNotContains('definition_model', $childColumns);
     }
 
-    public function testOperationalColumnDropPreservesChildProjectionRows(): void
+    public function testRetryColumnDropPreservesChildProjectionRows(): void
     {
-        $connection = $this->createSqliteConnection($this->isolatedDir.'/operational-column-drop.sqlite');
+        $connection = $this->createSqliteConnection($this->isolatedDir.'/retry-column-drop.sqlite');
         $connection->executeStatement(
             'CREATE TABLE doctrine_migration_versions (
                 version VARCHAR(191) NOT NULL PRIMARY KEY,
@@ -221,12 +228,12 @@ final class ApplicationMigrationExecutorTest extends TestCase
             )'
         );
         $connection->insert('doctrine_migration_versions', [
-            'version' => 'Version20260901015440',
+            'version' => 'Version20260901163503',
             'executed_at' => '2026-09-01 00:00:00',
             'execution_time' => 0,
         ]);
         (new ApplicationMigrationExecutor($connection, new NullLogger()))();
-        $connection->delete('doctrine_migration_versions', ['version' => 'Version20260901015440']);
+        $connection->delete('doctrine_migration_versions', ['version' => 'Version20260901163503']);
 
         $now = '2026-09-01 00:00:00';
         $connection->insert('run_operational_state', [
@@ -236,10 +243,6 @@ final class ApplicationMigrationExecutorTest extends TestCase
             'status' => 'running',
             'turn_no' => 3,
             'active_step_id' => 'step-1',
-            'operation_turn_no' => 3,
-            'operation_step_id' => 'step-1',
-            'operation_attempt' => 1,
-            'operation_key' => 'operation-1',
             'last_applied_advance_key' => null,
             'last_applied_compaction_key' => null,
             'retryable_failure' => 0,
@@ -277,6 +280,8 @@ final class ApplicationMigrationExecutorTest extends TestCase
         $this->assertSame('question-1', $connection->fetchOne('SELECT question_id FROM run_operational_human_input'));
 
         $columns = array_keys($connection->createSchemaManager()->listTableColumns('run_operational_state'));
+        $this->assertNotContains('retryable_failure', $columns);
+        $this->assertNotContains('retry_attempts', $columns);
         $this->assertNotContains('operation_turn_no', $columns);
         $this->assertNotContains('operation_step_id', $columns);
         $this->assertNotContains('operation_attempt', $columns);
