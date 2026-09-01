@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Domain\Event;
 
-use Ineersa\AgentCore\Domain\Run\RunState;
-
 final readonly class EventFactory
 {
     /**
@@ -49,15 +47,5 @@ final readonly class EventFactory
         }
 
         return $events;
-    }
-
-    public function incrementStateVersion(RunState $state, int $eventCount): RunState
-    {
-        // Stale-result/version bumps must not drop retry accounting: the
-        // auto-retry counter is read by the next LlmStepResultHandler.
-        return $state->with([
-            'version' => $state->version + 1,
-            'lastSeq' => $state->lastSeq + $eventCount,
-        ]);
     }
 }

@@ -93,7 +93,6 @@ final class ChildRunArtifactLifecycleServiceTest extends IsolatedKernelTestCase
             artifactId: $artifactId,
             displayName: 'scout',
             taskSummary: 'pending reservation',
-            launchModel: 'deepseek/deepseek-v4-flash', launchReasoning: 'medium',
             artifactKind: AgentArtifactKindEnum::Subagent,
         );
 

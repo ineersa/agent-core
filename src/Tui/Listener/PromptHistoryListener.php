@@ -47,18 +47,20 @@ final class PromptHistoryListener implements TuiListenerRegistrar
 
         $history = $context->sessionServices->promptHistory;
 
-        // Guard: typeText() navigates the cursor with synthetic DOWN/END
-        // keystrokes through handleInput(), which re-enters this onInput
-        // callback. While a recall is in flight those synthetic keys must
-        // reach the editor (cursor movement) without touching the history
-        // navigation cursor.
-        $recalling = false;
-
-        $editor->onInput(static function (string $data) use ($state, $editor, $promptEditor, $screen, $history, &$recalling): bool {
-            // @phpstan-ignore if.alwaysFalse (re-entered synchronously by typeText()'s synthetic keys)
-            if ($recalling) {
-                return false;
+        // typeText() navigates with synthetic DOWN/END via handleInput(),
+        // which would re-enter this onInput callback and mutate history
+        // navigation. Temporarily clear the single-slot handler for the
+        // duration of recall so those synthetic keys reach the editor.
+        $recallThroughEditor = static function (string $text) use ($editor, $promptEditor, &$onInput): void {
+            $editor->onInput(null);
+            try {
+                $promptEditor->typeText($text);
+            } finally {
+                $editor->onInput($onInput);
             }
+        };
+
+        $onInput = static function (string $data) use ($state, $editor, $screen, $history, &$recallThroughEditor): bool {
             if ($state->subagentLiveView->active) {
                 if ($history->isNavigating()) {
                     $history->exitNavigation();
@@ -81,15 +83,8 @@ final class PromptHistoryListener implements TuiListenerRegistrar
                         // Recall through the PromptEditor owner so the cursor
                         // lands at the END of the recalled text (raw
                         // EditorWidget::setText would leave it at (0,0) and
-                        // subsequent typing would insert at the start). The
-                        // guard above keeps typeText()'s synthetic DOWN/END
-                        // keys from advancing/exiting history navigation.
-                        $recalling = true;
-                        try {
-                            $promptEditor->typeText($text);
-                        } finally {
-                            $recalling = false;
-                        }
+                        // subsequent typing would insert at the start).
+                        $recallThroughEditor($text);
                         $screen->requestRender();
 
                         return true; // Consume the event
@@ -113,12 +108,7 @@ final class PromptHistoryListener implements TuiListenerRegistrar
                 if ($history->isNavigating()) {
                     $text = $history->next();
                     if (null !== $text) {
-                        $recalling = true;
-                        try {
-                            $promptEditor->typeText($text);
-                        } finally {
-                            $recalling = false;
-                        }
+                        $recallThroughEditor($text);
                         $screen->requestRender();
 
                         return true;
@@ -142,6 +132,8 @@ final class PromptHistoryListener implements TuiListenerRegistrar
 
             // Let the editor handle the key normally.
             return false;
-        });
+        };
+
+        $editor->onInput($onInput);
     }
 }

@@ -534,10 +534,6 @@ final class FakeNoopAgentRunner implements AgentRunnerInterface
         return $input->runId ?? 'fake-run-id';
     }
 
-    public function continue(string $runId): void
-    {
-    }
-
     public function shell(string $runId, string $rawInput): void
     {
     }

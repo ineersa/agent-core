@@ -83,11 +83,6 @@ final class SubagentChildToolProgressPresentationFormatter
         return $pairs;
     }
 
-    public function assistantTextFromMessage(AgentMessage $message): string
-    {
-        return $this->textFromMessage($message);
-    }
-
     /**
      * @param array<string, mixed> $assistantPayload
      */

@@ -9,14 +9,11 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
 use Ineersa\Tui\CompactHeader\CompactHeaderWidget;
 use Ineersa\Tui\Editor\PromptEditor;
-use Ineersa\Tui\Extension\SlotBasedTuiExtensionContext;
-use Ineersa\Tui\Extension\TuiExtensionContext;
 use Ineersa\Tui\Footer\FooterBarWidget;
 use Ineersa\Tui\Footer\FooterDataProvider;
 use Ineersa\Tui\Footer\FooterSegment;
 use Ineersa\Tui\Footer\FooterSegmentProvider;
 use Ineersa\Tui\Header\HeaderWidget;
-use Ineersa\Tui\Layout\TuiSlotRegistry;
 use Ineersa\Tui\Startup\LoadedResourcesWidget;
 use Ineersa\Tui\Status\StatusPanelWidget;
 use Ineersa\Tui\Theme\ThemeColorEnum;
@@ -40,7 +37,6 @@ use Symfony\Component\Tui\Widget\LoaderWidget;
  * Production screen bridge between the TUI layout/widget system and Symfony TUI.
  *
  * ChatScreen owns:
- *  - TuiSlotRegistry (input handlers only) and SlotBasedTuiExtensionContext
  *  - Status entries + working message/visibility state (sole owner/writer; syncs the
  *    native StatusPanelWidget/LoaderWidget directly)
  *  - Directly mounted native Symfony widgets for the chrome regions: header,
@@ -85,10 +81,6 @@ final class ChatScreen
     private readonly LiveTextWidget $footerSepWidget;
     private readonly FooterDataProvider $footerDataProvider;
 
-    /* ── Slot system ── */
-    private readonly TuiSlotRegistry $registry;
-    private readonly SlotBasedTuiExtensionContext $extensionContext;
-
     /* ── Status/working state (sole owner/writer; synced to native widgets) ── */
     /** @var array<string, string> */
     private array $statusEntries = [];
@@ -108,8 +100,6 @@ final class ChatScreen
         TranscriptDisplayConfig $displayConfig = new TranscriptDisplayConfig(),
         TranscriptDisplayState $displayState = new TranscriptDisplayState(),
     ) {
-        $this->registry = new TuiSlotRegistry();
-
         // ── Instantiate directly mounted native chrome widgets ──
         $this->headerWidget = new HeaderWidget($theme);
         $this->transcriptWidget = new TranscriptMountedWidget(
@@ -120,15 +110,6 @@ final class ChatScreen
         $this->pendingWidget = new PendingMessagesWidget($theme);
         $this->statusPanelWidget = new StatusPanelWidget($theme);
         $this->footerDataProvider = new FooterDataProvider();
-        // Route extension status/working-slot mutations through ChatScreen so the
-        // native widgets stay in sync (ChatScreen is the sole owner/writer).
-        $this->extensionContext = new SlotBasedTuiExtensionContext(
-            $this->registry,
-            $this->footerDataProvider,
-            $this->setStatus(...),
-            $this->setWorkingMessage(...),
-            $this->setWorkingVisible(...),
-        );
         $this->footerDataProvider->setProvider('_default', $this->createDefaultFooterProvider());
         $this->footerWidget = new FooterBarWidget($theme, $this->footerDataProvider);
         $this->loadedResourcesWidget = new LoadedResourcesWidget($theme);
@@ -573,47 +554,11 @@ final class ChatScreen
     /* ────────── Slot access ────────── */
 
     /**
-     * Current status-panel entries (keyed by section name).
-     *
-     * @return array<string, string>
-     */
-    public function statusEntries(): array
-    {
-        return $this->statusEntries;
-    }
-
-    /**
      * Current working message ('' when idle).
      */
     public function workingMessage(): string
     {
         return $this->workingMessage;
-    }
-
-    /**
-     * Register slot input handlers on the mounted Tui as native InputEvent
-     * listeners with their explicit priorities.
-     *
-     * Must be called AFTER listener registrars have run so any handler an
-     * internal extension context registered during setup is captured.
-     * Handlers added later are not picked up — the public ExtensionApi
-     * has no input registration today, so there is no consumer of late
-     * registration.
-     */
-    public function registerSlotInputListeners(): void
-    {
-        if (null === $this->tui) {
-            return;
-        }
-
-        foreach ($this->registry->getInputHandlers() as $entry) {
-            $this->tui->addListener($entry['handler'], priority: $entry['priority']);
-        }
-    }
-
-    public function extensionContext(): TuiExtensionContext
-    {
-        return $this->extensionContext;
     }
 
     /**

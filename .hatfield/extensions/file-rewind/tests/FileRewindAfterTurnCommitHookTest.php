@@ -40,7 +40,7 @@ final class FileRewindAfterTurnCommitHookTest extends TestCase
             paths: $paths,
             ledgerStore: $this->ledgerStore,
             ledgerProjector: new FileRewindLedgerProjector(),
-            config: new FileRewindConfig(enabled: true, maxRetainedTurns: 10, maxFileBytes: 1_048_576),
+            config: new FileRewindConfig(enabled: true, maxRetainedTurns: 10),
             logger: new NullLogger(),
             projectCwd: $this->projectDir,
         );
@@ -55,7 +55,7 @@ final class FileRewindAfterTurnCommitHookTest extends TestCase
     {
         $hook = new FileRewindAfterTurnCommitHook(
             $this->service,
-            new FileRewindConfig(enabled: true, maxRetainedTurns: 10, maxFileBytes: 1024),
+            new FileRewindConfig(enabled: true, maxRetainedTurns: 10),
         );
 
         $hook->onAfterTurnCommit(new AfterTurnCommitHookContextDTO(
@@ -76,7 +76,7 @@ final class FileRewindAfterTurnCommitHookTest extends TestCase
     {
         $hook = new FileRewindAfterTurnCommitHook(
             $this->service,
-            new FileRewindConfig(enabled: true, maxRetainedTurns: 10, maxFileBytes: 1024),
+            new FileRewindConfig(enabled: true, maxRetainedTurns: 10),
         );
 
         $hook->onAfterTurnCommit(new AfterTurnCommitHookContextDTO(
@@ -96,7 +96,7 @@ final class FileRewindAfterTurnCommitHookTest extends TestCase
 ');
         $hook = new FileRewindAfterTurnCommitHook(
             $this->service,
-            new FileRewindConfig(enabled: true, maxRetainedTurns: 10, maxFileBytes: 1024),
+            new FileRewindConfig(enabled: true, maxRetainedTurns: 10),
         );
 
         $hook->onAfterTurnCommit(new AfterTurnCommitHookContextDTO(
@@ -116,7 +116,7 @@ final class FileRewindAfterTurnCommitHookTest extends TestCase
     {
         $hook = new FileRewindAfterTurnCommitHook(
             $this->service,
-            new FileRewindConfig(enabled: true, maxRetainedTurns: 10, maxFileBytes: 1024),
+            new FileRewindConfig(enabled: true, maxRetainedTurns: 10),
         );
 
         $hook->onAfterTurnCommit(new AfterTurnCommitHookContextDTO(
@@ -138,7 +138,7 @@ final class FileRewindAfterTurnCommitHookTest extends TestCase
 ');
         $hook = new FileRewindAfterTurnCommitHook(
             $this->service,
-            new FileRewindConfig(enabled: true, maxRetainedTurns: 10, maxFileBytes: 1024),
+            new FileRewindConfig(enabled: true, maxRetainedTurns: 10),
         );
 
         $hook->onAfterTurnCommit(new AfterTurnCommitHookContextDTO(
@@ -160,7 +160,7 @@ final class FileRewindAfterTurnCommitHookTest extends TestCase
 ');
         $hook = new FileRewindAfterTurnCommitHook(
             $this->service,
-            new FileRewindConfig(enabled: true, maxRetainedTurns: 10, maxFileBytes: 1024),
+            new FileRewindConfig(enabled: true, maxRetainedTurns: 10),
         );
 
         $hook->onAfterTurnCommit(new AfterTurnCommitHookContextDTO(
@@ -182,7 +182,7 @@ final class FileRewindAfterTurnCommitHookTest extends TestCase
         file_put_contents($this->projectDir.'/test.txt', "LINE_ONE\n");
         $hook = new FileRewindAfterTurnCommitHook(
             $this->service,
-            new FileRewindConfig(enabled: true, maxRetainedTurns: 10, maxFileBytes: 1024),
+            new FileRewindConfig(enabled: true, maxRetainedTurns: 10),
         );
 
         $hook->onAfterTurnCommit(new AfterTurnCommitHookContextDTO(
@@ -205,7 +205,7 @@ final class FileRewindAfterTurnCommitHookTest extends TestCase
         file_put_contents($this->projectDir.'/test.txt', "LINE_ONE\n");
         $hook = new FileRewindAfterTurnCommitHook(
             $this->service,
-            new FileRewindConfig(enabled: true, maxRetainedTurns: 10, maxFileBytes: 1024),
+            new FileRewindConfig(enabled: true, maxRetainedTurns: 10),
         );
 
         $hook->onAfterTurnCommit(new AfterTurnCommitHookContextDTO(
@@ -226,7 +226,7 @@ final class FileRewindAfterTurnCommitHookTest extends TestCase
     {
         $hook = new FileRewindAfterTurnCommitHook(
             $this->service,
-            new FileRewindConfig(enabled: false, maxRetainedTurns: 10, maxFileBytes: 1024),
+            new FileRewindConfig(enabled: false, maxRetainedTurns: 10),
         );
 
         $hook->onAfterTurnCommit(new AfterTurnCommitHookContextDTO(

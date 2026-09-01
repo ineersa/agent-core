@@ -80,46 +80,6 @@ final class RunLogContext
     }
 
     /**
-     * Enter a scope for the given callable and return its result.
-     *
-     * @template TResult
-     *
-     * @param array<string, mixed> $context
-     * @param callable(): TResult  $operation
-     *
-     * @return TResult
-     */
-    public static function scoped(array $context, callable $operation): mixed
-    {
-        self::enter($context);
-
-        try {
-            return $operation();
-        } finally {
-            self::leave();
-        }
-    }
-
-    /**
-     * Reset all context for the current fiber (or default stack outside any fiber).
-     *
-     * For testing and worker startup. Does NOT affect other fibers' context — each
-     * fiber owns its own stack via WeakMap; reset() only targets the current execution
-     * context. WeakMap entries are automatically released when a fiber finishes
-     * and gets GC'd, so explicit reset() is typically only needed between test cases
-     * or worker iterations within the same fiber lifetime.
-     */
-    public static function reset(): void
-    {
-        $fiber = \Fiber::getCurrent();
-        if (null === $fiber) {
-            self::$defaultStack = [];
-        } elseif (null !== self::$fiberStacks && self::$fiberStacks->offsetExists($fiber)) {
-            self::$fiberStacks->offsetUnset($fiber);
-        }
-    }
-
-    /**
      * @return list<array<string, mixed>>
      */
     private static function readStack(): array

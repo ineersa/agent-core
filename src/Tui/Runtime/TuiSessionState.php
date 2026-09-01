@@ -139,18 +139,9 @@ final class TuiSessionState
     public string $branch = '';
 
     /**
-     * TUI-local immutable transcript display config for the current session.
-     *
-     * Set by InteractiveMode during TUI startup from Hatfield config via
-     * TranscriptDisplayConfigMapper. Defaults are safe for test factories
-     * and manual construction.
-     */
-    public TranscriptDisplayConfig $transcriptDisplayConfig;
-
-    /**
      * Live/session-only mutable display state for the transcript.
      *
-     * Initialized from transcriptDisplayConfig.previewsExpandedByDefault
+     * Initialized from TranscriptDisplayConfig.previewsExpandedByDefault
      * at TUI startup. Ctrl+O ({@see \Ineersa\Tui\Listener\PreviewExpansionInputListener}) toggles
      * previewableBlocksExpanded at runtime for this session only.
      * Not persisted to settings or session metadata.
@@ -192,7 +183,6 @@ final class TuiSessionState
         $this->sessionId = $sessionId;
         $this->resuming = $resuming;
         $this->usage = new UsageProjection();
-        $this->transcriptDisplayConfig = new TranscriptDisplayConfig();
         $this->transcriptDisplayState = new TranscriptDisplayState();
         // Catalog is typed-only; wire denorm happens in TuiRuntimeEventApplier.
         $this->subagentLiveCatalog = new SubagentLiveCatalog();

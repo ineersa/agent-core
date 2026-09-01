@@ -37,7 +37,7 @@ final class ToolRegistryTest extends TestCase
 
         $this->assertSame(['read'], $registry->activeToolNames());
         $this->assertSame(['read: Read'], $registry->permanentToolLines());
-        $this->assertSame(['G1'], $registry->permanentGuidelines());
+        $this->assertSame(['G1'], $this->flattenGuidelines($registry->permanentGuidelinesByTool()));
 
         $definition = $registry->toolDefinition('read');
         $this->assertNotNull($definition);
@@ -73,7 +73,7 @@ final class ToolRegistryTest extends TestCase
         $this->assertSame(['- read: Read file contents'], $this->registry->permanentToolLines());
         $this->assertSame(
             ['Use read for files', 'Output is truncated at 2000 lines'],
-            $this->registry->permanentGuidelines(),
+            $this->flattenGuidelines($this->registry->permanentGuidelinesByTool()),
         );
         $this->assertSame(['read'], $this->registry->activeToolNames());
     }
@@ -85,7 +85,7 @@ final class ToolRegistryTest extends TestCase
         $this->registry->registerTool(name: 'bash', description: 'Bash', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'bash: Bash', promptGuidelines: ['G3']);
 
         $this->assertSame(['read: Read', 'write: Write', 'bash: Bash'], $this->registry->permanentToolLines());
-        $this->assertSame(['G1', 'G2', 'G3'], $this->registry->permanentGuidelines());
+        $this->assertSame(['G1', 'G2', 'G3'], $this->flattenGuidelines($this->registry->permanentGuidelinesByTool()));
         $this->assertSame(['read', 'write', 'bash'], $this->registry->activeToolNames());
     }
 
@@ -96,7 +96,7 @@ final class ToolRegistryTest extends TestCase
 
         // Lines should not duplicate
         $this->assertCount(1, $this->registry->permanentToolLines());
-        $this->assertCount(1, $this->registry->permanentGuidelines());
+        $this->assertCount(1, $this->flattenGuidelines($this->registry->permanentGuidelinesByTool()));
     }
 
     public function testRegisterPermanentToolWithEmptyNameThrows(): void
@@ -126,7 +126,7 @@ final class ToolRegistryTest extends TestCase
         $this->registry->registerTool(name: 'a', description: 'A', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'L1', promptGuidelines: ['shared guideline']);
         $this->registry->registerTool(name: 'b', description: 'B', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'L2', promptGuidelines: ['shared guideline', 'unique g']);
 
-        $this->assertSame(['shared guideline', 'unique g'], $this->registry->permanentGuidelines());
+        $this->assertSame(['shared guideline', 'unique g'], $this->flattenGuidelines($this->registry->permanentGuidelinesByTool()));
     }
 
     /* ───────── Dynamic tools ───────── */
@@ -195,7 +195,7 @@ final class ToolRegistryTest extends TestCase
         $this->registry->addDynamicTool(name: 'bg', description: 'Bg', parametersJsonSchema: [], handler: $this->dummyHandler());
 
         $this->assertSame(['read line'], $this->registry->permanentToolLines());
-        $this->assertSame(['Guideline'], $this->registry->permanentGuidelines());
+        $this->assertSame(['Guideline'], $this->flattenGuidelines($this->registry->permanentGuidelinesByTool()));
     }
 
     /* ───────── ToolDefinitionDTO lookup methods ───────── */
@@ -305,14 +305,14 @@ final class ToolRegistryTest extends TestCase
     public function testEmptyRegistryReturnsEmptyLists(): void
     {
         $this->assertSame([], $this->registry->permanentToolLines());
-        $this->assertSame([], $this->registry->permanentGuidelines());
+        $this->assertSame([], $this->flattenGuidelines($this->registry->permanentGuidelinesByTool()));
         $this->assertSame([], $this->registry->activeToolNames());
     }
 
     public function testToolWithNoGuidelines(): void
     {
         $this->registry->registerTool(name: 'minimal', description: 'Min', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'minimal: Minimal');
-        $this->assertSame([], $this->registry->permanentGuidelines());
+        $this->assertSame([], $this->flattenGuidelines($this->registry->permanentGuidelinesByTool()));
     }
 
     /* ───────── Tool filtering (allowlist / denylist) ───────── */
@@ -327,7 +327,7 @@ final class ToolRegistryTest extends TestCase
 
         $this->assertSame(['read', 'write'], $this->registry->activeToolNames());
         $this->assertSame(['read: Read', 'write: Write'], $this->registry->permanentToolLines());
-        $this->assertSame(['G1', 'G2'], $this->registry->permanentGuidelines());
+        $this->assertSame(['G1', 'G2'], $this->flattenGuidelines($this->registry->permanentGuidelinesByTool()));
     }
 
     public function testSetAllowedToolNamesEmptyMakesAllToolsVisible(): void
@@ -349,7 +349,7 @@ final class ToolRegistryTest extends TestCase
 
         $this->assertSame(['read'], $this->registry->activeToolNames());
         $this->assertSame(['read: Read'], $this->registry->permanentToolLines());
-        $this->assertSame(['G1'], $this->registry->permanentGuidelines());
+        $this->assertSame(['G1'], $this->flattenGuidelines($this->registry->permanentGuidelinesByTool()));
     }
 
     public function testSetExcludedToolNamesEmptyShowsAll(): void
@@ -360,19 +360,6 @@ final class ToolRegistryTest extends TestCase
 
         $this->registry->setExcludedToolNames([]);
         $this->assertSame(['read'], $this->registry->activeToolNames());
-    }
-
-    public function testExcludedToolNamesReturnsCurrentList(): void
-    {
-        $this->registry->registerTool(name: 'read', description: 'Read', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'read: Read', promptGuidelines: ['G1']);
-        $this->registry->registerTool(name: 'bash', description: 'Bash', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'bash: Bash', promptGuidelines: ['G3']);
-
-        $this->registry->setExcludedToolNames(['bash', 'read']);
-
-        $excluded = $this->registry->excludedToolNames();
-        $this->assertCount(2, $excluded);
-        $this->assertContains('bash', $excluded);
-        $this->assertContains('read', $excluded);
     }
 
     public function testCombinedAllowlistAndDenylist(): void
@@ -387,7 +374,7 @@ final class ToolRegistryTest extends TestCase
 
         $this->assertSame(['read', 'write'], $this->registry->activeToolNames());
         $this->assertSame(['read: Read', 'write: Write'], $this->registry->permanentToolLines());
-        $this->assertSame(['G1', 'G2'], $this->registry->permanentGuidelines());
+        $this->assertSame(['G1', 'G2'], $this->flattenGuidelines($this->registry->permanentGuidelinesByTool()));
     }
 
     public function testToolDefinitionReturnsNullForExcludedTool(): void
@@ -563,7 +550,7 @@ final class ToolRegistryTest extends TestCase
         );
         $this->assertSame(
             ['G-read', 'G-write', 'G-bash'],
-            $this->registry->permanentGuidelinesForNames(['bash', 'read', 'write']),
+            $this->flattenGuidelines($this->registry->permanentGuidelinesByTool(['bash', 'read', 'write'])),
         );
     }
 
@@ -574,7 +561,7 @@ final class ToolRegistryTest extends TestCase
         $this->registry->setExcludedToolNames(['fork']);
 
         $this->assertSame(['read: Read'], $this->registry->permanentToolLinesForNames(['read', 'fork']));
-        $this->assertSame(['G1'], $this->registry->permanentGuidelinesForNames(['read', 'fork']));
+        $this->assertSame(['G1'], $this->flattenGuidelines($this->registry->permanentGuidelinesByTool(['read', 'fork'])));
     }
 
     public function testPermanentSubsetIgnoresDynamicAndUnknownNames(): void
@@ -588,7 +575,7 @@ final class ToolRegistryTest extends TestCase
         );
 
         $this->assertSame(['read: Read'], $this->registry->permanentToolLinesForNames(['read', 'mcp_tool', 'unknown']));
-        $this->assertSame(['G1'], $this->registry->permanentGuidelinesForNames(['read', 'mcp_tool']));
+        $this->assertSame(['G1'], $this->flattenGuidelines($this->registry->permanentGuidelinesByTool(['read', 'mcp_tool'])));
         $this->assertStringNotContainsString('CHANGED_PROVIDER_DESCRIPTION_MUST_NOT_LEAK', implode('
 ', $this->registry->permanentToolLinesForNames(['mcp_tool'])));
     }
@@ -623,8 +610,7 @@ final class ToolRegistryTest extends TestCase
             ],
             $this->registry->permanentGuidelinesByTool(),
         );
-        // Flattened API remains cross-tool deduped and order-preserving.
-        $this->assertSame(['G-read-a', 'G-read-b', 'G-bash'], $this->registry->permanentGuidelines());
+        $this->assertSame(['G-read-a', 'G-read-b', 'G-bash'], $this->flattenGuidelines($this->registry->permanentGuidelinesByTool()));
     }
 
     public function testPermanentGuidelinesByToolSubsetAndVisibility(): void
@@ -696,6 +682,28 @@ final class ToolRegistryTest extends TestCase
         $this->registry->addDynamicTool(name: 'mcp_x', description: 'X', parametersJsonSchema: [], handler: $this->dummyHandler());
 
         $this->assertNotSame($first, $this->registry->toolDefinition('mcp_x'));
+    }
+
+    /**
+     * @param array<string, list<string>> $grouped
+     *
+     * @return list<string>
+     */
+    private function flattenGuidelines(array $grouped): array
+    {
+        $flat = [];
+        $seen = [];
+        foreach ($grouped as $guidelines) {
+            foreach ($guidelines as $guideline) {
+                if (isset($seen[$guideline])) {
+                    continue;
+                }
+                $seen[$guideline] = true;
+                $flat[] = $guideline;
+            }
+        }
+
+        return $flat;
     }
 
     private function createProvider(

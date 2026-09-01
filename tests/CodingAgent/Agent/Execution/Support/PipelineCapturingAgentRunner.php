@@ -36,7 +36,6 @@ final class PipelineCapturingAgentRunner implements AgentRunnerInterface
 
     public function __construct(
         private readonly RunOrchestrator $orchestrator,
-        private readonly EventStoreInterface $eventStore,
     ) {
     }
 
@@ -64,7 +63,7 @@ final class PipelineCapturingAgentRunner implements AgentRunnerInterface
             ],
         );
 
-        return new self(new RunOrchestrator($processor, $activeRunContext), $eventStore);
+        return new self(new RunOrchestrator($processor, $activeRunContext));
     }
 
     public function start(StartRunInput $input): string
@@ -87,10 +86,6 @@ final class PipelineCapturingAgentRunner implements AgentRunnerInterface
         ));
 
         return $runId;
-    }
-
-    public function continue(string $runId): void
-    {
     }
 
     public function shell(string $runId, string $rawInput): void

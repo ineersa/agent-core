@@ -55,22 +55,6 @@ final class ProcessStore
     }
 
     /**
-     * Mark a process as finished with an exit code.
-     */
-    public function markFinished(int $id, ?int $exitCode, \DateTimeImmutable $finishedAt): void
-    {
-        $entity = $this->fetchById($id);
-
-        if (null === $entity) {
-            throw new \RuntimeException(\sprintf('Background process record with ID %d not found.', $id));
-        }
-
-        $entity->finish($exitCode, $finishedAt);
-
-        $this->entityManager->flush();
-    }
-
-    /**
      * Find background processes that finished and should notify on completion.
      *
      * Query conditions: finishedAt IS NOT NULL, backgroundedAt IS NOT NULL,

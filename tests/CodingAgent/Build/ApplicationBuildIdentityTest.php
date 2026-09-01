@@ -15,11 +15,10 @@ use PHPUnit\Framework\TestCase;
  */
 final class ApplicationBuildIdentityTest extends TestCase
 {
-    public function testSourceModeReportsDevChannelWithCommit(): void
+    public function testSourceModeReportsDevVersionWithCommit(): void
     {
         $identity = ApplicationBuildIdentity::resolve(ProjectDir::get());
         $this->assertSame('dev', $identity->version);
-        $this->assertSame('source', $identity->channel);
         $this->assertNotSame('', $identity->commit);
         $this->assertStringContainsString('dev (commit ', $identity->displayVersion());
     }
@@ -32,15 +31,12 @@ final class ApplicationBuildIdentityTest extends TestCase
             TestDirectoryIsolation::ensureDirectory(\dirname($path));
             file_put_contents(
                 $path,
-                ApplicationBuildIdentity::generatePhpSource('1.2.3', 'abcdef123456', 'release'),
+                ApplicationBuildIdentity::generatePhpSource('1.2.3', 'abcdef123456'),
             );
 
-            // Load via require path by temporarily including from generated path
-            // through resolve(projectDir) which checks projectDir relative path.
             $identity = ApplicationBuildIdentity::resolve($dir);
             $this->assertSame('1.2.3', $identity->version);
             $this->assertSame('abcdef123456', $identity->commit);
-            $this->assertSame('release', $identity->channel);
             $this->assertSame('1.2.3 (commit abcdef123456)', $identity->displayVersion());
         } finally {
             TestDirectoryIsolation::removeDirectory($dir);

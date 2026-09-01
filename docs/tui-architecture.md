@@ -21,8 +21,6 @@ Terminal UI for Hatfield interactive sessions (`src/Tui`).
 | Type | Role |
 |---|---|
 | Chrome widgets (header, status, pending, loaded resources, compact header, footer) | Native Symfony TUI `AbstractWidget`s mounted directly by `ChatScreen` |
-| `TuiSlotRegistry` | Native terminal input-handler registration (priority + listener) consumed by `ChatScreen` mount |
-| `TuiExtensionContext` / `SlotBasedTuiExtensionContext` | Internal extension seam: status, working state, footer providers, terminal input — no direct widget mutation |
 | `FooterDataProvider` / `FooterSegmentProvider` / `FooterBarWidget` | Footer composition |
 | `ThemeRegistry` / YAML themes under `config/themes/` | Theming |
 
@@ -48,7 +46,7 @@ Dependency direction: TUI may depend on CodingAgent services and models directly
 
 Generic TUI extension contracts live in `Ineersa\Hatfield\ExtensionApi\Tui\*` and may depend on **Symfony TUI** public widgets only. Feature UX belongs in extension packages.
 
-Public `TuiExtensionContextInterface` exposes status entries (`setStatus`), tick hooks (`onTick`), and native `AbstractWidget` overlays after the editor (`insertOverlayAfterEditor` / `removeOverlay` / `setFocus`); it does not expose internal widget replacement. Internal extension registrars use `TuiExtensionContext` for status/working/footer state and terminal input.
+Public `TuiExtensionContextInterface` exposes status entries (`setStatus`), tick hooks (`onTick`), and native `AbstractWidget` overlays after the editor (`insertOverlayAfterEditor` / `removeOverlay` / `setFocus`); it does not expose internal widget replacement. Host bridge: `BridgeTuiExtensionContext`.
 
 ## Related
 

@@ -9,12 +9,7 @@ namespace Ineersa\HatfieldExt\ObservationalMemory\Observer;
  */
 final class ObserverException extends \RuntimeException
 {
-    public const string CODE_CONFIG = 'observer_config_invalid';
-
-    public const string CODE_EMPTY_RANGE = 'observer_empty_range';
-
     public function __construct(
-        public readonly string $failureCode,
         string $message,
         ?\Throwable $previous = null,
     ) {
@@ -24,7 +19,6 @@ final class ObserverException extends \RuntimeException
     public static function invalidContextWindow(?int $contextWindow): self
     {
         return new self(
-            self::CODE_CONFIG,
             \sprintf('Observer model context_window is missing or nonpositive (%s).', null === $contextWindow ? 'null' : (string) $contextWindow),
         );
     }
@@ -32,7 +26,6 @@ final class ObserverException extends \RuntimeException
     public static function emptyRange(string $runId, int $start, int $end): self
     {
         return new self(
-            self::CODE_EMPTY_RANGE,
             \sprintf('Observer received empty event range %d..%d for run %s.', $start, $end, $runId),
         );
     }

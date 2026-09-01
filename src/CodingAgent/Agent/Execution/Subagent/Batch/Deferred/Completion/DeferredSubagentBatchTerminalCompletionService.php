@@ -115,7 +115,6 @@ final readonly class DeferredSubagentBatchTerminalCompletionService
         }
 
         $result = new ChildRunBatchSupervisionResultDTO(
-            parentRunId: $batch->parentRunId,
             items: $items,
         );
 

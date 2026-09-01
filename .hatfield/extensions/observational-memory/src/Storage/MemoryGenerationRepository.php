@@ -20,8 +20,6 @@ final class MemoryGenerationRepository
 
     public const string TRIGGER_THRESHOLD = 'threshold';
 
-    public const string TRIGGER_COMPACTION = 'compaction';
-
     public function __construct(
         private readonly Connection $connection,
     ) {

@@ -187,7 +187,7 @@ final class CompactRunHandlerTest extends TestCase
             {
                 ++$this->calls;
 
-                return CompactionHookResultDTO::continue();
+                return new CompactionHookResultDTO();
             }
         };
         $handler = new CompactRunHandler(
@@ -509,7 +509,7 @@ final class CompactRunHandlerTest extends TestCase
         $cancelHook = new class implements BeforeCompactionHookInterface {
             public function beforeCompaction(CompactionHookContextDTO $context): CompactionHookResultDTO
             {
-                return CompactionHookResultDTO::cancel('SafeGuard: session blocked.');
+                return new CompactionHookResultDTO(cancelReason: 'SafeGuard: session blocked.');
             }
         };
 
@@ -592,7 +592,7 @@ final class CompactRunHandlerTest extends TestCase
 
             public function beforeCompaction(CompactionHookContextDTO $context): CompactionHookResultDTO
             {
-                return CompactionHookResultDTO::replaceSummary($this->text);
+                return new CompactionHookResultDTO(replacementSummary: $this->text);
             }
         };
 
@@ -695,7 +695,7 @@ final class CompactRunHandlerTest extends TestCase
 
                 public function beforeCompaction(CompactionHookContextDTO $context): CompactionHookResultDTO
                 {
-                    return CompactionHookResultDTO::replaceSummary($this->text);
+                    return new CompactionHookResultDTO(replacementSummary: $this->text);
                 }
             };
 
@@ -728,7 +728,6 @@ final class CompactRunHandlerTest extends TestCase
             );
 
             $this->assertFalse($result->isFailure(), $result->failureReason ?? $result->failureMessage ?? 'expected success');
-            $this->assertTrue($result->compacted);
             $this->assertNotEmpty($result->messages);
             $found = false;
             foreach ($result->messages as $message) {
@@ -832,9 +831,6 @@ final class CompactRunHandlerTest extends TestCase
             );
 
             $this->assertFalse($result->isFailure(), 'ineffective snapshot compaction must not be a hard failure');
-            $this->assertFalse($result->compacted);
-            $this->assertTrue($result->structuralNoOp);
-            $this->assertSame('ineffective_compaction', $result->skipReason);
             $this->assertNull($result->failureReason);
             $this->assertNull($result->failureMessage);
             $this->assertSame($messages, $result->messages, 'original message objects/order must be returned unchanged');
@@ -863,7 +859,7 @@ final class CompactRunHandlerTest extends TestCase
 
         $receivedInstructions = null;
 
-        $fakeService = new class($receivedInstructions) implements CompactionServiceInterface {
+        $fakeService = new class implements CompactionServiceInterface {
             public ?string $receivedInstructions = null;
 
             public function prepare(array $messages): CompactionPrepareResult
@@ -1222,7 +1218,7 @@ final class CompactRunHandlerTest extends TestCase
         $cancelHook = new class implements BeforeCompactionHookInterface {
             public function beforeCompaction(CompactionHookContextDTO $context): CompactionHookResultDTO
             {
-                return CompactionHookResultDTO::cancel('SafeGuard: session blocked.');
+                return new CompactionHookResultDTO(cancelReason: 'SafeGuard: session blocked.');
             }
         };
 
@@ -1517,8 +1513,6 @@ final class CompactRunHandlerTest extends TestCase
             public function buildCompactedMessages(string $summaryText, CompactionPrepareResult $result): CompactResult
             {
                 return new CompactResult(
-                    summaryText: $summaryText,
-                    summaryMessage: $this->compactedMessages[0],
                     compactedMessages: $this->compactedMessages,
                     tokenEstimateBefore: $this->tokenEstimateBefore,
                     tokenEstimateAfter: $this->tokenEstimateAfter,

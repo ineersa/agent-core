@@ -13,7 +13,7 @@ use Symfony\Component\Validator\Context\ExecutionContextInterface;
  * and validation by Symfony Serializer + Validator.
  *
  * This DTO represents the user-supplied YAML frontmatter only.  It does NOT
- * include parser-added metadata (instructions, sourcePath, sourceDirectory).
+ * include parser-added metadata (instructions, sourcePath).
  *
  * All validation constraints are declared as PHP attributes so Symfony
  * Validator can enforce them without manual is_* checks.

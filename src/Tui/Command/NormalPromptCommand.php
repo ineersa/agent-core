@@ -5,17 +5,11 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Command;
 
 /**
- * The submitted text is a regular prompt — not a command.
+ * Marker for submitted text that is a regular prompt — not a slash or shell command.
+ *
+ * Callers keep the original submitted text themselves; this type only
+ * discriminates parse results.
  */
 final readonly class NormalPromptCommand implements CommandParseResult
 {
-    public function __construct(
-        public string $text,
-    ) {
-    }
-
-    public function originalText(): string
-    {
-        return $this->text;
-    }
 }

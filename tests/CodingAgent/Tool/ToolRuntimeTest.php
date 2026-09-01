@@ -7,14 +7,11 @@ namespace Ineersa\CodingAgent\Tests\Tool;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
-use Ineersa\CodingAgent\Tool\CancellableProcessResult;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Process\Process;
 
 /**
  * @covers \Ineersa\CodingAgent\Tool\ToolRuntime
- * @covers \Ineersa\CodingAgent\Tool\CancellableProcessResult
  */
 final class ToolRuntimeTest extends TestCase
 {
@@ -26,8 +23,6 @@ final class ToolRuntimeTest extends TestCase
         $this->contextAccessor = new StackToolExecutionContextAccessor();
         $this->toolRuntime = new ToolRuntime($this->contextAccessor);
     }
-
-    /* ────────── run() tests ────────── */
 
     public function testRunReturnsCallbackResult(): void
     {
@@ -78,118 +73,6 @@ final class ToolRuntimeTest extends TestCase
         $result = $this->toolRuntime->run(static fn (): string => 'ok');
 
         $this->assertSame('ok', $result);
-    }
-
-    /* ────────── runCancellableProcess() tests ────────── */
-
-    public function testCancellableProcessSuccess(): void
-    {
-        $process = new Process(['php', '-r', 'echo "hello"; exit(0);']);
-
-        /** @var CancellableProcessResult $result */
-        $result = $this->contextAccessor->with(
-            $this->contextWithToken($this->createToken(false)),
-            fn (): CancellableProcessResult => $this->toolRuntime->runCancellableProcess(
-                $process,
-                graceSeconds: 1,
-                timeoutSeconds: null,
-                pollIntervalMicros: 1000,
-            ),
-        );
-
-        $this->assertSame('hello', $result->stdout);
-        $this->assertSame(0, $result->exitCode);
-        $this->assertFalse($result->cancelled);
-        $this->assertFalse($result->timedOut);
-    }
-
-    public function testCancellableProcessCancelled(): void
-    {
-        $process = new Process(['php', '-r', 'usleep(200000); echo "interrupted";']);
-
-        // Cancellation token returns true — process should be stopped immediately.
-        $result = $this->contextAccessor->with(
-            $this->contextWithToken($this->createToken(true)),
-            fn (): CancellableProcessResult => $this->toolRuntime->runCancellableProcess(
-                $process,
-                graceSeconds: 1,
-                timeoutSeconds: null,
-                pollIntervalMicros: 1000,
-            ),
-        );
-
-        $this->assertTrue($result->cancelled, 'Process should be marked cancelled');
-        $this->assertFalse($result->timedOut);
-    }
-
-    public function testCancellableProcessTimeout(): void
-    {
-        $process = new Process(['php', '-r', 'usleep(500000); echo "too_slow";']);
-
-        // Timeout seconds 0 means immediate deadline.
-        // The process should be running (500ms sleep) and we hit timeout immediately.
-        $result = $this->contextAccessor->with(
-            $this->contextWithToken($this->createToken(false)),
-            fn (): CancellableProcessResult => $this->toolRuntime->runCancellableProcess(
-                $process,
-                graceSeconds: 1,
-                timeoutSeconds: 0,
-                pollIntervalMicros: 1000,
-            ),
-        );
-
-        $this->assertTrue($result->timedOut, 'Process should be marked timed out');
-        $this->assertFalse($result->cancelled);
-    }
-
-    public function testCancellableProcessWithoutContext(): void
-    {
-        // No context active — cancellation checks are skipped.
-        $process = new Process(['php', '-r', 'echo "no_context"; exit(0);']);
-
-        $result = $this->toolRuntime->runCancellableProcess(
-            $process,
-            graceSeconds: 1,
-            timeoutSeconds: null,
-            pollIntervalMicros: 1000,
-        );
-
-        $this->assertSame('no_context', $result->stdout);
-        $this->assertSame(0, $result->exitCode);
-        $this->assertFalse($result->cancelled);
-        $this->assertFalse($result->timedOut);
-    }
-
-    /* ────────── CancellableProcessResult DTO tests ────────── */
-
-    public function testCancellableProcessResultToArray(): void
-    {
-        $result = new CancellableProcessResult(
-            stdout: 'out',
-            stderr: 'err',
-            exitCode: 0,
-            cancelled: false,
-            timedOut: false,
-        );
-
-        $array = $result->toArray();
-
-        $this->assertSame('out', $array['stdout']);
-        $this->assertSame('err', $array['stderr']);
-        $this->assertSame(0, $array['exit_code']);
-        $this->assertFalse($array['cancelled']);
-        $this->assertFalse($array['timed_out']);
-    }
-
-    public function testCancellableProcessResultDefaultValues(): void
-    {
-        $result = new CancellableProcessResult();
-
-        $this->assertSame('', $result->stdout);
-        $this->assertSame('', $result->stderr);
-        $this->assertNull($result->exitCode);
-        $this->assertFalse($result->cancelled);
-        $this->assertFalse($result->timedOut);
     }
 
     private function createToken(bool $cancelled): CancellationTokenInterface

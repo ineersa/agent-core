@@ -17,11 +17,8 @@ use Ineersa\Tui\Command\SlashCommandCatalog;
  * so runtime-registered commands (e.g. /model, /model-favourites)
  * are included.
  *
- * EDITOR-08 limitation: only cursor-at-end is honoured.
- * When {@see CompletionContext::$cursorByteOffset} is not at the
- * end of the text, the entire text is still used as the prefix.
- * This matches the MVP where {@see PromptEditor} does not expose
- * live cursor state.
+ * EDITOR-08 limitation: completions operate on the full editor text
+ * because {@see PromptEditor} does not expose live cursor state.
  */
 final readonly class SlashCommandCompletionProvider implements CompletionProvider
 {

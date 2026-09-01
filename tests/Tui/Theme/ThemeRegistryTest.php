@@ -121,10 +121,11 @@ final class ThemeRegistryTest extends TestCase
         }
     }
 
-    public function testRegisterAddsNewTheme(): void
+    public function testRegisterPaletteAddsNewTheme(): void
     {
         $registry = $this->createEmptyRegistry();
-        $registry->register(new ThemePalette('custom', ['accent' => '#abc']));
+        $method = new \ReflectionMethod(ThemeRegistry::class, 'registerPalette');
+        $method->invoke($registry, new ThemePalette('custom', ['accent' => '#abc']), '');
 
         $this->assertTrue($registry->has('custom'));
         $this->assertSame('#abc', $registry->get('custom')?->get(ThemeColorEnum::Accent));
@@ -164,8 +165,9 @@ final class ThemeRegistryTest extends TestCase
         file_put_contents($themeFile, "name: dup-test\naccent: '#111111'\n");
 
         $palette = ThemePalette::fromArray(['name' => 'dup-test', 'accent' => '#111111']);
-        $registry->register($palette, $themeFile);
-        $registry->register($palette, $themeFile);
+        $method = new \ReflectionMethod(ThemeRegistry::class, 'registerPalette');
+        $method->invoke($registry, $palette, $themeFile);
+        $method->invoke($registry, $palette, $themeFile);
 
         $this->assertSame([], $registry->getThemeCollisions());
         $this->assertTrue($registry->has('dup-test'));
@@ -179,8 +181,9 @@ final class ThemeRegistryTest extends TestCase
         file_put_contents($winnerFile, "name: clash\naccent: '#111111'\n");
         file_put_contents($loserFile, "name: clash\naccent: '#222222'\n");
 
-        $registry->register(ThemePalette::fromArray(['name' => 'clash', 'accent' => '#111111']), $winnerFile);
-        $registry->register(ThemePalette::fromArray(['name' => 'clash', 'accent' => '#222222']), $loserFile);
+        $method = new \ReflectionMethod(ThemeRegistry::class, 'registerPalette');
+        $method->invoke($registry, ThemePalette::fromArray(['name' => 'clash', 'accent' => '#111111']), $winnerFile);
+        $method->invoke($registry, ThemePalette::fromArray(['name' => 'clash', 'accent' => '#222222']), $loserFile);
 
         $collisions = $registry->getThemeCollisions();
         $this->assertCount(1, $collisions);

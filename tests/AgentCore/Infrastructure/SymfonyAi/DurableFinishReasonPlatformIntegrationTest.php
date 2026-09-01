@@ -88,7 +88,7 @@ final class DurableFinishReasonPlatformIntegrationTest extends TestCase
                 new class implements ToolboxInterface {
                     public function execute(ToolCall $toolCall): ToolResult
                     {
-                        return new ToolResult(new \Symfony\AI\Platform\Message\Content\Text(''));
+                        return new ToolResult($toolCall, new \Symfony\AI\Platform\Message\Content\Text(''));
                     }
 
                     public function getToolIterator(): \Traversable

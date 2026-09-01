@@ -82,16 +82,6 @@ final class AuthCredentialFileStore
     }
 
     /**
-     * Unlocked remove of one provider key. MUST be called under {@see withLock}.
-     */
-    public function remove(string $providerKey): void
-    {
-        $data = $this->readAll();
-        unset($data[$providerKey]);
-        $this->writeAll($data);
-    }
-
-    /**
      * @return array<string, mixed>
      */
     public function readAll(): array

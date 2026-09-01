@@ -85,7 +85,7 @@ final class FileRewindServiceSessionScopedCheckpointTest extends TestCase
 
     private function makeService(): FileRewindService
     {
-        $config = new FileRewindConfig(enabled: true, maxRetainedTurns: 100, maxFileBytes: 2_097_152, gitTimeoutSeconds: 30);
+        $config = new FileRewindConfig(enabled: true, maxRetainedTurns: 100, gitTimeoutSeconds: 30);
 
         return new FileRewindService(
             new HiddenGitSnapshotBackend($this->runner, new NullLogger()),

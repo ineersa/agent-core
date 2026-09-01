@@ -107,8 +107,6 @@ final class ForkChildLaunchInputBuilder
             artifactId: $identity->artifactId,
             displayName: $identity->displayName,
             taskSummary: $identity->taskSummary,
-            launchModel: $resolved->model,
-            launchReasoning: $resolved->thinking,
             artifactKind: $identity->artifactKind,
             batchIndex: $identity->batchIndex,
         );

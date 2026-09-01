@@ -38,11 +38,4 @@ interface SpanProviderInterface
      * @param array<string, mixed> $tags   Tags to set/update on close
      */
     public function closeSpan(?string $spanId, array $tags = []): void;
-
-    /**
-     * Current trace context for log correlation.
-     *
-     * @return array{trace_id?: string, span_id?: string}
-     */
-    public function currentContext(): array;
 }

@@ -169,7 +169,6 @@ final class ProviderBoundaryCaptureSupport
 
 final class FakeSymfonyModelClientForCapture implements ModelClientInterface
 {
-    public ?string $capturedModel = null;
     /** @var array<string, mixed> */
     public array $capturedOptions = [];
     /** @var array<string, mixed>|string|null */
@@ -181,7 +180,6 @@ final class FakeSymfonyModelClientForCapture implements ModelClientInterface
 
     public function resetCapture(): void
     {
-        $this->capturedModel = null;
         $this->capturedOptions = [];
         $this->capturedPayload = null;
     }
@@ -193,7 +191,6 @@ final class FakeSymfonyModelClientForCapture implements ModelClientInterface
 
     public function request(Model $model, array|string $payload, array $options = []): RawResultInterface
     {
-        $this->capturedModel = $model->getName();
         $this->capturedPayload = $payload;
         $this->capturedOptions = $options;
 

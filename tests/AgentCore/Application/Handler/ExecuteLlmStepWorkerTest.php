@@ -49,7 +49,6 @@ final class ExecuteLlmStepWorkerTest extends TestCase
             stepId: 'step-1',
             attempt: 1,
             idempotencyKey: 'key-1',
-            contextRef: 'ctx-1',
             toolsRef: 'tools-1',
         ));
 
@@ -86,7 +85,6 @@ final class ExecuteLlmStepWorkerTest extends TestCase
             stepId: 'step-2',
             attempt: 1,
             idempotencyKey: 'key-2',
-            contextRef: 'ctx-2',
             toolsRef: 'tools-2',
         ));
 
@@ -124,7 +122,6 @@ final class ExecuteLlmStepWorkerTest extends TestCase
             stepId: 'step-3',
             attempt: 1,
             idempotencyKey: 'key-3',
-            contextRef: 'ctx-3',
             toolsRef: 'tools-3',
         ));
 
@@ -165,7 +162,6 @@ final class ExecuteLlmStepWorkerTest extends TestCase
             stepId: 'step-4',
             attempt: 1,
             idempotencyKey: 'key-4',
-            contextRef: 'ctx-4',
             toolsRef: 'tools-4',
         ));
 
@@ -203,7 +199,6 @@ final class ExecuteLlmStepWorkerTest extends TestCase
             stepId: 'step-retry',
             attempt: 1,
             idempotencyKey: 'key-retry',
-            contextRef: 'ctx',
             toolsRef: 'tools',
         ));
 
@@ -223,7 +218,6 @@ final class ExecuteLlmStepWorkerTest extends TestCase
             stepId: 'step-1',
             attempt: 1,
             idempotencyKey: 'key-1',
-            contextRef: 'hot:run:run-direct-context',
             toolsRef: 'tools-1',
             messages: $messages,
         ));

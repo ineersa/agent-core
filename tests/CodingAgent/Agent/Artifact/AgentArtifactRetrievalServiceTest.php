@@ -289,7 +289,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
                 $this->callback(static fn (RunState $queued): bool => $queued->runId === $childRun && 0 === $queued->lastSeq),
                 $this->identicalTo($childRun),
             )
-            ->willReturn(RunStateReplayResult::rebuilt($state, 44, 44, true));
+            ->willReturn(RunStateReplayResult::rebuilt($state));
         $eventStore = $this->createStub(EventStoreInterface::class);
 
         $service = $this->makeService(rebuilder: $rebuilder, eventStore: $eventStore);
@@ -366,7 +366,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
                 $this->callback(static fn (RunState $queued): bool => $queued->runId === $childRun && 0 === $queued->lastSeq),
                 $this->identicalTo($childRun),
             )
-            ->willReturn(RunStateReplayResult::rebuilt($state, 18, 18, true));
+            ->willReturn(RunStateReplayResult::rebuilt($state));
 
         $service = $this->makeService(rebuilder: $rebuilder);
         $out = $service->retrieve($parent, $this->args(['artifact_id' => $artifactId, 'mode' => 'metadata']));

@@ -35,7 +35,6 @@ use PHPUnit\Framework\TestCase;
 final class TuiJourneyE2eTest extends TestCase
 {
     private TmuxHarness $tmux;
-    private string $projectRoot;
     private string $testProjectDir;
 
     protected function setUp(): void
@@ -45,7 +44,6 @@ final class TuiJourneyE2eTest extends TestCase
         }
 
         $this->tmux = new TmuxHarness();
-        $this->projectRoot = ProjectDir::get();
         $this->testProjectDir = $this->createIsolatedProjectDir();
         $this->tmux->setSnapshotDir($this->testProjectDir);
     }

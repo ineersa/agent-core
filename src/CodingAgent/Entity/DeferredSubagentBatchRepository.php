@@ -266,32 +266,6 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
         return $this->toDto($row);
     }
 
-    public function markLaunched(string $parentRunId, string $parentToolCallId, \DateTimeImmutable $startedAt): void
-    {
-        $row = $this->requireRow($parentRunId, $parentToolCallId);
-        if (DeferredSubagentBatchLaunchStatusEnum::Launched === $row->launchStatus) {
-            return;
-        }
-        if (DeferredSubagentBatchLaunchStatusEnum::Failed === $row->launchStatus) {
-            return;
-        }
-
-        $row->launchStatus = DeferredSubagentBatchLaunchStatusEnum::Launched;
-        $row->startedAt = $row->startedAt ?? $startedAt;
-        $this->getEntityManager()->flush();
-    }
-
-    public function markFailed(string $parentRunId, string $parentToolCallId): void
-    {
-        $row = $this->requireRow($parentRunId, $parentToolCallId);
-        if (DeferredSubagentBatchLaunchStatusEnum::Launched === $row->launchStatus) {
-            return;
-        }
-
-        $row->launchStatus = DeferredSubagentBatchLaunchStatusEnum::Failed;
-        $this->getEntityManager()->flush();
-    }
-
     /**
      * Preparation failed before any runtime start: every child row becomes Failed and batch becomes Failed (forward-only).
      */
@@ -611,20 +585,6 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
                 throw new ToolCallException('Deferred subagent batch child was reserved with a different launch model or reasoning.', retryable: false);
             }
         }
-    }
-
-    private function requireRow(string $parentRunId, string $parentToolCallId): DeferredSubagentBatch
-    {
-        $row = $this->findOneBy([
-            'parentRunId' => $parentRunId,
-            'parentToolCallId' => $parentToolCallId,
-        ]);
-
-        if (!$row instanceof DeferredSubagentBatch) {
-            throw new \RuntimeException(\sprintf('Deferred subagent batch missing for parent "%s" tool call "%s".', $parentRunId, $parentToolCallId));
-        }
-
-        return $row;
     }
 
     private function toDto(DeferredSubagentBatch $row): DeferredSubagentBatchProjectionDTO

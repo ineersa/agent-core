@@ -28,15 +28,7 @@ use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummaryBuilder;
 use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Config\AppConfig;
-use Ineersa\CodingAgent\Config\AppResourceLocator;
-use Ineersa\CodingAgent\Config\LoggingConfig;
-use Ineersa\CodingAgent\Config\SettingsPathResolver;
-use Ineersa\CodingAgent\Config\TuiConfig;
-use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
-use Ineersa\CodingAgent\Skills\SkillContextRenderer;
-use Ineersa\CodingAgent\Skills\SkillDiscovery;
-use Ineersa\CodingAgent\Skills\SkillsConfig;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
 use Ineersa\CodingAgent\Tests\Agent\Execution\Support\SubagentExecutionServiceFactory;
@@ -46,7 +38,6 @@ use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use PHPUnit\Framework\Attributes\CoversClass;
 use Symfony\Component\Clock\NativeClock;
-use Symfony\Component\Filesystem\Filesystem;
 
 #[CoversClass(SubagentExecutionService::class)]
 final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
@@ -173,35 +164,6 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         return new AgentMcpToolsResolver($catalogStore, $loader);
     }
 
-    private function makeSkillsContextBuilder(string $cwd): SkillsContextBuilder
-    {
-        $homeDir = $cwd.'/home';
-        if (!is_dir($homeDir)) {
-            mkdir($homeDir, 0777, true);
-        }
-        $skillsConfig = new SkillsConfig(noSkills: false, skillsPaths: [], preloadSkills: []);
-
-        $discovery = new SkillDiscovery(
-            config: $skillsConfig,
-            pathResolver: new SettingsPathResolver($cwd, $homeDir),
-            appConfig: new AppConfig(
-                tui: new TuiConfig(theme: 'test'),
-                logging: new LoggingConfig(),
-                cwd: $cwd,
-            ),
-            extractor: new MarkdownFrontmatterExtractor(),
-            resources: new AppResourceLocator($cwd),
-            filesystem: new Filesystem(),
-        );
-
-        return new SkillsContextBuilder(
-            discovery: $discovery,
-            config: $skillsConfig,
-            renderer: new SkillContextRenderer(),
-            extractor: new MarkdownFrontmatterExtractor(),
-        );
-    }
-
     private function makeService(array $overrides): SubagentExecutionService
     {
         $defaults = [
@@ -244,16 +206,12 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
 final class ProgressAppendInputRecordingEventStore implements EventStoreInterface
 {
     /** @var list<RunEvent> */
-    public array $appendInputs = [];
-
     public function __construct(private readonly InMemoryEventStore $inner)
     {
     }
 
     public function append(RunEvent $event): RunEvent
     {
-        $this->appendInputs[] = $event;
-
         return $this->inner->append($event);
     }
 

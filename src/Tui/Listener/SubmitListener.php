@@ -326,18 +326,14 @@ final class SubmitListener implements TuiListenerRegistrar
                 // Merge any pre-configured draft request (e.g. from /new --model)
                 // with the submitted text so model/reasoning metadata carries
                 // forward and the run starts with the user-typed prompt.
+                $draftRequest = $state->request;
                 $mergedRequest = new StartRunRequest(
                     prompt: $text,
                     runId: $state->sessionId,
-                    // $state->request is nullable; nullsafe is required
-                    // to avoid a property-access error on null during
-                    // draft promotion from a plain /new without --model.
-                    // @phpstan-ignore nullsafe.neverNull
-                    cwd: $state->request?->cwd ?? '',
-                    // @phpstan-ignore nullsafe.neverNull
-                    options: $state->request?->options ?? [],
-                    model: $state->request?->model,
-                    reasoning: $state->request?->reasoning,
+                    cwd: null !== $draftRequest ? $draftRequest->cwd : '',
+                    options: null !== $draftRequest ? $draftRequest->options : [],
+                    model: null !== $draftRequest ? $draftRequest->model : null,
+                    reasoning: null !== $draftRequest ? $draftRequest->reasoning : null,
                 );
                 $state->request = $mergedRequest;
                 $state->handle = $client->start($state->request);
@@ -469,12 +465,7 @@ final class SubmitListener implements TuiListenerRegistrar
 
         $state->sessionId = $sessionStore->createSession($seedPrompt);
         $screen->updateSessionId($state->sessionId);
-        $lifecycle->dispatch(new \Ineersa\Tui\Runtime\TuiSessionLifecycleEventDTO(
-            type: \Ineersa\Tui\Runtime\TuiSessionLifecycleEventTypeEnum::SessionStarted,
-            sessionId: $state->sessionId,
-            isDraft: false,
-            resuming: false,
-        ));
+        $lifecycle->dispatch(\Ineersa\Tui\Runtime\TuiSessionLifecycleEventTypeEnum::SessionStarted);
         $logger->info('Draft session promoted to real session', [
             'component' => 'SubmitListener',
             'event_type' => $eventType,
@@ -545,12 +536,7 @@ final class SubmitListener implements TuiListenerRegistrar
             if ('' === $state->sessionId) {
                 $state->sessionId = $sessionStore->createSession($shellCommand->rawInput);
                 $screen->updateSessionId($state->sessionId);
-                $lifecycle->dispatch(new \Ineersa\Tui\Runtime\TuiSessionLifecycleEventDTO(
-                    type: \Ineersa\Tui\Runtime\TuiSessionLifecycleEventTypeEnum::SessionStarted,
-                    sessionId: $state->sessionId,
-                    isDraft: false,
-                    resuming: false,
-                ));
+                $lifecycle->dispatch(\Ineersa\Tui\Runtime\TuiSessionLifecycleEventTypeEnum::SessionStarted);
                 $logger->info('Draft session promoted for shell command', [
                     'component' => 'SubmitListener',
                     'event_type' => 'draft_promoted_shell',

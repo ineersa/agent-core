@@ -103,7 +103,7 @@ final class RawWebSocketResultTest extends TestCase
         $connection->expects($this->once())->method('receive')->willReturn($message);
         $connection->expects($this->once())->method('close');
 
-        $entry = new CodexWebSocketCacheEntry($connection, $identity, time(), $settings);
+        $entry = new CodexWebSocketCacheEntry($connection, $identity, time());
         $entry->continuation = CodexWebSocketContinuationState::fromSuccessfulResponse(
             ['input' => []],
             'resp-old',
@@ -210,7 +210,7 @@ final class RawWebSocketResultTest extends TestCase
         $connection->method('receive')->willReturn(WebsocketMessage::fromText(json_encode(['type' => 'response.failed'], \JSON_THROW_ON_ERROR)));
         $connection->expects($this->once())->method('close');
 
-        $entry = new CodexWebSocketCacheEntry($connection, $identity, time(), $settings);
+        $entry = new CodexWebSocketCacheEntry($connection, $identity, time());
         $entry->continuation = CodexWebSocketContinuationState::fromSuccessfulResponse(
             ['input' => []],
             'resp-old',
@@ -298,7 +298,7 @@ final class RawWebSocketResultTest extends TestCase
         // Successful cached stream retains the connection (no close).
         $connection->expects($this->never())->method('close');
 
-        $entry = new CodexWebSocketCacheEntry($connection, $identity, time(), $settings);
+        $entry = new CodexWebSocketCacheEntry($connection, $identity, time());
         $lease = new CodexWebSocketCacheLease($connection, true, true, false, $entry);
         $fullRequestBody = [
             'model' => 'gpt-5.6-luna',

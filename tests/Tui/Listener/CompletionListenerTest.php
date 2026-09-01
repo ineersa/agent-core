@@ -12,7 +12,6 @@ use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Command\SlashCommandHandler;
-use Ineersa\Tui\Command\SlashCommandRegistry;
 use Ineersa\Tui\Completion\SlashCommandCompletionProvider;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\CompletionListener;
@@ -38,7 +37,6 @@ final class CompletionListenerTest extends TestCase
     private ChatScreen $screen;
     private Tui $tui;
     private SlashCommandCatalog $catalog;
-    private SlashCommandRegistry $registry;
 
     protected function setUp(): void
     {
@@ -51,7 +49,6 @@ final class CompletionListenerTest extends TestCase
         $this->screen->mount($this->tui);
 
         $this->catalog = new SlashCommandCatalog();
-        $this->registry = new SlashCommandRegistry($this->catalog);
 
         $this->registerListener();
     }

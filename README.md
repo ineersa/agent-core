@@ -123,6 +123,7 @@ castor test:controller-replay
 castor test:tui
 castor deptrac
 castor phpstan
+castor dead-code
 castor cs-check
 castor docs:validate         # built-in catalog, links, ≤25k chars
 castor phar:build
@@ -131,6 +132,15 @@ castor distribution:build
 
 All QA goes through Castor — do not run raw `vendor/bin/*` in normal workflow.
 See `.agents/skills/testing/SKILL.md` and `tests/AGENTS.md`.
+
+### Dead-code detector
+
+`castor dead-code` and `castor dead-code:baseline` use ShipMonk against `phpstan.dead-code.neon`.
+
+- Delete confirmed dead members first; keep the committed baseline empty (`parameters.ignoreErrors: []`) when possible.
+- Production members used only from tests are dead unless there is concrete published-contract or dynamic/framework evidence.
+- Exact usage-provider rules are allowed for proven Serializer/DIC/ExtensionApi gaps. Expression GRAPH entries in `tools/phpstan/DeadCode/SymfonyExpressionServiceCallUsageProvider.php` must mirror generated DIC expression chains; unknown chains stay conservative.
+- The lane keeps unmatched reporting strict. Do not add ordinary PHPStan baselines or broad ignore blocks for dead-code findings.
 
 ## Model-visible docs (`hatfield_docs`)
 

@@ -28,30 +28,28 @@ final class CommandRouter
     {
         $optionValidationError = $this->validateOptionKeys($command);
         if (null !== $optionValidationError) {
-            return RoutedCommand::rejected($command->kind, $optionValidationError);
+            return RoutedCommand::rejected($optionValidationError);
         }
 
         if (CoreCommandKind::isCore($command->kind)) {
             if (\array_key_exists('cancel_safe', $command->options)) {
                 return RoutedCommand::rejected(
-                    $command->kind,
                     \sprintf('Option "cancel_safe" is reserved for extension commands and cannot be used for core command "%s".', $command->kind),
                 );
             }
 
-            return RoutedCommand::core($command->kind, $command->payload, []);
+            return RoutedCommand::core($command->payload, []);
         }
 
         if (!str_starts_with($command->kind, $this->extensionPrefix)) {
             return RoutedCommand::rejected(
-                $command->kind,
                 \sprintf('Unknown command kind "%s". Extension commands must use "%s" prefix.', $command->kind, $this->extensionPrefix),
             );
         }
 
         $handler = $this->findHandler($command->kind);
         if (null === $handler) {
-            return RoutedCommand::rejected($command->kind, \sprintf('No extension command handler registered for "%s".', $command->kind));
+            return RoutedCommand::rejected(\sprintf('No extension command handler registered for "%s".', $command->kind));
         }
 
         $normalizedOptions = [
@@ -59,10 +57,10 @@ final class CommandRouter
         ];
 
         if ($normalizedOptions['cancel_safe'] && !$handler->supportsCancelSafe($command->kind)) {
-            return RoutedCommand::rejected($command->kind, \sprintf('Extension command "%s" does not allow cancel_safe=true.', $command->kind));
+            return RoutedCommand::rejected(\sprintf('Extension command "%s" does not allow cancel_safe=true.', $command->kind));
         }
 
-        return RoutedCommand::extension($command->kind, $command->payload, $normalizedOptions);
+        return RoutedCommand::extension($command->payload, $normalizedOptions);
     }
 
     public function handlerFor(string $kind): ?CommandHandlerInterface

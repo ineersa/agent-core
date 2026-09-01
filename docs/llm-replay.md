@@ -13,9 +13,13 @@ LLM-visible flows offline. Live `castor test:llm-real` remains opt-in for compat
 castor test                 # default suites exclude live llm-real
 castor test:controller-replay
 castor llm:fixtures:info
-castor llm:fixtures:record  # re-record from live LLM intentionally
 castor test:llm-real        # live smoke (llama-proxy / test model)
 ```
+
+Replay helpers live under `tests/AgentCore/Infrastructure/SymfonyAi/Replay/`
+(`FixtureReplayModelClient`, `FixtureReplayResultConverter`). Committed fixtures
+are maintained directly under `tests/AgentCore/Fixtures/traces/` and related
+controller/TUI fixture dirs; there is no supported live recording Castor task.
 
 ## Rules
 

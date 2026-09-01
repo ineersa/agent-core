@@ -48,7 +48,6 @@ final class ExecutionWorkerTest extends TestCase
             stepId: 'turn-4-llm-1',
             attempt: 2,
             idempotencyKey: 'llm-idemp-1',
-            contextRef: 'hot:run:run-worker-1',
             toolsRef: 'toolset:run:run-worker-1:turn:4',
         ));
 
@@ -84,7 +83,6 @@ final class ExecutionWorkerTest extends TestCase
             stepId: 'turn-3-llm-1',
             attempt: 1,
             idempotencyKey: 'llm-malformed-1',
-            contextRef: 'hot:run:run-malformed-1',
             toolsRef: 'toolset:run:run-malformed-1:turn:3',
         ));
 
@@ -126,7 +124,6 @@ final class ExecutionWorkerTest extends TestCase
             stepId: 'turn-2-llm-1',
             attempt: 1,
             idempotencyKey: 'llm-obs-1',
-            contextRef: 'hot:run:run-worker-obs-1',
             toolsRef: 'toolset:run:run-worker-obs-1:turn:2',
         ));
 
@@ -346,7 +343,6 @@ final class ExecutionWorkerTest extends TestCase
             stepId: 'turn-3-llm-1',
             attempt: 1,
             idempotencyKey: 'llm-empty-metrics-1',
-            contextRef: 'hot:run:run-empty-metrics-1',
             toolsRef: 'toolset:run:run-empty-metrics-1:turn:3',
         ));
 
@@ -402,7 +398,6 @@ final class ExecutionWorkerTest extends TestCase
             stepId: 'turn-3-llm-1',
             attempt: 1,
             idempotencyKey: 'llm-empty-1',
-            contextRef: 'hot:run:run-empty-1',
             toolsRef: 'toolset:run:run-empty-1:turn:3',
         ));
 
@@ -450,7 +445,6 @@ final class ExecutionWorkerTest extends TestCase
             stepId: 'turn-1-llm-1',
             attempt: 1,
             idempotencyKey: 'llm-finish-only-1',
-            contextRef: 'hot:run:run-finish-only-1',
             toolsRef: 'toolset:run:run-finish-only-1:turn:1',
         ));
 

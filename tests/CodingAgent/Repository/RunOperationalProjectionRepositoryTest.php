@@ -70,12 +70,11 @@ final class RunOperationalProjectionRepositoryTest extends IsolatedKernelTestCas
         $this->assertSame(0, (int) $this->connection->fetchOne('SELECT COUNT(*) FROM run_operational_human_input'));
     }
 
-    public function testStatusReconstructsCurrentOperationAndOwnerCleanupRemovesGraph(): void
+    public function testStatusAndOwnerCleanupRemovesGraph(): void
     {
         $this->repository->replace($this->state(RunStatus::Cancelling));
         $status = $this->repository->findOperationalStatus('run-1');
         $this->assertSame(RunStatus::Cancelling, $status?->status);
-        $this->assertTrue($status?->currentOperation?->matches(3, 'step-3', 2, 'operation-3') ?? false);
 
         $this->assertSame(1, $this->repository->deleteForOwnerSession('run-1'));
         $this->assertNull($this->repository->findOperationalStatus('run-1'));

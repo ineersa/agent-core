@@ -1,0 +1,82 @@
+includes:
+    - vendor/shipmonk/dead-code-detector/rules.neon
+    - phpstan.dead-code-baseline.neon
+
+services:
+    -
+        class: Ineersa\Tools\PHPStan\DeadCode\HatfieldDeadCodeUsageProvider
+        tags:
+            - shipmonk.deadCode.memberUsageProvider
+    -
+        class: Ineersa\Tools\PHPStan\DeadCode\SymfonyExpressionServiceCallUsageProvider
+        tags:
+            - shipmonk.deadCode.memberUsageProvider
+
+parameters:
+    # Dedicated dead-code lane: only ShipMonk dead-member rules.
+    customRulesetUsed: true
+    level: 0
+    treatPhpDocTypesAsCertain: false
+    # Keep unmatched reporting on so stale baseline entries fail loudly.
+    reportUnmatchedIgnoredErrors: true
+    paths:
+        - src/
+        - tests/
+        - tools/phpstan/
+        - castor.php
+        - .castor/
+        - .hatfield/extensions/
+        - migrations/
+        - bin/console
+    scanFiles:
+        - .castor.stub.php
+        - .castor/helpers.php
+        - .castor/qa_tmux.php
+        - bin/console
+    tmpDir: var/phpstan-dead-code
+    excludePaths:
+        - .castor/vendor/*
+        - var/*
+        - vendor/*
+        - .hatfield/extensions/vendor/*
+    parallel:
+        maximumNumberOfProcesses: 1
+    shipmonkDeadCode:
+        reportTransitivelyDeadMethodAsSeparateError: false
+        detect:
+            deadMethods: true
+            deadConstants: true
+            deadEnumCases: true
+            deadProperties:
+                neverRead: true
+                neverWritten: true
+        usageProviders:
+            # Explicit enable documents required providers for this lane.
+            # Symfony needs the warmed container XML under var/phpstan-dead-code/.
+            symfony:
+                enabled: true
+                configDir: %currentWorkingDirectory%/config
+                containerXmlPaths:
+                    - %currentWorkingDirectory%/var/phpstan-dead-code/symfony-container.xml
+            doctrine:
+                enabled: true
+            phpunit:
+                enabled: true
+            streamWrapper:
+                enabled: true
+            vendor:
+                enabled: true
+            builtin:
+                enabled: true
+        usageExcluders:
+            tests:
+                enabled: true
+                # Bundled extension tests are analysed (not excluded from paths)
+                # so their usages can mark production members; these still count
+                # as test-only via the tests usage excluder.
+                devPaths:
+                    - %currentWorkingDirectory%/tests
+                    - %currentWorkingDirectory%/.hatfield/extensions/task-workflow/tests
+                    - %currentWorkingDirectory%/.hatfield/extensions/castor-llm-mode/tests
+                    - %currentWorkingDirectory%/.hatfield/extensions/file-rewind/tests
+                    - %currentWorkingDirectory%/.hatfield/extensions/observational-memory/tests

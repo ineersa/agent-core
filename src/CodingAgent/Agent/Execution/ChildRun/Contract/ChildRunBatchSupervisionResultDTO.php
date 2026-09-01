@@ -10,7 +10,6 @@ final readonly class ChildRunBatchSupervisionResultDTO
      * @param list<ChildRunBatchItemSnapshotDTO> $items
      */
     public function __construct(
-        public string $parentRunId,
         public array $items,
     ) {
     }

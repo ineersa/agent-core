@@ -1,5 +1,4 @@
 includes:
-    - phpstan-baseline.neon
     - vendor/phpstan/phpstan-strict-rules/rules.neon
     - vendor/phpstan/phpstan-phpunit/extension.neon
 
@@ -8,6 +7,7 @@ parameters:
     treatPhpDocTypesAsCertain: false
     paths:
         - src/
+        - tools/phpstan/
         - castor.php
         - .castor/
         - .hatfield/extensions/
@@ -15,6 +15,8 @@ parameters:
         - .castor.stub.php
         - .castor/helpers.php
         - .castor/qa_tmux.php
+    stubFiles:
+        - phpstan/stubs/league-oauth2-client.stub
     tmpDir: var/phpstan
     excludePaths:
         - .castor/vendor/*

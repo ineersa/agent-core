@@ -340,7 +340,8 @@ final class SubagentLiveScenarioHarness
 
     public function statusText(string $key): ?string
     {
-        $entries = $this->screen->statusEntries();
+        $ref = new \ReflectionProperty(ChatScreen::class, 'statusEntries');
+        $entries = $ref->getValue($this->screen);
 
         return $entries[$key] ?? null;
     }

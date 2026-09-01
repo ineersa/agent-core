@@ -77,50 +77,6 @@ final class ImageAttachmentProcessor
     }
 
     /**
-     * Remove expired cached processed image files.
-     *
-     * @param int|null $olderThanSeconds Delete files older than this many seconds.
-     *                                   Defaults to 86400 (24 hours). Null means all.
-     *
-     * @return int Number of deleted cache files
-     */
-    public function cleanCache(?int $olderThanSeconds = 86400): int
-    {
-        $cacheDir = $this->tempDir().'/'.self::CACHE_DIR;
-
-        if (!is_dir($cacheDir)) {
-            return 0;
-        }
-
-        $deleted = 0;
-        $cutoff = null !== $olderThanSeconds ? time() - $olderThanSeconds : null;
-
-        $files = @glob($cacheDir.'/*');
-        if (false === $files) {
-            return 0;
-        }
-
-        foreach ($files as $file) {
-            if (!is_file($file)) {
-                continue;
-            }
-
-            if (null !== $cutoff) {
-                $mtime = @filemtime($file);
-                if (false === $mtime || $mtime >= $cutoff) {
-                    continue;
-                }
-            }
-
-            if (@unlink($file)) {
-                ++$deleted;
-            }
-        }
-
-        return $deleted;
-    }
-
-    /**
      * @return array{path: string, media_type: string, width: int, height: int, bytes: int, processed: bool, exceeds_encoded_limit?: bool, warning?: string}
      */
     private function processWithImagick(string $filePath, string $mediaType, int $width, int $height, int $fileSize): array

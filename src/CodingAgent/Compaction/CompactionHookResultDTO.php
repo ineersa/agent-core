@@ -10,8 +10,7 @@ namespace Ineersa\CodingAgent\Compaction;
  * Aggregated (mutably merged) by {@see CompactionHookDispatcher} across all
  * registered hooks.  The DTO is also the mutable aggregation container itself —
  * the dispatcher instantiates one empty instance and merges each hook result
- * into it.  Convenience factories ({@see continue()}, {@see cancel()},
- * {@see replaceSummary()}) produce single-hook results.
+ * into it.
  *
  * Semantics:
  *  - cancelReason: non-null → stop iterating, emit context_compaction_failed.
@@ -32,37 +31,6 @@ final class CompactionHookResultDTO
         public ?string $additionalInstructions = null,
         public array $metadata = [],
     ) {
-    }
-
-    /**
-     * Convenience: identity result (no-op).
-     */
-    public static function continue(): self
-    {
-        return new self();
-    }
-
-    /**
-     * Convenience: cancel compaction with the given reason.
-     *
-     * The reason appears in the context_compaction_failed event payload
-     * as $payload['reason'] prefixed with 'hook_cancelled:' for traceability.
-     *
-     * @param string $reason Human-readable cancel reason (e.g. "SafeGuard: user is blocked")
-     */
-    public static function cancel(string $reason): self
-    {
-        return new self(cancelReason: $reason);
-    }
-
-    /**
-     * Convenience: skip the LLM call and use the given text as the summary.
-     *
-     * @param string $summaryText Replacement summary text (must be non-empty after trim)
-     */
-    public static function replaceSummary(string $summaryText): self
-    {
-        return new self(replacementSummary: $summaryText);
     }
 
     /**

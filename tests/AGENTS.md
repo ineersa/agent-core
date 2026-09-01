@@ -145,7 +145,7 @@ ParaTest (`castor test` default) isolates per-worker SQLite + cache via `TEST_TO
 
 All QA goes through Castor — never raw `vendor/bin/*` except isolating a Castor failure. PHPUnit flags and the full matrix live in the testing skill.
 
-Common entries: `castor test`, `castor test:tui`, `castor test:controller-replay`, `castor test:llm-real`, `castor test:controller`, `castor llm:fixtures:record`, `castor llm:fixtures:info`, `castor deptrac`, `castor phpstan`, `castor cs-check` / `castor cs-fix`, `castor check`, `castor clean:cleanup`.
+Common entries: `castor test`, `castor test:tui`, `castor test:controller-replay`, `castor test:llm-real`, `castor test:controller`, `castor llm:fixtures:info`, `castor deptrac`, `castor phpstan`, `castor cs-check` / `castor cs-fix`, `castor check`, `castor clean:cleanup`.
 
 ## Snapshots and artifacts
 
@@ -164,6 +164,6 @@ Even with temperature 0 / fixed seed on the test model:
 
 ## LLM fixture replay (committed)
 
-Deterministic fixtures under `tests/AgentCore/Fixtures/traces/` and controller/TUI fixture dirs. Helpers: `tests/AgentCore/Infrastructure/SymfonyAi/Replay/` (`FixtureReplayModelClient`, `FixtureReplayResultConverter`, `StreamRecorderObserver`, `ReplayTest`, `ReplayRecordingTest`). Format: `docs/llm-replay.md`. Re-record: `castor llm:fixtures:record`.
+Deterministic fixtures under `tests/AgentCore/Fixtures/traces/` and controller/TUI fixture dirs. Helpers: `tests/AgentCore/Infrastructure/SymfonyAi/Replay/` (`FixtureReplayModelClient`, `FixtureReplayResultConverter`). Format: `docs/llm-replay.md`. Inspect: `castor llm:fixtures:info`.
 
 llama-proxy cassettes (live HTTP on :9052) are a **different** mechanism from committed fixtures — see testing skill; do not conflate them.

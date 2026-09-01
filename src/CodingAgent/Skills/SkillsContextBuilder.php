@@ -32,8 +32,7 @@ final readonly class SkillsContextBuilder
     public function build(): string
     {
         $discovered = $this->discovery->discover();
-        $collisions = $this->discovery->getCollisions();
-        $registry = new SkillRegistry($discovered, extractor: $this->extractor, collisions: $collisions);
+        $registry = new SkillRegistry($discovered, extractor: $this->extractor);
 
         $parts = [];
 
@@ -89,8 +88,7 @@ final readonly class SkillsContextBuilder
         }
 
         $discovered = $this->discovery->discover();
-        $collisions = $this->discovery->getCollisions();
-        $registry = new SkillRegistry($discovered, extractor: $this->extractor, collisions: $collisions);
+        $registry = new SkillRegistry($discovered, extractor: $this->extractor);
 
         $parts = [];
         $seen = [];

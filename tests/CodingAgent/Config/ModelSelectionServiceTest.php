@@ -38,7 +38,6 @@ class ModelSelectionServiceTest extends IsolatedKernelTestCase
 {
     private string $tempDir;
     private string $homeDir;
-    private ModelSelectionService $service;
     private HatfieldSessionStore $sessionMetaStore;
     private \Doctrine\ORM\EntityManagerInterface $entityManager;
     /** Session ID from auto-increment entity created in setUp. */
@@ -77,8 +76,6 @@ class ModelSelectionServiceTest extends IsolatedKernelTestCase
         $this->entityManager->persist($entity);
         $this->entityManager->flush();
         $this->sessionId = (string) $entity->id;
-
-        $this->service = $this->buildService([]);
     }
 
     protected function tearDown(): void

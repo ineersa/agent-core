@@ -395,11 +395,6 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
                 throw new \RuntimeException('not used');
             }
 
-            public function continue(string $runId): void
-            {
-                throw new \RuntimeException('not used');
-            }
-
             public function shell(string $runId, string $rawInput): void
             {
                 throw new \RuntimeException('not used');
@@ -918,11 +913,6 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
                 throw new \RuntimeException('not used');
             }
 
-            public function continue(string $runId): void
-            {
-                throw new \RuntimeException('not used');
-            }
-
             public function shell(string $runId, string $rawInput): void
             {
                 throw new \RuntimeException('not used');
@@ -1295,8 +1285,6 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             artifactId: 'artifact-canonical-outcome',
             displayName: 'scout',
             taskSummary: 'inspect',
-            launchModel: 'test/model',
-            launchReasoning: 'medium',
             artifactKind: AgentArtifactKindEnum::Subagent,
             batchIndex: 1,
         );
@@ -1308,7 +1296,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
                 $this->callback(static fn (RunState $queued): bool => $queued->runId === $identity->childRunId && RunStatus::Queued === $queued->status),
                 $identity->childRunId,
             )
-            ->willReturn(RunStateReplayResult::rebuilt($state, 2, 2, true));
+            ->willReturn(RunStateReplayResult::rebuilt($state));
 
         $outcome = $this->createOutcomeFactory($rebuilder)->buildNaturalArtifactOutcome(
             $identity,
@@ -1334,8 +1322,6 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             artifactId: 'artifact-canonical-failure',
             displayName: 'scout',
             taskSummary: 'inspect',
-            launchModel: 'test/model',
-            launchReasoning: 'medium',
             artifactKind: AgentArtifactKindEnum::Subagent,
             batchIndex: 1,
         );
@@ -1473,9 +1459,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             artifactId: $artifactId,
             displayName: $agentName,
             taskSummary: $task,
-            launchModel: 'deepseek/deepseek-v4-flash', launchReasoning: 'medium',
             artifactKind: $artifactKind,
-            batchIndex: 1,
-        ));
+            batchIndex: 1));
     }
 }

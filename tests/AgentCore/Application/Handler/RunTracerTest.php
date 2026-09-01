@@ -155,9 +155,4 @@ final class FakeSpanProvider implements SpanProviderInterface
 
         $this->closed[] = ['id' => $spanId, 'tags' => $tags];
     }
-
-    public function currentContext(): array
-    {
-        return [];
-    }
 }

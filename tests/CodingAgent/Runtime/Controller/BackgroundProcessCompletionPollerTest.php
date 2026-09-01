@@ -11,7 +11,6 @@ use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
-use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Controller\BackgroundProcessCompletionPoller;
 use Ineersa\CodingAgent\Runtime\Controller\RuntimeEventEmitter;
@@ -23,7 +22,6 @@ use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use PHPUnit\Framework\Attributes\CoversClass;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
-use Symfony\Component\EventDispatcher\EventDispatcher;
 
 /**
  * Integration tests for BackgroundProcessCompletionPoller.
@@ -270,8 +268,6 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
             processManager: $manager,
             sessionClient: $this->clientSpy,
             emitter: new RuntimeEventEmitter(
-                eventClient: null,
-                boundary: new RuntimeExceptionBoundary(new EventDispatcher()),
                 logger: $this->createStub(LoggerInterface::class),
             ),
             logger: $this->createStub(LoggerInterface::class),
@@ -488,8 +484,6 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
             processManager: $manager,
             sessionClient: $this->clientSpy,
             emitter: new RuntimeEventEmitter(
-                eventClient: null,
-                boundary: new RuntimeExceptionBoundary(new EventDispatcher()),
                 logger: $this->createStub(LoggerInterface::class),
             ),
             logger: $this->createStub(LoggerInterface::class),

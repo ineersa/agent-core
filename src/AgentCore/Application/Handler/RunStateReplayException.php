@@ -11,7 +11,7 @@ use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
  *
  * Raised by replay rebuilders ({@see RunStateRebuilderInterface} implementations such as session replay)
  * and by history-select preflight ({@see \Ineersa\CodingAgent\Session\History\HistorySelectionService::selectPrompt()})
- * before appending a HistoryPositionSet event. Use {@see RunStateDuplicateSequenceReplayException} or {@see self::isDuplicateSequences()}
+ * before appending a HistoryPositionSet event. Use {@see RunStateDuplicateSequenceReplayException}
  * to distinguish this case from other failures.
  *
  * Sequence gaps (for example after cursor allocation without JSONL append) are tolerated and do not throw.
@@ -19,18 +19,10 @@ use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
  */
 class RunStateReplayException extends \RuntimeException
 {
-    public const REASON_DUPLICATE_SEQUENCES = 'duplicate_sequences';
-
     public function __construct(
         string $message,
-        public readonly ?string $reason = null,
         ?\Throwable $previous = null,
     ) {
         parent::__construct($message, 0, $previous);
-    }
-
-    public function isDuplicateSequences(): bool
-    {
-        return self::REASON_DUPLICATE_SEQUENCES === $this->reason;
     }
 }

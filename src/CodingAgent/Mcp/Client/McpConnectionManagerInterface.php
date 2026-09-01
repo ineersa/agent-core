@@ -40,18 +40,6 @@ interface McpConnectionManagerInterface
     public function discover(string $runId, ?callable $onServerDiscovered = null): array;
 
     /**
-     * Get an already-connected client for a server.
-     *
-     * Returns null if no connected client exists for this run/server.
-     */
-    public function getClient(string $runId, string $serverName): ?McpClientInterface;
-
-    /**
-     * Disconnect a single server for a run.
-     */
-    public function disconnectServer(string $runId, string $serverName): void;
-
-    /**
      * Disconnect all clients for a given run.
      *
      * Used on session disconnect or graceful shutdown.

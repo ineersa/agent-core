@@ -152,7 +152,6 @@ final class CommandRouterContractTest extends TestCase
 
         $this->assertSame('core', $routed->status);
         $this->assertNull($routed->reason);
-        $this->assertSame(CoreCommandKind::Continue, $routed->kind);
         $this->assertTrue($routed->payload['auto_retry'] ?? false);
         $this->assertSame(1, $routed->payload['retry_attempt'] ?? null);
     }

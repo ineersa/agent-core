@@ -44,7 +44,6 @@ use Symfony\Component\Process\Process;
  *   consumer key is retained for abnormal-exit diagnostics (Symfony Process
  *   buffers are cleared so idle polling does not retain the full event bus
  *   history)
- * - getProcess(): exposes the first Process for a transport name (legacy)
  *
  * App executable and runtime CWD resolution:
  * - Uses RuntimeProcessConfig to provide both the agent binary command
@@ -198,59 +197,6 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
                 $process->clearOutput();
             }
         }
-    }
-
-    /**
-     * Bounded stderr tail for a consumer (crash diagnostics only).
-     */
-    public function stderrTailFor(string $consumerKey): string
-    {
-        return $this->stderrTails[$consumerKey] ?? '';
-    }
-
-    /**
-     * Get the Symfony Process for a transport, returning the first instance.
-     *
-     * The controller uses this to read the LLM consumer's stdout pipe
-     * for transient streaming deltas (thinking, text, tool-call args).
-     * Returns null when there are no instances or when there are multiple
-     * instances (caller should use getProcesses() instead).
-     */
-    public function getProcess(string $transportName): ?Process
-    {
-        // Prefer the single-instance key first.
-        $singleKey = $this->consumerKey($transportName, 0);
-
-        if (isset($this->consumers[$singleKey])) {
-            return $this->consumers[$singleKey];
-        }
-
-        // Fallback: find first matching any instance.
-        foreach ($this->consumers as $key => $process) {
-            if ($this->extractTransportName($key) === $transportName) {
-                return $process;
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * Get all running consumer processes for a transport.
-     *
-     * @return list<Process>
-     */
-    public function getProcesses(string $transportName): array
-    {
-        $processes = [];
-
-        foreach ($this->consumers as $key => $process) {
-            if ($this->extractTransportName($key) === $transportName) {
-                $processes[] = $process;
-            }
-        }
-
-        return $processes;
     }
 
     /**

@@ -52,9 +52,11 @@ final class SubagentResultRendererTest extends TestCase
     {
         $progress = [
             'mode' => 'single', 'status' => 'completed', 'agent_name' => 'scout',
-            'artifact_id' => 'agent_one', 'task_summary' => 'one step', 'agent_run_id' => 'child-run-1', 'model' => 'test/model', 'reasoning' => 'medium',
+            'artifact_id' => 'agent_one', 'task_summary' => 'one step', 'agent_run_id' => 'child-run-1',
             'turn_no' => 99, 'llm_step_count' => 1,
-            'input_tokens' => 100, 'output_tokens' => 20, 'model' => 'deepseek/deepseek-v4-flash',
+            'input_tokens' => 100, 'output_tokens' => 20,
+            'model' => 'deepseek/deepseek-v4-flash',
+            'reasoning' => 'medium',
         ];
         $block = new TranscriptBlock(
             id: 'tool_result_one_step',
@@ -76,10 +78,11 @@ final class SubagentResultRendererTest extends TestCase
         $progress = [
             'mode' => 'single', 'status' => 'running', 'agent_name' => 'scout',
             'artifact_id' => 'agent_01HX', 'agent_run_id' => 'run-child-abc',
-            'task_summary' => 'inspect runtime events', 'model' => 'test/model', 'reasoning' => 'medium', 'turn_no' => 17,
+            'task_summary' => 'inspect runtime events', 'turn_no' => 17,
             'elapsed_ms' => 139000, 'tool_count' => 38, 'total_tokens' => 49000,
             'input_tokens' => 35000, 'output_tokens' => 14000, 'reasoning_tokens' => 584000,
-            'cost' => 0.0104, 'model' => 'deepseek/deepseek-v4-flash',
+            'cost' => 0.0104,
+            'model' => 'deepseek/deepseek-v4-flash',
             'reasoning' => 'high',
             'artifact_path' => 'artifacts/agents/agent_01HX',
             'recent_tools' => ['read: path="RuntimeEventTranslator.php"'],

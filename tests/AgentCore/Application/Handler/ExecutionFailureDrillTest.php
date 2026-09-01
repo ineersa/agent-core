@@ -48,7 +48,6 @@ final class ExecutionFailureDrillTest extends TestCase
             stepId: 'turn-1-llm-1',
             attempt: 1,
             idempotencyKey: 'llm-failure-worker-1',
-            contextRef: 'hot:run:run-failure-worker-1',
             toolsRef: 'toolset:run:run-failure-worker-1:turn:1',
         );
 

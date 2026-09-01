@@ -11,12 +11,12 @@ final class RunLogContextTest extends TestCase
 {
     protected function setUp(): void
     {
-        RunLogContext::reset();
+        $this->clearDefaultContext();
     }
 
     protected function tearDown(): void
     {
-        RunLogContext::reset();
+        $this->clearDefaultContext();
     }
 
     public function testEmptyOutsideAnyScope(): void
@@ -53,38 +53,6 @@ final class RunLogContextTest extends TestCase
         $this->assertSame([], RunLogContext::current());
     }
 
-    public function testScopedWrapsOperationWithTryFinally(): void
-    {
-        $result = RunLogContext::scoped(
-            ['run_id' => 'run-1'],
-            function (): string {
-                $this->assertSame('run-1', RunLogContext::current()['run_id']);
-
-                return 'success';
-            },
-        );
-
-        $this->assertSame('success', $result);
-        $this->assertSame([], RunLogContext::current());
-    }
-
-    public function testScopedRestoresContextAfterException(): void
-    {
-        $this->expectException(\RuntimeException::class);
-
-        try {
-            RunLogContext::scoped(
-                ['run_id' => 'run-1'],
-                static function (): never {
-                    throw new \RuntimeException('test error');
-                },
-            );
-        } finally {
-            // Context should be restored even after exception
-            $this->assertSame([], RunLogContext::current());
-        }
-    }
-
     public function testMultipleLeavesDoNotUnderflow(): void
     {
         RunLogContext::enter(['run_id' => 'run-1']);
@@ -104,16 +72,6 @@ final class RunLogContextTest extends TestCase
 
         RunLogContext::leave();
         $this->assertSame('runtime', RunLogContext::current()['component']);
-    }
-
-    public function testResetClearsStack(): void
-    {
-        RunLogContext::enter(['run_id' => 'run-1']);
-        RunLogContext::enter(['handler' => 'Test']);
-
-        RunLogContext::reset();
-
-        $this->assertSame([], RunLogContext::current());
     }
 
     public function testDuplicateEnterIsMerged(): void
@@ -244,26 +202,6 @@ final class RunLogContextTest extends TestCase
         $this->assertTrue($fiber->isTerminated());
     }
 
-    public function testFiberResetDoesNotAffectMainContext(): void
-    {
-        // Set context on main thread
-        RunLogContext::enter(['run_id' => 'main-run']);
-
-        $fiber = new \Fiber(static function (): void {
-            // Set and reset fiber context
-            RunLogContext::enter(['run_id' => 'fiber-only']);
-            RunLogContext::reset();
-            self::assertSame([], RunLogContext::current(), 'Fiber must be empty after reset');
-        });
-
-        $fiber->start();
-
-        // Main context must survive fiber's reset
-        $this->assertSame('main-run', RunLogContext::current()['run_id']);
-
-        RunLogContext::leave();
-    }
-
     public function testFiberContextDoesNotLeakToMainAfterFiberFinishes(): void
     {
         $fiber = new \Fiber(static function (): void {
@@ -279,5 +217,12 @@ final class RunLogContextTest extends TestCase
         // Fiber finished. Main thread should be empty.
         $this->assertSame([], RunLogContext::current());
         $this->assertTrue($fiber->isTerminated());
+    }
+
+    private function clearDefaultContext(): void
+    {
+        while ([] !== RunLogContext::current()) {
+            RunLogContext::leave();
+        }
     }
 }

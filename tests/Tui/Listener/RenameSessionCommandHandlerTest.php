@@ -10,7 +10,6 @@ use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Ineersa\Tui\Command\NoOp;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Editor\PromptEditor;
@@ -27,26 +26,6 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass(RenameSessionCommandHandler::class)]
 final class RenameSessionCommandHandlerTest extends TestCase
 {
-    #[Test]
-    public function testHandleWithNoArgsReturnsNoOpWithoutOpeningPicker(): void
-    {
-        $sessionStore = $this->createEmptySessionStore();
-        $switch = $this->createSwitchStub();
-        $screen = $this->pickerScreen();
-        $pickerController = new SessionPickerController($this->pickerTui(), $screen, $sessionStore, $switch);
-
-        $handler = new RenameSessionCommandHandler($sessionStore, $pickerController);
-
-        $result = $handler->handle(new SlashCommand('rename', '', '/rename'));
-
-        $this->assertInstanceOf(NoOp::class, $result);
-        // No sessions in the store: the picker reports the empty state
-        // instead of mounting an overlay (real behavior, constructor-valid
-        // controller) and the switch service is never consulted.
-        $this->assertFalse($pickerController->isOpen());
-        $this->assertSame('No sessions found', $screen->statusEntries()['session'] ?? null);
-    }
-
     #[Test]
     public function testHandleWithValidSessionAndNameReturnsSuccess(): void
     {
@@ -163,30 +142,6 @@ final class RenameSessionCommandHandlerTest extends TestCase
         $this->assertStringContainsString('Provide a name', $result->text);
         $this->assertStringContainsString('/rename 42', $result->text);
         $this->assertSame('error', $result->role);
-    }
-
-    private function createEmptySessionStore(): HatfieldSessionStore
-    {
-        // A real HatfieldSessionRepository (final class) whose findForCatalog()
-        // query chain is driven by PHPUnit public doubles — all real objects
-        // and stubs, no reflection.
-        $query = $this->createStub(\Doctrine\ORM\Query::class);
-        $query->method('getResult')->willReturn([]);
-        $qb = $this->createStub(\Doctrine\ORM\QueryBuilder::class);
-        $qb->method('select')->willReturnSelf();
-        $qb->method('from')->willReturnSelf();
-        $qb->method('orderBy')->willReturnSelf();
-        $qb->method('getQuery')->willReturn($query);
-        $em = $this->createStub(EntityManagerInterface::class);
-        $em->method('createQueryBuilder')->willReturn($qb);
-        $em->method('getClassMetadata')->willReturn(
-            new \Doctrine\ORM\Mapping\ClassMetadata(HatfieldSession::class),
-        );
-        $registry = $this->createStub(\Doctrine\Persistence\ManagerRegistry::class);
-        $registry->method('getManagerForClass')->willReturn($em);
-        $em->method('getRepository')->willReturn(new \Ineersa\CodingAgent\Entity\HatfieldSessionRepository($registry));
-
-        return new HatfieldSessionStore($this->createAppConfig(), $em, new \Symfony\Component\EventDispatcher\EventDispatcher());
     }
 
     private function createAppConfig(): AppConfig

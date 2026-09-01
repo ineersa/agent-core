@@ -11,8 +11,6 @@ interface AgentRunnerInterface
 {
     public function start(StartRunInput $input): string;
 
-    public function continue(string $runId): void;
-
     /**
      * Dispatch a raw bang shell command through the run pipeline.
      */

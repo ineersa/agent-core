@@ -49,7 +49,6 @@ final class PreviewExpansionInputListenerTest extends TestCase
         );
 
         $state = new TuiSessionState('preview-toggle-session');
-        $state->transcriptDisplayConfig = $displayConfig;
         $state->transcriptDisplayState = $displayState;
 
         $context = $this->buildTuiContext()
@@ -229,7 +228,6 @@ final class PreviewExpansionInputListenerTest extends TestCase
         );
 
         $state = new TuiSessionState('subagent-handoff-preview');
-        $state->transcriptDisplayConfig = $displayConfig;
         $state->transcriptDisplayState = $displayState;
 
         $context = $this->buildTuiContext()

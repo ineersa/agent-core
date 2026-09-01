@@ -56,7 +56,6 @@ enum RuntimeEventTypeEnum: string
 
     // ── Progress / status ────────────────────────────────────────────────
 
-    case ProgressUpdated = 'progress.updated';
     case StatusUpdated = 'status.updated';
 
     // ── Human-in-the-loop (AgentCore HITL only) ─────────────────────────
@@ -75,14 +74,6 @@ enum RuntimeEventTypeEnum: string
 
     case CancellationRequested = 'cancellation.requested';
     case OperationCancelled = 'operation.cancelled';
-
-    // ── Model / usage / cost metadata ───────────────────────────────────
-
-    case ModelChanged = 'model.changed';
-    case ReasoningChanged = 'reasoning.changed';
-    case UsageUpdated = 'usage.updated';
-    case ContextUpdated = 'context.updated';
-    case CostUpdated = 'cost.updated';
 
     // ── Command protocol (controller <-> TUI) ───────────────────────────────
 
@@ -126,125 +117,4 @@ enum RuntimeEventTypeEnum: string
     // ── Model notification ────────────────────────────────────────────
 
     case ModelNotification = 'model.notification';
-
-    /**
-     * Return the event family name for grouping and documentation.
-     *
-     * @return string One of: lifecycle, user_input, assistant_stream, tool,
-     *                progress, hitl, cancellation, metadata, runtime, protocol,
-     *                tool_question
-     */
-    public function family(): string
-    {
-        return match ($this) {
-            self::RunStarted, self::TurnStarted, self::TurnCompleted,
-            self::TurnFailed, self::TurnCancelled, self::RunCompleted,
-            self::RunFailed, self::RunCancelled, self::RunResumed,
-            self::RunHistoryPositionChanged => 'lifecycle',
-
-            self::UserMessageSubmitted,
-            self::UserMessageQueued => 'user_input',
-
-            self::AssistantMessageStarted, self::AssistantTextStarted,
-            self::AssistantTextDelta, self::AssistantTextCompleted,
-            self::AssistantThinkingStarted, self::AssistantThinkingDelta,
-            self::AssistantThinkingCompleted, self::AssistantMessageCompleted,
-            self::AssistantMessageFailed => 'assistant_stream',
-
-            self::ToolCallStarted, self::ToolCallArgumentsDelta,
-            self::ToolCallArgumentsCompleted, self::ToolExecutionStarted,
-            self::ToolExecutionOutputDelta, self::ToolExecutionCompleted,
-            self::ToolExecutionFailed, self::ToolExecutionCancelled => 'tool',
-
-            self::ProgressUpdated, self::StatusUpdated => 'progress',
-
-            self::HumanInputRequested, self::HumanInputAnswered,
-            self::HumanInputRejected, self::ApprovalRequested,
-            self::ApprovalApproved, self::ApprovalRejected => 'hitl',
-
-            self::CancellationRequested, self::OperationCancelled => 'cancellation',
-
-            self::CommandAck, self::CommandRejected => 'command',
-
-            self::RuntimeReady => 'runtime',
-            self::ProtocolError => 'protocol',
-            self::ToolQuestionRequested => 'tool_question',
-
-            self::BackgroundProcessCompleted => 'background_process_completion',
-
-            self::ExtensionAgentJobFailed => 'extension_agent',
-
-            self::ModelNotification => 'notification',
-
-            self::CompactionStarted, self::CompactionCompleted,
-            self::CompactionFailed => 'compaction',
-
-            self::ModelChanged, self::ReasoningChanged, self::UsageUpdated,
-            self::ContextUpdated, self::CostUpdated => 'metadata',
-        };
-    }
-
-    /**
-     * Return true when the event type belongs to the assistant stream family.
-     */
-    public function isAssistantStream(): bool
-    {
-        return 'assistant_stream' === $this->family();
-    }
-
-    /**
-     * Return true when the event type belongs to the tool call/execution family.
-     */
-    public function isTool(): bool
-    {
-        return 'tool' === $this->family();
-    }
-
-    /**
-     * Return true when the event type belongs to the run/turn lifecycle family.
-     */
-    public function isLifecycle(): bool
-    {
-        return 'lifecycle' === $this->family();
-    }
-
-    /**
-     * Return true when the event type belongs to the HITL family.
-     */
-    public function isHitl(): bool
-    {
-        return 'hitl' === $this->family();
-    }
-
-    /**
-     * Return true when the event type belongs to the cancellation family.
-     */
-    public function isCancellation(): bool
-    {
-        return 'cancellation' === $this->family();
-    }
-
-    /**
-     * Return true when the event type belongs to the runtime family.
-     */
-    public function isRuntime(): bool
-    {
-        return 'runtime' === $this->family();
-    }
-
-    /**
-     * Return true when the event type belongs to the protocol family.
-     */
-    public function isProtocol(): bool
-    {
-        return 'protocol' === $this->family();
-    }
-
-    /**
-     * Return true when the event type is a tool-local question.
-     */
-    public function isToolQuestion(): bool
-    {
-        return 'tool_question' === $this->family();
-    }
 }

@@ -27,9 +27,9 @@ final class FileRunSequenceAllocatorTest extends TestCase
         $counter = $this->tmpDir.'/sequence.cursor';
         $allocator = new FileRunSequenceAllocator();
 
-        $this->assertSame(1, $allocator->allocateNext($counter));
+        $this->assertSame(1, $allocator->allocateBlock($counter, 1)[0]);
         $this->assertSame("1\n", file_get_contents($counter));
-        $this->assertSame(2, $allocator->allocateNext($counter));
+        $this->assertSame(2, $allocator->allocateBlock($counter, 1)[0]);
     }
 
     public function testBootstrapFromExistingLogMaxFiveAllocatesSix(): void
@@ -41,7 +41,7 @@ final class FileRunSequenceAllocatorTest extends TestCase
         $counter = FileRunSequenceAllocator::counterPathForEventsLog($events);
         $allocator = new FileRunSequenceAllocator();
 
-        $this->assertSame(6, $allocator->allocateNext($counter, static fn (): int => 5));
+        $this->assertSame(6, $allocator->allocateBlock($counter, 1, static fn (): int => 5)[0]);
         $this->assertSame("6\n", file_get_contents($counter));
     }
 
@@ -52,11 +52,11 @@ final class FileRunSequenceAllocatorTest extends TestCase
         $allocator = new FileRunSequenceAllocator();
         $bootstrapCalls = 0;
 
-        $next = $allocator->allocateNext($counter, static function () use (&$bootstrapCalls): int {
+        $next = $allocator->allocateBlock($counter, 1, static function () use (&$bootstrapCalls): int {
             ++$bootstrapCalls;
 
             return 99;
-        });
+        })[0];
 
         $this->assertSame(11, $next);
         $this->assertSame(0, $bootstrapCalls);
@@ -83,7 +83,7 @@ final class FileRunSequenceAllocatorTest extends TestCase
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('corrupt');
-        $allocator->allocateNext($counter);
+        $allocator->allocateBlock($counter, 1)[0];
     }
 
     /**
@@ -115,7 +115,7 @@ $results = $dir . '/results.txt';
 $allocator = new FileRunSequenceAllocator();
 $allocated = [];
 for ($i = 0; $i < $count; ++$i) {
-    $allocated[] = $allocator->allocateNext($counter);
+    $allocated[] = $allocator->allocateBlock($counter, 1)[0];
 }
 $line = $workerId . ':' . implode(',', $allocated) . "\n";
 $fp = fopen($results, 'a');

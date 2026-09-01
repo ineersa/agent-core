@@ -858,7 +858,7 @@ final class PlatformIntegrationTest extends TestCase
                 new class implements ToolboxInterface {
                     public function execute(ToolCall $toolCall): ToolResult
                     {
-                        return new ToolResult(new Text(''));
+                        return new ToolResult($toolCall, new \Symfony\AI\Platform\Message\Content\Text(''));
                     }
 
                     public function getToolIterator(): \Traversable
@@ -1064,7 +1064,7 @@ final class MutableRunOperationalStatusReader implements RunOperationalStatusRea
             return null;
         }
 
-        return new RunOperationalStatusDTO($runId, RunStatus::Cancelling, null);
+        return new RunOperationalStatusDTO(RunStatus::Cancelling);
     }
 }
 

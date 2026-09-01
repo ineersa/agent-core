@@ -50,7 +50,7 @@ final class HistoryPickerControllerTest extends TestCase
         $switcher = $this->createStub(TuiSessionSwitchServiceInterface::class);
         $controller = new HistoryPickerController($this->tui, $this->screen, $this->state, $provider, $switcher);
 
-        $this->assertFalse($controller->isOpen());
+        $this->assertFalse(self::pickerOpen($controller));
     }
 
     /**
@@ -101,9 +101,9 @@ final class HistoryPickerControllerTest extends TestCase
         $controller = new HistoryPickerController($this->tui, $this->screen, $this->state, $provider, $switcher);
         $controller->open();
 
-        $this->assertTrue($controller->isOpen());
+        $this->assertTrue(self::pickerOpen($controller));
         $controller->closePicker();
-        $this->assertFalse($controller->isOpen());
+        $this->assertFalse(self::pickerOpen($controller));
     }
 
     #[Test]
@@ -117,7 +117,7 @@ final class HistoryPickerControllerTest extends TestCase
         $controller = new HistoryPickerController($this->tui, $this->screen, $this->state, $provider, $switcher);
         $controller->open();
 
-        $this->assertFalse($controller->isOpen());
+        $this->assertFalse(self::pickerOpen($controller));
     }
 
     #[Test]
@@ -133,7 +133,8 @@ final class HistoryPickerControllerTest extends TestCase
         $controller = new HistoryPickerController($this->tui, $this->screen, $this->state, $provider, $switcher);
         $controller->open();
 
-        $overlay = $controller->overlay();
+        $overlayRef = new \ReflectionProperty($controller, 'overlay');
+        $overlay = $overlayRef->getValue($controller);
         $this->assertNotNull($overlay);
         $list = $overlay->listWidget();
         $this->assertNotNull($list);
@@ -158,5 +159,13 @@ final class HistoryPickerControllerTest extends TestCase
             ],
             positionTurnNo: $positionTurnNo,
         );
+    }
+
+    private static function pickerOpen(HistoryPickerController $controller): bool
+    {
+        $overlayRef = new \ReflectionProperty($controller, 'overlay');
+        $overlay = $overlayRef->getValue($controller);
+
+        return null !== $overlay && $overlay->isOpen();
     }
 }

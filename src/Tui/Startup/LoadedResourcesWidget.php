@@ -33,17 +33,6 @@ final class LoadedResourcesWidget extends AbstractWidget
         $this->invalidate();
     }
 
-    public function setExpanded(bool $expanded): void
-    {
-        $this->expanded = $expanded;
-        $this->invalidate();
-    }
-
-    public function isExpanded(): bool
-    {
-        return $this->expanded;
-    }
-
     public function toggleExpanded(): void
     {
         $this->expanded = !$this->expanded;

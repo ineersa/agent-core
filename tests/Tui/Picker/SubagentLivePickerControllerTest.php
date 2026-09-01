@@ -31,6 +31,7 @@ use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Tests\Support\ChildAgentExportEventsFixture;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\ThemeColorEnum;
+use Ineersa\Tui\Theme\ThemePalette;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -149,40 +150,6 @@ final class SubagentLivePickerControllerTest extends TestCase
             'Cannot remove active subagent scout',
             $this->workingMessage($harness->screen()),
         );
-    }
-
-    #[Test]
-    public function dismissKeyRemovesCompletedChild(): void
-    {
-        $harness = new VirtualTuiHarness(sessionId: 'picker-dismiss-done');
-        $state = new TuiSessionState('picker-dismiss-done');
-        $this->seedCatalogChild($state, 'agent_done', 'child-run-done', 'completed');
-
-        $picker = $this->picker($harness, $state);
-        $this->invokeDismissSelected($picker, $harness->screen(), $state);
-
-        $this->assertCount(0, $state->subagentLiveCatalog->all());
-        $msg = $this->workingMessage($harness->screen());
-        // Last child dismissed: no working flash, status cleared
-        $this->assertSame('', $msg);
-        $entries = $this->statusEntries($harness->screen());
-        $this->assertArrayNotHasKey('agents-live', $entries, 'agents-live status should be cleared after last dismiss');
-    }
-
-    #[Test]
-    public function testEmptyOpenClearsWorkingMessageAndStatus(): void
-    {
-        $harness = new VirtualTuiHarness(sessionId: 'picker-empty-open');
-        $state = new TuiSessionState('picker-empty-open');
-
-        $picker = $this->picker($harness, $state);
-        $picker->open();
-
-        $this->assertFalse($picker->isOpen(), 'Picker should not open when catalog is empty');
-        $msg = $this->workingMessage($harness->screen());
-        $this->assertSame('', $msg, 'Working message should be empty');
-        $entries = $this->statusEntries($harness->screen());
-        $this->assertArrayNotHasKey('agents-live', $entries, 'agents-live status should be absent/cleared');
     }
 
     #[Test]
@@ -397,9 +364,11 @@ final class SubagentLivePickerControllerTest extends TestCase
     #[Test]
     public function testArrowNavigationMovesSingleNativeHighlight(): void
     {
-        $palette = VirtualTuiHarness::defaultVirtualPalette()->withOverrides([
-            ThemeColorEnum::Accent->value => 'magenta',
-        ]);
+        $base = VirtualTuiHarness::defaultVirtualPalette();
+        $palette = new ThemePalette(
+            $base->name,
+            array_merge($base->colors, [ThemeColorEnum::Accent->value => 'magenta']),
+        );
         $harness = new VirtualTuiHarness(
             sessionId: 'picker-native-highlight',
             palette: $palette,
@@ -855,11 +824,7 @@ final class SubagentLivePickerControllerTest extends TestCase
         return $screen->workingMessage();
     }
 
-    /**
+    /*
      * @return array<string, string>
      */
-    private function statusEntries(ChatScreen $screen): array
-    {
-        return $screen->statusEntries();
-    }
 }

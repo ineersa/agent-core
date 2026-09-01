@@ -633,20 +633,20 @@ final class SessionCompactorTest extends TestCase
             $prep,
         );
 
-        $this->assertSame('user', $compacted->summaryMessage->role);
+        $summaryMessage = $compacted->compactedMessages[0];
+        $this->assertSame('user', $summaryMessage->role);
         $this->assertTrue(
-            (bool) ($compacted->summaryMessage->metadata['compact_summary'] ?? false),
+            (bool) ($summaryMessage->metadata['compact_summary'] ?? false),
             'Summary message should have compact_summary metadata',
         );
         $this->assertStringContainsString(
             'The conversation history before this point was compacted',
-            $compacted->summaryMessage->content[0]['text'],
+            $summaryMessage->content[0]['text'],
         );
-        $this->assertStringContainsString('This is the summary text.', $compacted->summaryMessage->content[0]['text']);
-        $this->assertStringContainsString('</summary>', $compacted->summaryMessage->content[0]['text']);
+        $this->assertStringContainsString('This is the summary text.', $summaryMessage->content[0]['text']);
+        $this->assertStringContainsString('</summary>', $summaryMessage->content[0]['text']);
 
         $this->assertCount($prep->messagesRetained + 1, $compacted->compactedMessages);
-        $this->assertSame($compacted->summaryMessage, $compacted->compactedMessages[0]);
         $this->assertSame($prep->retainedTailMessages, \array_slice($compacted->compactedMessages, 1));
 
         $this->assertSame($prep->tokenEstimateBefore, $compacted->tokenEstimateBefore);

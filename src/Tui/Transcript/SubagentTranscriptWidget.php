@@ -28,16 +28,6 @@ final class SubagentTranscriptWidget extends ContainerWidget implements MutableT
         return TranscriptVisualNode::KIND_SUBAGENT === $node->kind;
     }
 
-    public function node(): ?TranscriptVisualNode
-    {
-        return $this->node;
-    }
-
-    public function content(): ?AbstractWidget
-    {
-        return $this->content;
-    }
-
     public function apply(TranscriptVisualNode $node): void
     {
         if (TranscriptVisualNode::KIND_SUBAGENT !== $node->kind || null === $node->primary) {

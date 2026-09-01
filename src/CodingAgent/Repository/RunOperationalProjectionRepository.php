@@ -8,7 +8,6 @@ use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
 use Ineersa\AgentCore\Contract\RunOperationalStatusDTO;
 use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
-use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\CodingAgent\Entity\RunOperationalHumanInput;
 use Ineersa\CodingAgent\Entity\RunOperationalState;
@@ -59,7 +58,7 @@ final class RunOperationalProjectionRepository extends ServiceEntityRepository i
             return null;
         }
 
-        return new RunOperationalStatusDTO($state->runId, $state->status, $this->currentOperation($state));
+        return new RunOperationalStatusDTO($state->status);
     }
 
     public function deleteForOwnerSession(string $ownerSessionId): int
@@ -89,10 +88,6 @@ final class RunOperationalProjectionRepository extends ServiceEntityRepository i
         $projection->status = $state->status;
         $projection->turnNo = $state->turnNo;
         $projection->activeStepId = $state->activeStepId;
-        $projection->operationTurnNo = $state->currentOperation?->turnNo;
-        $projection->operationStepId = $state->currentOperation?->stepId;
-        $projection->operationAttempt = $state->currentOperation?->attempt;
-        $projection->operationKey = $state->currentOperation?->idempotencyKey;
         $projection->lastAppliedAdvanceKey = $state->lastAppliedAdvanceKey;
         $projection->lastAppliedCompactionKey = $state->lastAppliedCompactionKey;
         $projection->retryableFailure = $state->retryableFailure;
@@ -139,8 +134,7 @@ final class RunOperationalProjectionRepository extends ServiceEntityRepository i
     {
         foreach ([
             'parentRunId', 'ownerSessionId',
-            'status', 'turnNo', 'activeStepId', 'operationTurnNo', 'operationStepId', 'operationAttempt',
-            'operationKey', 'lastAppliedAdvanceKey', 'lastAppliedCompactionKey', 'retryableFailure',
+            'status', 'turnNo', 'activeStepId', 'lastAppliedAdvanceKey', 'lastAppliedCompactionKey', 'retryableFailure',
             'retryAttempts', 'lastEventSequence', 'transitionVersion',
         ] as $property) {
             $state->{$property} = $replacement->{$property};
@@ -191,22 +185,5 @@ final class RunOperationalProjectionRepository extends ServiceEntityRepository i
         foreach ($managedHumanInputs as $humanInput) {
             $state->humanInputs->removeElement($humanInput);
         }
-    }
-
-    private function currentOperation(RunOperationalState $state): ?CurrentOperationDTO
-    {
-        if (null === $state->operationKey) {
-            return null;
-        }
-        if (null === $state->operationTurnNo || null === $state->operationStepId || null === $state->operationAttempt) {
-            throw new \UnexpectedValueException('Persisted current operation is incomplete.');
-        }
-
-        return new CurrentOperationDTO(
-            $state->operationTurnNo,
-            $state->operationStepId,
-            $state->operationAttempt,
-            $state->operationKey,
-        );
     }
 }

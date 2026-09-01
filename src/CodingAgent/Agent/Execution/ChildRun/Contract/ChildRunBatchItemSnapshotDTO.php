@@ -34,21 +34,4 @@ final class ChildRunBatchItemSnapshotDTO
         $this->artifactStatus = $status;
         $this->message = $message;
     }
-
-    public function markTerminalCancelled(string $message): void
-    {
-        $this->terminal = true;
-        $this->artifactStatus = AgentArtifactStatusEnum::Cancelled;
-        $this->message = $message;
-    }
-
-    public function markNeedsClarification(): void
-    {
-        $this->artifactStatus = AgentArtifactStatusEnum::NeedsClarification;
-    }
-
-    public function markRunning(): void
-    {
-        $this->artifactStatus = AgentArtifactStatusEnum::Running;
-    }
 }

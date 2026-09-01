@@ -38,13 +38,13 @@ final class FileRewindPostToolCheckpointRestoreTest extends TestCase
             paths: $paths,
             ledgerStore: new FileRewindLedgerStore($this->projectDir),
             ledgerProjector: new FileRewindLedgerProjector(),
-            config: new FileRewindConfig(enabled: true, maxRetainedTurns: 10, maxFileBytes: 1_048_576),
+            config: new FileRewindConfig(enabled: true, maxRetainedTurns: 10),
             logger: new NullLogger(),
             projectCwd: $this->projectDir,
         );
         $this->hook = new FileRewindAfterTurnCommitHook(
             $this->service,
-            new FileRewindConfig(enabled: true, maxRetainedTurns: 10, maxFileBytes: 1_048_576),
+            new FileRewindConfig(enabled: true, maxRetainedTurns: 10),
         );
     }
 

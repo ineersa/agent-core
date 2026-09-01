@@ -50,27 +50,6 @@ final class ChildRunArtifactLifecycleService
         );
     }
 
-    public function markNeedsClarification(ChildRunIdentityDTO $identity): void
-    {
-        $this->artifactRegistry->update(
-            parentRunId: $identity->parentRunId,
-            artifactId: $identity->artifactId,
-            status: AgentArtifactStatusEnum::NeedsClarification,
-        );
-    }
-
-    public function clearNeedsClarificationToRunning(ChildRunIdentityDTO $identity): void
-    {
-        $entry = $this->artifactRegistry->get($identity->parentRunId, $identity->artifactId);
-        if (null !== $entry && AgentArtifactStatusEnum::NeedsClarification === $entry->status) {
-            $this->artifactRegistry->update(
-                parentRunId: $identity->parentRunId,
-                artifactId: $identity->artifactId,
-                status: AgentArtifactStatusEnum::Running,
-            );
-        }
-    }
-
     public function getArtifactStatus(string $parentRunId, string $artifactId): ?AgentArtifactStatusEnum
     {
         $entry = $this->artifactRegistry->get($parentRunId, $artifactId);

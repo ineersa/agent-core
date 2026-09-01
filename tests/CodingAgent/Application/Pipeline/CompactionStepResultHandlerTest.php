@@ -1325,8 +1325,6 @@ final class CompactionStepResultHandlerTest extends TestCase
             public function buildCompactedMessages(string $summaryText, CompactionPrepareResult $result): CompactResult
             {
                 return new CompactResult(
-                    summaryText: $summaryText,
-                    summaryMessage: $this->compacted[0] ?? new AgentMessage('assistant', $summaryText),
                     compactedMessages: $this->compacted,
                     tokenEstimateBefore: 50000,
                     tokenEstimateAfter: 10000,
@@ -1414,8 +1412,6 @@ final class CompactionStepResultHandlerTest extends TestCase
             public function buildCompactedMessages(string $summaryText, CompactionPrepareResult $result): CompactResult
             {
                 return new CompactResult(
-                    summaryText: $summaryText,
-                    summaryMessage: $this->compacted[0] ?? new AgentMessage('assistant', $summaryText),
                     compactedMessages: $this->compacted,
                     tokenEstimateBefore: $this->before,
                     tokenEstimateAfter: $this->after,

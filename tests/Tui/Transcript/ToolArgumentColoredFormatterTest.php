@@ -37,7 +37,7 @@ final class ToolArgumentColoredFormatterTest extends TestCase
         $keyAnsi = $theme->color(ThemeColorEnum::ToolArgumentKey, 'path');
         $valueAnsi = $theme->color(ThemeColorEnum::ToolArgumentValue, ' ./example.txt');
         $mutedAnsi = $theme->muted('path');
-        $textAnsi = $theme->text(' ./example.txt');
+        $textAnsi = $theme->color(ThemeColorEnum::Text, ' ./example.txt');
 
         $this->assertStringContainsString($keyAnsi, $joined);
         $this->assertStringContainsString($valueAnsi, $joined);

@@ -25,19 +25,6 @@ final class ThemePaletteTest extends TestCase
         $this->assertSame('', $palette->get(\Ineersa\Tui\Theme\ThemeColorEnum::Accent));
     }
 
-    public function testWithOverrides(): void
-    {
-        $palette = new ThemePalette('test', ['accent' => 'cyan']);
-
-        $overridden = $palette->withOverrides(['accent' => 'magenta', 'muted' => '#888']);
-
-        $this->assertSame('test', $overridden->name);
-        $this->assertSame('magenta', $overridden->get(\Ineersa\Tui\Theme\ThemeColorEnum::Accent));
-        $this->assertSame('#888', $overridden->get(\Ineersa\Tui\Theme\ThemeColorEnum::Muted));
-        // Original unchanged
-        $this->assertSame('cyan', $palette->get(\Ineersa\Tui\Theme\ThemeColorEnum::Accent));
-    }
-
     public function testFromArray(): void
     {
         $data = [

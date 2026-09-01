@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Execution\Subagent;
 
-use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchItemSnapshotDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchSupervisionResultDTO;
 
@@ -51,16 +50,5 @@ final class SubagentParallelAggregateResultFormatter
         }
 
         return $body."\n\nUse agent_retrieve (metadata/events/history) for partial child details.";
-    }
-
-    public function hasFailures(ChildRunBatchSupervisionResultDTO $result): bool
-    {
-        foreach ($result->items as $item) {
-            if (AgentArtifactStatusEnum::Completed !== $item->artifactStatus) {
-                return true;
-            }
-        }
-
-        return false;
     }
 }

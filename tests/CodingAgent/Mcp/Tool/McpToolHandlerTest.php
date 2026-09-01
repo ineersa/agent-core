@@ -123,15 +123,6 @@ final class McpToolHandlerTest extends TestCase
                 return [];
             }
 
-            public function getClient(string $runId, string $serverName): ?\Ineersa\CodingAgent\Mcp\Client\McpClientInterface
-            {
-                return null;
-            }
-
-            public function disconnectServer(string $runId, string $serverName): void
-            {
-            }
-
             public function disconnectAll(string $runId): void
             {
             }
@@ -163,15 +154,6 @@ final class McpToolHandlerTest extends TestCase
             public function discover(string $runId, ?callable $onServerDiscovered = null): array
             {
                 return [];
-            }
-
-            public function getClient(string $runId, string $serverName): ?\Ineersa\CodingAgent\Mcp\Client\McpClientInterface
-            {
-                return null;
-            }
-
-            public function disconnectServer(string $runId, string $serverName): void
-            {
             }
 
             public function disconnectAll(string $runId): void

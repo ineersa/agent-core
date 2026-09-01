@@ -82,7 +82,7 @@ final class LoadedResourcesSummaryBuilderTest extends TestCase
         );
 
         $summary = $builder->build();
-        $skills = $this->sectionByKey($summary, 'skills');
+        $skills = $this->sectionByLabel($summary, 'Skills');
 
         $this->assertCount(1, $skills->conflicts);
         $this->assertSame('myskill', $skills->conflicts[0]->name);
@@ -126,7 +126,7 @@ final class LoadedResourcesSummaryBuilderTest extends TestCase
         );
 
         $summary = $builder->build();
-        $prompts = $this->sectionByKey($summary, 'prompts');
+        $prompts = $this->sectionByLabel($summary, 'Prompts');
 
         $this->assertCount(1, $prompts->conflicts);
         $this->assertSame('review', $prompts->conflicts[0]->name);
@@ -157,7 +157,7 @@ final class LoadedResourcesSummaryBuilderTest extends TestCase
         );
 
         $summary = $builder->build();
-        $section = $this->sectionByKey($summary, 'ai-catalog');
+        $section = $this->sectionByLabel($summary, 'AI Catalog');
 
         $this->assertSame('AI Catalog', $section->label);
         $this->assertSame([], $section->items);
@@ -193,7 +193,7 @@ final class LoadedResourcesSummaryBuilderTest extends TestCase
         );
 
         $summary = $builder->build();
-        $section = $this->sectionByKey($summary, 'default-model');
+        $section = $this->sectionByLabel($summary, 'Default model');
 
         $this->assertSame('Default model', $section->label);
         $this->assertSame([], $section->items);
@@ -222,7 +222,7 @@ final class LoadedResourcesSummaryBuilderTest extends TestCase
         );
 
         foreach ($builder->build()->sections as $section) {
-            $this->assertNotSame('default-model', $section->key);
+            $this->assertNotSame('Default model', $section->label);
         }
     }
 
@@ -242,7 +242,7 @@ final class LoadedResourcesSummaryBuilderTest extends TestCase
         );
 
         foreach ($withoutCatalog->build()->sections as $section) {
-            $this->assertNotSame('ai-catalog', $section->key);
+            $this->assertNotSame('AI Catalog', $section->label);
         }
 
         $home = $this->tmpDir.'/home-equal';
@@ -265,7 +265,7 @@ final class LoadedResourcesSummaryBuilderTest extends TestCase
         );
 
         foreach ($equal->build()->sections as $section) {
-            $this->assertNotSame('ai-catalog', $section->key);
+            $this->assertNotSame('AI Catalog', $section->label);
         }
     }
 
@@ -305,7 +305,7 @@ final class LoadedResourcesSummaryBuilderTest extends TestCase
         );
 
         $summary = $builder->build();
-        $agents = $this->sectionByKey($summary, 'agents');
+        $agents = $this->sectionByLabel($summary, 'Agents');
 
         $this->assertCount(1, $agents->conflicts);
         $this->assertSame('collide', $agents->conflicts[0]->name);
@@ -313,15 +313,15 @@ final class LoadedResourcesSummaryBuilderTest extends TestCase
         $this->assertSame($loser, $agents->conflicts[0]->loserPath);
     }
 
-    private function sectionByKey(\Ineersa\CodingAgent\Runtime\Contract\LoadedResourcesSummaryDTO $summary, string $key): \Ineersa\CodingAgent\Runtime\Contract\LoadedResourceSectionDTO
+    private function sectionByLabel(\Ineersa\CodingAgent\Runtime\Contract\LoadedResourcesSummaryDTO $summary, string $label): \Ineersa\CodingAgent\Runtime\Contract\LoadedResourceSectionDTO
     {
         foreach ($summary->sections as $section) {
-            if ($key === $section->key) {
+            if ($label === $section->label) {
                 return $section;
             }
         }
 
-        $this->fail('Missing section: '.$key);
+        $this->fail('Missing section: '.$label);
     }
 
     private function appConfig(string $cwd): AppConfig

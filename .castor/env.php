@@ -245,21 +245,35 @@ function diagnostic(): void
     echo \PHP_EOL;
 
     echo "Symfony debug:\n";
-    echo '  env: '.App\Kernel::env().\PHP_EOL;
-    $paths = App\Kernel::hatfieldConfigPaths();
-    echo '  config paths: '.implode(' : ', $paths).\PHP_EOL;
+    $appEnvValue = $_SERVER['APP_ENV'] ?? $_ENV['APP_ENV'] ?? getenv('APP_ENV');
+    $appEnv = is_string($appEnvValue) && '' !== $appEnvValue ? $appEnvValue : 'dev';
+    $appDebugValue = $_SERVER['APP_DEBUG'] ?? $_ENV['APP_DEBUG'] ?? getenv('APP_DEBUG');
+    if (false === $appDebugValue || !is_scalar($appDebugValue) || '' === (string) $appDebugValue) {
+        $appDebug = !str_starts_with($appEnv, 'prod');
+    } else {
+        $appDebug = filter_var((string) $appDebugValue, \FILTER_VALIDATE_BOOL);
+    }
+    echo '  env: '.$appEnv.\PHP_EOL;
+
+    $configPaths = [
+        $root.'/config/hatfield.defaults.yaml',
+        ($homeDir = (string) ($_SERVER['HOME'] ?? '')).'/.hatfield/settings.yaml',
+        $root.'/.hatfield/settings.yaml',
+    ];
+    echo '  config paths: '.implode(' : ', $configPaths).\PHP_EOL;
 
     try {
-        App\Kernel::boot();
+        $kernel = new Ineersa\CodingAgent\Kernel($appEnv, $appDebug);
+        $kernel->boot();
+        echo '  boot: ok'.\PHP_EOL;
     } catch (Throwable $e) {
         echo '  boot error: '.$e->getMessage().\PHP_EOL;
     }
 
     echo \PHP_EOL;
 
-    $homeDir = $_SERVER['HOME'];
     echo "Home: {$homeDir}\n";
-    $globalDir = App\Kernel::resolveGlobalHatfieldDir();
+    $globalDir = '' !== $homeDir ? $homeDir.'/.hatfield' : null;
     echo 'Global dir: '.($globalDir ?? '(null)').\PHP_EOL;
     if (null !== $globalDir) {
         echo 'Global dir readable: '.(is_readable($globalDir) ? 'yes' : 'no').\PHP_EOL;
@@ -274,10 +288,17 @@ function diagnostic_full(): void
     $root = (false !== ($_rp = realpath(__DIR__.'/..')) ? $_rp : __DIR__.'/..');
 
     echo "Hatfield tree:\n";
-    try {
-        App\Kernel::boot();
-    } catch (Throwable $e) {
-        echo '  boot error: '.$e->getMessage().\PHP_EOL;
+    $entries = [
+        $root.'/config',
+        $root.'/.hatfield',
+        $root.'/.hatfield/settings.yaml',
+        $root.'/.hatfield/sessions',
+        $root.'/.hatfield/cache',
+        $root.'/.hatfield/logs',
+    ];
+    foreach ($entries as $entry) {
+        $status = is_dir($entry) ? 'dir' : (is_file($entry) ? 'file' : 'missing');
+        echo '  '.project_relative_path($entry).': '.$status.\PHP_EOL;
     }
 }
 
@@ -370,5 +391,5 @@ function datadog_smoke_log(): void
 #[AsTask(name: 'ide:config', description: 'Generate IDE run configuration XML')]
 function ide_config(): void
 {
-    echo build_idea_run_config_xml();
+    echo build_idea_run_config_xml('ide:config', 'Generate IDE run configuration XML');
 }

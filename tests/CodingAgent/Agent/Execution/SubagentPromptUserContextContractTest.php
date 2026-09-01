@@ -345,7 +345,7 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
     {
         $rebuilder = $this->createStub(RunStateRebuilderInterface::class);
         $rebuilder->method('rebuildIfStale')->willReturn(
-            RunStateReplayResult::rebuilt($parentState, $parentState->lastSeq, 1, true),
+            RunStateReplayResult::rebuilt($parentState),
         );
 
         return $rebuilder;

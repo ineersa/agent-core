@@ -179,7 +179,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         $runStateRebuilder->expects($this->once())
             ->method('rebuildIfStale')
             ->with($this->isInstanceOf(RunState::class), $childRunId)
-            ->willReturn(RunStateReplayResult::rebuilt(new RunState(runId: $childRunId, status: RunStatus::Cancelling), 1, 1, true));
+            ->willReturn(RunStateReplayResult::rebuilt(new RunState(runId: $childRunId, status: RunStatus::Cancelling)));
 
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('mid-cancel and cannot be resumed yet');
@@ -448,7 +448,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
                 $this->callback(static fn (RunState $state): bool => $childRunId === $state->runId),
                 $childRunId,
             )
-            ->willReturn(RunStateReplayResult::rebuilt(new RunState(runId: $childRunId, status: RunStatus::Completed), 1, 1, true));
+            ->willReturn(RunStateReplayResult::rebuilt(new RunState(runId: $childRunId, status: RunStatus::Completed)));
 
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage(\sprintf('Duplicate artifact_id "%s" in one agent_resume call.', $artifactId));
@@ -487,7 +487,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
             $runStateRebuilder = $this->createStub(RunStateRebuilderInterface::class);
             $runStateRebuilder->method('rebuildIfStale')->willReturnCallback(
                 static function (RunState $state, string $runId) use ($runStatus): RunStateReplayResult {
-                    return RunStateReplayResult::rebuilt(new RunState(runId: $runId, status: $runStatus), 1, 1, true);
+                    return RunStateReplayResult::rebuilt(new RunState(runId: $runId, status: $runStatus));
                 },
             );
         }

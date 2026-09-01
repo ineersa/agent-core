@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Session\History;
 
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Handler\RunStateDuplicateSequenceReplayException;
 use Ineersa\AgentCore\Application\Handler\RunStateReplayException;
 use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
@@ -125,12 +126,7 @@ final class HistorySelectionServiceTest extends TestCase
         $rebuilder->expects($this->once())
             ->method('rebuildAtPosition')
             ->with($this->anything(), $runId, 0)
-            ->willReturn(\Ineersa\AgentCore\Application\Dto\RunStateReplayResult::rebuilt(
-                new RunState(runId: $runId, status: RunStatus::Running, version: 1, turnNo: 0, lastSeq: 7, model: 'test-model'),
-                7,
-                7,
-                true,
-            ));
+            ->willReturn(\Ineersa\AgentCore\Application\Dto\RunStateReplayResult::rebuilt(new RunState(runId: $runId, status: RunStatus::Running)));
 
         $service = new HistorySelectionService(
             eventStore: $eventStore,
@@ -267,12 +263,7 @@ final class HistorySelectionServiceTest extends TestCase
         $rebuilder->expects($this->once())
             ->method('rebuildAtPosition')
             ->with($this->anything(), $runId, 1)
-            ->willReturn(\Ineersa\AgentCore\Application\Dto\RunStateReplayResult::rebuilt(
-                new RunState(runId: $runId, status: RunStatus::Running, version: 1, turnNo: 1, lastSeq: 10, model: 'test-model'),
-                10,
-                10,
-                true,
-            ));
+            ->willReturn(\Ineersa\AgentCore\Application\Dto\RunStateReplayResult::rebuilt(new RunState(runId: $runId, status: RunStatus::Running)));
 
         $service = new HistorySelectionService(
             eventStore: $eventStore,
@@ -478,7 +469,7 @@ final class HistorySelectionServiceTest extends TestCase
             $service->selectPrompt($runId, 1);
             $this->fail('Expected RunStateReplayException');
         } catch (RunStateReplayException $exception) {
-            $this->assertTrue($exception->isDuplicateSequences());
+            $this->assertInstanceOf(RunStateDuplicateSequenceReplayException::class, $exception);
         }
     }
 }

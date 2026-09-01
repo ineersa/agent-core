@@ -19,7 +19,6 @@ final class MalformedToolCallSequenceException extends \RuntimeException
     private function __construct(
         string $message,
         public readonly string $violationType,
-        public readonly int $messageIndex,
         public readonly string $role,
         public readonly array $expectedIds,
         public readonly ?string $toolCallId = null,
@@ -41,7 +40,6 @@ final class MalformedToolCallSequenceException extends \RuntimeException
                 implode(', ', array_map(static fn (string $id): string => \sprintf('"%s"', $id), $expectedIds)),
             ),
             violationType: 'unclosed_batch',
-            messageIndex: $index,
             role: $role,
             expectedIds: $expectedIds,
         );
@@ -59,7 +57,6 @@ final class MalformedToolCallSequenceException extends \RuntimeException
                 implode(', ', array_map(static fn (string $id): string => \sprintf('"%s"', $id), $expectedIds)),
             ),
             violationType: 'missing_tool_results',
-            messageIndex: $index,
             role: 'end',
             expectedIds: $expectedIds,
         );
@@ -79,7 +76,6 @@ final class MalformedToolCallSequenceException extends \RuntimeException
                 $idStr,
             ),
             violationType: 'orphan_tool_message',
-            messageIndex: $index,
             role: 'tool',
             expectedIds: $expectedIds,
             toolCallId: $toolCallId,
@@ -99,7 +95,6 @@ final class MalformedToolCallSequenceException extends \RuntimeException
                 implode(', ', array_map(static fn (string $id): string => \sprintf('"%s"', $id), $expectedIds)),
             ),
             violationType: 'unknown_tool_call_id',
-            messageIndex: $index,
             role: 'tool',
             expectedIds: $expectedIds,
             toolCallId: $toolCallId,
@@ -118,7 +113,6 @@ final class MalformedToolCallSequenceException extends \RuntimeException
                 $toolCallId,
             ),
             violationType: 'duplicate_tool_result',
-            messageIndex: $index,
             role: 'tool',
             expectedIds: $expectedIds,
             toolCallId: $toolCallId,

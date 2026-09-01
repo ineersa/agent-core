@@ -33,17 +33,12 @@ interface McpClientInterface
     public function disconnect(): void;
 
     /**
-     * Whether the client is currently connected and initialized.
-     */
-    public function isConnected(): bool;
-
-    /**
      * List available tools from the connected MCP server.
      *
      * Returns an array of tool definitions as associative arrays,
      * each containing at minimum 'name', 'description', and 'inputSchema' keys.
      *
-     * @return list<array{name: string, description?: string|null, inputSchema: array}>
+     * @return list<array{name: string, description?: string|null, inputSchema: array<string, mixed>}>
      */
     public function listTools(): array;
 

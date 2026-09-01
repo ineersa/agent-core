@@ -14,7 +14,7 @@ use Symfony\Component\Serializer\Attribute\Groups;
  * ToolCallResult objects reconstruct without rebinding.
  * Messenger/PhpSerializer is unaffected by Serializer attributes.
  */
-abstract readonly class AbstractAgentBusMessage implements AgentBusMessageInterface
+abstract readonly class AbstractAgentBusMessage
 {
     public function __construct(
         #[Groups([ToolBatchStateDTO::SNAPSHOT_GROUP])]

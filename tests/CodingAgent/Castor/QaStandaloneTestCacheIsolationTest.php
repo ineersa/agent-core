@@ -72,7 +72,7 @@ final class QaStandaloneTestCacheIsolationTest extends TestCase
 
         $phpunitCmd = qa_observability_env_command().' APP_ENV=test '.\PHP_BINARY.' vendor/bin/phpunit'
             .' --filter=QaStandaloneTestCacheIsolationTest'
-            .' --exclude-group=tui-e2e-replay --exclude-group=llm-real --exclude-group=recording --exclude-group=controller-replay';
+            .' --exclude-group=tui-e2e-replay --exclude-group=llm-real --exclude-group=controller-replay';
 
         $this->assertStringContainsString('HATFIELD_CACHE_DIR='.escapeshellarg($cache), $migratePrefix);
         $this->assertStringContainsString('HATFIELD_CACHE_DIR='.escapeshellarg($cache), $phpunitCmd);

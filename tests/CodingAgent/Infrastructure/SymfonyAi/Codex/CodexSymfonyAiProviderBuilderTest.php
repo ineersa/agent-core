@@ -354,7 +354,6 @@ final class CodexSymfonyAiProviderBuilderTest extends TestCase
             enabled: true,
             baseUrl: 'https://chatgpt.com/backend-api',
             apiKey: 'some-access-token',
-            accountId: 'chat-123456',
         );
 
         $this->expectException(\RuntimeException::class);

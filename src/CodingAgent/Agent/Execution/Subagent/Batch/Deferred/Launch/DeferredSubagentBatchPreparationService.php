@@ -78,8 +78,6 @@ final class DeferredSubagentBatchPreparationService
                 artifactId: $ids['artifactId'],
                 displayName: $agentName,
                 taskSummary: $taskText,
-                launchModel: $launch['model'],
-                launchReasoning: $launch['reasoning'],
                 artifactKind: AgentArtifactKindEnum::Subagent,
                 batchIndex: $batchIndex,
             );
@@ -135,8 +133,6 @@ final class DeferredSubagentBatchPreparationService
                 artifactId: $ids['artifactId'],
                 displayName: $profile->displayAgentName,
                 taskSummary: $taskText,
-                launchModel: $launch['model'],
-                launchReasoning: $launch['reasoning'],
                 artifactKind: $profile->artifactKind,
                 batchIndex: 1,
             ),

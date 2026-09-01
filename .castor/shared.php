@@ -82,6 +82,8 @@ function read_suite_junit_summary(string $suite): string
 
 /**
  * Format step-failure messages for consistent reporting.
+ *
+ * @param array<string, string> $failures
  */
 function format_step_failures(array $failures): string
 {

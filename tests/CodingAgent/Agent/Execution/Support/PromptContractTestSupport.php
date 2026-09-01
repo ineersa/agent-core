@@ -8,7 +8,6 @@ use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
-use Symfony\AI\Platform\Message\MessageBag;
 
 /**
  * Shared assertions for GF-05 prompt/message contract RED specifications.
@@ -94,15 +93,6 @@ final class PromptContractTestSupport
     public static function assertCanonicalMatchesRunStartedMessages(array $canonical, array $fromRunStartedPayload): void
     {
         self::assertMessageListsEquivalent($canonical, $fromRunStartedPayload);
-    }
-
-    /**
-     * @param list<AgentMessage> $canonical
-     * @param list<AgentMessage> $fromStartRunInput
-     */
-    public static function assertCanonicalMatchesStartRunInput(array $canonical, array $fromStartRunInput): void
-    {
-        self::assertMessageListsEquivalent($canonical, $fromStartRunInput);
     }
 
     /**
@@ -229,10 +219,5 @@ final class PromptContractTestSupport
         if (1 !== $hits) {
             throw new \PHPUnit\Framework\AssertionFailedError(\sprintf('Expected sentinel in exactly one provider user message, hits=%d', $hits));
         }
-    }
-
-    public static function providerBag(array $messages): MessageBag
-    {
-        return (new AgentMessageConverter())->toMessageBag($messages);
     }
 }

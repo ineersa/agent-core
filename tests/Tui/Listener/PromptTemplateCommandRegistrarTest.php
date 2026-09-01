@@ -173,12 +173,6 @@ final class PromptTemplateCommandRegistrarTest extends TestCase
         $this->assertInstanceOf(SlashCommandCatalogRegistrar::class, $registrar);
     }
 
-    #[Test]
-    public function getPriorityReturnsNegative100(): void
-    {
-        $this->assertSame(-100, PromptTemplateCommandRegistrar::getPriority());
-    }
-
     private function createRegistrar(): PromptTemplateCommandRegistrar
     {
         $loader = new PromptTemplateLoader(

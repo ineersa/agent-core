@@ -64,10 +64,7 @@ final class RepairCommandHandlerTest extends TestCase
         $service->method('repair')->willReturn(new RepairResult(
             repairableStaleCancellationDetected: true,
             staleCancellationRepaired: false,
-            terminalEventsAppended: 0,
-            replayOk: false,
             message: 'internal',
-            duplicateSeqs: [3],
             refusalReason: SessionRepairRefusalReasonEnum::DuplicateSequences,
         ));
 
@@ -86,7 +83,7 @@ final class RepairCommandHandlerTest extends TestCase
     public function reportsActiveOperationRedrive(): void
     {
         $service = $this->createStub(SessionRepairServiceInterface::class);
-        $service->method('repair')->willReturn(new RepairResult(false, false, 0, true, 'internal', activeOperationsRedriven: 1));
+        $service->method('repair')->willReturn(new RepairResult(false, false, 'internal', activeOperationsRedriven: 1));
         $state = new TuiSessionState('repair');
         $state->handle = new RunHandle('run-redrive');
         $handler = new RepairCommandHandler($service, $state, new NullLogger());

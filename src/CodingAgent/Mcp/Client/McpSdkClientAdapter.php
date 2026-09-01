@@ -51,13 +51,8 @@ final class McpSdkClientAdapter implements McpClientInterface
         $this->client->disconnect();
     }
 
-    public function isConnected(): bool
-    {
-        return $this->client->isConnected();
-    }
-
     /**
-     * @return list<array{name: string, description?: string|null, inputSchema: array}>
+     * @return list<array{name: string, description?: string|null, inputSchema: array<string, mixed>}>
      */
     public function listTools(): array
     {

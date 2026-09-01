@@ -81,13 +81,4 @@ final class SafeGuardPathMatcherTest extends TestCase
         yield 'regular file not protected' => [['.env.local'], '/home/user/project/src/main.php', false];
         yield 'tracked .env not protected' => [['.env.local', '.env.dev.local'], '/home/user/project/.env', false];
     }
-
-    // ── Defaults ──
-
-    public function testDefaultPatternsListIsNotEmpty(): void
-    {
-        $defaults = $this->matcher->defaultProtectedReadPatterns();
-        $this->assertNotEmpty($defaults);
-        $this->assertGreaterThan(20, \count($defaults));
-    }
 }

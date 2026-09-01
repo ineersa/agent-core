@@ -460,10 +460,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
                 source: QuestionSource::AgentCore,
                 kind: QuestionKind::Text,
                 prompt: 'Which docs file would you like me to inspect and summarize?',
-                schema: ['type' => 'string'],
-                runId: $parentRunId,
-                questionId: 'q_docs_parent',
-            ),
+                runId: $parentRunId),
             onAnswer: static function (mixed $answer) use ($client, $parentRunId): void {
                 $client->send($parentRunId, new UserCommand(
                     type: 'answer_human',
@@ -498,7 +495,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
 
         $this->dispatchSubmit('plain user prompt', history: $history);
 
-        $this->assertSame(['plain user prompt'], $history->prompts());
+        $this->assertSame(['plain user prompt'], self::historyPrompts($history));
     }
 
     #[Test]
@@ -515,7 +512,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
 
         $this->dispatchSubmit('/review foo bar', history: $history);
 
-        $this->assertSame(['/review foo bar'], $history->prompts());
+        $this->assertSame(['/review foo bar'], self::historyPrompts($history));
     }
 
     #[Test]
@@ -542,7 +539,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
 
         $this->dispatchSubmit('/localonly', history: $history, router: $router);
 
-        $this->assertSame([], $history->prompts());
+        $this->assertSame([], self::historyPrompts($history));
     }
 
     #[Test]
@@ -590,7 +587,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
         $this->assertNotFalse($png);
         $staged = $this->tempCwd.'/staged-paste-1.png';
         file_put_contents($staged, $png);
-        $this->state->pastedImagePendingByIndex[1] = new \Ineersa\Tui\ImagePaste\PastedImagePendingDTO(1, '[Image #1]', $staged);
+        $this->state->pastedImagePendingByIndex[1] = new \Ineersa\Tui\ImagePaste\PastedImagePendingDTO($staged);
 
         $this->client->expects($this->once())
             ->method('start')
@@ -683,5 +680,13 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
         ($listeners[0])(new SubmitEvent($promptEditor->getWidget(), $text));
 
         return $screen;
+    }
+
+    /** @return list<string> */
+    private static function historyPrompts(PromptHistory $history): array
+    {
+        $ref = new \ReflectionProperty($history, 'prompts');
+
+        return $ref->getValue($history);
     }
 }

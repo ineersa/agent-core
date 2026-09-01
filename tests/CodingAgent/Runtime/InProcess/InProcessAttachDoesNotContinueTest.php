@@ -12,31 +12,31 @@ use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\CoversMethod;
 
 /**
- * Thesis: passive attach must not dispatch AgentCore Continue when reopening a session.
+ * Thesis: passive attach must not dispatch AgentCore run-control methods when reopening a session.
  *
  * @covers \Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient::attach
  */
 #[CoversMethod(InProcessAgentSessionClient::class, 'attach')]
 final class InProcessAttachDoesNotContinueTest extends IsolatedKernelTestCase
 {
-    private ContinueCountingAgentRunner $spyRunner;
+    private RecordingNoopAgentRunner $spyRunner;
 
     public static function setUpBeforeClass(): void
     {
         parent::setUpBeforeClass();
-        self::getContainer()->set(AgentRunnerInterface::class, new ContinueCountingAgentRunner());
+        self::getContainer()->set(AgentRunnerInterface::class, new RecordingNoopAgentRunner());
     }
 
     protected function setUp(): void
     {
         parent::setUp();
-        /** @var ContinueCountingAgentRunner $runner */
+        /** @var RecordingNoopAgentRunner $runner */
         $runner = self::getContainer()->get(AgentRunnerInterface::class);
         $this->spyRunner = $runner;
-        $this->spyRunner->continueCount = 0;
+        $this->spyRunner->calls = [];
     }
 
-    public function testAttachDoesNotInvokeRunnerContinue(): void
+    public function testAttachDoesNotInvokeRunnerMutators(): void
     {
         /** @var InProcessAgentSessionClient $client */
         $client = self::getContainer()->get(InProcessAgentSessionClient::class);
@@ -45,52 +45,57 @@ final class InProcessAttachDoesNotContinueTest extends IsolatedKernelTestCase
 
         $this->assertSame('session-attach-42', $handle->runId);
         $this->assertSame('attached', $handle->status);
-        $this->assertSame(0, $this->spyRunner->continueCount, 'attach must not call AgentRunnerInterface::continue');
+        $this->assertSame([], $this->spyRunner->calls, 'attach must not call AgentRunnerInterface mutators');
     }
 }
 
 /**
  * @internal
  */
-final class ContinueCountingAgentRunner implements AgentRunnerInterface
+final class RecordingNoopAgentRunner implements AgentRunnerInterface
 {
-    public int $continueCount = 0;
+    /** @var list<string> */
+    public array $calls = [];
 
     public function start(StartRunInput $input): string
     {
-        return $input->runId ?? 'run';
-    }
+        $this->calls[] = 'start';
 
-    public function continue(string $runId): void
-    {
-        ++$this->continueCount;
+        return $input->runId ?? 'run';
     }
 
     public function shell(string $runId, string $rawInput): void
     {
+        $this->calls[] = 'shell';
     }
 
     public function steer(string $runId, AgentMessage $message): void
     {
+        $this->calls[] = 'steer';
     }
 
     public function followUp(string $runId, AgentMessage $message): void
     {
+        $this->calls[] = 'followUp';
     }
 
     public function appendMessage(string $runId, AgentMessage $message): void
     {
+        $this->calls[] = 'appendMessage';
     }
 
     public function cancel(string $runId, ?string $reason = null): void
     {
+        $this->calls[] = 'cancel';
     }
 
     public function answerHuman(string $runId, string $questionId, mixed $answer): void
     {
+        $this->calls[] = 'answerHuman';
     }
 
     public function compact(string $runId, ?string $customInstructions = null): void
     {
+        $this->calls[] = 'compact';
     }
 }

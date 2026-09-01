@@ -46,7 +46,7 @@ final class HistoryCommandHandlerTest extends TestCase
         $command = new SlashCommand(name: 'history', args: '', originalText: '/history');
         $handler->handle($command);
 
-        $this->assertTrue($picker->isOpen(), 'Handler should cause picker to open');
+        $this->assertTrue(self::pickerOpen($picker), 'Handler should cause picker to open');
     }
 
     private function openablePicker(): HistoryPickerController
@@ -76,5 +76,13 @@ final class HistoryCommandHandlerTest extends TestCase
         $picker = new HistoryPickerController($tui, $screen, $state, $provider, $switcher);
 
         return $picker;
+    }
+
+    private static function pickerOpen(HistoryPickerController $controller): bool
+    {
+        $overlayRef = new \ReflectionProperty($controller, 'overlay');
+        $overlay = $overlayRef->getValue($controller);
+
+        return null !== $overlay && $overlay->isOpen();
     }
 }

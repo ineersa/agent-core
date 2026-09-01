@@ -253,8 +253,7 @@ final class ReloadCommandHandlerTest extends TestCase
             requestId: 'q-1',
             source: QuestionSource::AgentCore,
             kind: QuestionKind::Confirm,
-            prompt: 'Approve?',
-        ));
+            prompt: 'Approve?'));
         $handler = new ReloadCommandHandler(
             $switch,
             new TuiSessionState('42', false),
@@ -290,11 +289,6 @@ final class ReloadCommandHandlerTest extends TestCase
             public function selectHistoryTurn(int $targetTurnNo): void
             {
             }
-
-            public function hasPendingSwitch(): bool
-            {
-                return false;
-            }
         };
     }
 
@@ -315,8 +309,7 @@ final class ReloadCommandHandlerTest extends TestCase
                 requestId: 'q-1',
                 source: QuestionSource::AgentCore,
                 kind: QuestionKind::Confirm,
-                prompt: 'Approve?',
-            ));
+                prompt: 'Approve?'));
 
             return $coordinator;
         }

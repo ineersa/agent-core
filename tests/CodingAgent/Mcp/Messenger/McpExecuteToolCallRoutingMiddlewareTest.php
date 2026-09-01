@@ -34,13 +34,11 @@ use Symfony\Component\Messenger\Stamp\TransportNamesStamp;
 final class McpExecuteToolCallRoutingMiddlewareTest extends TestCase
 {
     private TestLogger $logger;
-    /** @var array<string, McpToolCatalogDTO> */
-    private array $catalogStoreData = [];
 
+    /** @var array<string, McpToolCatalogDTO> */
     protected function setUp(): void
     {
         $this->logger = new TestLogger();
-        $this->catalogStoreData = [];
     }
 
     // ── Test thesis 1: MCP tool gets stamped ──

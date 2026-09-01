@@ -34,50 +34,6 @@ final class ProviderContextUsageResolverTest extends TestCase
         $this->resolver = new ProviderContextUsageResolver($this->eventStore);
     }
 
-    // ── getLatestInputTokens (raw, no eligibility check) ──────────
-
-    public function testGetLatestInputTokensReturnsTokensWhenProviderEventExists(): void
-    {
-        $this->mockEvents([$this->makeLlmStepCompleted(1, 30755)]);
-
-        $this->assertSame(30755, $this->resolver->getLatestInputTokens('run-1'));
-    }
-
-    public function testGetLatestInputTokensReturnsNullWhenNoProviderEvent(): void
-    {
-        $this->mockEvents([]);
-
-        $this->assertNull($this->resolver->getLatestInputTokens('run-1'));
-    }
-
-    public function testGetLatestInputTokensUsesPromptTokensFallback(): void
-    {
-        $event = new RunEvent(
-            runId: 'run-1',
-            seq: 1,
-            turnNo: 1,
-            type: RunEventTypeEnum::LlmStepCompleted->value,
-            payload: [
-                'step_id' => 'step-1',
-                'usage' => [
-                    'prompt_tokens' => 20000,
-                    'completion_tokens' => 500,
-                ],
-            ],
-        );
-
-        $this->mockEvents([$event]);
-
-        $this->assertSame(20000, $this->resolver->getLatestInputTokens('run-1'));
-    }
-
-    // ── getLatestEligibleInputTokens (event-log authoritative) ────
-
-    /**
-     * Thesis: when provider usage seq > latest auto started seq, the
-     * measurement IS eligible.  This is the normal case — the provider
-     * just completed a step and no auto-compaction has acted on it yet.
-     */
     public function testEligibleWhenNoAutoCompactionAttemptExists(): void
     {
         $this->mockEvents([$this->makeLlmStepCompleted(5, 30755)]);
@@ -228,8 +184,6 @@ final class ProviderContextUsageResolverTest extends TestCase
         $this->assertSame(15000, $this->resolver->getLatestEligibleInputTokens('run-1'));
     }
 
-    // ── Structural failure-only marker tests (session 3 class) ─────
-
     /**
      * Thesis: when a provider measurement is followed by an auto
      * context_compaction_failed WITHOUT a preceding started event
@@ -355,31 +309,6 @@ final class ProviderContextUsageResolverTest extends TestCase
     }
 
     /**
-     * Thesis: usage with zero input_tokens is not a valid measurement.
-     */
-    public function testZeroTokensIgnored(): void
-    {
-        $event = new RunEvent(
-            runId: 'run-1',
-            seq: 1,
-            turnNo: 1,
-            type: RunEventTypeEnum::LlmStepCompleted->value,
-            payload: [
-                'step_id' => 'step-1',
-                'usage' => [
-                    'input_tokens' => 0,
-                    'output_tokens' => 100,
-                ],
-            ],
-        );
-
-        $this->mockEvents([$event]);
-
-        $this->assertNull($this->resolver->getLatestInputTokens('run-1'));
-        $this->assertNull($this->resolver->getLatestEligibleInputTokens('run-1'));
-    }
-
-    /**
      * Configure the mock to stream canonical events from newest to oldest.
      *
      * @param list<RunEvent> $events
@@ -404,8 +333,6 @@ final class ProviderContextUsageResolverTest extends TestCase
                 throw new \LogicException('Resolver read past the decisive provider measurement.');
             });
     }
-
-    // ── Helpers ───────────────────────────────────────────────────
 
     private function makeLlmStepCompleted(int $seq, int $inputTokens): RunEvent
     {

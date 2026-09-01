@@ -86,16 +86,12 @@ final class RuntimeQuestionEventHandler
             source: QuestionSource::AgentCore,
             kind: $kind,
             prompt: (string) ($p['prompt'] ?? 'Approval required.'),
-            schema: $schema,
             choices: $choices,
             header: $header,
-            default: $p['default'] ?? null,
             allowOther: $allowOther,
             runId: $runId,
-            questionId: $questionId,
             toolCallId: (string) ($p['tool_call_id'] ?? ''),
             toolName: (string) ($p['tool_name'] ?? ''),
-            transcript: true,
         );
 
         // Enqueue the question with answer and cancel callbacks.
@@ -117,7 +113,7 @@ final class RuntimeQuestionEventHandler
                         payload: [
                             'question_id' => $questionId,
                             'answer' => $boolAnswer,
-                        ],
+                        ]
                     ));
                 } else {
                     $answerStr = \is_scalar($answer) ? (string) $answer : 'cancel';
@@ -127,7 +123,7 @@ final class RuntimeQuestionEventHandler
                         payload: [
                             'question_id' => $questionId,
                             'answer' => $answerStr,
-                        ],
+                        ]
                     ));
                 }
 
@@ -141,14 +137,14 @@ final class RuntimeQuestionEventHandler
                     payload: [
                         'question_id' => $questionId,
                         'answer' => 'Cancelled by user',
-                    ],
+                    ]
                 ));
 
                 // Question dismiss is not child-run cancellation; clear needs-input only.
                 if (null !== $sessionState && null !== $screen) {
                     SubagentLiveAttention::clearWaitingHumanForRun($sessionState, $screen, $runId);
                 }
-            },
+            }
         );
     }
 
@@ -340,7 +336,7 @@ final class RuntimeQuestionEventHandler
                     if (\is_array($choice)) {
                         return new QuestionOption(
                             label: (string) ($choice['label'] ?? ''),
-                            description: (string) ($choice['description'] ?? ''),
+                            description: (string) ($choice['description'] ?? '')
                         );
                     }
 
@@ -349,7 +345,7 @@ final class RuntimeQuestionEventHandler
                     // hand-crafted shape that must not throw TypeError).
                     return new QuestionOption(label: (string) $choice);
                 },
-                $p['choices'],
+                $p['choices']
             ));
         }
 
@@ -358,7 +354,7 @@ final class RuntimeQuestionEventHandler
         if (\is_array($enum) && [] !== $enum) {
             return array_map(
                 static fn (string $label): QuestionOption => new QuestionOption($label),
-                array_values($enum),
+                array_values($enum)
             );
         }
 
@@ -387,15 +383,12 @@ final class RuntimeQuestionEventHandler
             source: QuestionSource::Tui,
             kind: QuestionKind::Confirm,
             prompt: (string) ($p['prompt'] ?? 'Confirmation required.'),
-            schema: ['type' => 'boolean'],
             choices: [],
             header: $this->resolveQuestionHeader($sessionState, $runId, $p, 'approval'),
             allowOther: false,
             runId: $runId,
-            questionId: $requestIdFromPayload,
             toolCallId: (string) ($p['tool_call_id'] ?? ''),
             toolName: (string) ($p['tool_name'] ?? ''),
-            transcript: false,
         );
 
         $questionCoordinator->enqueue(
@@ -409,7 +402,7 @@ final class RuntimeQuestionEventHandler
                         'request_id' => $requestIdFromPayload,
                         'answer' => $boolAnswer,
                         'kind' => 'confirm',
-                    ],
+                    ]
                 ));
 
                 // Local tool questions never own WaitingHuman; do not clear an
@@ -422,11 +415,11 @@ final class RuntimeQuestionEventHandler
                         'request_id' => $requestIdFromPayload,
                         'answer' => false,
                         'kind' => 'confirm',
-                    ],
+                    ]
                 ));
 
                 // Same as onAnswer: leave catalog/live WaitingHuman alone.
-            },
+            }
         );
     }
 

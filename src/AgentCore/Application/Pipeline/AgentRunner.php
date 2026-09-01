@@ -56,11 +56,6 @@ final readonly class AgentRunner implements AgentRunnerInterface
         return $runId;
     }
 
-    public function continue(string $runId): void
-    {
-        $this->applyCoreCommand($runId, CoreCommandKind::Continue, []);
-    }
-
     public function shell(string $runId, string $rawInput): void
     {
         $stepId = $this->nextStepId('shell');

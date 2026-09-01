@@ -181,14 +181,6 @@ final class TranscriptProjectionState
     }
 
     /**
-     * Peek whether any dirty upserts or removals exist without draining.
-     */
-    public function hasPendingChanges(): bool
-    {
-        return [] !== $this->dirtyIds || [] !== $this->removedIds;
-    }
-
-    /**
      * Reset all internal state so a fresh replay produces the same output.
      */
     public function reset(): void

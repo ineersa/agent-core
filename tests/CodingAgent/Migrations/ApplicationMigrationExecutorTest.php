@@ -153,6 +153,17 @@ final class ApplicationMigrationExecutorTest extends TestCase
         );
         $this->assertNotFalse($recordedOperationalProjection);
 
+        $recordedOperationColumnDrop = $connection->fetchOne(
+            'SELECT 1 FROM doctrine_migration_versions WHERE version = ?',
+            ['Version20260901015440'],
+        );
+        $this->assertNotFalse($recordedOperationColumnDrop);
+        $operationalStateColumns = array_keys($schemaManager->listTableColumns('run_operational_state'));
+        $this->assertNotContains('operation_turn_no', $operationalStateColumns);
+        $this->assertNotContains('operation_step_id', $operationalStateColumns);
+        $this->assertNotContains('operation_attempt', $operationalStateColumns);
+        $this->assertNotContains('operation_key', $operationalStateColumns);
+
         $recordedDeferredSingleDrop = $connection->fetchOne(
             'SELECT 1 FROM doctrine_migration_versions WHERE version = ?',
             ['Version20260714140000'],
@@ -197,6 +208,79 @@ final class ApplicationMigrationExecutorTest extends TestCase
         $this->assertContains('launch_model', $childColumns);
         $this->assertContains('launch_reasoning', $childColumns);
         $this->assertNotContains('definition_model', $childColumns);
+    }
+
+    public function testOperationalColumnDropPreservesChildProjectionRows(): void
+    {
+        $connection = $this->createSqliteConnection($this->isolatedDir.'/operational-column-drop.sqlite');
+        $connection->executeStatement(
+            'CREATE TABLE doctrine_migration_versions (
+                version VARCHAR(191) NOT NULL PRIMARY KEY,
+                executed_at DATETIME DEFAULT NULL,
+                execution_time INTEGER DEFAULT NULL
+            )'
+        );
+        $connection->insert('doctrine_migration_versions', [
+            'version' => 'Version20260901015440',
+            'executed_at' => '2026-09-01 00:00:00',
+            'execution_time' => 0,
+        ]);
+        (new ApplicationMigrationExecutor($connection, new NullLogger()))();
+        $connection->delete('doctrine_migration_versions', ['version' => 'Version20260901015440']);
+
+        $now = '2026-09-01 00:00:00';
+        $connection->insert('run_operational_state', [
+            'run_id' => 'run-1',
+            'parent_run_id' => null,
+            'owner_session_id' => 'session-1',
+            'status' => 'running',
+            'turn_no' => 3,
+            'active_step_id' => 'step-1',
+            'operation_turn_no' => 3,
+            'operation_step_id' => 'step-1',
+            'operation_attempt' => 1,
+            'operation_key' => 'operation-1',
+            'last_applied_advance_key' => null,
+            'last_applied_compaction_key' => null,
+            'retryable_failure' => 0,
+            'retry_attempts' => 0,
+            'last_event_sequence' => 7,
+            'transition_version' => 2,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+        $connection->insert('run_operational_tool_call', [
+            'run_id' => 'run-1',
+            'batch_id' => 'batch-1',
+            'tool_call_id' => 'tool-1',
+            'order_index' => 0,
+            'status' => 'running',
+            'attempt' => 1,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+        $connection->insert('run_operational_human_input', [
+            'run_id' => 'run-1',
+            'question_id' => 'question-1',
+            'order_index' => 0,
+            'continuation_kind' => 'resume',
+            'tool_call_id' => 'tool-1',
+            'status' => 'pending',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        (new ApplicationMigrationExecutor($connection, new NullLogger()))();
+
+        $this->assertSame('run-1', $connection->fetchOne('SELECT run_id FROM run_operational_state'));
+        $this->assertSame('tool-1', $connection->fetchOne('SELECT tool_call_id FROM run_operational_tool_call'));
+        $this->assertSame('question-1', $connection->fetchOne('SELECT question_id FROM run_operational_human_input'));
+
+        $columns = array_keys($connection->createSchemaManager()->listTableColumns('run_operational_state'));
+        $this->assertNotContains('operation_turn_no', $columns);
+        $this->assertNotContains('operation_step_id', $columns);
+        $this->assertNotContains('operation_attempt', $columns);
+        $this->assertNotContains('operation_key', $columns);
     }
 
     public function testLaunchIdentityMigrationFailsClosedWhenDeferredChildrenExist(): void

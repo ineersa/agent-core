@@ -44,12 +44,4 @@ final class ExtensionAgentJobRegistry
     {
         return $this->handlers[$handlerId]['owner'] ?? null;
     }
-
-    /**
-     * @return list<string>
-     */
-    public function handlerIds(): array
-    {
-        return array_keys($this->handlers);
-    }
 }
