@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Execution\Subagent\ChildRun\Deferred;
 
+use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
@@ -94,6 +95,68 @@ final class DeferredChildRunEventProjectorTest extends TestCase
         [$serializer] = AttributeSerializerValidatorTestFactory::create(withBackedEnumNormalizer: true);
         $wire = $serializer->normalize($resumed, null, [\Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer::SKIP_NULL_VALUES => true]);
         $this->assertSame('xhigh', $serializer->denormalize($wire, DeferredChildRunLifecycleProjectionDTO::class)->reasoning);
+    }
+
+    public function testResumeWakeDoesNotReusePreviousTerminalStatusBeforeFollowUpStarts(): void
+    {
+        $projector = new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new \Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()));
+        $current = new DeferredChildRunLifecycleProjectionDTO(
+            childStatus: RunStatus::Running,
+            childTurnNo: 106,
+            lastCommittedSeq: 109,
+            model: 'openai-codex/gpt-5.6-luna',
+            reasoning: 'low',
+        );
+
+        $queuedByPreviousStatus = [];
+        foreach ([RunStatus::Completed, RunStatus::Failed, RunStatus::Cancelled] as $previousTerminalStatus) {
+            $queued = $projector->apply(
+                $current,
+                [new AfterTurnCommitEventSummary(110, RunEventTypeEnum::AgentCommandQueued->value, [
+                    'kind' => CoreCommandKind::FollowUp,
+                    'idempotency_key' => 'resume-follow-up',
+                ])],
+                committedStatus: $previousTerminalStatus,
+                committedTurnNo: 106,
+            );
+
+            $this->assertSame(RunStatus::Running, $queued->childStatus, $previousTerminalStatus->value);
+            $this->assertFalse($queued->childStatus->isTerminal(), $previousTerminalStatus->value);
+            $this->assertSame(110, $queued->lastCommittedSeq);
+            $queuedByPreviousStatus[$previousTerminalStatus->value] = $queued;
+        }
+
+        $resumed = $projector->apply(
+            $queuedByPreviousStatus[RunStatus::Completed->value],
+            [
+                new AfterTurnCommitEventSummary(111, RunEventTypeEnum::AgentCommandApplied->value, [
+                    'kind' => CoreCommandKind::FollowUp,
+                    'idempotency_key' => 'resume-follow-up',
+                ]),
+                new AfterTurnCommitEventSummary(112, RunEventTypeEnum::TurnAdvanced->value, [
+                    'turn_no' => 111,
+                ]),
+            ],
+            committedStatus: RunStatus::Running,
+            committedTurnNo: 111,
+        );
+
+        $this->assertSame(RunStatus::Running, $resumed->childStatus);
+        $this->assertSame(111, $resumed->childTurnNo);
+        $this->assertSame(112, $resumed->lastCommittedSeq);
+
+        $completed = $projector->apply(
+            $resumed,
+            [new AfterTurnCommitEventSummary(137, RunEventTypeEnum::AgentEnd->value, [
+                'reason' => 'completed',
+            ])],
+            committedStatus: RunStatus::Completed,
+            committedTurnNo: 135,
+        );
+
+        $this->assertSame(RunStatus::Completed, $completed->childStatus);
+        $this->assertTrue($completed->childStatus->isTerminal());
+        $this->assertSame(137, $completed->lastCommittedSeq);
     }
 
     public function testRetryableLlmStepFailedStaysRunningWhileExhaustedFailureIsTerminal(): void
