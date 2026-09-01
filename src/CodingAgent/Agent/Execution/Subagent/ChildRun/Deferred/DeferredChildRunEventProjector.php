@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred;
 
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
+use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
@@ -59,16 +60,30 @@ final class DeferredChildRunEventProjector
         /** @var array<string, DeferredPendingToolCallRowDTO> $pendingById */
         $pendingById = $current->pendingToolCalls;
 
+        // A resumed child is rebound as Running before follow_up is dispatched.
+        // The first post-resume commit only queues that command, so RunState still
+        // carries the child's previous terminal status. Preserve the wake boundary
+        // until a later status-setting event proves the resumed lifecycle state.
+        $endsWithQueuedFollowUpWake = false;
+
         foreach ($summaries as $summary) {
             $lastSeq = $summary->seq;
             $payload = $summary->payload;
             $type = $summary->type;
+
+            if (RunEventTypeEnum::AgentCommandQueued->value === $type
+                && CoreCommandKind::FollowUp === ($payload['kind'] ?? null)) {
+                $status = RunStatus::Running;
+                $endsWithQueuedFollowUpWake = true;
+                continue;
+            }
 
             if (RunEventTypeEnum::TurnAdvanced->value === $type) {
                 if (isset($payload['turn_no']) && is_numeric($payload['turn_no'])) {
                     $turnNo = (int) $payload['turn_no'];
                 }
                 $status = RunStatus::Running;
+                $endsWithQueuedFollowUpWake = false;
                 continue;
             }
 
@@ -79,6 +94,7 @@ final class DeferredChildRunEventProjector
                 $reasoning = $metadata->reasoning ?? $reasoning;
                 $contextWindow = $metadata->contextWindow ?? $contextWindow;
                 $status = RunStatus::Running;
+                $endsWithQueuedFollowUpWake = false;
                 continue;
             }
 
@@ -123,6 +139,7 @@ final class DeferredChildRunEventProjector
                     }
                 }
                 $status = RunStatus::Running;
+                $endsWithQueuedFollowUpWake = false;
                 continue;
             }
 
@@ -146,6 +163,7 @@ final class DeferredChildRunEventProjector
                     $recentTools = \array_slice($recentTools, -self::MAX_RECENT_TOOLS);
                 }
                 $status = RunStatus::Running;
+                $endsWithQueuedFollowUpWake = false;
                 continue;
             }
 
@@ -156,11 +174,13 @@ final class DeferredChildRunEventProjector
                     ? $error['user_message']
                     : (\is_string($error['message'] ?? null) ? $error['message'] : 'LLM worker failed.');
                 $status = RunStatus::Failed;
+                $endsWithQueuedFollowUpWake = false;
                 continue;
             }
 
             if (RunEventTypeEnum::WaitingHuman->value === $type) {
                 $status = RunStatus::WaitingHuman;
+                $endsWithQueuedFollowUpWake = false;
                 continue;
             }
 
@@ -171,6 +191,7 @@ final class DeferredChildRunEventProjector
                     'failed' => RunStatus::Failed,
                     default => RunStatus::Completed,
                 };
+                $endsWithQueuedFollowUpWake = false;
                 continue;
             }
         }
@@ -187,7 +208,10 @@ final class DeferredChildRunEventProjector
         }
 
         if (null !== $committedStatus) {
-            $status = $committedStatus;
+            $staleTerminalBeforeFollowUpDrain = $endsWithQueuedFollowUpWake && $committedStatus->isTerminal();
+            if (!$staleTerminalBeforeFollowUpDrain) {
+                $status = $committedStatus;
+            }
             $turnNo = $committedTurnNo;
         }
 
