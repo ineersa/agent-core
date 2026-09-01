@@ -57,7 +57,7 @@ final readonly class SubagentResultRenderer
         }
 
         if ('' !== $resultText) {
-            return $this->buildFallbackWidget($resultText, $theme);
+            return $this->buildFallbackWidget($resultText, $theme, $this->resultColor($block));
         }
 
         $suffix = $block->streaming ? TranscriptGlyphs::STREAMING_SUFFIX : '';
@@ -71,7 +71,9 @@ final readonly class SubagentResultRenderer
         SubagentProgressSnapshotInterface $progress,
         string $resultText,
     ): AbstractWidget {
-        $handoffMarkdown = $this->resolveHandoffMarkdown($progress, $resultText);
+        $resultColor = $this->resultColor($block);
+        $isError = ThemeColorEnum::Error === $resultColor;
+        $handoffMarkdown = $isError ? '' : $this->resolveHandoffMarkdown($progress, $resultText);
         $expandHandoffHint = ('' !== $handoffMarkdown && $this->handoffNeedsExpandHint($handoffMarkdown))
             ? 'Ctrl+O to expand handoff'
             : null;
@@ -84,24 +86,41 @@ final readonly class SubagentResultRenderer
             expandHandoffHint: $expandHandoffHint,
         ));
 
-        if ('' !== $handoffMarkdown) {
+        if ($isError && '' !== trim($resultText)) {
+            $container->add($this->buildResultTextWidget($resultText, $theme, $resultColor));
+        } elseif ('' !== $handoffMarkdown) {
             $container->add($this->buildHandoffMarkdownWidget($handoffMarkdown, $theme));
         }
 
         return $container;
     }
 
-    private function buildFallbackWidget(string $resultText, TuiTheme $theme): TextWidget
+    private function buildFallbackWidget(string $resultText, TuiTheme $theme, ThemeColorEnum $resultColor): TextWidget
     {
         $lines = explode("\n", trim($resultText));
         $header = $theme->color(ThemeColorEnum::BorderAccent, '╭─ subagent');
         $body = [];
         foreach ($lines as $line) {
-            $body[] = $theme->color(ThemeColorEnum::BorderAccent, '│ ').$theme->color(ThemeColorEnum::ToolOutput, $line);
+            $body[] = $theme->color(ThemeColorEnum::BorderAccent, '│ ').$theme->color($resultColor, $line);
         }
         $bottom = $theme->color(ThemeColorEnum::BorderAccent, '╰─');
 
         return new TextWidget(implode("\n", array_merge([$header], $body, [$bottom])));
+    }
+
+    private function buildResultTextWidget(string $resultText, TuiTheme $theme, ThemeColorEnum $resultColor): TextWidget
+    {
+        $widget = new TextWidget($theme->color($resultColor, trim($resultText)));
+        $widget->setStyle(new Style(padding: Padding::from([0, 0, 0, 2])));
+
+        return $widget;
+    }
+
+    private function resultColor(TranscriptBlock $block): ThemeColorEnum
+    {
+        return true === ($block->meta['is_error'] ?? false)
+            ? ThemeColorEnum::Error
+            : ThemeColorEnum::ToolOutput;
     }
 
     private function buildHandoffMarkdownWidget(string $handoffMarkdown, TuiTheme $theme): AbstractWidget
