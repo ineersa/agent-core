@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Screen;
 
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingleSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
@@ -190,6 +191,94 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
         $this->assertStringContainsString('●', $text, 'Tool glyph missing');
         $this->assertStringContainsString('read', $text, 'Tool name missing');
         $this->assertStringContainsString('3 lines read', $text, 'Tool result text missing');
+    }
+
+    #[Test]
+    public function testToolResultTextUsesSuccessAndErrorThemeColors(): void
+    {
+        $palette = new ThemePalette('virtual-tool-results', [
+            ThemeColorEnum::ToolOutput->value => '#39ff14',
+            ThemeColorEnum::Error->value => '#ff3366',
+            ThemeColorEnum::BorderAccent->value => '#00ffff',
+            ThemeColorEnum::Text->value => '',
+        ]);
+        $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID, palette: $palette);
+        $harness->screen()->setTranscriptBlocks([
+            new TranscriptBlock(
+                id: 'tr-success',
+                kind: TranscriptBlockKindEnum::ToolResult,
+                runId: self::SESSION_ID,
+                seq: 1,
+                text: 'successful tool output',
+                meta: [
+                    'tool_name' => 'read',
+                    'result' => 'successful tool output',
+                    'is_error' => false,
+                ],
+            ),
+            new TranscriptBlock(
+                id: 'tr-subagent-failed',
+                kind: TranscriptBlockKindEnum::ToolResult,
+                runId: self::SESSION_ID,
+                seq: 2,
+                text: 'subagent failed before progress',
+                meta: [
+                    'tool_name' => 'subagent',
+                    'result' => 'subagent failed before progress',
+                    'is_error' => true,
+                ],
+            ),
+            new TranscriptBlock(
+                id: 'tr-resume-failed',
+                kind: TranscriptBlockKindEnum::ToolResult,
+                runId: self::SESSION_ID,
+                seq: 3,
+                text: 'agent_resume failed visibly',
+                meta: [
+                    'tool_name' => 'agent_resume',
+                    'result' => 'agent_resume failed visibly',
+                    'is_error' => true,
+                    'subagent_progress' => new SubagentProgressSingleSnapshotDTO(
+                        mode: 'single',
+                        status: 'running',
+                        agentName: 'worker',
+                        artifactId: 'artifact-1',
+                        agentRunId: 'child-run-1',
+                        taskSummary: 'Resume the child task',
+                        model: 'test/model',
+                        reasoning: 'medium',
+                    ),
+                ],
+            ),
+        ]);
+        $harness->screen()->setWorkingVisible(false);
+
+        $ansi = $harness->ansiOutput();
+        $plain = $harness->plainScreenText();
+
+        $this->assertStringContainsString('successful tool output', $plain);
+        $this->assertStringContainsString('subagent failed before progress', $plain);
+        $this->assertStringContainsString('agent_resume failed visibly', $plain);
+        $this->assertMatchesRegularExpression(
+            '/\x1b\[38;2;57;255;20m\s*successful tool output/',
+            $ansi,
+            'Successful tool result text must use ToolOutput color',
+        );
+        $this->assertMatchesRegularExpression(
+            '/\x1b\[38;2;255;51;102msubagent failed before progress/',
+            $ansi,
+            'Failed subagent fallback result text must use Error color',
+        );
+        $this->assertMatchesRegularExpression(
+            '/\x1b\[38;2;255;51;102m\s*agent_resume failed visibly/',
+            $ansi,
+            'Failed agent_resume result text must use Error color even with stale running progress',
+        );
+        $this->assertDoesNotMatchRegularExpression(
+            '/\x1b\[38;2;255;51;102m\s*successful tool output/',
+            $ansi,
+            'Successful tool result text must not use Error color',
+        );
     }
 
     #[Test]
