@@ -185,6 +185,7 @@ final class DeferredChildRunEventProjector
                 $reason = \is_string($payload['reason'] ?? null) ? $payload['reason'] : null;
                 $status = match ($reason) {
                     'cancelled' => RunStatus::Cancelled,
+                    'failed' => RunStatus::Failed,
                     default => RunStatus::Completed,
                 };
                 $endsWithRetryPendingLlmFailure = false;

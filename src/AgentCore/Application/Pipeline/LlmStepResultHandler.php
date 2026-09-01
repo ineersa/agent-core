@@ -597,7 +597,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
         return function () use ($runId, $turnNo, $stepId, $retryAttempt, $maxRetries, $error): void {
             $continueStepId = \sprintf('auto-retry-%s-%d', $stepId, $retryAttempt);
             $idempotencyKey = hash('sha256', \sprintf('%s|auto-retry|%s|%d', $runId, $stepId, $retryAttempt));
-            $exponent = max(0, $retryAttempt - 1);
+            $exponent = min(3, max(0, $retryAttempt - 1));
             $delayMs = min(
                 self::AGENT_RETRY_BASE_DELAY_MS * (2 ** $exponent),
                 self::AGENT_RETRY_MAX_DELAY_MS,

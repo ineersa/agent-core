@@ -650,7 +650,8 @@ final class LlmStepResultHandlerTest extends TestCase
             'first retry' => [0, 1000],
             'second retry' => [1, 2000],
             'third retry' => [2, 4000],
-            'fourth retry capped' => [3, 8000],
+            'fourth retry' => [3, 8000],
+            'later retry remains capped' => [4, 8000],
         ];
     }
 

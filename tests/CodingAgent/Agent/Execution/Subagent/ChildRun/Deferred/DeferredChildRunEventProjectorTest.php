@@ -189,6 +189,10 @@ final class DeferredChildRunEventProjectorTest extends TestCase
                     'retry_attempt' => 2,
                     'max_retries' => 2,
                 ]),
+                new AfterTurnCommitEventSummary(7, RunEventTypeEnum::AgentEnd->value, [
+                    'reason' => 'failed',
+                    'error' => 'Automatic LLM retry attempts exhausted after 2 retry attempt(s).',
+                ]),
             ],
             committedStatus: RunStatus::Failed,
             committedTurnNo: 48,
@@ -198,7 +202,7 @@ final class DeferredChildRunEventProjectorTest extends TestCase
         $this->assertTrue($exhausted->childStatus->isTerminal());
         $this->assertSame(48, $exhausted->childTurnNo);
         $this->assertSame(2, $exhausted->llmStepCount);
-        $this->assertSame(6, $exhausted->lastCommittedSeq);
+        $this->assertSame(7, $exhausted->lastCommittedSeq);
         $this->assertSame(
             'Automatic LLM retry attempts exhausted after 2 retry attempt(s).',
             $exhausted->errorMessage,
