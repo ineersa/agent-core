@@ -1,6 +1,7 @@
 ---
 name: datadog
 description: Investigate Datadog logs, traces, metrics, monitors, dashboards, and incidents with evidence correlation and mutation safety. Use when diagnosing Datadog observability data, querying Datadog, or changing a Datadog resource.
+disable-model-invocation: true
 ---
 
 # Datadog observability
