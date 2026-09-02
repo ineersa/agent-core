@@ -13,7 +13,6 @@ Use these known identifiers and queries instead of rediscovering the Hatfield se
 | Tool call resource | `tool.call` |
 | Messenger operation | `symfony.messenger.consume` |
 | Database operation | `PDOStatement.execute` |
-| Host | `server` |
 
 ## Confirmed queries
 
@@ -29,16 +28,10 @@ The Hatfield dashboard defines an `env` template variable with the `env` prefix.
 | Database statement spans | `service:hatfield $env operation_name:PDOStatement.execute` |
 | LLM-step errors | `sum:trace.symfony.messenger.consume.errors{service:hatfield AND $env AND resource_name:llm_-_ineersa_agentcore_domain_message_executellmstep}.as_count()` |
 | LLM-step count | `sum:trace.symfony.messenger.consume.hits{service:hatfield AND $env AND resource_name:llm_-_ineersa_agentcore_domain_message_executellmstep}.as_count()` |
-| Shared-host CPU user | `avg:system.cpu.user{host:server AND $env} by {host}` |
-| Shared-host CPU system | `avg:system.cpu.system{host:server AND $env} by {host}` |
-| Shared-host CPU I/O wait | `avg:system.cpu.iowait{host:server AND $env} by {host}` |
-| Shared-host usable memory | `avg:system.mem.pct_usable{host:server AND $env} by {host}` |
 
-Use `pc50` and `pc95` as span percentile aggregations in dashboard widget definitions. Datadog investigation tools may label equivalent results p50 and p95.
+Use `pc50` and `pc95` as span percentile aggregations in dashboard widget definitions. Add `indexes: ["*"]` to each span query. A percentile computation also requires `metric: "@duration"`. Datadog investigation tools may label equivalent results p50 and p95.
 
 `llm.call` and `turn.execution.llm_worker` are nested duplicates. `tool.call` and `turn.execution.tool_worker` are also nested duplicates. Use only the canonical call resources listed above when counting or measuring logical calls.
-
-CPU metrics are native percentages. `system.mem.pct_usable` is a fraction and must be multiplied by 100 for a percentage display. The host is shared. Never present these metrics as Hatfield-specific CPU or memory usage.
 
 Recent evidence confirmed log statuses `info`, `ok`, `notice`, `warn`, `error`, and `emergency`. Recent APM data included LLM calls, tool calls, Messenger work, database statements, and controller work.
 
@@ -79,6 +72,21 @@ No metric measures `.hatfield` or session-directory size. Whole-filesystem metri
 
 To support a storage widget, publish a directory-specific gauge such as `hatfield.session_storage.bytes{env:<env>}`. The collector must measure the configured session directory and document whether it includes sessions, logs, cache, or all `.hatfield` data.
 
+### Process CPU, memory, and I/O
+
+No current metric measures CPU, resident memory, or I/O for Hatfield processes. Available `system.cpu.*`, `system.mem.*`, and `system.io.*` metrics cover the host or device. Process metric contexts expose no process name, command, container, or service dimension that isolates Hatfield.
+
+Enable Datadog process collection and expose a stable Hatfield selector such as `service:hatfield`, a command tag, or a container ID. The resulting telemetry must support signals equivalent to:
+
+```text
+process.cpu.pct{service:hatfield,env:<env>}
+process.memory.rss{service:hatfield,env:<env>}
+process.io.read_bytes{service:hatfield,env:<env>}
+process.io.write_bytes{service:hatfield,env:<env>}
+```
+
+Do not add resource widgets until live metric contexts and queries prove that the selector isolates Hatfield.
+
 ### Other gaps
 
 - Tool names are not available as a usable span facet, so the dashboard cannot rank slow tools honestly.
@@ -100,5 +108,6 @@ Use these tools when current data needs confirmation:
 6. `datadog_search_datadog_metrics` finds Hatfield and host metrics.
 7. `datadog_get_datadog_metric_context` checks metric dimensions and units.
 8. `datadog_get_datadog_metric` confirms current metric data.
+9. `datadog_get_widget` executes a dashboard widget and exposes runtime query errors that schema validation misses.
 
-Read-back of a dashboard proves its definitions, not rendered values. Prove current data with the corresponding log, span, or metric tool.
+Read-back of a dashboard proves its definitions, not rendered values. Execute every final widget with `datadog_get_widget`, then prove current data with the corresponding log, span, or metric tool.

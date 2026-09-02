@@ -28,7 +28,7 @@ Use `$env` in widget queries. Datadog expands it to `env:<value>`. Do not write 
 
 ## Validated widgets
 
-The dashboard contains twelve widgets. Preserve their IDs when updating them.
+The dashboard contains ten widgets. Preserve their IDs when updating them.
 
 ### LLM/provider latency
 
@@ -41,9 +41,13 @@ ID `5737519449404669`. Layout: `x:0`, `y:0`, `width:8`, `height:4`.
   "requests": [{
     "queries": [{
       "data_source": "spans",
+      "indexes": ["*"],
       "name": "llm",
       "search": {"query": "service:hatfield $env resource_name:llm.call"},
-      "compute": {"aggregation": "pc95"}
+      "compute": {
+        "aggregation": "pc95",
+        "metric": "@duration"
+      }
     }],
     "formulas": [{"formula": "llm"}],
     "response_format": "timeseries",
@@ -148,7 +152,7 @@ ID `5065655617896639`. Layout: `x:6`, `y:4`, `width:3`, `height:4`.
 
 ### Tool execution latency
 
-ID `6627607068531676`. Layout: `x:9`, `y:4`, `width:3`, `height:4`.
+ID `6627607068531676`. Layout: `x:0`, `y:8`, `width:4`, `height:4`.
 
 ```json
 {
@@ -158,15 +162,23 @@ ID `6627607068531676`. Layout: `x:9`, `y:4`, `width:3`, `height:4`.
     "queries": [
       {
         "data_source": "spans",
+        "indexes": ["*"],
         "name": "tool_p50",
         "search": {"query": "service:hatfield $env resource_name:tool.call"},
-        "compute": {"aggregation": "pc50"}
+        "compute": {
+          "aggregation": "pc50",
+          "metric": "@duration"
+        }
       },
       {
         "data_source": "spans",
+        "indexes": ["*"],
         "name": "tool_p95",
         "search": {"query": "service:hatfield $env resource_name:tool.call"},
-        "compute": {"aggregation": "pc95"}
+        "compute": {
+          "aggregation": "pc95",
+          "metric": "@duration"
+        }
       }
     ],
     "formulas": [
@@ -181,7 +193,7 @@ ID `6627607068531676`. Layout: `x:9`, `y:4`, `width:3`, `height:4`.
 
 ### Messenger throughput and latency
 
-ID `6792767117984366`. Layout: `x:0`, `y:8`, `width:12`, `height:4`.
+ID `6792767117984366`. Layout: `x:0`, `y:12`, `width:12`, `height:4`.
 
 ```json
 {
@@ -191,6 +203,7 @@ ID `6792767117984366`. Layout: `x:0`, `y:8`, `width:12`, `height:4`.
     "queries": [
       {
         "data_source": "spans",
+        "indexes": ["*"],
         "name": "count",
         "search": {"query": "service:hatfield $env operation_name:symfony.messenger.consume"},
         "compute": {"aggregation": "count"},
@@ -198,9 +211,13 @@ ID `6792767117984366`. Layout: `x:0`, `y:8`, `width:12`, `height:4`.
       },
       {
         "data_source": "spans",
+        "indexes": ["*"],
         "name": "p95",
         "search": {"query": "service:hatfield $env operation_name:symfony.messenger.consume"},
-        "compute": {"aggregation": "pc95"},
+        "compute": {
+          "aggregation": "pc95",
+          "metric": "@duration"
+        },
         "group_by": [{"facet": "resource_name", "limit": 20}]
       }
     ],
@@ -215,7 +232,7 @@ ID `6792767117984366`. Layout: `x:0`, `y:8`, `width:12`, `height:4`.
 
 ### Database operations
 
-ID `4309650939374206`. Layout: `x:0`, `y:12`, `width:12`, `height:4`.
+ID `4309650939374206`. Layout: `x:0`, `y:16`, `width:12`, `height:4`.
 
 ```json
 {
@@ -229,6 +246,7 @@ ID `4309650939374206`. Layout: `x:0`, `y:12`, `width:12`, `height:4`.
     "queries": [
       {
         "data_source": "spans",
+        "indexes": ["*"],
         "name": "count",
         "search": {"query": "service:hatfield $env operation_name:PDOStatement.execute"},
         "compute": {"aggregation": "count"},
@@ -236,9 +254,13 @@ ID `4309650939374206`. Layout: `x:0`, `y:12`, `width:12`, `height:4`.
       },
       {
         "data_source": "spans",
+        "indexes": ["*"],
         "name": "p95",
         "search": {"query": "service:hatfield $env operation_name:PDOStatement.execute"},
-        "compute": {"aggregation": "pc95"},
+        "compute": {
+          "aggregation": "pc95",
+          "metric": "@duration"
+        },
         "group_by": [{"facet": "resource_name", "limit": 10}]
       }
     ],
@@ -249,7 +271,7 @@ ID `4309650939374206`. Layout: `x:0`, `y:12`, `width:12`, `height:4`.
 
 ### Logs by status
 
-ID `3448242938512668`. Layout: `x:0`, `y:16`, `width:6`, `height:5`.
+ID `3448242938512668`. Layout: `x:0`, `y:20`, `width:6`, `height:5`.
 
 ```json
 {
@@ -277,7 +299,7 @@ ID `3448242938512668`. Layout: `x:0`, `y:16`, `width:6`, `height:5`.
 
 ### Warning and error stream
 
-ID `1954057201076375`. Layout: `x:6`, `y:16`, `width:6`, `height:5`.
+ID `1954057201076375`. Layout: `x:6`, `y:20`, `width:6`, `height:5`.
 
 ```json
 {
@@ -292,68 +314,6 @@ ID `1954057201076375`. Layout: `x:6`, `y:16`, `width:6`, `height:5`.
 }
 ```
 
-### Shared-host CPU
-
-ID `5187045740648865`. Layout: `x:0`, `y:21`, `width:6`, `height:4`.
-
-```json
-{
-  "type": "timeseries",
-  "title": "Shared-host CPU context",
-  "requests": [{
-    "display_type": "line",
-    "formulas": [
-      {"formula": "user"},
-      {"formula": "system"},
-      {"formula": "iowait"}
-    ],
-    "queries": [
-      {
-        "data_source": "metrics",
-        "name": "user",
-        "query": "avg:system.cpu.user{host:server AND $env} by {host}"
-      },
-      {
-        "data_source": "metrics",
-        "name": "system",
-        "query": "avg:system.cpu.system{host:server AND $env} by {host}"
-      },
-      {
-        "data_source": "metrics",
-        "name": "iowait",
-        "query": "avg:system.cpu.iowait{host:server AND $env} by {host}"
-      }
-    ],
-    "response_format": "timeseries"
-  }]
-}
-```
-
-These CPU metrics are native percentages. The host is shared, so this widget is not Hatfield-specific usage.
-
-### Shared-host memory
-
-ID `5027319727723062`. Layout: `x:6`, `y:21`, `width:6`, `height:4`.
-
-```json
-{
-  "type": "timeseries",
-  "title": "Shared-host memory usable (%)",
-  "requests": [{
-    "display_type": "line",
-    "formulas": [{"formula": "usable * 100"}],
-    "queries": [{
-      "data_source": "metrics",
-      "name": "usable",
-      "query": "avg:system.mem.pct_usable{host:server AND $env} by {host}"
-    }],
-    "response_format": "timeseries"
-  }]
-}
-```
-
-`system.mem.pct_usable` is a fraction, so the formula converts it to a percentage. The host is shared, so this widget is not Hatfield-specific usage.
-
 ## Update checklist
 
 1. Read the complete dashboard.
@@ -363,9 +323,12 @@ ID `5027319727723062`. Layout: `x:6`, `y:21`, `width:6`, `height:4`.
 5. Validate every changed or new widget.
 6. Upsert the complete widget list and template variable.
 7. Read the dashboard again. Verify the template variable, widget IDs, titles, queries, layouts, description, and tags.
+8. Execute every final widget with `datadog_get_widget`. Treat any runtime query error as a failed update even when schema validation passed.
 
 Dashboard query values follow the dashboard time range. Do not add a time range to a title unless the widget has an explicit time override.
 
 Use `resource_name:llm.call` and `resource_name:tool.call` as the canonical call spans. Their worker spans are nested duplicates.
+
+Span percentile widgets require `indexes: ["*"]` and `compute.metric: "@duration"`. Schema validation does not catch every missing runtime field.
 
 See [Datadog MCP](mcp.md) for exact tool names, replacement semantics, schema quirks, and access gates.
