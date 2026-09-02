@@ -141,6 +141,44 @@ final class SubagentLiveChildViewPollerReplayTest extends TestCase
     }
 
     #[Test]
+    public function pollRemovesLoadingPlaceholderWhenFirstLiveTranscriptChangesArrive(): void
+    {
+        $projector = $this->childLiveProjector();
+        $poller = new SubagentLiveChildViewPoller($projector, new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer());
+        $live = $this->liveState();
+        $live->childTranscript = $live->placeholderTranscriptFor($live->selected);
+
+        $client = $this->createMock(AgentSessionClient::class);
+        $client->expects($this->once())
+            ->method('events')
+            ->with(self::CHILD_RUN_ID, 0)
+            ->willReturn([
+                new RuntimeEvent(
+                    RuntimeEventTypeEnum::AssistantThinkingStarted->value,
+                    self::CHILD_RUN_ID,
+                    0,
+                    ['block_id' => 'thinking-1'],
+                ),
+                new RuntimeEvent(
+                    RuntimeEventTypeEnum::AssistantThinkingDelta->value,
+                    self::CHILD_RUN_ID,
+                    0,
+                    ['block_id' => 'thinking-1', 'thinking' => 'The child has started.'],
+                ),
+            ]);
+
+        $changes = $poller->poll($live, $client);
+
+        $this->assertNotNull($changes);
+        $this->assertFalse($changes->isFull());
+        $this->assertSame(['subagent-live-placeholder'], $changes->removals);
+        $this->assertCount(1, $changes->upserts);
+        $this->assertSame('thinking-1', $changes->upserts[0]->id);
+        $this->assertCount(1, $live->childTranscript);
+        $this->assertSame('thinking-1', $live->childTranscript[0]->id);
+    }
+
+    #[Test]
     public function pollSkipsEventsAtOrBelowChildLastSeqAfterReplay(): void
     {
         $projector = new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState());
@@ -175,7 +213,9 @@ final class SubagentLiveChildViewPollerReplayTest extends TestCase
         $this->assertNull($poller->poll($live, $client), 'seq 3 must be skipped when childLastSeq is 5');
 
         $live->childLastPoll = 0.0;
-        $this->assertNull($poller->poll($live, $client), 'non-transcript events do not require a repaint');
+        $changes = $poller->poll($live, $client);
+        $this->assertNotNull($changes);
+        $this->assertSame(['b1'], $changes->removals, 'mounted snapshot fallbacks must be removed when live projection replaces them');
         $this->assertSame(6, $live->childLastSeq);
     }
 
