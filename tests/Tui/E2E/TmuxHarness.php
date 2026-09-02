@@ -481,7 +481,7 @@ final class TmuxHarness
      *   - Absolute paths to the project root → <root>
      *   - CWD path in footer after ⌂ → <cwd>
      *   - Git branch in footer after ⎇ → <branch>
-     *   - Elapsed time after ⏱ → ⏱ 0s
+     *   - Elapsed time after ⏱ → ⏱ 0m
      *   - Wrapped footer lines rejoined
      *   - Date/timestamps → <timestamp>  (future; not yet applied)
      *   - Trailing blank lines trimmed

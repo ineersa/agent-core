@@ -259,7 +259,7 @@ class FooterStateSegmentProviderTest extends TestCase
         $state->footerModel = 'm';
         $provider = new FooterStateSegmentProvider($state);
 
-        $state->sessionStartTime = microtime(true) - 59.0;
+        $state->sessionStartTime = microtime(true) - 30.0;
         $this->assertSame('⏱ 0m', $this->elapsedSegmentText($provider));
 
         $state->sessionStartTime = microtime(true) - 125.0;
@@ -276,10 +276,10 @@ class FooterStateSegmentProviderTest extends TestCase
         $state->footerModel = 'm';
         $provider = new FooterStateSegmentProvider($state);
 
-        $state->sessionStartTime = microtime(true) - 65.0;
+        $state->sessionStartTime = microtime(true) - 75.0;
         $first = $provider->footerFingerprint();
 
-        $state->sessionStartTime = microtime(true) - 119.0;
+        $state->sessionStartTime = microtime(true) - 105.0;
         $this->assertSame($first, $provider->footerFingerprint());
 
         $state->sessionStartTime = microtime(true) - 125.0;
