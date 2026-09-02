@@ -113,7 +113,7 @@ final class SubagentLiveViewState
             $this->childTranscript = $cached['transcript'];
             $this->childLastSeq = $cached['lastSeq'];
             $this->childLastPoll = $cached['lastPoll'];
-            $sameGeneration = ($cached['taskSummary'] ?? null) === $child->taskSummary;
+            $sameGeneration = $cached['taskSummary'] === $child->taskSummary;
             if ($sameGeneration) {
                 $this->childActivity = $cached['activity'];
                 $this->childQueuedUserMessages = $cached['queuedUserMessages'] ?? [];
@@ -121,7 +121,7 @@ final class SubagentLiveViewState
             } else {
                 // Resume reuses agentRunId: keep transcript/seq continuity, adopt the
                 // newly selected catalog lifecycle, and drop prior-task transient state.
-                $this->childActivity = $this->activityFromCatalogChild($child);
+                $this->childActivity = $child->status->toActivity() ?? RunActivityStateEnum::Completed;
                 $this->childQueuedUserMessages = [];
                 $this->childReplayEvents = [];
                 $this->persistCurrentChildCache();

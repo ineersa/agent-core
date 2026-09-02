@@ -89,6 +89,24 @@ final class SubagentLiveViewStateTest extends TestCase
         $this->assertSame(RunActivityStateEnum::Running, $view->childCaches['run-resume']['activity']);
     }
 
+    public function testNewResumeGenerationPreservesFailedCatalogActivity(): void
+    {
+        $view = new SubagentLiveViewState();
+        $completed = $this->child('run-resume', 'agent_resume', SubagentLiveStatusEnum::Completed, 'Task A');
+        $view->enter($completed);
+        $view->childTranscript = [
+            new TranscriptBlock('b-a', TranscriptBlockKindEnum::AssistantMessage, 'run-resume', 4, 'task a done'),
+        ];
+        $view->childActivity = RunActivityStateEnum::Completed;
+        $view->persistCurrentChildCache();
+        $view->exit();
+
+        $view->enter($this->child('run-resume', 'agent_resume', SubagentLiveStatusEnum::Failed, 'Task B'));
+
+        $this->assertSame(RunActivityStateEnum::Failed, $view->childActivity);
+        $this->assertSame(RunActivityStateEnum::Failed, $view->childCaches['run-resume']['activity']);
+    }
+
     private function child(
         string $runId,
         string $artifactId,

@@ -219,13 +219,13 @@ final class TickPollListener implements TuiListenerRegistrar
                     RunActivityStateEnum::Cancelling => 'Child cancelling...',
                     default => $state->subagentLiveView->childActivity->isActive()
                         ? 'Child agent working...'
-                        // Empty message uses ChatScreen's static finished idle slot (● idle).
-                        // A non-empty "Child agent idle" would start LoaderWidget and spin.
-                        : null,
+                        : 'Child agent idle',
                 };
                 $liveWorking = null !== $parentMsg
-                    ? (null !== $childMsg ? $parentMsg.' | '.$childMsg : $parentMsg)
-                    : $childMsg;
+                    ? $parentMsg.' | '.$childMsg
+                    // Empty message uses ChatScreen's static finished idle slot (● idle).
+                    // A lone "Child agent idle" would start LoaderWidget and spin.
+                    : ($state->subagentLiveView->childActivity->isActive() ? $childMsg : null);
                 // Live-view-only cache: generic tick path avoids static last-value (see comment above).
                 if ($liveWorking !== $state->subagentLiveView->lastLiveWorkingMessage) {
                     $state->subagentLiveView->lastLiveWorkingMessage = $liveWorking;
