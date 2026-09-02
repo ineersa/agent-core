@@ -384,8 +384,10 @@ services:
   Ineersa\CodingAgent\Infrastructure\Doctrine\SqliteImmediateTransactionMiddleware:
     autoconfigure: false
     tags:
-      - { name: doctrine.middleware, connection: default }
-      - { name: doctrine.middleware, connection: messenger_transport }
+      # Priority above DAMA's 100 keeps this wrapper innermost in tests, so
+      # DAMA can translate explicit transactions to savepoints around it.
+      - { name: doctrine.middleware, connection: default, priority: 101 }
+      - { name: doctrine.middleware, connection: messenger_transport, priority: 101 }
 
   Ineersa\CodingAgent\Migrations\StartupDatabaseMigrator:
     arguments:

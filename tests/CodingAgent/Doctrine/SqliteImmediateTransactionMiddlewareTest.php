@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Doctrine;
 
+use Doctrine\DBAL\Connection;
 use Ineersa\CodingAgent\Tests\Support\ProjectDir;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Symfony\Component\DependencyInjection\Container;
 
@@ -27,11 +29,23 @@ final class SqliteImmediateTransactionMiddlewareTest extends IsolatedKernelTestC
 {
     private string $workerScript;
 
+    private string $workerDatabaseDir;
+
     protected function setUp(): void
     {
         parent::setUp();
 
         $this->workerScript = ProjectDir::get().'/tests/CodingAgent/Doctrine/Support/SqliteImmediateTransactionKernelWorker.php';
+        $this->workerDatabaseDir = TestDirectoryIsolation::createProjectTempDir('sqlite-immediate-db');
+    }
+
+    protected function tearDown(): void
+    {
+        try {
+            TestDirectoryIsolation::removeDirectory($this->workerDatabaseDir);
+        } finally {
+            parent::tearDown();
+        }
     }
 
     public function testMiddlewareIsRegisteredForBothSqliteConnections(): void
@@ -50,14 +64,26 @@ final class SqliteImmediateTransactionMiddlewareTest extends IsolatedKernelTestC
         );
     }
 
+    public function testDefaultConnectionExplicitTransactionRunsInsideDamaTransaction(): void
+    {
+        /** @var Connection $connection */
+        $connection = static::getContainer()->get('doctrine.dbal.default_connection');
+
+        $connection->beginTransaction();
+        $connection->commit();
+
+        $this->assertFalse($connection->isTransactionActive());
+    }
+
     public function testConnectionsSupportNestedTransactionsViaSavepoints(): void
     {
         $this->runKernelWorker(['nested-savepoint-probe', 'default']);
         $this->runKernelWorker(['nested-savepoint-probe', 'messenger_transport']);
     }
 
-    public function testTransportConnectionRollBackReleasesOuterTransaction(): void
+    public function testConnectionsRollBackOuterTransaction(): void
     {
+        $this->runKernelWorker(['rollback-probe', 'default']);
         $this->runKernelWorker(['rollback-probe', 'messenger_transport']);
     }
 
@@ -151,17 +177,13 @@ final class SqliteImmediateTransactionMiddlewareTest extends IsolatedKernelTestC
      */
     private function kernelWorkerEnv(): array
     {
-        $env = array_merge($_ENV, [
+        $relativeDatabaseDir = '../tmp/'.basename($this->workerDatabaseDir);
+
+        return array_merge($_ENV, [
             'APP_ENV' => 'test',
             'HATFIELD_CWD' => $this->isolatedCwd(),
+            'HATFIELD_TEST_DATABASE_PATH' => $relativeDatabaseDir.'/state.sqlite',
+            'HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH' => $relativeDatabaseDir.'/messenger-transport.sqlite',
         ]);
-        foreach (['HATFIELD_TEST_DATABASE_PATH', 'HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH'] as $key) {
-            $value = getenv($key);
-            if (\is_string($value) && '' !== $value) {
-                $env[$key] = $value;
-            }
-        }
-
-        return $env;
     }
 }
