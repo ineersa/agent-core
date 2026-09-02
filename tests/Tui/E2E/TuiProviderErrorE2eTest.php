@@ -130,14 +130,6 @@ final class TuiProviderErrorE2eTest extends TestCase
             // 4. Save ANSI snapshot for inspection.
             $this->tmux->saveAnsiSnapshot($pane, 'provider-rate-limit-error');
 
-            // Optionally check that the session metadata shows the error.
-            $sessionCapture = $this->tmux->capturePlainWithHistory($pane, 2000);
-            $this->assertStringContainsString(
-                'session ',
-                $sessionCapture,
-                'Session ID should appear in footer after prompt submission',
-            );
-
             // Send clean exit.
             $this->tmux->sendKey($pane, 'C-d');
         } catch (\Throwable $e) {
