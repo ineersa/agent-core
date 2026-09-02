@@ -106,7 +106,7 @@ forks:
         always_on: {}
 context_budget_reminders:
     early_input_tokens: 200000
-    urgent_remaining_tokens: 25000
+    urgent_remaining_tokens: 20000
 agents:
     extensions:
         always_on: {}
