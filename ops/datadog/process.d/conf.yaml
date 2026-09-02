@@ -1,0 +1,22 @@
+# Datadog Agent Process Check for Hatfield CLI and worker processes.
+#
+# Install to:
+#   /etc/datadog-agent/conf.d/process.d/conf.yaml
+#
+# This integration aggregates matching Hatfield processes and emits
+# system.processes.* metrics tagged with service:hatfield and env:dev.
+
+init_config:
+
+instances:
+  - name: hatfield
+    search_string:
+      - hatfield.phar
+      - bin/console agent
+      - bin/console messenger:consume
+    exact_match: false
+    service: hatfield
+    tags:
+      - env:dev
+      - app:hatfield
+    min_collection_interval: 15

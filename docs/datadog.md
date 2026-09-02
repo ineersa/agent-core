@@ -49,6 +49,43 @@ inspect or inject a smoke line in the configured directory manually.
 Search Logs Explorer for the printed smoke message. The sample config includes
 masking rules for common secret shapes.
 
+## Hatfield process metrics
+
+The Datadog Process Check can aggregate CPU, resident memory, and process I/O for
+the Hatfield CLI, controller, and Messenger workers. Install the sample config:
+
+```bash
+sudo install -o dd-agent -g dd-agent -m 0644 \
+  ops/datadog/process.d/conf.yaml \
+  /etc/datadog-agent/conf.d/process.d/conf.yaml
+sudo systemctl restart datadog-agent
+```
+
+The config matches Hatfield PHAR processes and source launches through
+`bin/console`. It tags the resulting `system.processes.*` metrics with
+`service:hatfield`, `env:dev`, and `app:hatfield`.
+
+Check the integration after the Agent has completed one collection interval:
+
+```bash
+sudo datadog-agent check process
+```
+
+Use these dashboard queries:
+
+```text
+sum:system.processes.cpu.pct{service:hatfield AND $env}
+sum:system.processes.mem.rss{service:hatfield AND $env}
+per_second(sum:system.processes.ioread_bytes_count{service:hatfield AND $env})
+per_second(sum:system.processes.iowrite_bytes_count{service:hatfield AND $env})
+```
+
+The Process Check must match every Hatfield process that belongs in the total.
+Short-lived processes can disappear before collection. Datadog documents
+`system.processes.cpu.pct` as inaccurate for processes that live for less than
+30 seconds. Linux process I/O availability also depends on Agent access to
+`/proc/<pid>/io`; verify both I/O metrics before adding dashboard widgets.
+
 ## APM (`HATFIELD_DATADOG` / ddtrace)
 
 Castor launch helpers may wrap the agent process with Datadog APM env when auto-enabled:

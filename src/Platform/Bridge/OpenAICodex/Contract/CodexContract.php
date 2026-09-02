@@ -7,6 +7,7 @@ namespace Symfony\AI\Platform\Bridge\OpenAICodex\Contract;
 use Symfony\AI\Platform\Bridge\OpenAICodex\Contract\Message\CodexAssistantMessageNormalizer;
 use Symfony\AI\Platform\Bridge\OpenAICodex\Contract\Message\CodexMessageBagNormalizer;
 use Symfony\AI\Platform\Bridge\OpenAICodex\Contract\Message\CodexUserMessageNormalizer;
+use Symfony\AI\Platform\Bridge\OpenResponses\Contract\Message\Content\ImageNormalizer;
 use Symfony\AI\Platform\Bridge\OpenResponses\Contract\Message\Content\TextNormalizer;
 use Symfony\AI\Platform\Bridge\OpenResponses\Contract\Message\ToolCallMessageNormalizer;
 use Symfony\AI\Platform\Contract;
@@ -43,8 +44,8 @@ final class CodexContract extends Contract
         //   - CodexUserMessageNormalizer: typed {type:'input_text', text} content
         //   - CodexToolNormalizer: adds strict:null to parameters
         //   - CodexToolCallNormalizer: adds id field alongside call_id
-        // Upstream normalizers handle Text content types identically to
-        // what Codex needs. MessageBag is handled by CodexMessageBagNormalizer
+        // Upstream normalizers handle Image and Text content types identically
+        // to what Codex needs. MessageBag is handled by CodexMessageBagNormalizer
         // (which flattens multi-item outputs unlike the upstream normalizer).
         //
         // The OpenResponses ToolCallMessageNormalizer is intentionally
@@ -61,6 +62,7 @@ final class CodexContract extends Contract
             new CodexAssistantMessageNormalizer(),
             new ToolCallMessageNormalizer(),
             new CodexUserMessageNormalizer(),
+            new ImageNormalizer(),
             new TextNormalizer(),
             new CodexToolNormalizer(),
             new CodexToolCallNormalizer(),
