@@ -28,7 +28,7 @@ Topology map for AgentCore application handlers. Authoritative routing: `config/
 | `ExecuteShellToolCall` | `tool` | `Ineersa\CodingAgent\Runtime\Controller\CommandHandler\ExecuteShellToolCallWorker` |
 | `ExecuteCompactionStep` | `llm` | `ExecuteCompactionStepWorker` |
 
-Workers post results (`LlmStepResult`, `ToolCallResult`, `CompactionStepResult`) back onto `agent.command.bus` → `run_control`. Retryable provider-operation failures from `ExecuteLlmStepWorker` use the `llm` transport retry strategy; `LlmWorkerFailedEventSubscriber` posts one sanitized terminal `LlmStepResult` after final `ExecuteLlmStep` failure and rethrows delivery failure so the original envelope remains recoverable.
+Workers post results (`LlmStepResult`, `ToolCallResult`, `CompactionStepResult`) back onto `agent.command.bus` → `run_control`. Retryable provider-operation failures from `ExecuteLlmStepWorker` use the `llm` transport retry strategy; `LlmWorkerFailedEventSubscriber` posts one sanitized terminal `LlmStepResult` after final `ExecuteLlmStep` failure and rethrows delivery failure so the original envelope remains recoverable. Failed `run_control` deliveries reset the default Doctrine connection and manager after Messenger decides retry eligibility but before permanent-failure terminalization, so redelivery and `agent_end` persistence never reuse failed transaction state.
 
 ## Dispatch ownership (producers)
 

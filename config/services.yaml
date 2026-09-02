@@ -378,11 +378,13 @@ services:
       $knownMigrations:
         - DoctrineMigrations\MessengerTransport\Version20260828224203
 
-  # Outer transactions on messenger_transport use BEGIN IMMEDIATE (see doctrine.yaml).
-  # autoconfigure: false keeps middleware registration explicit and connection-scoped.
-  Ineersa\CodingAgent\Infrastructure\Doctrine\MessengerSqliteImmediateTransactionMiddleware:
+  # Explicit outer SQLite transactions reserve the writer slot before reading so
+  # busy_timeout can serialize concurrent app-state and Messenger transport writers.
+  # autoconfigure: false keeps both connection registrations explicit.
+  Ineersa\CodingAgent\Infrastructure\Doctrine\SqliteImmediateTransactionMiddleware:
     autoconfigure: false
     tags:
+      - { name: doctrine.middleware, connection: default }
       - { name: doctrine.middleware, connection: messenger_transport }
 
   Ineersa\CodingAgent\Migrations\StartupDatabaseMigrator:

@@ -9,13 +9,13 @@ use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Symfony\Component\DependencyInjection\Container;
 
 /**
- * Regression: Messenger transport SQLite claims use BEGIN IMMEDIATE on the
- * dedicated messenger_transport connection (middleware registration + nested
- * savepoint / rollback probes). Timing-lottery competing-writer wait coverage
- * was removed — restore only with a deterministic barrier, never elapsed-time.
+ * Regression: explicit transactions use BEGIN IMMEDIATE on both SQLite connections
+ * (middleware registration + nested savepoint / rollback probes). Timing-lottery
+ * competing-writer wait coverage was removed — restore only with a deterministic
+ * barrier, never elapsed-time.
  *
- * Subprocess helpers boot APP_ENV=test and resolve doctrine.dbal.messenger_transport_connection
- * from the container. StaticDriver::setKeepStaticConnections(false) in those subprocesses
+ * Subprocess helpers boot APP_ENV=test and resolve each DBAL connection from the
+ * container. StaticDriver::setKeepStaticConnections(false) in those subprocesses
  * avoids DAMA's static outer transaction so production outer BEGIN IMMEDIATE semantics
  * can be exercised (in-process kernel connections stay under DAMA in the parent test).
  *
@@ -23,7 +23,7 @@ use Symfony\Component\DependencyInjection\Container;
  *
  * @coversNothing
  */
-final class MessengerSqliteImmediateTransactionMiddlewareTest extends IsolatedKernelTestCase
+final class SqliteImmediateTransactionMiddlewareTest extends IsolatedKernelTestCase
 {
     private string $workerScript;
 
@@ -31,33 +31,34 @@ final class MessengerSqliteImmediateTransactionMiddlewareTest extends IsolatedKe
     {
         parent::setUp();
 
-        $this->workerScript = ProjectDir::get().'/tests/CodingAgent/Doctrine/Support/MessengerSqliteImmediateTransactionKernelWorker.php';
+        $this->workerScript = ProjectDir::get().'/tests/CodingAgent/Doctrine/Support/SqliteImmediateTransactionKernelWorker.php';
     }
 
-    public function testMiddlewareIsRegisteredOnlyForMessengerTransportConnection(): void
+    public function testMiddlewareIsRegisteredForBothSqliteConnections(): void
     {
         /** @var Container $container */
         $container = static::getContainer();
 
-        // Container child service ids prove DoctrineBundle scoped the middleware tag to messenger_transport only.
+        // DoctrineBundle creates one scoped middleware child service per tagged connection.
         $this->assertTrue(
-            $container->has('Ineersa\\CodingAgent\\Infrastructure\\Doctrine\\MessengerSqliteImmediateTransactionMiddleware.messenger_transport'),
-            'BEGIN IMMEDIATE middleware must be wired for messenger_transport only',
+            $container->has('Ineersa\\CodingAgent\\Infrastructure\\Doctrine\\SqliteImmediateTransactionMiddleware.default'),
+            'BEGIN IMMEDIATE middleware must be wired for state.sqlite',
         );
-        $this->assertFalse(
-            $container->has('Ineersa\\CodingAgent\\Infrastructure\\Doctrine\\MessengerSqliteImmediateTransactionMiddleware.default'),
-            'default state.sqlite connection must not use BEGIN IMMEDIATE middleware',
+        $this->assertTrue(
+            $container->has('Ineersa\\CodingAgent\\Infrastructure\\Doctrine\\SqliteImmediateTransactionMiddleware.messenger_transport'),
+            'BEGIN IMMEDIATE middleware must be wired for messenger_transport.sqlite',
         );
     }
 
-    public function testTransportConnectionSupportsNestedTransactionsViaSavepoints(): void
+    public function testConnectionsSupportNestedTransactionsViaSavepoints(): void
     {
-        $this->runKernelWorker(['nested-savepoint-probe']);
+        $this->runKernelWorker(['nested-savepoint-probe', 'default']);
+        $this->runKernelWorker(['nested-savepoint-probe', 'messenger_transport']);
     }
 
     public function testTransportConnectionRollBackReleasesOuterTransaction(): void
     {
-        $this->runKernelWorker(['rollback-probe']);
+        $this->runKernelWorker(['rollback-probe', 'messenger_transport']);
     }
 
     /**
