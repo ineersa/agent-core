@@ -628,6 +628,42 @@ final class ExportCommandHandlerTest extends TestCase
         $this->assertStringContainsString('&lt;div&gt;Injected HTML&lt;/div&gt;', $html);
     }
 
+    #[Test]
+    public function htmlExportRendersNonTextContentParts(): void
+    {
+        $this->setupEventsFile('test-session', [
+            $this->makeEvent(1, 1, 'run_started', [
+                'step_id' => 's1',
+                'payload' => ['messages' => [[
+                    'role' => 'tool',
+                    'content' => [
+                        ['type' => 'text', 'text' => 'Image loaded'],
+                        [
+                            'type' => 'image_ref',
+                            'path' => '/tmp/image.png',
+                            'media_type' => 'image/png',
+                            'width' => 640,
+                            'height' => 480,
+                        ],
+                    ],
+                    'tool_call_id' => 'tc-image',
+                    'tool_name' => 'view_image',
+                ]]],
+            ]),
+        ]);
+
+        $path = $this->projectDir.'/non-text-content.html';
+        $handler = $this->createHandler('test-session');
+        $result = $handler->handle(new SlashCommand('export', $path, '/export '.$path));
+
+        $this->assertInstanceOf(TranscriptMessage::class, $result);
+        $html = (string) file_get_contents($path);
+        $this->assertStringContainsString('Image loaded', $html);
+        $this->assertStringContainsString('[image_ref content]', $html);
+        $this->assertStringContainsString('/tmp/image.png', $html);
+        $this->assertStringContainsString('&quot;media_type&quot;: &quot;image/png&quot;', $html);
+    }
+
     // ── Tool event rendering ───────────────────────────────────────────────
 
     #[Test]

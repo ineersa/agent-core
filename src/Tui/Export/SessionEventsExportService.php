@@ -493,7 +493,15 @@ HTML;
         foreach ($blocks as $block) {
             if ('text' === ($block['type'] ?? null) && isset($block['text'])) {
                 $parts[] = (string) $block['text'];
+                continue;
             }
+
+            $type = self::strFromArray($block, 'type', 'unknown');
+            $parts[] = \sprintf(
+                "\n[%s content]\n%s\n",
+                $type,
+                self::encodePrettyJson($block),
+            );
         }
 
         return implode('', $parts);

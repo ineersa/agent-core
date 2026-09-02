@@ -38,8 +38,13 @@ final readonly class EffectiveModelContextProjector
 
         $this->assertMessagePayloadsReplayWithoutLoss($events, $runId);
 
-        $filtered = $this->historyReplayFilter->filter($events);
-        $replayed = $this->runStateReducer->replay(RunState::queued($runId), $filtered);
+        try {
+            $filtered = $this->historyReplayFilter->filter($events);
+            $replayed = $this->runStateReducer->replay(RunState::queued($runId), $filtered);
+        } catch (\Throwable $exception) {
+            throw new \RuntimeException(\sprintf('Cannot project model context for session %s: retained event replay failed (%s).', $runId, $exception->getMessage()), previous: $exception);
+        }
+
         $toolsSnapshot = $this->latestAvailableToolsSnapshot($filtered, $runId);
 
         return new EffectiveModelContextSnapshot(
@@ -194,6 +199,10 @@ final readonly class EffectiveModelContextProjector
                     $this->throwMalformedMessage($runId, $event->seq);
                 }
                 $messageLists[] = [$event->payload['message']];
+            } elseif (RunEventTypeEnum::AgentCommandApplied->value === $event->type
+                && 'human_response' === ($event->payload['kind'] ?? null)
+                && \array_key_exists('message', $event->payload)) {
+                $messageLists[] = [$event->payload['message']];
             } elseif (RunEventTypeEnum::LlmStepCompleted->value === $event->type) {
                 if (!\array_key_exists('assistant_message', $event->payload)) {
                     $this->throwMalformedMessage($runId, $event->seq);
@@ -265,9 +274,6 @@ final readonly class EffectiveModelContextProjector
                 'estimated_tokens_before' => \is_int($payload['estimated_tokens_before'] ?? null) ? $payload['estimated_tokens_before'] : null,
                 'estimated_tokens_after' => \is_int($payload['estimated_tokens_after'] ?? null) ? $payload['estimated_tokens_after'] : null,
                 'hook_metadata' => \is_array($payload['hook_metadata'] ?? null) ? $payload['hook_metadata'] : null,
-                'replacement_summary' => \array_key_exists('replacement_summary', $payload)
-                    ? $payload['replacement_summary']
-                    : null,
             ];
         }
 

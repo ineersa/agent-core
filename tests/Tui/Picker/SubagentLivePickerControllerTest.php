@@ -195,6 +195,41 @@ final class SubagentLivePickerControllerTest extends TestCase
     }
 
     #[Test]
+    public function exportKeyReportsMalformedChildReplayWithoutThrowing(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: 'parent-session-malformed-child');
+        $state = new TuiSessionState('parent-session-malformed-child');
+        $artifactId = 'agent_malformed';
+        $childRunId = 'child-run-malformed';
+        $this->seedCatalogChild($state, $artifactId, $childRunId, 'completed');
+        ChildAgentExportEventsFixture::write(
+            $this->projectDir,
+            'parent-session-malformed-child',
+            $artifactId,
+            [
+                ChildAgentExportEventsFixture::childEvent(
+                    $childRunId,
+                    1,
+                    'run_started',
+                    ['payload' => ['messages' => []]],
+                ),
+                ChildAgentExportEventsFixture::childEvent($childRunId, 2, 'waiting_human'),
+            ],
+        );
+
+        $picker = $this->exportPicker($harness, $state);
+        $picker->open();
+        $this->invokeExportSelected($picker, $harness->screen(), $state);
+
+        $expected = $this->projectDir.'/hatfield-child-'.$artifactId.'.html';
+        $this->assertFileDoesNotExist($expected);
+        $this->assertStringContainsString(
+            'retained event replay failed',
+            (string) $state->subagentLiveView->pickerFeedbackMessage,
+        );
+    }
+
+    #[Test]
     public function exportKeyReportsMissingEventsFileWithoutParentFallback(): void
     {
         $harness = new VirtualTuiHarness(sessionId: 'parent-session-no-events');

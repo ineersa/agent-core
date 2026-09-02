@@ -273,7 +273,8 @@ final class EffectiveModelContextProjectorTest extends TestCase
                 'step_id' => 's1',
                 'payload' => ['messages' => []],
             ]),
-            $this->event(2, 1, 'llm_step_completed', [
+            $this->event(2, 1, 'turn_advanced', ['turn_no' => 1]),
+            $this->event(3, 1, 'llm_step_completed', [
                 'step_id' => 's2',
                 'assistant_message' => [
                     'role' => 'assistant',
@@ -303,6 +304,47 @@ final class EffectiveModelContextProjectorTest extends TestCase
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('duplicate event sequence(s): 1');
         $this->projector()->project($this->jsonl($events), 'run-1');
+    }
+
+    #[Test]
+    public function wrapsReplayFailuresWithSessionContext(): void
+    {
+        $jsonl = $this->jsonl([
+            $this->event(1, 1, 'run_started', [
+                'step_id' => 's1',
+                'payload' => ['messages' => []],
+            ]),
+            $this->event(2, 1, 'turn_advanced', ['turn_no' => 1]),
+            $this->event(3, 1, 'waiting_human'),
+        ]);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Cannot project model context for session run-1: retained event replay failed');
+        $this->projector()->project($jsonl, 'run-1');
+    }
+
+    #[Test]
+    public function rejectsMalformedHumanResponseMessage(): void
+    {
+        $jsonl = $this->jsonl([
+            $this->event(1, 1, 'run_started', [
+                'step_id' => 's1',
+                'payload' => ['messages' => []],
+            ]),
+            $this->event(2, 1, 'turn_advanced', ['turn_no' => 1]),
+            $this->event(3, 1, 'agent_command_applied', [
+                'kind' => 'human_response',
+                'question_id' => 'question-1',
+                'message' => [
+                    'role' => 'user',
+                    'content' => 'not-canonical-content',
+                ],
+            ]),
+        ]);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('event seq 3 has a malformed message');
+        $this->projector()->project($jsonl, 'run-1');
     }
 
     private function projector(): EffectiveModelContextProjector
