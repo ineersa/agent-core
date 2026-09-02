@@ -10,7 +10,7 @@
       "availability": "all"
     },
     "datadog": {
-      "url": "https://mcp.datadoghq.com/v1/mcp",
+      "url": "https://mcp.datadoghq.com/v1/mcp?toolsets=core,alerting,dashboards,widgets",
       "headers": {
         "Authorization": "Bearer ${DATADOG_MCP_KEY}"
       },

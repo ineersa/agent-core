@@ -3,8 +3,8 @@
 declare(strict_types=1);
 
 /**
- * Test-only CLI entry for kernel-backed messenger_transport SQLite probes.
- * Invoked from MessengerSqliteImmediateTransactionMiddlewareTest subprocesses.
+ * Test-only CLI entry for kernel-backed SQLite connection probes.
+ * Invoked from SqliteImmediateTransactionMiddlewareTest subprocesses.
  *
  * @internal
  */
@@ -12,7 +12,7 @@ require dirname(__DIR__, 4).'/vendor/autoload.php';
 
 use DAMA\DoctrineTestBundle\Doctrine\DBAL\StaticDriver;
 use Doctrine\DBAL\Connection;
-use Ineersa\CodingAgent\Tests\Doctrine\Support\MessengerSqliteImmediateTransactionKernelTestKernel;
+use Ineersa\CodingAgent\Tests\Doctrine\Support\SqliteImmediateTransactionKernelTestKernel;
 
 $mode = $argv[1] ?? '';
 if ('' === $mode) {
@@ -47,17 +47,23 @@ if (is_string($transportDb) && '' !== $transportDb) {
 chdir($hatfieldCwd);
 
 // Subprocess kernels disable DAMA static connections so each worker gets a fresh
-// messenger_transport connection and real outer BEGIN IMMEDIATE transactions.
+// connection and real outer BEGIN IMMEDIATE transactions.
 StaticDriver::setKeepStaticConnections(false);
 
-MessengerSqliteImmediateTransactionKernelTestKernel::bootForSqliteWorker();
-/** @var Connection $transport */
-$transport = MessengerSqliteImmediateTransactionKernelTestKernel::getContainerForSqliteWorker()->get('doctrine.dbal.messenger_transport_connection');
+SqliteImmediateTransactionKernelTestKernel::bootForSqliteWorker();
+$connectionName = $argv[2] ?? 'messenger_transport';
+$connectionService = match ($connectionName) {
+    'default' => 'doctrine.dbal.default_connection',
+    'messenger_transport' => 'doctrine.dbal.messenger_transport_connection',
+    default => throw new InvalidArgumentException('unknown connection: '.$connectionName),
+};
+/** @var Connection $connection */
+$connection = SqliteImmediateTransactionKernelTestKernel::getContainerForSqliteWorker()->get($connectionService);
 
 try {
     match ($mode) {
-        'nested-savepoint-probe' => nestedSavepointProbe($transport),
-        'rollback-probe' => rollbackProbe($transport),
+        'nested-savepoint-probe' => nestedSavepointProbe($connection),
+        'rollback-probe' => rollbackProbe($connection),
 
         default => throw new InvalidArgumentException('unknown mode: '.$mode),
     };
@@ -68,45 +74,45 @@ try {
 
 exit(0);
 
-function nestedSavepointProbe(Connection $transport): void
+function nestedSavepointProbe(Connection $connection): void
 {
-    $transport->beginTransaction();
-    $transport->beginTransaction();
+    $connection->beginTransaction();
+    $connection->beginTransaction();
     try {
-        $transport->executeStatement(
+        $connection->executeStatement(
             'CREATE TABLE IF NOT EXISTS immediate_tx_probe (id INTEGER PRIMARY KEY)',
         );
-        $transport->executeStatement('INSERT INTO immediate_tx_probe (id) VALUES (1)');
-        $transport->commit();
-        $transport->commit();
+        $connection->executeStatement('INSERT INTO immediate_tx_probe (id) VALUES (1)');
+        $connection->commit();
+        $connection->commit();
     } catch (Throwable $e) {
-        while ($transport->isTransactionActive()) {
-            $transport->rollBack();
+        while ($connection->isTransactionActive()) {
+            $connection->rollBack();
         }
         throw $e;
     }
 
-    $count = (int) $transport->fetchOne('SELECT COUNT(*) FROM immediate_tx_probe');
+    $count = (int) $connection->fetchOne('SELECT COUNT(*) FROM immediate_tx_probe');
     if (1 !== $count) {
         throw new RuntimeException('nested savepoint probe failed');
     }
-    $transport->executeStatement('DROP TABLE immediate_tx_probe');
+    $connection->executeStatement('DROP TABLE immediate_tx_probe');
 }
 
-function rollbackProbe(Connection $transport): void
+function rollbackProbe(Connection $connection): void
 {
-    $transport->beginTransaction();
+    $connection->beginTransaction();
     try {
-        $transport->executeStatement(
+        $connection->executeStatement(
             'CREATE TABLE IF NOT EXISTS rollback_probe (id INTEGER PRIMARY KEY)',
         );
-        $transport->rollBack();
+        $connection->rollBack();
     } catch (Throwable $e) {
-        $transport->rollBack();
+        $connection->rollBack();
         throw $e;
     }
 
-    $exists = (int) $transport->fetchOne(
+    $exists = (int) $connection->fetchOne(
         "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'rollback_probe'",
     );
     if (0 !== $exists) {
