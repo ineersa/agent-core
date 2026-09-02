@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Export\SessionEventsExportService;
+use Ineersa\Tui\Tests\Support\SessionEventsExportServiceFactory;
 use Ineersa\Tui\Listener\SubagentLiveToggleInputListener;
 use Ineersa\Tui\Picker\SubagentLivePickerController;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
@@ -40,7 +41,7 @@ final class SubagentLiveToggleInputListenerTest extends TestCase
             new SubagentLiveChildViewPoller(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer()),
             $this->createStub(ChildRunTranscriptSnapshotProviderInterface::class),
             $this->createStub(ChildAgentEventsPathResolverInterface::class),
-            new SessionEventsExportService(),
+            SessionEventsExportServiceFactory::create(),
         );
 
         $context = $this->buildTuiContext()

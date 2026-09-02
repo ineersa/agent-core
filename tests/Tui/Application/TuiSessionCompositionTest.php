@@ -28,6 +28,7 @@ use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Application\TuiSessionCompositionFactory;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Export\SessionEventsExportService;
+use Ineersa\Tui\Tests\Support\SessionEventsExportServiceFactory;
 use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
 use Ineersa\Tui\Question\QuestionOverlayPromptRenderer;
 use Ineersa\Tui\Runtime\TuiSessionState;
@@ -100,7 +101,7 @@ final class TuiSessionCompositionTest extends TestCase
             historyProvider: $this->createStub(HistoryProviderInterface::class),
             childSnapshotProvider: $this->createStub(ChildRunTranscriptSnapshotProviderInterface::class),
             childEventsPathResolver: $this->createStub(ChildAgentEventsPathResolverInterface::class),
-            exportService: new SessionEventsExportService(),
+            exportService: SessionEventsExportServiceFactory::create(),
             runtimeQuestionEventHandler: new RuntimeQuestionEventHandler(),
             questionPromptRenderer: new QuestionOverlayPromptRenderer()
         );

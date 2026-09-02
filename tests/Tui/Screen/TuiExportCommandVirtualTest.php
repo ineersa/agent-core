@@ -16,9 +16,9 @@ use Ineersa\Tui\Command\DispatchRuntime;
 use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Command\SubmissionRouter;
 use Ineersa\Tui\Command\TranscriptMessage;
-use Ineersa\Tui\Export\SessionEventsExportService;
 use Ineersa\Tui\Listener\ExportCommandRegistrar;
 use Ineersa\Tui\Runtime\TuiSessionState;
+use Ineersa\Tui\Tests\Support\SessionEventsExportServiceFactory;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
@@ -74,8 +74,8 @@ final class TuiExportCommandVirtualTest extends TestCase
             ->withSessionServices($this->createSessionServices(catalog: $catalog))
             ->build();
 
-        (new ExportCommandRegistrar(new SessionEventsExportService()))->registerCatalog($catalog);
-        (new ExportCommandRegistrar(new SessionEventsExportService()))->register($context);
+        (new ExportCommandRegistrar(SessionEventsExportServiceFactory::create()))->registerCatalog($catalog);
+        (new ExportCommandRegistrar(SessionEventsExportServiceFactory::create()))->register($context);
 
         $router = new SubmissionRouter(new CommandParser(), $context->sessionServices->commandRegistry);
         $result = $router->route('/export');
@@ -133,22 +133,34 @@ final class TuiExportCommandVirtualTest extends TestCase
             throw new \RuntimeException('Failed to create session dir: '.$sessionDir);
         }
 
-        $event = [
-            'schema_version' => '1.0',
-            'run_id' => $sessionId,
-            'seq' => 1,
-            'turn_no' => 1,
-            'type' => 'run_started',
-            'payload' => [
-                'step_id' => 's1',
-                'payload' => ['messages' => [['role' => 'user', 'content' => 'Export me']]],
+        $events = [
+            [
+                'schema_version' => '1.0',
+                'run_id' => $sessionId,
+                'seq' => 1,
+                'turn_no' => 0,
+                'type' => 'run_started',
+                'payload' => [
+                    'step_id' => 's1',
+                    'payload' => ['messages' => [['role' => 'user', 'content' => 'Export me']]],
+                ],
+                'ts' => '2026-01-01T00:00:00+00:00',
             ],
-            'ts' => '2026-01-01T00:00:00+00:00',
+            [
+                'schema_version' => '1.0',
+                'run_id' => $sessionId,
+                'seq' => 2,
+                'turn_no' => 1,
+                'type' => 'turn_advanced',
+                'payload' => ['turn_no' => 1],
+                'ts' => '2026-01-01T00:00:00+00:00',
+            ],
         ];
 
-        file_put_contents(
-            $sessionDir.'/events.jsonl',
-            json_encode($event, \JSON_THROW_ON_ERROR)."\n",
+        $lines = array_map(
+            static fn (array $event): string => json_encode($event, \JSON_THROW_ON_ERROR),
+            $events,
         );
+        file_put_contents($sessionDir.'/events.jsonl', implode("\n", $lines)."\n");
     }
 }

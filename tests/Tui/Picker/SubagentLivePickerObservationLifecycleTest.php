@@ -19,6 +19,7 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Export\SessionEventsExportService;
+use Ineersa\Tui\Tests\Support\SessionEventsExportServiceFactory;
 use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
 use Ineersa\Tui\Picker\SubagentLivePickerController;
 use Ineersa\Tui\Question\QuestionCoordinator;
@@ -73,7 +74,7 @@ final class SubagentLivePickerObservationLifecycleTest extends TestCase
             new SubagentLiveChildViewPoller(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer()),
             $snapshotProvider,
             $this->createStub(ChildAgentEventsPathResolverInterface::class),
-            new SessionEventsExportService(),
+            SessionEventsExportServiceFactory::create(),
         );
 
         $method = new \ReflectionMethod(SubagentLivePickerController::class, 'enterLiveView');
@@ -169,7 +170,7 @@ final class SubagentLivePickerObservationLifecycleTest extends TestCase
             new SubagentLiveChildViewPoller(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer()),
             $snapshotProvider,
             $this->createStub(ChildAgentEventsPathResolverInterface::class),
-            new SessionEventsExportService(),
+            SessionEventsExportServiceFactory::create(),
             onHumanInputRequested: $onHuman,
             onLeavingChildRun: $onLeaving,
         );

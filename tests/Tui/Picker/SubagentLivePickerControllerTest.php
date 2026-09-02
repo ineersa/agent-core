@@ -21,6 +21,7 @@ use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\Export\SessionEventsExportService;
+use Ineersa\Tui\Tests\Support\SessionEventsExportServiceFactory;
 use Ineersa\Tui\Picker\PickerOverlay;
 use Ineersa\Tui\Picker\SubagentLivePickerController;
 use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
@@ -302,7 +303,7 @@ final class SubagentLivePickerControllerTest extends TestCase
             new SubagentLiveChildViewPoller(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer()),
             $snapshotProvider,
             $this->createStub(ChildAgentEventsPathResolverInterface::class),
-            new SessionEventsExportService(),
+            SessionEventsExportServiceFactory::create(),
         );
 
         $method = new \ReflectionMethod(SubagentLivePickerController::class, 'enterLiveView');
@@ -635,7 +636,7 @@ final class SubagentLivePickerControllerTest extends TestCase
             new SubagentLiveChildViewPoller(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer()),
             $this->createStub(ChildRunTranscriptSnapshotProviderInterface::class),
             $this->createStub(ChildAgentEventsPathResolverInterface::class),
-            new SessionEventsExportService(),
+            SessionEventsExportServiceFactory::create(),
         );
     }
 
@@ -742,7 +743,7 @@ final class SubagentLivePickerControllerTest extends TestCase
             new SubagentLiveChildViewPoller(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer()),
             $this->createStub(ChildRunTranscriptSnapshotProviderInterface::class),
             $this->childEventsPathResolver(),
-            new SessionEventsExportService(),
+            SessionEventsExportServiceFactory::create(),
         );
     }
 
