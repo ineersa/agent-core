@@ -311,6 +311,7 @@ function datadog_smoke_diag(): void
     $today = date('Y-m-d');
     $todayLog = "{$root}/.hatfield/logs/agent-{$today}.log";
     $installedConfig = '/etc/datadog-agent/conf.d/hatfield.d/conf.yaml';
+    $installedProcessConfig = '/etc/datadog-agent/conf.d/process.d/conf.yaml';
     $legacyConfig = '/etc/datadog-agent/conf.d/conf.yaml';
 
     echo 'Datadog smoke diagnostic'.\PHP_EOL;
@@ -332,6 +333,7 @@ function datadog_smoke_diag(): void
 
     echo 'Hatfield log today: '.$todayLog.' '.(is_readable($todayLog) ? 'readable' : 'missing/not-readable').\PHP_EOL;
     echo 'Expected Agent config: '.$installedConfig.' '.(is_readable($installedConfig) ? 'present' : 'missing/not-readable').\PHP_EOL;
+    echo 'Expected Process Check config: '.$installedProcessConfig.' '.(is_readable($installedProcessConfig) ? 'present' : 'missing/not-readable').\PHP_EOL;
     if (is_readable($legacyConfig)) {
         echo 'Legacy config warning: '.$legacyConfig.' exists; prefer conf.d/hatfield.d/conf.yaml'.\PHP_EOL;
     }
@@ -352,6 +354,7 @@ function datadog_log_config(): void
     echo \PHP_EOL.'Install with:'.\PHP_EOL;
     echo '  sudo mkdir -p /etc/datadog-agent/conf.d/hatfield.d'.\PHP_EOL;
     echo '  sudo install -o dd-agent -g dd-agent -m 0644 ops/datadog/hatfield.d/conf.yaml /etc/datadog-agent/conf.d/hatfield.d/conf.yaml'.\PHP_EOL;
+    echo '  sudo install -o dd-agent -g dd-agent -m 0644 ops/datadog/process.d/conf.yaml /etc/datadog-agent/conf.d/process.d/conf.yaml'.\PHP_EOL;
     echo '  sudo rm -f /etc/datadog-agent/conf.d/conf.yaml'.\PHP_EOL;
     echo '  setfacl -m u:dd-agent:--x /home/ineersa'.\PHP_EOL;
     echo '  setfacl -m u:dd-agent:rX /home/ineersa/projects/agent-core/.hatfield/logs'.\PHP_EOL;
