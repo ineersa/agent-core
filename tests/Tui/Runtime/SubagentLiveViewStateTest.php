@@ -25,6 +25,7 @@ final class SubagentLiveViewStateTest extends TestCase
             'lastSeq' => 3,
             'lastPoll' => 1.0,
             'activity' => RunActivityStateEnum::Completed,
+            'taskSummary' => 'task',
         ];
 
         $view->enter($child);
@@ -49,6 +50,7 @@ final class SubagentLiveViewStateTest extends TestCase
 
         $this->assertArrayHasKey('run-b', $view->childCaches);
         $this->assertSame('cached', $view->childCaches['run-b']['transcript'][0]->text);
+        $this->assertSame('task', $view->childCaches['run-b']['taskSummary']);
     }
 
     public function testChildQueuedMessagesPersistInCache(): void
@@ -62,14 +64,43 @@ final class SubagentLiveViewStateTest extends TestCase
         $this->assertSame(['k1' => 'steer next'], $view->childCaches['run-q']['queuedUserMessages']);
     }
 
-    private function child(string $runId, string $artifactId): SubagentLiveChildDTO
+    public function testEnterReusesTranscriptButResetsLifecycleAcrossResumeTaskGeneration(): void
     {
+        $view = new SubagentLiveViewState();
+        $completed = $this->child('run-resume', 'agent_resume', SubagentLiveStatusEnum::Completed, 'Task A');
+        $block = new TranscriptBlock('b-a', TranscriptBlockKindEnum::AssistantMessage, 'run-resume', 4, 'task a done');
+        $view->enter($completed);
+        $view->childTranscript = [$block];
+        $view->childLastSeq = 4;
+        $view->childActivity = RunActivityStateEnum::Completed;
+        $view->childQueuedUserMessages = ['old' => 'steer from task a'];
+        $view->persistCurrentChildCache();
+        $view->exit();
+
+        $resumed = $this->child('run-resume', 'agent_resume', SubagentLiveStatusEnum::Running, 'Task B');
+        $view->enter($resumed);
+
+        $this->assertSame([$block], $view->childTranscript);
+        $this->assertSame(4, $view->childLastSeq);
+        $this->assertSame(RunActivityStateEnum::Running, $view->childActivity);
+        $this->assertSame([], $view->childQueuedUserMessages);
+        $this->assertSame([], $view->childReplayEvents);
+        $this->assertSame('Task B', $view->childCaches['run-resume']['taskSummary']);
+        $this->assertSame(RunActivityStateEnum::Running, $view->childCaches['run-resume']['activity']);
+    }
+
+    private function child(
+        string $runId,
+        string $artifactId,
+        SubagentLiveStatusEnum $status = SubagentLiveStatusEnum::Completed,
+        string $taskSummary = 'task',
+    ): SubagentLiveChildDTO {
         return new SubagentLiveChildDTO(
             agentRunId: $runId,
             artifactId: $artifactId,
             agentName: 'scout',
-            status: SubagentLiveStatusEnum::Completed,
-            taskSummary: 'task',
+            status: $status,
+            taskSummary: $taskSummary,
             lastActivityAtMs: 1,
             model: 'deepseek/deepseek-v4-flash',
             reasoning: 'medium',

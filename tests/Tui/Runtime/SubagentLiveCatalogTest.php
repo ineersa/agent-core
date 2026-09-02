@@ -44,8 +44,7 @@ final class SubagentLiveCatalogTest extends TestCase
         ]));
         SubagentProgressSerializerTestSupport::ingestCatalogEvent($catalog, $this->progressEvent('parent-1', [
             'mode' => 'single', 'status' => 'completed', 'agent_name' => 'scout',
-            // Same-task generation keeps task_summary stable; status alone advances lifecycle.
-            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Task',
+            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Task done',
             'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'medium',
         ]));
 
@@ -117,42 +116,6 @@ final class SubagentLiveCatalogTest extends TestCase
         $child = $catalog->findByArtifactId('agent_a');
         $this->assertNotNull($child);
         $this->assertSame(SubagentLiveStatusEnum::Completed, $child->status);
-    }
-
-    public function testLateTerminalSnapshotFromPriorTaskDoesNotOverwriteResumedRunningRow(): void
-    {
-        $catalog = new SubagentLiveCatalog();
-        SubagentProgressSerializerTestSupport::ingestCatalogEvent($catalog, $this->progressEvent('parent-1', [
-            'mode' => 'single', 'status' => 'completed', 'agent_name' => 'scout',
-            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Task A',
-            'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'medium',
-        ]));
-        SubagentProgressSerializerTestSupport::ingestCatalogEvent($catalog, $this->progressEvent('parent-1', [
-            'mode' => 'single', 'status' => 'running', 'agent_name' => 'scout',
-            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Task B',
-            'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'medium',
-        ]));
-        SubagentProgressSerializerTestSupport::ingestCatalogEvent($catalog, $this->progressEvent('parent-1', [
-            'mode' => 'single', 'status' => 'completed', 'agent_name' => 'scout',
-            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Task A',
-            'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'medium',
-        ]));
-
-        $child = $catalog->findByArtifactId('agent_a');
-        $this->assertNotNull($child);
-        $this->assertSame(SubagentLiveStatusEnum::Running, $child->status);
-        $this->assertSame('Task B', $child->taskSummary);
-
-        SubagentProgressSerializerTestSupport::ingestCatalogEvent($catalog, $this->progressEvent('parent-1', [
-            'mode' => 'single', 'status' => 'completed', 'agent_name' => 'scout',
-            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Task B',
-            'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'medium',
-        ]));
-
-        $child = $catalog->findByArtifactId('agent_a');
-        $this->assertNotNull($child);
-        $this->assertSame(SubagentLiveStatusEnum::Completed, $child->status);
-        $this->assertSame('Task B', $child->taskSummary);
     }
 
     public function testWaitingHumanChildrenSortBeforeRunning(): void
