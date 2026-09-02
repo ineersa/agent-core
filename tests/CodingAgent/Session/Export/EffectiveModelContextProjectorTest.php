@@ -73,14 +73,14 @@ final class EffectiveModelContextProjectorTest extends TestCase
         ]);
 
         $snapshot = $this->projector()->project($jsonl, 'run-1');
-        $roles = array_map(static fn ($m): string => $m->role, $snapshot->messages);
+        $roles = array_map(static fn (array $m): string => (string) ($m['role'] ?? ''), $snapshot->messages);
 
         $this->assertSame(['system', 'user-context', 'user', 'assistant', 'tool'], $roles);
         $this->assertSame(['bash', 'read'], $snapshot->availableTools);
         $this->assertSame(99, $snapshot->availableToolsSchemaTokensEstimate);
         $this->assertNull($snapshot->compaction);
-        $this->assertSame('bash', $snapshot->messages[3]->metadata['tool_calls'][0]['name'] ?? null);
-        $this->assertSame('c1', $snapshot->messages[4]->toolCallId);
+        $this->assertSame('bash', $snapshot->messages[3]['metadata']['tool_calls'][0]['name'] ?? null);
+        $this->assertSame('c1', $snapshot->messages[4]['tool_call_id'] ?? null);
     }
 
     #[Test]
@@ -147,7 +147,8 @@ final class EffectiveModelContextProjectorTest extends TestCase
         $texts = [];
         foreach ($snapshot->messages as $message) {
             $parts = [];
-            foreach ($message->content as $block) {
+            $content = \is_array($message['content'] ?? null) ? $message['content'] : [];
+            foreach ($content as $block) {
                 if (\is_array($block) && isset($block['text'])) {
                     $parts[] = (string) $block['text'];
                 }
@@ -161,11 +162,48 @@ final class EffectiveModelContextProjectorTest extends TestCase
         $this->assertStringContainsString('condensed memories', $joined);
         $this->assertStringContainsString('NEW_USER', $joined);
         $this->assertStringContainsString('NEW_ASSISTANT', $joined);
-        $this->assertTrue($snapshot->messages[1]->metadata['compact_summary'] ?? false);
+        $this->assertTrue($snapshot->messages[1]['metadata']['compact_summary'] ?? false);
         $this->assertSame('observational_memory', $snapshot->compaction['hook_metadata']['om_source'] ?? null);
         $this->assertSame($summary, $snapshot->compaction['summary_text'] ?? null);
         $this->assertSame(['read'], $snapshot->availableTools);
         $this->assertSame(7, $snapshot->availableToolsSchemaTokensEstimate);
+    }
+
+    #[Test]
+    public function emptyAvailableToolsSnapshotOverridesEarlierNonEmptyList(): void
+    {
+        $jsonl = $this->jsonl([
+            $this->event(1, 1, 'run_started', [
+                'step_id' => 's1',
+                'payload' => ['messages' => [
+                    ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hi']]],
+                ]],
+            ]),
+            $this->event(2, 1, 'llm_step_completed', [
+                'step_id' => 's2',
+                'assistant_message' => [
+                    'role' => 'assistant',
+                    'content' => [['type' => 'text', 'text' => 'With tools']],
+                ],
+                'stop_reason' => 'end_turn',
+                'available_tools' => ['bash', 'read'],
+                'available_tools_schema_tokens_estimate' => 88,
+            ]),
+            $this->event(3, 1, 'llm_step_completed', [
+                'step_id' => 's3',
+                'assistant_message' => [
+                    'role' => 'assistant',
+                    'content' => [['type' => 'text', 'text' => 'No tools']],
+                ],
+                'stop_reason' => 'end_turn',
+                'available_tools' => [],
+                'available_tools_schema_tokens_estimate' => 0,
+            ]),
+        ]);
+
+        $snapshot = $this->projector()->project($jsonl, 'run-1');
+        $this->assertSame([], $snapshot->availableTools);
+        $this->assertSame(0, $snapshot->availableToolsSchemaTokensEstimate);
     }
 
     #[Test]

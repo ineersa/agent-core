@@ -508,9 +508,8 @@ parameters:
 
     TuiExport:
       - TuiCommand
-      # Effective model-context projection reuses AppSession history filter + AgentCore replay.
+      # Effective model-context projection lives in AppSession; TuiExport only consumes the snapshot DTO.
       - AppSession
-      - AgentCore
       # Live /export HTML tool definitions snapshot (ToolboxInterface + Tool).
       - SymfonyAiAgent
       - SymfonyAiPlatform

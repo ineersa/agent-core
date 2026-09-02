@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Export;
 
-use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\CodingAgent\Session\Export\EffectiveModelContextProjector;
 use Ineersa\CodingAgent\Session\Export\EffectiveModelContextSnapshot;
 use Ineersa\Tui\Command\TranscriptMessage;
@@ -236,7 +235,7 @@ HTML;
         foreach ($snapshot->messages as $message) {
             $html .= $this->renderMessage($message);
 
-            if ($toolsPending && 'system' === $message->role) {
+            if ($toolsPending && 'system' === self::strFromArray($message, 'role')) {
                 $html .= $toolDefinitionsHtml;
                 $toolsPending = false;
             }
@@ -295,23 +294,14 @@ HTML;
                 $bits = array_filter([$source, $projection], static fn (string $value): bool => '' !== $value);
                 $html .= '      <div class="compaction-om-meta">'.self::escapeHtml(implode(' · ', $bits))."</div>\n";
             }
-            $html .= '      <pre class="pretty-json">'.self::escapeHtml((string) json_encode(
-                $hookMetadata,
-                \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE,
-            ))."</pre>\n";
+            $html .= '      <pre class="pretty-json">'.self::escapeHtml(self::encodePrettyJson($hookMetadata))."</pre>\n";
             $html .= "    </div>\n";
         }
 
-        if ('' !== $summaryText) {
-            $html .= '    <details class="compaction-summary" open>'."\n";
-            $html .= '      <summary>'.self::escapeHtml(\sprintf(
-                'OM / compaction summary (%s chars)',
-                number_format(mb_strlen($summaryText)),
-            ))."</summary>\n";
-            $html .= '      <div class="message-content">'.self::escapeHtml($summaryText)."</div>\n";
-            $html .= "    </details>\n";
-        } else {
+        if ('' === $summaryText) {
             $html .= '    <div class="compaction-missing">Compaction checkpoint present, but summary_text is missing.</div>'."\n";
+        } else {
+            $html .= '    <div class="compaction-summary-note">Summary content is rendered once in the effective model context below.</div>'."\n";
         }
 
         $html .= "  </section>\n";
@@ -324,7 +314,7 @@ HTML;
      */
     private function renderAvailableToolsSnapshot(?array $tools, ?int $estimate): string
     {
-        if (null === $tools || [] === $tools) {
+        if (null === $tools) {
             return '';
         }
 
@@ -335,11 +325,22 @@ HTML;
             }
             $items[] = self::escapeHtml($entry);
         }
-        if ([] === $items) {
-            return '';
-        }
 
         $estimateInt = $estimate ?? 0;
+        if ([] === $items) {
+            $summary = \sprintf(
+                'Available tools (0 · ~%s schema tokens)',
+                number_format($estimateInt),
+            );
+
+            $html = '  <details class="available-tools available-tools-empty" open>'."\n";
+            $html .= '    <summary>'.self::escapeHtml($summary)."</summary>\n";
+            $html .= '    <div class="available-tools-empty-note">Latest retained LLM snapshot recorded zero available tools.</div>'."\n";
+            $html .= "  </details>\n";
+
+            return $html;
+        }
+
         $summary = \sprintf(
             'Available tools (%d · ~%s schema tokens)',
             \count($items),
@@ -358,11 +359,23 @@ HTML;
         return $html;
     }
 
-    private function renderMessage(AgentMessage $message): string
+    /**
+     * @param array<string, mixed> $message
+     */
+    private function renderMessage(array $message): string
     {
-        $role = $message->role;
-        $isCompactSummary = true === ($message->metadata['compact_summary'] ?? false);
-        $text = $this->extractTextFromContentBlocks($message->content);
+        $role = self::strFromArray($message, 'role', 'unknown');
+        $metadata = \is_array($message['metadata'] ?? null) ? $message['metadata'] : [];
+        $isCompactSummary = true === ($metadata['compact_summary'] ?? false);
+        $content = \is_array($message['content'] ?? null) ? $message['content'] : [];
+        /** @var array<int, array<string, mixed>> $contentBlocks */
+        $contentBlocks = [];
+        foreach ($content as $block) {
+            if (\is_array($block)) {
+                $contentBlocks[] = $block;
+            }
+        }
+        $text = $this->extractTextFromContentBlocks($contentBlocks);
         $cssRole = self::escapeHtml($role);
         if ($isCompactSummary) {
             $cssRole .= ' message-compact-summary';
@@ -398,8 +411,9 @@ HTML;
         }
 
         $thinking = '';
-        if (\is_array($message->details) && \is_string($message->details['thinking'] ?? null)) {
-            $thinking = $message->details['thinking'];
+        $details = $message['details'] ?? null;
+        if (\is_array($details) && \is_string($details['thinking'] ?? null)) {
+            $thinking = $details['thinking'];
         }
         if ('' !== $thinking) {
             $html .= '    <details class="thinking-block" open>'."\n";
@@ -408,20 +422,22 @@ HTML;
             $html .= "    </details>\n";
         }
 
-        $toolCalls = $message->metadata['tool_calls'] ?? null;
+        $toolCalls = $metadata['tool_calls'] ?? null;
         if (\is_array($toolCalls) && [] !== $toolCalls) {
             $html .= $this->renderToolCalls($toolCalls);
         }
 
         if ('tool' === $role) {
             $meta = [];
-            if (null !== $message->toolName && '' !== $message->toolName) {
-                $meta[] = 'tool: '.$message->toolName;
+            $toolName = self::strFromArray($message, 'tool_name');
+            $toolCallId = self::strFromArray($message, 'tool_call_id');
+            if ('' !== $toolName) {
+                $meta[] = 'tool: '.$toolName;
             }
-            if (null !== $message->toolCallId && '' !== $message->toolCallId) {
-                $meta[] = 'id: '.$message->toolCallId;
+            if ('' !== $toolCallId) {
+                $meta[] = 'id: '.$toolCallId;
             }
-            if ($message->isError) {
+            if (true === ($message['is_error'] ?? false)) {
                 $meta[] = 'error';
             }
             if ([] !== $meta) {
@@ -454,10 +470,7 @@ HTML;
             $name = self::escapeHtml($tool->getName());
             $description = self::escapeHtml($tool->getDescription());
             $parameters = $tool->getParameters() ?? new \stdClass();
-            $json = json_encode($parameters, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
-            if (!\is_string($json)) {
-                $json = '{}';
-            }
+            $json = self::encodePrettyJson($parameters);
 
             $html .= '    <div class="tool-definition">'."\n";
             $html .= '      <div class="tool-definition-name">'.$name."</div>\n";
@@ -478,12 +491,19 @@ HTML;
     {
         $parts = [];
         foreach ($blocks as $block) {
-            if (\is_array($block) && 'text' === ($block['type'] ?? null) && isset($block['text'])) {
+            if ('text' === ($block['type'] ?? null) && isset($block['text'])) {
                 $parts[] = (string) $block['text'];
             }
         }
 
         return implode('', $parts);
+    }
+
+    private static function encodePrettyJson(mixed $value): string
+    {
+        $json = json_encode($value, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
+
+        return false === $json ? '{}' : $json;
     }
 
     /**
@@ -532,13 +552,9 @@ HTML;
         }
 
         if (\is_array($value) || \is_object($value)) {
-            $json = json_encode($value, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
+            $json = self::encodePrettyJson($value);
         } else {
-            $json = json_encode([$value], \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
-        }
-
-        if (!\is_string($json)) {
-            $json = '{}';
+            $json = self::encodePrettyJson([$value]);
         }
 
         return '<pre class="pretty-json">'.self::escapeHtml($json).'</pre>'."\n";
@@ -634,7 +650,6 @@ body {
 .thinking-block { margin: 0.5rem 0; }
 .thinking-block summary,
 .instruction-block summary,
-.compaction-summary summary,
 .compaction-in-context summary {
     color: var(--text-muted);
     font-size: 0.8rem;
@@ -664,10 +679,15 @@ body {
     color: var(--accent);
     font-weight: 700;
 }
-.compaction-meta, .compaction-om-meta, .compaction-missing {
+.compaction-meta, .compaction-om-meta, .compaction-missing, .compaction-summary-note {
     margin-top: 0.35rem;
     color: var(--text-muted);
     font-size: 0.82rem;
+}
+.available-tools-empty-note {
+    margin-top: 0.4rem;
+    color: var(--text-muted);
+    font-size: 0.8rem;
 }
 .compaction-om { margin-top: 0.75rem; }
 .compaction-om-label {

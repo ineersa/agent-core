@@ -56,7 +56,7 @@ final class ExportCommandHandlerTest extends TestCase
         $this->setupEventsFile('test-session', [
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
-                'payload' => ['messages' => [['role' => 'user', 'content' => 'Hi']]],
+                'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hi']]]]],
             ]),
         ]);
 
@@ -77,7 +77,7 @@ final class ExportCommandHandlerTest extends TestCase
         $this->setupEventsFile('test-session', [
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
-                'payload' => ['messages' => [['role' => 'user', 'content' => 'Hi']]],
+                'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hi']]]]],
             ]),
         ]);
 
@@ -96,7 +96,7 @@ final class ExportCommandHandlerTest extends TestCase
         $this->setupEventsFile('test-session', [
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
-                'payload' => ['messages' => [['role' => 'user', 'content' => 'Hi']]],
+                'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hi']]]]],
             ]),
         ]);
 
@@ -115,7 +115,7 @@ final class ExportCommandHandlerTest extends TestCase
         $this->setupEventsFile('test-session', [
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
-                'payload' => ['messages' => [['role' => 'user', 'content' => 'Hi']]],
+                'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hi']]]]],
             ]),
         ]);
 
@@ -171,7 +171,7 @@ final class ExportCommandHandlerTest extends TestCase
         $this->setupEventsFile('test-session', [
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
-                'payload' => ['messages' => [['role' => 'user', 'content' => 'Hello world']]],
+                'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hello world']]]]],
             ]),
             $this->makeEvent(2, 1, 'llm_step_completed', [
                 'step_id' => 's2',
@@ -210,7 +210,7 @@ final class ExportCommandHandlerTest extends TestCase
         $this->setupEventsFile('test-session', [
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
-                'payload' => ['messages' => [['role' => 'user', 'content' => 'List tools']]],
+                'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'List tools']]]]],
             ]),
             $this->makeEvent(2, 1, 'llm_step_completed', [
                 'step_id' => 's2',
@@ -255,7 +255,7 @@ final class ExportCommandHandlerTest extends TestCase
         $this->setupEventsFile('old-session', [
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
-                'payload' => ['messages' => [['role' => 'user', 'content' => 'Hi']]],
+                'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hi']]]]],
             ]),
             $this->makeEvent(2, 1, 'llm_step_completed', [
                 'step_id' => 's2',
@@ -411,7 +411,7 @@ final class ExportCommandHandlerTest extends TestCase
         $eventsData = [
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
-                'payload' => ['messages' => [['role' => 'user', 'content' => 'Hello']]],
+                'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hello']]]]],
             ]),
             $this->makeEvent(2, 1, 'llm_step_completed', [
                 'step_id' => 's2',
@@ -443,7 +443,7 @@ final class ExportCommandHandlerTest extends TestCase
         $this->setupEventsFile('test-session', [
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
-                'payload' => ['messages' => [['role' => 'user', 'content' => 'Hello']]],
+                'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hello']]]]],
             ]),
             $this->makeEvent(2, 1, 'llm_step_completed', [
                 'step_id' => 's2',
@@ -475,7 +475,7 @@ final class ExportCommandHandlerTest extends TestCase
         $eventsData = [
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
-                'payload' => ['messages' => [['role' => 'user', 'content' => 'Hello']]],
+                'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hello']]]]],
             ]),
             $this->makeEvent(2, 1, 'llm_step_completed', [
                 'step_id' => 's2',
@@ -513,7 +513,7 @@ final class ExportCommandHandlerTest extends TestCase
         $this->setupEventsFile($sessionId, [
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
-                'payload' => ['messages' => [['role' => 'user', 'content' => 'Hello']]],
+                'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hello']]]]],
             ]),
         ]);
 
@@ -550,7 +550,7 @@ final class ExportCommandHandlerTest extends TestCase
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
                 'payload' => ['messages' => [
-                    ['role' => 'user', 'content' => '<script>alert("xss")</script>'],
+                    ['role' => 'user', 'content' => [['type' => 'text', 'text' => '<script>alert("xss")</script>']]],
                 ]],
             ]),
             $this->makeEvent(2, 1, 'llm_step_completed', [
@@ -587,7 +587,7 @@ final class ExportCommandHandlerTest extends TestCase
         $this->setupEventsFile('test-session', [
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
-                'payload' => ['messages' => [['role' => 'user', 'content' => 'Run tool']]],
+                'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Run tool']]]]],
             ]),
             $this->makeEvent(2, 1, 'llm_step_completed', [
                 'step_id' => 's2',
@@ -636,7 +636,7 @@ final class ExportCommandHandlerTest extends TestCase
         $this->setupEventsFile('test-session', [
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
-                'payload' => ['messages' => [['role' => 'user', 'content' => 'List files']]],
+                'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'List files']]]]],
             ]),
             $this->makeEvent(2, 1, 'llm_step_completed', [
                 'step_id' => 's2',
@@ -684,7 +684,7 @@ final class ExportCommandHandlerTest extends TestCase
         $this->setupEventsFile('test-session', [
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
-                'payload' => ['messages' => [['role' => 'user', 'content' => 'Hello']]],
+                'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hello']]]]],
             ]),
             $this->makeEvent(2, 1, 'turn_advanced', ['turn_no' => 1]),
             $this->makeEvent(3, 1, 'llm_step_completed', [
@@ -717,7 +717,7 @@ final class ExportCommandHandlerTest extends TestCase
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
                 'payload' => ['messages' => [
-                    ['role' => 'user', 'content' => 'What is the capital of France?'],
+                    ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'What is the capital of France?']]],
                 ]],
             ]),
             $this->makeEvent(2, 1, 'llm_step_completed', [
@@ -758,8 +758,8 @@ You are a helpful assistant.
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
                 'payload' => ['messages' => [
-                    ['role' => 'system', 'content' => $instructionText],
-                    ['role' => 'user', 'content' => 'Hello'],
+                    ['role' => 'system', 'content' => [['type' => 'text', 'text' => $instructionText]]],
+                    ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hello']]],
                 ]],
             ]),
         ]);
@@ -853,7 +853,8 @@ You are a helpful assistant.
         $this->assertStringContainsString('Observational memory', $html);
         $this->assertStringContainsString('observational_memory', $html);
         $this->assertStringContainsString('active_durable_memory', $html);
-        $this->assertStringContainsString('condensed memories from earlier in this session', $html);
+        $this->assertStringContainsString('Summary content is rendered once in the effective model context below.', $html);
+        $this->assertSame(1, substr_count($html, 'condensed memories from earlier in this session'));
         $this->assertStringContainsString('OM-backed compaction summary in model context', $html);
         $this->assertStringContainsString('POST_COMPACTION_USER', $html);
         $this->assertStringContainsString('POST_COMPACTION_ASSISTANT', $html);
@@ -861,6 +862,51 @@ You are a helpful assistant.
         $this->assertStringContainsString('~42 schema tokens', $html);
         $this->assertStringNotContainsString('OLD_HISTORY_SHOULD_NOT_APPEAR', $html);
         $this->assertStringNotContainsString('OLD_ASSISTANT_SHOULD_NOT_APPEAR', $html);
+        $this->assertStringNotContainsString('class="compaction-summary"', $html);
+    }
+
+    #[Test]
+    public function htmlRendersAuthoritativeEmptyAvailableToolsSnapshot(): void
+    {
+        $this->setupEventsFile('test-session', [
+            $this->makeEvent(1, 1, 'run_started', [
+                'step_id' => 's1',
+                'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'List tools']]]]],
+            ]),
+            $this->makeEvent(2, 1, 'llm_step_completed', [
+                'step_id' => 's2',
+                'assistant_message' => [
+                    'role' => 'assistant',
+                    'content' => [['type' => 'text', 'text' => 'Tools were available.']],
+                ],
+                'stop_reason' => 'end_turn',
+                'available_tools' => ['bash', 'read'],
+                'available_tools_schema_tokens_estimate' => 55,
+            ]),
+            $this->makeEvent(3, 1, 'llm_step_completed', [
+                'step_id' => 's3',
+                'assistant_message' => [
+                    'role' => 'assistant',
+                    'content' => [['type' => 'text', 'text' => 'Tools were cleared.']],
+                ],
+                'stop_reason' => 'end_turn',
+                'available_tools' => [],
+                'available_tools_schema_tokens_estimate' => 0,
+            ]),
+        ]);
+
+        $path = $this->projectDir.'/available-tools-empty.html';
+        $handler = $this->createHandler('test-session');
+        $result = $handler->handle(new SlashCommand('export', $path, '/export '.$path));
+
+        $this->assertInstanceOf(TranscriptMessage::class, $result);
+        $html = (string) file_get_contents($path);
+        $this->assertStringContainsString('class="available-tools available-tools-empty"', $html);
+        $this->assertStringContainsString('Available tools (0 · ~0 schema tokens)', $html);
+        $this->assertStringContainsString('Latest retained LLM snapshot recorded zero available tools.', $html);
+        $this->assertStringNotContainsString('<li>bash</li>', $html);
+        $this->assertStringNotContainsString('<li>read</li>', $html);
+        $this->assertStringNotContainsString('~55 schema tokens', $html);
     }
 
     // ── Thinking block rendering ───────────────────────────────────────────
@@ -871,7 +917,7 @@ You are a helpful assistant.
         $this->setupEventsFile('test-session', [
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
-                'payload' => ['messages' => [['role' => 'user', 'content' => 'Think about it']]],
+                'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Think about it']]]]],
             ]),
             $this->makeEvent(2, 1, 'llm_step_completed', [
                 'step_id' => 's2',
@@ -951,7 +997,7 @@ You are a helpful assistant.
         $this->setupEventsFile('test-session', [
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
-                'payload' => ['messages' => [['role' => 'user', 'content' => 'Think']]],
+                'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Think']]]]],
             ]),
             $this->makeEvent(2, 1, 'llm_step_completed', [
                 'step_id' => 's2',
@@ -982,7 +1028,7 @@ You are a helpful assistant.
         $this->setupEventsFile('test-session', [
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
-                'payload' => ['messages' => [['role' => 'user', 'content' => 'Hi']]],
+                'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hi']]]]],
             ]),
             $this->makeEvent(2, 1, 'llm_step_completed', [
                 'step_id' => 's2',
@@ -1010,7 +1056,7 @@ You are a helpful assistant.
         $this->setupEventsFile('test-session', [
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
-                'payload' => ['messages' => [['role' => 'user', 'content' => 'Run tool']]],
+                'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Run tool']]]]],
             ]),
             $this->makeEvent(2, 1, 'llm_step_completed', [
                 'step_id' => 's2',
@@ -1061,7 +1107,7 @@ You are a helpful assistant.
         $this->setupEventsFile('test-session', [
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
-                'payload' => ['messages' => [['role' => 'user', 'content' => 'First message']]],
+                'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'First message']]]]],
             ]),
             $this->makeEvent(2, 1, 'llm_step_completed', [
                 'step_id' => 's2',
@@ -1098,7 +1144,7 @@ You are a helpful assistant.
         $this->setupEventsFile('test-session', [
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
-                'payload' => ['messages' => [['role' => 'user', 'content' => 'Hi']]],
+                'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hi']]]]],
             ]),
             [
                 'schema_version' => '1.0',
@@ -1128,7 +1174,7 @@ You are a helpful assistant.
         $events = [
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
-                'payload' => ['messages' => [['role' => 'user', 'content' => 'Hi']]],
+                'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hi']]]]],
             ]),
             $this->makeEvent(2, 1, 'llm_step_completed', [
                 'step_id' => 's2',
@@ -1160,7 +1206,7 @@ You are a helpful assistant.
         $this->setupEventsFile('test-session', [
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
-                'payload' => ['messages' => [['role' => 'user', 'content' => '<script>evil()</script>']]],
+                'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => '<script>evil()</script>']]]]],
             ]),
             $this->makeEvent(2, 1, 'llm_step_completed', [
                 'step_id' => 's2',

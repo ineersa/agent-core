@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Session\Export;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\CodingAgent\Session\History\HistoryReplayFilter;
@@ -35,11 +36,15 @@ final readonly class EffectiveModelContextProjector
 
         $filtered = $this->historyReplayFilter->filter($events);
         $replayed = $this->runStateReducer->replay(RunState::queued($runId), $filtered);
+        $toolsSnapshot = $this->latestAvailableToolsSnapshot($filtered);
 
         return new EffectiveModelContextSnapshot(
-            messages: $replayed->messages,
-            availableTools: $this->latestAvailableTools($filtered),
-            availableToolsSchemaTokensEstimate: $this->latestAvailableToolsEstimate($filtered),
+            messages: array_values(array_map(
+                static fn (AgentMessage $message): array => $message->toArray(),
+                $replayed->messages,
+            )),
+            availableTools: $toolsSnapshot['tools'],
+            availableToolsSchemaTokensEstimate: $toolsSnapshot['estimate'],
             compaction: $this->latestCompactionMetadata($filtered),
         );
     }
@@ -89,7 +94,7 @@ final readonly class EffectiveModelContextProjector
                 throw new \RuntimeException(\sprintf('Cannot project model context for session %s: event seq %d embeds run_id "%s".', $runId, $event->seq, $event->runId));
             }
 
-            $events[] = $this->normalizeLegacyStringContent($event);
+            $events[] = $event;
         }
 
         if ([] !== $unsupported) {
@@ -109,11 +114,13 @@ final readonly class EffectiveModelContextProjector
     /**
      * @param list<RunEvent> $events
      *
-     * @return list<string>|null
+     * @return array{tools: list<string>|null, estimate: int|null}
      */
-    private function latestAvailableTools(array $events): ?array
+    private function latestAvailableToolsSnapshot(array $events): array
     {
         $tools = null;
+        $estimate = null;
+
         foreach ($events as $event) {
             if (RunEventTypeEnum::LlmStepCompleted->value !== $event->type
                 && RunEventTypeEnum::LlmStepFailed->value !== $event->type
@@ -121,8 +128,12 @@ final readonly class EffectiveModelContextProjector
                 continue;
             }
 
-            $raw = $event->payload['available_tools'] ?? null;
-            if (!\is_array($raw) || [] === $raw) {
+            if (!\array_key_exists('available_tools', $event->payload)) {
+                continue;
+            }
+
+            $raw = $event->payload['available_tools'];
+            if (!\is_array($raw)) {
                 continue;
             }
 
@@ -133,34 +144,16 @@ final readonly class EffectiveModelContextProjector
                 }
             }
 
-            if ([] !== $names) {
-                $tools = $names;
-            }
+            // Empty arrays are an authoritative zero-tools snapshot.
+            $tools = $names;
+            $rawEstimate = $event->payload['available_tools_schema_tokens_estimate'] ?? null;
+            $estimate = \is_int($rawEstimate) ? $rawEstimate : null;
         }
 
-        return $tools;
-    }
-
-    /**
-     * @param list<RunEvent> $events
-     */
-    private function latestAvailableToolsEstimate(array $events): ?int
-    {
-        $estimate = null;
-        foreach ($events as $event) {
-            if (RunEventTypeEnum::LlmStepCompleted->value !== $event->type
-                && RunEventTypeEnum::LlmStepFailed->value !== $event->type
-                && RunEventTypeEnum::LlmStepAborted->value !== $event->type) {
-                continue;
-            }
-
-            $raw = $event->payload['available_tools_schema_tokens_estimate'] ?? null;
-            if (\is_int($raw)) {
-                $estimate = $raw;
-            }
-        }
-
-        return $estimate;
+        return [
+            'tools' => $tools,
+            'estimate' => $estimate,
+        ];
     }
 
     /**
@@ -193,93 +186,5 @@ final readonly class EffectiveModelContextProjector
         }
 
         return $latest;
-    }
-
-    /**
-     * Older fixtures/exports sometimes store message content as a bare string.
-     * Canonical AgentMessage::fromPayload requires typed content blocks; coerce
-     * for projection only so HTML export can reuse RunStateReducer.
-     */
-    private function normalizeLegacyStringContent(RunEvent $event): RunEvent
-    {
-        $payload = $event->payload;
-        $changed = false;
-
-        if (isset($payload['payload']) && \is_array($payload['payload'])) {
-            $inner = $payload['payload'];
-            if (isset($inner['messages']) && \is_array($inner['messages'])) {
-                $normalized = $this->normalizeMessageList($inner['messages']);
-                if ($normalized !== $inner['messages']) {
-                    $inner['messages'] = $normalized;
-                    $payload['payload'] = $inner;
-                    $changed = true;
-                }
-            }
-        }
-
-        if (isset($payload['messages']) && \is_array($payload['messages'])) {
-            $normalized = $this->normalizeMessageList($payload['messages']);
-            if ($normalized !== $payload['messages']) {
-                $payload['messages'] = $normalized;
-                $changed = true;
-            }
-        }
-
-        if (isset($payload['assistant_message']) && \is_array($payload['assistant_message'])) {
-            $assistant = $payload['assistant_message'];
-            $content = $assistant['content'] ?? null;
-            if (\is_string($content)) {
-                $assistant['content'] = [['type' => 'text', 'text' => $content]];
-                $payload['assistant_message'] = $assistant;
-                $changed = true;
-            }
-        }
-
-        if (isset($payload['message']) && \is_array($payload['message'])) {
-            $message = $payload['message'];
-            $content = $message['content'] ?? null;
-            if (\is_string($content)) {
-                $message['content'] = [['type' => 'text', 'text' => $content]];
-                $payload['message'] = $message;
-                $changed = true;
-            }
-        }
-
-        if (!$changed) {
-            return $event;
-        }
-
-        return new RunEvent(
-            runId: $event->runId,
-            seq: $event->seq,
-            turnNo: $event->turnNo,
-            type: $event->type,
-            payload: $payload,
-            createdAt: $event->createdAt,
-        );
-    }
-
-    /**
-     * @param list<mixed> $messages
-     *
-     * @return list<mixed>
-     */
-    private function normalizeMessageList(array $messages): array
-    {
-        $normalized = [];
-        foreach ($messages as $message) {
-            if (!\is_array($message)) {
-                $normalized[] = $message;
-                continue;
-            }
-
-            $content = $message['content'] ?? null;
-            if (\is_string($content)) {
-                $message['content'] = [['type' => 'text', 'text' => $content]];
-            }
-            $normalized[] = $message;
-        }
-
-        return $normalized;
     }
 }
