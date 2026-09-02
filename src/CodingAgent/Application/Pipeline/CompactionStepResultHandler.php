@@ -397,8 +397,6 @@ final class CompactionStepResultHandler implements RunMessageHandler, RunMessage
             'activeStepId' => null,
             'currentOperation' => null,
             'lastAppliedCompactionKey' => $message->idempotencyKey(),
-            // Compaction replaces the conversation: explicit retry-episode reset.
-            'retryAttempts' => 0,
         ]);
 
         // Continue the LLM turn ONLY when the compaction was holding a
@@ -447,8 +445,6 @@ final class CompactionStepResultHandler implements RunMessageHandler, RunMessage
             'activeStepId' => $clearActiveStepId ? null : $state->activeStepId,
             'currentOperation' => $clearActiveStepId ? null : $state->currentOperation,
             'lastAppliedCompactionKey' => $completedRequestKey ?? $state->lastAppliedCompactionKey,
-            // Compaction events restart the retry episode (context replaced).
-            'retryAttempts' => 0,
         ]);
     }
 }

@@ -103,8 +103,6 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                 'activeStepId' => null,
                 'currentOperation' => null,
                 'lastAppliedAdvanceKey' => $message->idempotencyKey(),
-                'retryableFailure' => false,
-                'retryAttempts' => 0,
             ]);
 
             $postCommit = [];
@@ -152,13 +150,9 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
             }
 
             if ($hasNonCompactBoundaryEvent && [] !== $boundaryEventSpecs && \in_array($preparedState->status, [RunStatus::Completed, RunStatus::Failed, RunStatus::Cancelled, RunStatus::WaitingHuman], true)) {
-                // The retry counter is deliberately preserved across the
-                // boundary drain: an in-flight auto-retry episode must keep
-                // counting so retriesExhausted is not delayed.
                 $preparedState = $preparedState->with([
                     'status' => RunStatus::Running,
                     'errorMessage' => null,
-                    'retryableFailure' => false,
                 ]);
             // Fall through to the turn-advance code below.
             } else {
@@ -397,9 +391,6 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
 
         $events = $this->eventFactory->eventsFromSpecs($runId, $preparedState->turnNo, $state->lastSeq + 1, $eventSpecs);
 
-        // The retry counter is deliberately preserved across the turn advance:
-        // the auto-retry cycle (continue -> advance -> llm step) must keep
-        // counting so retriesExhausted is reached at the configured maximum.
         $nextState = $preparedState->with([
             'status' => RunStatus::Running,
             'version' => $state->version + 1,
@@ -415,7 +406,6 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                 $effect->idempotencyKey(),
             ),
             'lastAppliedAdvanceKey' => $message->idempotencyKey(),
-            'retryableFailure' => false,
         ]);
 
         return new HandlerResult(

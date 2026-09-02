@@ -70,9 +70,9 @@ or provider compatibility rules. Unsupported levels are rejected or coerced per 
 Controls outbound LLM HTTP behavior (timeouts, proxies, and related transport options as defined in defaults).
 If unset, the app injects a safe default HTTP timeout so requests cannot hang forever.
 
-## Agent retry (`ai.agent_retry`)
+## LLM transport retries
 
-Controls the bounded retry count for typed mid-stream provider failures. HTTP status, transport, backoff, and Retry-After handling belong to Symfony HttpClient under `ai.http`.
+HTTP provider failures retry through Symfony `RetryableHttpClient` under `ai.http` (status/transport/`Retry-After`). Mid-stream and WebSocket provider-operation failures retry by redelivering the same `ExecuteLlmStep` envelope through the `llm` Messenger transport retry strategy. Explicit permanent errors, cancellations, programming errors, context overflow, and HTTP failures already exhausted by HttpClient remain terminal and emit `llm_step_failed` then `agent_end(reason=failed)`.
 
 ## Model reference format
 

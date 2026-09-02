@@ -576,7 +576,6 @@ final class SessionRunStateReplayServiceTest extends TestCase
         $rebuiltState = $result->rebuiltState;
         $this->assertSame(RunStatus::Failed, $rebuiltState->status);
         $this->assertSame('API timeout', $rebuiltState->errorMessage);
-        $this->assertTrue($rebuiltState->retryableFailure);
     }
 
     // ── Idempotent replay ───────────────────────────────────────────────────
@@ -850,7 +849,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
 
         $state = RunState::queued($this->runId);
         $result = $this->service->rebuildIfStale($state, $this->runId);
-        $this->assertSame(RunStatus::Running, $result->rebuiltState->status, 'Continue command must restore Running status.');
+        $this->assertSame(RunStatus::WaitingHuman, $result->rebuiltState->status, 'Unsupported continue command must not mutate status.');
         $this->assertNull($result->rebuiltState->errorMessage);
     }
 
@@ -1958,60 +1957,6 @@ final class SessionRunStateReplayServiceTest extends TestCase
         $this->assertCount(1, $messages, 'Text+thinking message must be replayed.');
         $this->assertSame('assistant', $messages[0]->role);
         $this->assertSame('Here is the answer.', $messages[0]->content[0]['text']);
-    }
-
-    public function testReplayPreservesRetryAttemptsThroughAutoRetryContinueAndTurnAdvanced(): void
-    {
-        $this->appendEventWithTurn('run_started', 1, 0, ['step_id' => 's1', 'payload' => ['messages' => []]]);
-        $this->appendEventWithTurn(RunEventTypeEnum::TurnAdvanced->value, 2, 1, [
-            'turn_no' => 1,
-            'step_id' => 's1',
-        ]);
-        $this->appendEventWithTurn(RunEventTypeEnum::HistoryPositionSet->value, 3, 1, [
-            'position_turn_no' => 1,
-            'reason' => 'continue',
-        ]);
-        $this->appendEventWithTurn('llm_step_failed', 4, 1, [
-            'error' => [
-                'message' => 'fail',
-                'retryable' => true,
-                'user_message' => 'retryable',
-            ],
-            'retryable' => true,
-            'step_id' => 's1',
-            'retry_attempt' => 1,
-            'max_retries' => 2,
-        ]);
-        $this->appendEventWithTurn('agent_command_applied', 5, 1, [
-            'kind' => 'continue',
-            'idempotency_key' => 'ik-1',
-            'options' => [],
-            'payload' => ['auto_retry' => true, 'retry_attempt' => 1],
-        ]);
-        $this->appendEventWithTurn(RunEventTypeEnum::TurnAdvanced->value, 6, 2, [
-            'step_id' => 's2',
-            'turn_no' => 2,
-        ]);
-        $this->appendEventWithTurn(RunEventTypeEnum::HistoryPositionSet->value, 7, 2, [
-            'position_turn_no' => 2,
-            'reason' => 'continue',
-        ]);
-
-        $state = new RunState(
-            runId: $this->runId,
-            status: RunStatus::Queued,
-            version: 0,
-            turnNo: 0,
-            lastSeq: 0,
-            model: 'test-model',
-        );
-
-        $result = $this->service->rebuildIfStale($state, $this->runId);
-        $this->assertNotNull($result->rebuiltState);
-        $this->assertSame(RunStatus::Running, $result->rebuiltState->status);
-        $this->assertSame(2, $result->rebuiltState->turnNo);
-        $this->assertSame('s2', $result->rebuiltState->activeStepId);
-        $this->assertSame(1, $result->rebuiltState->retryAttempts);
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────

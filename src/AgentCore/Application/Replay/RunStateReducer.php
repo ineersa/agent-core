@@ -173,7 +173,6 @@ final readonly class RunStateReducer
             errorMessage: null,
             messages: $state->messages, // placeholder; actual messages in $messages by-ref
             activeStepId: $stepId,
-            retryableFailure: false,
             pendingHumanInputRequests: $state->pendingHumanInputRequests,
             model: $model,
             parentRunId: $parentRunId,
@@ -203,7 +202,6 @@ final readonly class RunStateReducer
             'currentOperation' => \is_string($stepId) && '' !== $stepId && \is_string($key) && '' !== $key
                 ? new CurrentOperationDTO($turnNo, $stepId, $attempt, $key)
                 : null,
-            'retryableFailure' => false,
         ]);
     }
 
@@ -266,7 +264,6 @@ final readonly class RunStateReducer
             return $state->with([
                 'status' => RunStatus::Running,
                 'errorMessage' => null,
-                'retryableFailure' => false,
             ]);
         }
 
@@ -304,8 +301,6 @@ final readonly class RunStateReducer
             return $state->with([
                 'status' => [] !== $remaining ? RunStatus::WaitingHuman : RunStatus::Running,
                 'errorMessage' => null,
-                'retryableFailure' => false,
-                'retryAttempts' => 0,
                 'currentToolCalls' => $currentToolCalls,
                 'pendingHumanInputRequests' => $remaining,
             ]);
@@ -322,22 +317,6 @@ final readonly class RunStateReducer
                     $state->currentToolCalls,
                 ),
                 'errorMessage' => $reason,
-                'retryableFailure' => false,
-                'retryAttempts' => 0,
-            ]);
-        }
-
-        // continue: restore to Running from WaitingHuman/Failed
-        if ('continue' === $kind) {
-            $cmdPayload = \is_array($payload['payload'] ?? null) ? $payload['payload'] : [];
-            $isAutoRetry = true === ($cmdPayload['auto_retry'] ?? false);
-            $retryAttempts = $isAutoRetry ? $state->retryAttempts : 0;
-
-            return $state->with([
-                'status' => RunStatus::Running,
-                'errorMessage' => null,
-                'retryableFailure' => false,
-                'retryAttempts' => $retryAttempts,
             ]);
         }
 
@@ -403,8 +382,6 @@ final readonly class RunStateReducer
         return $state->with([
             'status' => RunStatus::Running,
             'errorMessage' => null,
-            'retryableFailure' => false,
-            'retryAttempts' => 0,
             'currentToolCalls' => $currentToolCalls,
             'currentOperation' => null,
         ]);
@@ -419,8 +396,6 @@ final readonly class RunStateReducer
         $errorMessage = \is_string($error['user_message'] ?? null)
             ? $error['user_message']
             : (\is_string($error['message'] ?? null) ? $error['message'] : 'LLM worker failed.');
-        $retryable = \is_bool($payload['retryable'] ?? null) ? $payload['retryable'] : false;
-        $retryAttempt = isset($payload['retry_attempt']) && is_numeric($payload['retry_attempt']) ? (int) $payload['retry_attempt'] : 0;
 
         return $state->with([
             'status' => RunStatus::Failed,
@@ -430,8 +405,6 @@ final readonly class RunStateReducer
             'currentToolCalls' => [],
             'currentOperation' => null,
             'errorMessage' => $errorMessage,
-            'retryableFailure' => $retryable,
-            'retryAttempts' => $retryAttempt,
         ]);
     }
 
@@ -565,6 +538,7 @@ final readonly class RunStateReducer
         $status = match ($reason) {
             'completed' => RunStatus::Completed,
             'cancelled' => RunStatus::Cancelled,
+            'failed' => RunStatus::Failed,
             default => RunStatus::Completed,
         };
 
@@ -575,8 +549,6 @@ final readonly class RunStateReducer
             'pendingToolCalls' => [],
             'activeStepId' => null,
             'currentOperation' => null,
-            'retryableFailure' => false,
-            'retryAttempts' => 0,
         ]);
     }
 
@@ -610,7 +582,6 @@ final readonly class RunStateReducer
             'currentOperation' => null !== $stepId && null !== $key
                 ? new CurrentOperationDTO($turnNo, $stepId, $attempt, $key)
                 : null,
-            'retryAttempts' => 0,
         ]);
     }
 
@@ -660,7 +631,6 @@ final readonly class RunStateReducer
             'activeStepId' => null,
             'currentOperation' => null,
             'lastAppliedCompactionKey' => $this->currentCompactionKey($state),
-            'retryAttempts' => 0,
         ]);
     }
 
@@ -703,7 +673,6 @@ final readonly class RunStateReducer
 
             return $state->with([
                 'lastAppliedCompactionKey' => $operationKey,
-                'retryAttempts' => 0,
             ]);
         }
 
@@ -730,7 +699,6 @@ final readonly class RunStateReducer
                 'activeStepId' => null,
                 'currentOperation' => null,
                 'lastAppliedCompactionKey' => $this->currentCompactionKey($state),
-                'retryAttempts' => 0,
             ]);
         }
 
@@ -740,7 +708,6 @@ final readonly class RunStateReducer
         // compaction's own started event will set Compacting again.
         return $state->with([
             'status' => $resolveCompacting ?? $state->status,
-            'retryAttempts' => 0,
         ]);
     }
 

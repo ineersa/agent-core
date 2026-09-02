@@ -76,7 +76,6 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
                 ),
             ],
             activeStepId: 'parent-step',
-            retryableFailure: false,
             model: 'test-model',
         );
 
@@ -158,7 +157,6 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
             errorMessage: null,
             messages: [],
             activeStepId: 'p',
-            retryableFailure: false,
             model: 'test-model',
         );
 
@@ -264,7 +262,6 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
                 ),
             ],
             activeStepId: 'p',
-            retryableFailure: false,
             model: 'test-model',
         );
 

@@ -20,8 +20,8 @@ use PHPUnit\Framework\TestCase;
  * never raw secrets or full arg blobs, while preserving assistant result text and
  * honoring parent-committed status/turn overrides. Completed and failed LLM steps
  * each increment one durable llm_step_count that round-trips through DTO serialization.
- * Retryable llm_step_failed stays nonterminal so deferred child/fork completion cannot
- * hand off failure before the bounded auto-retry runs.
+ * llm_step_failed is always terminal Failed for deferred child/fork projection because
+ * transport-owned Messenger retries never commit a still-retryable failure.
  * Canonical run_started.metadata.model always overrides a stale definition/current model
  * and must survive later incremental apply without run_started (resume/failed-child).
  */
@@ -102,7 +102,7 @@ final class DeferredChildRunEventProjectorTest extends TestCase
         $projector = new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new \Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()));
         $current = new DeferredChildRunLifecycleProjectionDTO(
             childStatus: RunStatus::Running,
-            childTurnNo: 106,
+            childTurnNo: 0,
             lastCommittedSeq: 109,
             model: 'openai-codex/gpt-5.6-luna',
             reasoning: 'low',
@@ -122,6 +122,7 @@ final class DeferredChildRunEventProjectorTest extends TestCase
 
             $this->assertSame(RunStatus::Running, $queued->childStatus, $previousTerminalStatus->value);
             $this->assertFalse($queued->childStatus->isTerminal(), $previousTerminalStatus->value);
+            $this->assertSame(106, $queued->childTurnNo);
             $this->assertSame(110, $queued->lastCommittedSeq);
             $queuedByPreviousStatus[$previousTerminalStatus->value] = $queued;
         }
@@ -159,7 +160,7 @@ final class DeferredChildRunEventProjectorTest extends TestCase
         $this->assertSame(137, $completed->lastCommittedSeq);
     }
 
-    public function testRetryableLlmStepFailedStaysRunningWhileExhaustedFailureIsTerminal(): void
+    public function testLlmStepFailedIsTerminalEvenWithTrailingModelNotification(): void
     {
         $projector = new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new \Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()));
         $current = new DeferredChildRunLifecycleProjectionDTO(
@@ -170,101 +171,44 @@ final class DeferredChildRunEventProjectorTest extends TestCase
             reasoning: 'medium',
         );
 
-        // Session-shaped: LlmStepResultHandler commits retryable failure as
-        // llm_step_failed(retryable=true) then trailing ModelNotification specs in the
-        // same tail, with committedStatus Failed. Pending-retry must survive the
-        // ignored notification (literal last-summary checks would wrongly terminalize).
-        $retryPending = $projector->apply(
+        // Transport retries never commit a still-retryable failure. Exhausted
+        // llm_step_failed + trailing ModelNotification + agent_end(failed) must
+        // project Failed even when committedStatus is also Failed.
+        $failed = $projector->apply(
             $current,
             [
                 new AfterTurnCommitEventSummary(1, RunEventTypeEnum::LlmStepFailed->value, [
                     'error' => [
                         'type' => \Symfony\AI\Platform\Exception\ServerException::class,
-                        'message' => 'Server error.',
-                        'user_message' => 'LLM provider server error interrupted the response stream.',
-                        'retryable' => true,
+                        'message' => 'LLM provider request failed after retries were exhausted.',
+                        'user_message' => 'LLM provider request failed after retries were exhausted.',
+                        'retryable' => false,
                         'error_category' => 'server',
                     ],
-                    'retryable' => true,
+                    'retryable' => false,
                     'step_id' => 'advance-after-tools-sync',
-                    'retry_attempt' => 1,
-                    'max_retries' => 2,
                 ]),
                 new AfterTurnCommitEventSummary(2, RunEventTypeEnum::ModelNotification->value, [
                     'source' => 'transform_hook',
                     'message' => 'provider diagnostic notification',
+                ]),
+                new AfterTurnCommitEventSummary(3, RunEventTypeEnum::AgentEnd->value, [
+                    'reason' => 'failed',
+                    'error' => 'LLM provider request failed after retries were exhausted.',
                 ]),
             ],
             committedStatus: RunStatus::Failed,
             committedTurnNo: 47,
         );
 
-        $this->assertSame(RunStatus::Running, $retryPending->childStatus);
-        $this->assertFalse($retryPending->childStatus->isTerminal());
-        $this->assertSame(47, $retryPending->childTurnNo);
-        $this->assertSame(1, $retryPending->llmStepCount);
-        $this->assertSame(2, $retryPending->lastCommittedSeq);
+        $this->assertSame(RunStatus::Failed, $failed->childStatus);
+        $this->assertTrue($failed->childStatus->isTerminal());
+        $this->assertSame(47, $failed->childTurnNo);
+        $this->assertSame(1, $failed->llmStepCount);
+        $this->assertSame(3, $failed->lastCommittedSeq);
         $this->assertSame(
-            'LLM provider server error interrupted the response stream.',
-            $retryPending->errorMessage,
-        );
-
-        $recovered = $projector->apply(
-            $retryPending,
-            [
-                new AfterTurnCommitEventSummary(3, RunEventTypeEnum::LlmStepCompleted->value, [
-                    'usage' => ['input_tokens' => 12, 'output_tokens' => 2, 'total_tokens' => 14],
-                    'assistant_message' => [
-                        'role' => 'assistant',
-                        'content' => [['type' => 'text', 'text' => 'Recovered.']],
-                    ],
-                ]),
-                new AfterTurnCommitEventSummary(4, RunEventTypeEnum::AgentEnd->value, ['reason' => 'completed']),
-            ],
-            committedStatus: RunStatus::Completed,
-            committedTurnNo: 48,
-        );
-
-        $this->assertSame(RunStatus::Completed, $recovered->childStatus);
-        $this->assertTrue($recovered->childStatus->isTerminal());
-        $this->assertNull($recovered->errorMessage);
-        $this->assertSame(2, $recovered->llmStepCount);
-
-        // Later exhausted/non-retryable failure in a batched tail clears pending-retry
-        // and remains terminal Failed (forgotten flag reset would leave Running).
-        $exhausted = $projector->apply(
-            $retryPending,
-            [
-                new AfterTurnCommitEventSummary(5, RunEventTypeEnum::ModelNotification->value, [
-                    'source' => 'transform_hook',
-                    'message' => 'ignored between attempts',
-                ]),
-                new AfterTurnCommitEventSummary(6, RunEventTypeEnum::LlmStepFailed->value, [
-                    'error' => [
-                        'message' => 'Codex WebSocket request frame could not be sent.',
-                        'user_message' => 'Automatic LLM retry attempts exhausted after 2 retry attempt(s).',
-                        'retryable' => false,
-                        'error_category' => 'network',
-                    ],
-                    'retryable' => false,
-                    'retries_exhausted' => true,
-                    'step_id' => 'advance-after-tools-sync',
-                    'retry_attempt' => 2,
-                    'max_retries' => 2,
-                ]),
-            ],
-            committedStatus: RunStatus::Failed,
-            committedTurnNo: 48,
-        );
-
-        $this->assertSame(RunStatus::Failed, $exhausted->childStatus);
-        $this->assertTrue($exhausted->childStatus->isTerminal());
-        $this->assertSame(48, $exhausted->childTurnNo);
-        $this->assertSame(2, $exhausted->llmStepCount);
-        $this->assertSame(6, $exhausted->lastCommittedSeq);
-        $this->assertSame(
-            'Automatic LLM retry attempts exhausted after 2 retry attempt(s).',
-            $exhausted->errorMessage,
+            'LLM provider request failed after retries were exhausted.',
+            $failed->errorMessage,
         );
     }
 

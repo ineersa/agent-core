@@ -13,7 +13,6 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Run\RunState;
-use Ineersa\AgentCore\Domain\Run\RunStatus;
 
 final readonly class CommandMailboxPolicy
 {
@@ -44,31 +43,6 @@ final readonly class CommandMailboxPolicy
     {
         return !CoreCommandKind::isCore($kind)
             && true === ($options['cancel_safe'] ?? false);
-    }
-
-    public function continueRejectionReason(RunState $state): ?string
-    {
-        if (\in_array($state->status, [RunStatus::Running, RunStatus::Completed, RunStatus::Cancelled, RunStatus::Cancelling], true)) {
-            return \sprintf('continue command is not allowed while run is %s.', $state->status->value);
-        }
-
-        if (RunStatus::Failed !== $state->status) {
-            return 'continue command is only allowed from failed runs.';
-        }
-
-        if (!$state->retryableFailure) {
-            return 'continue command requires a retryable failure state.';
-        }
-
-        $lastRole = $this->lastMessageRole($state);
-        if (!\in_array($lastRole, ['user', 'tool'], true)) {
-            return \sprintf(
-                'continue command rejected: last message role must be "user" or "tool", got "%s".',
-                $lastRole ?? 'none',
-            );
-        }
-
-        return null;
     }
 
     /**
@@ -262,17 +236,6 @@ final readonly class CommandMailboxPolicy
         }
 
         return $eventSpecs;
-    }
-
-    private function lastMessageRole(RunState $state): ?string
-    {
-        if ([] === $state->messages) {
-            return null;
-        }
-
-        $lastMessage = $state->messages[\count($state->messages) - 1] ?? null;
-
-        return $lastMessage instanceof AgentMessage ? $lastMessage->role : null;
     }
 
     /**

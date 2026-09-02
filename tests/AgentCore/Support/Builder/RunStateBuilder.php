@@ -14,7 +14,7 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
  *
  * Defaults: runId="run-test", status=Queued, version=0, turnNo=0, lastSeq=0,
  * isStreaming=false, streamingMessage=null, pendingToolCalls=[],
- * errorMessage=null, messages=[], activeStepId=null, retryableFailure=false,
+ * errorMessage=null, messages=[], activeStepId=null,
  * pendingHumanInputRequests=[].
  *
  * @phpstan-type StreamingMessage array<string, mixed>|null
@@ -43,8 +43,6 @@ final class RunStateBuilder
     private array $messages = [];
 
     private ?string $activeStepId = null;
-    private bool $retryableFailure = false;
-    private int $retryAttempts = 0;
 
     /** @var PendingHumanInputRequests */
     private array $pendingHumanInputRequests = [];
@@ -162,13 +160,6 @@ final class RunStateBuilder
         return $this;
     }
 
-    public function withRetryableFailure(bool $retryableFailure): self
-    {
-        $this->retryableFailure = $retryableFailure;
-
-        return $this;
-    }
-
     /**
      * @param PendingHumanInputRequests $pendingHumanInputRequests
      */
@@ -200,8 +191,6 @@ final class RunStateBuilder
             errorMessage: $this->errorMessage,
             messages: $this->messages,
             activeStepId: $this->activeStepId,
-            retryableFailure: $this->retryableFailure,
-            retryAttempts: $this->retryAttempts,
             pendingHumanInputRequests: $this->pendingHumanInputRequests,
             model: $this->model,
             parentRunId: $this->parentRunId,

@@ -56,7 +56,7 @@ final class LlmProviderErrorClassifier
         [$category, $retryable, $userMessage] = $this->classifyPermanentException($errorType)
             ?? $this->classifyStatus($statusCode)
             ?? $this->classifyTransientStreamException($errorType)
-            ?? [self::CATEGORY_PROVIDER, false, 'LLM provider request failed.'];
+            ?? [self::CATEGORY_PROVIDER, true, 'LLM provider request failed.'];
 
         $result = array_replace($error, [
             'retryable' => $retryable,
@@ -72,14 +72,6 @@ final class LlmProviderErrorClassifier
         );
 
         return $result;
-    }
-
-    /** @param array<string, mixed> $classifiedError */
-    public function isContextOverflow(array $classifiedError): bool
-    {
-        $type = $classifiedError['type'] ?? null;
-
-        return \is_string($type) && is_a($type, ExceedContextSizeException::class, true);
     }
 
     /** @return array{string, bool, string}|null */

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\Tools\PHPStan\DeadCode;
 
-use Ineersa\CodingAgent\Config\Ai\AiAgentRetryConfig;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
@@ -45,12 +44,6 @@ final class SymfonyExpressionServiceCallUsageProvider extends ReflectionBasedMem
             'catalog' => null,
             'cwd' => null,
             'tools' => ToolsConfig::class,
-        ],
-        AiConfig::class => [
-            'agentRetry' => AiAgentRetryConfig::class,
-        ],
-        AiAgentRetryConfig::class => [
-            'resolveMaxAttempts' => null,
         ],
         ToolsConfig::class => [
             'execution' => ToolExecutionConfig::class,

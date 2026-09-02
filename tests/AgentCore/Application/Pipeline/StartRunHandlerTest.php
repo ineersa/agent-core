@@ -36,7 +36,6 @@ final class StartRunHandlerTest extends TestCase
             ->withErrorMessage('old error')
             ->withMessages([new AgentMessage(role: 'assistant', content: [])])
             ->withActiveStepId('legacy-step')
-            ->withRetryableFailure(true)
             ->withModel(null)
             ->build();
 
@@ -63,7 +62,6 @@ final class StartRunHandlerTest extends TestCase
         $this->assertNull($result->nextState->streamingMessage);
         $this->assertSame([], $result->nextState->pendingToolCalls);
         $this->assertNull($result->nextState->errorMessage);
-        $this->assertFalse($result->nextState->retryableFailure);
 
         $this->assertCount(1, $result->nextState->messages);
         $this->assertSame('user', $result->nextState->messages[0]->role);
