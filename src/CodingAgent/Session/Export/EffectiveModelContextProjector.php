@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Session\Export;
 
+use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -22,6 +23,7 @@ final readonly class EffectiveModelContextProjector
 {
     public function __construct(
         private EventPayloadNormalizer $eventPayloadNormalizer,
+        private ReplayEventPreparer $replayEventPreparer,
         private HistoryReplayFilter $historyReplayFilter,
         private RunStateReducer $runStateReducer,
     ) {
@@ -34,9 +36,11 @@ final readonly class EffectiveModelContextProjector
             throw new \RuntimeException(\sprintf('Session %s has no events to export.', $runId));
         }
 
+        $this->assertMessagePayloadsReplayWithoutLoss($events, $runId);
+
         $filtered = $this->historyReplayFilter->filter($events);
         $replayed = $this->runStateReducer->replay(RunState::queued($runId), $filtered);
-        $toolsSnapshot = $this->latestAvailableToolsSnapshot($filtered);
+        $toolsSnapshot = $this->latestAvailableToolsSnapshot($filtered, $runId);
 
         return new EffectiveModelContextSnapshot(
             messages: array_values(array_map(
@@ -56,7 +60,6 @@ final readonly class EffectiveModelContextProjector
     {
         $events = [];
         $unsupported = [];
-        $skippedIncompatible = 0;
 
         foreach (explode("\n", $content) as $lineIndex => $line) {
             $trimmed = trim($line);
@@ -86,8 +89,7 @@ final readonly class EffectiveModelContextProjector
             }
 
             if (null === $event) {
-                ++$skippedIncompatible;
-                continue;
+                throw new \RuntimeException(\sprintf('Cannot project model context for session %s: malformed or incompatible canonical event at line %d.', $runId, $lineIndex + 1));
             }
 
             if ($event->runId !== $runId) {
@@ -102,11 +104,11 @@ final readonly class EffectiveModelContextProjector
             throw new \RuntimeException(\sprintf('Cannot project model context for session %s: unsupported event type(s): %s.', $runId, $types));
         }
 
-        if ([] === $events && $skippedIncompatible > 0) {
-            throw new \RuntimeException(\sprintf('Cannot project model context for session %s: all events were skipped as incompatible schema.', $runId));
+        $events = $this->replayEventPreparer->sortBySequence($events);
+        $duplicateSequences = $this->replayEventPreparer->duplicateSequences($events);
+        if ([] !== $duplicateSequences) {
+            throw new \RuntimeException(\sprintf('Cannot project model context for session %s: duplicate event sequence(s): %s.', $runId, implode(', ', $duplicateSequences)));
         }
-
-        usort($events, static fn (RunEvent $left, RunEvent $right): int => $left->seq <=> $right->seq);
 
         return $events;
     }
@@ -116,7 +118,7 @@ final readonly class EffectiveModelContextProjector
      *
      * @return array{tools: list<string>|null, estimate: int|null}
      */
-    private function latestAvailableToolsSnapshot(array $events): array
+    private function latestAvailableToolsSnapshot(array $events, string $runId): array
     {
         $tools = null;
         $estimate = null;
@@ -129,31 +131,115 @@ final readonly class EffectiveModelContextProjector
             }
 
             if (!\array_key_exists('available_tools', $event->payload)) {
+                if (\array_key_exists('available_tools_schema_tokens_estimate', $event->payload)) {
+                    throw new \RuntimeException(\sprintf('Cannot project model context for session %s: event seq %d has an available-tools estimate without available_tools.', $runId, $event->seq));
+                }
+
                 continue;
             }
 
             $raw = $event->payload['available_tools'];
             if (!\is_array($raw)) {
-                continue;
+                throw new \RuntimeException(\sprintf('Cannot project model context for session %s: event seq %d has malformed available_tools.', $runId, $event->seq));
             }
 
             $names = [];
             foreach ($raw as $entry) {
-                if (\is_string($entry) && '' !== $entry) {
-                    $names[] = $entry;
+                if (!\is_string($entry) || '' === $entry) {
+                    throw new \RuntimeException(\sprintf('Cannot project model context for session %s: event seq %d has a malformed available_tools entry.', $runId, $event->seq));
                 }
+                $names[] = $entry;
+            }
+
+            $rawEstimate = $event->payload['available_tools_schema_tokens_estimate'] ?? null;
+            if (null !== $rawEstimate && !\is_int($rawEstimate)) {
+                throw new \RuntimeException(\sprintf('Cannot project model context for session %s: event seq %d has a malformed available_tools_schema_tokens_estimate.', $runId, $event->seq));
             }
 
             // Empty arrays are an authoritative zero-tools snapshot.
             $tools = $names;
-            $rawEstimate = $event->payload['available_tools_schema_tokens_estimate'] ?? null;
-            $estimate = \is_int($rawEstimate) ? $rawEstimate : null;
+            $estimate = $rawEstimate;
         }
 
         return [
             'tools' => $tools,
             'estimate' => $estimate,
         ];
+    }
+
+    /**
+     * Rejects message payloads that RunStateReducer would otherwise skip or partially filter.
+     *
+     * @param list<RunEvent> $events
+     */
+    private function assertMessagePayloadsReplayWithoutLoss(array $events, string $runId): void
+    {
+        foreach ($events as $event) {
+            $messageLists = [];
+
+            if (RunEventTypeEnum::RunStarted->value === $event->type) {
+                $innerPayload = $event->payload['payload'] ?? null;
+                if (!\is_array($innerPayload) || !\array_key_exists('messages', $innerPayload)) {
+                    $this->throwMalformedMessage($runId, $event->seq);
+                }
+                $messageLists[] = $innerPayload['messages'];
+            } elseif (RunEventTypeEnum::ContextCompacted->value === $event->type) {
+                if (!\array_key_exists('messages', $event->payload)) {
+                    $this->throwMalformedMessage($runId, $event->seq);
+                }
+                $messageLists[] = $event->payload['messages'];
+            } elseif (RunEventTypeEnum::AgentCommandApplied->value === $event->type
+                && \in_array($event->payload['kind'] ?? null, ['steer', 'follow_up', 'append_message'], true)) {
+                if (!\array_key_exists('message', $event->payload)) {
+                    $this->throwMalformedMessage($runId, $event->seq);
+                }
+                $messageLists[] = [$event->payload['message']];
+            } elseif (RunEventTypeEnum::LlmStepCompleted->value === $event->type) {
+                if (!\array_key_exists('assistant_message', $event->payload)) {
+                    $this->throwMalformedMessage($runId, $event->seq);
+                }
+                $assistant = $event->payload['assistant_message'];
+                if (!\is_array($assistant)) {
+                    $this->throwMalformedMessage($runId, $event->seq);
+                }
+                if (\is_array($assistant['content'] ?? null)) {
+                    $messageLists[] = [$assistant];
+                } elseif ('assistant' !== ($assistant['role'] ?? null)
+                    || (\array_key_exists('content', $assistant) && null !== $assistant['content'])) {
+                    $this->throwMalformedMessage($runId, $event->seq);
+                }
+            }
+
+            foreach ($messageLists as $rawMessages) {
+                if (!\is_array($rawMessages)) {
+                    $this->throwMalformedMessage($runId, $event->seq);
+                }
+
+                foreach ($rawMessages as $rawMessage) {
+                    if (!\is_array($rawMessage)) {
+                        $this->throwMalformedMessage($runId, $event->seq);
+                    }
+
+                    try {
+                        $message = AgentMessage::fromPayload($rawMessage);
+                    } catch (\InvalidArgumentException $exception) {
+                        throw new \RuntimeException(\sprintf('Cannot project model context for session %s: event seq %d has a malformed message (%s).', $runId, $event->seq, $exception->getMessage()), previous: $exception);
+                    }
+
+                    $rawContent = $rawMessage['content'] ?? null;
+                    if (null === $message
+                        || !\is_array($rawContent)
+                        || \count($message->content) !== \count($rawContent)) {
+                        $this->throwMalformedMessage($runId, $event->seq);
+                    }
+                }
+            }
+        }
+    }
+
+    private function throwMalformedMessage(string $runId, int $seq): never
+    {
+        throw new \RuntimeException(\sprintf('Cannot project model context for session %s: event seq %d has a malformed message.', $runId, $seq));
     }
 
     /**

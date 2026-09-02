@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Support;
 
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
+use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
@@ -26,6 +27,7 @@ final class SessionEventsExportServiceFactory
         return new SessionEventsExportService(
             contextProjector: new EffectiveModelContextProjector(
                 eventPayloadNormalizer: new EventPayloadNormalizer(),
+                replayEventPreparer: new ReplayEventPreparer(),
                 historyReplayFilter: new HistoryReplayFilter(new HistoryProjector()),
                 runStateReducer: new RunStateReducer(
                     AttributeSerializerValidatorTestFactory::denormalizer(),

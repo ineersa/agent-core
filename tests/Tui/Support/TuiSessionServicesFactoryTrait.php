@@ -28,8 +28,6 @@ use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Command\SlashCommandRegistry;
 use Ineersa\Tui\Command\SubmissionRouter;
 use Ineersa\Tui\Editor\PromptEditor;
-use Ineersa\Tui\Export\SessionEventsExportService;
-use Ineersa\Tui\Tests\Support\SessionEventsExportServiceFactory;
 use Ineersa\Tui\Listener\PromptHistory;
 use Ineersa\Tui\Picker\FavoritePickerController;
 use Ineersa\Tui\Picker\HistoryPickerController;

@@ -9,12 +9,11 @@ use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInter
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
-use Ineersa\Tui\Export\SessionEventsExportService;
-use Ineersa\Tui\Tests\Support\SessionEventsExportServiceFactory;
 use Ineersa\Tui\Listener\SubagentLiveToggleInputListener;
 use Ineersa\Tui\Picker\SubagentLivePickerController;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
 use Ineersa\Tui\Runtime\TuiSessionState;
+use Ineersa\Tui\Tests\Support\SessionEventsExportServiceFactory;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use PHPUnit\Framework\Attributes\Test;

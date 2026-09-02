@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Session\Export;
 
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
+use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
@@ -230,12 +231,87 @@ final class EffectiveModelContextProjectorTest extends TestCase
         $this->projector()->project($jsonl, 'run-1');
     }
 
+    #[Test]
+    public function rejectsMalformedCanonicalEventAmongValidEvents(): void
+    {
+        $events = [
+            $this->event(1, 1, 'run_started', [
+                'step_id' => 's1',
+                'payload' => ['messages' => []],
+            ]),
+            $this->event(2, 1, 'turn_advanced', ['turn_no' => 1]),
+        ];
+        $events[1]['turn_no'] = 'not-an-int';
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('malformed or incompatible canonical event at line 2');
+        $this->projector()->project($this->jsonl($events), 'run-1');
+    }
+
+    #[Test]
+    public function rejectsMessageContentThatReplayWouldOtherwiseDrop(): void
+    {
+        $jsonl = $this->jsonl([
+            $this->event(1, 1, 'run_started', [
+                'step_id' => 's1',
+                'payload' => ['messages' => [
+                    ['role' => 'user', 'content' => 'not-canonical-content'],
+                ]],
+            ]),
+        ]);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('event seq 1 has a malformed message');
+        $this->projector()->project($jsonl, 'run-1');
+    }
+
+    #[Test]
+    public function rejectsMalformedLatestAvailableToolsSnapshot(): void
+    {
+        $jsonl = $this->jsonl([
+            $this->event(1, 1, 'run_started', [
+                'step_id' => 's1',
+                'payload' => ['messages' => []],
+            ]),
+            $this->event(2, 1, 'llm_step_completed', [
+                'step_id' => 's2',
+                'assistant_message' => [
+                    'role' => 'assistant',
+                    'content' => [['type' => 'text', 'text' => 'Done']],
+                ],
+                'available_tools' => 'bash',
+                'available_tools_schema_tokens_estimate' => 12,
+            ]),
+        ]);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('event seq 3 has malformed available_tools');
+        $this->projector()->project($jsonl, 'run-1');
+    }
+
+    #[Test]
+    public function rejectsDuplicateEventSequences(): void
+    {
+        $events = [
+            $this->event(1, 1, 'run_started', [
+                'step_id' => 's1',
+                'payload' => ['messages' => []],
+            ]),
+            $this->event(1, 1, 'turn_advanced', ['turn_no' => 1]),
+        ];
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('duplicate event sequence(s): 1');
+        $this->projector()->project($this->jsonl($events), 'run-1');
+    }
+
     private function projector(): EffectiveModelContextProjector
     {
         $serializer = AttributeSerializerValidatorTestFactory::serializer();
 
         return new EffectiveModelContextProjector(
             eventPayloadNormalizer: new EventPayloadNormalizer(),
+            replayEventPreparer: new ReplayEventPreparer(),
             historyReplayFilter: new HistoryReplayFilter(new HistoryProjector()),
             runStateReducer: new RunStateReducer(
                 AttributeSerializerValidatorTestFactory::denormalizer(),

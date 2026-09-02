@@ -326,12 +326,11 @@ HTML;
             $items[] = self::escapeHtml($entry);
         }
 
-        $estimateInt = $estimate ?? 0;
+        $estimateLabel = null === $estimate
+            ? 'schema token estimate unavailable'
+            : \sprintf('~%s schema tokens', number_format($estimate));
         if ([] === $items) {
-            $summary = \sprintf(
-                'Available tools (0 · ~%s schema tokens)',
-                number_format($estimateInt),
-            );
+            $summary = \sprintf('Available tools (0 · %s)', $estimateLabel);
 
             $html = '  <details class="available-tools available-tools-empty" open>'."\n";
             $html .= '    <summary>'.self::escapeHtml($summary)."</summary>\n";
@@ -342,9 +341,9 @@ HTML;
         }
 
         $summary = \sprintf(
-            'Available tools (%d · ~%s schema tokens)',
+            'Available tools (%d · %s)',
             \count($items),
-            number_format($estimateInt),
+            $estimateLabel,
         );
 
         $html = '  <details class="available-tools" open>'."\n";
@@ -389,6 +388,7 @@ HTML;
         }
 
         if ('' !== $text) {
+            /** @var positive-int $contentLen */
             $contentLen = mb_strlen($text);
             if ($contentLen > 500 && \in_array($role, ['system', 'developer', 'user-context'], true)) {
                 $label = match ($role) {

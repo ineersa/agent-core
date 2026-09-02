@@ -20,8 +20,6 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
-use Ineersa\Tui\Export\SessionEventsExportService;
-use Ineersa\Tui\Tests\Support\SessionEventsExportServiceFactory;
 use Ineersa\Tui\Picker\PickerOverlay;
 use Ineersa\Tui\Picker\SubagentLivePickerController;
 use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
@@ -30,6 +28,7 @@ use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Tests\Support\ChildAgentExportEventsFixture;
+use Ineersa\Tui\Tests\Support\SessionEventsExportServiceFactory;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\ThemePalette;
@@ -170,7 +169,14 @@ final class SubagentLivePickerControllerTest extends TestCase
                     $childRunId,
                     1,
                     'run_started',
-                    ['payload' => ['messages' => [['role' => 'user', 'content' => 'child export unique marker']]]],
+                    [
+                        'payload' => [
+                            'messages' => [[
+                                'role' => 'user',
+                                'content' => [['type' => 'text', 'text' => 'child export unique marker']],
+                            ]],
+                        ],
+                    ],
                 ),
             ],
         );
@@ -544,7 +550,14 @@ final class SubagentLivePickerControllerTest extends TestCase
                     'child-run-export-persist',
                     1,
                     'run_started',
-                    ['payload' => ['messages' => [['role' => 'user', 'content' => 'persist marker']]]],
+                    [
+                        'payload' => [
+                            'messages' => [[
+                                'role' => 'user',
+                                'content' => [['type' => 'text', 'text' => 'persist marker']],
+                            ]],
+                        ],
+                    ],
                 ),
             ],
         );
@@ -609,7 +622,14 @@ final class SubagentLivePickerControllerTest extends TestCase
                     'child-dismiss-done',
                     1,
                     'run_started',
-                    ['payload' => ['messages' => [['role' => 'user', 'content' => 'dismiss feedback marker']]]],
+                    [
+                        'payload' => [
+                            'messages' => [[
+                                'role' => 'user',
+                                'content' => [['type' => 'text', 'text' => 'dismiss feedback marker']],
+                            ]],
+                        ],
+                    ],
                 ),
             ],
         );
