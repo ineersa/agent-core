@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
@@ -87,6 +88,9 @@ final class SubagentLiveChildViewPoller
         $live->childTranscript = [] !== $projected
             ? $projected
             : $snapshot->transcriptBlocks;
+        // Snapshot replay establishes the mounted baseline. Discard its full dirty
+        // state so later live stream batches produce bounded incremental patches.
+        $this->eventApplier->drainProjectedChanges();
         $live->persistCurrentChildCache();
 
         return $live->childTranscript;
@@ -97,7 +101,7 @@ final class SubagentLiveChildViewPoller
      * @param ?callable(RuntimeEvent): void $onToolQuestionRequested
      * @param ?callable(RuntimeEvent): void $onToolTerminal
      *
-     * @return list<TranscriptBlock>|null
+     * @return TranscriptChangeSet|null Incremental transcript changes, or null when events changed only non-transcript state
      */
     public function poll(
         SubagentLiveViewState $live,
@@ -105,7 +109,7 @@ final class SubagentLiveChildViewPoller
         ?callable $onHumanInputRequested = null,
         ?callable $onToolQuestionRequested = null,
         ?callable $onToolTerminal = null,
-    ): ?array {
+    ): ?TranscriptChangeSet {
         if (!$live->active || null === $live->selected) {
             return null;
         }
@@ -169,7 +173,9 @@ final class SubagentLiveChildViewPoller
         $live->childTranscript = $this->projector->blocks();
         $live->persistCurrentChildCache();
 
-        return $live->childTranscript;
+        $transcriptChanges = $this->eventApplier->drainProjectedChanges();
+
+        return $transcriptChanges->isEmpty() ? null : $transcriptChanges;
     }
 
     /**

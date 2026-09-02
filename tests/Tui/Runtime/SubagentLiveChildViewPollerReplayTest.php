@@ -9,7 +9,9 @@ use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
+use Ineersa\CodingAgent\Runtime\ProjectionPipeline\AssistantStreamProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\HitlProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
@@ -84,20 +86,31 @@ final class SubagentLiveChildViewPollerReplayTest extends TestCase
     }
 
     #[Test]
-    public function pollUsesOnlyLiveClientEventsAndPersistsCache(): void
+    public function pollReturnsOnlyIncrementalLiveTranscriptChangesAndPersistsCache(): void
     {
-        $projector = new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState());
+        $projector = $this->childLiveProjector();
         $poller = new SubagentLiveChildViewPoller($projector, new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer());
 
         $live = $this->liveState();
         $poller->replaySnapshot(
             $live,
             new ChildRunTranscriptSnapshotDTO(
-                [
-                    new TranscriptBlock('b0', TranscriptBlockKindEnum::AssistantMessage, self::CHILD_RUN_ID, 1, 'seed'),
+                transcriptBlocks: [],
+                replayEvents: [
+                    new RuntimeEvent(
+                        RuntimeEventTypeEnum::AssistantThinkingStarted->value,
+                        self::CHILD_RUN_ID,
+                        0,
+                        ['block_id' => 'thinking-1'],
+                    ),
+                    new RuntimeEvent(
+                        RuntimeEventTypeEnum::AssistantThinkingDelta->value,
+                        self::CHILD_RUN_ID,
+                        0,
+                        ['block_id' => 'thinking-1', 'thinking' => 'A long reasoning prefix. '],
+                    ),
                 ],
-                [],
-                1,
+                maxSeq: 1,
             ),
         );
 
@@ -106,15 +119,25 @@ final class SubagentLiveChildViewPollerReplayTest extends TestCase
             ->method('events')
             ->with(self::CHILD_RUN_ID, 1)
             ->willReturn([
+                new RuntimeEvent(
+                    RuntimeEventTypeEnum::AssistantThinkingDelta->value,
+                    self::CHILD_RUN_ID,
+                    0,
+                    ['block_id' => 'thinking-1', 'thinking' => 'followed by one streamed suffix.'],
+                ),
                 new RuntimeEvent(RuntimeEventTypeEnum::StatusUpdated->value, self::CHILD_RUN_ID, 2, ['text' => 'live only']),
             ]);
 
         $live->childLastPoll = 0.0;
-        $result = $poller->poll($live, $client);
+        $changes = $poller->poll($live, $client);
 
-        $this->assertNotNull($result);
+        $this->assertNotNull($changes);
+        $this->assertFalse($changes->isFull(), 'Live child streaming must not replace the full mounted transcript.');
+        $this->assertCount(1, $changes->upserts);
+        $this->assertSame('A long reasoning prefix. followed by one streamed suffix.', $changes->upserts[0]->text);
         $this->assertSame(2, $live->childLastSeq);
         $this->assertSame(2, $live->childCaches[self::CHILD_RUN_ID]['lastSeq']);
+        $this->assertSame($changes->upserts[0]->text, $live->childTranscript[0]->text);
     }
 
     #[Test]
@@ -152,7 +175,7 @@ final class SubagentLiveChildViewPollerReplayTest extends TestCase
         $this->assertNull($poller->poll($live, $client), 'seq 3 must be skipped when childLastSeq is 5');
 
         $live->childLastPoll = 0.0;
-        $this->assertNotNull($poller->poll($live, $client));
+        $this->assertNull($poller->poll($live, $client), 'non-transcript events do not require a repaint');
         $this->assertSame(6, $live->childLastSeq);
     }
 
@@ -226,6 +249,7 @@ final class SubagentLiveChildViewPollerReplayTest extends TestCase
         $projector = $this->createMock(TranscriptProjectorInterface::class);
         $projector->method('reset');
         $projector->method('blocks')->willReturn([]);
+        $projector->method('drainChanges')->willReturn(TranscriptChangeSet::incremental([]));
         $projector->expects($this->exactly(2))->method('accept')->willReturnOnConsecutiveCalls(
             $this->throwException(new \RuntimeException('projection failed')),
             null,
@@ -257,6 +281,7 @@ final class SubagentLiveChildViewPollerReplayTest extends TestCase
     private function childLiveProjector(): TranscriptProjector
     {
         $dispatcher = new EventDispatcher();
+        $dispatcher->addSubscriber(new AssistantStreamProjectionSubscriber());
         $dispatcher->addSubscriber(new HitlProjectionSubscriber());
 
         return new TranscriptProjector($dispatcher, new TranscriptProjectionState());
