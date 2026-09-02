@@ -74,18 +74,25 @@ To support a storage widget, publish a directory-specific gauge such as `hatfiel
 
 ### Process CPU, memory, and I/O
 
-No current metric measures CPU, resident memory, or I/O for Hatfield processes. Available `system.cpu.*`, `system.mem.*`, and `system.io.*` metrics cover the host or device. Process metric contexts expose no process name, command, container, or service dimension that isolates Hatfield.
+The installed Datadog Process Check attaches `service:hatfield`, `env:dev`, and `app:hatfield` to matching Hatfield CLI, controller, and Messenger worker processes.
 
-Enable Datadog process collection and expose a stable Hatfield selector such as `service:hatfield`, a command tag, or a container ID. The resulting telemetry must support signals equivalent to:
+Current verification proved attributable CPU and RSS series:
 
 ```text
-process.cpu.pct{service:hatfield,env:<env>}
-process.memory.rss{service:hatfield,env:<env>}
-process.io.read_bytes{service:hatfield,env:<env>}
-process.io.write_bytes{service:hatfield,env:<env>}
+sum:system.processes.cpu.pct{service:hatfield,env:dev} by {service,env}
+sum:system.processes.mem.rss{service:hatfield,env:dev} by {service,env}
 ```
 
-Do not add resource widgets until live metric contexts and queries prove that the selector isolates Hatfield.
+Metric types and units:
+
+- `system.processes.cpu.pct`: gauge, percent. Aggregate process CPU may exceed 100% across cores.
+- `system.processes.mem.rss`: gauge, bytes.
+- `system.processes.ioread_bytes`: gauge, bytes.
+- `system.processes.iowrite_bytes`: gauge, bytes.
+- `system.processes.ioread_bytes_count`: count, bytes.
+- `system.processes.iowrite_bytes_count`: count, bytes.
+
+No read or write I/O variant returned a current `service:hatfield`, `env:dev` series. Do not add an I/O widget until a read/write pair has live attributable data. If the count variants begin reporting, use `.as_rate()` to display bytes per second. Do not substitute host or device I/O.
 
 ### Other gaps
 

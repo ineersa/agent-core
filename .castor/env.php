@@ -317,8 +317,8 @@ function datadog_smoke_diag(): void
     echo 'Datadog smoke diagnostic'.\PHP_EOL;
     echo \PHP_EOL;
 
-    echo 'Package: '.(false !== ($_v = shell_exec('dpkg -l datadog-agent 2>/dev/null | grep ^ii')) ? trim($_v) : 'not installed').\PHP_EOL;
-    echo 'Datadog agent: '.(false !== ($_v = shell_exec('systemctl is-active datadog-agent 2>/dev/null')) ? trim($_v) : 'unknown').\PHP_EOL;
+    echo 'Package: '.(null !== ($_v = shell_exec('dpkg -l datadog-agent 2>/dev/null | grep ^ii')) ? trim($_v) : 'not installed').\PHP_EOL;
+    echo 'Datadog agent: '.(null !== ($_v = shell_exec('systemctl is-active datadog-agent 2>/dev/null')) ? trim($_v) : 'unknown').\PHP_EOL;
     echo \PHP_EOL;
 
     echo "PHP extension:\n";

@@ -28,11 +28,11 @@ Use `$env` in widget queries. Datadog expands it to `env:<value>`. Do not write 
 
 ## Validated widgets
 
-The dashboard contains ten widgets. Preserve their IDs when updating them.
+The dashboard contains twelve widgets. Preserve their IDs when updating them.
 
 ### LLM/provider latency
 
-ID `5737519449404669`. Layout: `x:0`, `y:0`, `width:8`, `height:4`.
+ID `5737519449404669`. Layout: `x:0`, `y:0`, `width:4`, `height:4`.
 
 ```json
 {
@@ -58,7 +58,7 @@ ID `5737519449404669`. Layout: `x:0`, `y:0`, `width:8`, `height:4`.
 
 ### LLM/provider throughput
 
-ID `8711659535887169`. Layout: `x:8`, `y:0`, `width:2`, `height:4`.
+ID `8711659535887169`. Layout: `x:8`, `y:2`, `width:2`, `height:2`.
 
 ```json
 {
@@ -80,7 +80,7 @@ ID `8711659535887169`. Layout: `x:8`, `y:0`, `width:2`, `height:4`.
 
 ### LLM-step errors
 
-ID `7338158574332695`. Layout: `x:10`, `y:0`, `width:2`, `height:4`.
+ID `7338158574332695`. Layout: `x:10`, `y:0`, `width:2`, `height:2`.
 
 ```json
 {
@@ -102,7 +102,7 @@ ID `7338158574332695`. Layout: `x:10`, `y:0`, `width:2`, `height:4`.
 
 ### LLM-step error rate
 
-ID `4737903204572067`. Layout: `x:0`, `y:4`, `width:6`, `height:4`.
+ID `4737903204572067`. Layout: `x:4`, `y:0`, `width:4`, `height:4`.
 
 ```json
 {
@@ -130,7 +130,7 @@ ID `4737903204572067`. Layout: `x:0`, `y:4`, `width:6`, `height:4`.
 
 ### Tool execution throughput
 
-ID `5065655617896639`. Layout: `x:6`, `y:4`, `width:3`, `height:4`.
+ID `5065655617896639`. Layout: `x:8`, `y:0`, `width:2`, `height:2`.
 
 ```json
 {
@@ -152,7 +152,7 @@ ID `5065655617896639`. Layout: `x:6`, `y:4`, `width:3`, `height:4`.
 
 ### Tool execution latency
 
-ID `6627607068531676`. Layout: `x:0`, `y:8`, `width:4`, `height:4`.
+ID `6627607068531676`. Layout: `x:0`, `y:4`, `width:6`, `height:4`.
 
 ```json
 {
@@ -193,7 +193,7 @@ ID `6627607068531676`. Layout: `x:0`, `y:8`, `width:4`, `height:4`.
 
 ### Messenger throughput and latency
 
-ID `6792767117984366`. Layout: `x:0`, `y:12`, `width:12`, `height:4`.
+ID `6792767117984366`. Layout: `x:0`, `y:8`, `width:6`, `height:4`.
 
 ```json
 {
@@ -232,7 +232,7 @@ ID `6792767117984366`. Layout: `x:0`, `y:12`, `width:12`, `height:4`.
 
 ### Database operations
 
-ID `4309650939374206`. Layout: `x:0`, `y:16`, `width:12`, `height:4`.
+ID `4309650939374206`. Layout: `x:6`, `y:4`, `width:6`, `height:4`.
 
 ```json
 {
@@ -271,7 +271,7 @@ ID `4309650939374206`. Layout: `x:0`, `y:16`, `width:12`, `height:4`.
 
 ### Logs by status
 
-ID `3448242938512668`. Layout: `x:0`, `y:20`, `width:6`, `height:5`.
+ID `3448242938512668`. Layout: `x:0`, `y:12`, `width:6`, `height:5`.
 
 ```json
 {
@@ -299,7 +299,7 @@ ID `3448242938512668`. Layout: `x:0`, `y:20`, `width:6`, `height:5`.
 
 ### Warning and error stream
 
-ID `1954057201076375`. Layout: `x:6`, `y:20`, `width:6`, `height:5`.
+ID `1954057201076375`. Layout: `x:6`, `y:8`, `width:6`, `height:5`.
 
 ```json
 {
@@ -311,6 +311,57 @@ ID `1954057201076375`. Layout: `x:6`, `y:20`, `width:6`, `height:5`.
   "message_display": "expanded-md",
   "show_date_column": true,
   "show_message_column": true
+}
+```
+
+### Hatfield process CPU
+
+ID `5473361968423792`. Layout: `x:6`, `y:13`, `width:6`, `height:4`.
+
+```json
+{
+  "type": "timeseries",
+  "title": "Hatfield process CPU (%)",
+  "requests": [{
+    "queries": [{
+      "data_source": "metrics",
+      "name": "cpu",
+      "query": "sum:system.processes.cpu.pct{service:hatfield AND $env}"
+    }],
+    "formulas": [{"formula": "cpu"}],
+    "response_format": "timeseries",
+    "display_type": "line"
+  }],
+  "show_legend": true
+}
+```
+
+This is the aggregate CPU percentage across the Hatfield processes matched by the Datadog Process Check. It may exceed 100% when the process group uses more than one CPU core.
+
+### Hatfield process RSS memory
+
+ID `3097066923179713`. Layout: `x:0`, `y:17`, `width:6`, `height:4`.
+
+```json
+{
+  "type": "timeseries",
+  "title": "Hatfield process RSS memory (bytes)",
+  "requests": [{
+    "queries": [{
+      "data_source": "metrics",
+      "name": "rss",
+      "query": "sum:system.processes.mem.rss{service:hatfield AND $env}"
+    }],
+    "formulas": [{"formula": "rss"}],
+    "response_format": "timeseries",
+    "display_type": "line"
+  }],
+  "show_legend": true,
+  "yaxis": {
+    "include_zero": false,
+    "label": "bytes",
+    "scale": "linear"
+  }
 }
 ```
 
