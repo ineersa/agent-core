@@ -14,7 +14,6 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Editor\PromptEditor;
-use Ineersa\Tui\Export\SessionEventsExportService;
 use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
 use Ineersa\Tui\Listener\TickPollListener;
 use Ineersa\Tui\Picker\SubagentLivePickerController;
@@ -25,6 +24,7 @@ use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Runtime\TuiTickDispatcher;
 use Ineersa\Tui\Screen\ChatScreen;
+use Ineersa\Tui\Tests\Support\SessionEventsExportServiceFactory;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
@@ -117,7 +117,7 @@ final class TickPollListenerSubagentLivePickerExportTest extends TestCase
             new SubagentLiveChildViewPoller(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer()),
             $this->createStub(ChildRunTranscriptSnapshotProviderInterface::class),
             $this->createStub(ChildAgentEventsPathResolverInterface::class),
-            new SessionEventsExportService(),
+            SessionEventsExportServiceFactory::create(),
         );
         $overlay = new \Ineersa\Tui\Picker\PickerOverlay();
         $overlayRef = new \ReflectionProperty(SubagentLivePickerController::class, 'overlay');
