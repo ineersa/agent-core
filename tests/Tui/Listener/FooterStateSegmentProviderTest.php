@@ -253,34 +253,37 @@ class FooterStateSegmentProviderTest extends TestCase
     }
 
     #[Test]
-    public function testFooterFingerprintChangesWhenElapsedSecondChanges(): void
+    public function testElapsedFooterTimeUsesMinutePrecision(): void
     {
         $state = $this->state;
         $state->footerModel = 'm';
-        $state->sessionStartTime = microtime(true) - 65.0;
-
         $provider = new FooterStateSegmentProvider($state);
-        $first = $provider->footerFingerprint();
+
+        $state->sessionStartTime = microtime(true) - 59.0;
+        $this->assertSame('⏱ 0m', $this->elapsedSegmentText($provider));
 
         $state->sessionStartTime = microtime(true) - 125.0;
-        $second = $provider->footerFingerprint();
+        $this->assertSame('⏱ 2m', $this->elapsedSegmentText($provider));
 
-        $this->assertNotSame($first, $second);
-        $this->assertStringContainsString('⏱', $second);
+        $state->sessionStartTime = microtime(true) - 3665.0;
+        $this->assertSame('⏱ 1h1m', $this->elapsedSegmentText($provider));
     }
 
     #[Test]
-    public function testFooterFingerprintStableWithinSameElapsedDisplay(): void
+    public function testFooterFingerprintChangesOnlyWhenElapsedMinuteChanges(): void
     {
         $state = $this->state;
         $state->footerModel = 'm';
-        $state->sessionStartTime = microtime(true) - 10.4;
-
         $provider = new FooterStateSegmentProvider($state);
-        $a = $provider->footerFingerprint();
-        $b = $provider->footerFingerprint();
 
-        $this->assertSame($a, $b);
+        $state->sessionStartTime = microtime(true) - 65.0;
+        $first = $provider->footerFingerprint();
+
+        $state->sessionStartTime = microtime(true) - 119.0;
+        $this->assertSame($first, $provider->footerFingerprint());
+
+        $state->sessionStartTime = microtime(true) - 125.0;
+        $this->assertNotSame($first, $provider->footerFingerprint());
     }
 
     #[Test]
@@ -373,5 +376,16 @@ class FooterStateSegmentProviderTest extends TestCase
             $this->assertCount(1, $ctxSegments, 'Child live footer must expose one context segment for latestInput='.$latestInput);
             $this->assertSame($expectedColor, $ctxSegments[0]->color, 'Child context threshold color for latestInput='.$latestInput);
         }
+    }
+
+    private function elapsedSegmentText(FooterStateSegmentProvider $provider): string
+    {
+        $segments = array_values(array_filter(
+            $provider->getSegments(),
+            static fn (FooterSegment $segment): bool => 20 === $segment->priority,
+        ));
+        $this->assertCount(1, $segments);
+
+        return $segments[0]->text;
     }
 }

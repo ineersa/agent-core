@@ -243,17 +243,10 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
 
     private static function formatElapsed(float $elapsedSeconds): string
     {
-        $total = (int) $elapsedSeconds;
-
-        if ($total < 60) {
-            return \sprintf('%ds', $total);
-        }
-
-        $minutes = (int) ($total / 60);
-        $seconds = $total % 60;
+        $minutes = (int) ($elapsedSeconds / 60);
 
         if ($minutes < 60) {
-            return $seconds > 0 ? \sprintf('%dm%ds', $minutes, $seconds) : \sprintf('%dm', $minutes);
+            return \sprintf('%dm', $minutes);
         }
 
         $hours = (int) ($minutes / 60);
