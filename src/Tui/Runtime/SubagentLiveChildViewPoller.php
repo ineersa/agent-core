@@ -181,18 +181,16 @@ final class SubagentLiveChildViewPoller
         // Entry placeholders and snapshot fallbacks are mounted from childTranscript,
         // not the projector. Carry their disappearance as explicit removals so the
         // incremental screen state converges with the projector-backed cache.
-        if (!$transcriptChanges->isFull()) {
-            $currentBlockIds = array_fill_keys(array_map(
-                static fn (TranscriptBlock $block): string => $block->id,
-                $live->childTranscript,
-            ), true);
-            $removedVisibleIds = array_keys(array_diff_key($previousBlockIds, $currentBlockIds));
-            if ([] !== $removedVisibleIds) {
-                $transcriptChanges = TranscriptChangeSet::incremental(
-                    $transcriptChanges->upserts,
-                    array_values(array_unique([...$transcriptChanges->removals, ...$removedVisibleIds])),
-                );
-            }
+        $currentBlockIds = array_fill_keys(array_map(
+            static fn (TranscriptBlock $block): string => $block->id,
+            $live->childTranscript,
+        ), true);
+        $removedVisibleIds = array_keys(array_diff_key($previousBlockIds, $currentBlockIds));
+        if ([] !== $removedVisibleIds) {
+            $transcriptChanges = TranscriptChangeSet::incremental(
+                $transcriptChanges->upserts,
+                array_values(array_unique([...$transcriptChanges->removals, ...$removedVisibleIds])),
+            );
         }
 
         return $transcriptChanges->isEmpty() ? null : $transcriptChanges;
