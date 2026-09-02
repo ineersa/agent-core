@@ -124,14 +124,18 @@ final class SubagentLiveCatalog
 
         $status = SubagentLiveStatusEnum::fromProgressString($row->status);
         $existing = $this->byArtifactId[$artifactId] ?? null;
-        if (null !== $existing && $existing->status->isTerminal() && !$status->isTerminal()) {
-            // Stale same-task in-flight progress must not reopen terminal rows.
-            // Resume rebind updates task_summary; allow Running/WaitingHuman only when the task changed.
-            $isResumeReopen = (SubagentLiveStatusEnum::Running === $status || SubagentLiveStatusEnum::WaitingHuman === $status)
-                && $row->taskSummary !== $existing->taskSummary;
+        if (null !== $existing && $row->taskSummary !== $existing->taskSummary) {
+            // taskSummary identifies the current invocation on a reused artifact.
+            // Cross-generation snapshots are stale except resume reopen:
+            // terminal row → Running/WaitingHuman for the new task.
+            $isResumeReopen = $existing->status->isTerminal()
+                && (SubagentLiveStatusEnum::Running === $status || SubagentLiveStatusEnum::WaitingHuman === $status);
             if (!$isResumeReopen) {
                 return;
             }
+        } elseif (null !== $existing && $existing->status->isTerminal() && !$status->isTerminal()) {
+            // Same-task stale in-flight progress must not reopen a terminal row.
+            return;
         }
 
         $latestInputTokens = $row->latestInputTokens > 0

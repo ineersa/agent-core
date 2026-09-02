@@ -100,6 +100,111 @@ final class SubagentLivePickerControllerTest extends TestCase
     }
 
     #[Test]
+    public function testReopenedPickerKeepsResumedRunningStatusAfterStalePriorTaskTerminal(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: 'picker-resume-stale-terminal');
+        $state = new TuiSessionState('picker-resume-stale-terminal');
+        $catalog = $state->subagentLiveCatalog;
+
+        SubagentProgressSerializerTestSupport::ingestCatalogEvent($catalog, new RuntimeEvent(
+            RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
+            'picker-resume-stale-terminal',
+            1,
+            [
+                'tool_call_id' => 'tc1',
+                'tool_name' => 'subagent',
+                'delta' => '',
+                'subagent_progress' => [
+                    'mode' => 'single',
+                    'status' => 'completed',
+                    'agent_name' => 'reviewer',
+                    'artifact_id' => 'agent_resume',
+                    'agent_run_id' => 'child-run-resume',
+                    'task_summary' => 'Task A',
+                    'model' => 'deepseek/deepseek-v4-flash',
+                    'reasoning' => 'medium',
+                ],
+            ],
+        ));
+        SubagentProgressSerializerTestSupport::ingestCatalogEvent($catalog, new RuntimeEvent(
+            RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
+            'picker-resume-stale-terminal',
+            2,
+            [
+                'tool_call_id' => 'tc1',
+                'tool_name' => 'subagent',
+                'delta' => '',
+                'subagent_progress' => [
+                    'mode' => 'single',
+                    'status' => 'running',
+                    'agent_name' => 'reviewer',
+                    'artifact_id' => 'agent_resume',
+                    'agent_run_id' => 'child-run-resume',
+                    'task_summary' => 'Task B',
+                    'model' => 'deepseek/deepseek-v4-flash',
+                    'reasoning' => 'medium',
+                ],
+            ],
+        ));
+        SubagentProgressSerializerTestSupport::ingestCatalogEvent($catalog, new RuntimeEvent(
+            RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
+            'picker-resume-stale-terminal',
+            3,
+            [
+                'tool_call_id' => 'tc1',
+                'tool_name' => 'subagent',
+                'delta' => '',
+                'subagent_progress' => [
+                    'mode' => 'single',
+                    'status' => 'completed',
+                    'agent_name' => 'reviewer',
+                    'artifact_id' => 'agent_resume',
+                    'agent_run_id' => 'child-run-resume',
+                    'task_summary' => 'Task A',
+                    'model' => 'deepseek/deepseek-v4-flash',
+                    'reasoning' => 'medium',
+                ],
+            ],
+        ));
+
+        $picker = $this->picker($harness, $state);
+        $picker->open();
+        $this->assertStringContainsString('[running]', $harness->plainScreenText());
+        $picker->closePicker();
+
+        $picker->open();
+        $this->assertStringContainsString('[running]', $harness->plainScreenText());
+        $this->assertStringNotContainsString('[completed]', $harness->plainScreenText());
+
+        SubagentProgressSerializerTestSupport::ingestCatalogEvent($catalog, new RuntimeEvent(
+            RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
+            'picker-resume-stale-terminal',
+            4,
+            [
+                'tool_call_id' => 'tc1',
+                'tool_name' => 'subagent',
+                'delta' => '',
+                'subagent_progress' => [
+                    'mode' => 'single',
+                    'status' => 'completed',
+                    'agent_name' => 'reviewer',
+                    'artifact_id' => 'agent_resume',
+                    'agent_run_id' => 'child-run-resume',
+                    'task_summary' => 'Task B',
+                    'model' => 'deepseek/deepseek-v4-flash',
+                    'reasoning' => 'medium',
+                ],
+            ],
+        ));
+
+        $picker->closePicker();
+        $picker->open();
+        $screen = $harness->plainScreenText();
+        $this->assertStringContainsString('[completed]', $screen);
+        $this->assertStringNotContainsString('[running]', $screen);
+    }
+
+    #[Test]
     public function testDismissLastSnapshotRowDoesNotImportChildAddedAfterOpen(): void
     {
         $harness = new VirtualTuiHarness(sessionId: 'picker-dismiss-snapshot');

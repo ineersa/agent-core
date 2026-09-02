@@ -117,7 +117,89 @@ final class TickPollListenerSubagentLiveTest extends TestCase
         ($handlerRef->getValue($context->ticks)[0])();
 
         $this->assertSame(RunActivityStateEnum::Completed, $state->subagentLiveView->childActivity);
-        $this->assertSame('Child agent idle', $state->subagentLiveView->lastLiveWorkingMessage);
+        $this->assertNull($state->subagentLiveView->lastLiveWorkingMessage);
+        $this->assertSame('', $screen->workingMessage());
+        $this->assertFalse($this->workingWidget($screen)->isRunning());
+        $this->assertSame('idle', $this->workingWidget($screen)->getMessage());
+    }
+
+    public function testActiveLiveChildKeepsWorkingSpinnerMessage(): void
+    {
+        $parentRun = 'session-201';
+        $client = $this->createStub(AgentSessionClient::class);
+
+        $parentProjector = new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState());
+        $poller = new RuntimeEventPoller(
+            new TuiRuntimeEventApplier($parentProjector, SubagentProgressSerializerTestSupport::denormalizer()),
+            new TestLogger(),
+            new RuntimeExceptionBoundary(new EventDispatcher()),
+            $this->createStub(SessionTranscriptProviderInterface::class),
+        );
+
+        $state = new TuiSessionState($parentRun);
+        $state->handle = null;
+        $state->lastSeq = 0;
+        $state->activity = RunActivityStateEnum::Completed;
+
+        $child = new SubagentLiveChildDTO('child-301', 'art2', 'scout', SubagentLiveStatusEnum::Running, 'task', 1, 'deepseek/deepseek-v4-flash', 'medium');
+        $state->subagentLiveView->enter($child);
+        $state->subagentLiveView->childActivity = RunActivityStateEnum::Running;
+        $state->subagentLiveView->childTranscript = [
+            new TranscriptBlock('c1', TranscriptBlockKindEnum::Progress, 'child-301', 1, 'child live'),
+        ];
+
+        SubagentProgressSerializerTestSupport::ingestCatalogEvent($state->subagentLiveCatalog, new RuntimeEvent(
+            'tool_execution_update',
+            $parentRun,
+            2,
+            [
+                'subagent_progress' => [
+                    'mode' => 'single',
+                    'status' => 'running',
+                    'agent_name' => 'scout',
+                    'artifact_id' => 'art2',
+                    'agent_run_id' => 'child-301',
+                    'task_summary' => 'task',
+                    'model' => 'deepseek/deepseek-v4-flash',
+                    'reasoning' => 'medium',
+                ],
+            ],
+        ));
+
+        $childPoller = new SubagentLiveChildViewPoller(
+            new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
+            new \Psr\Log\NullLogger(),
+            SubagentProgressSerializerTestSupport::denormalizer(),
+        );
+
+        $tui = new Tui();
+        $screen = new ChatScreen(new DefaultTheme(new ThemePalette('test')), $parentRun, new PromptEditor(), new TranscriptDisplayConfig(), new TranscriptDisplayState());
+        $screen->setTranscriptBlocks($state->subagentLiveView->childTranscript);
+
+        $services = $this->createSessionServices(
+            tui: $tui,
+            state: $state,
+            screen: $screen,
+            parentPoller: $poller,
+            childPoller: $childPoller,
+            subagentLivePicker: $this->closedSubagentLivePicker(),
+        );
+        $context = $this->buildTuiContext()
+            ->withTui($tui)
+            ->withClient($client)
+            ->withState($state)
+            ->withScreen($screen)
+            ->withSessionServices($services)
+            ->build();
+        $listener = new TickPollListener(new RuntimeQuestionEventHandler());
+        $listener->register($context);
+        $handlerRef = new \ReflectionProperty(TuiTickDispatcher::class, 'handlers');
+        ($handlerRef->getValue($context->ticks)[0])();
+
+        $this->assertSame(RunActivityStateEnum::Running, $state->subagentLiveView->childActivity);
+        $this->assertSame('Child agent working...', $state->subagentLiveView->lastLiveWorkingMessage);
+        $this->assertSame('Child agent working...', $screen->workingMessage());
+        $this->assertTrue($this->workingWidget($screen)->isRunning());
     }
 
     private function closedSubagentLivePicker(): \Ineersa\Tui\Picker\SubagentLivePickerController
@@ -130,6 +212,15 @@ final class TickPollListenerSubagentLiveTest extends TestCase
         $openRef->setValue($overlay, false);
 
         return $picker;
+    }
+
+    private function workingWidget(ChatScreen $screen): \Symfony\Component\Tui\Widget\LoaderWidget
+    {
+        $property = new \ReflectionProperty($screen, 'workingWidget');
+        $widget = $property->getValue($screen);
+        $this->assertInstanceOf(\Symfony\Component\Tui\Widget\LoaderWidget::class, $widget);
+
+        return $widget;
     }
 }
 final class ParentEventClient implements AgentSessionClient
