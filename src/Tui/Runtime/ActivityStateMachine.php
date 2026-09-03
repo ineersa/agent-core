@@ -167,32 +167,4 @@ final class ActivityStateMachine
             default => false,
         };
     }
-
-    /**
-     * Transient assistant/tool stream events that must not mutate transcript
-     * projection once activity is already terminal.
-     */
-    public static function isStaleTerminalTransientStreamEvent(RuntimeEvent $event): bool
-    {
-        if ($event->seq > 0) {
-            return false;
-        }
-
-        return match ($event->type) {
-            RuntimeEventTypeEnum::AssistantMessageStarted->value,
-            RuntimeEventTypeEnum::AssistantTextStarted->value,
-            RuntimeEventTypeEnum::AssistantTextDelta->value,
-            RuntimeEventTypeEnum::AssistantTextCompleted->value,
-            RuntimeEventTypeEnum::AssistantThinkingStarted->value,
-            RuntimeEventTypeEnum::AssistantThinkingDelta->value,
-            RuntimeEventTypeEnum::AssistantThinkingCompleted->value,
-            RuntimeEventTypeEnum::AssistantMessageCompleted->value,
-            RuntimeEventTypeEnum::ToolCallStarted->value,
-            RuntimeEventTypeEnum::ToolCallArgumentsDelta->value,
-            RuntimeEventTypeEnum::ToolCallArgumentsCompleted->value,
-            RuntimeEventTypeEnum::ToolExecutionStarted->value,
-            RuntimeEventTypeEnum::ToolExecutionOutputDelta->value => true,
-            default => false,
-        };
-    }
 }
