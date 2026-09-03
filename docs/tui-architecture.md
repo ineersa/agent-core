@@ -16,6 +16,21 @@ Terminal UI for Hatfield interactive sessions (`src/Tui`).
 
 `AgentCommand` resolves an `AgentSessionClient`, then `InteractiveMode::run(...)` mounts `ChatScreen` with theme, session state, and listener registrars (session commands, compaction, hotkeys, extensions).
 
+## ScreenWriter (Pi-style viewport bookkeeping)
+
+Symfony TUI keeps `ScreenWriter` `final`/`@internal` and constructs it privately
+inside `Tui`. There is no injection seam.
+
+Before the first `new Tui`, production interactive mode installs
+`PiStyleScreenWriterAliasInstaller`, which `class_alias`es app-owned
+`PiStyleScreenWriter` onto `Symfony\Component\Tui\Render\ScreenWriter`. If the
+vendor class is already loaded, install fails loudly (no silent fallback).
+Repeat calls are idempotent for the session-switch loop.
+
+`PiStyleScreenWriter` keeps Symfony ScreenWriter public behaviour and adds
+physical viewport bookkeeping (`previousViewportTop` / terminal height) so
+logical buffer rows map to physical cursor rows during native scroll growth.
+
 ## Key types
 
 | Type | Role |
