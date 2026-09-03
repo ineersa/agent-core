@@ -16,13 +16,6 @@ Terminal UI for Hatfield interactive sessions (`src/Tui`).
 
 `AgentCommand` resolves an `AgentSessionClient`, then `InteractiveMode::run(...)` mounts `ChatScreen` with theme, session state, and listener registrars (session commands, compaction, hotkeys, extensions).
 
-## Terminal write completion
-
-Interactive sessions construct `Tui` with `CompleteWriteTerminal`, a thin
-`TerminalInterface` decorator around stock Symfony `Terminal`. Its `write()`
-loops until every STDOUT byte is written (or throws on false/zero progress).
-Stock `ScreenWriter` stays unchanged; Setup stays on the default terminal.
-
 ## Key types
 
 | Type | Role |
