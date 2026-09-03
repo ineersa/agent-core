@@ -20,7 +20,6 @@ use Ineersa\Tui\Runtime\TuiSessionLifecycleEventTypeEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Runtime\TuiTickDispatcher;
 use Ineersa\Tui\Screen\ChatScreen;
-use Ineersa\Tui\Terminal\PiStyleScreenWriterAliasInstaller;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemeRegistry;
 use Ineersa\Tui\Theme\TuiTheme;
@@ -189,14 +188,6 @@ final readonly class InteractiveMode
             );
 
             // ── Build screen and mount widget tree ──
-            // Install the Pi-style ScreenWriter class_alias BEFORE the first
-            // `new Tui`. Symfony constructs a private final ScreenWriter with no
-            // injection seam; the alias makes that construction resolve to the
-            // app-owned PiStyleScreenWriter (native viewport bookkeeping).
-            // Fail-fast if the vendor class is already loaded — no silent fallback.
-            // Idempotent across session-switch loop iterations.
-            PiStyleScreenWriterAliasInstaller::install($this->logger);
-
             $tui = new Tui();
             $screen = new ChatScreen(
                 $theme,
