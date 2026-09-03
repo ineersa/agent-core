@@ -29,6 +29,7 @@ use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Runtime\TuiTickDispatcher;
 use Ineersa\Tui\Screen\ChatScreen;
+use Ineersa\Tui\Tests\Support\SessionEventsExportServiceFactory;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\DefaultTheme;
@@ -256,7 +257,7 @@ final class TickPollListenerSubagentLiveTest extends TestCase
             $childPoller,
             $this->createStub(\Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInterface::class),
             $this->createStub(\Ineersa\CodingAgent\Runtime\Contract\ChildAgentEventsPathResolverInterface::class),
-            new \Ineersa\Tui\Export\SessionEventsExportService(),
+            SessionEventsExportServiceFactory::create(),
         );
 
         $enter = new \ReflectionMethod(\Ineersa\Tui\Picker\SubagentLivePickerController::class, 'enterLiveView');
