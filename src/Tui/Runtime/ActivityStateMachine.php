@@ -39,10 +39,12 @@ final class ActivityStateMachine
         //
         // Stale mid-turn deltas after terminal (e.g. assistant.text.delta) must
         // not reopen the run — only explicit continuation events may leave terminal.
+        // Transient seq=0 assistant/tool stream events never reopen a terminal
+        // run; only sequenced (seq>0) continuation events may.
         if ($current->isTerminal()
             && !(RunActivityStateEnum::Completed === $current
                  && RuntimeEventTypeEnum::CompactionStarted->value === $event->type)
-            && !self::allowsContinuationAfterTerminal($event->type)) {
+            && !self::allowsContinuationAfterTerminal($event)) {
             return $current;
         }
 
@@ -139,16 +141,19 @@ final class ActivityStateMachine
     }
 
     /**
-     * Events that may leave a terminal activity state during multi-turn replay/live.
+     * Whether an event may leave a terminal activity state during multi-turn replay/live.
      *
-     * @param string $eventType RuntimeEventTypeEnum value
+     * Only sequenced (seq > 0) new-turn / in-flight tool-start signals may leave
+     * terminal. Transient seq=0 assistant/tool stream events after RunCancelled
+     * must not reopen Cancelled/Completed (session 1 ghost-stream regression).
      */
-    private static function allowsContinuationAfterTerminal(string $eventType): bool
+    private static function allowsContinuationAfterTerminal(RuntimeEvent $event): bool
     {
-        // Only genuine new-turn / in-flight tool-start signals may leave terminal.
-        // Stale terminal outcomes and tool-end events after RunCancelled must not
-        // reopen Cancelled/Completed (session 4 resume regression).
-        return match ($eventType) {
+        if ($event->seq <= 0) {
+            return false;
+        }
+
+        return match ($event->type) {
             RuntimeEventTypeEnum::RunStarted->value,
             RuntimeEventTypeEnum::TurnStarted->value,
             RuntimeEventTypeEnum::UserMessageSubmitted->value,

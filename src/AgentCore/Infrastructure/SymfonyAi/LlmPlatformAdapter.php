@@ -379,32 +379,44 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         }
 
         try {
-            foreach ($deferredResult->asStream() as $delta) {
-                if ($cancelToken->isCancellationRequested()) {
-                    $aborted = true;
-                    break;
+            // Check before the first delta so a cancel that landed during the
+            // provider wait / buffered open still aborts without emitting work.
+            if ($cancelToken->isCancellationRequested()) {
+                $aborted = true;
+            } else {
+                foreach ($deferredResult->asStream() as $delta) {
+                    if ($cancelToken->isCancellationRequested()) {
+                        $aborted = true;
+                        break;
+                    }
+
+                    if ($delta instanceof DeltaInterface) {
+                        if ($delta instanceof ThinkingDelta) {
+                            $thinkingSegmentStart ??= \strlen($accumulatedThinking);
+                            $accumulatedThinking .= $delta->getThinking();
+                        } elseif ($delta instanceof ThinkingComplete) {
+                            // ThinkingComplete finalizes one reasoning segment, while one model
+                            // stream may contain several segments. Normalize completion payloads
+                            // to the cumulative stream text before live observers and canonical
+                            // message construction consume them.
+                            $thinkingSegmentStart ??= \strlen($accumulatedThinking);
+                            $completedThinking = $delta->getThinking();
+                            $accumulatedThinking = substr($accumulatedThinking, 0, $thinkingSegmentStart).$completedThinking;
+                            $thinkingSegmentStart = null;
+                            $delta = new ThinkingComplete($accumulatedThinking, $delta->getSignature());
+                        }
+
+                        $deltas[] = $delta;
+                        if ($streamObserverEnabled) {
+                            $this->notifyDelta($runId, $stepId, $delta);
+                        }
+                    }
                 }
 
-                if ($delta instanceof DeltaInterface) {
-                    if ($delta instanceof ThinkingDelta) {
-                        $thinkingSegmentStart ??= \strlen($accumulatedThinking);
-                        $accumulatedThinking .= $delta->getThinking();
-                    } elseif ($delta instanceof ThinkingComplete) {
-                        // ThinkingComplete finalizes one reasoning segment, while one model
-                        // stream may contain several segments. Normalize completion payloads
-                        // to the cumulative stream text before live observers and canonical
-                        // message construction consume them.
-                        $thinkingSegmentStart ??= \strlen($accumulatedThinking);
-                        $completedThinking = $delta->getThinking();
-                        $accumulatedThinking = substr($accumulatedThinking, 0, $thinkingSegmentStart).$completedThinking;
-                        $thinkingSegmentStart = null;
-                        $delta = new ThinkingComplete($accumulatedThinking, $delta->getSignature());
-                    }
-
-                    $deltas[] = $delta;
-                    if ($streamObserverEnabled) {
-                        $this->notifyDelta($runId, $stepId, $delta);
-                    }
+                // Providers may buffer the full response and yield once; a cancel
+                // that arrives after the last delta must still abort.
+                if (!$aborted && $cancelToken->isCancellationRequested()) {
+                    $aborted = true;
                 }
             }
         } catch (\Throwable $exception) {
