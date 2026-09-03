@@ -450,7 +450,9 @@ final class PlatformIntegrationTest extends TestCase
             ],
         );
 
-        $statusReader = new MutableRunOperationalStatusReader('run-cancel');
+        // Poll 1 = before-stream; poll 2 = first delta (keep Running, emit A);
+        // poll 3 = second delta (Cancelling → abort with partial "A").
+        $statusReader = new MutableRunOperationalStatusReader('run-cancel', cancelAfterReads: 2);
         $adapter = new LlmPlatformAdapter(
             statusReader: $statusReader,
             messageConverter: new AgentMessageConverter(),
@@ -476,6 +478,43 @@ final class PlatformIntegrationTest extends TestCase
         $this->assertSame('aborted', $response->stopReason);
         $this->assertSame('A', $response->assistantMessage?->asText());
         $this->assertSame(15, $response->usage['total_tokens']);
+    }
+
+    public function testStreamingCancellationAfterLastDeltaStillAborts(): void
+    {
+        $platform = $this->createSymfonyPlatform(
+            modelClient: new FakeSymfonyModelClient(new FakeTokenUsage(promptTokens: 3, completionTokens: 1, totalTokens: 4)),
+            streamFactory: static fn (): iterable => [
+                new TextDelta('done'),
+            ],
+        );
+
+        // Keep Running through before/during polls; cancel only on the end-of-stream check.
+        $statusReader = new MutableRunOperationalStatusReader('run-cancel-end', cancelAfterReads: 2);
+        $adapter = new LlmPlatformAdapter(
+            statusReader: $statusReader,
+            messageConverter: new AgentMessageConverter(),
+            toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
+            platform: $platform,
+            transformContextHooks: [],
+            convertToLlmHooks: [],
+            streamObserver: null,
+            costCalculator: null,
+            modelResolver: null,
+            logger: new NullLogger(),
+            denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
+        );
+
+        $response = $adapter->invoke(new ModelInvocationRequest(
+            model: 'gpt-test',
+            input: new ModelInvocationInput(
+                runId: 'run-cancel-end',
+                messages: [new AgentMessage('user', [['type' => 'text', 'text' => 'cancel after stream']])],
+            ),
+        ));
+
+        $this->assertSame('aborted', $response->stopReason);
+        $this->assertSame('done', $response->assistantMessage?->asText());
     }
 
     public function testRepeatedThinkingSegmentsRemainCumulativeInStreamAndCanonicalMessage(): void
@@ -1091,14 +1130,16 @@ final class MutableRunOperationalStatusReader implements RunOperationalStatusRea
 {
     private int $reads = 0;
 
-    public function __construct(private readonly string $runId)
-    {
+    public function __construct(
+        private readonly string $runId,
+        private readonly int $cancelAfterReads = 1,
+    ) {
     }
 
     public function findOperationalStatus(string $runId): ?RunOperationalStatusDTO
     {
         ++$this->reads;
-        if ($runId !== $this->runId || 1 === $this->reads) {
+        if ($runId !== $this->runId || $this->reads <= $this->cancelAfterReads) {
             return null;
         }
 

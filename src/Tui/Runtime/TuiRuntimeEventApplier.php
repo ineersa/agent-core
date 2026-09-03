@@ -84,6 +84,15 @@ final readonly class TuiRuntimeEventApplier
 
         $state->applyQueuedUserMessageEvent($event);
         $this->ingestSubagentProgress($state, $event);
+
+        // After terminal activity, ignore stale seq=0 assistant/tool stream
+        // events so they cannot create ghost transcript blocks. Sequenced
+        // continuation events still project normally.
+        if ($state->activity->isTerminal()
+            && ActivityStateMachine::isStaleTerminalTransientStreamEvent($event)) {
+            return;
+        }
+
         $this->projector->accept($event);
     }
 

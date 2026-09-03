@@ -396,14 +396,20 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
     }
 
     /**
-     * Whether cancel must wait for in-flight LLM streaming or unresolved tool calls.
+     * Whether cancel must wait for in-flight work before AgentEnd(cancelled).
      *
-     * A non-null activeStepId alone is not active work once all pending tool calls
-     * are resolved and streaming has stopped (stale advance-after-tools step).
+     * An active currentOperation (typically ExecuteLlmStep) counts as work even
+     * when isStreaming is false — production never arms isStreaming while the
+     * LLM worker is in flight. A non-null activeStepId alone is not work once
+     * pending tool calls are resolved and no currentOperation remains.
      */
     private static function hasActiveCancellationWork(RunState $state): bool
     {
         if ($state->isStreaming) {
+            return true;
+        }
+
+        if (null !== $state->currentOperation) {
             return true;
         }
 

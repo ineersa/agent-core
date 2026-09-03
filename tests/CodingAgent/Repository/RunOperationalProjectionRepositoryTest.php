@@ -81,6 +81,24 @@ final class RunOperationalProjectionRepositoryTest extends IsolatedKernelTestCas
         $this->assertSame(0, (int) $this->connection->fetchOne('SELECT COUNT(*) FROM run_operational_tool_call'));
     }
 
+    public function testFindOperationalStatusRefreshesStaleIdentityMapRow(): void
+    {
+        $this->repository->replace($this->state(RunStatus::Running));
+
+        $first = $this->repository->findOperationalStatus('run-1');
+        $this->assertSame(RunStatus::Running, $first?->status);
+
+        // Simulate a cross-process cancel write that Doctrine's identity map
+        // would otherwise hide from the already-managed entity.
+        $this->connection->executeStatement(
+            'UPDATE run_operational_state SET status = ? WHERE run_id = ?',
+            [RunStatus::Cancelling->value, 'run-1'],
+        );
+
+        $refreshed = $this->repository->findOperationalStatus('run-1');
+        $this->assertSame(RunStatus::Cancelling, $refreshed?->status);
+    }
+
     public function testParentRunIdFromRunStateMapsOwnershipWithoutMetadataReader(): void
     {
         $this->repository->replace(new RunState('child', RunStatus::Running, parentRunId: 'parent'));

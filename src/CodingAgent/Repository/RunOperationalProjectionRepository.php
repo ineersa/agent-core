@@ -58,6 +58,11 @@ final class RunOperationalProjectionRepository extends ServiceEntityRepository i
             return null;
         }
 
+        // Cancel polls from long-lived LLM workers must observe cross-process
+        // status writes. Doctrine's identity map would otherwise keep the
+        // first-loaded Running row for the whole message lifetime.
+        $this->getEntityManager()->refresh($state);
+
         return new RunOperationalStatusDTO($state->status);
     }
 
