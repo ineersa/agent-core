@@ -135,7 +135,7 @@ final class ChatScreen
             function (RenderContext $symfonyCtx): string {
                 return $this->theme->color(
                     ThemeColorEnum::Separator,
-                    str_repeat('─', $symfonyCtx->getColumns()),
+                    $this->separator($symfonyCtx),
                 );
             },
         );
@@ -154,7 +154,7 @@ final class ChatScreen
             function (RenderContext $symfonyCtx): string {
                 return $this->theme->color(
                     ThemeColorEnum::Separator,
-                    str_repeat('─', $symfonyCtx->getColumns()),
+                    $this->separator($symfonyCtx),
                 );
             },
         );
@@ -167,10 +167,17 @@ final class ChatScreen
             function (RenderContext $symfonyCtx): string {
                 return $this->theme->color(
                     ThemeColorEnum::Separator,
-                    str_repeat('─', $symfonyCtx->getColumns()),
+                    $this->separator($symfonyCtx),
                 );
             },
         );
+    }
+
+    private function separator(RenderContext $context): string
+    {
+        // Prototype: avoid exact-width rows so terminal autowrap cannot leave
+        // the cursor in wrap-pending state between differential frame writes.
+        return str_repeat('─', max(0, $context->getColumns() - 1));
     }
 
     /* ────────── Mounting ────────── */
