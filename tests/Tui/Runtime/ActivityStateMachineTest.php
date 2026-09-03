@@ -306,6 +306,32 @@ final class ActivityStateMachineTest extends TestCase
         $this->assertSame(RunActivityStateEnum::Cancelled, $result);
     }
 
+    public function testCancelledStaysCancelledOnTransientSeqZeroToolCallStarted(): void
+    {
+        $event = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::ToolCallStarted->value,
+            runId: '1',
+            seq: 0,
+            payload: ['tool_call_id' => 'call_ghost', 'tool_name' => 'bash'],
+        );
+        $result = ActivityStateMachine::transition(RunActivityStateEnum::Cancelled, $event);
+        $this->assertSame(RunActivityStateEnum::Cancelled, $result,
+            'Transient seq=0 tool-call stream events must not reopen Cancelled');
+    }
+
+    public function testCancelledAllowsSequencedToolCallStartedContinuation(): void
+    {
+        $event = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::ToolCallStarted->value,
+            runId: '1',
+            seq: 42,
+            payload: ['tool_call_id' => 'call_next', 'tool_name' => 'bash'],
+        );
+        $result = ActivityStateMachine::transition(RunActivityStateEnum::Cancelled, $event);
+        $this->assertSame(RunActivityStateEnum::Running, $result,
+            'Sequenced tool-call starts may reopen a terminal run for a new turn');
+    }
+
     // ── Cancelling stickiness tests (issue #151 cosmetic flicker fix) ──
 
     /** @return iterable<array{string, RunActivityStateEnum, RunActivityStateEnum}> */
