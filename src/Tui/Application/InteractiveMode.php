@@ -20,6 +20,7 @@ use Ineersa\Tui\Runtime\TuiSessionLifecycleEventTypeEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Runtime\TuiTickDispatcher;
 use Ineersa\Tui\Screen\ChatScreen;
+use Ineersa\Tui\Terminal\CompleteWriteTerminal;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemeRegistry;
 use Ineersa\Tui\Theme\TuiTheme;
@@ -188,7 +189,10 @@ final readonly class InteractiveMode
             );
 
             // ── Build screen and mount widget tree ──
-            $tui = new Tui();
+            // Stock Symfony Terminal::write() is one unchecked fwrite. Wrap it so
+            // ScreenWriter paints only return after every STDOUT byte is written
+            // (or fail loudly on false/zero progress). ScreenWriter itself stays stock.
+            $tui = new Tui(terminal: new CompleteWriteTerminal());
             $screen = new ChatScreen(
                 $theme,
                 $state->sessionId,
