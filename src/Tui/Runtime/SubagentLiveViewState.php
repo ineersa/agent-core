@@ -30,7 +30,10 @@ final class SubagentLiveViewState
      * Per-child transcript/seq cache keyed by agentRunId so switching picker rows
      * does not discard completed transcripts (JSONL pipe events are consumed once).
      *
-     * @var array<string, array{transcript: list<TranscriptBlock>, lastSeq: int, lastPoll: float, activity: RunActivityStateEnum, queuedUserMessages: array<string, string>, replayEvents: list<\Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent>}>
+     * Entries also store taskSummary so agent_resume can reuse the same run id for a
+     * new invocation without restoring the prior task's terminal activity.
+     *
+     * @var array<string, array{transcript: list<TranscriptBlock>, lastSeq: int, lastPoll: float, activity: RunActivityStateEnum, taskSummary: string, queuedUserMessages: array<string, string>, replayEvents: list<\Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent>}>
      */
     public array $childCaches = [];
 
@@ -90,6 +93,7 @@ final class SubagentLiveViewState
             'lastSeq' => $this->childLastSeq,
             'lastPoll' => $this->childLastPoll,
             'activity' => $this->childActivity,
+            'taskSummary' => $this->selected->taskSummary,
             'queuedUserMessages' => $this->childQueuedUserMessages,
             'replayEvents' => $this->childReplayEvents,
         ];
@@ -109,9 +113,19 @@ final class SubagentLiveViewState
             $this->childTranscript = $cached['transcript'];
             $this->childLastSeq = $cached['lastSeq'];
             $this->childLastPoll = $cached['lastPoll'];
-            $this->childActivity = $cached['activity'];
-            $this->childQueuedUserMessages = $cached['queuedUserMessages'] ?? [];
-            $this->childReplayEvents = $cached['replayEvents'] ?? [];
+            $sameGeneration = $cached['taskSummary'] === $child->taskSummary;
+            if ($sameGeneration) {
+                $this->childActivity = $cached['activity'];
+                $this->childQueuedUserMessages = $cached['queuedUserMessages'] ?? [];
+                $this->childReplayEvents = $cached['replayEvents'] ?? [];
+            } else {
+                // Resume reuses agentRunId: keep transcript/seq continuity, adopt the
+                // newly selected catalog lifecycle, and drop prior-task transient state.
+                $this->childActivity = $child->status->toActivity() ?? RunActivityStateEnum::Completed;
+                $this->childQueuedUserMessages = [];
+                $this->childReplayEvents = [];
+                $this->persistCurrentChildCache();
+            }
 
             return;
         }
@@ -126,11 +140,7 @@ final class SubagentLiveViewState
             // differs from SubagentLiveStatusEnum::toActivity() (Failed and
             // Cancelled map to themselves) — preserved verbatim to avoid a
             // behavior change; the next poll tick reconciles from the catalog.
-            $this->childActivity = match (true) {
-                SubagentLiveStatusEnum::WaitingHuman === $child->status => RunActivityStateEnum::WaitingHuman,
-                $child->isRunning() => RunActivityStateEnum::Running,
-                default => RunActivityStateEnum::Completed,
-            };
+            $this->childActivity = $this->activityFromCatalogChild($child);
 
             return;
         }
@@ -177,5 +187,14 @@ final class SubagentLiveViewState
         $this->active = false;
         $this->lastLiveWorkingMessage = null;
         $this->childQueuedUserMessages = [];
+    }
+
+    private function activityFromCatalogChild(SubagentLiveChildDTO $child): RunActivityStateEnum
+    {
+        return match (true) {
+            SubagentLiveStatusEnum::WaitingHuman === $child->status => RunActivityStateEnum::WaitingHuman,
+            $child->isRunning() => RunActivityStateEnum::Running,
+            default => RunActivityStateEnum::Completed,
+        };
     }
 }
