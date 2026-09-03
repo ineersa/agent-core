@@ -1241,7 +1241,7 @@ final class ApplyCommandHandlerTest extends TestCase
      * Session 1: cancel while an LLM currentOperation is active must remain
      * Cancelling (no agent_end) until the worker result/abort path terminalizes.
      */
-    public function testCancelWithActiveCurrentOperationEntersCancellingWithoutAgentEnd(): void
+    public function testCancelWithActiveLlmCurrentOperationEntersCancellingWithoutAgentEnd(): void
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
@@ -1291,13 +1291,72 @@ final class ApplyCommandHandlerTest extends TestCase
         $result = $handler->handle($cancelMessage, $state);
 
         $this->assertSame(RunStatus::Cancelling, $result->nextState?->status,
-            'Active currentOperation must keep cancel in Cancelling until LLM abort/result');
+            'Active LLM currentOperation must keep cancel in Cancelling until abort/result');
         $this->assertNotNull($result->nextState?->currentOperation);
         $this->assertSame('follow_up-18906669744370', $result->nextState?->activeStepId);
         $eventTypes = array_map(static fn ($e) => $e->type, $result->events);
         $this->assertContains('agent_command_applied', $eventTypes);
         $this->assertNotContains('agent_end', $eventTypes);
         $this->assertSame([], $result->postCommit);
+    }
+
+    /**
+     * Standalone shell currentOperation must not delay cancel: its result path
+     * does not honor Cancelling, so cancel terminalizes immediately.
+     */
+    public function testCancelWithStandaloneShellCurrentOperationTerminalizesImmediately(): void
+    {
+        $commandStore = new InMemoryCommandStore();
+        $commandRouter = new CommandRouter([]);
+        $commandMailboxPolicy = new CommandMailboxPolicy(
+            commandStore: $commandStore,
+            commandRouter: $commandRouter,
+        );
+
+        $handler = new ApplyCommandHandler(
+            commandStore: $commandStore,
+            commandRouter: $commandRouter,
+            commandMailboxPolicy: $commandMailboxPolicy,
+            eventFactory: new EventFactory(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            maxPendingCommands: 10,
+        );
+
+        $shellKey = 'shell-standalone-key';
+        $shellToolCallId = 'sh_'.hash('sha256', $shellKey);
+        $state = new RunState(
+            runId: 'run-cancel-shell-op',
+            status: RunStatus::Running,
+            version: 3,
+            turnNo: 2,
+            lastSeq: 8,
+            isStreaming: false,
+            pendingToolCalls: [],
+            pendingShellToolCalls: [$shellToolCallId => true],
+            messages: [],
+            activeStepId: 'shell-step',
+            currentOperation: new CurrentOperationDTO(2, 'shell-step', 1, $shellKey),
+            model: 'test-model',
+        );
+
+        $cancelMessage = new ApplyCommand(
+            runId: 'run-cancel-shell-op',
+            turnNo: 2,
+            stepId: 'cancel-shell-op',
+            attempt: 1,
+            idempotencyKey: 'cancel-shell-op-1',
+            kind: CoreCommandKind::Cancel,
+            payload: [],
+        );
+
+        $result = $handler->handle($cancelMessage, $state);
+
+        $this->assertSame(RunStatus::Cancelled, $result->nextState?->status,
+            'Standalone shell currentOperation must not keep cancel in Cancelling');
+        $this->assertNull($result->nextState?->currentOperation);
+        $this->assertNull($result->nextState?->activeStepId);
+        $eventTypes = array_map(static fn ($e) => $e->type, $result->events);
+        $this->assertContains('agent_end', $eventTypes);
     }
 
     public function testCancelWithUnresolvedPendingToolCallEntersCancelling(): void

@@ -398,10 +398,11 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
     /**
      * Whether cancel must wait for in-flight work before AgentEnd(cancelled).
      *
-     * An active currentOperation (typically ExecuteLlmStep) counts as work even
-     * when isStreaming is false — production never arms isStreaming while the
-     * LLM worker is in flight. A non-null activeStepId alone is not work once
-     * pending tool calls are resolved and no currentOperation remains.
+     * An in-flight LLM currentOperation counts as work even when isStreaming is
+     * false — production never arms isStreaming while the LLM worker is in
+     * flight. Standalone shell currentOperation must not wait: its result path
+     * does not honor Cancelling. A non-null activeStepId alone is not work once
+     * pending tool calls are resolved and no LLM operation remains.
      */
     private static function hasActiveCancellationWork(RunState $state): bool
     {
@@ -409,7 +410,9 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             return true;
         }
 
-        if (null !== $state->currentOperation) {
+        $operation = $state->currentOperation;
+        if (null !== $operation
+            && !isset($state->pendingShellToolCalls['sh_'.hash('sha256', $operation->idempotencyKey)])) {
             return true;
         }
 
