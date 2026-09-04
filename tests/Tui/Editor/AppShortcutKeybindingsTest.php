@@ -34,6 +34,8 @@ final class AppShortcutKeybindingsTest extends TestCase
         yield 'reasoning kitty' => ['cycle_reasoning', "\x1b[9;2u"];
         yield 'completion tab legacy' => ['trigger_completion', "\t"];
         yield 'completion tab kitty' => ['trigger_completion', "\x1b[9u"];
+        yield 'image paste legacy' => ['paste_image', "\x16"];
+        yield 'image paste kitty' => ['paste_image', "\x1b[118;5u"];
         yield 'newline ctrl+j legacy' => ['new_line', "\n"]; // ctrl+j is LF
         yield 'newline ctrl+j kitty' => ['new_line', "\x1b[106;5u"];
         yield 'newline shift+enter kitty' => ['new_line', "\x1b[13;2u"];

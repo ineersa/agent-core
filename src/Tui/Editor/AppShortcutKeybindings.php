@@ -29,6 +29,7 @@ final class AppShortcutKeybindings
             'cycle_favorite_model' => ['ctrl+p'],
             'cycle_reasoning' => ['shift+tab'],
             'trigger_completion' => ['tab'],
+            'paste_image' => ['ctrl+v'],
         ];
     }
 
