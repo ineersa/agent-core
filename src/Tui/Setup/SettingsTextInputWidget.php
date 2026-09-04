@@ -6,6 +6,8 @@ namespace Ineersa\Tui\Setup;
 
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
+use Symfony\Component\Tui\Input\Key;
+use Symfony\Component\Tui\Input\Keybindings;
 use Symfony\Component\Tui\Render\RenderContext;
 use Symfony\Component\Tui\Widget\BracketedPasteTrait;
 use Symfony\Component\Tui\Widget\SelectListWidget;
@@ -32,6 +34,9 @@ final class SettingsTextInputWidget extends SelectListWidget
         parent::__construct([]);
         $this->line = new Line($initial);
         $this->prompt = $prompt;
+        $this->setKeybindings(new Keybindings([
+            'delete_char_backward' => [Key::BACKSPACE, 'shift+backspace'],
+        ]));
     }
 
     public function handleInput(string $data): void
@@ -54,7 +59,7 @@ final class SettingsTextInputWidget extends SelectListWidget
 
             return;
         }
-        if ($kb->matches($data, 'select_confirm') || "\n" === $data || "\r" === $data) {
+        if ($kb->matches($data, 'select_confirm')) {
             $this->dispatch(new SelectEvent($this, [
                 'value' => $this->line->getText(),
                 'label' => $this->line->getText(),
@@ -64,7 +69,7 @@ final class SettingsTextInputWidget extends SelectListWidget
         }
 
         // Backspace / delete
-        if ("\x7f" === $data || "\x08" === $data) {
+        if ($kb->matches($data, 'delete_char_backward')) {
             $text = $this->line->getText();
             if ('' !== $text) {
                 $this->line->setText(mb_substr($text, 0, -1));

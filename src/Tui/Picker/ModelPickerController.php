@@ -70,8 +70,9 @@ final class ModelPickerController
             truncate: true,
         );
 
-        // ── Keybindings: remove ctrl+f from cursor_right so we can intercept it ──
-        $kb = SelectListKeybindings::standard();
+        // Standard select actions plus toggle_favorite (ctrl+f).
+        // cursor_right is unbound so Ctrl+F is not stolen by page-right.
+        $kb = SelectListKeybindings::withFavoriteToggle();
 
         // ── Build items: favorites-first with markers ──
         $items = $this->buildItems();
@@ -89,8 +90,7 @@ final class ModelPickerController
         $listWidget->onInput(static function (string $data) use (
             $screen, $state, $modelService, $listWidget, $logger,
         ): bool {
-            // Ctrl+F sends \x06 in most terminals
-            if ("\x06" !== $data) {
+            if (!$listWidget->getKeybindings()->matches($data, 'toggle_favorite')) {
                 return false;
             }
 
