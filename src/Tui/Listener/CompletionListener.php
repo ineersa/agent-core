@@ -34,6 +34,7 @@ use Symfony\Component\Tui\Event\InputEvent;
  *  - Escape: close completion without clearing editor
  *  - Up/Down: forward to unfocused SelectListWidget (only when menu is open)
  *  - Printing keys: live completion open/refine/close (never stolen)
+ *  - Kitty key releases: consume without changing editor or completion state
  *
  * Completion is not implemented as a slot input handler because
  * slot handlers live at extension tier ({@see InputPriority::EXTENSION_DEFAULT})
@@ -96,6 +97,12 @@ final class CompletionListener implements TuiListenerRegistrar
             ): void {
                 $data = $event->getData();
                 $keys = $editorWidget->getKeybindings();
+
+                if ($keys->getParser()->isKeyRelease($data)) {
+                    $event->stopPropagation();
+
+                    return;
+                }
 
                 // Shift+Tab must pass through to ModelControlListener.
                 if ($keys->matches($data, 'cycle_reasoning')) {

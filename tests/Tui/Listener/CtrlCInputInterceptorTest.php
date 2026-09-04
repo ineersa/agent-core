@@ -12,6 +12,7 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Tui\Terminal\ScreenBuffer;
 
 /**
  * Test thesis: Ctrl+C / Ctrl+D global interrupt matching accepts both legacy
@@ -28,7 +29,8 @@ final class CtrlCInputInterceptorTest extends TestCase
     public static function provideCtrlCSequences(): iterable
     {
         yield 'legacy' => ["\x03"];
-        yield 'kitty' => ["\x1b[99;5u"];
+        yield 'kitty press' => ["\x1b[99;5u"];
+        yield 'kitty repeat' => ["\x1b[99;5:2u"];
     }
 
     /**
@@ -37,7 +39,17 @@ final class CtrlCInputInterceptorTest extends TestCase
     public static function provideCtrlDSequences(): iterable
     {
         yield 'legacy' => ["\x04"];
-        yield 'kitty' => ["\x1b[100;5u"];
+        yield 'kitty press' => ["\x1b[100;5u"];
+        yield 'kitty repeat' => ["\x1b[100;5:2u"];
+    }
+
+    /**
+     * @return iterable<string, array{0: string}>
+     */
+    public static function provideKittyControlReleaseSequences(): iterable
+    {
+        yield 'Ctrl+C' => ["\x1b[99;5:3u"];
+        yield 'Ctrl+D' => ["\x1b[100;5:3u"];
     }
 
     #[Test]
@@ -59,10 +71,13 @@ final class CtrlCInputInterceptorTest extends TestCase
     {
         $harness = $this->startHarness();
         $harness->screen()->promptEditor()->typeText('draft text');
+        $harness->render();
+        $this->assertStringContainsString('draft text', $this->currentScreenText($harness));
 
         $harness->sendInput($sequence);
 
         $this->assertSame('', $harness->screen()->editorText());
+        $this->assertStringNotContainsString('draft text', $this->currentScreenText($harness));
         $this->assertTrue($harness->tui()->isRunning());
         $this->assertArrayNotHasKey('ctrl_c', $this->statusEntries($harness));
         $harness->stopInputLoop();
@@ -101,6 +116,40 @@ final class CtrlCInputInterceptorTest extends TestCase
         $harness->stopInputLoop();
     }
 
+    #[Test]
+    public function kittyReleaseDoesNotResetDoublePressState(): void
+    {
+        $harness = $this->startHarness();
+
+        $harness->sendInput("\x1b[99;5u");
+        $harness->sendInput("\x1b[99;5:3u");
+
+        $this->assertSame(
+            'Press Ctrl+C again to exit',
+            $this->statusEntries($harness)['ctrl_c'] ?? null,
+        );
+
+        $harness->sendInput("\x1b[99;5u");
+
+        $this->assertFalse($harness->tui()->isRunning());
+        $harness->stopInputLoop();
+    }
+
+    #[Test]
+    #[DataProvider('provideKittyControlReleaseSequences')]
+    public function kittyControlReleaseDoesNotMutateEditorOrQuit(string $sequence): void
+    {
+        $harness = $this->startHarness();
+        $harness->screen()->promptEditor()->typeText('draft text');
+
+        $harness->sendInput($sequence);
+
+        $this->assertSame('draft text', $harness->screen()->editorText());
+        $this->assertTrue($harness->tui()->isRunning());
+        $this->assertArrayNotHasKey('ctrl_c', $this->statusEntries($harness));
+        $harness->stopInputLoop();
+    }
+
     private function startHarness(): VirtualTuiHarness
     {
         $harness = new VirtualTuiHarness(sessionId: 'ctrl-c-interceptor');
@@ -126,5 +175,16 @@ final class CtrlCInputInterceptorTest extends TestCase
 
         /* @var array<string, string> */
         return $ref->getValue($harness->screen());
+    }
+
+    private function currentScreenText(VirtualTuiHarness $harness): string
+    {
+        $buffer = new ScreenBuffer(
+            width: $harness->terminal()->getColumns(),
+            height: $harness->terminal()->getRows(),
+        );
+        $buffer->write($harness->terminal()->getOutput());
+
+        return $buffer->getScreen();
     }
 }
