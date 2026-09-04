@@ -12,14 +12,17 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\AI\Platform\Exception\AuthenticationException;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Event\WorkerMessageFailedEvent;
+use Symfony\Component\Messenger\Exception\HandlerFailedException;
 use Symfony\Component\Messenger\Stamp\RedeliveryStamp;
 
 /**
  * Thesis: final extension_agent delivery with validated payload.run_id emits
- * exactly one sanitized transient event; retrying failure emits none; missing
- * run_id logs only; payload has no exception/session content.
+ * exactly one sanitized transient event; classified provider failures include
+ * an actionable safe reason; retrying failure emits none; missing run_id logs
+ * only; payload has no exception/session content.
  */
 final class ExtensionAgentJobFailedEventSubscriberTest extends TestCase
 {
@@ -44,7 +47,7 @@ final class ExtensionAgentJobFailedEventSubscriberTest extends TestCase
         $event = new WorkerMessageFailedEvent(
             $envelope,
             'extension_agent',
-            new \RuntimeException('sensitive provider error with stack'),
+            new \RuntimeException('[account_secret_code]: sensitive provider error with stack'),
         );
 
         $subscriber->onWorkerMessageFailed($event);
@@ -63,6 +66,7 @@ final class ExtensionAgentJobFailedEventSubscriberTest extends TestCase
 
         $encoded = json_encode($emitted->toArray(), \JSON_THROW_ON_ERROR);
         $this->assertStringNotContainsString('sensitive provider error', $encoded);
+        $this->assertStringNotContainsString('account_secret_code', $encoded);
         $this->assertStringNotContainsString('RuntimeException', $encoded);
         $this->assertStringNotContainsString('session-should-not-leak', $encoded);
         $this->assertStringNotContainsString('never-include', $encoded);
@@ -71,6 +75,72 @@ final class ExtensionAgentJobFailedEventSubscriberTest extends TestCase
         $this->assertArrayNotHasKey('exception', $emitted->payload);
         $this->assertArrayNotHasKey('exception_class', $emitted->payload);
         $this->assertSame([], $logger->records);
+    }
+
+    #[Test]
+    public function classifiedUsageLimitFailureEmitsActionableReasonWithoutProviderText(): void
+    {
+        $sink = new CollectingRuntimeEventSink();
+        $logger = new TestLogger();
+        $subscriber = new ExtensionAgentJobFailedEventSubscriber($sink, $logger);
+        $message = new ExtensionAgentJobMessage(
+            handlerId: 'observational_memory.observe_boundary',
+            payload: ['run_id' => 'run-usage-limit'],
+            jobId: 'job-usage-limit',
+        );
+        $providerFailure = new \RuntimeException(
+            '[usage_limit_reached/insufficient_quota]: RAW_PROVIDER_ACCOUNT_DETAIL',
+        );
+        $wrapped = new HandlerFailedException(new Envelope($message), [$providerFailure]);
+
+        $subscriber->onWorkerMessageFailed(new WorkerMessageFailedEvent(
+            new Envelope($message),
+            'extension_agent',
+            $wrapped,
+        ));
+
+        $this->assertCount(1, $sink->events);
+        $payload = $sink->events[0]->payload;
+        $this->assertSame('usage_limit_reached', $payload['reason']);
+        $this->assertSame(
+            'Extension background job failed after retrying. LLM provider usage limit reached. Check your plan or billing.',
+            $payload['message'],
+        );
+        $this->assertStringNotContainsString(
+            'RAW_PROVIDER_ACCOUNT_DETAIL',
+            json_encode($payload, \JSON_THROW_ON_ERROR),
+        );
+        $this->assertSame([], $logger->records);
+    }
+
+    #[Test]
+    public function classifiedExceptionTypeUsesFixedMessageWithoutExceptionText(): void
+    {
+        $sink = new CollectingRuntimeEventSink();
+        $subscriber = new ExtensionAgentJobFailedEventSubscriber($sink, new TestLogger());
+        $message = new ExtensionAgentJobMessage(
+            handlerId: 'generic.extension_job',
+            payload: ['run_id' => 'run-auth'],
+            jobId: 'job-auth',
+        );
+
+        $subscriber->onWorkerMessageFailed(new WorkerMessageFailedEvent(
+            new Envelope($message),
+            'extension_agent',
+            new AuthenticationException('RAW_CREDENTIAL_DETAIL'),
+        ));
+
+        $this->assertCount(1, $sink->events);
+        $payload = $sink->events[0]->payload;
+        $this->assertSame('auth', $payload['reason']);
+        $this->assertSame(
+            'Extension background job failed after retrying. LLM provider authentication failed. Check your credentials.',
+            $payload['message'],
+        );
+        $this->assertStringNotContainsString(
+            'RAW_CREDENTIAL_DETAIL',
+            json_encode($payload, \JSON_THROW_ON_ERROR),
+        );
     }
 
     #[Test]

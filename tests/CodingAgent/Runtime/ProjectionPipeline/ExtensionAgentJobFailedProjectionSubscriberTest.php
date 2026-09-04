@@ -34,8 +34,8 @@ final class ExtensionAgentJobFailedProjectionSubscriberTest extends TestCase
             runId: 'run-1',
             seq: 0,
             payload: [
-                'message' => 'Extension background job failed after retrying.',
-                'reason' => 'retry_exhausted',
+                'message' => 'Extension background job failed after retrying. LLM provider usage limit reached. Check your plan or billing.',
+                'reason' => 'usage_limit_reached',
                 'handler_id' => 'observational_memory.observe_boundary',
                 'job_id' => 'job-xyz',
                 'retry_count' => 1,
@@ -48,8 +48,11 @@ final class ExtensionAgentJobFailedProjectionSubscriberTest extends TestCase
         $block = $blocks[0];
         $this->assertSame(TranscriptBlockKindEnum::Error, $block->kind);
         $this->assertSame('run-1', $block->runId);
-        $this->assertSame('Extension background job failed after retrying.', $block->text);
-        $this->assertSame('retry_exhausted', $block->meta['reason'] ?? null);
+        $this->assertSame(
+            'Extension background job failed after retrying. LLM provider usage limit reached. Check your plan or billing.',
+            $block->text,
+        );
+        $this->assertSame('usage_limit_reached', $block->meta['reason'] ?? null);
         $this->assertSame('observational_memory.observe_boundary', $block->meta['handler_id'] ?? null);
         $this->assertSame('job-xyz', $block->meta['job_id'] ?? null);
         $this->assertSame(1, $block->meta['retry_count'] ?? null);
