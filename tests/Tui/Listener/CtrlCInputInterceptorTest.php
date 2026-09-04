@@ -84,6 +84,23 @@ final class CtrlCInputInterceptorTest extends TestCase
         $harness->stopInputLoop();
     }
 
+    #[Test]
+    public function anotherKeyResetsDoublePressBeforeTwoCtrlCPressesExit(): void
+    {
+        $harness = $this->startHarness();
+
+        $harness->sendInput("\x03");
+        $harness->sendInput('a');
+        $this->assertArrayNotHasKey('ctrl_c', $this->statusEntries($harness));
+
+        $harness->screen()->clearEditor();
+        $harness->sendInput("\x03");
+        $harness->sendInput("\x03");
+
+        $this->assertFalse($harness->tui()->isRunning());
+        $harness->stopInputLoop();
+    }
+
     private function startHarness(): VirtualTuiHarness
     {
         $harness = new VirtualTuiHarness(sessionId: 'ctrl-c-interceptor');

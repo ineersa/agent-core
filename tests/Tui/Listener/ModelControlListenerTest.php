@@ -135,6 +135,9 @@ final class ModelControlListenerTest extends TestCase
         $harness = new VirtualTuiHarness(sessionId: '1');
         $state = new TuiSessionState('');
         $state->footerReasoning = 'medium';
+        $harness->screen()->applyEditorBorderColor('medium');
+        $beforeBorder = $this->editorBottomBorderSgr($harness->ansiOutput());
+        $this->assertNotNull($beforeBorder);
 
         $catalog = new SlashCommandCatalog();
         $context = $this->buildTuiContext()
@@ -157,6 +160,10 @@ final class ModelControlListenerTest extends TestCase
         $harness->sendInput($sequence);
 
         $this->assertSame('high', $state->footerReasoning);
+        $screen = $harness->plainScreenText();
+        $this->assertStringContainsString('reasoning', $screen);
+        $this->assertStringContainsString('high', $screen);
+        $this->assertNotSame($beforeBorder, $this->editorBottomBorderSgr($harness->ansiOutput()));
         $harness->stopInputLoop();
     }
 
@@ -243,5 +250,17 @@ final class ModelControlListenerTest extends TestCase
                 ],
             ],
         ];
+    }
+
+    private function editorBottomBorderSgr(string $ansi): ?string
+    {
+        $lines = explode("\n", $ansi);
+        for ($i = \count($lines) - 1; $i >= 0; --$i) {
+            if (str_contains($lines[$i], '─') && preg_match('/\\x1b\\[([0-9;]+)m/', $lines[$i], $match)) {
+                return $match[1];
+            }
+        }
+
+        return null;
     }
 }
