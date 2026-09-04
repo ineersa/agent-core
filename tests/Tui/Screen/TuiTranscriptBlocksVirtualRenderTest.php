@@ -182,7 +182,11 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
                 runId: self::SESSION_ID,
                 seq: 2,
                 text: '3 lines read',
-                meta: ['tool_name' => 'read'],
+                meta: [
+                    'tool_name' => 'bash',
+                    'result' => '3 lines read',
+                    'is_error' => false,
+                ],
             ),
         ]);
         $harness->screen()->setWorkingVisible(false);
@@ -190,7 +194,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
         $text = $harness->plainScreenText();
 
         $this->assertStringContainsString('●', $text, 'Tool glyph missing');
-        $this->assertStringContainsString('read', $text, 'Tool name missing');
+        $this->assertStringContainsString('bash', $text, 'Tool name missing');
         $this->assertStringContainsString('3 lines read', $text, 'Tool result text missing');
     }
 
@@ -212,7 +216,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
                 seq: 1,
                 text: 'successful tool output',
                 meta: [
-                    'tool_name' => 'read',
+                    'tool_name' => 'bash',
                     'result' => 'successful tool output',
                     'is_error' => false,
                 ],
@@ -869,7 +873,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
                 runId: self::SESSION_ID,
                 seq: 1,
                 text: $body,
-                meta: ['tool_name' => 'read', 'result' => $body, 'is_error' => false],
+                meta: ['tool_name' => 'write', 'result' => $body, 'is_error' => false],
             ),
         ]);
         $harness->screen()->setWorkingVisible(false);
@@ -878,19 +882,19 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
         $plain = $harness->plainScreenText();
 
         $this->assertStringContainsString('… literal ellipsis in tool output', $plain);
-        $this->assertStringContainsString('… 2 more lines', $plain);
+        $this->assertStringContainsString('… 1 more line', $plain);
         $this->assertMatchesRegularExpression(
             '/\x1b\[38;2;57;255;20m\s*… literal ellipsis in tool output/',
             $ansi,
             'Literal U+2026 tool output must keep ToolOutput color',
         );
         $this->assertMatchesRegularExpression(
-            '/\x1b\[3m(?:\x1b\[[0-9;]*m)*… 2 more lines/',
+            '/\x1b\[3m(?:\x1b\[[0-9;]*m)*… 1 more line/',
             $ansi,
             'Generated collapsed indicator must stay muted+italic',
         );
         $this->assertDoesNotMatchRegularExpression(
-            '/\x1b\[38;2;57;255;20m\s*… 2 more lines/',
+            '/\x1b\[38;2;57;255;20m\s*… 1 more line/',
             $ansi,
             'Generated collapsed indicator must not inherit ToolOutput color',
         );
@@ -899,7 +903,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
     #[Test]
     public function testVirtualLongToolResultPreviewsByDefault(): void
     {
-        $body = implode("\n", ['v0', 'v1', 'v2', 'v3']);
+        $body = implode("\n", ['v0', 'v1', 'v2', 'v3', 'v4']);
         $harness = new VirtualTuiHarness(
             sessionId: self::SESSION_ID,
             displayConfig: new TranscriptDisplayConfig(toolResultPreviewLines: 2),
@@ -911,7 +915,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
                 runId: self::SESSION_ID,
                 seq: 2,
                 text: $body,
-                meta: ['tool_name' => 'read', 'result' => $body, 'is_error' => false],
+                meta: ['tool_name' => 'write', 'result' => $body, 'is_error' => false],
             ),
         ]);
         $harness->screen()->setWorkingVisible(false);
@@ -920,7 +924,8 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
 
         $this->assertStringContainsString('v0', $text);
         $this->assertStringContainsString('v1', $text);
-        $this->assertStringNotContainsString('v3', $text);
+        $this->assertStringContainsString('v2', $text);
+        $this->assertStringNotContainsString('v4', $text);
         $this->assertStringContainsString('more line', $text);
     }
 
@@ -1281,18 +1286,18 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
                 runId: self::SESSION_ID,
                 seq: 1,
                 text: $body,
-                meta: ['tool_name' => 'read', 'result' => $body, 'is_error' => false],
+                meta: ['tool_name' => 'write', 'result' => $body, 'is_error' => false],
             ),
         ]);
         $harness->screen()->setWorkingVisible(false);
 
         $ansi = $harness->ansiOutput();
         $this->assertMatchesRegularExpression(
-            '/\x1b\[3m(?:\x1b\[[0-9;]*m)*… 2 more lines/',
+            '/\x1b\[3m(?:\x1b\[[0-9;]*m)*… 1 more line/',
             $ansi,
             'Collapsed ellipsis must carry italic ANSI styling',
         );
-        $this->assertStringContainsString('… 2 more lines', $harness->plainScreenText());
+        $this->assertStringContainsString('… 1 more line', $harness->plainScreenText());
         $this->assertStringNotContainsString('line3', $harness->plainScreenText());
     }
 

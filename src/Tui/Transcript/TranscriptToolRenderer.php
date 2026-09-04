@@ -101,14 +101,17 @@ final readonly class TranscriptToolRenderer
             $headerLine .= $suffix;
         }
 
-        $color = $this->toolResultFacts->toolResultIsFullRender($block) && $this->toolResultFacts->metaIsTruthy($block->meta['is_error'] ?? false)
+        $headerColor = $this->toolResultFacts->toolResultIsFullRender($block) && $this->toolResultFacts->metaIsTruthy($block->meta['is_error'] ?? false)
             ? ThemeColorEnum::Error
             : ThemeColorEnum::ToolOutput;
+        $bodyColor = $this->toolResultFacts->toolResultIsFullRender($block) && $this->toolResultFacts->metaIsTruthy($block->meta['is_error'] ?? false)
+            ? ThemeColorEnum::Error
+            : $this->successfulToolResultBodyColor($block);
 
-        $coloredHeader = $theme->color($color, $headerLine);
+        $coloredHeader = $theme->color($headerColor, $headerLine);
         $coloredBody = [];
         foreach ($previewLines as $line) {
-            $coloredBody[] = $theme->color($color, $line);
+            $coloredBody[] = $theme->color($bodyColor, $line);
         }
         if (null !== $styledEllipsis) {
             $coloredBody[] = $styledEllipsis;
@@ -598,6 +601,19 @@ final readonly class TranscriptToolRenderer
     {
         if ($this->toolResultFacts->toolResultIsFullRender($resultBlock) && $this->toolResultFacts->metaIsTruthy($resultBlock->meta['is_error'] ?? false)) {
             return ThemeColorEnum::Error;
+        }
+
+        return $this->successfulToolResultBodyColor($resultBlock);
+    }
+
+    /**
+     * Successful edit summaries are status chrome, not payload — keep them dim so the patch body stays primary.
+     */
+    private function successfulToolResultBodyColor(TranscriptBlock $resultBlock): ThemeColorEnum
+    {
+        if (!$this->toolResultFacts->toolResultIsFullRender($resultBlock)
+            && 'edit' === ($resultBlock->meta['tool_name'] ?? null)) {
+            return ThemeColorEnum::Dim;
         }
 
         return ThemeColorEnum::ToolOutput;
