@@ -68,13 +68,15 @@ final class CompletionListener implements TuiListenerRegistrar
         // Runs BEFORE CtrlCInputInterceptor (100) so the completion
         // overlay is torn down cleanly.  Does NOT stop propagation;
         // CtrlCInputInterceptor still performs clear/quit logic.
+        $editorWidget = $screen->editorWidget();
         $context->tui->addListener(
             static function (InputEvent $event) use (
-                $screen, $menu, $state,
+                $screen, $menu, $state, $editorWidget,
             ): void {
                 $data = $event->getData();
+                $keys = $editorWidget->getKeybindings();
 
-                if ("\x03" === $data || "\x04" === $data) {
+                if ($keys->matches($data, 'copy') || $keys->matches($data, 'delete_char_forward')) {
                     if ($state->isOpen()) {
                         $menu->close($screen);
                         $state->close();
@@ -90,17 +92,18 @@ final class CompletionListener implements TuiListenerRegistrar
         // ── Priority 90: completion input routing ───────────────────
         $context->tui->addListener(
             static function (InputEvent $event) use (
-                $state, $provider, $screen, $editor, $menu,
+                $state, $provider, $screen, $editor, $menu, $editorWidget,
             ): void {
                 $data = $event->getData();
+                $keys = $editorWidget->getKeybindings();
 
                 // Shift+Tab must pass through to ModelControlListener.
-                if ("\x1b[Z" === $data) {
+                if ($keys->matches($data, 'cycle_reasoning')) {
                     return;
                 }
 
                 // ── Tab ──────────────────────────────────────────────
-                if ("\t" === $data) {
+                if ($keys->matches($data, 'trigger_completion')) {
                     // Menu open: accept selected suggestion.
                     if ($state->isOpen()) {
                         $suggestion = $state->acceptSelected($menu->selectedValue());
@@ -137,7 +140,9 @@ final class CompletionListener implements TuiListenerRegistrar
                 // Menu open: accept selected, close menu, and let Enter
                 // propagate to the focused EditorWidget so the completed
                 // text is submitted through the normal slash-command path.
-                if ("\n" === $data || "\r" === $data) {
+                // Exclude new_line (Ctrl+J / Shift+Enter): LF also matches
+                // enter in legacy mode, but EditorWidget inserts a newline.
+                if ($keys->matches($data, 'submit') && !$keys->matches($data, 'new_line')) {
                     if ($state->isOpen()) {
                         $suggestion = $state->acceptSelected($menu->selectedValue());
                         if (null !== $suggestion) {
@@ -153,7 +158,7 @@ final class CompletionListener implements TuiListenerRegistrar
                 }
 
                 // ── Escape ────────────────────────────────────────────
-                if ("\x1b" === $data) {
+                if ($keys->matches($data, 'select_cancel')) {
                     if ($state->isOpen()) {
                         $menu->close($screen);
                         $state->close();
@@ -168,8 +173,8 @@ final class CompletionListener implements TuiListenerRegistrar
                 }
 
                 // ── Up / Down navigation (SelectListWidget owns selection) ──
-                $isUp = "\x1b[A" === $data || "\x1bOA" === $data;
-                $isDown = "\x1b[B" === $data || "\x1bOB" === $data;
+                $isUp = $keys->matches($data, 'cursor_up');
+                $isDown = $keys->matches($data, 'cursor_down');
 
                 if (($isUp || $isDown) && $state->isOpen()) {
                     $menu->handleNavigationInput($data);
@@ -232,7 +237,7 @@ final class CompletionListener implements TuiListenerRegistrar
             return null;
         }
 
-        // Escape / CSI sequences — cannot predict
+        // Escape / CSI sequences — cannot predict text mutation.
         if ("\x1b" === $data[0] || "\x9b" === $data[0]) {
             return null;
         }
@@ -243,12 +248,8 @@ final class CompletionListener implements TuiListenerRegistrar
             return null;
         }
 
-        // Enter / Return — editor submits, don't predict.
-        if ("\n" === $data || "\r" === $data) {
-            return null;
-        }
-
         // Backspace / Delete — remove last char (cursor-at-end MVP).
+        // Raw forms only: this helper predicts text shape, not key identity.
         if ("\x7f" === $data || "\x08" === $data) {
             if ('' === $current) {
                 return null;

@@ -22,6 +22,7 @@ use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Transcript\HotkeyTableWidget;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
 use Ineersa\Tui\Transcript\TranscriptBlockWidgetFactory;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Tui\Ansi\AnsiUtils;
@@ -54,6 +55,33 @@ final class TuiVirtualInputTest extends TestCase
 
             $screen = $harness->plainScreenText();
             $this->assertStringContainsString('hello virtual', $screen, 'Typed text should appear on rendered screen');
+        } finally {
+            $harness->stopInputLoop();
+        }
+    }
+
+    /**
+     * @return iterable<string, array{0: string}>
+     */
+    public static function provideCtrlJSequences(): iterable
+    {
+        yield 'legacy' => ["\n"];
+        yield 'kitty' => ["\x1b[106;5u"];
+    }
+
+    #[Test]
+    #[DataProvider('provideCtrlJSequences')]
+    public function ctrlJInsertsANewline(string $sequence): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
+
+        try {
+            $harness->startInputLoop();
+            $harness->sendInput('first');
+            $harness->sendInput($sequence);
+            $harness->sendInput('second');
+
+            $this->assertSame("first\nsecond", $harness->screen()->editorText());
         } finally {
             $harness->stopInputLoop();
         }

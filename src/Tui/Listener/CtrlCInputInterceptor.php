@@ -13,6 +13,10 @@ use Symfony\Component\Tui\Event\InputEvent;
  *
  * Registered at priority {@see InputPriority::GLOBAL_INTERRUPT} so it runs before other input handlers.
  *
+ * Matching uses the mounted editor widget's effective keybindings
+ * (`copy` / `delete_char_forward`) so legacy control bytes and Kitty
+ * CSI-u sequences stay synchronized with Symfony TUI protocol state.
+ *
  * Ctrl+D → immediate quit
  * Ctrl+C (with editor text) → clear editor
  * Ctrl+C (empty editor) → show "Press Ctrl+C again to exit"
@@ -27,6 +31,7 @@ final class CtrlCInputInterceptor implements TuiListenerRegistrar
     {
         $tui = $context->tui;
         $screen = $context->screen;
+        $editor = $screen->editorWidget();
 
         // Mutable state captured by the closure (scoped to this TUI session).
         // The by-reference capture is REQUIRED: PHP re-initialises by-value
@@ -35,19 +40,20 @@ final class CtrlCInputInterceptor implements TuiListenerRegistrar
         $ctrlCLast = 0.0;
 
         $context->tui->addListener(
-            static function (InputEvent $event) use ($tui, $screen, &$ctrlCLast): void {
+            static function (InputEvent $event) use ($tui, $screen, $editor, &$ctrlCLast): void {
                 $data = $event->getData();
+                $keys = $editor->getKeybindings();
 
-                // Ctrl+D → quit
-                if ("\x04" === $data) {
+                // Ctrl+D (editor delete_char_forward) → quit
+                if ($keys->matches($data, 'delete_char_forward')) {
                     $event->stopPropagation();
                     $tui->stop();
 
                     return;
                 }
 
-                // Ctrl+C → cancel or double-press quit
-                if ("\x03" === $data) {
+                // Ctrl+C (editor copy) → cancel or double-press quit
+                if ($keys->matches($data, 'copy')) {
                     $event->stopPropagation();
 
                     $now = microtime(true);

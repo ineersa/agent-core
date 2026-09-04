@@ -29,7 +29,6 @@ use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Tui\Event\TickEvent;
-use Symfony\Component\Tui\Input\Keybindings;
 use Symfony\Component\Tui\Terminal\TerminalInterface;
 use Symfony\Component\Tui\Tui;
 
@@ -199,13 +198,6 @@ final readonly class InteractiveMode
                 $state->transcriptDisplayState,
             );
             $screen->mount($tui);
-
-            // Apply Ctrl+J as portable newline, overriding the default new_line
-            // key list.  Both ctrl+j and shift+enter are listed so the default
-            // Shift+Enter behavior is preserved alongside the new portable key.
-            $this->promptEditor->setKeybindings(new Keybindings([
-                'new_line' => ['ctrl+j', 'shift+enter'],
-            ]));
 
             // ── Compose the per-session service scope ──
             // Fresh controllers, question/history state, command registry,
