@@ -91,7 +91,7 @@ framework:
             # ExtensionAgentJobDispatcher refuses sync:// so model work cannot run
             # inline during AfterTurnCommit / on the caller thread.
             # Uses Symfony Messenger native default max_retries (3). No failure_transport:
-            # exhausted jobs emit a sanitized TUI runtime event instead of a dead-letter queue.
+            # exhausted jobs emit a TUI runtime event instead of a dead-letter queue.
             extension_agent:
                 dsn: '%env(HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN)%'
 

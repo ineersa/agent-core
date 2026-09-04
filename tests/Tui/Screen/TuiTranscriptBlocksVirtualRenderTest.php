@@ -9,9 +9,11 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\AssistantStreamProjectionSubscriber;
+use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ExtensionAgentJobFailedProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\ThemePalette;
@@ -364,6 +366,35 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
 
         $this->assertStringContainsString('✕', $text, 'Error glyph missing');
         $this->assertStringContainsString('something went wrong', $text, 'Error text missing');
+    }
+
+    #[Test]
+    public function testExtensionAgentFailureRendersUnderlyingError(): void
+    {
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addSubscriber(new ExtensionAgentJobFailedProjectionSubscriber());
+        $projector = new TranscriptProjector($dispatcher, new TranscriptProjectionState());
+        $projector->accept(new RuntimeEvent(
+            type: RuntimeEventTypeEnum::ExtensionAgentJobFailed->value,
+            runId: self::SESSION_ID,
+            seq: 0,
+            payload: [
+                'message' => '[usage_limit_reached/insufficient_quota]: You have no credits left.',
+                'reason' => 'retry_exhausted',
+                'handler_id' => 'observational_memory.observe_boundary',
+                'job_id' => 'job-usage-limit',
+                'retry_count' => 1,
+                'attempts' => 2,
+            ],
+        ));
+
+        $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
+        $harness->screen()->setTranscriptBlocks($projector->blocks());
+        $harness->screen()->setWorkingVisible(false);
+        $text = $harness->plainScreenText();
+
+        $this->assertStringContainsString('✕', $text);
+        $this->assertStringContainsString('[usage_limit_reached/insufficient_quota]: You have no credits left.', $text);
     }
 
     #[Test]

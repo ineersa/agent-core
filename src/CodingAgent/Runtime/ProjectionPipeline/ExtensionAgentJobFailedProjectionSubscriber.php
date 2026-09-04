@@ -12,12 +12,12 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 /**
  * Projects extension_agent permanent failures into transcript Error blocks.
  *
- * Does not mark the main agent run failed. Uses only the fixed safe message
- * from the runtime event payload (or the same constant fallback).
+ * Does not mark the main agent run failed. Uses the unwrapped extension error
+ * from the runtime event payload, with a generic fallback when it is missing.
  */
 final readonly class ExtensionAgentJobFailedProjectionSubscriber implements EventSubscriberInterface
 {
-    private const string SAFE_MESSAGE = 'Extension background job failed after retrying.';
+    private const string GENERIC_MESSAGE = 'Extension background job failed after retrying.';
 
     public static function getSubscribedEvents(): array
     {
@@ -32,7 +32,7 @@ final readonly class ExtensionAgentJobFailedProjectionSubscriber implements Even
         $state = $event->state;
         $runId = $event->runId();
 
-        $text = self::SAFE_MESSAGE;
+        $text = self::GENERIC_MESSAGE;
         if (isset($p['message']) && \is_string($p['message']) && '' !== trim($p['message'])) {
             $text = $p['message'];
         }
