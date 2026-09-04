@@ -15,6 +15,7 @@ use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Listener\ModelControlListener;
 use Ineersa\Tui\Runtime\TuiSessionState;
@@ -37,24 +38,24 @@ final class ModelControlListenerHotkeyTest extends TestCase
 {
     use TuiRuntimeContextBuilderTrait;
 
-    private string $tempDir;
+    private string $projectDir;
     private string $homeDir;
     private HatfieldSessionStore $sessionStore;
 
     protected function setUp(): void
     {
         parent::setUp();
-        $this->tempDir = sys_get_temp_dir().'/hatfield-model-hotkey-'.uniqid('', true);
-        $this->homeDir = $this->tempDir.'/home';
-        mkdir($this->homeDir.'/.hatfield', 0777, true);
-        mkdir($this->tempDir.'/project/.hatfield/sessions', 0777, true);
+        $this->projectDir = TestDirectoryIsolation::createProjectTempDir('model-hotkey');
+        $this->homeDir = TestDirectoryIsolation::createOsTempDir('model-hotkey-home');
+        TestDirectoryIsolation::createHatfieldTree($this->projectDir, withSessions: true);
+        TestDirectoryIsolation::ensureDirectory($this->homeDir.'/.hatfield');
         file_put_contents($this->homeDir.'/.hatfield/settings.yaml', "tui:\n    theme: default\n");
 
         $this->sessionStore = new HatfieldSessionStore(
             appConfig: new AppConfig(
                 tui: new TuiConfig(theme: 'default'),
                 logging: new LoggingConfig(),
-                cwd: $this->tempDir.'/project',
+                cwd: $this->projectDir,
             ),
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
             dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
@@ -63,10 +64,8 @@ final class ModelControlListenerHotkeyTest extends TestCase
 
     protected function tearDown(): void
     {
-        $fs = new Filesystem();
-        if (is_dir($this->tempDir)) {
-            $fs->remove($this->tempDir);
-        }
+        TestDirectoryIsolation::removeDirectory($this->projectDir);
+        TestDirectoryIsolation::removeDirectory($this->homeDir);
         parent::tearDown();
     }
 
@@ -167,7 +166,7 @@ final class ModelControlListenerHotkeyTest extends TestCase
     private function buildService(array $aiData): ModelSelectionService
     {
         $appConfig = $this->makeAppConfig($aiData);
-        $pathResolver = new SettingsPathResolver($this->tempDir.'/project', $this->homeDir);
+        $pathResolver = new SettingsPathResolver($this->projectDir, $this->homeDir);
         $homeWriter = new SettingsOverrideWriter($pathResolver, PropertyAccess::createPropertyAccessor(), new Filesystem());
 
         return new ModelSelectionService($appConfig, new ModelResolver($appConfig, $this->sessionStore), $homeWriter, $this->sessionStore);
@@ -191,7 +190,7 @@ final class ModelControlListenerHotkeyTest extends TestCase
             ai: $ai,
             raw: $raw,
             catalog: null !== $ai ? new HatfieldModelCatalog($ai) : null,
-            cwd: $this->tempDir.'/project',
+            cwd: $this->projectDir,
         );
     }
 

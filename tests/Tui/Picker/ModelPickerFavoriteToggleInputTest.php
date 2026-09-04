@@ -16,10 +16,10 @@ use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\Picker\ModelPickerController;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
-use Ineersa\Tui\Widget\SelectListKeybindings;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
@@ -31,30 +31,28 @@ use Symfony\Component\Tui\Widget\SelectListWidget;
 
 /**
  * Test thesis: model-picker Ctrl+F favorite toggle matches through list
- * keybindings for legacy and Kitty forms.
+ * keybindings for legacy and Kitty forms and toggles the selected model.
  */
 #[CoversClass(ModelPickerController::class)]
 final class ModelPickerFavoriteToggleInputTest extends TestCase
 {
-    private string $tempDir;
+    private string $projectDir;
     private string $homeDir;
 
     protected function setUp(): void
     {
         parent::setUp();
-        $this->tempDir = sys_get_temp_dir().'/hatfield-picker-fav-'.uniqid('', true);
-        $this->homeDir = $this->tempDir.'/home';
-        mkdir($this->homeDir.'/.hatfield', 0777, true);
-        mkdir($this->tempDir.'/project/.hatfield/sessions', 0777, true);
+        $this->projectDir = TestDirectoryIsolation::createProjectTempDir('picker-fav');
+        $this->homeDir = TestDirectoryIsolation::createOsTempDir('picker-fav-home');
+        TestDirectoryIsolation::createHatfieldTree($this->projectDir, withSessions: true);
+        TestDirectoryIsolation::ensureDirectory($this->homeDir.'/.hatfield');
         file_put_contents($this->homeDir.'/.hatfield/settings.yaml', "tui:\n    theme: default\n");
     }
 
     protected function tearDown(): void
     {
-        $fs = new Filesystem();
-        if (is_dir($this->tempDir)) {
-            $fs->remove($this->tempDir);
-        }
+        TestDirectoryIsolation::removeDirectory($this->projectDir);
+        TestDirectoryIsolation::removeDirectory($this->homeDir);
         parent::tearDown();
     }
 
@@ -65,14 +63,6 @@ final class ModelPickerFavoriteToggleInputTest extends TestCase
     {
         yield 'legacy' => ["\x06"];
         yield 'kitty' => ["\x1b[102;5u"];
-    }
-
-    #[Test]
-    #[DataProvider('provideCtrlFSequences')]
-    public function ctrlFMatchesFavoriteToggleAction(string $sequence): void
-    {
-        $kb = SelectListKeybindings::withFavoriteToggle();
-        $this->assertTrue($kb->matches($sequence, 'toggle_favorite'));
     }
 
     #[Test]
@@ -104,7 +94,7 @@ final class ModelPickerFavoriteToggleInputTest extends TestCase
     private function buildService(): ModelSelectionService
     {
         $appConfig = $this->makeAppConfig($this->standardAiData());
-        $pathResolver = new SettingsPathResolver($this->tempDir.'/project', $this->homeDir);
+        $pathResolver = new SettingsPathResolver($this->projectDir, $this->homeDir);
         $homeWriter = new SettingsOverrideWriter($pathResolver, PropertyAccess::createPropertyAccessor(), new Filesystem());
         $sessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
@@ -133,7 +123,7 @@ final class ModelPickerFavoriteToggleInputTest extends TestCase
             ai: $ai,
             raw: $raw,
             catalog: null !== $ai ? new HatfieldModelCatalog($ai) : null,
-            cwd: $this->tempDir.'/project',
+            cwd: $this->projectDir,
         );
     }
 
