@@ -839,6 +839,10 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
         $this->assertStringContainsString('view_image', $plain);
         $this->assertStringContainsString('path:', $plain);
         $this->assertStringContainsString('/tmp/shot.png', $plain);
+        $this->assertStringContainsString('media: image/png', $plain);
+        $this->assertStringContainsString('size: 10x20', $plain);
+        $this->assertStringContainsString('bytes: 99', $plain);
+        $this->assertStringNotContainsString('type: view_image', $plain);
         $this->assertMatchesRegularExpression(
             '/\x1b\[38;2;255;0;255mpath\x1b\[39m:/',
             $ansi,

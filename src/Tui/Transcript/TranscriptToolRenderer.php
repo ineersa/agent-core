@@ -478,7 +478,10 @@ final readonly class TranscriptToolRenderer
             $container->add(new TextWidget($this->coloredArgumentPathLine($theme, $path)));
         }
 
-        $this->appendStyledToolExchangeResultBodyWidgets($container, $resultBlock, $theme);
+        $resultBody = $this->buildViewImageToolResultBodyWidget($resultBlock, $theme, prependBlankLine: true);
+        if (null !== $resultBody) {
+            $container->add($resultBody);
+        }
 
         return $container;
     }
@@ -589,6 +592,34 @@ final readonly class TranscriptToolRenderer
                 $bodyLines = ['(image metadata)'];
             }
         }
+        foreach ($bodyLines as $bodyLine) {
+            $lines[] = '    '.$bodyLine;
+        }
+
+        $color = $this->toolResultFacts->toolResultIsFullRender($block) && $this->toolResultFacts->metaIsTruthy($block->meta['is_error'] ?? false)
+            ? ThemeColorEnum::Error
+            : ThemeColorEnum::ToolOutput;
+
+        return new TextWidget($theme->color($color, implode("\n", $lines)));
+    }
+
+    private function buildViewImageToolResultBodyWidget(
+        TranscriptBlock $block,
+        TuiTheme $theme,
+        bool $prependBlankLine,
+    ): ?TextWidget {
+        $result = $block->meta['result'] ?? null;
+        $bodyLines = $this->viewImageFormatter->formatToolResultLines($result);
+        if ([] === $bodyLines && \is_string($result) && '' !== $result) {
+            $bodyLines = $this->toolResultFacts->toolResultIsFullRender($block)
+                ? [$result]
+                : ['(image metadata)'];
+        }
+        if ([] === $bodyLines) {
+            return null;
+        }
+
+        $lines = $prependBlankLine ? [''] : [];
         foreach ($bodyLines as $bodyLine) {
             $lines[] = '    '.$bodyLine;
         }
