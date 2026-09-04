@@ -7,24 +7,27 @@ namespace Ineersa\CodingAgent\Tests\Extension\Agent;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobFailedEventSubscriber;
 use Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobMessage;
+use Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobWorker;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\HttpClient\Exception\TransportException;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Event\WorkerMessageFailedEvent;
+use Symfony\Component\Messenger\Exception\HandlerFailedException;
 use Symfony\Component\Messenger\Stamp\RedeliveryStamp;
 
 /**
  * Thesis: final extension_agent delivery with validated payload.run_id emits
- * exactly one sanitized transient event; retrying failure emits none; missing
- * run_id logs only; payload has no exception/session content.
+ * exactly one transient event containing the unwrapped handler error; retrying
+ * failure emits none; missing run_id logs only.
  */
 final class ExtensionAgentJobFailedEventSubscriberTest extends TestCase
 {
     #[Test]
-    public function finalFailureWithRunIdEmitsExactlyOneSanitizedEvent(): void
+    public function finalFailureWithRunIdEmitsUnderlyingError(): void
     {
         $sink = new CollectingRuntimeEventSink();
         $logger = new TestLogger();
@@ -44,7 +47,7 @@ final class ExtensionAgentJobFailedEventSubscriberTest extends TestCase
         $event = new WorkerMessageFailedEvent(
             $envelope,
             'extension_agent',
-            new \RuntimeException('sensitive provider error with stack'),
+            new TransportException('[account_secret_code]: sensitive provider error with stack'),
         );
 
         $subscriber->onWorkerMessageFailed($event);
@@ -54,7 +57,7 @@ final class ExtensionAgentJobFailedEventSubscriberTest extends TestCase
         $this->assertSame(RuntimeEventTypeEnum::ExtensionAgentJobFailed->value, $emitted->type);
         $this->assertSame('run-abc', $emitted->runId);
         $this->assertSame(0, $emitted->seq);
-        $this->assertSame('Extension background job failed after retrying.', $emitted->payload['message']);
+        $this->assertSame('[account_secret_code]: sensitive provider error with stack', $emitted->payload['message']);
         $this->assertSame('retry_exhausted', $emitted->payload['reason']);
         $this->assertSame('observational_memory.observe_boundary', $emitted->payload['handler_id']);
         $this->assertSame('job-1', $emitted->payload['job_id']);
@@ -62,14 +65,46 @@ final class ExtensionAgentJobFailedEventSubscriberTest extends TestCase
         $this->assertSame(2, $emitted->payload['attempts']);
 
         $encoded = json_encode($emitted->toArray(), \JSON_THROW_ON_ERROR);
-        $this->assertStringNotContainsString('sensitive provider error', $encoded);
-        $this->assertStringNotContainsString('RuntimeException', $encoded);
         $this->assertStringNotContainsString('session-should-not-leak', $encoded);
         $this->assertStringNotContainsString('never-include', $encoded);
         $this->assertStringNotContainsString('corr-should-not-leak', $encoded);
         $this->assertArrayNotHasKey('session_id', $emitted->payload);
         $this->assertArrayNotHasKey('exception', $emitted->payload);
         $this->assertArrayNotHasKey('exception_class', $emitted->payload);
+        $this->assertSame([], $logger->records);
+    }
+
+    #[Test]
+    public function wrappedFailureEmitsUnderlyingProviderError(): void
+    {
+        $sink = new CollectingRuntimeEventSink();
+        $logger = new TestLogger();
+        $subscriber = new ExtensionAgentJobFailedEventSubscriber($sink, $logger);
+        $message = new ExtensionAgentJobMessage(
+            handlerId: 'observational_memory.observe_boundary',
+            payload: ['run_id' => 'run-usage-limit'],
+            jobId: 'job-usage-limit',
+        );
+        $providerFailure = new \RuntimeException(
+            '[usage_limit_reached/insufficient_quota]: RAW_PROVIDER_ACCOUNT_DETAIL',
+        );
+        $wrapped = new HandlerFailedException(new Envelope($message), [
+            ExtensionAgentJobWorker::class => $providerFailure,
+        ]);
+
+        $subscriber->onWorkerMessageFailed(new WorkerMessageFailedEvent(
+            new Envelope($message),
+            'extension_agent',
+            $wrapped,
+        ));
+
+        $this->assertCount(1, $sink->events);
+        $payload = $sink->events[0]->payload;
+        $this->assertSame('retry_exhausted', $payload['reason']);
+        $this->assertSame(
+            '[usage_limit_reached/insufficient_quota]: RAW_PROVIDER_ACCOUNT_DETAIL',
+            $payload['message'],
+        );
         $this->assertSame([], $logger->records);
     }
 
