@@ -30,7 +30,7 @@ ai:
             supports_completions: true
             supports_embeddings: false
             supports_thinking_levels: false
-            models: { flash: { name: flash, context_window: 200000, max_tokens: 65536, input: [text, image], tool_calling: true, reasoning: true, cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 } } }
+            models: { flash: { name: flash, context_window: 160000, max_tokens: 65536, input: [text, image], tool_calling: true, reasoning: true, cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 } } }
         llama_cpp_test:
             type: generic
             enabled: true
@@ -92,7 +92,7 @@ extensions:
         observational_memory:
             storage: { database: .hatfield/extensions-data/observational-memory/om.sqlite }
             model: llama_cpp/flash
-            observer: { context_window_ratio: 0.50 }
+            observer: { context_window_ratio: 0.35 }
             reflector: { reflect_after_observation_tokens: 40000 }
             pools: { observations_max_tokens: 30000 }
         safe_guard:
