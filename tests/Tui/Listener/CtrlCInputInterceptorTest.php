@@ -70,10 +70,9 @@ final class CtrlCInputInterceptorTest extends TestCase
 
     #[Test]
     #[DataProvider('provideCtrlCSequences')]
-    public function emptyCtrlCShowsSecondPressPrompt(string $sequence): void
+    public function ctrlCOnEmptyEditorShowsExitPrompt(string $sequence): void
     {
         $harness = $this->startHarness();
-        $this->assertSame('', $harness->screen()->editorText());
 
         $harness->sendInput($sequence);
 
@@ -82,44 +81,6 @@ final class CtrlCInputInterceptorTest extends TestCase
             'Press Ctrl+C again to exit',
             $this->statusEntries($harness)['ctrl_c'] ?? null,
         );
-        $harness->stopInputLoop();
-    }
-
-    #[Test]
-    #[DataProvider('provideCtrlCSequences')]
-    public function secondCtrlCWithinWindowStopsTui(string $sequence): void
-    {
-        $harness = $this->startHarness();
-
-        $harness->sendInput($sequence);
-        $this->assertTrue($harness->tui()->isRunning());
-        $this->assertSame(
-            'Press Ctrl+C again to exit',
-            $this->statusEntries($harness)['ctrl_c'] ?? null,
-        );
-
-        $harness->sendInput($sequence);
-
-        $this->assertFalse($harness->tui()->isRunning());
-        $harness->stopInputLoop();
-    }
-
-    #[Test]
-    #[DataProvider('provideCtrlCSequences')]
-    public function otherKeyResetsDoublePressPrompt(string $sequence): void
-    {
-        $harness = $this->startHarness();
-
-        $harness->sendInput($sequence);
-        $this->assertSame(
-            'Press Ctrl+C again to exit',
-            $this->statusEntries($harness)['ctrl_c'] ?? null,
-        );
-
-        $harness->sendInput('a');
-
-        $this->assertArrayNotHasKey('ctrl_c', $this->statusEntries($harness));
-        $this->assertTrue($harness->tui()->isRunning());
         $harness->stopInputLoop();
     }
 

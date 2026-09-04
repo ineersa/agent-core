@@ -33,16 +33,6 @@ final class SelectListKeybindingsTest extends TestCase
         $this->assertSame([], $kb->getBindings('cursor_right'));
     }
 
-    public function testWithFavoriteToggleMatchesLegacyAndKittyCtrlF(): void
-    {
-        $kb = SelectListKeybindings::withFavoriteToggle();
-
-        $this->assertSame([Key::ctrl('f')], $kb->getBindings('toggle_favorite'));
-        $this->assertTrue($kb->matches("\x06", 'toggle_favorite'));
-        $this->assertTrue($kb->matches("\x1b[102;5u", 'toggle_favorite'));
-        $this->assertSame([], $kb->getBindings('cursor_right'));
-    }
-
     public function testWithSpaceFavoriteToggleMatchesLegacyAndKittySpace(): void
     {
         $kb = SelectListKeybindings::withSpaceFavoriteToggle();

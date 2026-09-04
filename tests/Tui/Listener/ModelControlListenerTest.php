@@ -34,7 +34,7 @@ use Symfony\Component\PropertyAccess\PropertyAccess;
  * through the mounted editor keybindings and invoke model-control actions.
  */
 #[CoversClass(ModelControlListener::class)]
-final class ModelControlListenerHotkeyTest extends TestCase
+final class ModelControlListenerTest extends TestCase
 {
     use TuiRuntimeContextBuilderTrait;
 

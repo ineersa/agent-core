@@ -172,7 +172,7 @@ final class SetupScreen
 
     private function quitOnCtrlD(string $data): bool
     {
-        if ($this->activeQuitWidget()->getKeybindings()->matches($data, 'quit_setup')) {
+        if ($this->listWidget->getKeybindings()->matches($data, 'quit_setup')) {
             $this->finishSuccess();
 
             return true;
@@ -186,15 +186,6 @@ final class SetupScreen
         $widget->setKeybindings(new Keybindings([
             'quit_setup' => [Key::ctrl('d')],
         ]));
-    }
-
-    private function activeQuitWidget(): SelectListWidget|InputWidget|SettingsListWidget
-    {
-        return match ($this->phase) {
-            self::PHASE_INPUT => $this->inputWidget,
-            self::PHASE_CUSTOM => $this->settingsWidget,
-            default => $this->listWidget,
-        };
     }
 
     private function onListSelect(string $value): void
