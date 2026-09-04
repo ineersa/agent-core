@@ -12,8 +12,8 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 /**
  * Projects extension_agent permanent failures into transcript Error blocks.
  *
- * Does not mark the main agent run failed. Uses the boundary-sanitized message
- * from the runtime event payload, with the same generic fallback.
+ * Does not mark the main agent run failed. Uses the unwrapped extension error
+ * from the runtime event payload, with a generic fallback when it is missing.
  */
 final readonly class ExtensionAgentJobFailedProjectionSubscriber implements EventSubscriberInterface
 {

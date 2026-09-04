@@ -369,7 +369,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
     }
 
     #[Test]
-    public function testExtensionAgentUsageLimitFailureRendersActionableError(): void
+    public function testExtensionAgentFailureRendersUnderlyingError(): void
     {
         $dispatcher = new EventDispatcher();
         $dispatcher->addSubscriber(new ExtensionAgentJobFailedProjectionSubscriber());
@@ -379,8 +379,8 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
             runId: self::SESSION_ID,
             seq: 0,
             payload: [
-                'message' => 'Extension background job failed after retrying. LLM provider usage limit reached. Check your plan or billing.',
-                'reason' => 'usage_limit_reached',
+                'message' => '[usage_limit_reached/insufficient_quota]: You have no credits left.',
+                'reason' => 'retry_exhausted',
                 'handler_id' => 'observational_memory.observe_boundary',
                 'job_id' => 'job-usage-limit',
                 'retry_count' => 1,
@@ -394,7 +394,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
         $text = $harness->plainScreenText();
 
         $this->assertStringContainsString('✕', $text);
-        $this->assertStringContainsString('LLM provider usage limit reached. Check your plan or billing.', $text);
+        $this->assertStringContainsString('[usage_limit_reached/insufficient_quota]: You have no credits left.', $text);
     }
 
     #[Test]
