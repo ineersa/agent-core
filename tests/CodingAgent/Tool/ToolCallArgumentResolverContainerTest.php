@@ -85,11 +85,13 @@ final class ToolCallArgumentResolverContainerTest extends IsolatedKernelTestCase
         $config = self::getContainer()->get(BashToolConfig::class);
         $timeout = $this->toolboxParameterSchema('bash', 'timeout');
 
+        $this->assertSame(30, $config->defaultTimeoutSeconds);
+
         // Settings-derived schema fragment: same BashToolConfig the runtime
         // BashTimeoutMax constraint consumes.
         $this->assertSame($config->maxTimeoutSeconds, $timeout['maximum']);
         $this->assertSame(
-            \sprintf('Timeout in seconds (default: %d, max: %d). Use for commands that may hang.', $config->defaultTimeoutSeconds, $config->maxTimeoutSeconds),
+            \sprintf('Timeout in seconds (default: %d, max: %d). Provide an explicit higher value for commands that need more than the default.', $config->defaultTimeoutSeconds, $config->maxTimeoutSeconds),
             $timeout['description'],
         );
     }

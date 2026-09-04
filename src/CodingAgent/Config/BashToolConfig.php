@@ -23,7 +23,7 @@ final readonly class BashToolConfig
      * @param int $logTailChars                     Max chars to read from background process log
      */
     public function __construct(
-        public int $defaultTimeoutSeconds = 300,
+        public int $defaultTimeoutSeconds = 30,
 
         public int $maxTimeoutSeconds = 3600,
 
