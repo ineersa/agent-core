@@ -795,6 +795,33 @@ final class CompletionListenerTest extends TestCase
         $this->assertCompletionOverlayClosesOnInterrupt($sequence);
     }
 
+    #[Test]
+    public function kittyPrintableKeyReleaseLeavesCompletionOpen(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: 'completion-key-release');
+        $provider = new SlashCommandCompletionProvider(new SlashCommandCatalog());
+        $context = $this->buildTuiContext()
+            ->withTui($harness->tui())
+            ->withState(new TuiSessionState('completion-key-release'))
+            ->withScreen($harness->screen())
+            ->build();
+        (new CompletionListener($provider))->register($context);
+
+        try {
+            $harness->startInputLoop();
+            $harness->screen()->promptEditor()->typeText('/');
+            $harness->sendInput("\t");
+            $this->assertStringContainsString('Completions — arrows move', $harness->plainScreenText());
+
+            $harness->sendInput("\x1b[47;1:3u");
+
+            $this->assertStringContainsString('Completions — arrows move', $harness->plainScreenText());
+            $this->assertSame('/', $harness->screen()->editorText());
+        } finally {
+            $harness->stopInputLoop();
+        }
+    }
+
     // ── Overlay lifecycle (open/close is idempotent) ──────────────
 
     #[Test]

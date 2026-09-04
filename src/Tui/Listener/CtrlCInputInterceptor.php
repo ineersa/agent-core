@@ -22,6 +22,7 @@ use Symfony\Component\Tui\Event\InputEvent;
  * Ctrl+C (empty editor) → show "Press Ctrl+C again to exit"
  * Ctrl+C × 2 within 1.5s → quit
  * Any other key → reset double-press timer
+ * Kitty key releases → ignored without resetting the timer
  *
  * Implements TuiListenerRegistrar for DI-driven registration.
  */
@@ -43,6 +44,10 @@ final class CtrlCInputInterceptor implements TuiListenerRegistrar
             static function (InputEvent $event) use ($tui, $screen, $editor, &$ctrlCLast): void {
                 $data = $event->getData();
                 $keys = $editor->getKeybindings();
+
+                if ($keys->getParser()->isKeyRelease($data)) {
+                    return;
+                }
 
                 // Ctrl+D (editor delete_char_forward) → quit
                 if ($keys->matches($data, 'delete_char_forward')) {
@@ -66,6 +71,7 @@ final class CtrlCInputInterceptor implements TuiListenerRegistrar
                     if ('' !== $screen->editorText()) {
                         $screen->clearEditor();
                         $screen->setStatus('ctrl_c', null);
+                        $screen->requestRender();
                     } else {
                         $screen->setStatus('ctrl_c', 'Press Ctrl+C again to exit');
                     }
