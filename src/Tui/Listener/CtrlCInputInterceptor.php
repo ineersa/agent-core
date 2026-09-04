@@ -7,11 +7,16 @@ namespace Ineersa\Tui\Listener;
 use Ineersa\Tui\Layout\InputPriority;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Symfony\Component\Tui\Event\InputEvent;
+use Symfony\Component\Tui\Input\Key;
+use Symfony\Component\Tui\Input\Keybindings;
 
 /**
  * Intercepts Ctrl+D (quit) and Ctrl+C (cancel / double-press quit).
  *
  * Registered at priority {@see InputPriority::GLOBAL_INTERRUPT} so it runs before other input handlers.
+ *
+ * Matching uses Symfony TUI {@see Keybindings} so both legacy control bytes
+ * (`\x03` / `\x04`) and Kitty CSI-u sequences (`ESC[99;5u` / `ESC[100;5u`) work.
  *
  * Ctrl+D → immediate quit
  * Ctrl+C (with editor text) → clear editor
@@ -33,13 +38,17 @@ final class CtrlCInputInterceptor implements TuiListenerRegistrar
         // use() captures on every closure invocation, so the double-press
         // timer would never see the previous press without it.
         $ctrlCLast = 0.0;
+        $keys = new Keybindings([
+            'quit' => [Key::ctrl('d')],
+            'interrupt' => [Key::ctrl('c')],
+        ]);
 
         $context->tui->addListener(
-            static function (InputEvent $event) use ($tui, $screen, &$ctrlCLast): void {
+            static function (InputEvent $event) use ($tui, $screen, $keys, &$ctrlCLast): void {
                 $data = $event->getData();
 
                 // Ctrl+D → quit
-                if ("\x04" === $data) {
+                if ($keys->matches($data, 'quit')) {
                     $event->stopPropagation();
                     $tui->stop();
 
@@ -47,7 +56,7 @@ final class CtrlCInputInterceptor implements TuiListenerRegistrar
                 }
 
                 // Ctrl+C → cancel or double-press quit
-                if ("\x03" === $data) {
+                if ($keys->matches($data, 'interrupt')) {
                     $event->stopPropagation();
 
                     $now = microtime(true);

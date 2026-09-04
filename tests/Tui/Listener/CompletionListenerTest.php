@@ -23,6 +23,7 @@ use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Tui\Tui;
@@ -731,8 +732,27 @@ final class CompletionListenerTest extends TestCase
 
     // ── Ctrl+C / Ctrl+D tears down completion overlay ────────────
 
+    /**
+     * @return iterable<string, array{0: string}>
+     */
+    public static function provideCtrlCSequences(): iterable
+    {
+        yield 'legacy' => ["\x03"];
+        yield 'kitty' => ["\x1b[99;5u"];
+    }
+
+    /**
+     * @return iterable<string, array{0: string}>
+     */
+    public static function provideCtrlDSequences(): iterable
+    {
+        yield 'legacy' => ["\x04"];
+        yield 'kitty' => ["\x1b[100;5u"];
+    }
+
     #[Test]
-    public function ctrlCClearsCompletionOverlay(): void
+    #[DataProvider('provideCtrlCSequences')]
+    public function ctrlCClearsCompletionOverlay(string $sequence): void
     {
         $this->editor->typeText('/');
 
@@ -745,7 +765,7 @@ final class CompletionListenerTest extends TestCase
         // register the full interceptor chain).
         $exception = null;
         try {
-            $this->tui->handleInput("\x03");
+            $this->tui->handleInput($sequence);
         } catch (\Throwable $e) {
             $exception = $e;
         }
@@ -762,7 +782,8 @@ final class CompletionListenerTest extends TestCase
     }
 
     #[Test]
-    public function ctrlDClearsCompletionOverlay(): void
+    #[DataProvider('provideCtrlDSequences')]
+    public function ctrlDClearsCompletionOverlay(string $sequence): void
     {
         $this->editor->typeText('/');
 
@@ -774,7 +795,7 @@ final class CompletionListenerTest extends TestCase
         // (CtrlCInputInterceptor, editor) still handle the key.
         $exception = null;
         try {
-            $this->tui->handleInput("\x04");
+            $this->tui->handleInput($sequence);
         } catch (\Throwable $e) {
             $exception = $e;
         }
@@ -790,7 +811,8 @@ final class CompletionListenerTest extends TestCase
     }
 
     #[Test]
-    public function ctrlCDoesNothingWhenCompletionClosed(): void
+    #[DataProvider('provideCtrlCSequences')]
+    public function ctrlCDoesNothingWhenCompletionClosed(string $sequence): void
     {
         $this->editor->typeText('hello');
 
@@ -800,7 +822,7 @@ final class CompletionListenerTest extends TestCase
         // exception is thrown.
         $exception = null;
         try {
-            $this->tui->handleInput("\x03");
+            $this->tui->handleInput($sequence);
         } catch (\Throwable $e) {
             $exception = $e;
         }
