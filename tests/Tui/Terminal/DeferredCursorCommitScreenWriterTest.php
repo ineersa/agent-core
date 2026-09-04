@@ -10,16 +10,27 @@ use PHPUnit\Framework\TestCase;
 use Revolt\EventLoop;
 use Symfony\Component\Tui\Ansi\AnsiUtils;
 use Symfony\Component\Tui\Style\CursorShape;
-use Symfony\Component\Tui\Terminal\VirtualTerminal;
+use Symfony\Component\Tui\Terminal\TerminalInterface;
 
 final class DeferredCursorCommitScreenWriterTest extends TestCase
 {
+    private const string UPSTREAM_SCREEN_WRITER_SHA256 = '5b06f6b76b3d0c53e26327ee0ada88a2666ec46ca8f4eb99e826db227da9c97f';
+
+    #[Test]
+    public function copiedWriterTracksTheLockedSymfonyRevision(): void
+    {
+        $this->assertSame(
+            self::UPSTREAM_SCREEN_WRITER_SHA256,
+            hash_file('sha256', \dirname(__DIR__, 3).'/vendor/symfony/tui/Render/ScreenWriter.php'),
+            'Symfony ScreenWriter changed. Rebase the app-owned copy and update this reviewed hash.',
+        );
+    }
+
     #[Test]
     public function itRepeatsCursorCommitOnNextLoopTurnAfterOverheightFrame(): void
     {
-        $terminal = new VirtualTerminal(columns: 20, rows: 3);
+        $terminal = $this->terminalExpectingCursorCommits(rows: 3, count: 2);
         $writer = new DeferredCursorCommitScreenWriter($terminal);
-        $cursorCommit = "\x1b[4G\x1b[5 q\x1b[?25h";
 
         $writer->writeLines([
             'one',
@@ -28,19 +39,14 @@ final class DeferredCursorCommitScreenWriterTest extends TestCase
             'abc'.AnsiUtils::cursorMarker(CursorShape::Bar),
         ]);
 
-        $this->assertSame(1, substr_count($terminal->getOutput(), $cursorCommit));
-
         self::runOneLoopTurn();
-
-        $this->assertSame(2, substr_count($terminal->getOutput(), $cursorCommit));
     }
 
     #[Test]
     public function itDoesNotRepeatCursorCommitWhenFrameFitsViewport(): void
     {
-        $terminal = new VirtualTerminal(columns: 20, rows: 4);
+        $terminal = $this->terminalExpectingCursorCommits(rows: 4, count: 1);
         $writer = new DeferredCursorCommitScreenWriter($terminal);
-        $cursorCommit = "\x1b[4G\x1b[5 q\x1b[?25h";
 
         $writer->writeLines([
             'one',
@@ -49,8 +55,33 @@ final class DeferredCursorCommitScreenWriterTest extends TestCase
             'abc'.AnsiUtils::cursorMarker(CursorShape::Bar),
         ]);
         self::runOneLoopTurn();
+    }
 
-        $this->assertSame(1, substr_count($terminal->getOutput(), $cursorCommit));
+    #[Test]
+    public function exportingStateCancelsPendingCursorCommit(): void
+    {
+        $terminal = $this->terminalExpectingCursorCommits(rows: 3, count: 1);
+        $writer = new DeferredCursorCommitScreenWriter($terminal);
+
+        $writer->writeLines([
+            'one',
+            'two',
+            'three',
+            'abc'.AnsiUtils::cursorMarker(CursorShape::Bar),
+        ]);
+        $writer->getState();
+        self::runOneLoopTurn();
+    }
+
+    private function terminalExpectingCursorCommits(int $rows, int $count): TerminalInterface
+    {
+        $terminal = $this->createMock(TerminalInterface::class);
+        $terminal->method('getColumns')->willReturn(20);
+        $terminal->method('getRows')->willReturn($rows);
+        $terminal->method('isVirtual')->willReturn(true);
+        $terminal->expects($this->exactly($count))->method('showCursor');
+
+        return $terminal;
     }
 
     private static function runOneLoopTurn(): void

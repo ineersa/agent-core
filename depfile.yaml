@@ -135,6 +135,11 @@ parameters:
         - type: directory
           value: src/Tui/Export/.*
 
+    - name: TuiTerminal
+      collectors:
+        - type: directory
+          value: src/Tui/Terminal/.*
+
     - name: AppRuntimeContract
       collectors:
         - type: directory
@@ -402,6 +407,7 @@ parameters:
       - TuiCommand
       - TuiPicker
       - TuiExport
+      - TuiTerminal
       # TuiSessionCompositionFactory constructs TuiRuntimeEventApplier
       # with the serializer denormalizer.
       - SymfonySerializer
@@ -548,6 +554,7 @@ parameters:
       - SymfonyTui
 
     TuiSetup:
+      - TuiTerminal
       - SymfonyTui
 
     TuiCompactHeader:
@@ -580,6 +587,9 @@ parameters:
 
     TuiUtility:
       - SymfonyProcess
+
+    TuiTerminal:
+      - SymfonyTui
 
     TuiImagePaste:
       - AppConfig

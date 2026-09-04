@@ -24,8 +24,8 @@ use Symfony\Component\Tui\Terminal\TerminalInterface;
  * Symfony TUI 8.1 constructs its final ScreenWriter internally, so Hatfield
  * installs this class under Symfony's FQCN before Tui loads it. Keep the body
  * aligned with the referenced upstream revision. The Hatfield delta is the
- * deferredCursorCommitId field, one call after writeInternal(), and the two
- * deferred-commit methods at the end of the class.
+ * EventLoop import, deferredCursorCommitId field, scheduling call after
+ * writeInternal(), cancellation in reset(), and deferred-commit methods.
  */
 final class DeferredCursorCommitScreenWriter
 {
@@ -148,6 +148,8 @@ final class DeferredCursorCommitScreenWriter
      */
     public function getState(): array
     {
+        $this->cancelDeferredCursorCommit();
+
         return [
             'line_count' => \count($this->previousLines),
             'cursor_row' => $this->hardwareCursorRow,
