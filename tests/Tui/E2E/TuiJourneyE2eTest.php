@@ -23,6 +23,7 @@ use PHPUnit\Framework\TestCase;
  *  - Real shell prefix + follow-up after completed shell run.
  *  - A single model-interaction step submits a prompt and verifies
  *    the replay-backed assistant block appears.
+ *  - The overheight /hotkeys frame settles without a follow-up keypress.
  *  - Teardown sends Ctrl+D for a clean exit; TmuxHarness destructor
  *    kills the tmux session.
  *
@@ -62,9 +63,10 @@ final class TuiJourneyE2eTest extends TestCase
      *  1. Startup layout (logo, status, footer)
      *  2. Shell !ls prefix — real command output proof + ordering
      *  3. Inline shell on completed run + follow-up (issue #183 repro)
-     *  4. Clean exit via Ctrl+D
+     *  4. Overheight /hotkeys frame settles without another keypress
+     *  5. Clean exit via Ctrl+D
      *
-     * Virtual-only: /hotkeys, slash completion/cursor, chrome ordering,
+     * Virtual-only: slash completion/cursor, chrome ordering,
      * !! rejection ({@see TuiVirtualInputTest}, {@see TuiStartupVirtualRenderTest}).
      */
     public function testJourneyCoversCoreTuiBehavior(): void
@@ -81,6 +83,7 @@ final class TuiJourneyE2eTest extends TestCase
             $this->journeyPhase1StartupLayout($pane);
             $this->journeyPhase4ShellPrefixOutput($pane);
             $this->journeyPhase9InlineShellOnCompletedRun($pane);
+            $this->journeyPhase10OverheightHotkeysFrameSettles($pane);
 
             $this->tmux->sendKey($pane, 'C-d');
         } catch (\Throwable $e) {
@@ -424,5 +427,27 @@ final class TuiJourneyE2eTest extends TestCase
                 $lastLine ?? 0,
             ),
         );
+    }
+
+    /**
+     * A tall local-command result scrolls the physical terminal while Symfony
+     * still tracks logical rows. The final frame must settle without the user
+     * pressing another key to trigger a cursor-only terminal write.
+     */
+    private function journeyPhase10OverheightHotkeysFrameSettles(TmuxPane $pane): void
+    {
+        $this->tmux->sendKey($pane, 'C-u');
+        $this->tmux->sendLiteral($pane, '/hotkeys');
+        $this->tmux->sendKey($pane, 'Enter');
+
+        $capture = $this->tmux->waitForCaptureContains(
+            $pane,
+            'App shortcuts (Ctrl+C, Ctrl+D)',
+            timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
+            message: 'Overheight /hotkeys frame did not settle with its bottom chrome visible',
+        );
+
+        $this->assertStringContainsString('App shortcuts (Ctrl+C, Ctrl+D)', $capture);
+        $this->assertStringContainsString('◆', $capture);
     }
 }
