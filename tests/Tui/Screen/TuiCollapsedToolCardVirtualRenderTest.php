@@ -18,16 +18,16 @@ use PHPUnit\Framework\TestCase;
  * Virtual product proof for collapsed tool-card presentation.
  *
  * Test thesis: ChatScreen → TranscriptMountedWidget → TranscriptToolRenderer
- * keeps collapsed cards compact (identifying args, short/hidden results, spaced
- * result bodies, dim successful edit summaries) while Ctrl+O expansion restores
- * full detail. Exercises the live widget → ScreenBuffer path without tmux.
+ * keeps every argument visible with native terminal wrapping while result bodies
+ * use short/hidden previews and Ctrl+O expansion restores full result detail.
+ * Exercises the live widget → ScreenBuffer path without tmux.
  */
 final class TuiCollapsedToolCardVirtualRenderTest extends TestCase
 {
     private const string SESSION_ID = 'virtual-collapsed-tool-cards';
 
     #[Test]
-    public function collapsedReadShowsIdentifyingArgsAndHidesSuccessfulResult(): void
+    public function collapsedReadShowsAllArgsAndHidesSuccessfulResult(): void
     {
         $body = implode("\n", [
             '1|secret-line-a',
@@ -48,14 +48,14 @@ final class TuiCollapsedToolCardVirtualRenderTest extends TestCase
         $this->assertStringContainsString('path: src/Example.php', $collapsed);
         $this->assertStringContainsString('offset: 10', $collapsed);
         $this->assertStringContainsString('limit: 20', $collapsed);
-        $this->assertStringNotContainsString('nested:', $collapsed);
+        $this->assertStringContainsString('nested: { keep: hidden-until-expand }', $collapsed);
         $this->assertStringNotContainsString('secret-line-a', $collapsed);
         $this->assertStringNotContainsString('secret-line-c', $collapsed);
 
         $displayState->previewableBlocksExpanded = true;
         $harness->screen()->setTranscriptBlocks($blocks);
         $expanded = $harness->plainScreenText();
-        $this->assertStringContainsString('nested:', $expanded);
+        $this->assertStringContainsString('nested: { keep: hidden-until-expand }', $expanded);
         $this->assertStringContainsString('secret-line-a', $expanded);
         $this->assertStringContainsString('secret-line-c', $expanded);
     }
@@ -120,7 +120,7 @@ final class TuiCollapsedToolCardVirtualRenderTest extends TestCase
         $collapsed = $harness->plainScreenText();
         $collapsedAnsi = $harness->ansiOutput();
         $this->assertStringContainsString('$ echo one ⏎ echo two', $collapsed);
-        $this->assertStringNotContainsString('cwd:', $collapsed);
+        $this->assertStringContainsString('cwd: /tmp', $collapsed);
         $this->assertStringContainsString('bash_line_5', $collapsed);
         $this->assertStringContainsString('bash_line_3', $collapsed);
         $this->assertStringNotContainsString('bash_line_0', $collapsed);
@@ -147,7 +147,7 @@ final class TuiCollapsedToolCardVirtualRenderTest extends TestCase
     }
 
     #[Test]
-    public function collapsedGenericToolKeepsScalarArgsAndShortResultHead(): void
+    public function collapsedGenericToolShowsEveryArgumentAndShortResultHead(): void
     {
         $resultBody = implode("\n", [
             'status: moved',
@@ -176,10 +176,11 @@ final class TuiCollapsedToolCardVirtualRenderTest extends TestCase
                         'from' => 'TODO',
                         'to' => 'IN-PROGRESS',
                         'payload' => [
-                            'nested' => ['keep' => 'hidden'],
+                            'nested' => ['keep' => 'visible'],
                             'blob' => str_repeat('x', 40),
                         ],
                         'notes' => "line1\nline2\nline3\nline4",
+                        'long' => str_repeat('wrapped argument ', 10).'argument-tail-marker',
                     ],
                 ],
             ),
@@ -203,19 +204,70 @@ final class TuiCollapsedToolCardVirtualRenderTest extends TestCase
         $this->assertStringContainsString('task:', $collapsed);
         $this->assertStringContainsString('from: TODO', $collapsed);
         $this->assertStringContainsString('to: IN-PROGRESS', $collapsed);
-        $this->assertStringNotContainsString('payload:', $collapsed);
-        $this->assertStringNotContainsString('notes:', $collapsed);
+        $this->assertStringContainsString('payload: { nested: { keep: visible }, blob:', $collapsed);
+        $this->assertStringContainsString('notes: "line1\\nline2\\nline3\\nline4"', $collapsed);
+        $this->assertStringContainsString('argument-tail-marker', $collapsed);
         $this->assertStringContainsString('status: moved', $collapsed);
         $this->assertStringContainsString('from: TODO', $collapsed);
         $this->assertStringContainsString('to: IN-PROGRESS', $collapsed);
-        $this->assertStringNotContainsString('notes: keep this line collapsed away', $collapsed);
+        $this->assertStringContainsString('notes: keep this line collapsed away', $collapsed);
         $this->assertStringNotContainsString('extra: still collapsed away', $collapsed);
         $this->assertMatchesRegularExpression(
             '/to: IN-PROGRESS[\s\S]*?\n\s*\n[\s\S]*?status: moved/',
             $collapsed,
             'Collapsed generic tool must separate args from result body',
         );
-        $this->assertStringContainsString('more line', $collapsed);
+        $this->assertStringContainsString('… 1 more line', $collapsed);
+    }
+
+    #[Test]
+    public function genericResultPreviewCountsWrappedTerminalRows(): void
+    {
+        $harness = new VirtualTuiHarness(
+            columns: 50,
+            sessionId: self::SESSION_ID,
+            displayConfig: new TranscriptDisplayConfig(toolResultPreviewLines: 8),
+            displayState: new TranscriptDisplayState(previewableBlocksExpanded: false),
+        );
+        $harness->screen()->setTranscriptBlocks([
+            new TranscriptBlock(
+                id: 'tc-wrapped-result',
+                kind: TranscriptBlockKindEnum::ToolCall,
+                runId: self::SESSION_ID,
+                seq: 1,
+                text: 'mcp__wrapped_result',
+                meta: [
+                    'tool_call_id' => 'call-wrapped-result',
+                    'tool_name' => 'mcp__wrapped_result',
+                    'arguments' => ['query' => 'all arguments remain visible'],
+                ],
+            ),
+            new TranscriptBlock(
+                id: 'tr-wrapped-result',
+                kind: TranscriptBlockKindEnum::ToolResult,
+                runId: self::SESSION_ID,
+                seq: 2,
+                text: 'mcp__wrapped_result',
+                meta: [
+                    'tool_call_id' => 'call-wrapped-result',
+                    'tool_name' => 'mcp__wrapped_result',
+                    'result' => implode("\n", [
+                        str_repeat('first ', 10).'first-tail',
+                        str_repeat('second ', 10).'second-tail',
+                        'third-logical-line-hidden',
+                    ]),
+                    'is_error' => false,
+                ],
+            ),
+        ]);
+        $harness->screen()->setWorkingVisible(false);
+
+        $collapsed = $harness->plainScreenText();
+        $this->assertStringContainsString('first-tail', $collapsed);
+        $this->assertStringContainsString('second', $collapsed);
+        $this->assertStringContainsString('second-tail', $collapsed);
+        $this->assertStringNotContainsString('third-logical-line-hidden', $collapsed);
+        $this->assertStringContainsString('… 1 more line', $collapsed);
     }
 
     #[Test]
@@ -407,7 +459,7 @@ final class TuiCollapsedToolCardVirtualRenderTest extends TestCase
 
         $collapsed = $harness->plainScreenText();
         $this->assertMatchesRegularExpression(
-            '/… 3 earlier lines[\s\S]*bash_line_3[\s\S]*bash_line_5/',
+            '/… 2 earlier lines[\s\S]*bash_line_2[\s\S]*bash_line_5/',
             $collapsed,
             'Standalone bash ToolResult must place the earlier-lines ellipsis before the tail',
         );

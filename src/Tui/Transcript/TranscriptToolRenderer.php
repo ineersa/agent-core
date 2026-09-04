@@ -7,6 +7,8 @@ namespace Ineersa\Tui\Transcript;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
+use Symfony\Component\Tui\Style\Padding;
+use Symfony\Component\Tui\Style\Style;
 use Symfony\Component\Tui\Widget\AbstractWidget;
 use Symfony\Component\Tui\Widget\ContainerWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
@@ -33,7 +35,6 @@ final readonly class TranscriptToolRenderer
         private readonly ToolArgumentColoredFormatter $toolArgumentColoredFormatter,
         private readonly ViewImageTranscriptFormatter $viewImageFormatter,
         private readonly TranscriptToolResultFacts $toolResultFacts,
-        private readonly TranscriptToolCollapsedPresentation $collapsedPresentation,
     ) {
     }
 
@@ -64,16 +65,17 @@ final readonly class TranscriptToolRenderer
             return $this->buildViewImageToolCallWidget($block, $theme, $headerLine, $arguments);
         }
 
-        $lines = [$headerLine];
-        $this->appendStyledToolArgumentLines($lines, $block->meta['tool_name'] ?? null, $arguments, $theme);
+        $container = new ContainerWidget();
+        $container->add(new TextWidget($theme->color(ThemeColorEnum::ToolTitle, $headerLine)));
+        $argumentsWidget = $this->buildToolArgumentsWidget($block->meta['tool_name'] ?? null, $arguments, $theme);
+        if (null !== $argumentsWidget) {
+            $container->add($argumentsWidget);
+        }
 
-        $coloredHeader = $theme->color(ThemeColorEnum::ToolTitle, $lines[0]);
-        $body = \array_slice($lines, 1);
-
-        return new TextWidget(implode("\n", array_merge([$coloredHeader], $body)));
+        return $container;
     }
 
-    public function buildToolResultWidget(TranscriptBlock $block, TuiTheme $theme): TextWidget
+    public function buildToolResultWidget(TranscriptBlock $block, TuiTheme $theme): AbstractWidget
     {
         if ($this->isViewImageToolName($block->meta['tool_name'] ?? null)) {
             return $this->buildViewImageToolResultWidget($block, $theme);
@@ -81,20 +83,6 @@ final readonly class TranscriptToolRenderer
 
         $header = $this->toolResultHeaderLabel($block);
         $headerLine = \sprintf('%s %s', TranscriptGlyphs::GLYPH_TOOL, $header);
-        $previewLines = [];
-        $styledEllipsis = null;
-
-        $body = $this->toolResultFacts->toolResultBodyText($block);
-        if ('' !== $body) {
-            $bodyLines = explode("\n", $body);
-            $preview = $this->applyToolResultPreview($bodyLines, $block);
-            foreach ($preview['lines'] as $bodyLine) {
-                $previewLines[] = '    '.$bodyLine;
-            }
-            if (null !== $preview['ellipsis']) {
-                $styledEllipsis = '    '.TranscriptPreviewEllipsis::style($theme, $preview['ellipsis']);
-            }
-        }
 
         $suffix = $block->streaming ? TranscriptGlyphs::STREAMING_SUFFIX : '';
         if ('' !== $suffix) {
@@ -108,23 +96,14 @@ final readonly class TranscriptToolRenderer
             ? ThemeColorEnum::Error
             : $this->successfulToolResultBodyColor($block);
 
-        $coloredHeader = $theme->color($headerColor, $headerLine);
-        $coloredBody = [];
-        if (null !== $styledEllipsis && $this->collapsedPresentation->shouldTailCollapsedResult($block->meta['tool_name'] ?? null)) {
-            $coloredBody[] = $styledEllipsis;
-            foreach ($previewLines as $line) {
-                $coloredBody[] = $theme->color($bodyColor, $line);
-            }
-        } else {
-            foreach ($previewLines as $line) {
-                $coloredBody[] = $theme->color($bodyColor, $line);
-            }
-            if (null !== $styledEllipsis) {
-                $coloredBody[] = $styledEllipsis;
-            }
+        $container = new ContainerWidget();
+        $container->add(new TextWidget($theme->color($headerColor, $headerLine)));
+        $bodyWidget = $this->buildToolResultBodyWidget($block, $theme, $bodyColor, prependBlankLine: false);
+        if (null !== $bodyWidget) {
+            $container->add($bodyWidget);
         }
 
-        return new TextWidget(implode("\n", array_merge([$coloredHeader], $coloredBody)));
+        return $container;
     }
 
     public function buildToolExchangeWidget(TranscriptBlock $callBlock, TranscriptBlock $resultBlock, TuiTheme $theme): AbstractWidget
@@ -183,7 +162,7 @@ final readonly class TranscriptToolRenderer
         TranscriptBlock $resultBlock,
         TuiTheme $theme,
         array $arguments,
-    ): TextWidget {
+    ): AbstractWidget {
         $headerLine = $this->skillReadHeaderLabel($callBlock, $arguments);
         $fullRender = $this->toolResultFacts->toolResultIsFullRender($resultBlock);
         $expanded = $this->displayState->previewableBlocksExpanded;
@@ -196,10 +175,19 @@ final readonly class TranscriptToolRenderer
             return new TextWidget($theme->color(ThemeColorEnum::Skill, $headerLine).$hint);
         }
 
-        $lines = [$theme->color(ThemeColorEnum::Skill, $headerLine)];
-        $this->appendStyledToolExchangeResultBody($lines, $resultBlock, $theme);
+        $container = new ContainerWidget();
+        $container->add(new TextWidget($theme->color(ThemeColorEnum::Skill, $headerLine)));
+        $bodyWidget = $this->buildToolResultBodyWidget(
+            $resultBlock,
+            $theme,
+            $this->toolExchangeBodyColor($resultBlock),
+            prependBlankLine: true,
+        );
+        if (null !== $bodyWidget) {
+            $container->add($bodyWidget);
+        }
 
-        return new TextWidget(implode("\n", $lines));
+        return $container;
     }
 
     /**
@@ -322,42 +310,6 @@ final readonly class TranscriptToolRenderer
         return \array_key_exists('content', $arguments) && \is_string($arguments['content']);
     }
 
-    /**
-     * @param list<string> $bodyLines
-     *
-     * @return array{lines: list<string>, ellipsis: ?string}
-     */
-    private function applyToolResultPreview(array $bodyLines, TranscriptBlock $block): array
-    {
-        $fullRender = $this->toolResultFacts->toolResultIsFullRender($block);
-        $toolName = $block->meta['tool_name'] ?? null;
-
-        if (!$fullRender
-            && !$this->displayState->previewableBlocksExpanded
-            && $this->collapsedPresentation->shouldHideCollapsedResult($toolName)) {
-            return ['lines' => [], 'ellipsis' => null];
-        }
-
-        return $this->applyLinePreview(
-            $bodyLines,
-            $fullRender,
-            lineLimit: $this->collapsedResultPreviewLineLimit($fullRender),
-            fromEnd: $this->collapsedPresentation->shouldTailCollapsedResult($toolName),
-        );
-    }
-
-    /**
-     * @param list<string> $lines
-     *
-     * @return array{lines: list<string>, ellipsis: ?string}
-     */
-    private function applyLinePreview(array $lines, bool $fullRender, ?int $lineLimit = null, bool $fromEnd = false): array
-    {
-        $limit = $lineLimit ?? $this->displayConfig->toolResultPreviewLines;
-
-        return $this->linePreviewService->apply($lines, $limit, $fullRender, $this->displayState, $fromEnd);
-    }
-
     private function toolCallHeaderLabel(TranscriptBlock $block): string
     {
         $toolName = $block->meta['tool_name'] ?? null;
@@ -409,17 +361,29 @@ final readonly class TranscriptToolRenderer
         TranscriptBlock $resultBlock,
         TuiTheme $theme,
         array $arguments,
-    ): TextWidget {
+    ): AbstractWidget {
         $header = $this->toolCallHeaderLabel($callBlock);
         $suffix = $callBlock->streaming ? TranscriptGlyphs::STREAMING_SUFFIX : '';
         $headerLine = \sprintf('%s %s%s', TranscriptGlyphs::GLYPH_TOOL, $header, $suffix);
-        $lines = [$theme->color(ThemeColorEnum::ToolTitle, $headerLine)];
+        $container = new ContainerWidget();
+        $container->add(new TextWidget($theme->color(ThemeColorEnum::ToolTitle, $headerLine)));
 
-        $this->appendStyledToolArgumentLines($lines, $callBlock->meta['tool_name'] ?? null, $arguments, $theme);
+        $argumentsWidget = $this->buildToolArgumentsWidget($callBlock->meta['tool_name'] ?? null, $arguments, $theme);
+        if (null !== $argumentsWidget) {
+            $container->add($argumentsWidget);
+        }
 
-        $this->appendStyledToolExchangeResultBody($lines, $resultBlock, $theme);
+        $bodyWidget = $this->buildToolResultBodyWidget(
+            $resultBlock,
+            $theme,
+            $this->toolExchangeBodyColor($resultBlock),
+            prependBlankLine: true,
+        );
+        if (null !== $bodyWidget) {
+            $container->add($bodyWidget);
+        }
 
-        return new TextWidget(implode("\n", $lines));
+        return $container;
     }
 
     /**
@@ -519,89 +483,52 @@ final readonly class TranscriptToolRenderer
         return $container;
     }
 
-    /**
-     * @param list<string> $lines
-     */
-    private function appendStyledToolExchangeResultBody(array &$lines, TranscriptBlock $resultBlock, TuiTheme $theme): void
-    {
-        $color = $this->toolExchangeBodyColor($resultBlock);
-        $preview = $this->toolExchangeResultPreview($resultBlock);
-        if ([] === $preview['lines'] && null === $preview['ellipsis']) {
-            return;
-        }
-
-        $lines[] = '';
-        if (null !== $preview['ellipsis'] && $this->collapsedPresentation->shouldTailCollapsedResult($resultBlock->meta['tool_name'] ?? null)) {
-            $lines[] = '    '.TranscriptPreviewEllipsis::style($theme, $preview['ellipsis']);
-            foreach ($preview['lines'] as $bodyLine) {
-                $lines[] = $theme->color($color, '    '.$bodyLine);
-            }
-
-            return;
-        }
-
-        foreach ($preview['lines'] as $bodyLine) {
-            $lines[] = $theme->color($color, '    '.$bodyLine);
-        }
-        if (null !== $preview['ellipsis']) {
-            $lines[] = '    '.TranscriptPreviewEllipsis::style($theme, $preview['ellipsis']);
-        }
-    }
-
     private function appendStyledToolExchangeResultBodyWidgets(
         ContainerWidget $container,
         TranscriptBlock $resultBlock,
         TuiTheme $theme,
     ): void {
-        $color = $this->toolExchangeBodyColor($resultBlock);
-        $preview = $this->toolExchangeResultPreview($resultBlock);
-        if ([] === $preview['lines'] && null === $preview['ellipsis']) {
-            return;
-        }
-
-        $container->add(new TextWidget(''));
-        if (null !== $preview['ellipsis'] && $this->collapsedPresentation->shouldTailCollapsedResult($resultBlock->meta['tool_name'] ?? null)) {
-            $container->add(new TextWidget('    '.TranscriptPreviewEllipsis::style($theme, $preview['ellipsis'])));
-            foreach ($preview['lines'] as $bodyLine) {
-                $container->add(new TextWidget($theme->color($color, '    '.$bodyLine)));
-            }
-
-            return;
-        }
-
-        foreach ($preview['lines'] as $bodyLine) {
-            $container->add(new TextWidget($theme->color($color, '    '.$bodyLine)));
-        }
-        if (null !== $preview['ellipsis']) {
-            $container->add(new TextWidget('    '.TranscriptPreviewEllipsis::style($theme, $preview['ellipsis'])));
+        $bodyWidget = $this->buildToolResultBodyWidget(
+            $resultBlock,
+            $theme,
+            $this->toolExchangeBodyColor($resultBlock),
+            prependBlankLine: true,
+        );
+        if (null !== $bodyWidget) {
+            $container->add($bodyWidget);
         }
     }
 
-    /**
-     * @return array{lines: list<string>, ellipsis: ?string}
-     */
-    private function toolExchangeResultPreview(TranscriptBlock $resultBlock): array
-    {
-        if ($this->isViewImageToolName($resultBlock->meta['tool_name'] ?? null)) {
-            $result = $resultBlock->meta['result'] ?? null;
-            $bodyLines = $this->viewImageFormatter->formatToolResultLines($result);
-            if ([] === $bodyLines && \is_string($result) && '' !== $result) {
-                if ($this->toolResultFacts->toolResultIsFullRender($resultBlock)) {
-                    $bodyLines = [$result];
-                } else {
-                    $bodyLines = ['(image metadata)'];
-                }
-            }
-
-            return ['lines' => $bodyLines, 'ellipsis' => null];
-        }
-
+    private function buildToolResultBodyWidget(
+        TranscriptBlock $resultBlock,
+        TuiTheme $theme,
+        ThemeColorEnum $color,
+        bool $prependBlankLine,
+    ): ?TranscriptToolResultPreviewWidget {
         $body = $this->toolResultFacts->toolResultBodyText($resultBlock);
         if ('' === $body) {
-            return ['lines' => [], 'ellipsis' => null];
+            return null;
         }
 
-        return $this->applyToolResultPreview(explode("\n", $body), $resultBlock);
+        $fullRender = $this->toolResultFacts->toolResultIsFullRender($resultBlock);
+        $toolName = $resultBlock->meta['tool_name'] ?? null;
+        if (!$fullRender
+            && !$this->displayState->previewableBlocksExpanded
+            && $this->shouldHideCollapsedResult($toolName)) {
+            return null;
+        }
+
+        return new TranscriptToolResultPreviewWidget(
+            body: $body,
+            lineLimit: $this->collapsedResultPreviewLineLimit($fullRender),
+            fullRender: $fullRender,
+            fromEnd: $this->isBashToolName($toolName),
+            prependBlankLine: $prependBlankLine,
+            displayState: $this->displayState,
+            linePreviewService: $this->linePreviewService,
+            theme: $theme,
+            color: $color,
+        );
     }
 
     private function toolExchangeBodyColor(TranscriptBlock $resultBlock): ThemeColorEnum
@@ -673,49 +600,38 @@ final readonly class TranscriptToolRenderer
         return new TextWidget($theme->color($color, implode("\n", $lines)));
     }
 
-    /**
-     * @param list<string>         $lines
-     * @param array<string, mixed> $arguments
-     */
-    private function appendStyledToolArgumentLines(
-        array &$lines,
+    /** @param array<string, mixed> $arguments */
+    private function buildToolArgumentsWidget(
         mixed $toolName,
         array $arguments,
         TuiTheme $theme,
-    ): void {
+    ): ?TextWidget {
         if ([] === $arguments) {
-            return;
+            return null;
         }
 
-        $displayArguments = $this->displayState->previewableBlocksExpanded
-            ? $arguments
-            : $this->collapsedPresentation->collapsedArguments($toolName, $arguments);
-
-        if ([] === $displayArguments) {
-            return;
-        }
-
-        if ($this->collapsedPresentation->isBashTool($toolName) && !$this->displayState->previewableBlocksExpanded) {
-            $command = $displayArguments['command'] ?? null;
+        $lines = [];
+        if ($this->isBashToolName($toolName) && !$this->displayState->previewableBlocksExpanded) {
+            $command = $arguments['command'] ?? null;
             if (\is_string($command) && '' !== $command) {
-                $lines[] = '    '.$this->formatBashCommandLine($command, $theme);
-
-                return;
+                $lines[] = $this->formatBashCommandLine($command, $theme);
             }
+
+            unset($arguments['command']);
         }
 
-        $argLines = $this->toolArgumentColoredFormatter->formatColoredLines($displayArguments, $theme);
-        $preview = $this->applyLinePreview(
-            $argLines,
-            fullRender: $this->displayState->previewableBlocksExpanded,
-            lineLimit: TranscriptToolCollapsedPresentation::ARGUMENT_PREVIEW_LINES,
-        );
-        foreach ($preview['lines'] as $argLine) {
-            $lines[] = '    '.$argLine;
+        foreach ($this->toolArgumentColoredFormatter->formatColoredLines($arguments, $theme) as $argLine) {
+            $lines[] = $argLine;
         }
-        if (null !== $preview['ellipsis']) {
-            $lines[] = '    '.TranscriptPreviewEllipsis::style($theme, $preview['ellipsis']);
+
+        if ([] === $lines) {
+            return null;
         }
+
+        $widget = new TextWidget(implode("\n", $lines));
+        $widget->setStyle(new Style(padding: Padding::from([0, 0, 0, 4])));
+
+        return $widget;
     }
 
     private function formatBashCommandLine(string $command, TuiTheme $theme): string
@@ -723,6 +639,16 @@ final readonly class TranscriptToolRenderer
         $display = str_replace("\n", ' ⏎ ', $command);
 
         return $theme->color(ThemeColorEnum::MarkdownCode, '$ '.$display);
+    }
+
+    private function shouldHideCollapsedResult(mixed $toolName): bool
+    {
+        return \is_string($toolName) && 'read' === $toolName;
+    }
+
+    private function isBashToolName(mixed $toolName): bool
+    {
+        return \is_string($toolName) && 'bash' === $toolName;
     }
 
     private function collapsedResultPreviewLineLimit(bool $fullRender): int
@@ -736,6 +662,6 @@ final readonly class TranscriptToolRenderer
             return $configured;
         }
 
-        return min($configured, TranscriptToolCollapsedPresentation::RESULT_PREVIEW_LINES);
+        return min($configured, TranscriptToolResultPreviewWidget::COLLAPSED_LINE_LIMIT);
     }
 }
