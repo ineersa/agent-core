@@ -33,7 +33,7 @@ final readonly class TranscriptToolRenderer
         private readonly ToolArgumentColoredFormatter $toolArgumentColoredFormatter,
         private readonly ViewImageTranscriptFormatter $viewImageFormatter,
         private readonly TranscriptToolResultFacts $toolResultFacts,
-        private readonly TranscriptToolCollapsedPresentation $collapsedPresentation = new TranscriptToolCollapsedPresentation(),
+        private readonly TranscriptToolCollapsedPresentation $collapsedPresentation,
     ) {
     }
 
@@ -110,11 +110,18 @@ final readonly class TranscriptToolRenderer
 
         $coloredHeader = $theme->color($headerColor, $headerLine);
         $coloredBody = [];
-        foreach ($previewLines as $line) {
-            $coloredBody[] = $theme->color($bodyColor, $line);
-        }
-        if (null !== $styledEllipsis) {
+        if (null !== $styledEllipsis && $this->collapsedPresentation->shouldTailCollapsedResult($block->meta['tool_name'] ?? null)) {
             $coloredBody[] = $styledEllipsis;
+            foreach ($previewLines as $line) {
+                $coloredBody[] = $theme->color($bodyColor, $line);
+            }
+        } else {
+            foreach ($previewLines as $line) {
+                $coloredBody[] = $theme->color($bodyColor, $line);
+            }
+            if (null !== $styledEllipsis) {
+                $coloredBody[] = $styledEllipsis;
+            }
         }
 
         return new TextWidget(implode("\n", array_merge([$coloredHeader], $coloredBody)));
@@ -724,6 +731,11 @@ final readonly class TranscriptToolRenderer
             return $this->displayConfig->toolResultPreviewLines;
         }
 
-        return TranscriptToolCollapsedPresentation::RESULT_PREVIEW_LINES;
+        $configured = $this->displayConfig->toolResultPreviewLines;
+        if ($configured <= 0) {
+            return $configured;
+        }
+
+        return min($configured, TranscriptToolCollapsedPresentation::RESULT_PREVIEW_LINES);
     }
 }

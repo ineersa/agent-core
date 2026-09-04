@@ -21,6 +21,10 @@ final readonly class TranscriptToolCollapsedPresentation
 
     public const int ARGUMENT_PREVIEW_LINES = 4;
 
+    public const int SCALAR_ARGUMENT_MAX_CHARS = 200;
+
+    public const int SCALAR_ARGUMENT_TRUNCATE_CHARS = 197;
+
     /** @var list<string> */
     private const array READ_IDENTIFYING_KEYS = ['path', 'offset', 'limit'];
 
@@ -103,8 +107,8 @@ final readonly class TranscriptToolCollapsedPresentation
                 if (substr_count($value, "\n") > 2) {
                     continue;
                 }
-                if (\strlen($value) > 200) {
-                    $out[$key] = substr($value, 0, 197).'...';
+                if (mb_strlen($value) > self::SCALAR_ARGUMENT_MAX_CHARS) {
+                    $out[$key] = mb_substr($value, 0, self::SCALAR_ARGUMENT_TRUNCATE_CHARS).'...';
                     continue;
                 }
             }

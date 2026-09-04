@@ -311,6 +311,114 @@ final class TuiCollapsedToolCardVirtualRenderTest extends TestCase
         );
     }
 
+    #[Test]
+    public function collapsedConfiguredToolResultLinesOfOneCapsPreviewToOneLine(): void
+    {
+        $body = implode("\n", [
+            'status: moved',
+            'from: TODO',
+            'to: IN-PROGRESS',
+            'notes: keep this line collapsed away',
+        ]);
+        $harness = new VirtualTuiHarness(
+            sessionId: self::SESSION_ID,
+            displayConfig: new TranscriptDisplayConfig(toolResultPreviewLines: 1),
+            displayState: new TranscriptDisplayState(previewableBlocksExpanded: false),
+        );
+        $harness->screen()->setTranscriptBlocks([
+            new TranscriptBlock(
+                id: 'tc-move-cap',
+                kind: TranscriptBlockKindEnum::ToolCall,
+                runId: self::SESSION_ID,
+                seq: 1,
+                text: 'move_task',
+                meta: [
+                    'tool_call_id' => 'call-move-cap',
+                    'tool_name' => 'move_task',
+                    'arguments' => [
+                        'task' => 'cap-preview',
+                        'from' => 'TODO',
+                        'to' => 'IN-PROGRESS',
+                    ],
+                ],
+            ),
+            new TranscriptBlock(
+                id: 'tr-move-cap',
+                kind: TranscriptBlockKindEnum::ToolResult,
+                runId: self::SESSION_ID,
+                seq: 2,
+                text: 'move_task',
+                meta: [
+                    'tool_call_id' => 'call-move-cap',
+                    'tool_name' => 'move_task',
+                    'result' => $body,
+                    'is_error' => false,
+                ],
+            ),
+        ]);
+        $harness->screen()->setWorkingVisible(false);
+
+        $collapsed = $harness->plainScreenText();
+        $this->assertStringContainsString('status: moved', $collapsed);
+        $this->assertDoesNotMatchRegularExpression(
+            '/status: moved[\s\S]*from: TODO/',
+            $collapsed,
+            'Configured tool_result_lines=1 must hide later result lines while collapsed',
+        );
+        $this->assertDoesNotMatchRegularExpression(
+            '/status: moved[\s\S]*to: IN-PROGRESS/',
+            $collapsed,
+            'Configured tool_result_lines=1 must hide later result lines while collapsed',
+        );
+        $this->assertStringContainsString('… 3 more lines', $collapsed);
+    }
+
+    #[Test]
+    public function standaloneCollapsedBashToolResultPutsEarlierEllipsisBeforeTail(): void
+    {
+        $body = implode("\n", [
+            'bash_line_0',
+            'bash_line_1',
+            'bash_line_2',
+            'bash_line_3',
+            'bash_line_4',
+            'bash_line_5',
+        ]);
+        $harness = new VirtualTuiHarness(
+            sessionId: self::SESSION_ID,
+            displayConfig: new TranscriptDisplayConfig(toolResultPreviewLines: 8),
+            displayState: new TranscriptDisplayState(previewableBlocksExpanded: false),
+        );
+        $harness->screen()->setTranscriptBlocks([
+            new TranscriptBlock(
+                id: 'tr-bash-standalone',
+                kind: TranscriptBlockKindEnum::ToolResult,
+                runId: self::SESSION_ID,
+                seq: 1,
+                text: 'bash',
+                meta: [
+                    'tool_name' => 'bash',
+                    'result' => $body,
+                    'is_error' => false,
+                ],
+            ),
+        ]);
+        $harness->screen()->setWorkingVisible(false);
+
+        $collapsed = $harness->plainScreenText();
+        $this->assertMatchesRegularExpression(
+            '/… 3 earlier lines[\s\S]*bash_line_3[\s\S]*bash_line_5/',
+            $collapsed,
+            'Standalone bash ToolResult must place the earlier-lines ellipsis before the tail',
+        );
+        $this->assertStringNotContainsString('bash_line_0', $collapsed);
+        $this->assertDoesNotMatchRegularExpression(
+            '/bash_line_5[\s\S]*earlier line/',
+            $collapsed,
+            'Standalone bash ToolResult must not append the earlier-lines ellipsis after the tail',
+        );
+    }
+
     /**
      * @return list<TranscriptBlock>
      */

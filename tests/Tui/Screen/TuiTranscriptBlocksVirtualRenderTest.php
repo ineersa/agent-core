@@ -882,19 +882,19 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
         $plain = $harness->plainScreenText();
 
         $this->assertStringContainsString('… literal ellipsis in tool output', $plain);
-        $this->assertStringContainsString('… 1 more line', $plain);
+        $this->assertStringContainsString('… 2 more lines', $plain);
         $this->assertMatchesRegularExpression(
             '/\x1b\[38;2;57;255;20m\s*… literal ellipsis in tool output/',
             $ansi,
             'Literal U+2026 tool output must keep ToolOutput color',
         );
         $this->assertMatchesRegularExpression(
-            '/\x1b\[3m(?:\x1b\[[0-9;]*m)*… 1 more line/',
+            '/\x1b\[3m(?:\x1b\[[0-9;]*m)*… 2 more lines/',
             $ansi,
             'Generated collapsed indicator must stay muted+italic',
         );
         $this->assertDoesNotMatchRegularExpression(
-            '/\x1b\[38;2;57;255;20m\s*… 1 more line/',
+            '/\x1b\[38;2;57;255;20m\s*… 2 more lines/',
             $ansi,
             'Generated collapsed indicator must not inherit ToolOutput color',
         );
@@ -924,9 +924,9 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
 
         $this->assertStringContainsString('v0', $text);
         $this->assertStringContainsString('v1', $text);
-        $this->assertStringContainsString('v2', $text);
+        $this->assertStringNotContainsString('v2', $text);
         $this->assertStringNotContainsString('v4', $text);
-        $this->assertStringContainsString('more line', $text);
+        $this->assertStringContainsString('… 3 more lines', $text);
     }
 
     #[Test]
@@ -1293,11 +1293,11 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
 
         $ansi = $harness->ansiOutput();
         $this->assertMatchesRegularExpression(
-            '/\x1b\[3m(?:\x1b\[[0-9;]*m)*… 1 more line/',
+            '/\x1b\[3m(?:\x1b\[[0-9;]*m)*… 2 more lines/',
             $ansi,
             'Collapsed ellipsis must carry italic ANSI styling',
         );
-        $this->assertStringContainsString('… 1 more line', $harness->plainScreenText());
+        $this->assertStringContainsString('… 2 more lines', $harness->plainScreenText());
         $this->assertStringNotContainsString('line3', $harness->plainScreenText());
     }
 
