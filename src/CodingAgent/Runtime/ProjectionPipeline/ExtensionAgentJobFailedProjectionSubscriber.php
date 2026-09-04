@@ -17,7 +17,7 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
  */
 final readonly class ExtensionAgentJobFailedProjectionSubscriber implements EventSubscriberInterface
 {
-    private const string SAFE_MESSAGE = 'Extension background job failed after retrying.';
+    private const string GENERIC_MESSAGE = 'Extension background job failed after retrying.';
 
     public static function getSubscribedEvents(): array
     {
@@ -32,7 +32,7 @@ final readonly class ExtensionAgentJobFailedProjectionSubscriber implements Even
         $state = $event->state;
         $runId = $event->runId();
 
-        $text = self::SAFE_MESSAGE;
+        $text = self::GENERIC_MESSAGE;
         if (isset($p['message']) && \is_string($p['message']) && '' !== trim($p['message'])) {
             $text = $p['message'];
         }

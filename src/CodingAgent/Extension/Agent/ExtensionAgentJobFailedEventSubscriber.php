@@ -32,7 +32,7 @@ final readonly class ExtensionAgentJobFailedEventSubscriber implements EventSubs
 {
     private const string RECEIVER = 'extension_agent';
 
-    private const string FALLBACK_REASON = 'retry_exhausted';
+    private const string REASON = 'retry_exhausted';
 
     public function __construct(
         private RuntimeEventSinkInterface $stdoutSink,
@@ -76,7 +76,7 @@ final readonly class ExtensionAgentJobFailedEventSubscriber implements EventSubs
                 'job_id' => $message->jobId,
                 'retry_count' => $retryCount,
                 'attempts' => $attempts,
-                'reason' => self::FALLBACK_REASON,
+                'reason' => self::REASON,
                 'exception_class' => $failure::class,
             ]);
 
@@ -85,7 +85,7 @@ final readonly class ExtensionAgentJobFailedEventSubscriber implements EventSubs
 
         $payload = [
             'message' => $failure->getMessage(),
-            'reason' => self::FALLBACK_REASON,
+            'reason' => self::REASON,
             'handler_id' => $message->handlerId,
             'job_id' => $message->jobId,
             'retry_count' => $retryCount,
@@ -118,7 +118,10 @@ final readonly class ExtensionAgentJobFailedEventSubscriber implements EventSubs
             return $throwable;
         }
 
-        return $throwable->getWrappedExceptions(null, true)[0] ?? $throwable;
+        $wrapped = $throwable->getWrappedExceptions(null, true);
+        $firstKey = array_key_first($wrapped);
+
+        return null !== $firstKey ? $wrapped[$firstKey] : $throwable;
     }
 
     /**

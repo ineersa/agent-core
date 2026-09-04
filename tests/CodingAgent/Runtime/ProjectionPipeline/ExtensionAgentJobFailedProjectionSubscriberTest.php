@@ -66,7 +66,7 @@ final class ExtensionAgentJobFailedProjectionSubscriberTest extends TestCase
     }
 
     #[Test]
-    public function subscriberUsesSafeFallbackWhenMessageMissing(): void
+    public function subscriberUsesGenericFallbackWhenMessageEmpty(): void
     {
         $subscriber = new ExtensionAgentJobFailedProjectionSubscriber();
         $state = new TranscriptProjectionState();
@@ -76,6 +76,7 @@ final class ExtensionAgentJobFailedProjectionSubscriberTest extends TestCase
                 runId: 'run-2',
                 seq: 0,
                 payload: [
+                    'message' => '',
                     'reason' => 'retry_exhausted',
                 ],
             ),

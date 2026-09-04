@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Extension\Agent;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobFailedEventSubscriber;
 use Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobMessage;
+use Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobWorker;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
@@ -87,7 +88,9 @@ final class ExtensionAgentJobFailedEventSubscriberTest extends TestCase
         $providerFailure = new \RuntimeException(
             '[usage_limit_reached/insufficient_quota]: RAW_PROVIDER_ACCOUNT_DETAIL',
         );
-        $wrapped = new HandlerFailedException(new Envelope($message), [$providerFailure]);
+        $wrapped = new HandlerFailedException(new Envelope($message), [
+            ExtensionAgentJobWorker::class => $providerFailure,
+        ]);
 
         $subscriber->onWorkerMessageFailed(new WorkerMessageFailedEvent(
             new Envelope($message),
