@@ -25,7 +25,8 @@ use Symfony\Component\Tui\Terminal\TerminalInterface;
  * installs this class under Symfony's FQCN before Tui loads it. Keep the body
  * aligned with the referenced upstream revision. The Hatfield delta is the
  * EventLoop import, deferredCursorCommitId field, scheduling call after
- * writeInternal(), cancellation in reset(), and deferred-commit methods.
+ * writeInternal(), cancellation in reset() and getState(), and the
+ * deferred-commit methods.
  */
 final class DeferredCursorCommitScreenWriter
 {
