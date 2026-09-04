@@ -102,9 +102,11 @@ final class BashToolTest extends IsolatedKernelTestCase
         parent::tearDown();
     }
 
-    public function testBashToolConfigDefaultBackgroundPromptThresholdIsFifteenSeconds(): void
+    public function testBashToolConfigDefaults(): void
     {
         $config = new BashToolConfig();
+
+        $this->assertSame(30, $config->defaultTimeoutSeconds);
         $this->assertSame(15, $config->backgroundPromptThresholdSeconds);
     }
 
@@ -487,7 +489,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->assertSame([], $this->manager->list(self::TEST_SESSION), 'Handler must not run for invalid arguments.');
     }
 
-    public function testTimeoutAtMaximumAccepted(): void
+    public function testExplicitTimeoutAboveDefaultIsAccepted(): void
     {
         $this->createManager();
         $this->bashConfig = new BashToolConfig(
@@ -862,8 +864,15 @@ final class BashToolTest extends IsolatedKernelTestCase
         // Prompt line must NOT advertise a run_in_background parameter
         $this->assertStringNotContainsStringIgnoringCase('run_in_background', $def->promptLine);
 
-        // Prompt guidelines must describe user-owned backgrounding and no-poll completion
+        $this->assertStringContainsString('Commands time out after 2 seconds by default.', $def->description);
+        $this->assertStringContainsString('Provide the timeout argument with an explicit higher value', $def->description);
+
+        // Prompt guidelines must describe timeout selection, user-owned
+        // backgrounding, and no-poll completion.
         $guidelinesText = implode(' ', $def->promptGuidelines);
+        $this->assertStringContainsStringIgnoringCase('time out after 2 seconds by default', $guidelinesText);
+        $this->assertStringContainsStringIgnoringCase('always provide the timeout argument with an explicit higher value', $guidelinesText);
+        $this->assertStringContainsStringIgnoringCase('3600-second maximum', $guidelinesText);
         $this->assertStringContainsStringIgnoringCase('user', $guidelinesText);
         $this->assertStringContainsStringIgnoringCase('bg_status', $guidelinesText);
         $this->assertStringContainsStringIgnoringCase('no run_in_background', $guidelinesText);
