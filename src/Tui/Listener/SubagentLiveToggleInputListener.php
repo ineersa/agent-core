@@ -25,7 +25,8 @@ final class SubagentLiveToggleInputListener implements TuiListenerRegistrar
 
         $context->tui->addListener(
             static function (InputEvent $event) use ($context, $state, $screen, $picker, $questionCoordinator, $questionController): void {
-                if ("\x1c" !== $event->getData()) {
+                $keys = $screen->editorWidget()->getKeybindings();
+                if (!$keys->matches($event->getData(), 'toggle_subagent_live')) {
                     return;
                 }
 

@@ -58,8 +58,8 @@ final class FavoritePickerController
             truncate: true,
         );
 
-        // Keybindings: arrows, space, enter, escape — no ctrl+f
-        $kb = SelectListKeybindings::standard();
+        // Space toggles favorite; keep Ctrl+F unbound for this picker.
+        $kb = SelectListKeybindings::withSpaceFavoriteToggle();
 
         $items = $this->buildItems();
 
@@ -76,13 +76,8 @@ final class FavoritePickerController
         $listWidget->onInput(static function (string $data) use (
             $modelService, $listWidget, $screen, $logger,
         ): bool {
-            // We handle space via select_toggle_fav in keybindings,
-            // but SelectListWidget routes confirm to select_confirm.
-            // We need to intercept AFTER keybindings match or use
-            // onInput before keybindings. The KeybindingsTrait
-            // checks onInput BEFORE matching, so we can match
-            // the raw space character here.
-            if (' ' !== $data) {
+            // Space toggles favorite; match through the list's shared parser.
+            if (!$listWidget->getKeybindings()->matches($data, 'toggle_favorite_space')) {
                 return false;
             }
 

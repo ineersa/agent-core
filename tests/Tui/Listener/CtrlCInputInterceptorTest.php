@@ -146,7 +146,7 @@ final class CtrlCInputInterceptorTest extends TestCase
     {
         $ref = new \ReflectionProperty($harness->screen(), 'statusEntries');
 
-        /** @var array<string, string> */
+        /* @var array<string, string> */
         return $ref->getValue($harness->screen());
     }
 }

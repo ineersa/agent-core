@@ -49,7 +49,8 @@ final readonly class LoadedResourcesStartupRegistrar implements TuiListenerRegis
         });
 
         $tui->addListener(static function (InputEvent $event) use ($screen, $tui): void {
-            if ("\x12" !== $event->getData()) { // ctrl+r
+            $keys = $screen->editorWidget()->getKeybindings();
+            if (!$keys->matches($event->getData(), 'toggle_loaded_resources')) {
                 return;
             }
 

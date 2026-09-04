@@ -547,7 +547,7 @@ final class CompletionListenerTest extends TestCase
 
         // Enter: accept first suggestion (/help) + let Enter propagate to
         // EditorWidget → submit fires.
-        $this->tui->handleInput("\n");
+        $this->tui->handleInput("\r");
 
         // Editor text was set to '/help ' by completion acceptance.
         // SubmitListener would normally extract() and clear, but in this
@@ -580,7 +580,7 @@ final class CompletionListenerTest extends TestCase
         $this->tui->handleInput("\x1b[B");
 
         // Enter: accept /help + submit
-        $this->tui->handleInput("\n");
+        $this->tui->handleInput("\r");
 
         $this->assertSame('/help ', $this->editor->getText());
         $this->assertSame('/help ', $submittedText);
@@ -601,7 +601,7 @@ final class CompletionListenerTest extends TestCase
             },
         );
 
-        $this->tui->handleInput("\n");
+        $this->tui->handleInput("\r");
 
         // Completion has no menu open — Enter passes through.
         $this->assertSame('hello', $this->editor->getText());
@@ -644,7 +644,7 @@ final class CompletionListenerTest extends TestCase
         $this->tui->handleInput("\t");
 
         // Enter: accept /exit + submit propagates
-        $this->tui->handleInput("\n");
+        $this->tui->handleInput("\r");
 
         $this->assertSame('/exit ', $this->editor->getText());
 
@@ -751,11 +751,69 @@ final class CompletionListenerTest extends TestCase
         yield 'kitty' => ["\x1b[100;5u"];
     }
 
+    /**
+     * @return iterable<string, array{0: string}>
+     */
+    public static function provideTabSequences(): iterable
+    {
+        yield 'legacy' => ["\t"];
+        yield 'kitty' => ["\x1b[9u"];
+    }
+
+    /**
+     * @return iterable<string, array{0: string}>
+     */
+    public static function provideEscapeSequences(): iterable
+    {
+        yield 'legacy' => ["\x1b"];
+        yield 'kitty' => ["\x1b[27u"];
+    }
+
+    /**
+     * @return iterable<string, array{0: string}>
+     */
+    public static function provideDownSequences(): iterable
+    {
+        yield 'csi' => ["\x1b[B"];
+        yield 'ss3' => ["\x1bOB"];
+        yield 'protocol-csi' => ["\x1b[1;1B"];
+    }
+
     #[Test]
     #[DataProvider('provideCtrlCSequences')]
     public function ctrlCClearsCompletionOverlay(string $sequence): void
     {
         $this->assertCompletionOverlayClosesOnInterrupt($sequence);
+    }
+
+    #[Test]
+    #[DataProvider('provideTabSequences')]
+    public function tabOpensCompletionForLegacyAndKitty(string $sequence): void
+    {
+        $this->editor->typeText('/he');
+        $this->tui->handleInput($sequence);
+        $this->assertSame('/he', $this->editor->getText());
+    }
+
+    #[Test]
+    #[DataProvider('provideEscapeSequences')]
+    public function escapeClosesCompletionForLegacyAndKitty(string $sequence): void
+    {
+        $this->editor->typeText('/he');
+        $this->tui->handleInput("\t");
+        $this->tui->handleInput($sequence);
+        $this->assertSame('/he', $this->editor->getText());
+    }
+
+    #[Test]
+    #[DataProvider('provideDownSequences')]
+    public function downNavigationAcceptsProtocolForms(string $sequence): void
+    {
+        $this->editor->typeText('/');
+        $this->tui->handleInput("\t");
+        $this->tui->handleInput($sequence);
+        $this->tui->handleInput("\t");
+        $this->assertSame('/exit ', $this->editor->getText());
     }
 
     #[Test]

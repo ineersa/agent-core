@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Runtime\Contract\LoadedResourcesSummaryDTO;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
 use Ineersa\Tui\CompactHeader\CompactHeaderWidget;
+use Ineersa\Tui\Editor\AppShortcutKeybindings;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Footer\FooterBarWidget;
 use Ineersa\Tui\Footer\FooterDataProvider;
@@ -219,6 +220,10 @@ final class ChatScreen
         $tui->add($this->compactHeaderWidget);
         $tui->add($this->editorSepWidget);
         $tui->add($this->promptEditor->getWidget());
+
+        // App shortcuts live on the mounted editor so InputEvent listeners
+        // match through the context-shared KeyParser (legacy + Kitty).
+        $this->promptEditor->setKeybindings(AppShortcutKeybindings::create());
 
         // The PromptEditor wraps an EditorWidget that is a DI singleton
         // reused across TUI iterations during session switches.  After
