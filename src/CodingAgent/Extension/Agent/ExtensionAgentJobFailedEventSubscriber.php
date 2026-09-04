@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Psr\Log\LoggerInterface;
+use Symfony\AI\Platform\Exception\ExceptionInterface as AiExceptionInterface;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\Messenger\Event\WorkerMessageFailedEvent;
 use Symfony\Component\Messenger\Exception\WrappedExceptionsInterface;
@@ -50,8 +51,6 @@ final readonly class ExtensionAgentJobFailedEventSubscriber implements EventSubs
         LlmProviderErrorClassifier::CATEGORY_BAD_REQUEST,
         LlmProviderErrorClassifier::CATEGORY_RATE_LIMIT,
         LlmProviderErrorClassifier::CATEGORY_SERVER,
-        LlmProviderErrorClassifier::CATEGORY_TIMEOUT,
-        LlmProviderErrorClassifier::CATEGORY_NETWORK,
     ];
 
     public function __construct(
@@ -150,6 +149,10 @@ final readonly class ExtensionAgentJobFailedEventSubscriber implements EventSubs
         }
 
         foreach ($throwables as $candidate) {
+            if (!$candidate instanceof AiExceptionInterface) {
+                continue;
+            }
+
             $classified = $this->errorClassifier->classify(['type' => $candidate::class]);
             $category = $classified['error_category'] ?? null;
             $userMessage = $classified['user_message'] ?? null;
@@ -172,9 +175,9 @@ final readonly class ExtensionAgentJobFailedEventSubscriber implements EventSubs
 
     private function safeProviderReason(string $message): ?string
     {
-        if (1 > preg_match_all('~\[([a-zA-Z0-9_.-]+(?:/[a-zA-Z0-9_.-]+){0,2})]~', $message, $matches)) {
-            return null;
-        }
+        // ProviderErrorFormatter preserves structured provider fields in this
+        // bracketed shape. Match only allowlisted field values, never prose.
+        preg_match_all('~\[([a-zA-Z0-9_.-]+(?:/[a-zA-Z0-9_.-]+){0,2})]~', $message, $matches);
 
         foreach ($matches[1] as $fields) {
             foreach (explode('/', $fields) as $field) {

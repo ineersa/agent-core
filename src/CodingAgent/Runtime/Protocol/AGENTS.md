@@ -29,7 +29,7 @@ Exact optional fields evolve with mappers; assert against code + tests. Stable i
 | HITL request | `request_id`, `source`, `question_id`, `kind`, `prompt`, `schema`, optional `choices`/`default`/`tool_call_id`/`tool_name`, `transcript` |
 | Cancellation | `reason`, optional `operation_id`/`operation_type`, `partial_output_available` |
 | Model/usage/cost | `provider`/`model`/`display`/`reasoning`, token/cost/context fields |
-| Extension job failed | fixed `message`/`reason`, `handler_id`, optional `job_id`, `retry_count`, `attempts` |
+| Extension job failed | safe fixed-set `message`/`reason`, `handler_id`, optional `job_id`, `retry_count`, `attempts` |
 
 Run/turn lifecycle events often have no standardized payload yet (mapper normalization).
 

@@ -13,6 +13,7 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Exception\AuthenticationException;
+use Symfony\Component\HttpClient\Exception\TransportException;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Event\WorkerMessageFailedEvent;
 use Symfony\Component\Messenger\Exception\HandlerFailedException;
@@ -47,7 +48,7 @@ final class ExtensionAgentJobFailedEventSubscriberTest extends TestCase
         $event = new WorkerMessageFailedEvent(
             $envelope,
             'extension_agent',
-            new \RuntimeException('[account_secret_code]: sensitive provider error with stack'),
+            new TransportException('[account_secret_code]: sensitive provider error with stack'),
         );
 
         $subscriber->onWorkerMessageFailed($event);
@@ -67,7 +68,7 @@ final class ExtensionAgentJobFailedEventSubscriberTest extends TestCase
         $encoded = json_encode($emitted->toArray(), \JSON_THROW_ON_ERROR);
         $this->assertStringNotContainsString('sensitive provider error', $encoded);
         $this->assertStringNotContainsString('account_secret_code', $encoded);
-        $this->assertStringNotContainsString('RuntimeException', $encoded);
+        $this->assertStringNotContainsString('TransportException', $encoded);
         $this->assertStringNotContainsString('session-should-not-leak', $encoded);
         $this->assertStringNotContainsString('never-include', $encoded);
         $this->assertStringNotContainsString('corr-should-not-leak', $encoded);
