@@ -9,7 +9,7 @@ namespace Ineersa\HatfieldExt\ObservationalMemory\Observer;
  */
 final class OmTokenEstimator
 {
-    private const float CHARS_PER_TOKEN = 3.25;
+    private const float CHARS_PER_TOKEN = 2.35;
 
     public static function estimate(string $text): int
     {
