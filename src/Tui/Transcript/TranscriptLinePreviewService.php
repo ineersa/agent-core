@@ -43,7 +43,7 @@ final readonly class TranscriptLinePreviewService
 
         return [
             'lines' => $fromEnd
-                ? \array_values(\array_slice($lines, -$lineLimit))
+                ? array_values(\array_slice($lines, -$lineLimit))
                 : \array_slice($lines, 0, $lineLimit),
             'ellipsis' => $ellipsis,
         ];

@@ -86,7 +86,7 @@ YAML);
     public function testBundledCatalogIncludesCurrentPiModels(): void
     {
         $catalog = new AiCatalog(
-            dirname(__DIR__, 4).'/config/ai-catalog.yaml',
+            \dirname(__DIR__, 4).'/config/ai-catalog.yaml',
             $this->homeDir,
         );
         $ai = AiConfig::fromArray($catalog->loadProviders()['ai']);
