@@ -21,8 +21,8 @@ AfterTurnCommit (any run_control/llm/tool worker)
       → ObserveBoundaryJobHandler / ObserverPipeline
           → open/migrate om.sqlite (per-job path-local DBAL connection)
           → SessionEventReader::readRange (async path)
-          → deterministic 0.65 context-window chunk/part packer
-          → $api->agent()->run(... record_observations, maxToolCalls=16 ...)
+          → deterministic configured context-window chunk/part packer
+          → $api->agent()->run(... record_observations, maxToolCalls=6 ...)
           → transactionally persist observations + coverage parts
           → optional threshold dispatch observational_memory.reflect_generation
 
@@ -153,5 +153,6 @@ composer update ineersa/hatfield-ext-observational-memory
   user evidence questions. Not semantic search or transcript browsing; do not recall every id.
 
 One top-level `observational_memory.model` is shared by Observer, Reflector, and Dropper.
-Thinking levels are not configured; provider defaults apply. `maxToolCalls=16` maps Pi's
-default agent loop cap.
+Thinking levels are not configured; provider defaults apply. Observer uses
+`maxToolCalls=6` to allow correction rounds while bounding accumulated context;
+Reflector and Dropper retain the Pi-mapped `maxToolCalls=16` cap.
