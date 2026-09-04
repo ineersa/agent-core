@@ -22,6 +22,7 @@ final readonly class TranscriptLinePreviewService
         int $lineLimit,
         bool $fullRender,
         TranscriptDisplayState $displayState,
+        bool $fromEnd = false,
     ): array {
         if ($fullRender) {
             return ['lines' => $lines, 'ellipsis' => null];
@@ -36,10 +37,14 @@ final readonly class TranscriptLinePreviewService
         }
 
         $remaining = \count($lines) - $lineLimit;
-        $ellipsis = \sprintf('… %d more line%s', $remaining, 1 === $remaining ? '' : 's');
+        $ellipsis = $fromEnd
+            ? \sprintf('… %d earlier line%s', $remaining, 1 === $remaining ? '' : 's')
+            : \sprintf('… %d more line%s', $remaining, 1 === $remaining ? '' : 's');
 
         return [
-            'lines' => \array_slice($lines, 0, $lineLimit),
+            'lines' => $fromEnd
+                ? \array_values(\array_slice($lines, -$lineLimit))
+                : \array_slice($lines, 0, $lineLimit),
             'ellipsis' => $ellipsis,
         ];
     }

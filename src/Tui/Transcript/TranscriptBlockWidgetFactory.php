@@ -50,6 +50,7 @@ final readonly class TranscriptBlockWidgetFactory
             $this->toolArgumentColoredFormatter,
             $this->viewImageFormatter,
             $this->toolResultFacts,
+            new TranscriptToolCollapsedPresentation(),
         );
         $this->blockRenderer = new TranscriptBlockRenderer($this->displayConfig);
     }
