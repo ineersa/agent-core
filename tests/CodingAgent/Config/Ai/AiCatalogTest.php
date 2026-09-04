@@ -83,6 +83,39 @@ YAML);
         $this->assertSame('https://api.z.ai/api/coding/paas/v4', $ai->providers['zai']->baseUrl);
     }
 
+    public function testBundledCatalogIncludesCurrentPiModels(): void
+    {
+        $catalog = new AiCatalog(
+            dirname(__DIR__, 4).'/config/ai-catalog.yaml',
+            $this->homeDir,
+        );
+        $ai = AiConfig::fromArray($catalog->loadProviders()['ai']);
+
+        $glm = $ai->providers['zai']->models['glm-5.3'];
+        $this->assertSame(
+            ['minimal' => null, 'low' => 'low', 'medium' => null, 'high' => 'high', 'xhigh' => null, 'max' => 'max'],
+            $glm->thinkingLevelMap,
+        );
+        $this->assertTrue($glm->compatibility?->supportsReasoningEffort);
+        $this->assertTrue($glm->compatibility?->zaiToolStream);
+
+        $glmFlash = $ai->providers['zai']->models['glm-5.3-flash'];
+        $this->assertSame(['text', 'image', 'video', 'pdf'], $glmFlash->input);
+        $this->assertSame(1000000, $glmFlash->contextWindow);
+        $this->assertSame(131072, $glmFlash->maxTokens);
+        $this->assertSame($glm->thinkingLevelMap, $glmFlash->thinkingLevelMap);
+        $this->assertTrue($glmFlash->compatibility?->supportsReasoningEffort);
+        $this->assertTrue($glmFlash->compatibility?->zaiToolStream);
+
+        $astra = $ai->providers['openai-codex']->models['gpt-6-astra'];
+        $this->assertSame(272000, $astra->contextWindow);
+        $this->assertSame(128000, $astra->maxTokens);
+        $this->assertSame(
+            ['minimal' => null, 'low' => 'low', 'medium' => 'medium', 'high' => 'high', 'xhigh' => 'xhigh', 'max' => 'max'],
+            $astra->thinkingLevelMap,
+        );
+    }
+
     public function testCorruptUserCopyFallsBackToBundled(): void
     {
         TestDirectoryIsolation::ensureDirectory($this->homeDir.'/.hatfield');
