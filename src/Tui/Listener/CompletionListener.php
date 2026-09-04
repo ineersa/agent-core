@@ -12,8 +12,6 @@ use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Layout\InputPriority;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Symfony\Component\Tui\Event\InputEvent;
-use Symfony\Component\Tui\Input\Key;
-use Symfony\Component\Tui\Input\Keybindings;
 
 /**
  * Registers TUI-level input listeners for editor completion.
@@ -70,17 +68,15 @@ final class CompletionListener implements TuiListenerRegistrar
         // Runs BEFORE CtrlCInputInterceptor (100) so the completion
         // overlay is torn down cleanly.  Does NOT stop propagation;
         // CtrlCInputInterceptor still performs clear/quit logic.
-        $interruptKeys = new Keybindings([
-            'interrupt' => [Key::ctrl('c')],
-            'quit' => [Key::ctrl('d')],
-        ]);
+        $editorWidget = $screen->editorWidget();
         $context->tui->addListener(
             static function (InputEvent $event) use (
-                $screen, $menu, $state, $interruptKeys,
+                $screen, $menu, $state, $editorWidget,
             ): void {
                 $data = $event->getData();
+                $keys = $editorWidget->getKeybindings();
 
-                if ($interruptKeys->matches($data, 'interrupt') || $interruptKeys->matches($data, 'quit')) {
+                if ($keys->matches($data, 'copy') || $keys->matches($data, 'delete_char_forward')) {
                     if ($state->isOpen()) {
                         $menu->close($screen);
                         $state->close();

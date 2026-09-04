@@ -7,16 +7,15 @@ namespace Ineersa\Tui\Listener;
 use Ineersa\Tui\Layout\InputPriority;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Symfony\Component\Tui\Event\InputEvent;
-use Symfony\Component\Tui\Input\Key;
-use Symfony\Component\Tui\Input\Keybindings;
 
 /**
  * Intercepts Ctrl+D (quit) and Ctrl+C (cancel / double-press quit).
  *
  * Registered at priority {@see InputPriority::GLOBAL_INTERRUPT} so it runs before other input handlers.
  *
- * Matching uses Symfony TUI {@see Keybindings} so both legacy control bytes
- * (`\x03` / `\x04`) and Kitty CSI-u sequences (`ESC[99;5u` / `ESC[100;5u`) work.
+ * Matching uses the mounted editor widget's effective keybindings
+ * (`copy` / `delete_char_forward`) so legacy control bytes and Kitty
+ * CSI-u sequences stay synchronized with Symfony TUI protocol state.
  *
  * Ctrl+D → immediate quit
  * Ctrl+C (with editor text) → clear editor
@@ -32,31 +31,29 @@ final class CtrlCInputInterceptor implements TuiListenerRegistrar
     {
         $tui = $context->tui;
         $screen = $context->screen;
+        $editor = $screen->editorWidget();
 
         // Mutable state captured by the closure (scoped to this TUI session).
         // The by-reference capture is REQUIRED: PHP re-initialises by-value
         // use() captures on every closure invocation, so the double-press
         // timer would never see the previous press without it.
         $ctrlCLast = 0.0;
-        $keys = new Keybindings([
-            'quit' => [Key::ctrl('d')],
-            'interrupt' => [Key::ctrl('c')],
-        ]);
 
         $context->tui->addListener(
-            static function (InputEvent $event) use ($tui, $screen, $keys, &$ctrlCLast): void {
+            static function (InputEvent $event) use ($tui, $screen, $editor, &$ctrlCLast): void {
                 $data = $event->getData();
+                $keys = $editor->getKeybindings();
 
-                // Ctrl+D → quit
-                if ($keys->matches($data, 'quit')) {
+                // Ctrl+D (editor delete_char_forward) → quit
+                if ($keys->matches($data, 'delete_char_forward')) {
                     $event->stopPropagation();
                     $tui->stop();
 
                     return;
                 }
 
-                // Ctrl+C → cancel or double-press quit
-                if ($keys->matches($data, 'interrupt')) {
+                // Ctrl+C (editor copy) → cancel or double-press quit
+                if ($keys->matches($data, 'copy')) {
                     $event->stopPropagation();
 
                     $now = microtime(true);

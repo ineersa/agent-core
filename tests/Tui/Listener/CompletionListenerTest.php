@@ -20,6 +20,7 @@ use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
+use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -754,80 +755,51 @@ final class CompletionListenerTest extends TestCase
     #[DataProvider('provideCtrlCSequences')]
     public function ctrlCClearsCompletionOverlay(string $sequence): void
     {
-        $this->editor->typeText('/');
-
-        // Open menu
-        $this->tui->handleInput("\t");
-
-        // Ctrl+C should close the overlay (priority 105 listener).
-        // Propagation is NOT stopped so CtrlCInputInterceptor
-        // still receives the key (not tested here since we don't
-        // register the full interceptor chain).
-        $exception = null;
-        try {
-            $this->tui->handleInput($sequence);
-        } catch (\Throwable $e) {
-            $exception = $e;
-        }
-
-        // The key must not crash or throw after overlay close.
-        $this->assertNull($exception, 'Ctrl+C must not throw when completion overlay closes.');
-
-        // Re-open and accept to verify state machine is still healthy.
-        $this->editor->typeText('/');
-        $this->tui->handleInput("\t");
-        $this->tui->handleInput("\t");
-        // First alphabetical suggestion is /clear
-        $this->assertStringStartsWith('/clear', $this->editor->getText());
+        $this->assertCompletionOverlayClosesOnInterrupt($sequence);
     }
 
     #[Test]
     #[DataProvider('provideCtrlDSequences')]
     public function ctrlDClearsCompletionOverlay(string $sequence): void
     {
-        $this->editor->typeText('/');
-
-        // Open menu
-        $this->tui->handleInput("\t");
-
-        // Ctrl+D should close the overlay (priority 105 listener).
-        // Propagation is NOT stopped so downstream listeners
-        // (CtrlCInputInterceptor, editor) still handle the key.
-        $exception = null;
-        try {
-            $this->tui->handleInput($sequence);
-        } catch (\Throwable $e) {
-            $exception = $e;
-        }
-
-        $this->assertNull($exception, 'Ctrl+D must not throw when completion overlay closes.');
-
-        // Re-open and accept to verify state machine is still healthy.
-        $this->editor->typeText('/');
-        $this->tui->handleInput("\t");
-        $this->tui->handleInput("\t");
-        // First alphabetical suggestion is /clear
-        $this->assertStringStartsWith('/clear', $this->editor->getText());
+        $this->assertCompletionOverlayClosesOnInterrupt($sequence);
     }
 
     #[Test]
     #[DataProvider('provideCtrlCSequences')]
     public function ctrlCDoesNothingWhenCompletionClosed(string $sequence): void
     {
-        $this->editor->typeText('hello');
+        $harness = new VirtualTuiHarness(sessionId: 'completion-ctrl-closed');
+        $provider = new SlashCommandCompletionProvider(new SlashCommandCatalog());
+        $context = $this->buildTuiContext()
+            ->withTui($harness->tui())
+            ->withState(new TuiSessionState('completion-ctrl-closed'))
+            ->withScreen($harness->screen())
+            ->build();
+        (new CompletionListener($provider))->register($context);
 
-        // No menu open — Ctrl+C should not crash.
-        // Without CtrlCInputInterceptor registered in this isolated
-        // fixture, the key may be consumed by the editor; verify no
-        // exception is thrown.
-        $exception = null;
         try {
-            $this->tui->handleInput($sequence);
-        } catch (\Throwable $e) {
-            $exception = $e;
-        }
+            $harness->startInputLoop();
+            $harness->screen()->promptEditor()->typeText('hello');
+            $harness->render();
 
-        $this->assertNull($exception, 'Ctrl+C with no completion open must not throw.');
+            $this->assertStringNotContainsString(
+                'Completions — arrows move',
+                $harness->plainScreenText(),
+                'Completion overlay must stay closed before interrupt',
+            );
+
+            $harness->sendInput($sequence);
+
+            $this->assertStringNotContainsString(
+                'Completions — arrows move',
+                $harness->plainScreenText(),
+                'Ctrl+C with no open completion must not open the overlay',
+            );
+            $this->assertSame('hello', $harness->screen()->promptEditor()->getText());
+        } finally {
+            $harness->stopInputLoop();
+        }
     }
 
     // ── Overlay lifecycle (open/close is idempotent) ──────────────
@@ -1140,5 +1112,46 @@ final class CompletionListenerTest extends TestCase
             ->withState($this->state)
             ->withScreen($this->screen)
             ->build();
+    }
+
+    private function assertCompletionOverlayClosesOnInterrupt(string $sequence): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: 'completion-ctrl-interrupt');
+        $provider = new SlashCommandCompletionProvider(new SlashCommandCatalog());
+        $context = $this->buildTuiContext()
+            ->withTui($harness->tui())
+            ->withState(new TuiSessionState('completion-ctrl-interrupt'))
+            ->withScreen($harness->screen())
+            ->build();
+        (new CompletionListener($provider))->register($context);
+
+        try {
+            $harness->startInputLoop();
+            $harness->screen()->promptEditor()->typeText('/');
+            $harness->sendInput("\t");
+
+            $openScreen = $harness->plainScreenText();
+            $this->assertStringContainsString(
+                'Completions — arrows move',
+                $openScreen,
+                'Tab should open the completion overlay before interrupt',
+            );
+
+            $harness->sendInput($sequence);
+
+            $this->assertStringNotContainsString(
+                'Completions — arrows move',
+                $harness->plainScreenText(),
+                'Interrupt sequence must close the completion overlay',
+            );
+
+            // State machine remains healthy: reopen + accept first suggestion.
+            $harness->screen()->promptEditor()->typeText('/');
+            $harness->sendInput("\t");
+            $harness->sendInput("\t");
+            $this->assertStringStartsWith('/clear', $harness->screen()->promptEditor()->getText());
+        } finally {
+            $harness->stopInputLoop();
+        }
     }
 }
