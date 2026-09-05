@@ -5,10 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Runtime\Messenger\Doctrine;
 
 use Doctrine\DBAL\ArrayParameterType;
-use Doctrine\DBAL\Exception as DBALException;
 use Doctrine\DBAL\Exception\TableNotFoundException;
-use Doctrine\DBAL\Platforms\OraclePlatform;
-use Doctrine\DBAL\Query\ForUpdate\ConflictResolutionMode;
 use Doctrine\DBAL\Query\QueryBuilder;
 use Doctrine\DBAL\Result;
 use Doctrine\DBAL\Types\Types;
@@ -17,16 +14,15 @@ use Symfony\Component\Messenger\Bridge\Doctrine\Transport\Connection;
 /**
  * Doctrine Messenger connection that never reclaims claimed rows by age.
  *
- * Domain shape:
- * - queued/unclaimed (`delivered_at IS NULL`) remains receivable when available_at is due
- * - claimed (`delivered_at IS NOT NULL`) stays invisible to get()/findAll()/getMessageCount()
- *   forever, regardless of age
- *
- * Ack/reject still delete the row. A legitimate retry must enqueue a fresh unclaimed
- * row (Symfony's reject+retry path), not age-reclaim the claimed delivery.
+ * Unclaimed due rows remain receivable. Claimed rows stay invisible to get(),
+ * findAll(), and getMessageCount() until ack/reject deletes them. Legitimate
+ * retries enqueue a fresh unclaimed row.
  */
 final class ClaimOnlyDoctrineConnection extends Connection
 {
+    /**
+     * @return list<array<string, mixed>>|null
+     */
     public function get(int $fetchSize = 1): ?array
     {
         get:
@@ -36,24 +32,8 @@ final class ClaimOnlyDoctrineConnection extends Connection
                 ->orderBy('available_at', 'ASC')
                 ->setMaxResults($fetchSize);
 
-            if ($this->driverConnection->getDatabasePlatform() instanceof OraclePlatform) {
-                $query->select('m.id');
-            }
-
-            $sql = $query->getSQL();
-
-            if ($this->driverConnection->getDatabasePlatform() instanceof OraclePlatform) {
-                $query = $this->createUnlockedQueryBuilder('w')
-                    ->where('w.id IN ('.str_replace('SELECT a.* FROM', 'SELECT a.id FROM', $sql).')')
-                    ->setParameters($query->getParameters(), $query->getParameterTypes());
-
-                $sql = $query->getSQL();
-            }
-
-            $sql = $this->addSkipLockedMode($query, $sql);
-
-            $doctrineEnvelopes = $this->executeUnlockedQuery(
-                $sql,
+            $doctrineEnvelopes = $this->executeQuery(
+                $query->getSQL(),
                 $query->getParameters(),
                 $query->getParameterTypes()
             )->fetchAllAssociative();
@@ -66,8 +46,7 @@ final class ClaimOnlyDoctrineConnection extends Connection
             }
 
             $this->queueEmptiedAt = null;
-
-            $doctrineEnvelopes = array_map($this->decodeUnlockedEnvelopeHeaders(...), $doctrineEnvelopes);
+            $doctrineEnvelopes = array_map($this->decodeEnvelopeHeaders(...), $doctrineEnvelopes);
             $now = new \DateTimeImmutable('UTC');
 
             if (1 === \count($doctrineEnvelopes)) {
@@ -119,13 +98,16 @@ final class ClaimOnlyDoctrineConnection extends Connection
             ->select('COUNT(m.id) AS message_count')
             ->setMaxResults(1);
 
-        return $this->executeUnlockedQuery(
+        return $this->executeQuery(
             $queryBuilder->getSQL(),
             $queryBuilder->getParameters(),
             $queryBuilder->getParameterTypes()
         )->fetchOne();
     }
 
+    /**
+     * @return list<array<string, mixed>>
+     */
     public function findAll(?int $limit = null): array
     {
         $queryBuilder = $this->createUnclaimedAvailableMessagesQueryBuilder();
@@ -135,8 +117,8 @@ final class ClaimOnlyDoctrineConnection extends Connection
         }
 
         return array_map(
-            $this->decodeUnlockedEnvelopeHeaders(...),
-            $this->executeUnlockedQuery(
+            $this->decodeEnvelopeHeaders(...),
+            $this->executeQuery(
                 $queryBuilder->getSQL(),
                 $queryBuilder->getParameters(),
                 $queryBuilder->getParameterTypes()
@@ -148,7 +130,9 @@ final class ClaimOnlyDoctrineConnection extends Connection
     {
         $now = new \DateTimeImmutable('UTC');
 
-        return $this->createUnlockedQueryBuilder()
+        return $this->driverConnection->createQueryBuilder()
+            ->select('m.*')
+            ->from($this->configuration['table_name'], 'm')
             ->where('m.queue_name = ?')
             ->andWhere('m.delivered_at is null')
             ->andWhere('m.available_at <= ?')
@@ -161,21 +145,11 @@ final class ClaimOnlyDoctrineConnection extends Connection
             ]);
     }
 
-    private function createUnlockedQueryBuilder(string $alias = 'm'): QueryBuilder
-    {
-        $queryBuilder = $this->driverConnection->createQueryBuilder()
-            ->from($this->configuration['table_name'], $alias);
-
-        $alias .= '.';
-
-        return $queryBuilder->select($alias.'*');
-    }
-
     /**
      * @param list<mixed>|array<string, mixed> $parameters
      * @param array<int|string, mixed>         $types
      */
-    private function executeUnlockedQuery(string $sql, array $parameters = [], array $types = []): Result
+    private function executeQuery(string $sql, array $parameters = [], array $types = []): Result
     {
         try {
             return $this->driverConnection->executeQuery($sql, $parameters, $types);
@@ -195,31 +169,11 @@ final class ClaimOnlyDoctrineConnection extends Connection
      *
      * @return array<string, mixed>
      */
-    private function decodeUnlockedEnvelopeHeaders(array $doctrineEnvelope): array
+    private function decodeEnvelopeHeaders(array $doctrineEnvelope): array
     {
         $doctrineEnvelope['headers'] = json_decode((string) $doctrineEnvelope['headers'], true);
 
         return $doctrineEnvelope;
-    }
-
-    private function addSkipLockedMode(QueryBuilder $query, string $sql): string
-    {
-        $query->forUpdate(ConflictResolutionMode::SKIP_LOCKED);
-        try {
-            return $query->getSQL();
-        } catch (DBALException) {
-            return $this->fallBackToPlainForUpdate($query, $sql);
-        }
-    }
-
-    private function fallBackToPlainForUpdate(QueryBuilder $query, string $sql): string
-    {
-        $query->forUpdate();
-        try {
-            return $query->getSQL();
-        } catch (DBALException) {
-            return $sql;
-        }
     }
 
     private function isAutoSetupEnabled(): bool

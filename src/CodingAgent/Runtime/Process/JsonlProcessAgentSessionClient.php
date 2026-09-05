@@ -565,13 +565,12 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             // TUI process defaults to sync:// so --transport=in-process remains
             // usable without a consumer pool.
             // Claimed Doctrine rows are never age-reclaimed (ClaimOnlyDoctrineConnection).
-            // Keep an explicit redeliver_timeout for Symfony DSN validation only.
-            'HATFIELD_RUN_CONTROL_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=run_control_{$queueSuffix}&redeliver_timeout=3600",
-            'HATFIELD_LLM_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=llm_{$queueSuffix}&redeliver_timeout=3600",
-            'HATFIELD_TOOL_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=tool_{$queueSuffix}&redeliver_timeout=3600",
-            'HATFIELD_AGENT_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=agent_{$queueSuffix}&redeliver_timeout=3600",
-            'HATFIELD_MCP_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=mcp_{$queueSuffix}&redeliver_timeout=3600",
-            'HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=extension_agent_{$queueSuffix}&redeliver_timeout=3600",
+            'HATFIELD_RUN_CONTROL_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=run_control_{$queueSuffix}",
+            'HATFIELD_LLM_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=llm_{$queueSuffix}",
+            'HATFIELD_TOOL_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=tool_{$queueSuffix}",
+            'HATFIELD_AGENT_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=agent_{$queueSuffix}",
+            'HATFIELD_MCP_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=mcp_{$queueSuffix}",
+            'HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=extension_agent_{$queueSuffix}",
             // Pass session ID so the controller can identify and reap its own
             // orphaned consumers when a previous session was SIGKILL'd.
             'HATFIELD_SESSION_ID' => $this->sessionId ?? 'unknown',

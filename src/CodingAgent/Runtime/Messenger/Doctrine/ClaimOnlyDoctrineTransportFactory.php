@@ -17,12 +17,7 @@ use Symfony\Component\Messenger\Transport\TransportFactoryInterface;
 use Symfony\Component\Messenger\Transport\TransportInterface;
 
 /**
- * Replaces Symfony's Doctrine transport factory so claim eligibility ignores age.
- *
- * Hatfield session Doctrine transports are SQLite. This decorator keeps DSN
- * parsing and DoctrineTransport packaging, but installs
- * {@see ClaimOnlyDoctrineConnection} so delivered rows are never reclaimed by
- * redeliver_timeout.
+ * Decorates Symfony's Doctrine transport factory with claim-only eligibility.
  *
  * @implements TransportFactoryInterface<DoctrineTransport>
  */
@@ -37,6 +32,9 @@ final class ClaimOnlyDoctrineTransportFactory implements TransportFactoryInterfa
     ) {
     }
 
+    /**
+     * @phpstan-ignore missingType.iterableValue
+     */
     public function createTransport(#[\SensitiveParameter] string $dsn, array $options, SerializerInterface $serializer): TransportInterface
     {
         unset($options['transport_name'], $options['use_notify']);
@@ -54,6 +52,9 @@ final class ClaimOnlyDoctrineTransportFactory implements TransportFactoryInterfa
         );
     }
 
+    /**
+     * @phpstan-ignore missingType.iterableValue
+     */
     public function supports(#[\SensitiveParameter] string $dsn, array $options): bool
     {
         return $this->inner->supports($dsn, $options);
