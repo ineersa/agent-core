@@ -7,10 +7,12 @@ Read [implementation-ownership.md](implementation-ownership.md) and [specificati
 1. Inspect the worktree with `git status`, `git log`, and `git diff --stat origin/main...HEAD`.
 2. Run the reviewer subagent in the worktree. Record its role, artifact or run ID, target revision, and scope with `update_task`. Require a specification-fidelity review.
 3. If the reviewer requests changes, apply the ownership decision rules to the requested fixes. Record ownership, implement the fixes, run focused validation, and repeat review until approved.
-4. Run relevant filtered tests, `castor deptrac`, `castor phpstan`, and `castor cs-check`. Add controller replay or `castor test:tui` only when the required proof layer calls for it. Do not run full `castor test`; the transition runs `castor check`.
+4. Reuse applicable focused validation from implementation for the same revision and environment. Run filtered tests or individual static checks (`castor deptrac`, `castor phpstan`, `castor cs-check`) when they provide useful focused feedback or address an unresolved concern. Add controller replay or `castor test:tui` only when the required proof layer calls for it. Do not run full `castor test`; the transition runs `castor check`.
 5. Run focused `castor test:llm-real` only for provider or LLM-visible changes such as schemas, prompts, streaming, model routing, or provider compatibility.
 6. Record the reviewer decision, target revision, validation, and unresolved blockers with `update_task`.
-7. Call `move_task(to="CODE-REVIEW")`. It runs deterministic `castor check`, checks that the worktree is clean, pushes the branch, and creates or updates the PR.
+7. Call `move_task(to="CODE-REVIEW")`. It runs deterministic `castor check`, checks that the worktree is clean, pushes the branch, and creates or updates the PR. Do not run `castor check` separately before this transition. The successful transition gate satisfies the mandatory full-validation requirement for the submitted revision.
+
+Repeat or broaden discretionary checks only after changes, failures, or unresolved concerns. This stopping rule does not replace the mandatory transition gate or the separate post-merge check.
 
 ## Failure handling
 
