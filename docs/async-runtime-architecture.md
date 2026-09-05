@@ -27,8 +27,8 @@ Canonical replay source is the session event log — not transient stream deltas
 
 Controller-owned messenger consumers (LLM/tool/…) are supervised with concrete invariants:
 
-- Keepalive interval **5s** (`messenger:consume --keepalive`) so live workers refresh `delivered_at` before session Doctrine `redeliver_timeout` (60s) reclaim.
-- Keepalive requires **pcntl** signal+alarm support; without it the supervisor refuses to launch (long turns would be reclaimed).
+- Doctrine claim semantics: once a row is claimed (`delivered_at` set), age never restores eligibility. Abandoned claimed deliveries stay stuck until explicit `/repair` or restart-and-continue recovery.
+- Consumers launch without `--keepalive`. SIGALRM lease refresh is not part of the runtime contract.
 - Restart budget: max **3** restarts per consumer key within a **60s** window, initial restart delay **1s**; beyond budget the consumer is abandoned and the controller can surface a diagnostic.
 - Shared consumer graceful shutdown grace defaults to **5s**; partial stdout line buffer max **65_536** bytes; stderr tail retained for crash diagnostics (**16_384** bytes).
 - Consumer memory recycle threshold **256M** via Messenger worker options.

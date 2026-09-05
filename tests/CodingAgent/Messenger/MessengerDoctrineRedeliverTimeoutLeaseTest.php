@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Messenger;
 
 use Doctrine\DBAL\DriverManager;
+use Ineersa\CodingAgent\Runtime\Messenger\Doctrine\ClaimOnlyDoctrineConnection;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Symfony\Component\Messenger\Bridge\Doctrine\Transport\Connection as DoctrineMessengerConnection;
 use Symfony\Component\Messenger\Bridge\Doctrine\Transport\DoctrineTransport;
@@ -12,19 +13,18 @@ use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Transport\Serialization\PhpSerializer;
 
 /**
- * Thesis: production session DSNs pin redeliver_timeout=60 so a delivered-but-unacked
- * Doctrine row is not immediately receivable, but becomes receivable again once its
- * delivered_at lease is aged past that timeout — without sleeping a full minute.
+ * Thesis: ClaimOnlyDoctrineConnection never reclaims a claimed row by age, while
+ * a fresh unclaimed row remains receivable. No keepalive or wall-clock wait.
  *
  * Uses the test container's messenger_transport SQLite path (same DB family as
  * production controller DSNs) with a fresh DBAL connection so DAMA's outer
  * transaction wrapper does not nest under Messenger BEGIN IMMEDIATE.
  *
- * @coversNothing
+ * @covers \Ineersa\CodingAgent\Runtime\Messenger\Doctrine\ClaimOnlyDoctrineConnection
  */
 final class MessengerDoctrineRedeliverTimeoutLeaseTest extends IsolatedKernelTestCase
 {
-    public function testDeliveredUnackedRowBecomesReceivableOnlyAfterStaleLease(): void
+    public function testClaimedRowStaysUnreceivableAfterAgingAndFreshUnclaimedRemainsReceivable(): void
     {
         $sessionId = 'lease-'.bin2hex(random_bytes(4));
         $queueName = 'llm_'.$sessionId;
@@ -34,8 +34,6 @@ final class MessengerDoctrineRedeliverTimeoutLeaseTest extends IsolatedKernelTes
         $path = $params['path'] ?? null;
         $this->assertIsString($path, 'messenger_transport connection must expose a SQLite path');
 
-        // Fresh connection to the same transport file: DAMA wraps the kernel
-        // connection in a test transaction that conflicts with Messenger BEGIN.
         $fresh = DriverManager::getConnection([
             'driver' => 'pdo_sqlite',
             'path' => $path,
@@ -48,14 +46,14 @@ final class MessengerDoctrineRedeliverTimeoutLeaseTest extends IsolatedKernelTes
 
         $configuration = DoctrineMessengerConnection::buildConfiguration(
             \sprintf(
-                'doctrine://messenger_transport?queue_name=%s&redeliver_timeout=60',
+                'doctrine://messenger_transport?queue_name=%s&redeliver_timeout=3600',
                 $queueName,
             ),
         );
-        $this->assertSame(60, (int) $configuration['redeliver_timeout']);
+        $this->assertSame(3600, (int) $configuration['redeliver_timeout']);
         $this->assertSame($queueName, $configuration['queue_name']);
 
-        $connection = new DoctrineMessengerConnection($configuration, $fresh);
+        $connection = new ClaimOnlyDoctrineConnection($configuration, $fresh);
         $transport = new DoctrineTransport($connection, new PhpSerializer());
 
         $transport->send(new Envelope(new \stdClass()));
@@ -64,20 +62,45 @@ final class MessengerDoctrineRedeliverTimeoutLeaseTest extends IsolatedKernelTes
         $this->assertCount(1, $claimed, 'Fresh queue row must be claimable once.');
 
         $stillHeld = iterator_to_array($transport->get());
-        $this->assertSame([], $stillHeld, 'Fresh delivered_at lease must not be immediately reclaimed.');
+        $this->assertSame([], $stillHeld, 'Fresh delivered_at claim must not be immediately reclaimed.');
 
-        $stale = (new \DateTimeImmutable('UTC'))->modify('-61 seconds')->format('Y-m-d H:i:s');
+        $stale = (new \DateTimeImmutable('UTC'))->modify('-7200 seconds')->format('Y-m-d H:i:s');
         $updated = $fresh->executeStatement(
             'UPDATE messenger_messages SET delivered_at = ? WHERE queue_name = ? AND delivered_at IS NOT NULL',
             [$stale, $queueName],
         );
-        $this->assertSame(1, $updated, 'Exactly one delivered row must be aged for reclaim.');
+        $this->assertSame(1, $updated, 'Exactly one delivered row must be aged.');
 
-        $reclaimed = iterator_to_array($transport->get());
-        $this->assertCount(1, $reclaimed, 'Stale delivered_at must make the row receivable again under redeliver_timeout=60.');
+        $agedStillHeld = iterator_to_array($transport->get());
+        $this->assertSame([], $agedStillHeld, 'Aged claimed row must remain unreceivable without age reclaim.');
 
-        $transport->ack($reclaimed[0]);
+        $transport->send(new Envelope(new \stdClass()));
+        $freshUnclaimed = iterator_to_array($transport->get());
+        $this->assertCount(1, $freshUnclaimed, 'A fresh unclaimed row must still be receivable.');
+
+        $transport->ack($freshUnclaimed[0]);
         $fresh->executeStatement('DELETE FROM messenger_messages WHERE queue_name = ?', [$queueName]);
         $fresh->close();
+    }
+
+    public function testDecoratedDoctrineFactoryWiresClaimOnlyConnection(): void
+    {
+        $factory = self::getContainer()->get('messenger.transport.doctrine.factory');
+        $this->assertInstanceOf(
+            \Ineersa\CodingAgent\Runtime\Messenger\Doctrine\ClaimOnlyDoctrineTransportFactory::class,
+            $factory,
+        );
+
+        $transport = $factory->createTransport(
+            'doctrine://messenger_transport?queue_name=claim_only_wiring&redeliver_timeout=3600',
+            [],
+            new PhpSerializer(),
+        );
+        $this->assertInstanceOf(DoctrineTransport::class, $transport);
+
+        $reflection = new \ReflectionClass($transport);
+        $connectionProperty = $reflection->getProperty('connection');
+        $connection = $connectionProperty->getValue($transport);
+        $this->assertInstanceOf(ClaimOnlyDoctrineConnection::class, $connection);
     }
 }

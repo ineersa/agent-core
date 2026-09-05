@@ -7,7 +7,6 @@ namespace Ineersa\CodingAgent\Runtime\Controller;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Psr\Log\LoggerInterface;
 use Revolt\EventLoop;
-use Symfony\Component\Console\SignalRegistry\SignalRegistry;
 use Symfony\Component\Process\Process;
 
 /**
@@ -29,12 +28,10 @@ use Symfony\Component\Process\Process;
  *   restart, the counter resets.
  *
  * Process management:
- * - Launch: creates a non-blocking Symfony Process with timeout(null),
- *   Symfony Messenger --memory-limit for graceful worker recycling, and
- *   --keepalive=5 so Doctrine leases refresh during long LLM/tool handlers
- * - Fail-fast: refuses to launch when pcntl signal + alarm support is missing,
- *   because keepalive depends on SIGALRM and abandoned-message recovery depends
- *   on keepalive keeping delivered_at fresh for live workers
+ * - Launch: creates a non-blocking Symfony Process with timeout(null) and
+ *   Symfony Messenger --memory-limit for graceful worker recycling
+ * - Claimed Doctrine rows are never reclaimed by age; abandoned deliveries
+ *   require explicit /repair or restart-and-continue recovery
  * - Supervision: polls isRunning() every 5s; exit code 0 is treated as
  *   normal memory-limit (or other graceful) recycle with immediate relaunch;
  *   non-zero exits use crash restart policy with exponential backoff
@@ -62,13 +59,6 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
 
     /** Symfony Messenger graceful worker recycle threshold for controller consumers. */
     private const string CONSUMER_MEMORY_LIMIT = '256M';
-
-    /**
-     * Keepalive interval (seconds) passed to messenger:consume.
-     * Must stay well below session Doctrine redeliver_timeout (60s) so live
-     * workers refresh delivered_at before abandoned-message reclaim.
-     */
-    private const int CONSUMER_KEEPALIVE_SECONDS = 5;
 
     /**
      * Idle poll delay passed to messenger:consume in seconds (10ms).
@@ -118,10 +108,6 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
      */
     public function launch(string $transportName, int $instanceId = 0): void
     {
-        // Keepalive uses Symfony Console SIGALRM scheduling; without pcntl
-        // signal+alarm support, redeliver_timeout=60 would reclaim live long turns.
-        $this->assertKeepaliveRuntimeSupport();
-
         $cwd = $this->runtimeConfig->runtimeCwd();
         $appCommand = $this->runtimeConfig->executableCommand();
 
@@ -137,7 +123,6 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
                     '--no-interaction',
                     '--memory-limit='.self::CONSUMER_MEMORY_LIMIT,
                     // Explicit values avoid Symfony's one-second default idle sleep.
-                    '--keepalive='.self::CONSUMER_KEEPALIVE_SECONDS,
                     '--sleep='.self::CONSUMER_SLEEP_SECONDS,
                 ],
                 cwd: $cwd,
@@ -455,20 +440,6 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
                 $this->launch($transportName, $instanceId);
             }
         });
-    }
-
-    /**
-     * Keepalive recovery requires pcntl signal handlers plus pcntl_alarm.
-     * Fail before any consumer is launched so the controller never advertises
-     * readiness with workers that cannot refresh Doctrine leases.
-     */
-    private function assertKeepaliveRuntimeSupport(): void
-    {
-        if (SignalRegistry::isSupported() && \function_exists('pcntl_alarm')) {
-            return;
-        }
-
-        throw new \RuntimeException('Messenger consumer keepalive requires pcntl signal support and pcntl_alarm(); cannot launch consumers safely with redeliver_timeout=60.');
     }
 
     /**

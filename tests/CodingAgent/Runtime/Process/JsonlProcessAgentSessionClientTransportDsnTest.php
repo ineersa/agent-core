@@ -135,7 +135,7 @@ PHP);
             'HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN',
         ] as $dsnKey) {
             $this->assertStringStartsWith('doctrine://messenger_transport?', $env[$dsnKey], $dsnKey);
-            $this->assertStringContainsString('redeliver_timeout=60', $env[$dsnKey], $dsnKey);
+            $this->assertStringContainsString('redeliver_timeout=3600', $env[$dsnKey], $dsnKey);
         }
 
         $this->assertStringContainsString('run_control_session-42', $env['HATFIELD_RUN_CONTROL_TRANSPORT_DSN']);
