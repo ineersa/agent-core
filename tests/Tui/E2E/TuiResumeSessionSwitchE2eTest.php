@@ -103,10 +103,13 @@ final class TuiResumeSessionSwitchE2eTest extends TestCase
 
             $this->tmux->saveAnsiSnapshot($pane, 'resume-repaint');
             $this->tmux->sendKey($pane, 'C-d');
+            // Prove clean exit before tearDown removeDirectory races leftover writers.
+            $this->tmux->waitUntilPaneExits($pane, 10.0);
         } catch (\Throwable $e) {
             $this->tmux->saveAnsiSnapshot($pane, 'resume-repaint-FAILURE');
             try {
                 $this->tmux->sendKey($pane, 'C-d');
+                $this->tmux->waitUntilPaneExits($pane, 10.0);
             } catch (\Throwable) {
             }
             throw $e;

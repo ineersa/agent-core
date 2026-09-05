@@ -89,6 +89,8 @@ final class TuiStartupSnapshotTest extends TestCase
         $this->assertStringContainsString('e2e-startup/SKILL.md', $normalizedExpanded, 'Expanded loaded-resources block should show planted skill source path');
 
         $this->tmux->sendKey($pane, 'C-d');
+        // Wait for natural exit before tearDown removeDirectory.
+        $this->tmux->waitUntilPaneExits($pane, 10.0);
     }
 
     // ── helpers ────────────────────────────────────────────
