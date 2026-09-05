@@ -35,10 +35,10 @@ use Symfony\Component\Clock\Clock;
  *  4. stop() sends SIGTERM to the process group (negative PGID), polls
  *     until exit or the configured grace deadline, then SIGKILL if still alive.
  *
- * Session ownership: user-facing list(), readLogTail(), and session-scoped
+ * Session ownership: user-facing list(), readLogTail(), and
  * stop() operations require an owning session and expose only rows explicitly
- * accepted as background work. Internal shutdown/reap code retains an
- * unscoped stop path for records this manager instance owns.
+ * accepted as background work. Instance shutdown resolves owned record IDs
+ * directly and stops them through stopProcessEntity().
  *
  * Shutdown handling:
  * Call registerShutdownHandler() from production wiring (services.yaml)
@@ -443,16 +443,13 @@ final class BackgroundProcessManager
      * to single-PID signalling only when the PGID could not be
      * determined — a rare race window immediately after process launch.
      *
-     * @param int         $pid       Process PID to stop. Must be > 0.
-     * @param string|null $sessionId owning run for user-facing operations.
-     *                               When provided, only an accepted process
-     *                               in that run can be stopped; null is only
-     *                               for internal session-selected rows.
-     *                               Instance shutdown uses owned record IDs.
+     * @param int    $pid       Process PID to stop. Must be > 0.
+     * @param string $sessionId owning run. Only an accepted background process
+     *                          in that run can be stopped.
      *
      * @throws \RuntimeException when process not found or PID is invalid
      */
-    public function stop(int $pid, ?string $sessionId = null): StopResult
+    public function stop(int $pid, string $sessionId): StopResult
     {
         // Defence-in-depth: reject non-positive PIDs that could cause
         // kill(0) or kill(-negative) to broadcast signals to the caller.
@@ -460,12 +457,10 @@ final class BackgroundProcessManager
             throw new \RuntimeException(\sprintf('Invalid PID %d for stop.', $pid));
         }
 
-        $entity = null === $sessionId
-            ? $this->store->fetchLatestByPid($pid)
-            : $this->store->fetchBackgroundedByPid($sessionId, $pid);
+        $entity = $this->store->fetchBackgroundedByPid($sessionId, $pid);
 
         if (null === $entity) {
-            throw new \RuntimeException(null === $sessionId ? \sprintf('No background process found with PID %d.', $pid) : \sprintf('No background process found with PID %d for this session.', $pid));
+            throw new \RuntimeException(\sprintf('No background process found with PID %d for this session.', $pid));
         }
 
         return $this->stopProcessEntity($entity);

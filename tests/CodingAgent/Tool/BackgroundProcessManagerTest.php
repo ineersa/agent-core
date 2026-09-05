@@ -191,8 +191,9 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         }
         $this->assertFileExists($readySentinel, 'TERM trap fixture must signal ready before stop()');
 
+        $this->manager->markBackgroundedForRecord($result->id, self::TEST_SESSION);
         $startedNs = hrtime(true);
-        $stopResult = $this->manager->stop($result->pid);
+        $stopResult = $this->manager->stop($result->pid, self::TEST_SESSION);
         $elapsedSeconds = (hrtime(true) - $startedNs) / 1_000_000_000;
 
         $this->assertInstanceOf(StopResult::class, $stopResult);
@@ -209,7 +210,8 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $this->createManager(stopGraceSeconds: 0);
         $result = $this->manager->start('trap "" TERM; sleep 3', self::TEST_SESSION);
 
-        $stopResult = $this->manager->stop($result->pid);
+        $this->manager->markBackgroundedForRecord($result->id, self::TEST_SESSION);
+        $stopResult = $this->manager->stop($result->pid, self::TEST_SESSION);
 
         $this->assertFalse($stopResult->alreadyFinished);
         $this->assertSame('term+kill', $stopResult->signalSent);
@@ -222,7 +224,8 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
 
         $this->waitUntilFinished($result->pid);
 
-        $stopResult = $this->manager->stop($result->pid);
+        $this->manager->markBackgroundedForRecord($result->id, self::TEST_SESSION);
+        $stopResult = $this->manager->stop($result->pid, self::TEST_SESSION);
 
         $this->assertTrue($stopResult->alreadyFinished);
     }
@@ -234,7 +237,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('No background process found');
 
-        $this->manager->stop(999999);
+        $this->manager->stop(999999, self::TEST_SESSION);
     }
 
     /* ── shutdownCleanup() ── */
