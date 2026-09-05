@@ -17,10 +17,10 @@ use Ineersa\HatfieldExt\Jbcontext\State\JbcontextStatusStore;
 use Psr\Log\LoggerInterface;
 
 /**
- * Startup eligibility / retry / first incremental refresh worker.
+ * Interactive-session eligibility / retry / first incremental refresh worker.
  *
- * Never creates a first index. Transient status failures retry on a fixed
- * schedule totaling ~30s; exhaustion disables search for the session.
+ * Never creates a first index. Transient status failures retry under a hard
+ * ~30s wall-clock budget that includes CLI status timeouts.
  */
 final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerInterface
 {
@@ -29,26 +29,60 @@ final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerIn
     /** @var callable(int): void */
     private $sleeper;
 
+    /** @var callable(): float */
+    private $clock;
+
     public function __construct(
         private readonly LoggerInterface $logger,
         private readonly string $packageRoot,
         ?callable $sleeper = null,
+        ?callable $clock = null,
     ) {
         $this->sleeper = $sleeper ?? static function (int $seconds): void {
-            sleep($seconds);
+            if ($seconds > 0) {
+                sleep($seconds);
+            }
         };
+        $this->clock = $clock ?? static fn (): float => microtime(true);
     }
 
     public function handle(ExtensionApiInterface $api, array $payload, ?string $jobId, ?string $correlationId): void
     {
+        $sessionId = trim((string) ($payload['session_id'] ?? $correlationId ?? ''));
+        if ('' === $sessionId) {
+            $this->logger->error('jbcontext.eligibility.missing_session', [
+                'component' => 'jbcontext',
+                'event_type' => 'jbcontext.eligibility.missing_session',
+                'job_id' => $jobId,
+            ]);
+
+            return;
+        }
+
         $paths = JbcontextPaths::fromProjectRoot($api->getCwd());
-        $store = new JbcontextStatusStore($paths->statusPath);
+        $store = JbcontextStatusStore::forSession($paths, $sessionId);
         $attempt = max(1, (int) ($payload['attempt'] ?? 1));
+        $now = ($this->clock)();
 
         $state = $store->read();
+        if ($state->sessionId !== $sessionId) {
+            return;
+        }
         if (JbcontextSessionModeEnum::Disabled === $state->mode
             || JbcontextSessionModeEnum::Eligible === $state->mode
         ) {
+            return;
+        }
+
+        if (!JbcontextRetrySchedule::canAttemptStatus($state->elapsedSeconds($now))) {
+            $this->disable(
+                $store,
+                'jbcontext disabled: status check budget exhausted. Fix CLI auth/daemon access and restart Hatfield.',
+                'budget_exhausted',
+                $attempt,
+                $sessionId,
+            );
+
             return;
         }
 
@@ -58,16 +92,26 @@ final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerIn
                 'jbcontext disabled: project has no .idea directory. Open the project in JetBrains IDE and run jbcontext index manually before enabling search.',
                 'missing_idea',
                 $attempt,
-                $correlationId,
+                $sessionId,
             );
 
             return;
         }
 
-        $cli = new JbcontextCli($api->exec(), $paths->projectRoot);
+        $cli = new JbcontextCli(
+            $api->exec(),
+            $paths->projectRoot,
+            statusTimeoutSeconds: JbcontextRetrySchedule::STATUS_TIMEOUT_SECONDS,
+        );
         $status = $cli->status();
         if (!$status['ok'] || null === $status['payload']) {
-            $this->handleTransient($api, $store, $attempt, (string) ($status['error'] ?? 'status_failed'), $correlationId);
+            $this->handleTransient(
+                $api,
+                $store,
+                $attempt,
+                (string) ($status['error'] ?? 'status_failed'),
+                $sessionId,
+            );
 
             return;
         }
@@ -78,27 +122,31 @@ final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerIn
                 'jbcontext disabled: no existing index snapshot. Run `jbcontext index` manually once for this repository, then restart Hatfield.',
                 'no_index',
                 $attempt,
-                $correlationId,
+                $sessionId,
             );
 
             return;
         }
 
         $store->write(new JbcontextSessionState(
+            sessionId: $sessionId,
             mode: JbcontextSessionModeEnum::Eligible,
             reason: null,
             statusText: 'jbcontext: indexed',
             attempt: $attempt,
+            startedAt: $state->startedAt,
             nextRetryAt: null,
             reindexPending: false,
             reindexRunning: false,
-            updatedAt: microtime(true),
+            eligibilityStarted: true,
+            updatedAt: ($this->clock)(),
         ));
 
         $this->logger->info('jbcontext.eligibility.ok', [
             'component' => 'jbcontext',
             'event_type' => 'jbcontext.eligibility.ok',
             'attempt' => $attempt,
+            'session_id' => $sessionId,
             'correlation_id' => $correlationId,
         ]);
 
@@ -108,6 +156,7 @@ final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerIn
             $this->logger->warning('jbcontext.assets.install_failed', [
                 'component' => 'jbcontext',
                 'event_type' => 'jbcontext.assets.install_failed',
+                'session_id' => $sessionId,
                 'correlation_id' => $correlationId,
             ]);
         }
@@ -119,6 +168,7 @@ final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerIn
                 'event_type' => 'jbcontext.index.startup_failed',
                 'error' => $index['error'],
                 'exit_code' => $index['exit_code'],
+                'session_id' => $sessionId,
                 'correlation_id' => $correlationId,
             ]);
             // Eligibility already succeeded; incremental refresh failure does not disable search.
@@ -139,32 +189,35 @@ final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerIn
         JbcontextStatusStore $store,
         int $attempt,
         string $errorCode,
-        ?string $correlationId,
+        string $sessionId,
     ): void {
-        $delay = JbcontextRetrySchedule::delayAfterAttempt($attempt);
-        if (null === $delay || $attempt >= JbcontextRetrySchedule::maxAttempts()) {
+        $now = ($this->clock)();
+        $state = $store->read();
+        $sleep = JbcontextRetrySchedule::sleepBeforeNextAttempt($attempt, $state->elapsedSeconds($now));
+        if (null === $sleep) {
             $this->disable(
                 $store,
                 'jbcontext disabled: status check failed after retries. Fix CLI auth/daemon access and restart Hatfield.',
                 'status_exhausted:'.$errorCode,
                 $attempt,
-                $correlationId,
+                $sessionId,
             );
 
             return;
         }
 
         $nextAttempt = $attempt + 1;
-        $nextAt = microtime(true) + $delay;
-        $store->write(new JbcontextSessionState(
+        $nextAt = $now + $sleep;
+        $store->write($state->with(
             mode: JbcontextSessionModeEnum::Pending,
-            reason: null,
+            clearReason: true,
             statusText: 'jbcontext: checking index…',
             attempt: $attempt,
             nextRetryAt: $nextAt,
             reindexPending: false,
             reindexRunning: false,
-            updatedAt: microtime(true),
+            eligibilityStarted: true,
+            updatedAt: $now,
         ));
 
         $this->logger->warning('jbcontext.eligibility.retry', [
@@ -172,34 +225,37 @@ final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerIn
             'event_type' => 'jbcontext.eligibility.retry',
             'attempt' => $attempt,
             'next_attempt' => $nextAttempt,
-            'delay_seconds' => $delay,
+            'delay_seconds' => $sleep,
             'error' => $errorCode,
-            'correlation_id' => $correlationId,
+            'session_id' => $sessionId,
         ]);
 
         // Bounded wait lives in the background worker so the TUI stays responsive.
-        ($this->sleeper)($delay);
+        ($this->sleeper)($sleep);
 
         try {
             $api->dispatchExtensionAgentJob(new ExtensionAgentJobRequestDTO(
                 handlerId: self::HANDLER_ID,
-                payload: ['attempt' => $nextAttempt],
-                jobId: 'jbcontext.eligibility.attempt.'.$nextAttempt,
-                correlationId: $correlationId,
+                payload: [
+                    'session_id' => $sessionId,
+                    'attempt' => $nextAttempt,
+                ],
+                jobId: 'jbcontext.eligibility.'.$sessionId.'.attempt.'.$nextAttempt,
+                correlationId: $sessionId,
             ));
         } catch (\Throwable) {
             $this->logger->error('jbcontext.eligibility.retry_dispatch_failed', [
                 'component' => 'jbcontext',
                 'event_type' => 'jbcontext.eligibility.retry_dispatch_failed',
                 'attempt' => $nextAttempt,
-                'correlation_id' => $correlationId,
+                'session_id' => $sessionId,
             ]);
             $this->disable(
                 $store,
                 'jbcontext disabled: could not schedule status retry.',
                 'retry_dispatch_failed',
                 $attempt,
-                $correlationId,
+                $sessionId,
             );
         }
     }
@@ -209,17 +265,21 @@ final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerIn
         string $statusText,
         string $reason,
         int $attempt,
-        ?string $correlationId,
+        string $sessionId,
     ): void {
+        $current = $store->read();
         $store->write(new JbcontextSessionState(
+            sessionId: $sessionId,
             mode: JbcontextSessionModeEnum::Disabled,
             reason: $statusText,
             statusText: $statusText,
             attempt: $attempt,
+            startedAt: $current->startedAt,
             nextRetryAt: null,
             reindexPending: false,
             reindexRunning: false,
-            updatedAt: microtime(true),
+            eligibilityStarted: true,
+            updatedAt: ($this->clock)(),
         ));
 
         $this->logger->warning('jbcontext.eligibility.disabled', [
@@ -227,7 +287,7 @@ final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerIn
             'event_type' => 'jbcontext.eligibility.disabled',
             'reason' => $reason,
             'attempt' => $attempt,
-            'correlation_id' => $correlationId,
+            'session_id' => $sessionId,
         ]);
     }
 }

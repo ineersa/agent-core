@@ -10,9 +10,9 @@ use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitEventSummaryDTO;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextPaths;
+use Ineersa\HatfieldExt\Jbcontext\State\JbcontextSessionLocator;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextSessionModeEnum;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextSessionState;
-use Ineersa\HatfieldExt\Jbcontext\State\JbcontextStatusStore;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -25,6 +25,7 @@ final readonly class JbcontextCompletedTurnHook implements AfterTurnCommitHookIn
     public function __construct(
         private ExtensionApiInterface $api,
         private JbcontextPaths $paths,
+        private JbcontextSessionLocator $sessions,
         private LoggerInterface $logger,
     ) {
     }
@@ -35,7 +36,11 @@ final readonly class JbcontextCompletedTurnHook implements AfterTurnCommitHookIn
             return;
         }
 
-        $store = new JbcontextStatusStore($this->paths->statusPath);
+        $store = $this->sessions->storeFor($this->paths, $context->runId);
+        if (null === $store) {
+            return;
+        }
+
         $state = $store->read();
         if (JbcontextSessionModeEnum::Eligible !== $state->mode) {
             return;
@@ -56,6 +61,7 @@ final readonly class JbcontextCompletedTurnHook implements AfterTurnCommitHookIn
             $this->api->dispatchExtensionAgentJob(new ExtensionAgentJobRequestDTO(
                 handlerId: JbcontextReindexJobHandler::HANDLER_ID,
                 payload: [
+                    'session_id' => $context->runId,
                     'run_id' => $context->runId,
                     'turn_no' => $context->turnNo,
                 ],

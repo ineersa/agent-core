@@ -11,6 +11,7 @@ use Ineersa\Hatfield\ExtensionApi\Exec\ExecResultDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolInvocationContextDTO;
 use Ineersa\HatfieldExt\Jbcontext\Cli\JbcontextCli;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextPaths;
+use Ineersa\HatfieldExt\Jbcontext\State\JbcontextSessionLocator;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextSessionModeEnum;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextSessionState;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextStatusStore;
@@ -39,10 +40,11 @@ final class CodeSearchToolHandlerTest extends TestCase
     public function returnsUnavailableWhenPendingAndNeverSearches(): void
     {
         $paths = JbcontextPaths::fromProjectRoot($this->projectDir);
-        (new JbcontextStatusStore($paths->statusPath))->write(JbcontextSessionState::pending());
+        JbcontextStatusStore::forSession($paths, 'run-1')->write(JbcontextSessionState::pending('run-1'));
         $exec = new RecordingExec();
         $handler = new CodeSearchToolHandler(
-            new JbcontextStatusStore($paths->statusPath),
+            $paths,
+            new JbcontextSessionLocator(),
             new JbcontextCli($exec, $paths->projectRoot),
             new TestLogger(),
         );
@@ -61,15 +63,18 @@ final class CodeSearchToolHandlerTest extends TestCase
     public function returnsToonHitsWhenEligible(): void
     {
         $paths = JbcontextPaths::fromProjectRoot($this->projectDir);
-        (new JbcontextStatusStore($paths->statusPath))->write(new JbcontextSessionState(
+        JbcontextStatusStore::forSession($paths, 'run-1')->write(new JbcontextSessionState(
+            sessionId: 'run-1',
             mode: JbcontextSessionModeEnum::Eligible,
             reason: null,
             statusText: 'jbcontext: indexed',
             attempt: 1,
+            startedAt: 1.0,
             nextRetryAt: null,
             reindexPending: false,
             reindexRunning: false,
-            updatedAt: microtime(true),
+            eligibilityStarted: true,
+            updatedAt: 1.0,
         ));
 
         $payload = [
@@ -78,67 +83,37 @@ final class CodeSearchToolHandlerTest extends TestCase
                 [
                     'result' => [
                         'scoredText' => ['similarity' => 0.9],
-                        'sourcePosition' => ['relativePath' => 'src/A.php', 'startOffset' => 1, 'endOffset' => 2],
+                        'sourcePosition' => [
+                            'relativePath' => 'src/Example.php',
+                            'startOffset' => 10,
+                            'endOffset' => 40,
+                        ],
                         'indexItemType' => 'CHUNKS',
                     ],
-                    'content' => 'class A {}',
-                    'contentStartLine' => 4,
+                    'content' => "class Example\n{\n}",
+                    'contentStartLine' => 12,
                 ],
             ],
-            'revision' => 'rev1',
+            'revision' => 'abc',
         ];
         $exec = new RecordingExec([
             new ExecResultDTO(stdout: json_encode($payload, \JSON_THROW_ON_ERROR), stderr: '', exitCode: 0),
         ]);
         $handler = new CodeSearchToolHandler(
-            new JbcontextStatusStore($paths->statusPath),
+            $paths,
+            new JbcontextSessionLocator(),
             new JbcontextCli($exec, $paths->projectRoot),
             new TestLogger(),
         );
 
         $result = $handler([
-            'text' => 'class A',
-            'path_filter' => 'src',
-        ], new ToolInvocationContextDTO(runId: 'run-1', timeoutSeconds: 12));
-
-        $decoded = Toon::decode($result);
-        $this->assertTrue($decoded['available']);
-        $this->assertSame('src/A.php', $decoded['results'][0]['path']);
-        $this->assertSame(4, $decoded['results'][0]['start_line']);
-        $this->assertSame('class A {}', $decoded['results'][0]['content']);
-        $this->assertSame('search', $exec->calls()[0]['args'][0]);
-        $this->assertContains('--path-filter', $exec->calls()[0]['args']);
-        $this->assertSame(12.0, $exec->calls()[0]['timeout']);
-    }
-
-    #[Test]
-    public function rejectsAbsolutePathFilter(): void
-    {
-        $paths = JbcontextPaths::fromProjectRoot($this->projectDir);
-        (new JbcontextStatusStore($paths->statusPath))->write(new JbcontextSessionState(
-            mode: JbcontextSessionModeEnum::Eligible,
-            reason: null,
-            statusText: 'jbcontext: indexed',
-            attempt: 1,
-            nextRetryAt: null,
-            reindexPending: false,
-            reindexRunning: false,
-            updatedAt: microtime(true),
-        ));
-        $exec = new RecordingExec();
-        $handler = new CodeSearchToolHandler(
-            new JbcontextStatusStore($paths->statusPath),
-            new JbcontextCli($exec, $paths->projectRoot),
-            new TestLogger(),
-        );
-
-        $result = $handler([
-            'text' => 'x',
-            'path_filter' => '/etc',
+            'text' => 'Example class',
         ], new ToolInvocationContextDTO(runId: 'run-1'));
 
+        $this->assertIsString($result);
         $decoded = Toon::decode($result);
-        $this->assertFalse($decoded['available']);
-        $this->assertSame([], $exec->calls());
+        $this->assertTrue($decoded['available']);
+        $this->assertSame('src/Example.php', $decoded['results'][0]['path']);
+        $this->assertSame(12, $decoded['results'][0]['start_line']);
     }
 }

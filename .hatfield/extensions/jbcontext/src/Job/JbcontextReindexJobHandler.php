@@ -30,19 +30,40 @@ final readonly class JbcontextReindexJobHandler implements ExtensionAgentJobHand
 
     public function handle(ExtensionApiInterface $api, array $payload, ?string $jobId, ?string $correlationId): void
     {
-        $paths = JbcontextPaths::fromProjectRoot($api->getCwd());
-        $store = new JbcontextStatusStore($paths->statusPath);
+        $sessionId = trim((string) ($payload['session_id'] ?? $payload['run_id'] ?? $correlationId ?? ''));
+        if ('' === $sessionId) {
+            $this->logger->error('jbcontext.reindex.missing_session', [
+                'component' => 'jbcontext',
+                'event_type' => 'jbcontext.reindex.missing_session',
+                'job_id' => $jobId,
+            ]);
 
-        $state = $store->update(static function (JbcontextSessionState $current): JbcontextSessionState {
+            return;
+        }
+
+        $paths = JbcontextPaths::fromProjectRoot($api->getCwd());
+        $store = JbcontextStatusStore::forSession($paths, $sessionId);
+
+        $claimed = false;
+        $store->update(static function (JbcontextSessionState $current) use (&$claimed): JbcontextSessionState {
             if (JbcontextSessionModeEnum::Eligible !== $current->mode) {
+                $claimed = false;
+
                 return $current->with(reindexPending: false, reindexRunning: false);
             }
             if ($current->reindexRunning) {
-                return $current;
+                // Another job owns the CLI work. Keep pending for a later drain.
+                $claimed = false;
+
+                return $current->with(reindexPending: true);
             }
             if (!$current->reindexPending) {
+                $claimed = false;
+
                 return $current;
             }
+
+            $claimed = true;
 
             return $current->with(
                 statusText: 'jbcontext: refreshing index…',
@@ -51,7 +72,7 @@ final readonly class JbcontextReindexJobHandler implements ExtensionAgentJobHand
             );
         });
 
-        if (JbcontextSessionModeEnum::Eligible !== $state->mode || !$state->reindexRunning) {
+        if (!$claimed) {
             return;
         }
 
@@ -63,19 +84,8 @@ final readonly class JbcontextReindexJobHandler implements ExtensionAgentJobHand
                 return $current->with(reindexPending: false, reindexRunning: false);
             }
 
-            $stillPending = $current->reindexPending;
-            if ($stillPending) {
-                // Another completed turn arrived while this job ran; leave pending
-                // so a subsequent coalesced job can drain it.
-                return $current->with(
-                    statusText: $result['ok'] ? 'jbcontext: indexed' : 'jbcontext: indexed (refresh failed)',
-                    reindexRunning: false,
-                );
-            }
-
             return $current->with(
                 statusText: $result['ok'] ? 'jbcontext: indexed' : 'jbcontext: indexed (refresh failed)',
-                reindexPending: false,
                 reindexRunning: false,
             );
         });
@@ -87,6 +97,7 @@ final readonly class JbcontextReindexJobHandler implements ExtensionAgentJobHand
                 'error' => $result['error'],
                 'exit_code' => $result['exit_code'],
                 'job_id' => $jobId,
+                'session_id' => $sessionId,
                 'correlation_id' => $correlationId,
             ]);
 
@@ -97,6 +108,7 @@ final readonly class JbcontextReindexJobHandler implements ExtensionAgentJobHand
             'component' => 'jbcontext',
             'event_type' => 'jbcontext.index.reindex_ok',
             'job_id' => $jobId,
+            'session_id' => $sessionId,
             'correlation_id' => $correlationId,
         ]);
     }

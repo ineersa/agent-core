@@ -12,7 +12,6 @@ extensions:
         - Ineersa\HatfieldExt\FileRewind\FileRewindExtension
         - Ineersa\HatfieldExt\CastorLlmMode\CastorLlmModeExtension
         - Ineersa\HatfieldExt\ObservationalMemory\ObservationalMemoryExtension
-        - Ineersa\HatfieldExt\Jbcontext\JbcontextExtension
     settings:
         task_workflow:
             task_root: /home/ineersa/projects/agent-core-tasks

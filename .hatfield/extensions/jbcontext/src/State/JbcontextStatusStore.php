@@ -5,16 +5,25 @@ declare(strict_types=1);
 namespace Ineersa\HatfieldExt\Jbcontext\State;
 
 /**
- * Atomic JSON status file under the project Hatfield tree.
+ * Atomic JSON status file for one Hatfield session.
  *
- * Shared by the extension-agent worker (writer) and the interactive TUI/tool
- * processes (readers). File locking keeps concurrent updates coherent.
+ * Shared by the extension-agent worker (writer) and interactive TUI/tool
+ * processes (readers). Exclusive flock keeps concurrent updates coherent.
  */
 final class JbcontextStatusStore
 {
     public function __construct(
         private readonly string $path,
+        private readonly string $sessionId,
     ) {
+        if ('' === trim($this->sessionId)) {
+            throw new \InvalidArgumentException('JbcontextStatusStore sessionId must be non-empty.');
+        }
+    }
+
+    public static function forSession(JbcontextPaths $paths, string $sessionId): self
+    {
+        return new self($paths->sessionStatusPath($sessionId), $sessionId);
     }
 
     public function path(): string
@@ -22,33 +31,52 @@ final class JbcontextStatusStore
         return $this->path;
     }
 
+    public function sessionId(): string
+    {
+        return $this->sessionId;
+    }
+
     public function read(): JbcontextSessionState
     {
         if (!is_file($this->path)) {
-            return JbcontextSessionState::pending();
+            return JbcontextSessionState::pending($this->sessionId);
         }
 
         $raw = @file_get_contents($this->path);
         if (false === $raw || '' === trim($raw)) {
-            return JbcontextSessionState::pending();
+            return JbcontextSessionState::pending($this->sessionId);
         }
 
         try {
             $decoded = json_decode($raw, true, 512, \JSON_THROW_ON_ERROR);
         } catch (\JsonException) {
-            return JbcontextSessionState::pending();
+            return JbcontextSessionState::pending($this->sessionId);
         }
 
         if (!\is_array($decoded)) {
-            return JbcontextSessionState::pending();
+            return JbcontextSessionState::pending($this->sessionId);
         }
 
-        /* @var array<string, mixed> $decoded */
-        return JbcontextSessionState::fromArray($decoded);
+        try {
+            /** @var array<string, mixed> $decoded */
+            $state = JbcontextSessionState::fromArray($decoded);
+        } catch (\InvalidArgumentException) {
+            return JbcontextSessionState::pending($this->sessionId);
+        }
+
+        if ($state->sessionId !== $this->sessionId) {
+            return JbcontextSessionState::pending($this->sessionId);
+        }
+
+        return $state;
     }
 
     public function write(JbcontextSessionState $state): void
     {
+        if ($state->sessionId !== $this->sessionId) {
+            throw new \InvalidArgumentException('Cannot write jbcontext status for a different session id.');
+        }
+
         $dir = \dirname($this->path);
         if (!is_dir($dir) && !@mkdir($dir, 0o777, true) && !is_dir($dir)) {
             throw new \RuntimeException(\sprintf('Unable to create jbcontext status directory "%s".', $dir));
@@ -86,20 +114,27 @@ final class JbcontextStatusStore
             }
 
             $raw = stream_get_contents($handle);
-            $current = JbcontextSessionState::pending();
+            $current = JbcontextSessionState::pending($this->sessionId);
             if (\is_string($raw) && '' !== trim($raw)) {
                 try {
                     $decoded = json_decode($raw, true, 512, \JSON_THROW_ON_ERROR);
                     if (\is_array($decoded)) {
                         /** @var array<string, mixed> $decoded */
-                        $current = JbcontextSessionState::fromArray($decoded);
+                        $parsed = JbcontextSessionState::fromArray($decoded);
+                        if ($parsed->sessionId === $this->sessionId) {
+                            $current = $parsed;
+                        }
                     }
-                } catch (\JsonException) {
-                    $current = JbcontextSessionState::pending();
+                } catch (\JsonException|\InvalidArgumentException) {
+                    $current = JbcontextSessionState::pending($this->sessionId);
                 }
             }
 
             $next = $mutator($current);
+            if ($next->sessionId !== $this->sessionId) {
+                throw new \InvalidArgumentException('Cannot write jbcontext status for a different session id.');
+            }
+
             $payload = json_encode($next->toArray(), \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES)."\n";
             ftruncate($handle, 0);
             rewind($handle);

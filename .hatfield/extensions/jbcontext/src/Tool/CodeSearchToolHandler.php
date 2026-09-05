@@ -9,14 +9,16 @@ use Ineersa\Hatfield\ExtensionApi\Tool\ToolInvocationContextDTO;
 use Ineersa\HatfieldExt\Jbcontext\Cli\JbcontextCli;
 use Ineersa\HatfieldExt\Jbcontext\Cli\JbcontextPathFilter;
 use Ineersa\HatfieldExt\Jbcontext\Cli\JbcontextSearchResultNormalizer;
+use Ineersa\HatfieldExt\Jbcontext\State\JbcontextPaths;
+use Ineersa\HatfieldExt\Jbcontext\State\JbcontextSessionLocator;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextSessionModeEnum;
-use Ineersa\HatfieldExt\Jbcontext\State\JbcontextStatusStore;
 use Psr\Log\LoggerInterface;
 
 final readonly class CodeSearchToolHandler implements ContextualExtensionToolHandlerInterface
 {
     public function __construct(
-        private JbcontextStatusStore $store,
+        private JbcontextPaths $paths,
+        private JbcontextSessionLocator $sessions,
         private JbcontextCli $cli,
         private LoggerInterface $logger,
     ) {
@@ -24,7 +26,14 @@ final readonly class CodeSearchToolHandler implements ContextualExtensionToolHan
 
     public function __invoke(array $arguments, ToolInvocationContextDTO $context): mixed
     {
-        $state = $this->store->read();
+        $store = $this->sessions->storeFor($this->paths, $context->runId);
+        if (null === $store) {
+            return JbcontextToolResult::unavailable(
+                'jbcontext code_search has no active session context.',
+            );
+        }
+
+        $state = $store->read();
         if (JbcontextSessionModeEnum::Pending === $state->mode) {
             return JbcontextToolResult::unavailable(
                 'jbcontext code_search is still checking index eligibility for this session.',

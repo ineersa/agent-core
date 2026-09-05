@@ -13,7 +13,7 @@ use Ineersa\Hatfield\ExtensionApi\Tool\ToolCancellationTokenInterface;
  */
 final readonly class JbcontextCli
 {
-    public const float STATUS_TIMEOUT_SECONDS = 15.0;
+    public const float STATUS_TIMEOUT_SECONDS = 5.0;
     public const float SEARCH_TIMEOUT_SECONDS = 30.0;
     public const float INDEX_TIMEOUT_SECONDS = 120.0;
     public const int SEARCH_LIMIT = 8;
@@ -22,6 +22,7 @@ final readonly class JbcontextCli
         private ExecInterface $exec,
         private string $projectPath,
         private string $binary = 'jbcontext',
+        private float $statusTimeoutSeconds = self::STATUS_TIMEOUT_SECONDS,
     ) {
     }
 
@@ -32,7 +33,7 @@ final readonly class JbcontextCli
     {
         return $this->runJson(
             args: ['status', '--project-path', $this->projectPath, '--json-output'],
-            timeout: self::STATUS_TIMEOUT_SECONDS,
+            timeout: $this->statusTimeoutSeconds,
             cancellationToken: $cancellationToken,
         );
     }

@@ -11,6 +11,7 @@ use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookContextDTO;
 use Ineersa\HatfieldExt\Jbcontext\Job\JbcontextCompletedTurnHook;
 use Ineersa\HatfieldExt\Jbcontext\Job\JbcontextReindexJobHandler;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextPaths;
+use Ineersa\HatfieldExt\Jbcontext\State\JbcontextSessionLocator;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextSessionModeEnum;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextSessionState;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextStatusStore;
@@ -39,20 +40,23 @@ final class JbcontextCompletedTurnHookTest extends TestCase
     public function dispatchesReindexOnlyOnCompletedEligibleTurns(): void
     {
         $paths = JbcontextPaths::fromProjectRoot($this->projectDir);
-        $store = new JbcontextStatusStore($paths->statusPath);
+        $store = JbcontextStatusStore::forSession($paths, 'run-1');
         $store->write(new JbcontextSessionState(
+            sessionId: 'run-1',
             mode: JbcontextSessionModeEnum::Eligible,
             reason: null,
             statusText: 'jbcontext: indexed',
             attempt: 1,
+            startedAt: 1.0,
             nextRetryAt: null,
             reindexPending: false,
             reindexRunning: false,
-            updatedAt: microtime(true),
+            eligibilityStarted: true,
+            updatedAt: 1.0,
         ));
 
         $api = new TestExtensionApi($this->projectDir, new RecordingExec());
-        $hook = new JbcontextCompletedTurnHook($api, $paths, new TestLogger());
+        $hook = new JbcontextCompletedTurnHook($api, $paths, new JbcontextSessionLocator(), new TestLogger());
 
         $hook->onAfterTurnCommit(new AfterTurnCommitHookContextDTO(
             runId: 'run-1',
@@ -85,19 +89,22 @@ final class JbcontextCompletedTurnHookTest extends TestCase
     public function skipsWhenDisabled(): void
     {
         $paths = JbcontextPaths::fromProjectRoot($this->projectDir);
-        (new JbcontextStatusStore($paths->statusPath))->write(new JbcontextSessionState(
+        JbcontextStatusStore::forSession($paths, 'run-1')->write(new JbcontextSessionState(
+            sessionId: 'run-1',
             mode: JbcontextSessionModeEnum::Disabled,
             reason: 'no index',
             statusText: 'disabled',
             attempt: 1,
+            startedAt: 1.0,
             nextRetryAt: null,
             reindexPending: false,
             reindexRunning: false,
-            updatedAt: microtime(true),
+            eligibilityStarted: true,
+            updatedAt: 1.0,
         ));
 
         $api = new TestExtensionApi($this->projectDir, new RecordingExec());
-        $hook = new JbcontextCompletedTurnHook($api, $paths, new TestLogger());
+        $hook = new JbcontextCompletedTurnHook($api, $paths, new JbcontextSessionLocator(), new TestLogger());
         $hook->onAfterTurnCommit(new AfterTurnCommitHookContextDTO(
             runId: 'run-1',
             turnNo: 1,

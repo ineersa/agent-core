@@ -43,10 +43,10 @@ Start a **new Hatfield session** after enabling. Extensions register at startup.
 
 ### Startup (non-blocking)
 
-1. Registration writes a pending status file and dispatches one background eligibility job.
+1. Interactive TUI registration binds the live session context. The first TUI tick with a real session id writes a session-scoped pending status file and dispatches one background eligibility job. Worker/tool process loads do not start eligibility.
 2. The worker requires `.idea` and a prior index snapshot from `jbcontext status --project-path <cwd> --json-output`.
 3. If either check fails, search and refresh stay disabled for the rest of that session and the TUI shows a concise disabled status.
-4. Transient status failures retry with delays 2s, 4s, 8s, 16s (~30s total). Exhaustion disables the session; later turns do not retry.
+4. Transient status failures retry with preferred delays 2s, 4s, 8s, 16s under a hard ~30s wall-clock budget that also covers CLI status timeouts. Exhaustion disables the session; later turns do not retry.
 5. When eligible, the worker installs managed project assets and runs incremental `jbcontext index --silent`.
 
 ### Refresh cadence

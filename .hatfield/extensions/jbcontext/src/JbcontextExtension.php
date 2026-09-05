@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\HatfieldExt\Jbcontext;
 
-use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobRequestDTO;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
@@ -15,8 +14,7 @@ use Ineersa\HatfieldExt\Jbcontext\Job\JbcontextCompletedTurnHook;
 use Ineersa\HatfieldExt\Jbcontext\Job\JbcontextEligibilityJobHandler;
 use Ineersa\HatfieldExt\Jbcontext\Job\JbcontextReindexJobHandler;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextPaths;
-use Ineersa\HatfieldExt\Jbcontext\State\JbcontextSessionState;
-use Ineersa\HatfieldExt\Jbcontext\State\JbcontextStatusStore;
+use Ineersa\HatfieldExt\Jbcontext\State\JbcontextSessionLocator;
 use Ineersa\HatfieldExt\Jbcontext\Tool\CodeSearchToolHandler;
 use Ineersa\HatfieldExt\Jbcontext\Tui\JbcontextStatusPoller;
 use Psr\Log\LoggerAwareInterface;
@@ -26,22 +24,22 @@ use Psr\Log\NullLogger;
 /**
  * JetBrains Context semantic-search extension.
  *
- * Registers:
- * - permanent code_search tool (TOON)
- * - background eligibility/retry job (no first-index)
- * - completed-turn incremental reindex dispatch
- * - TUI status poller
+ * Registers handlers/tools only during register(). Interactive eligibility
+ * starts from the TUI poller once a real session id is available.
  */
 final class JbcontextExtension implements HatfieldExtensionInterface, TuiExtensionInterface, LoggerAwareInterface
 {
     public const int TOOL_TIMEOUT_SECONDS = 30;
 
     private LoggerInterface $logger;
+    private JbcontextSessionLocator $sessions;
     private ?JbcontextPaths $paths = null;
+    private ?ExtensionApiInterface $api = null;
 
     public function __construct()
     {
         $this->logger = new NullLogger();
+        $this->sessions = new JbcontextSessionLocator();
     }
 
     public function setLogger(LoggerInterface $logger): void
@@ -53,13 +51,8 @@ final class JbcontextExtension implements HatfieldExtensionInterface, TuiExtensi
     {
         $paths = JbcontextPaths::fromProjectRoot($api->getCwd());
         $this->paths = $paths;
-        $store = new JbcontextStatusStore($paths->statusPath);
+        $this->api = $api;
         $packageRoot = \dirname(__DIR__);
-
-        // Fresh session starts pending; worker will move to eligible/disabled.
-        if (!is_file($paths->statusPath)) {
-            $store->write(JbcontextSessionState::pending());
-        }
 
         $api->registerExtensionAgentJobHandler(
             JbcontextEligibilityJobHandler::HANDLER_ID,
@@ -71,7 +64,7 @@ final class JbcontextExtension implements HatfieldExtensionInterface, TuiExtensi
         );
 
         $api->registerAfterTurnCommitHook(
-            new JbcontextCompletedTurnHook($api, $paths, $this->logger),
+            new JbcontextCompletedTurnHook($api, $paths, $this->sessions, $this->logger),
         );
 
         $api->registerTool(new ToolRegistrationDTO(
@@ -96,7 +89,8 @@ final class JbcontextExtension implements HatfieldExtensionInterface, TuiExtensi
                 ],
             ],
             handler: new CodeSearchToolHandler(
-                $store,
+                $paths,
+                $this->sessions,
                 new JbcontextCli($api->exec(), $paths->projectRoot),
                 $this->logger,
             ),
@@ -111,26 +105,6 @@ final class JbcontextExtension implements HatfieldExtensionInterface, TuiExtensi
             timeoutSeconds: self::TOOL_TIMEOUT_SECONDS,
         ));
 
-        try {
-            $api->dispatchExtensionAgentJob(new ExtensionAgentJobRequestDTO(
-                handlerId: JbcontextEligibilityJobHandler::HANDLER_ID,
-                payload: ['attempt' => 1],
-                jobId: 'jbcontext.eligibility.attempt.1',
-                correlationId: 'startup',
-            ));
-        } catch (\Throwable $e) {
-            $this->logger->error('jbcontext.eligibility.startup_dispatch_failed', [
-                'component' => 'jbcontext',
-                'event_type' => 'jbcontext.eligibility.startup_dispatch_failed',
-                'exception_class' => $e::class,
-            ]);
-            $store->write(JbcontextSessionState::pending()->with(
-                mode: State\JbcontextSessionModeEnum::Disabled,
-                reason: 'jbcontext disabled: could not start background eligibility check.',
-                statusText: 'jbcontext disabled: could not start background eligibility check.',
-            ));
-        }
-
         $this->logger->info('jbcontext.extension.registered', [
             'component' => 'jbcontext',
             'event_type' => 'jbcontext.extension.registered',
@@ -140,15 +114,14 @@ final class JbcontextExtension implements HatfieldExtensionInterface, TuiExtensi
     public function registerTui(TuiExtensionContextInterface $context): void
     {
         $paths = $this->paths;
-        if (null === $paths) {
+        $api = $this->api;
+        if (null === $paths || null === $api) {
+            // register() always runs before registerTui when the extension is enabled.
             return;
         }
 
-        $poller = new JbcontextStatusPoller(
-            $context,
-            new JbcontextStatusStore($paths->statusPath),
-            $this->logger,
-        );
+        $this->sessions->bindTui($context);
+        $poller = new JbcontextStatusPoller($api, $context, $paths, $this->sessions, $this->logger);
         $context->onTick(static function () use ($poller): void {
             $poller->tick();
         });
