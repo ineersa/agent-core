@@ -69,7 +69,7 @@ function run_agent(): void
 
     launch_agent_direct_terminal(
         build_agent_console_inner_command(
-            agent_runtime_env_command(datadog_auto_enabled()),
+            agent_runtime_env_command(datadog_auto_enabled()).' DD_PROFILING_ENABLED=0',
             agent_phar_invocation(),
         ),
     );
