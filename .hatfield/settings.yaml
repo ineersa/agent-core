@@ -38,3 +38,29 @@ context_budget_reminders:
 agents:
     extensions:
         always_on: {}
+ai:
+    providers:
+        llama_cpp:
+            type: generic
+            enabled: true
+            base_url: 'http://192.168.2.38:8052/v1'
+            api: openai-completions
+            api_key: dummy
+            completions_path: /chat/completions
+            embeddings_path: /embeddings
+            supports_completions: true
+            supports_embeddings: false
+            supports_thinking_levels: false
+            models: { flash: { name: flash, context_window: 160000, max_tokens: 65536, input: [text, image], tool_calling: true, reasoning: true, cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 } } }
+        llama_cpp_test:
+            type: generic
+            enabled: true
+            base_url: 'http://192.168.2.38:9052/v1'
+            api: openai-completions
+            api_key: dummy
+            completions_path: /chat/completions
+            embeddings_path: /embeddings
+            supports_completions: true
+            supports_embeddings: false
+            supports_thinking_levels: false
+            models: { test: { name: test, context_window: 32768, max_tokens: 32768, input: [text, image], tool_calling: true, reasoning: false, cost: { input: 1000, output: 100000, cache_read: 0, cache_write: 0 } } }
