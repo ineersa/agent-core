@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Agent Core architecture review · 5 September 2026</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+mermaid.initialize({startOnLoad:true,theme:'neutral',securityLevel:'strict',flowchart:{useMaxWidth:true,htmlLabels:false}});
+</script>
+<style>
+:root{color-scheme:light;--ink:#172733;--muted:#53636c;--line:#d5dcd9;--accent:#176349;--paper:#faf9f5}*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.6 system-ui,sans-serif}main{max-width:1190px;margin:auto;padding:56px 28px}header{border-top:7px solid var(--ink);padding-top:24px}h1,h2,h3{line-height:1.2;letter-spacing:-.025em}h1{font:normal clamp(36px,5vw, sixty) Georgia,serif;font-size:clamp(36px,5vw,60px);margin:14px 0}h2{font:normal 32px/1.25 Georgia,serif;margin:0 0 24px}h3{font-size:22px;margin:0 0 16px}h4{font-size:15px;margin:20px 0 6px}p{margin:10px 0}section{margin-top:58px}a{color:var(--accent);text-underline-offset:3px}nav{display:flex;gap:18px;flex-wrap:wrap;border-block:1px solid var(--line);padding:15px 0;margin-top:25px}.eyebrow{font-size:12px;text-transform:uppercase;letter-spacing:.15em;color:var(--muted)}.muted,small{color:var(--muted)}code{font:12px/1.65 ui-monospace,monospace;overflow-wrap:anywhere}pre{white-space:pre-wrap}.badge{display:inline-block;border-radius:4px;padding:3px 10px;font-size:12px;font-weight:650;background:#edf0ef;color:#44515b;margin:0 5px 5px 0}.strong{background:#d8f1e4;color:#155137}.worth{background:#fff0ce;color:#785110}.speculative{background:#e8edf1;color:#475569}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:22px}.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}.panel,.candidate{background:#fff;border:1px solid var(--line);padding:25px;border-radius:8px}.candidate{margin:28px 0 0}.candidate:target{outline:3px solid #8caf9b}.summary{background:var(--ink);color:white;padding:27px;border-radius:7px}.summary .muted{color:#c2d3cc}.stat{font:normal 38px Georgia,serif}.diagram{background:#f5f6f3;border:1px solid #dde3de;border-radius:6px;padding:17px;min-height:280px}.diagram h4{margin:0 0 15px;font-size:12px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted)}.node{border:1px solid #8d9f99;background:white;padding:10px 14px;text-align:center;border-radius:4px}.node + .node{margin-top:10px}.deep{background:var(--ink);color:white;border:3px solid var(--ink);border-radius:5px;padding:16px}.deep .node{background:#263d48;color:#e4efea;border-color:#698077}.seam{border-top:2px dashed #81978e;margin:15px 0;padding-top:12px}.arrow{text-align:center;color:#657c71;font-size:20px;line-height:1.5}.leak{border-color:#b84141;background:#fff1ef;color:#923232}.warning{background:#fff5df;border-left:4px solid #bb8831;padding:12px 16px}.note{background:#eff4f1;border-left:4px solid #769686;padding:12px 16px}.files{margin:15px 0;font-size:13px}.files a{display:block;text-decoration:none}.files a:hover{text-decoration:underline}.wins{display:flex;gap:8px 20px;flex-wrap:wrap;padding-left:20px;font-size:14px}.details{display:grid;grid-template-columns:100px 1fr;gap:8px 15px;margin-top:22px}.details dt{font-size:13px;font-weight:650;color:var(--muted)}.details dd{margin:0;font-size:15px}table{width:100%;border-collapse:collapse;background:white}th,td{text-align:left;vertical-align:top;padding:13px 15px;border-bottom:1px solid var(--line);font-size:14px}th{font-size:12px;letter-spacing:.06em;background:#edf1ee}td:first-child{width:22%;font-weight:600}.table-wrap{overflow-x:auto}.mermaid{font-size:12px}.legend{font-size:12px;color:var(--muted);margin:14px 0}details{border-top:1px solid var(--line);padding-top:15px;margin-top:20px}summary{cursor:pointer;font-weight:600}footer{border-top:1px solid var(--line);padding-top:25px;margin-top:55px;font-size:13px}.priority{font-size:13px;color:var(--muted);margin-bottom:12px}ul{padding-left:21px}li{margin:5px 0}@media(max-width:760px){main{padding:28px 16px}.grid2,.grid3{grid-template-columns:1fr}.candidate,.panel{padding:18px}.details{grid-template-columns:1fr;gap:3px}.details dd{margin-bottom:12px}.diagram{min-height:0}td,th{padding:10px}h2{font-size:27px}}@media print{nav{display:none}body{background:white}main{max-width:none;padding:10px}.candidate,.panel,.diagram{break-inside:avoid}section{margin-top:30px}a{color:inherit}.summary,.deep{print-color-adjust:exact}}
+</style>
+</head>
+<body>
+<main>
+<header>
+<div class="eyebrow">Full-codebase architecture review · 5 September 2026</div>
+<h1>Agent Core</h1>
+<p class="muted"><code>24cd515bfd5d96992587b7b2337a0a9ff7b0cb0a</code> · Modular monolith · HTTP-less Symfony CLI</p>
+<div class="legend">Solid box = module · Dashed line = seam · Red = exposed failure or repeated policy · Dark box = deep module</div>
+<nav aria-label="Report sections"><a href="#verdict">Assessment</a><a href="#map">Architecture map</a><a href="#coverage">Subsystem review</a><a href="#findings">Candidates</a><a href="#risks">Risks and documentation</a><a href="#retain">Keep as designed</a><a href="#method">Evidence and limits</a><a href="#top">Top recommendation</a></nav>
+</header>
+<section id="verdict">
+<h2>A sound structure with a specific startup gap</h2>
+<div class="summary">
+<p>The run engine, canonical event history, process ownership, and public extension seam fit together coherently. The evidence does not support a broad rewrite.</p>
+<p>Extension loading is the clearest exception. Its interface promises failure isolation, but construction and some later lifecycle steps sit outside the guarded registration path.</p>
+<div class="grid3" style="margin-top:22px"><div><div class="stat">1</div><div>Strong correction</div></div><div><div class="stat">3</div><div>Bounded opportunities</div></div><div><div class="stat">0</div><div>Production edits or QA runs</div></div></div>
+</div>
+<p class="muted">Whole-codebase scope, with targeted source and caller inspection rather than a line-by-line audit. Four scouts covered the major areas, then revisited weak claims and missing areas. Parent review rejected several initial recommendations.</p>
+</section>
+<section id="map">
+<h2>How the modules fit together</h2>
+<div class="panel">
+<pre class="mermaid">
+flowchart TB
+ CLI["AgentCommand and CLI bootstrap"] --> TUI["InteractiveMode and ChatScreen"]
+ CLI --> CLIENT["AgentSessionClient seam"]
+ TUI --> CLIENT
+ CLIENT --> IP["In-process adapter"]
+ CLIENT --> JP["JSONL process adapter"]
+ JP --> HC["HeadlessController"]
+ HC --> SUP["ConsumerSupervisor and Messenger workers"]
+ HC --> IP
+ IP --> CORE["AgentCore run pipeline"]
+ SUP --> CORE
+ CORE --> COMMIT["RunCommit"]
+ COMMIT --> LOG["Canonical events.jsonl"]
+ COMMIT --> OP["Disposable operational projection"]
+ COMMIT --> FX["Effects and after-commit hooks"]
+ FX --> SUP
+ LOG --> REPLAY["History filtering and RunStateReducer"]
+ REPLAY --> USE["Resume, repair, effective-context export"]
+ LOG --> MAP["RuntimeEventTranslator"]
+ SUP -. "Transient deltas, separate from history" .-> PROJ["TranscriptProjector"]
+ MAP --> PROJ
+ PROJ --> VIS["Visual patches and mounted widgets"]
+ VIS --> TUI
+ classDef deep fill:#172733,color:#fff,stroke:#172733,stroke-width:3px;
+ class CORE,COMMIT,LOG,REPLAY deep;
+</pre>
+<p class="muted">This is an execution and data-flow map, not a replacement for the allowed dependency edges in <code>depfile.yaml</code>. The controller uses command handlers; workers return results to run control.</p>
+</div>
+<div class="grid2" style="margin-top:22px">
+<div class="panel"><h3>The durable seam</h3><p><code>session_id === run_id</code>. Canonical events describe conversation and run history. Operational database rows support bounded coordination, not a second conversation archive.</p><p><code>RunMessageProcessor</code> serializes transitions. <code>RunCommit</code> appends events before it updates operational state and dispatches effects.</p><p class="muted">Tool-batch snapshots, deferred batches, questions, and background-process records have distinct durable coordination roles. Not every database table can be rebuilt from events.</p></div>
+<div class="panel"><h3>The extension and provider seams</h3><p>Concrete extensions register through the public ExtensionApi contracts. Host adapters translate tools, hooks, jobs, and TUI operations into owning modules.</p><p>Symfony AI construction selects provider adapters. AgentCore coordinates model invocation; <code>src/Platform</code> contains provider protocol differences.</p><p class="muted">Two runtime adapters make <code>AgentSessionClient</code> a real seam. Provider variation and independently packaged extensions also justify their seams.</p></div>
+</div>
+</section>
+<section id="coverage">
+<h2>Subsystem-by-subsystem assessment</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Area</th><th>Ownership and assessment</th><th>Source anchors</th></tr></thead>
+<tbody>
+<tr><td>Domain, commands, replay</td><td>Retain the distinction between live admission decisions and event reconstruction. Large handlers are not, by themselves, evidence of shallow modules. Shared semantics deserve regression proof, not automatic consolidation.</td><td><code>src/AgentCore/Application/Pipeline/{RunMessageProcessor,RunCommit,ApplyCommandHandler}.php</code><br><code>src/AgentCore/Application/Replay/RunStateReducer.php</code></td></tr>
+<tr><td>Tool execution and batches</td><td>Execution, durable batch coordination, and canonical projection have different jobs. Preserve ordered tool messages, duplicate admission, cancellation, and human-input suspension. Do not merge them into one lifecycle class.</td><td><code>src/AgentCore/Application/Handler/{ToolExecutor,ToolBatchCollector}.php</code><br><code>src/AgentCore/Application/Pipeline/ToolCallResultHandler.php</code></td></tr>
+<tr><td>Runtime and process ownership</td><td>The session client hides meaningful implementation depth. Controller ownership, worker supervision, shared-pipe event partitioning, and shutdown belong behind this seam. Constructor breadth is not sufficient reason to split it.</td><td><code>src/CodingAgent/Runtime/Contract/AgentSessionClient.php</code><br><code>Runtime/Process/JsonlProcessAgentSessionClient.php</code><br><code>Runtime/Controller/{HeadlessController,ConsumerSupervisor}.php</code></td></tr>
+<tr><td>Session persistence and history</td><td>Canonical JSONL mechanics are shared. History selection mutates canonical state under a lock; history projection derives a view. Recovery preserves existing events and reconstructs only event-backed metadata.</td><td><code>src/CodingAgent/Session/{SessionRunEventStore,JsonlRunEventLog,SessionCatalogRecoveryService}.php</code><br><code>Session/History/{HistoryProjector,HistorySelectionService}.php</code></td></tr>
+<tr><td>Repair, failure, cleanup</td><td>Explicit repair is a deliberate operator action, not an automatic retry system. Keep per-resource cleanup separate from terminal transitions. Permanent worker failure and normal commit have different, documented cleanup behavior.</td><td><code>Session/Repair/SessionRepairService.php</code><br><code>Runtime/Messenger/WorkerFailedEventSubscriber.php</code><br><code>Session/Event/*ControllerSessionLifecycleListener.php</code></td></tr>
+<tr><td>Runtime protocol and export</td><td>One translator defines canonical-to-runtime mapping. Effective model-context export reuses history filtering and replay rather than inventing another interpretation. Keep transient streams out of canonical reconstruction.</td><td><code>Runtime/Protocol/{RuntimeEventMapper,RuntimeEventTranslator}.php</code><br><code>Session/Export/EffectiveModelContextProjector.php</code></td></tr>
+<tr><td>Tools, agents, forks</td><td>The tool registry centralizes availability and ordering. Deferred orchestration has a small model-visible interface but a sequencing-sensitive implementation. Model preflight and artifact reservation deserve clearer locality.</td><td><code>src/CodingAgent/Tool/{ToolRegistry,RegistryBackedToolbox}.php</code><br><code>Agent/Execution/SubagentLaunchPreparationService.php</code><br><code>Agent/Execution/Subagent/Batch/Deferred/Launch/DeferredSubagentBatchPreparationService.php</code></td></tr>
+<tr><td>MCP</td><td>Connection ownership, catalog generation, and tool routing are distinct modules. Sanitized errors and stale-catalog invalidation are useful guarantees. Per-call timeout and cancellation remain a documented SDK limitation.</td><td><code>src/CodingAgent/Mcp/Client/McpConnectionManager.php</code><br><code>Mcp/Handler/McpInitializeSessionHandler.php</code><br><code>Mcp/Catalog/McpToolCatalogBuilder.php</code></td></tr>
+<tr><td>Settings, prompts, discovery</td><td>Keep settings precedence, replacement rules, raw provenance, and effective path normalization centralized. Skill and prompt discovery have intentional precedence differences. A generic discovery framework would obscure those rules.</td><td><code>src/CodingAgent/Config/{AppConfigLoader,AppConfig}.php</code><br><code>Config/Ai/HatfieldModelCatalog.php</code><br><code>Skills/SkillDiscovery.php</code><br><code>PromptTemplate/PromptTemplateLoader.php</code></td></tr>
+<tr><td>Providers and authentication</td><td>Provider-specific request shaping and bounded OAuth refresh belong in concrete adapters. The invocation adapter has a narrow external interface, but stream assembly and diagnostics are a worthwhile internal review target.</td><td><code>src/AgentCore/Infrastructure/SymfonyAi/LlmPlatformAdapter.php</code><br><code>src/CodingAgent/Infrastructure/SymfonyAi/SymfonyAiProviderFactory.php</code><br><code>src/Platform/Bridge/OpenAICodex/{CodexModelClient,CodexRequestBodyFactory}.php</code></td></tr>
+<tr><td>Extensions and approvals</td><td>The public extension seam protects package independence. Host bridges retain execution ownership. SafeGuard classifies policy; approval suspension and resume retain exact-hook identity. Extension startup failure isolation is incomplete.</td><td><code>.hatfield/extensions/extension-api/src/ExtensionApiInterface.php</code><br><code>src/CodingAgent/Extension/{ExtensionManager,ExtensionToolRegistryBridge,ExtensionToolHookEventSubscriber}.php</code></td></tr>
+<tr><td>Compaction and memory</td><td>CodingAgent owns compaction policy behind AgentCore contracts. Observational Memory owns its database, observer jobs, reflection claims, and compaction hooks inside the extension. No host migration of memory policy is justified.</td><td><code>src/CodingAgent/Compaction/CompactionService.php</code><br><code>ContextBudget/ContextBudgetReminderHookSubscriber.php</code><br><code>.hatfield/extensions/observational-memory/src/</code></td></tr>
+<tr><td>Other concrete extensions</td><td>File Rewind separates checkpoint policy, ledger locking, and hidden-Git execution. Task Workflow separates board persistence, transitions, Git, worktrees, and PRs. Castor LLM mode is a focused command rewrite.</td><td><code>.hatfield/extensions/file-rewind/src/</code><br><code>.hatfield/extensions/task-workflow/src/</code><br><code>.hatfield/extensions/castor-llm-mode/src/</code></td></tr>
+<tr><td>TUI runtime and composition</td><td>Fresh per-session composition prevents stale state across switches. Parent and child polling share small rules but have different failure, history, and replay policies. Preserve those differences instead of forcing a shared drain interface.</td><td><code>src/Tui/Application/TuiSessionCompositionFactory.php</code><br><code>src/Tui/Runtime/{RuntimeEventPoller,SubagentLiveChildViewPoller,TuiRuntimeEventApplier}.php</code></td></tr>
+<tr><td>TUI rendering and interaction</td><td>Transcript visual patches and mounted widgets provide a useful seam. PickerOverlay already centralizes mount and focus behavior. ChatScreen retains layout ownership. Setup, theme precedence, completion priority, and export remain focused.</td><td><code>src/Tui/Transcript/{TranscriptVisualProjector,TranscriptMountedWidget}.php</code><br><code>src/Tui/Picker/PickerOverlay.php</code><br><code>src/Tui/{Screen,Setup,Theme,Completion,Export}/</code></td></tr>
+<tr><td>Terminal adapters</td><td>Renderer and writer replacements compensate for final concrete Symfony TUI types. Their alias installers fail closed. Keep them until an upstream injectable seam exists; deletion now would remove required behavior.</td><td><code>src/Tui/Terminal/{CachedWidthValidationRenderer,DeferredCursorCommitScreenWriter}.php</code><br><code>src/Tui/Terminal/*AliasInstaller.php</code></td></tr>
+<tr><td>Support and startup</td><td>Migration-before-catalog-recovery ordering is explicit. Logging correlation, docs validation, frontmatter parsing, paths, atomic writes, and build identity are focused supporting modules. Privacy still depends on log producers.</td><td><code>src/CodingAgent/{Migrations,Logging,Docs,Markdown,Path,Utility,Build,EventListener,Messenger}/</code><br><code>src/AgentCore/Schema/EventPayloadNormalizer.php</code></td></tr>
+<tr><td>QA and release</td><td>Castor owns QA. Release passes one PHAR into native builds, checks hashes, and proves process topology. Installer smoke and atomic replacement protect installation. The testing skill understates the TUI lane's PHAR prerequisite.</td><td><code>.castor/{tasks,e2e,helpers,distribution}.php</code><br><code>.github/workflows/release.yml</code><br><code>installer/bash-installer</code></td></tr>
+</tbody></table></div>
+<p class="muted">Paths without <code>src/</code> in the table continue under <code>src/CodingAgent/</code>. Test contracts were sampled alongside the owning modules; this table does not claim every implementation or test was read.</p>
+</section>
+<section id="findings">
+<h2>Changes supported by the evidence</h2>
+<p class="muted">Recommendation strength is not a defect severity score. Only the first finding identifies a directly observable failure-isolation gap. The other cards describe bounded maintainability opportunities, not proven runtime regressions. No new interface signatures are proposed.</p>
+<article class="candidate" id="extension-loading">
+<div class="priority">01 · Correctness first · Localized change</div>
+<h3>Make extension loading own the entire per-extension outcome</h3>
+<span class="badge strong">Strong</span><span class="badge">in-process</span><span class="badge">Source-confirmed failure path</span>
+<div class="files">
+<a href="file:///home/ineersa/projects/agent-core/src/CodingAgent/Extension/ExtensionManager.php"><code>src/CodingAgent/Extension/ExtensionManager.php:17–34, 158–241</code></a>
+<a href="file:///home/ineersa/projects/agent-core/src/CodingAgent/Extension/ExtensionLoaderSubscriber.php"><code>src/CodingAgent/Extension/ExtensionLoaderSubscriber.php:18–65</code></a>
+<a href="file:///home/ineersa/projects/agent-core/tests/CodingAgent/Extension/ExtensionManagerTest.php"><code>tests/CodingAgent/Extension/ExtensionManagerTest.php</code></a>
+</div>
+<div class="grid2">
+<div class="diagram"><h4>Before</h4><div class="node">Console startup → extension loader</div><div class="arrow">↓</div><div class="node leak">Construct and inject logger<br>Exceptions escape</div><div class="arrow">↓</div><div class="node">Guard register → log and continue</div><div class="arrow">↓</div><div class="node leak">Record success → add subscriber<br>Later failure can escape</div></div>
+<div class="diagram"><h4>After, responsibility only</h4><div class="node">Console startup → extension loader</div><div class="seam">Same extension interface</div><div class="deep">One per-extension outcome<div class="node" style="margin-top:12px">Construct · validate · inject logger</div><div class="node">Register · attach subscriber</div><div class="node">Report success or logged failure</div></div><div class="arrow">↓</div><div class="node">Continue with the next extension</div></div>
+</div>
+<dl class="details"><dt>Problem</dt><dd>The module promises lifecycle isolation, but <code>new $className()</code> occurs outside the only <code>try</code> in <code>loadSingle()</code>.</dd><dt>Solution</dt><dd>Keep the existing module and make its per-extension outcome include construction and lifecycle attachment, without adding a new adapter or public seam.</dd><dt>Evidence</dt><dd><code>ExtensionLoaderSubscriber → loadExtensions → loadEach → loadSingle</code> reaches the unguarded constructor during console startup, including workers.</dd><dt>Deletion test</dt><dd>Deleting the loader would move extension lifecycle knowledge into startup callers. Retain it and increase depth by making its advertised failure behavior reliable.</dd><dt>Test benefit</dt><dd>Use the existing loader test surface to prove that a throwing constructor records failure and does not prevent a later extension from loading.</dd><dt>Preserve</dt><dd>Keep missing-class and invalid-type diagnostics distinct. Do not claim transactional rollback of registrations; an extension can already register some tools before failing.</dd></dl>
+<ul class="wins"><li>Locality for lifecycle failures</li><li>Leverage across console entry points</li><li>Tests cross the existing interface</li></ul>
+</article>
+<article class="candidate" id="launch-preparation">
+<div class="priority">02 · Sequencing-sensitive cleanup · Follow existing launch work</div>
+<h3>Give child launch resolution one explicit role</h3>
+<span class="badge worth">Worth exploring</span><span class="badge">in-process</span><span class="badge">Repeated resolution, no proven mismatch</span>
+<div class="files">
+<a href="file:///home/ineersa/projects/agent-core/src/CodingAgent/Agent/Execution/SubagentLaunchPreparationService.php"><code>src/CodingAgent/Agent/Execution/SubagentLaunchPreparationService.php:54–181</code></a>
+<a href="file:///home/ineersa/projects/agent-core/src/CodingAgent/Agent/Execution/Subagent/ChildRun/Preparation/SubagentChildLaunchInputFactory.php"><code>Agent/Execution/Subagent/ChildRun/Preparation/SubagentChildLaunchInputFactory.php:37–113</code></a>
+<a href="file:///home/ineersa/projects/agent-core/src/CodingAgent/Agent/Execution/Subagent/Batch/Deferred/Launch/DeferredSubagentBatchPreparationService.php"><code>Agent/Execution/Subagent/Batch/Deferred/Launch/DeferredSubagentBatchPreparationService.php:45–165</code></a>
+<a href="file:///home/ineersa/projects/agent-core/src/CodingAgent/Agent/Fork/ForkChildLaunchInputBuilder.php"><code>Agent/Fork/ForkChildLaunchInputBuilder.php:37–112</code></a>
+</div>
+<div class="grid2">
+<div class="diagram"><h4>Before, two entry paths</h4><pre class="mermaid">
+flowchart TB
+ D["Direct preparation"] --> V["Resolve and validate; discard value"]
+ V --> B["Build prepared launch; resolve again"]
+ P["Deferred plan"] --> I["Resolve and persist launch intent"]
+ I --> B
+ B --> R["Prepared child launch"]
+ classDef leak fill:#fff1ef,stroke:#b84141;
+ class V,B leak;
+</pre></div>
+<div class="diagram"><h4>After, ownership goal</h4><div class="node">Direct and deferred entry paths</div><div class="seam">Existing preparation seam</div><div class="deep">Launch preparation module<div class="node" style="margin-top:14px">Explicit validation checkpoint</div><div class="node">Model and reasoning ownership</div><div class="node">Prompt, policy, and reservation ordering</div></div><p class="muted">Retain deliberate preflight, or reuse its result. Choose only after preserving each path's failure order.</p></div>
+</div>
+<dl class="details"><dt>Problem</dt><dd>Direct identity helpers discard resolved values, while downstream preparation resolves them again; deferred planning separately persists a meaningful resolution result.</dd><dt>Solution</dt><dd>Clarify validation versus preparation within the existing module before attempting to remove repeated resolution.</dd><dt>Deletion test</dt><dd>The unused value does not mean dead behavior. Resolution can throw for missing model or reasoning; deleting it changes which failure occurs first.</dd><dt>Depth</dt><dd>Callers should not need to infer validation timing from an unused assignment. Better locality comes from explicit ownership, not another launch adapter.</dd><dt>Test benefit</dt><dd>Retain direct and deferred launch contract tests for model inheritance, invalid configuration, and artifact outcomes. Prove externally visible ordering, not resolver call counts.</dd><dt>Preserve</dt><dd>The deferred plan's persisted model and reasoning are not redundant. Keep identity-template reuse, extension validation, and reservation order intact.</dd></dl>
+<ul class="wins"><li>Locality for launch validation</li><li>Leverage across fork and subagent</li><li>Same model-visible interface</li></ul>
+</article>
+<article class="candidate" id="event-schema">
+<div class="priority">03 · Small policy cleanup · No schema behavior change</div>
+<h3>Keep canonical schema compatibility in one owning module</h3>
+<span class="badge worth">Worth exploring</span><span class="badge">in-process</span><span class="badge">Duplicated major-version arithmetic</span>
+<div class="files">
+<a href="file:///home/ineersa/projects/agent-core/src/AgentCore/Schema/EventPayloadNormalizer.php"><code>src/AgentCore/Schema/EventPayloadNormalizer.php:62–69, 123–129</code></a>
+<a href="file:///home/ineersa/projects/agent-core/src/CodingAgent/Session/JsonlRunEventLog.php"><code>src/CodingAgent/Session/JsonlRunEventLog.php:138–158</code></a>
+</div>
+<div class="grid2">
+<div class="diagram"><h4>Before</h4><div class="node">Canonical JSONL payload</div><div class="arrow">↓</div><div class="grid2"><div class="node leak">JSONL adapter<br>Split major version<br>Mismatch diagnostic</div><div class="node leak">Event normalizer<br>Split major version<br>Accept or reject</div></div><p class="muted">Related predicates, different responsibilities.</p></div>
+<div class="diagram"><h4>After, ownership goal</h4><div class="node">Canonical JSONL payload</div><div class="seam">Existing event schema seam</div><div class="deep">Canonical schema module<div class="node" style="margin-top:15px">One major-version policy</div><div class="node">Hydration keeps its acceptance rules</div></div><div class="arrow">↓</div><div class="node">JSONL adapter keeps store diagnostics</div></div>
+</div>
+<dl class="details"><dt>Problem</dt><dd>Both modules parse <code>SchemaVersion::CURRENT</code> and the candidate major version, so a future compatibility change requires coordinated edits.</dd><dt>Solution</dt><dd>Concentrate only shared version policy in the existing canonical schema module; leave storage diagnostics in the JSONL adapter.</dd><dt>Deletion test</dt><dd>Removing JSONL's duplicated arithmetic can improve locality only if the existing diagnostic behavior survives. Do not delete the diagnostic decision itself.</dd><dt>Depth</dt><dd>The schema interface should own version meaning. The storage seam should not teach a second implementation of that meaning.</dd><dt>Test benefit</dt><dd>Exercise supported and unsupported majors plus absent, empty, and non-string versions through existing normalizer and event-store contracts.</dd><dt>Preserve</dt><dd>The predicates are not logical inverses. Empty and non-string versions do not trigger the JSONL major-mismatch diagnostic, while hydration can still reject them.</dd></dl>
+<ul class="wins"><li>Locality for compatibility policy</li><li>Leverage across event readers</li><li>Keep distinct diagnostic behavior</li></ul>
+</article>
+<article class="candidate" id="provider-invocation">
+<div class="priority">04 · Internal depth · Only with a provider change driver</div>
+<h3>Keep stream assembly local inside model invocation</h3>
+<span class="badge worth">Worth exploring</span><span class="badge">ports &amp; adapters</span><span class="badge">Maintainability opportunity</span>
+<div class="files">
+<a href="file:///home/ineersa/projects/agent-core/src/AgentCore/Infrastructure/SymfonyAi/LlmPlatformAdapter.php"><code>src/AgentCore/Infrastructure/SymfonyAi/LlmPlatformAdapter.php:74–164, 360–469</code></a>
+<a href="file:///home/ineersa/projects/agent-core/tests/AgentCore/Infrastructure/SymfonyAi/LlmPlatformAdapterTest.php"><code>tests/AgentCore/Infrastructure/SymfonyAi/LlmPlatformAdapterTest.php</code></a>
+<a href="file:///home/ineersa/projects/agent-core/tests/AgentCore/Infrastructure/SymfonyAi/PlatformIntegrationTest.php"><code>tests/AgentCore/Infrastructure/SymfonyAi/PlatformIntegrationTest.php</code></a>
+</div>
+<div class="grid2">
+<div class="diagram"><h4>Before, already deep externally</h4><div class="node">invoke request → result</div><div class="seam">Narrow existing interface</div><div class="deep"><div class="node">Hooks, model, tools, request diagnostics</div><div class="node">Provider invocation</div><div class="node">Stream, cancellation, reasoning, observers</div><div class="node">Message, usage, errors, stop reason</div></div></div>
+<div class="diagram"><h4>After, internal locality only</h4><div class="node">Same invoke request → result</div><div class="seam">No new public seam</div><div class="deep"><div class="node">Existing request preparation collaborators</div><div class="node">Provider adapter invocation</div><div class="node" style="border:2px solid #9cbfa8;padding:22px">Cohesive stream-to-result implementation<br>Cancellation · reasoning · finalization</div></div></div>
+</div>
+<dl class="details"><dt>Problem</dt><dd>Stream assembly crosses observer notifications, cancellation checks, reasoning normalization, diagnostic state, and final-result construction inside one broad adapter.</dd><dt>Solution</dt><dd>Keep the external module intact; consider concentrating the stream-to-result implementation using existing collaborators when a provider change requires it.</dd><dt>Deletion test</dt><dd>Deleting the adapter would spread substantial provider knowledge into LLM and compaction callers. It is deep, not a shallow module to remove.</dd><dt>Evidence</dt><dd><code>consumeStream()</code> already has a focused role, but passes request diagnostics and model metadata through success and error paths. Extraction is worthwhile only if it hides that knowledge rather than exporting more parameters.</dd><dt>Test benefit</dt><dd>Keep invocation as the test surface. Retain cancellation before the first delta and after the last, cumulative reasoning, partial errors, and observer behavior.</dd><dt>Preserve</dt><dd>Keep tool-sequence validation before provider calls, privacy-safe diagnostics, retry classification, and connection cleanup. No new provider interface is justified by this review.</dd></dl>
+<ul class="wins"><li>Locality for stream finalization</li><li>Leverage for model and compaction</li><li>Preserve external interface depth</li></ul>
+</article>
+</section>
+<section id="risks">
+<h2>Operational risks and documentation drift</h2>
+<div class="grid2">
+<div class="panel"><span class="badge worth">Known limitation</span><h3>MCP cannot enforce each tool call's budget</h3><p><code>McpConnectionManager::callTool()</code> documents that the SDK exposes neither per-call timeout nor cancellation. Client-construction timeout is a different guarantee.</p><p>This is a real interface limit, not evidence that a particular call hung. Do not replace the SDK or add a custom transport on this review alone.</p><p><a href="file:///home/ineersa/projects/agent-core/src/CodingAgent/Mcp/Client/McpConnectionManager.php"><code>src/CodingAgent/Mcp/Client/McpConnectionManager.php:242–290</code></a></p></div>
+<div class="panel"><span class="badge worth">Documentation defect</span><h3>The TUI lane requires a PHAR</h3><p>The testing skill says TUI replay tests use source and do not require PHAR. Current Castor unconditionally calls <code>phar_ensure()</code>, including filtered TUI runs.</p><p>Both facts can be stated precisely. Behavioral TUI replay uses source; the lane also includes packaged-artifact boot proof. This review did not change the skill.</p><p><a href="file:///home/ineersa/projects/agent-core/.castor/e2e.php"><code>.castor/e2e.php:81–101</code></a><br><a href="file:///home/ineersa/projects/agent-core/.agents/skills/testing/SKILL.md"><code>.agents/skills/testing/SKILL.md, PHAR-based testing</code></a></p></div>
+<div class="panel"><span class="badge">Documented degradation</span><h3>Permanent run-control failure bypasses normal hooks</h3><p><code>WorkerFailedEventSubscriber</code> appends terminal failure outside normal <code>RunCommit</code>. Post-commit tool-batch cleanup can be bypassed; later lifecycle cleanup remains a separate recovery mechanism.</p><p>Keep the run-control ownership restriction and Doctrine reset ordering. No evidence here justifies a global failure subscriber.</p><p><code>src/CodingAgent/Runtime/Messenger/{WorkerFailedEventSubscriber,RunControlDoctrineFailureResetSubscriber}.php</code></p></div>
+<div class="panel"><span class="badge">Coupled upstream seam</span><h3>Terminal replacements carry an upgrade obligation</h3><p>Class aliases compensate for Symfony TUI's final concrete renderer and writer types. They are deliberate adapters, not ordinary interchangeable implementations.</p><p>Review these contracts on Symfony TUI upgrades. Keep the existing fail-closed installation and rendering proofs until normal injection can preserve behavior.</p><p><code>src/Tui/Terminal/*AliasInstaller.php</code></p></div>
+</div>
+</section>
+<section id="retain">
+<h2>Refactors this review does not recommend</h2>
+<div class="table-wrap"><table><thead><tr><th>Tempting change</th><th>Why it does not earn its cost</th></tr></thead><tbody>
+<tr><td>Merge parent and child pollers</td><td>The repeated cursor loop is small. Parent retries and degrades, replaces history, and restores editor state. Child replay hydrates a separate snapshot and applies different removal rules. A shared interface would expose those differences as configuration.</td></tr>
+<tr><td>Unify live transitions and replay</td><td>Live handlers decide admissibility and effects; replay interprets committed facts. Paired tool and compaction rules do not establish a defect. Keep replay independent of process-local execution and Messenger.</td></tr>
+<tr><td>Move answers into ToolCallResultHandler</td><td>Command-side answer validation is not result-side human-input suspension. That move would relocate complexity and create a second command router.</td></tr>
+<tr><td>Split process client by class length</td><td>Its implementation hides startup, readiness, restarts, per-run buffers, and process cleanup behind an existing small interface. That is depth. Splitting state ownership can reduce locality.</td></tr>
+<tr><td>Merge session creation and recovery</td><td>Normal creation coordinates new metadata and exclusive directory creation. Recovery reads surviving canonical events after metadata loss and has different refusal and degradation rules.</td></tr>
+<tr><td>Add more TUI composition interfaces</td><td>The current factory earns its role by creating fresh per-session state. Named projector lookup and repeated ChatScreen overlay surgery are local cleanup opportunities, not grounds for another public seam.</td></tr>
+<tr><td>Treat RuntimeEventMapper as deep</td><td>It only forwards to RuntimeEventTranslator. The mapper's deletion test shows no lost behavior, but removing this naming facade is low leverage. The translator, not the forwarding facade, owns the real mapping implementation.</td></tr>
+<tr><td>Split provider construction preemptively</td><td>Tagged builders already isolate real provider variation. Optional raw-capture lifecycle is a possible local cleanup, not a reason for a new provider framework.</td></tr>
+</tbody></table></div>
+</section>
+<section id="method">
+<h2>Evidence, method, and limits</h2>
+<div class="grid2">
+<div class="panel"><h3>What was inspected</h3><ul><li>All four source roots, the public extension contracts, concrete extension packages, configuration wiring, Castor, release CI, and installer architecture.</li><li>Scoped JetBrains symbol, caller, and structure inspection plus targeted source reads.</li><li>Existing tests at the relevant seams, following the testing skill and <code>tests/AGENTS.md</code>. No tests were run.</li><li>The last 100 non-merge commits for change pressure. TUI and runtime dominated recent activity, but scope expanded to the full codebase at the user's direction.</li><li>Root and applicable nested instructions, <code>depfile.yaml</code>, session, TUI, and distribution documentation.</li></ul></div>
+<div class="panel"><h3>What this does not establish</h3><ul><li>No fresh Deptrac, static analysis, live provider, contention, performance, or terminal correctness result.</li><li>No exhaustive security audit or proof that every allowed dependency is desirable.</li><li>No complete trace of every Messenger handler, CLI command, auth path, or Codex WebSocket continuation.</li><li>No measured launch-resolution cost or observed mismatch between deferred intent and actual model.</li><li>No repository edits, task creation, implementation proposal with new signatures, or grilling session.</li></ul></div>
+</div>
+<div class="note" style="margin-top:22px">No root <code>CONTEXT.md</code> or tracked <code>docs/adr/</code> was found. Domain names come from current code and project documentation. This report preserves documented decisions rather than treating the absence of ADRs as permission to reopen them.</div>
+<details><summary>Evidence provenance and reproduction</summary>
+<p>Checkout <code>/home/ineersa/projects/agent-core</code> was clean at initial inspection. The report is outside the repository. Source links use local absolute paths; line ranges refer to the reviewed revision and may move later.</p>
+<p>Scouts covered AgentCore, runtime and sessions, application integrations and extensions, and TUI with build tooling. Follow-up passes explicitly corrected overstatements about replay duplication, mapper depth, and shared polling.</p>
+<ul><li><code>agent_a1c3753d11daa1b7</code> · AgentCore and provider invocation</li><li><code>agent_4787fb47b4c89ef1</code> · Runtime, session, and supporting modules</li><li><code>agent_aec424ec407002eb</code> · Tools, child execution, integrations, and extensions</li><li><code>agent_29626a4c9cee1c2f</code> · TUI, Castor, release, and installer</li></ul>
+<pre><code>git rev-parse HEAD
+git status --short
+git log --no-merges -100 --format='%h %s'
+git ls-files '*CONTEXT.md' 'docs/adr/*'
+git log --no-merges -100 --format= --name-only -- src</code></pre>
+<p>Recommendation counts describe this report, not automated measurements of code quality. HTML layout uses inline CSS, Tailwind via CDN, and Mermaid via CDN. Source links require the local checkout; Mermaid diagrams require network access.</p>
+</details>
+</section>
+<section id="top">
+<div class="summary"><div class="eyebrow" style="color:#b6d2c4">Top recommendation</div><h2 style="margin-top:12px">Fix extension startup isolation first</h2><p>The existing module already promises to contain extension lifecycle failures. Making that promise true protects every console process without changing the public interface.</p><p><a href="#extension-loading" style="color:#b7e8d0">Review the evidence and preserved invariants →</a></p></div>
+</section>
+<footer>Agent Core architecture review · 5 September 2026 · Read-only source assessment · No implementation or follow-up task authorized</footer>
+</main>
+</body>
+</html>
