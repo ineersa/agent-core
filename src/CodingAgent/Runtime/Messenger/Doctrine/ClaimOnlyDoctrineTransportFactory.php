@@ -33,7 +33,7 @@ final class ClaimOnlyDoctrineTransportFactory implements TransportFactoryInterfa
     }
 
     /**
-     * @phpstan-ignore missingType.iterableValue
+     * @param array<array-key, mixed> $options
      */
     public function createTransport(#[\SensitiveParameter] string $dsn, array $options, SerializerInterface $serializer): TransportInterface
     {
@@ -53,7 +53,7 @@ final class ClaimOnlyDoctrineTransportFactory implements TransportFactoryInterfa
     }
 
     /**
-     * @phpstan-ignore missingType.iterableValue
+     * @param array<array-key, mixed> $options
      */
     public function supports(#[\SensitiveParameter] string $dsn, array $options): bool
     {
