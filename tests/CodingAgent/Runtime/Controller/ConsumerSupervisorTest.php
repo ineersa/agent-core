@@ -71,7 +71,8 @@ final class ConsumerSupervisorTest extends TestCase
             $argv = json_decode((string) file_get_contents($argvFile), true, 512, \JSON_THROW_ON_ERROR);
             $this->assertIsArray($argv);
             $this->assertContains('--memory-limit=256M', $argv);
-            $this->assertContains('--keepalive=5', $argv);
+            $this->assertNotContains('--keepalive=5', $argv);
+            $this->assertNotContains('--keepalive', $argv);
             $this->assertContains('--sleep=0.01', $argv);
             $this->assertNotContains('--time-limit=3600', $argv);
             $this->assertContains('messenger:consume', $argv);
