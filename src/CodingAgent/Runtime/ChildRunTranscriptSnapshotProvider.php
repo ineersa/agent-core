@@ -55,6 +55,7 @@ final readonly class ChildRunTranscriptSnapshotProvider implements ChildRunTrans
         }
 
         $blocks = $this->transcriptProjector->blocks();
+        // The shared projector must not retain the child's blocks after the snapshot returns.
         $this->transcriptProjector->reset();
 
         return new ChildRunTranscriptSnapshotDTO(

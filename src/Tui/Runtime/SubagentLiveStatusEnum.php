@@ -43,8 +43,7 @@ enum SubagentLiveStatusEnum: string
     /**
      * Map this subagent status to the TUI run-activity state.
      *
-     * Single owner of the forward status→activity mapping shared by
-     * TickPollListener and SubagentLiveViewState. Unknown maps to null
+     * Forward status→activity mapping used by TickPollListener. Unknown maps to null
      * so callers can keep their current activity unchanged. The reverse
      * activity→status reconciliation stays separate (TickPollListener).
      */

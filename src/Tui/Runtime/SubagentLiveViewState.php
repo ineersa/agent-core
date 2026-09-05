@@ -102,6 +102,8 @@ final class SubagentLiveViewState
 
     private function activityFromCatalogChild(SubagentLiveChildDTO $child): RunActivityStateEnum
     {
+        // Fresh entry uses Completed for all inactive statuses until replay/poll
+        // reconciles the exact lifecycle; unlike toActivity(), Unknown is not preserved.
         return match (true) {
             SubagentLiveStatusEnum::WaitingHuman === $child->status => RunActivityStateEnum::WaitingHuman,
             $child->isRunning() => RunActivityStateEnum::Running,
