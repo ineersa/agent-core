@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Session;
+namespace Ineersa\CodingAgent\Runtime;
 
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotDTO;
