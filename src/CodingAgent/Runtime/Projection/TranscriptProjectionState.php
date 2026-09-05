@@ -171,63 +171,6 @@ final class TranscriptProjectionState
         return true;
     }
 
-    /**
-     * Evict blocks strictly before {@see $floorBlockId}, keeping the floor and
-     * everything after it.
-     *
-     * ToolCall blocks before the floor remain when a retained ToolResult still
-     * references their tool_call_id, so open exchanges are not orphaned.
-     */
-    private function pruneBlocksBefore(string $floorBlockId): void
-    {
-        $floorIdx = $this->orderIndex[$floorBlockId] ?? null;
-        if (null === $floorIdx || $floorIdx <= 0) {
-            return;
-        }
-
-        /** @var array<string, true> $requiredCallIds */
-        $requiredCallIds = [];
-        $orderCount = \count($this->order);
-        for ($i = $floorIdx; $i < $orderCount; ++$i) {
-            $block = $this->blocks[$this->order[$i]] ?? null;
-            if (null === $block || TranscriptBlockKindEnum::ToolResult !== $block->kind) {
-                continue;
-            }
-            $callId = $block->meta['tool_call_id'] ?? '';
-            if (\is_string($callId) && '' !== $callId) {
-                $requiredCallIds[$callId] = true;
-            }
-        }
-
-        $keptBefore = [];
-        for ($i = 0; $i < $floorIdx; ++$i) {
-            $id = $this->order[$i];
-            $block = $this->blocks[$id] ?? null;
-            if (null === $block) {
-                continue;
-            }
-            if (TranscriptBlockKindEnum::ToolCall === $block->kind) {
-                $callId = $block->meta['tool_call_id'] ?? '';
-                if (\is_string($callId) && isset($requiredCallIds[$callId])) {
-                    $keptBefore[] = $id;
-                    continue;
-                }
-            }
-            unset($this->blocks[$id]);
-            if (isset($this->dirtyIds[$id])) {
-                unset($this->dirtyIds[$id]);
-            }
-            $this->removedIds[$id] = true;
-        }
-
-        $retainedTail = array_slice($this->order, $floorIdx);
-        $this->order = [...$keptBefore, ...$retainedTail];
-        $this->orderIndex = [];
-        foreach ($this->order as $idx => $id) {
-            $this->orderIndex[$id] = $idx;
-        }
-    }
-
     // ── Accessors ────────────────────────────────────────────────────────────
 
     /**
@@ -590,6 +533,63 @@ final class TranscriptProjectionState
         }
 
         return '('.implode(', ', $parts).')';
+    }
+
+    /**
+     * Evict blocks strictly before {@see $floorBlockId}, keeping the floor and
+     * everything after it.
+     *
+     * ToolCall blocks before the floor remain when a retained ToolResult still
+     * references their tool_call_id, so open exchanges are not orphaned.
+     */
+    private function pruneBlocksBefore(string $floorBlockId): void
+    {
+        $floorIdx = $this->orderIndex[$floorBlockId] ?? null;
+        if (null === $floorIdx || $floorIdx <= 0) {
+            return;
+        }
+
+        /** @var array<string, true> $requiredCallIds */
+        $requiredCallIds = [];
+        $orderCount = \count($this->order);
+        for ($i = $floorIdx; $i < $orderCount; ++$i) {
+            $block = $this->blocks[$this->order[$i]] ?? null;
+            if (null === $block || TranscriptBlockKindEnum::ToolResult !== $block->kind) {
+                continue;
+            }
+            $callId = $block->meta['tool_call_id'] ?? '';
+            if (\is_string($callId) && '' !== $callId) {
+                $requiredCallIds[$callId] = true;
+            }
+        }
+
+        $keptBefore = [];
+        for ($i = 0; $i < $floorIdx; ++$i) {
+            $id = $this->order[$i];
+            $block = $this->blocks[$id] ?? null;
+            if (null === $block) {
+                continue;
+            }
+            if (TranscriptBlockKindEnum::ToolCall === $block->kind) {
+                $callId = $block->meta['tool_call_id'] ?? '';
+                if (\is_string($callId) && isset($requiredCallIds[$callId])) {
+                    $keptBefore[] = $id;
+                    continue;
+                }
+            }
+            unset($this->blocks[$id]);
+            if (isset($this->dirtyIds[$id])) {
+                unset($this->dirtyIds[$id]);
+            }
+            $this->removedIds[$id] = true;
+        }
+
+        $retainedTail = \array_slice($this->order, $floorIdx);
+        $this->order = [...$keptBefore, ...$retainedTail];
+        $this->orderIndex = [];
+        foreach ($this->order as $idx => $id) {
+            $this->orderIndex[$id] = $idx;
+        }
     }
 
     private function markDirty(string $id): void

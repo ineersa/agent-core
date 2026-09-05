@@ -180,6 +180,7 @@ final class TranscriptProjectionChangeSetTest extends TestCase
         $this->assertCount(1, $state->blocks());
         $this->assertSame($replacement, $state->blocks()[0]);
     }
+
     #[Test]
     public function testBulkPruneBeforeFloorIsLinearAndEmitsRemovals(): void
     {
@@ -244,5 +245,4 @@ final class TranscriptProjectionChangeSetTest extends TestCase
         $this->assertTrue($session->applyTranscriptChangeSet(TranscriptChangeSet::full($fresh)));
         $this->assertSame(['new'], array_map(static fn (TranscriptBlock $b): string => $b->id, $session->transcript));
     }
-
 }
