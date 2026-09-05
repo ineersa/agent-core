@@ -279,7 +279,8 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
     public function testShutdownCleanupIsQuietAfterOwnedRowIsStoppedAndDeleted(): void
     {
         $this->createManager(stopGraceSeconds: 0);
-        $result = $this->manager->start('sleep 30', self::TEST_SESSION);
+        $result = $this->manager->start('echo "completed"', self::TEST_SESSION);
+        $this->waitUntilFinished($result->pid);
 
         $this->manager->stopByRecordId($result->id, self::TEST_SESSION);
         $store = static::getContainer()->get(ProcessStore::class);
@@ -304,7 +305,8 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
     public function testShutdownCleanupDoesNotTargetReusedPidAfterOwnedRowDeleted(): void
     {
         $this->createManager(stopGraceSeconds: 0);
-        $owned = $this->manager->start('sleep 30', self::TEST_SESSION);
+        $owned = $this->manager->start('echo "completed"', self::TEST_SESSION);
+        $this->waitUntilFinished($owned->pid);
         $pid = $owned->pid;
         $ownedId = $owned->id;
 
@@ -336,6 +338,32 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $this->assertFalse($foreign->stoppedByUser);
 
         $this->assertTrue($store->deleteById($foreignId));
+    }
+
+    public function testShutdownCleanupLogsFailureAndRetainsOwnershipForRetry(): void
+    {
+        $this->createManager(stopGraceSeconds: 0);
+        $result = $this->manager->start('echo "completed"', self::TEST_SESSION);
+        $this->waitUntilFinished($result->pid);
+
+        $events = static::getContainer()->get(\Doctrine\ORM\EntityManagerInterface::class)->getEventManager();
+        $listener = new class {
+            public function onFlush(): void
+            {
+                throw new \RuntimeException('cleanup flush failed');
+            }
+        };
+        $events->addEventListener([\Doctrine\ORM\Events::onFlush], $listener);
+        try {
+            $this->assertSame(0, $this->manager->shutdownCleanup());
+            $this->assertShutdownCleanupErrors(['cleanup flush failed']);
+        } finally {
+            $events->removeEventListener([\Doctrine\ORM\Events::onFlush], $listener);
+        }
+
+        $this->assertSame(1, $this->manager->shutdownCleanup());
+        $this->assertSame(0, $this->manager->shutdownCleanup());
+        $this->assertShutdownCleanupErrors(['cleanup flush failed']);
     }
 
     /* ── Session scoping ── */

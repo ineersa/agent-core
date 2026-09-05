@@ -533,9 +533,8 @@ final class BackgroundProcessManager
     /**
      * Terminate background processes started by this manager instance.
      *
-     * This PHP-shutdown fallback never queries the shared database. Controller
-     * session cleanup is owned by its lifecycle listener and uses immutable
-     * record IDs instead.
+     * This PHP-shutdown fallback queries only this instance's immutable record
+     * IDs. The controller lifecycle listener owns session-wide cleanup.
      *
      * @return int Number of processes terminated
      */
@@ -661,9 +660,14 @@ final class BackgroundProcessManager
         $count = 0;
         foreach (array_keys($this->ownedRecordIds) as $recordId) {
             try {
-                if ($this->stopOwnedRecord($recordId)) {
+                $entity = $this->store->fetchByRecordId($recordId);
+                if (null !== $entity) {
+                    $this->stopProcessEntity($entity);
                     ++$count;
                 }
+                // Missing rows were already removed by session/provisional cleanup.
+                // Keep ownership on failure so a later cleanup can retry.
+                unset($this->ownedRecordIds[$recordId]);
             } catch (\RuntimeException $e) {
                 $this->logger->warning('background_process.shutdown_cleanup_error', [
                     'component' => 'tool.background_process',
@@ -675,34 +679,6 @@ final class BackgroundProcessManager
         }
 
         return $count;
-    }
-
-    /**
-     * Stop one owned record during instance shutdown, then forget ownership.
-     *
-     * Missing rows are treated as already cleaned (session/provisional cleanup
-     * deleted them). Finished rows still count as a successful owned stop so
-     * callers can observe that ownership was processed once.
-     *
-     * @return bool True when a retained owned row was stopped (including
-     *              already-finished rows); false when the row was already gone
-     *
-     * @throws \RuntimeException for genuine stop failures on a retained owned row
-     */
-    private function stopOwnedRecord(int $recordId): bool
-    {
-        try {
-            $entity = $this->store->fetchByRecordId($recordId);
-            if (null === $entity) {
-                return false;
-            }
-
-            $this->stopProcessEntity($entity);
-
-            return true;
-        } finally {
-            unset($this->ownedRecordIds[$recordId]);
-        }
     }
 
     // ─── Private helpers ─────────────────────────────────────────────
