@@ -49,13 +49,6 @@ final class SubagentLiveViewState
      */
     public ?string $lastPickerFeedbackWorkingMessage = null;
 
-    public function isSameChild(SubagentLiveChildDTO $child): bool
-    {
-        return null !== $this->selected
-            && $this->selected->artifactId === $child->artifactId
-            && $this->selected->agentRunId === $child->agentRunId;
-    }
-
     public function enter(SubagentLiveChildDTO $child): void
     {
         $this->active = true;

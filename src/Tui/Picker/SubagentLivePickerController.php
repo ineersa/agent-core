@@ -411,19 +411,16 @@ final class SubagentLivePickerController
 
         $state->subagentLiveView->enter($child);
 
-        $this->childPoller->resetProjection();
-
         $snapshot = $this->childSnapshotProvider->snapshot($child->agentRunId);
-        if ([] === $snapshot->transcriptBlocks && [] === $snapshot->replayEvents) {
+        $this->childPoller->replaySnapshot(
+            $state->subagentLiveView,
+            $snapshot,
+            onHumanInputRequested: $this->onHumanInputRequested,
+            onToolQuestionRequested: $this->onToolQuestionRequested,
+            onToolTerminal: $this->onToolTerminal,
+        );
+        if ([] === $state->subagentLiveView->childTranscript) {
             $state->subagentLiveView->childTranscript = $state->subagentLiveView->placeholderTranscriptFor($child);
-        } else {
-            $this->childPoller->replaySnapshot(
-                $state->subagentLiveView,
-                $snapshot,
-                onHumanInputRequested: $this->onHumanInputRequested,
-                onToolQuestionRequested: $this->onToolQuestionRequested,
-                onToolTerminal: $this->onToolTerminal,
-            );
         }
 
         $screen->setTranscriptBlocks($state->subagentLiveView->childTranscript);

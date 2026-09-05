@@ -11,7 +11,6 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
-use Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
@@ -39,7 +38,6 @@ final class SubagentLiveChildViewPoller
         private readonly TranscriptProjectorInterface $projector,
         private readonly LoggerInterface $logger,
         DenormalizerInterface $denormalizer,
-        private readonly ?ToolQuestionStoreInterface $toolQuestionStore = null,
     ) {
         $this->eventApplier = new TuiRuntimeEventApplier($this->projector, $denormalizer);
     }
@@ -82,15 +80,26 @@ final class SubagentLiveChildViewPoller
         $scratch->activity = $live->childActivity;
         $scratch->queuedUserMessages = $live->childQueuedUserMessages;
 
+        $pendingQuestions = [];
         foreach ($snapshot->replayEvents as $event) {
             $this->eventApplier->apply($scratch, $event, replayMode: true);
-            if ($this->isUnresolvedHumanInputRequest($event, $snapshot->replayEvents)) {
-                $callbacks->dispatch($event, $live->selected->agentRunId);
+            $questionId = $event->payload['question_id'] ?? '';
+            if (RuntimeEventTypeEnum::HumanInputRequested->value === $event->type) {
+                $pendingQuestions[$questionId] = $event;
+            } elseif (RuntimeEventTypeEnum::HumanInputAnswered->value === $event->type
+                || RuntimeEventTypeEnum::HumanInputRejected->value === $event->type
+            ) {
+                unset($pendingQuestions[$questionId]);
             }
         }
-
-        foreach ($this->pendingToolQuestionEvents($live->selected->agentRunId) as $event) {
+        foreach ($pendingQuestions as $event) {
             $callbacks->dispatch($event, $live->selected->agentRunId);
+        }
+
+        foreach ($snapshot->replayEvents as $event) {
+            if (RuntimeEventTypeEnum::ToolQuestionRequested->value === $event->type) {
+                $callbacks->dispatch($event, $live->selected->agentRunId);
+            }
         }
 
         $live->childActivity = $scratch->activity;
@@ -225,85 +234,5 @@ final class SubagentLiveChildViewPoller
             $onToolQuestionRequested,
             $onToolTerminal,
         );
-    }
-
-    /**
-     * @param list<RuntimeEvent> $events
-     */
-    private function isUnresolvedHumanInputRequest(RuntimeEvent $event, array $events): bool
-    {
-        if (RuntimeEventTypeEnum::HumanInputRequested->value !== $event->type) {
-            return false;
-        }
-
-        $questionId = (string) ($event->payload['question_id'] ?? '');
-        if ('' === $questionId) {
-            return false;
-        }
-
-        foreach ($events as $candidate) {
-            if ($candidate->runId !== $event->runId) {
-                continue;
-            }
-
-            if (
-                RuntimeEventTypeEnum::HumanInputAnswered->value !== $candidate->type
-                && RuntimeEventTypeEnum::HumanInputRejected->value !== $candidate->type
-            ) {
-                continue;
-            }
-
-            if ((string) ($candidate->payload['question_id'] ?? '') === $questionId) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    /**
-     * @return list<RuntimeEvent>
-     */
-    private function pendingToolQuestionEvents(string $runId): array
-    {
-        if (null === $this->toolQuestionStore) {
-            return [];
-        }
-
-        $events = [];
-        foreach ($this->toolQuestionStore->findPendingQuestionsForRun($runId) as $question) {
-            $schema = $question->schema;
-            if (\is_string($schema) && '' !== $schema) {
-                try {
-                    $decoded = json_decode($schema, true, 512, \JSON_THROW_ON_ERROR);
-                    $schema = \is_array($decoded) ? $decoded : ['type' => 'boolean'];
-                } catch (\JsonException) {
-                    $schema = ['type' => 'boolean'];
-                }
-            } else {
-                $schema = ['type' => 'boolean'];
-            }
-
-            $events[] = new RuntimeEvent(
-                type: RuntimeEventTypeEnum::ToolQuestionRequested->value,
-                runId: $question->runId,
-                seq: 0,
-                payload: [
-                    'request_id' => $question->requestId,
-                    'run_id' => $question->runId,
-                    'tool_call_id' => $question->toolCallId,
-                    'tool_name' => $question->toolName,
-                    'pid' => $question->pid,
-                    'log_path' => $question->logPath,
-                    'command_preview' => $question->commandPreview,
-                    'prompt' => $question->prompt,
-                    'kind' => $question->kind,
-                    'schema' => $schema,
-                    'transcript' => false,
-                ],
-            );
-        }
-
-        return $events;
     }
 }

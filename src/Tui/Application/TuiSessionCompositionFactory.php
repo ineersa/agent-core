@@ -15,7 +15,6 @@ use Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface;
 use Ineersa\Tui\Command\CommandParser;
 use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Command\SlashCommandRegistry;
@@ -77,7 +76,6 @@ final class TuiSessionCompositionFactory
         private readonly SessionEventsExportService $exportService,
         private readonly RuntimeQuestionEventHandler $runtimeQuestionEventHandler,
         private readonly QuestionOverlayPromptRenderer $questionPromptRenderer,
-        private readonly ?ToolQuestionStoreInterface $toolQuestionStore = null,
     ) {
     }
 
@@ -109,7 +107,6 @@ final class TuiSessionCompositionFactory
             $childProjector,
             $this->logger,
             $this->denormalizer,
-            $this->toolQuestionStore,
         );
 
         // ── Fresh question/history state ──

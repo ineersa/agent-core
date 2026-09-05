@@ -58,7 +58,7 @@ Compaction records canonical session events so resume rebuilds the compacted LLM
 
 The TUI retains the most recently completed compaction segment and the current segment. The first successful compaction keeps the initial conversation. The second drops content before the first completion marker. Each later success advances that window once. Failed compactions do not advance it. Resume and history selection rebuild the same window at the selected position.
 
-Retention removes old projected blocks and mounted widgets, including local notices in the evicted segment. Canonical events remain on disk for history and replay. This is a segment limit, not a byte or rendered-row limit: one large segment can still be expensive. Full event reads are temporary and are not cached by the session event store. Child live-view caches retain projected blocks and pending questions instead of a full replay-event archive.
+Retention removes old projected blocks and mounted widgets, including local notices in the evicted segment. Canonical events remain on disk for history and replay. This is a segment limit, not a byte or rendered-row limit: one large segment can still be expensive. Full event reads are temporary and are not cached by the session event store. Child views rebuild from durable state on every entry and release their projection on exit.
 
 ## Extension hooks
 

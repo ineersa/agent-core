@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Runtime;
 
-use Ineersa\CodingAgent\Entity\ToolQuestion;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
@@ -18,7 +17,6 @@ use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
-use Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
@@ -102,38 +100,19 @@ final class SubagentLiveChildViewPollerReplayTest extends TestCase
     }
 
     #[Test]
-    public function replaySnapshotRestoresPendingToolQuestionsFromStore(): void
+    public function replaySnapshotDispatchesPendingLocalToolQuestion(): void
     {
-        $store = $this->createMock(ToolQuestionStoreInterface::class);
-        $store->expects($this->once())
-            ->method('findPendingQuestionsForRun')
-            ->with(self::CHILD_RUN_ID)
-            ->willReturn([
-                ToolQuestion::create(
-                    requestId: 'bg_open',
-                    runId: self::CHILD_RUN_ID,
-                    toolCallId: 'tc-bg',
-                    toolName: 'bash',
-                    pid: 42,
-                    logPath: '/tmp/bg.log',
-                    commandPreview: 'sleep 30',
-                    prompt: 'Move bash to background?',
-                    schema: '{"type":"boolean"}',
-                ),
-            ]);
-
         $poller = new SubagentLiveChildViewPoller(
             new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
             new NullLogger(),
             SubagentProgressSerializerTestSupport::denormalizer(),
-            $store,
         );
         $live = $this->liveState();
         $hit = [];
 
         $poller->replaySnapshot(
             $live,
-            new ChildRunTranscriptSnapshotDTO([], [], 0),
+            new ChildRunTranscriptSnapshotDTO([], [new RuntimeEvent('tool_question.requested', self::CHILD_RUN_ID, 0, ['request_id' => 'bg_open'])], 0),
             onToolQuestionRequested: static function (RuntimeEvent $event) use (&$hit): void {
                 $hit[] = (string) ($event->payload['request_id'] ?? '');
             },

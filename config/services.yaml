@@ -653,12 +653,12 @@ services:
       $eventDispatcher: '@event_dispatcher'
       $state: '@child_run.transcript.projection_state'
 
-  Ineersa\CodingAgent\Session\ChildRunTranscriptSnapshotProvider:
+  Ineersa\CodingAgent\Runtime\ChildRunTranscriptSnapshotProvider:
     arguments:
       $transcriptProjector: '@child_run.transcript.transcript_projector'
 
   Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInterface:
-    alias: Ineersa\CodingAgent\Session\ChildRunTranscriptSnapshotProvider
+    alias: Ineersa\CodingAgent\Runtime\ChildRunTranscriptSnapshotProvider
 
   Ineersa\CodingAgent\Runtime\Contract\ChildAgentEventsPathResolverInterface:
     alias: Ineersa\CodingAgent\Session\ChildAgentEventsPathResolver

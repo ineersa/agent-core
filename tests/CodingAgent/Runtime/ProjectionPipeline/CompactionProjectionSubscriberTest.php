@@ -170,53 +170,28 @@ final class CompactionProjectionSubscriberTest extends TestCase
     }
 
     #[Test]
-    public function testFirstCompactionKeepsPriorConversation(): void
+    public function testSuccessfulCompactionsAdvanceWindowAndEmitRemovals(): void
     {
         $this->acceptUser('u1', 'conversation 1');
         $this->acceptCompactionCompleted(10);
+        $firstMarker = $this->blockIds()[1];
+        $this->assertSame(['u1', $firstMarker], $this->blockIds());
+        $this->state->drainChanges();
 
-        $ids = $this->blockIds();
-        $this->assertSame(['u1'], array_values(array_filter(
-            $ids,
-            static fn (string $id): bool => str_starts_with($id, 'u'),
-        )));
-        $this->assertSame(1, $this->countCompactionCompletedMarkers());
-        $this->assertCount(2, $ids);
-    }
-
-    #[Test]
-    public function testSecondCompactionEvictsConversationOne(): void
-    {
-        $this->acceptUser('u1', 'conversation 1');
-        $this->acceptCompactionCompleted(10);
         $this->acceptUser('u2', 'conversation 2');
         $this->acceptCompactionCompleted(20);
+        $secondMarker = $this->blockIds()[2];
+        $this->assertSame([$firstMarker, 'u2', $secondMarker], $this->blockIds());
+        $delta = $this->state->drainChanges();
+        $this->assertSame(['u1'], $delta->removals);
+        $this->assertSame($firstMarker, $delta->retentionFloorBlockId);
 
-        $ids = $this->blockIds();
-        $this->assertNotContains('u1', $ids);
-        $this->assertContains('u2', $ids);
-        $this->assertSame(2, $this->countCompactionCompletedMarkers());
-        $this->assertSame(['u2'], array_values(array_filter(
-            $ids,
-            static fn (string $id): bool => str_starts_with($id, 'u'),
-        )));
-    }
-
-    #[Test]
-    public function testThirdCompactionEvictsConversationTwo(): void
-    {
-        $this->acceptUser('u1', 'conversation 1');
-        $this->acceptCompactionCompleted(10);
-        $this->acceptUser('u2', 'conversation 2');
-        $this->acceptCompactionCompleted(20);
         $this->acceptUser('u3', 'conversation 3');
         $this->acceptCompactionCompleted(30);
-
-        $ids = $this->blockIds();
-        $this->assertNotContains('u1', $ids);
-        $this->assertNotContains('u2', $ids);
-        $this->assertContains('u3', $ids);
-        $this->assertSame(2, $this->countCompactionCompletedMarkers());
+        $this->assertSame([$secondMarker, 'u3', $this->blockIds()[2]], $this->blockIds());
+        $delta = $this->state->drainChanges();
+        $this->assertSame([$firstMarker, 'u2'], $delta->removals);
+        $this->assertSame($secondMarker, $delta->retentionFloorBlockId);
     }
 
     #[Test]
@@ -298,60 +273,6 @@ final class CompactionProjectionSubscriberTest extends TestCase
         $this->assertContains('call-1', $ids, 'ToolCall before floor must survive when a retained result needs it');
         $this->assertContains('result-1', $ids);
         $this->assertContains('u2', $ids);
-    }
-
-    #[Test]
-    public function testRetentionDrainEmitsFloorAndRemovals(): void
-    {
-        $this->acceptUser('u1', 'conversation 1');
-        $this->acceptCompactionCompleted(10);
-        $firstCompletedId = null;
-        foreach ($this->projector->blocks() as $block) {
-            if ('compaction_completed' === ($block->meta['lifecycle'] ?? null)) {
-                $firstCompletedId = $block->id;
-            }
-        }
-        $this->assertNotNull($firstCompletedId);
-        $this->state->drainChanges();
-
-        $this->acceptUser('u2', 'conversation 2');
-        $this->acceptCompactionCompleted(20);
-        $delta = $this->state->drainChanges();
-
-        $this->assertFalse($delta->isFull());
-        $this->assertContains('u1', $delta->removals);
-        $this->assertSame($firstCompletedId, $delta->retentionFloorBlockId);
-        $this->assertNotContains('u1', $this->blockIds());
-        $this->assertContains('u2', $this->blockIds());
-    }
-
-    #[Test]
-    public function testReplaySameEventsMatchesLiveRetention(): void
-    {
-        $liveEvents = [
-            $this->userEvent('u1', 'conversation 1', 1),
-            $this->compactionEvent(10),
-            $this->userEvent('u2', 'conversation 2', 11),
-            $this->compactionEvent(20),
-            $this->userEvent('u3', 'conversation 3', 21),
-            $this->compactionEvent(30),
-        ];
-
-        foreach ($liveEvents as $event) {
-            $this->projector->accept($event);
-        }
-        $liveIds = $this->blockIds();
-
-        $this->projector->reset();
-        foreach ($liveEvents as $event) {
-            $this->projector->accept($event);
-        }
-        $replayIds = $this->blockIds();
-
-        $this->assertSame($liveIds, $replayIds);
-        $this->assertNotContains('u1', $replayIds);
-        $this->assertNotContains('u2', $replayIds);
-        $this->assertContains('u3', $replayIds);
     }
 
     /**

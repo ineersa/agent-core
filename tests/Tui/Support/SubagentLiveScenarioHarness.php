@@ -83,6 +83,7 @@ final class SubagentLiveScenarioHarness
         Tui $tui,
         PromptEditor $promptEditor,
         string $parentRunId,
+        private readonly \Ineersa\Tui\Runtime\SubagentLiveChildViewPoller $childPoller,
     ) {
         $this->state = $state;
         $this->screen = $screen;
@@ -208,7 +209,7 @@ final class SubagentLiveScenarioHarness
         );
         $cancelListener->register($context);
 
-        return new self($state, $screen, $client, $questionCoordinator, $questionController, $tui, $promptEditor, $parentRunId);
+        return new self($state, $screen, $client, $questionCoordinator, $questionController, $tui, $promptEditor, $parentRunId, $services->childPoller);
     }
 
     public function seedChildInCatalog(
@@ -315,14 +316,7 @@ final class SubagentLiveScenarioHarness
             $this->screen,
             $this->questionCoordinator,
             $this->questionController,
-            new \Ineersa\Tui\Runtime\SubagentLiveChildViewPoller(
-                new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector(
-                    new EventDispatcher(),
-                    new \Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState(),
-                ),
-                new NullLogger(),
-                SubagentProgressSerializerTestSupport::denormalizer(),
-            ),
+            $this->childPoller,
         );
         $handler->handle(new SlashCommand('agents-main', '', '/agents-main'));
     }
