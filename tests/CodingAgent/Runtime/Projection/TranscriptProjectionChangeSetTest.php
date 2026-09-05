@@ -180,4 +180,69 @@ final class TranscriptProjectionChangeSetTest extends TestCase
         $this->assertCount(1, $state->blocks());
         $this->assertSame($replacement, $state->blocks()[0]);
     }
+    #[Test]
+    public function testBulkPruneBeforeFloorIsLinearAndEmitsRemovals(): void
+    {
+        $state = new TranscriptProjectionState();
+        for ($i = 0; $i < 20; ++$i) {
+            $state->addBlock(new TranscriptBlock(
+                id: 'old-'.$i,
+                kind: TranscriptBlockKindEnum::UserMessage,
+                runId: 'run-1',
+                seq: $state->nextSeq(),
+                text: 'old '.$i,
+            ));
+        }
+        $floor = new TranscriptBlock(
+            id: 'floor',
+            kind: TranscriptBlockKindEnum::System,
+            runId: 'run-1',
+            seq: $state->nextSeq(),
+            text: 'Conversation compacted.',
+            meta: ['lifecycle' => 'compaction_completed'],
+        );
+        $state->addBlock($floor);
+        $state->addBlock(new TranscriptBlock(
+            id: 'keep',
+            kind: TranscriptBlockKindEnum::UserMessage,
+            runId: 'run-1',
+            seq: $state->nextSeq(),
+            text: 'keep',
+        ));
+        $state->drainChanges();
+
+        $this->assertTrue($state->advanceCompactionRetention(5, 'floor'));
+        $delta = $state->drainChanges();
+        $this->assertSame('floor', $delta->retentionFloorBlockId);
+        $this->assertCount(20, $delta->removals);
+        $this->assertSame(['floor', 'keep'], array_map(
+            static fn (TranscriptBlock $block): string => $block->id,
+            $state->blocks(),
+        ));
+    }
+
+    #[Test]
+    public function testFullReplacementClearsWithoutPreservingLocalErrors(): void
+    {
+        $session = new TuiSessionState('session-1');
+        $session->appendTranscriptBlock(new TranscriptBlock(
+            id: 'local-error',
+            kind: TranscriptBlockKindEnum::Error,
+            runId: 'run-1',
+            seq: 1,
+            text: 'local',
+        ));
+        $fresh = [
+            new TranscriptBlock(
+                id: 'new',
+                kind: TranscriptBlockKindEnum::UserMessage,
+                runId: 'run-1',
+                seq: 2,
+                text: 'leaf',
+            ),
+        ];
+        $this->assertTrue($session->applyTranscriptChangeSet(TranscriptChangeSet::full($fresh)));
+        $this->assertSame(['new'], array_map(static fn (TranscriptBlock $b): string => $b->id, $session->transcript));
+    }
+
 }

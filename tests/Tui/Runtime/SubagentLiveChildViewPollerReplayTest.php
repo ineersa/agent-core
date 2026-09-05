@@ -290,6 +290,7 @@ final class SubagentLiveChildViewPollerReplayTest extends TestCase
         $projector->method('reset');
         $projector->method('blocks')->willReturn([]);
         $projector->method('drainChanges')->willReturn(TranscriptChangeSet::incremental([]));
+        $projector->method('replaceProjectedBlocks');
         $projector->expects($this->exactly(2))->method('accept')->willReturnOnConsecutiveCalls(
             $this->throwException(new \RuntimeException('projection failed')),
             null,

@@ -62,23 +62,17 @@ final readonly class CompactionProjectionSubscriber implements EventSubscriberIn
         $runId = $event->runId();
         $eventSeq = $event->runtimeEvent->seq;
 
+        $previousCompletedId = $this->findLatestCompactionCompletedBlockId($state);
+
         // Duplicate positive-seq delivery is a pure no-op: do not prune again and
         // do not append another completed marker.
-        if (!$state->shouldApplyCompactionRetention($eventSeq)) {
+        if (!$state->advanceCompactionRetention($eventSeq, $previousCompletedId)) {
             return;
         }
 
         // Remove the "Compacting conversation..." streaming placeholder
         // (blocks with streaming=true for this runId).
         $state->removeActiveStreamingBlocks($runId);
-
-        // Advance the rolling retention window before adding the new marker so
-        // the just-completed marker becomes the retained floor after prune.
-        $previousCompletedId = $this->findLatestCompactionCompletedBlockId($state);
-        if (null !== $previousCompletedId) {
-            $state->pruneBlocksBefore($previousCompletedId);
-        }
-        $state->markCompactionRetentionApplied($eventSeq);
 
         $before = $p['estimated_tokens_before'] ?? null;
         $after = $p['estimated_tokens_after'] ?? null;

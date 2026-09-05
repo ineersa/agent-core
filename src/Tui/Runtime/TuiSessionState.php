@@ -293,11 +293,7 @@ final class TuiSessionState
     public function applyTranscriptChangeSet(TranscriptChangeSet $changes): bool
     {
         if ($changes->isFull()) {
-            // Full snapshots come from projector-owned history. Preserve local UI
-            // blocks the runtime projector does not know about (errors, Processing…,
-            // paste/system notices) so a prune-driven or history-position replace
-            // cannot resurrect older projector content while dropping those locals.
-            $next = $this->mergeLocalUiBlocksIntoProjectorSnapshot($changes->blocks());
+            $next = $changes->blocks();
             if ($this->transcript === $next) {
                 return false;
             }
@@ -350,6 +346,12 @@ final class TuiSessionState
             $changed = true;
         }
 
+        if (null !== $changes->retentionFloorBlockId) {
+            if ($this->dropLocalBlocksBeforeRetentionFloor($changes->retentionFloorBlockId)) {
+                $changed = true;
+            }
+        }
+
         return $changed;
     }
 
@@ -381,60 +383,57 @@ final class TuiSessionState
     }
 
     /**
-     * Append session-local UI blocks that are absent from a projector snapshot.
+     * Drop session-local UI blocks that sit strictly before a retention floor.
      *
-     * Local Error blocks and the Processing… placeholder never enter
-     * TranscriptProjectionState. When history-position/full replace rebuilds from
-     * projector blocks, keep those locals at the tail so prune-driven snapshots
-     * neither resurrect older projector content nor drop active local UI.
-     *
-     * @param list<TranscriptBlock> $projectorBlocks
-     *
-     * @return list<TranscriptBlock>
+     * Local Error / Processing… blocks never enter the runtime projector, so
+     * projector ID removals cannot evict them. When compaction advances the
+     * rolling window, drop locals that appear before the floor marker while
+     * keeping newer locals that arrived after it.
      */
-    private function mergeLocalUiBlocksIntoProjectorSnapshot(array $projectorBlocks): array
+    private function dropLocalBlocksBeforeRetentionFloor(string $floorBlockId): bool
     {
-        if ([] === $this->transcript) {
-            return $projectorBlocks;
-        }
-
-        $projectorIds = [];
-        foreach ($projectorBlocks as $block) {
-            $projectorIds[$block->id] = true;
-        }
-
-        $locals = [];
-        foreach ($this->transcript as $block) {
-            if (isset($projectorIds[$block->id])) {
-                continue;
-            }
-            if (!$this->isLocalUiTranscriptBlock($block)) {
-                continue;
-            }
-            $locals[] = $block;
-        }
-
-        if ([] === $locals) {
-            return $projectorBlocks;
-        }
-
-        return [...$projectorBlocks, ...$locals];
-    }
-
-    private function isLocalUiTranscriptBlock(TranscriptBlock $block): bool
-    {
-        if (TranscriptBlockKindEnum::Error === $block->kind) {
-            return true;
-        }
-
-        if (TranscriptBlockKindEnum::System !== $block->kind) {
+        $this->rebuildTranscriptIndexIfStale();
+        $floorIdx = $this->transcriptIndexById[$floorBlockId] ?? null;
+        if (null === $floorIdx || $floorIdx <= 0) {
             return false;
         }
 
-        // Only the ephemeral Processing… placeholder is preserved across full
-        // projector snapshots. Other local system notices are intentionally not
-        // merged: history-position/full replace must be able to drop them with
-        // the replaced conversation.
-        return str_contains($block->text, 'Processing...');
+        $indices = [];
+        for ($i = 0; $i < $floorIdx; ++$i) {
+            $block = $this->transcript[$i] ?? null;
+            if (null === $block) {
+                continue;
+            }
+            // Projector prune already removed owned history before the floor,
+            // except ToolCall blocks retained for still-visible ToolResults.
+            // Anything else still sitting before the floor is session-local UI
+            // (or stale) and must leave with the evicted segment.
+            if (TranscriptBlockKindEnum::ToolCall === $block->kind) {
+                continue;
+            }
+            if (isset($this->transcriptIndexById[$block->id])) {
+                $indices[] = $i;
+            }
+        }
+
+        if ([] === $indices) {
+            return false;
+        }
+
+        rsort($indices, \SORT_NUMERIC);
+        foreach ($indices as $idx) {
+            $removed = $this->transcript[$idx] ?? null;
+            array_splice($this->transcript, $idx, 1);
+            if (null !== $removed) {
+                unset($this->transcriptIndexById[$removed->id]);
+            }
+        }
+
+        $this->transcriptIndexById = [];
+        foreach ($this->transcript as $i => $block) {
+            $this->transcriptIndexById[$block->id] = $i;
+        }
+
+        return true;
     }
 }

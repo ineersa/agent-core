@@ -65,6 +65,15 @@ final class TranscriptProjectionState
      */
     private int $lastAppliedCompactionEventSeq = 0;
 
+    /**
+     * Previous compaction.completed block id that became the retention floor
+     * during the outstanding dirty window (cleared by {@see drainChanges()}).
+     *
+     * Session application uses this to drop local UI blocks that belonged to
+     * the evicted segment while keeping newer locals.
+     */
+    private ?string $pendingRetentionFloorBlockId = null;
+
     // ── State mutation ──────────────────────────────────────────────────────
 
     /**
@@ -129,28 +138,37 @@ final class TranscriptProjectionState
     }
 
     /**
-     * Whether this compaction.completed event seq should apply retention.
+     * Advance the rolling compaction retention window for a successful
+     * compaction.completed event.
      *
-     * Duplicate delivery of the same positive seq returns false. Seq 0 is
-     * treated as non-dedupable and always applies.
+     * Compaction #1 keeps conversation #1 (no prior completed marker).
+     * Compaction #2 evicts conversation #1 by pruning strictly before the
+     * previous completed marker. Compaction #3 evicts conversation #2.
+     *
+     * Duplicate delivery of the same positive event seq is a pure no-op.
+     * Seq 0 is treated as non-dedupable and always applies.
+     *
+     * ToolCall blocks before the floor remain when a retained ToolResult still
+     * references their tool_call_id.
+     *
+     * @return bool True when retention advanced (caller should append the new marker)
      */
-    public function shouldApplyCompactionRetention(int $eventSeq): bool
+    public function advanceCompactionRetention(int $eventSeq, ?string $previousCompletedBlockId): bool
     {
         if ($eventSeq > 0 && $eventSeq <= $this->lastAppliedCompactionEventSeq) {
             return false;
         }
 
-        return true;
-    }
+        if (null !== $previousCompletedBlockId) {
+            $this->pruneBlocksBefore($previousCompletedBlockId);
+            $this->pendingRetentionFloorBlockId = $previousCompletedBlockId;
+        }
 
-    /**
-     * Record that rolling retention for this compaction.completed seq ran.
-     */
-    public function markCompactionRetentionApplied(int $eventSeq): void
-    {
         if ($eventSeq > $this->lastAppliedCompactionEventSeq) {
             $this->lastAppliedCompactionEventSeq = $eventSeq;
         }
+
+        return true;
     }
 
     /**
@@ -160,7 +178,7 @@ final class TranscriptProjectionState
      * ToolCall blocks before the floor remain when a retained ToolResult still
      * references their tool_call_id, so open exchanges are not orphaned.
      */
-    public function pruneBlocksBefore(string $floorBlockId): void
+    private function pruneBlocksBefore(string $floorBlockId): void
     {
         $floorIdx = $this->orderIndex[$floorBlockId] ?? null;
         if (null === $floorIdx || $floorIdx <= 0) {
@@ -181,7 +199,7 @@ final class TranscriptProjectionState
             }
         }
 
-        $toRemove = [];
+        $keptBefore = [];
         for ($i = 0; $i < $floorIdx; ++$i) {
             $id = $this->order[$i];
             $block = $this->blocks[$id] ?? null;
@@ -191,14 +209,22 @@ final class TranscriptProjectionState
             if (TranscriptBlockKindEnum::ToolCall === $block->kind) {
                 $callId = $block->meta['tool_call_id'] ?? '';
                 if (\is_string($callId) && isset($requiredCallIds[$callId])) {
+                    $keptBefore[] = $id;
                     continue;
                 }
             }
-            $toRemove[] = $id;
+            unset($this->blocks[$id]);
+            if (isset($this->dirtyIds[$id])) {
+                unset($this->dirtyIds[$id]);
+            }
+            $this->removedIds[$id] = true;
         }
 
-        foreach ($toRemove as $id) {
-            $this->removeBlock($id);
+        $retainedTail = array_slice($this->order, $floorIdx);
+        $this->order = [...$keptBefore, ...$retainedTail];
+        $this->orderIndex = [];
+        foreach ($this->order as $idx => $id) {
+            $this->orderIndex[$id] = $idx;
         }
     }
 
@@ -260,7 +286,10 @@ final class TranscriptProjectionState
         $this->dirtyOrder = [];
         $this->removedIds = [];
 
-        return TranscriptChangeSet::incremental($upserts, $removals);
+        $retentionFloorBlockId = $this->pendingRetentionFloorBlockId;
+        $this->pendingRetentionFloorBlockId = null;
+
+        return TranscriptChangeSet::incremental($upserts, $removals, $retentionFloorBlockId);
     }
 
     /**
@@ -276,6 +305,37 @@ final class TranscriptProjectionState
         $this->dirtyOrder = [];
         $this->removedIds = [];
         $this->lastAppliedCompactionEventSeq = 0;
+        $this->pendingRetentionFloorBlockId = null;
+    }
+
+    /**
+     * Replace the projected block list without replaying events.
+     *
+     * Clears dirty/removal/pending-retention tracking. Does not change
+     * {@see $lastAppliedCompactionEventSeq} — callers that need a clean
+     * retention dedup cursor must {@see reset()} first.
+     *
+     * @param list<TranscriptBlock> $blocks
+     */
+    public function replaceBlocks(array $blocks): void
+    {
+        $this->blocks = [];
+        $this->order = [];
+        $this->orderIndex = [];
+        $this->dirtyIds = [];
+        $this->dirtyOrder = [];
+        $this->removedIds = [];
+        $this->pendingRetentionFloorBlockId = null;
+        $this->nextSeq = 0;
+
+        foreach ($blocks as $block) {
+            $this->orderIndex[$block->id] = \count($this->order);
+            $this->order[] = $block->id;
+            $this->blocks[$block->id] = $block;
+            if ($block->seq >= $this->nextSeq) {
+                $this->nextSeq = $block->seq + 1;
+            }
+        }
     }
 
     // ── Sequence counter ─────────────────────────────────────────────────────
