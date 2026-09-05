@@ -283,6 +283,11 @@ final class SpyToolQuestionStore implements ToolQuestionStoreInterface
         return [];
     }
 
+    public function findPendingQuestionsForRun(string $runId): array
+    {
+        return [];
+    }
+
     public function findByRequestId(string $requestId): ?ToolQuestion
     {
         return $this->storedByRequestId[$requestId] ?? null;

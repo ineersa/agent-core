@@ -233,7 +233,6 @@ final class TickPollListenerSubagentLiveTest extends TestCase
         ];
         $state->subagentLiveView->childLastSeq = 4;
         $state->subagentLiveView->childActivity = RunActivityStateEnum::Completed;
-        $state->subagentLiveView->persistCurrentChildCache();
         $state->subagentLiveView->exit();
 
         $this->ingestProgress($state, $parentRun, $artifactId, $childRunId, 'completed', 'Task A', 1);
@@ -255,7 +254,12 @@ final class TickPollListenerSubagentLiveTest extends TestCase
             $state,
             $client,
             $childPoller,
-            $this->createStub(\Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInterface::class),
+            new class implements \Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInterface {
+                public function snapshot(string $childRunId): \Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotDTO
+                {
+                    return new \Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotDTO([], [], 0);
+                }
+            },
             $this->createStub(\Ineersa\CodingAgent\Runtime\Contract\ChildAgentEventsPathResolverInterface::class),
             SessionEventsExportServiceFactory::create(),
         );

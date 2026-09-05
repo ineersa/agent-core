@@ -26,6 +26,16 @@ interface ToolQuestionStoreInterface
      */
     public function findUnemittedPendingQuestions(): array;
 
+    /**
+     * Find pending tool questions for one run, including already-emitted ones.
+     *
+     * Used by child live-view entry to restore local bash-background prompts from
+     * durable DB state after leaving agents-live (those events are not in events.jsonl).
+     *
+     * @return list<ToolQuestion>
+     */
+    public function findPendingQuestionsForRun(string $runId): array;
+
     public function markEmitted(string $requestId): void;
 
     /**

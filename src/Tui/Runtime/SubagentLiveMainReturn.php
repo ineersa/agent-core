@@ -12,6 +12,7 @@ use Ineersa\Tui\Screen\ChatScreen;
  *
  * Callers that own QuestionCoordinator must drop the leaving child's questions
  * before invoking this helper (Deptrac: TuiRuntime must not depend on TuiQuestion).
+ * Callers that own the child poller must also reset its projector/pending buffers.
  */
 final class SubagentLiveMainReturn
 {

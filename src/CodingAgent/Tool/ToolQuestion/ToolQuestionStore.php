@@ -157,6 +157,31 @@ final class ToolQuestionStore implements ToolQuestionStoreInterface
     }
 
     /**
+     * Find pending tool questions for one run, including already-emitted ones.
+     *
+     * @return list<ToolQuestion>
+     */
+    public function findPendingQuestionsForRun(string $runId): array
+    {
+        $runId = trim($runId);
+        if ('' === $runId) {
+            return [];
+        }
+
+        $this->entityManager->clear();
+
+        $qb = $this->entityManager->getRepository(ToolQuestion::class)->createQueryBuilder('tq');
+        $qb->where('tq.status = :status')
+            ->andWhere('tq.runId = :runId')
+            ->setParameter('status', ToolQuestionStatusEnum::Pending->value)
+            ->setParameter('runId', $runId)
+            ->orderBy('tq.createdAt', 'ASC');
+
+        /* @var list<ToolQuestion> */
+        return $qb->getQuery()->getResult();
+    }
+
+    /**
      * Answer a pending question with a boolean answer (Confirm-kind).
      * Uses fresh DB read to ensure we have the latest state.
      *
