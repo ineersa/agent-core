@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool;
 
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
@@ -35,6 +36,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
 
     private BackgroundProcessManager $manager;
     private string $tmpDir;
+    private TestLogger $logger;
 
     protected function setUp(): void
     {
@@ -189,8 +191,9 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         }
         $this->assertFileExists($readySentinel, 'TERM trap fixture must signal ready before stop()');
 
+        $this->manager->markBackgroundedForRecord($result->id, self::TEST_SESSION);
         $startedNs = hrtime(true);
-        $stopResult = $this->manager->stop($result->pid);
+        $stopResult = $this->manager->stop($result->pid, self::TEST_SESSION);
         $elapsedSeconds = (hrtime(true) - $startedNs) / 1_000_000_000;
 
         $this->assertInstanceOf(StopResult::class, $stopResult);
@@ -207,7 +210,8 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $this->createManager(stopGraceSeconds: 0);
         $result = $this->manager->start('trap "" TERM; sleep 3', self::TEST_SESSION);
 
-        $stopResult = $this->manager->stop($result->pid);
+        $this->manager->markBackgroundedForRecord($result->id, self::TEST_SESSION);
+        $stopResult = $this->manager->stop($result->pid, self::TEST_SESSION);
 
         $this->assertFalse($stopResult->alreadyFinished);
         $this->assertSame('term+kill', $stopResult->signalSent);
@@ -220,7 +224,8 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
 
         $this->waitUntilFinished($result->pid);
 
-        $stopResult = $this->manager->stop($result->pid);
+        $this->manager->markBackgroundedForRecord($result->id, self::TEST_SESSION);
+        $stopResult = $this->manager->stop($result->pid, self::TEST_SESSION);
 
         $this->assertTrue($stopResult->alreadyFinished);
     }
@@ -232,7 +237,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('No background process found');
 
-        $this->manager->stop(999999);
+        $this->manager->stop(999999, self::TEST_SESSION);
     }
 
     /* ── shutdownCleanup() ── */
@@ -272,6 +277,96 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $this->assertNull($entity->finishedAt);
 
         $this->assertSame(1, $this->manager->shutdownCleanup());
+    }
+
+    public function testShutdownCleanupIsQuietAfterOwnedRowIsStoppedAndDeleted(): void
+    {
+        $this->createManager(stopGraceSeconds: 0);
+        $result = $this->manager->start('echo "completed"', self::TEST_SESSION);
+        $this->waitUntilFinished($result->pid);
+
+        $this->manager->stopByRecordId($result->id, self::TEST_SESSION);
+        $store = static::getContainer()->get(ProcessStore::class);
+        $this->assertTrue($store->deleteById($result->id));
+
+        $this->assertSame(0, $this->manager->shutdownCleanup());
+        $this->assertSame(0, $this->manager->shutdownCleanup());
+        $this->assertShutdownCleanupErrors([]);
+    }
+
+    public function testShutdownCleanupIsQuietForAlreadyFinishedOwnedRow(): void
+    {
+        $this->createManager(stopGraceSeconds: 0);
+        $result = $this->manager->start('echo "finished-owned"', self::TEST_SESSION);
+        $this->waitUntilFinished($result->pid);
+
+        $this->assertSame(1, $this->manager->shutdownCleanup());
+        $this->assertSame(0, $this->manager->shutdownCleanup());
+        $this->assertShutdownCleanupErrors([]);
+    }
+
+    public function testShutdownCleanupDoesNotTargetReusedPidAfterOwnedRowDeleted(): void
+    {
+        $this->createManager(stopGraceSeconds: 0);
+        $owned = $this->manager->start('echo "completed"', self::TEST_SESSION);
+        $this->waitUntilFinished($owned->pid);
+        $pid = $owned->pid;
+        $ownedId = $owned->id;
+
+        $this->manager->stopByRecordId($owned->id, self::TEST_SESSION);
+        $store = static::getContainer()->get(ProcessStore::class);
+        $this->assertTrue($store->deleteById($owned->id));
+
+        $foreignId = $store->insertRecord([
+            'pid' => $pid,
+            'pgid' => $pid,
+            'session_id' => 'foreign-reuse-session',
+            'command' => 'sleep 30',
+            'log_path' => $this->tmpDir.'/foreign-reuse.log',
+            'status_path' => $this->tmpDir.'/foreign-reuse.status',
+            'started_at' => new \DateTimeImmutable(),
+        ]);
+        $this->assertNotSame($ownedId, $foreignId);
+
+        $this->assertSame(0, $this->manager->shutdownCleanup());
+        $this->assertShutdownCleanupErrors([]);
+
+        // Read through ProcessStore so resolveEntityStatus() does not mutate the
+        // synthetic foreign row (no live process / status sidecar).
+        $foreign = $store->fetchByRecordId($foreignId);
+        $this->assertNotNull($foreign);
+        $this->assertSame('foreign-reuse-session', $foreign->sessionId);
+        $this->assertSame($pid, $foreign->pid);
+        $this->assertNull($foreign->finishedAt);
+        $this->assertFalse($foreign->stoppedByUser);
+
+        $this->assertTrue($store->deleteById($foreignId));
+    }
+
+    public function testShutdownCleanupLogsFailureAndRetainsOwnershipForRetry(): void
+    {
+        $this->createManager(stopGraceSeconds: 0);
+        $result = $this->manager->start('echo "completed"', self::TEST_SESSION);
+        $this->waitUntilFinished($result->pid);
+
+        $events = static::getContainer()->get(\Doctrine\ORM\EntityManagerInterface::class)->getEventManager();
+        $listener = new class {
+            public function onFlush(): void
+            {
+                throw new \RuntimeException('cleanup flush failed');
+            }
+        };
+        $events->addEventListener([\Doctrine\ORM\Events::onFlush], $listener);
+        try {
+            $this->assertSame(0, $this->manager->shutdownCleanup());
+            $this->assertShutdownCleanupErrors(['cleanup flush failed']);
+        } finally {
+            $events->removeEventListener([\Doctrine\ORM\Events::onFlush], $listener);
+        }
+
+        $this->assertSame(1, $this->manager->shutdownCleanup());
+        $this->assertSame(0, $this->manager->shutdownCleanup());
+        $this->assertShutdownCleanupErrors(['cleanup flush failed']);
     }
 
     /* ── Session scoping ── */
@@ -436,7 +531,8 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         // ProcessStore uses the container's EntityManager — no manual ORM setup.
         $store = static::getContainer()->get(ProcessStore::class);
         $lifecycle = new ProcessLifecycle($config, new NullLogger());
-        $this->manager = new BackgroundProcessManager($store, $lifecycle, $config, new NullLogger());
+        $this->logger = new TestLogger();
+        $this->manager = new BackgroundProcessManager($store, $lifecycle, $config, $this->logger);
     }
 
     private function createOtherManager(int $stopGraceSeconds = 1): BackgroundProcessManager
@@ -462,6 +558,21 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
                 // ignore cleanup errors in teardown
             }
         }
+    }
+
+    /**
+     * @param list<string> $expectedMessages
+     */
+    private function assertShutdownCleanupErrors(array $expectedMessages): void
+    {
+        $messages = [];
+        foreach ($this->logger->records as $record) {
+            if ('background_process.shutdown_cleanup_error' === $record['message']) {
+                $messages[] = (string) ($record['context']['error'] ?? '');
+            }
+        }
+
+        $this->assertSame($expectedMessages, $messages);
     }
 
     private function rmDir(string $dir): void
