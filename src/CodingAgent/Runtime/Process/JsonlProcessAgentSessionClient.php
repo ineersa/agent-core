@@ -564,13 +564,15 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             // Controller/worker mode must use real async queues. The parent
             // TUI process defaults to sync:// so --transport=in-process remains
             // usable without a consumer pool.
-            // Claimed Doctrine rows are never age-reclaimed (ClaimOnlyDoctrineConnection).
-            'HATFIELD_RUN_CONTROL_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=run_control_{$queueSuffix}",
-            'HATFIELD_LLM_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=llm_{$queueSuffix}",
-            'HATFIELD_TOOL_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=tool_{$queueSuffix}",
-            'HATFIELD_AGENT_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=agent_{$queueSuffix}",
-            'HATFIELD_MCP_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=mcp_{$queueSuffix}",
-            'HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=extension_agent_{$queueSuffix}",
+            // Stock Doctrine redeliver_timeout ≈ ten 365-day years; no keepalive.
+            // Rows older than that horizon can reclaim. Restarting the same session
+            // reuses the same queue and does not reset delivered_at age.
+            'HATFIELD_RUN_CONTROL_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=run_control_{$queueSuffix}&redeliver_timeout=315360000",
+            'HATFIELD_LLM_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=llm_{$queueSuffix}&redeliver_timeout=315360000",
+            'HATFIELD_TOOL_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=tool_{$queueSuffix}&redeliver_timeout=315360000",
+            'HATFIELD_AGENT_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=agent_{$queueSuffix}&redeliver_timeout=315360000",
+            'HATFIELD_MCP_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=mcp_{$queueSuffix}&redeliver_timeout=315360000",
+            'HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=extension_agent_{$queueSuffix}&redeliver_timeout=315360000",
             // Pass session ID so the controller can identify and reap its own
             // orphaned consumers when a previous session was SIGKILL'd.
             'HATFIELD_SESSION_ID' => $this->sessionId ?? 'unknown',

@@ -30,8 +30,9 @@ use Symfony\Component\Process\Process;
  * Process management:
  * - Launch: creates a non-blocking Symfony Process with timeout(null) and
  *   Symfony Messenger --memory-limit for graceful worker recycling
- * - Claimed Doctrine rows are never reclaimed by age; abandoned deliveries
- *   require explicit `/repair` redrive of current effects
+ * - Consumers launch without --keepalive; session Doctrine DSNs use a ~10-year
+ *   redeliver_timeout so short-lived claims are not age-reclaimed. Abandoned
+ *   deliveries still need explicit `/repair` redrive of current effects
  * - Supervision: polls isRunning() every 5s; exit code 0 is treated as
  *   normal memory-limit (or other graceful) recycle with immediate relaunch;
  *   non-zero exits use crash restart policy with exponential backoff
