@@ -213,6 +213,7 @@ final class SubagentLiveChildViewPoller
             $transcriptChanges = TranscriptChangeSet::incremental(
                 $transcriptChanges->upserts,
                 array_values(array_unique([...$transcriptChanges->removals, ...$removedVisibleIds])),
+                $transcriptChanges->retentionFloorBlockId,
             );
         }
 

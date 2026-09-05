@@ -1280,6 +1280,43 @@ final class RuntimeEventPollerTest extends TestCase
         $this->assertSame($second->blocks(), $this->state->transcript);
     }
 
+    public function testMultipleCompactionsInOnePollRetainOnlyLatestWindow(): void
+    {
+        $dispatcher = new \Symfony\Component\EventDispatcher\EventDispatcher();
+        $projectionState = new \Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState();
+        $dispatcher->addSubscriber(new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber());
+        $dispatcher->addSubscriber(new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\CompactionProjectionSubscriber());
+        $projector = new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector($dispatcher, $projectionState);
+        $poller = new RuntimeEventPoller(
+            new TuiRuntimeEventApplier($projector, SubagentProgressSerializerTestSupport::denormalizer()),
+            $this->logger,
+            new RuntimeExceptionBoundary($this->createStub(EventDispatcherInterface::class)),
+            $this->sessionTranscriptProvider,
+        );
+        $this->state->appendTranscriptBlock(new TranscriptBlock(
+            id: 'old-local', kind: TranscriptBlockKindEnum::Error,
+            runId: 'test-run', seq: 999, text: 'old local notice',
+        ));
+        $events = [];
+        for ($i = 1; $i <= 3; ++$i) {
+            $events[] = new RuntimeEvent('user.message_submitted', 'test-run', $i * 2 - 1, [
+                'message_id' => 'u'.$i, 'text' => 'conversation '.$i,
+            ]);
+            $events[] = new RuntimeEvent('compaction.completed', 'test-run', $i * 2, []);
+        }
+        $this->client->expects($this->once())->method('events')->willReturn($events);
+
+        $result = $poller->poll($this->state, $this->client);
+
+        $this->assertInstanceOf(TranscriptChangeSet::class, $result);
+        $this->assertTrue($result->isFull());
+        $this->assertSame($projector->blocks(), $result->blocks());
+        $this->assertSame(['Conversation compacted.', 'conversation 3', 'Conversation compacted.'], array_map(
+            static fn (TranscriptBlock $block): string => $block->text,
+            $this->state->transcript,
+        ));
+    }
+
     public function testFullHistoryPositionReplaceClearsWithoutMergingLocalErrors(): void
     {
         // Thesis: full replacement must not preserve arbitrary Error blocks as "local UI".
