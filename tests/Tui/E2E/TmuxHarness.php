@@ -506,11 +506,23 @@ final class TmuxHarness
      * Deterministic owned-tree teardown for a tmux session pane before kill-session.
      *
      * Catalog writers and Messenger children can outlive a bare kill-session when
-     * they reparent. Signal the pane process group first so isolated HOME cleanup
-     * does not race leftover writers. Never signals root-owned PIDs.
+     * they reparent. Signal only same-UID, untagged PIDs discovered under the pane
+     * so isolated HOME cleanup does not race leftover writers.
+     *
+     * Never uses negative process-group signals: a pane PGID can include members
+     * outside the examined descendant list. Never signals root-owned PIDs, never
+     * signals when the test process itself is root, and never signals PIDs whose
+     * environ contains HATFIELD_SESSION_ID (including test-owned controller /
+     * messenger children). Tagged leftovers must exit via product shutdown or be
+     * reported as leaks — root AGENTS.md forbids touching them.
      */
     private function terminateOwnedSessionTree(string $session): void
     {
+        // Root AGENTS.md: never signal as UID 0.
+        if (0 === posix_getuid()) {
+            return;
+        }
+
         $panePidRaw = $this->runTmux(
             \sprintf(
                 'tmux display-message -p -t %s:0.0 "#{pane_pid}" 2>/dev/null',
@@ -520,6 +532,8 @@ final class TmuxHarness
             throwOnTimeout: false,
         );
         $panePid = (int) trim($panePidRaw);
+        // Pane shell may itself be session-tagged; still walk descendants and
+        // signal only the untagged same-UID subset.
         if ($panePid <= 1 || !$this->isSameUidProcess($panePid)) {
             return;
         }
@@ -528,15 +542,14 @@ final class TmuxHarness
         $pids[] = $panePid;
         $pids = array_values(array_unique(array_filter(
             $pids,
-            static fn (int $pid): bool => $pid > 1,
+            fn (int $pid): bool => $this->isSignableOwnedProcess($pid),
         )));
-
-        $pgid = @posix_getpgid($panePid);
-        if (\is_int($pgid) && $pgid > 1) {
-            @posix_kill(-$pgid, \SIGTERM);
+        if ([] === $pids) {
+            return;
         }
+
         foreach ($pids as $pid) {
-            if ($this->isSameUidProcess($pid) && $this->isProcessAlive($pid)) {
+            if ($this->isSignableOwnedProcess($pid) && $this->isProcessAlive($pid)) {
                 @posix_kill($pid, \SIGTERM);
             }
         }
@@ -545,7 +558,7 @@ final class TmuxHarness
         while (microtime(true) < $deadline) {
             $alive = false;
             foreach ($pids as $pid) {
-                if ($this->isSameUidProcess($pid) && $this->isProcessAlive($pid)) {
+                if ($this->isSignableOwnedProcess($pid) && $this->isProcessAlive($pid)) {
                     $alive = true;
                     break;
                 }
@@ -555,12 +568,8 @@ final class TmuxHarness
             }
             usleep(10_000);
         }
-
-        if (\is_int($pgid) && $pgid > 1) {
-            @posix_kill(-$pgid, \SIGKILL);
-        }
         foreach ($pids as $pid) {
-            if ($this->isSameUidProcess($pid) && $this->isProcessAlive($pid)) {
+            if ($this->isSignableOwnedProcess($pid) && $this->isProcessAlive($pid)) {
                 @posix_kill($pid, \SIGKILL);
             }
         }
@@ -636,7 +645,38 @@ final class TmuxHarness
             return false;
         }
 
-        return (int) $matches[1] === posix_getuid();
+        $uid = (int) $matches[1];
+
+        return 0 !== $uid && $uid === posix_getuid();
+    }
+
+    /**
+     * True when /proc/<pid>/environ marks an active Hatfield session worker.
+     * Matches castor stale-worker protection and root AGENTS.md.
+     */
+    private function hasHatfieldSessionId(int $pid): bool
+    {
+        if ($pid <= 1) {
+            return false;
+        }
+
+        $environ = @file_get_contents('/proc/'.$pid.'/environ');
+        if (false === $environ || '' === $environ) {
+            return false;
+        }
+
+        return str_contains($environ, 'HATFIELD_SESSION_ID=');
+    }
+
+    /**
+     * Same-UID non-root process that is safe to signal from TUI harness teardown.
+     * Session-tagged processes are never signable here, even when test-owned.
+     */
+    private function isSignableOwnedProcess(int $pid): bool
+    {
+        return $pid > 1
+            && $this->isSameUidProcess($pid)
+            && !$this->hasHatfieldSessionId($pid);
     }
 
     private function isProcessAlive(int $pid): bool
