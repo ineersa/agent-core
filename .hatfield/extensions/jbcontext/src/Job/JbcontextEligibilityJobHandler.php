@@ -65,9 +65,6 @@ final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerIn
         $now = ($this->clock)();
 
         $state = $store->read();
-        if ($state->sessionId !== $sessionId) {
-            return;
-        }
         if (JbcontextSessionModeEnum::Disabled === $state->mode
             || JbcontextSessionModeEnum::Eligible === $state->mode
         ) {
@@ -135,7 +132,6 @@ final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerIn
             statusText: 'jbcontext: indexed',
             attempt: $attempt,
             startedAt: $state->startedAt,
-            nextRetryAt: null,
             reindexPending: false,
             reindexRunning: false,
             eligibilityStarted: true,
@@ -207,13 +203,11 @@ final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerIn
         }
 
         $nextAttempt = $attempt + 1;
-        $nextAt = $now + $sleep;
         $store->write($state->with(
             mode: JbcontextSessionModeEnum::Pending,
             clearReason: true,
             statusText: 'jbcontext: checking index…',
             attempt: $attempt,
-            nextRetryAt: $nextAt,
             reindexPending: false,
             reindexRunning: false,
             eligibilityStarted: true,
@@ -275,7 +269,6 @@ final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerIn
             statusText: $statusText,
             attempt: $attempt,
             startedAt: $current->startedAt,
-            nextRetryAt: null,
             reindexPending: false,
             reindexRunning: false,
             eligibilityStarted: true,

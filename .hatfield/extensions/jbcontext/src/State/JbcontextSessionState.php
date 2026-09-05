@@ -16,7 +16,6 @@ namespace Ineersa\HatfieldExt\Jbcontext\State;
  *     status_text: ?string,
  *     attempt: int,
  *     started_at: float,
- *     next_retry_at: ?float,
  *     reindex_pending: bool,
  *     reindex_running: bool,
  *     eligibility_started: bool,
@@ -32,7 +31,6 @@ final readonly class JbcontextSessionState
         public ?string $statusText,
         public int $attempt,
         public float $startedAt,
-        public ?float $nextRetryAt,
         public bool $reindexPending,
         public bool $reindexRunning,
         public bool $eligibilityStarted,
@@ -54,7 +52,6 @@ final readonly class JbcontextSessionState
             statusText: 'jbcontext: checking index…',
             attempt: 0,
             startedAt: $now,
-            nextRetryAt: null,
             reindexPending: false,
             reindexRunning: false,
             eligibilityStarted: false,
@@ -83,7 +80,6 @@ final readonly class JbcontextSessionState
             statusText: isset($data['status_text']) ? (string) $data['status_text'] : null,
             attempt: max(0, (int) ($data['attempt'] ?? 0)),
             startedAt: (float) ($data['started_at'] ?? $now),
-            nextRetryAt: isset($data['next_retry_at']) ? (float) $data['next_retry_at'] : null,
             reindexPending: (bool) ($data['reindex_pending'] ?? false),
             reindexRunning: (bool) ($data['reindex_running'] ?? false),
             eligibilityStarted: (bool) ($data['eligibility_started'] ?? false),
@@ -103,7 +99,6 @@ final readonly class JbcontextSessionState
             'status_text' => $this->statusText,
             'attempt' => $this->attempt,
             'started_at' => $this->startedAt,
-            'next_retry_at' => $this->nextRetryAt,
             'reindex_pending' => $this->reindexPending,
             'reindex_running' => $this->reindexRunning,
             'eligibility_started' => $this->eligibilityStarted,
@@ -119,8 +114,6 @@ final readonly class JbcontextSessionState
         bool $clearStatusText = false,
         ?int $attempt = null,
         ?float $startedAt = null,
-        ?float $nextRetryAt = null,
-        bool $clearNextRetryAt = false,
         ?bool $reindexPending = null,
         ?bool $reindexRunning = null,
         ?bool $eligibilityStarted = null,
@@ -133,17 +126,11 @@ final readonly class JbcontextSessionState
             statusText: $clearStatusText ? null : ($statusText ?? $this->statusText),
             attempt: $attempt ?? $this->attempt,
             startedAt: $startedAt ?? $this->startedAt,
-            nextRetryAt: $clearNextRetryAt ? null : ($nextRetryAt ?? $this->nextRetryAt),
             reindexPending: $reindexPending ?? $this->reindexPending,
             reindexRunning: $reindexRunning ?? $this->reindexRunning,
             eligibilityStarted: $eligibilityStarted ?? $this->eligibilityStarted,
             updatedAt: $updatedAt ?? microtime(true),
         );
-    }
-
-    public function isSearchAvailable(): bool
-    {
-        return JbcontextSessionModeEnum::Eligible === $this->mode;
     }
 
     public function elapsedSeconds(?float $now = null): float

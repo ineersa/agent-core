@@ -5,10 +5,11 @@ declare(strict_types=1);
 namespace Ineersa\HatfieldExt\Jbcontext\State;
 
 /**
- * Atomic JSON status file for one Hatfield session.
+ * Locked JSON status file for one Hatfield session.
  *
  * Shared by the extension-agent worker (writer) and interactive TUI/tool
- * processes (readers). Exclusive flock keeps concurrent updates coherent.
+ * processes (readers). All mutations take an exclusive flock on the target
+ * status file so concurrent writers cannot orphan each other.
  */
 final class JbcontextStatusStore
 {
@@ -73,24 +74,7 @@ final class JbcontextStatusStore
 
     public function write(JbcontextSessionState $state): void
     {
-        if ($state->sessionId !== $this->sessionId) {
-            throw new \InvalidArgumentException('Cannot write jbcontext status for a different session id.');
-        }
-
-        $dir = \dirname($this->path);
-        if (!is_dir($dir) && !@mkdir($dir, 0o777, true) && !is_dir($dir)) {
-            throw new \RuntimeException(\sprintf('Unable to create jbcontext status directory "%s".', $dir));
-        }
-
-        $payload = json_encode($state->toArray(), \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES)."\n";
-        $tmp = $this->path.'.tmp.'.bin2hex(random_bytes(4));
-        if (false === @file_put_contents($tmp, $payload, \LOCK_EX)) {
-            throw new \RuntimeException(\sprintf('Unable to write jbcontext status temp file "%s".', $tmp));
-        }
-        if (!@rename($tmp, $this->path)) {
-            @unlink($tmp);
-            throw new \RuntimeException(\sprintf('Unable to publish jbcontext status file "%s".', $this->path));
-        }
+        $this->update(static fn (): JbcontextSessionState => $state);
     }
 
     /**

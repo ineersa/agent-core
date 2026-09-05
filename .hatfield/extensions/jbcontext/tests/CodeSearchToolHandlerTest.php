@@ -70,7 +70,6 @@ final class CodeSearchToolHandlerTest extends TestCase
             statusText: 'jbcontext: indexed',
             attempt: 1,
             startedAt: 1.0,
-            nextRetryAt: null,
             reindexPending: false,
             reindexRunning: false,
             eligibilityStarted: true,

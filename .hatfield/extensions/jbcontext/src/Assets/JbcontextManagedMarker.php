@@ -13,12 +13,7 @@ final class JbcontextManagedMarker
         return str_contains($contents, self::MARKER);
     }
 
-    public static function skillFrontmatterMarkerLine(): string
-    {
-        return '# '.self::MARKER;
-    }
-
-    public static function scoutFrontmatterMarkerLine(): string
+    public static function markerLine(): string
     {
         return '# '.self::MARKER;
     }

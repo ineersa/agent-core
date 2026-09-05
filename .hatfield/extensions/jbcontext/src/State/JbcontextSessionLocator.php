@@ -9,8 +9,9 @@ use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionContextInterface;
 /**
  * Resolves the active Hatfield session/run id for jbcontext session state.
  *
- * Interactive TUI binds a live context and is the only place that starts
- * eligibility. Tool and after-turn paths use the ambient runId instead.
+ * Interactive TUI may bind a live context for status polling. Tool and
+ * after-turn paths use the ambient runId. Eligibility starts from the
+ * controller session-start hook.
  */
 final class JbcontextSessionLocator
 {

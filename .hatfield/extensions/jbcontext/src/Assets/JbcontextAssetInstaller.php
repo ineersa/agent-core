@@ -23,107 +23,67 @@ final readonly class JbcontextAssetInstaller
 
     public function install(): void
     {
-        $this->installSkill();
-        $this->installScout();
+        $this->installManagedFile(
+            sourcePath: $this->packageRoot.'/resources/skills/jbcontext-semantic-search/SKILL.md',
+            destinationPath: $this->paths->skillDestinationDir.'/SKILL.md',
+            relativePath: '.hatfield/skills/jbcontext-semantic-search/SKILL.md',
+            eventPrefix: 'jbcontext.assets.skill',
+        );
+        $this->installManagedFile(
+            sourcePath: $this->packageRoot.'/resources/agents/scout.md',
+            destinationPath: $this->paths->scoutDestinationPath,
+            relativePath: '.hatfield/agents/scout.md',
+            eventPrefix: 'jbcontext.assets.scout',
+        );
     }
 
-    private function installSkill(): void
-    {
-        $sourceDir = $this->packageRoot.'/resources/skills/jbcontext-semantic-search';
-        $sourceSkill = $sourceDir.'/SKILL.md';
-        $destDir = $this->paths->skillDestinationDir;
-        $destSkill = $destDir.'/SKILL.md';
-
-        if (!is_file($sourceSkill)) {
-            $this->logger->warning('jbcontext.assets.skill_source_missing', [
+    private function installManagedFile(
+        string $sourcePath,
+        string $destinationPath,
+        string $relativePath,
+        string $eventPrefix,
+    ): void {
+        if (!is_file($sourcePath)) {
+            $this->logger->warning($eventPrefix.'_source_missing', [
                 'component' => 'jbcontext',
-                'event_type' => 'jbcontext.assets.skill_source_missing',
+                'event_type' => $eventPrefix.'_source_missing',
             ]);
 
             return;
         }
 
-        if (is_file($destSkill)) {
-            $existing = (string) @file_get_contents($destSkill);
+        if (is_file($destinationPath)) {
+            $existing = (string) @file_get_contents($destinationPath);
             if (!JbcontextManagedMarker::isManaged($existing)) {
-                $this->logger->warning('jbcontext.assets.skill_collision', [
+                $this->logger->warning($eventPrefix.'_collision', [
                     'component' => 'jbcontext',
-                    'event_type' => 'jbcontext.assets.skill_collision',
-                    'path' => '.hatfield/skills/jbcontext-semantic-search/SKILL.md',
+                    'event_type' => $eventPrefix.'_collision',
+                    'path' => $relativePath,
                 ]);
 
                 return;
             }
         }
 
-        if (!is_dir($destDir) && !@mkdir($destDir, 0o777, true) && !is_dir($destDir)) {
-            $this->logger->warning('jbcontext.assets.skill_mkdir_failed', [
+        $destinationDir = \dirname($destinationPath);
+        if (!is_dir($destinationDir) && !@mkdir($destinationDir, 0o777, true) && !is_dir($destinationDir)) {
+            $this->logger->warning($eventPrefix.'_mkdir_failed', [
                 'component' => 'jbcontext',
-                'event_type' => 'jbcontext.assets.skill_mkdir_failed',
+                'event_type' => $eventPrefix.'_mkdir_failed',
             ]);
 
             return;
         }
 
-        $body = (string) file_get_contents($sourceSkill);
+        $body = (string) file_get_contents($sourcePath);
         if (!JbcontextManagedMarker::isManaged($body)) {
             $body = $this->injectMarkerAfterFrontmatter($body);
         }
 
-        if (false === @file_put_contents($destSkill, $body)) {
-            $this->logger->warning('jbcontext.assets.skill_write_failed', [
+        if (false === @file_put_contents($destinationPath, $body)) {
+            $this->logger->warning($eventPrefix.'_write_failed', [
                 'component' => 'jbcontext',
-                'event_type' => 'jbcontext.assets.skill_write_failed',
-            ]);
-        }
-    }
-
-    private function installScout(): void
-    {
-        $source = $this->packageRoot.'/resources/agents/scout.md';
-        $dest = $this->paths->scoutDestinationPath;
-
-        if (!is_file($source)) {
-            $this->logger->warning('jbcontext.assets.scout_source_missing', [
-                'component' => 'jbcontext',
-                'event_type' => 'jbcontext.assets.scout_source_missing',
-            ]);
-
-            return;
-        }
-
-        if (is_file($dest)) {
-            $existing = (string) @file_get_contents($dest);
-            if (!JbcontextManagedMarker::isManaged($existing)) {
-                $this->logger->warning('jbcontext.assets.scout_collision', [
-                    'component' => 'jbcontext',
-                    'event_type' => 'jbcontext.assets.scout_collision',
-                    'path' => '.hatfield/agents/scout.md',
-                ]);
-
-                return;
-            }
-        }
-
-        $destDir = \dirname($dest);
-        if (!is_dir($destDir) && !@mkdir($destDir, 0o777, true) && !is_dir($destDir)) {
-            $this->logger->warning('jbcontext.assets.scout_mkdir_failed', [
-                'component' => 'jbcontext',
-                'event_type' => 'jbcontext.assets.scout_mkdir_failed',
-            ]);
-
-            return;
-        }
-
-        $body = (string) file_get_contents($source);
-        if (!JbcontextManagedMarker::isManaged($body)) {
-            $body = $this->injectMarkerAfterFrontmatter($body);
-        }
-
-        if (false === @file_put_contents($dest, $body)) {
-            $this->logger->warning('jbcontext.assets.scout_write_failed', [
-                'component' => 'jbcontext',
-                'event_type' => 'jbcontext.assets.scout_write_failed',
+                'event_type' => $eventPrefix.'_write_failed',
             ]);
         }
     }
@@ -136,11 +96,11 @@ final readonly class JbcontextAssetInstaller
                 $insertAt = $end + \strlen("\n---\n");
 
                 return substr($body, 0, $insertAt)
-                    .JbcontextManagedMarker::skillFrontmatterMarkerLine()."\n"
+                    .JbcontextManagedMarker::markerLine()."\n"
                     .substr($body, $insertAt);
             }
         }
 
-        return JbcontextManagedMarker::skillFrontmatterMarkerLine()."\n".$body;
+        return JbcontextManagedMarker::markerLine()."\n".$body;
     }
 }

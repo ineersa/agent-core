@@ -133,7 +133,7 @@ final class JbcontextEligibilityJobHandlerTest extends TestCase
         $this->assertSame([2], $sleeps);
         $now += 2.0;
 
-        for ($attempt = 2; $attempt <= JbcontextRetrySchedule::maxAttempts(); ++$attempt) {
+        for ($attempt = 2; $attempt <= \count(JbcontextRetrySchedule::DELAYS_SECONDS) + 1; ++$attempt) {
             $exec->push(new ExecResultDTO(stdout: '', stderr: 'boom', exitCode: 1));
             $api->jobs = [];
             $handler->handle($api, ['session_id' => 'sess-1', 'attempt' => $attempt], 'job', 'sess-1');
@@ -197,7 +197,6 @@ final class JbcontextEligibilityJobHandlerTest extends TestCase
             statusText: 'disabled a',
             attempt: 1,
             startedAt: 1.0,
-            nextRetryAt: null,
             reindexPending: false,
             reindexRunning: false,
             eligibilityStarted: true,

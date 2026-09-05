@@ -97,6 +97,10 @@ final class ObservationalMemoryExtensionRegistrationTest extends TestCase
             {
             }
 
+            public function registerSessionStartHook(\Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterSessionStartHookInterface $hook): void
+            {
+            }
+
             public function registerBeforeCompactionHook(BeforeCompactionHookInterface $hook): void
             {
                 $this->compactHooks[] = $hook;

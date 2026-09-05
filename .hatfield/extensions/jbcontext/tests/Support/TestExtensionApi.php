@@ -12,6 +12,7 @@ use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
+use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterSessionStartHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
 use Ineersa\Hatfield\ExtensionApi\Session\SessionEventReaderInterface;
@@ -27,6 +28,9 @@ final class TestExtensionApi implements ExtensionApiInterface
 
     /** @var list<AfterTurnCommitHookInterface> */
     public array $afterTurnHooks = [];
+
+    /** @var list<AfterSessionStartHookInterface> */
+    public array $sessionStartHooks = [];
 
     /** @var array<string, ExtensionAgentJobHandlerInterface> */
     public array $handlers = [];
@@ -87,6 +91,11 @@ final class TestExtensionApi implements ExtensionApiInterface
     public function registerAfterTurnCommitHook(AfterTurnCommitHookInterface $hook): void
     {
         $this->afterTurnHooks[] = $hook;
+    }
+
+    public function registerSessionStartHook(AfterSessionStartHookInterface $hook): void
+    {
+        $this->sessionStartHooks[] = $hook;
     }
 
     public function registerBeforeCompactionHook(BeforeCompactionHookInterface $hook): void

@@ -54,8 +54,8 @@ final readonly class JbcontextCompletedTurnHook implements AfterTurnCommitHookIn
             return $current->with(reindexPending: true);
         });
 
-        // Deterministic job id coalesces duplicate completed-turn dispatches while
-        // a prior reindex message is still queued for the same run.
+        // Deterministic job id is diagnostics-only. Coalescing is owned by
+        // reindexPending/reindexRunning flags in JbcontextReindexJobHandler.
         $jobId = 'jbcontext.reindex.'.$context->runId;
         try {
             $this->api->dispatchExtensionAgentJob(new ExtensionAgentJobRequestDTO(

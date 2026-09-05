@@ -59,6 +59,7 @@ final readonly class JbcontextCli
             $args[] = '--path-filter';
             $args[] = $pathFilter;
         }
+        $args[] = '--';
         $args[] = $text;
 
         return $this->runJson(

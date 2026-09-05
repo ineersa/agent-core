@@ -51,6 +51,25 @@ final class JbcontextAssetInstallerTest extends TestCase
     }
 
     #[Test]
+    public function doesNotOverwriteUserOwnedSkill(): void
+    {
+        $paths = JbcontextPaths::fromProjectRoot($this->projectDir);
+        $dest = $paths->skillDestinationDir.'/SKILL.md';
+        mkdir(\dirname($dest), 0o777, true);
+        file_put_contents($dest, "---\nname: jbcontext-semantic-search\n---\nuser owned skill\n");
+
+        $logger = new TestLogger();
+        (new JbcontextAssetInstaller($paths, $this->packageRoot, $logger))->install();
+
+        $this->assertSame("---\nname: jbcontext-semantic-search\n---\nuser owned skill\n", file_get_contents($dest));
+        $events = array_map(
+            static fn (array $r): string => (string) ($r['context']['event_type'] ?? $r['message']),
+            $logger->records,
+        );
+        $this->assertContains('jbcontext.assets.skill_collision', $events);
+    }
+
+    #[Test]
     public function doesNotOverwriteUserOwnedScout(): void
     {
         $paths = JbcontextPaths::fromProjectRoot($this->projectDir);

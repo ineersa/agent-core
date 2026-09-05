@@ -13,6 +13,7 @@ use Ineersa\HatfieldExt\Jbcontext\Cli\JbcontextCli;
 use Ineersa\HatfieldExt\Jbcontext\Job\JbcontextCompletedTurnHook;
 use Ineersa\HatfieldExt\Jbcontext\Job\JbcontextEligibilityJobHandler;
 use Ineersa\HatfieldExt\Jbcontext\Job\JbcontextReindexJobHandler;
+use Ineersa\HatfieldExt\Jbcontext\Job\JbcontextSessionStartHook;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextPaths;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextSessionLocator;
 use Ineersa\HatfieldExt\Jbcontext\Tool\CodeSearchToolHandler;
@@ -24,8 +25,8 @@ use Psr\Log\NullLogger;
 /**
  * JetBrains Context semantic-search extension.
  *
- * Registers handlers/tools only during register(). Interactive eligibility
- * starts from the TUI poller once a real session id is available.
+ * Registers handlers/tools during register(). Interactive eligibility starts
+ * from the controller session-start hook; the TUI poller only publishes status.
  */
 final class JbcontextExtension implements HatfieldExtensionInterface, TuiExtensionInterface, LoggerAwareInterface
 {
@@ -34,7 +35,6 @@ final class JbcontextExtension implements HatfieldExtensionInterface, TuiExtensi
     private LoggerInterface $logger;
     private JbcontextSessionLocator $sessions;
     private ?JbcontextPaths $paths = null;
-    private ?ExtensionApiInterface $api = null;
 
     public function __construct()
     {
@@ -51,7 +51,6 @@ final class JbcontextExtension implements HatfieldExtensionInterface, TuiExtensi
     {
         $paths = JbcontextPaths::fromProjectRoot($api->getCwd());
         $this->paths = $paths;
-        $this->api = $api;
         $packageRoot = \dirname(__DIR__);
 
         $api->registerExtensionAgentJobHandler(
@@ -63,6 +62,9 @@ final class JbcontextExtension implements HatfieldExtensionInterface, TuiExtensi
             new JbcontextReindexJobHandler($this->logger),
         );
 
+        $api->registerSessionStartHook(
+            new JbcontextSessionStartHook($api, $paths, $this->logger),
+        );
         $api->registerAfterTurnCommitHook(
             new JbcontextCompletedTurnHook($api, $paths, $this->sessions, $this->logger),
         );
@@ -114,14 +116,13 @@ final class JbcontextExtension implements HatfieldExtensionInterface, TuiExtensi
     public function registerTui(TuiExtensionContextInterface $context): void
     {
         $paths = $this->paths;
-        $api = $this->api;
-        if (null === $paths || null === $api) {
+        if (null === $paths) {
             // register() always runs before registerTui when the extension is enabled.
             return;
         }
 
         $this->sessions->bindTui($context);
-        $poller = new JbcontextStatusPoller($api, $context, $paths, $this->sessions, $this->logger);
+        $poller = new JbcontextStatusPoller($context, $paths, $this->sessions, $this->logger);
         $context->onTick(static function () use ($poller): void {
             $poller->tick();
         });

@@ -368,6 +368,10 @@ final class OmSessionContextCommandTest extends IsolatedKernelTestCase
             {
             }
 
+            public function registerSessionStartHook(\Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterSessionStartHookInterface $hook): void
+            {
+            }
+
             public function registerBeforeCompactionHook(BeforeCompactionHookInterface $hook): void
             {
             }

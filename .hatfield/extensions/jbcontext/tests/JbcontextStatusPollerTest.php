@@ -7,14 +7,11 @@ namespace Ineersa\HatfieldExt\Jbcontext\Tests;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionContextInterface;
-use Ineersa\HatfieldExt\Jbcontext\Job\JbcontextEligibilityJobHandler;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextPaths;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextSessionLocator;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextSessionModeEnum;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextSessionState;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextStatusStore;
-use Ineersa\HatfieldExt\Jbcontext\Tests\Support\RecordingExec;
-use Ineersa\HatfieldExt\Jbcontext\Tests\Support\TestExtensionApi;
 use Ineersa\HatfieldExt\Jbcontext\Tui\JbcontextStatusPoller;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -37,7 +34,7 @@ final class JbcontextStatusPollerTest extends TestCase
     }
 
     #[Test]
-    public function publishesDisabledStatusFromStoreAndDoesNotRedispatch(): void
+    public function publishesDisabledStatusFromStoreWithoutDispatching(): void
     {
         $paths = JbcontextPaths::fromProjectRoot($this->projectDir);
         $sessionId = 'sess';
@@ -48,7 +45,6 @@ final class JbcontextStatusPollerTest extends TestCase
             statusText: 'jbcontext disabled: no existing index snapshot. Run `jbcontext index` manually once for this repository, then restart Hatfield.',
             attempt: 1,
             startedAt: 1.0,
-            nextRetryAt: null,
             reindexPending: false,
             reindexRunning: false,
             eligibilityStarted: true,
@@ -57,38 +53,33 @@ final class JbcontextStatusPollerTest extends TestCase
 
         $statuses = [];
         $tui = $this->tui($statuses, $sessionId);
-        $api = new TestExtensionApi($this->projectDir, new RecordingExec());
         $locator = new JbcontextSessionLocator();
         $locator->bindTui($tui);
 
-        $poller = new JbcontextStatusPoller($api, $tui, $paths, $locator, new TestLogger());
+        $poller = new JbcontextStatusPoller($tui, $paths, $locator, new TestLogger());
         $poller->tick();
 
         $this->assertArrayHasKey(JbcontextStatusPoller::STATUS_KEY, $statuses);
         $this->assertStringContainsString('no existing index snapshot', (string) $statuses[JbcontextStatusPoller::STATUS_KEY]);
-        $this->assertSame([], $api->jobs);
     }
 
     #[Test]
-    public function claimsAndDispatchesEligibilityOnceForFreshSession(): void
+    public function doesNotStartEligibilityFromTuiTick(): void
     {
         $paths = JbcontextPaths::fromProjectRoot($this->projectDir);
         $sessionId = 'fresh';
         $statuses = [];
         $tui = $this->tui($statuses, $sessionId);
-        $api = new TestExtensionApi($this->projectDir, new RecordingExec());
         $locator = new JbcontextSessionLocator();
         $locator->bindTui($tui);
 
-        $poller = new JbcontextStatusPoller($api, $tui, $paths, $locator, new TestLogger());
-        $poller->tick();
+        $poller = new JbcontextStatusPoller($tui, $paths, $locator, new TestLogger());
         $poller->tick();
 
-        $this->assertCount(1, $api->jobs);
-        $this->assertSame(JbcontextEligibilityJobHandler::HANDLER_ID, $api->jobs[0]->handlerId);
         $state = JbcontextStatusStore::forSession($paths, $sessionId)->read();
-        $this->assertTrue($state->eligibilityStarted);
+        $this->assertFalse($state->eligibilityStarted);
         $this->assertSame(JbcontextSessionModeEnum::Pending, $state->mode);
+        $this->assertNull($statuses[JbcontextStatusPoller::STATUS_KEY] ?? null);
     }
 
     /**

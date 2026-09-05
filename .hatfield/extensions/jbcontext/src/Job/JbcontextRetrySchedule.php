@@ -21,11 +21,6 @@ final class JbcontextRetrySchedule
     /** @var list<int> preferred seconds to wait before the next attempt */
     public const array DELAYS_SECONDS = [2, 4, 8, 16];
 
-    public static function maxAttempts(): int
-    {
-        return \count(self::DELAYS_SECONDS) + 1;
-    }
-
     public static function delayAfterAttempt(int $attemptNumber): ?int
     {
         $index = $attemptNumber - 1;

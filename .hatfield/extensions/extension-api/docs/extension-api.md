@@ -49,6 +49,7 @@ final class ExampleExtension implements HatfieldExtensionInterface
 | `getSettings` / `getCwd` | Extension settings bag + project CWD |
 | `exec` | Safe argv exec (no shell interpolation) |
 | `registerAfterTurnCommitHook` | Stable post-turn commits |
+| `registerSessionStartHook` | Interactive controller session start |
 | `registerBeforeCompactionHook` | Compaction contribution/trim |
 | `sessionEvents` | Read canonical session events |
 | `agent` / extension-agent jobs | Isolated agent calls + async jobs |

@@ -471,6 +471,10 @@ final class ObserveBoundaryJobHandlerTest extends IsolatedKernelTestCase
             {
             }
 
+            public function registerSessionStartHook(\Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterSessionStartHookInterface $hook): void
+            {
+            }
+
             public function registerBeforeCompactionHook(\Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookInterface $hook): void
             {
             }
