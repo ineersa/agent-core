@@ -294,22 +294,14 @@ final class TranscriptMountedWidget extends ContainerWidget
                 && !$existing instanceof TranscriptClippedRowsWidget
                 && !$this->pendingContentDirty
             ) {
+                // bind() returns createAndBind() when the existing widget cannot reuse.
                 $widget = $this->bind($existing, $node);
-                if ($widget !== $existing) {
-                    // Incompatible reuse: build fresh instead of splicing mid-list.
-                    $widget = $this->createAndBind($node);
-                }
             } else {
+                // Existing clipped leaves and missing keys always rebuild; bind()
+                // already returns createAndBind() when reuse is incompatible.
                 $widget = null === $existing || $existing instanceof TranscriptClippedRowsWidget
                     ? $this->createAndBind($node)
                     : $this->bind($existing, $node);
-                if (
-                    null !== $existing
-                    && !$existing instanceof TranscriptClippedRowsWidget
-                    && $widget !== $existing
-                ) {
-                    $widget = $this->createAndBind($node);
-                }
             }
             $next[$key] = $widget;
         }
@@ -323,12 +315,6 @@ final class TranscriptMountedWidget extends ContainerWidget
                 if (isset($next[$key])) {
                     $this->add($next[$key]);
                 }
-            }
-        }
-
-        foreach (array_keys($previous) as $key) {
-            if (!isset($next[$key])) {
-                unset($previous[$key]);
             }
         }
 

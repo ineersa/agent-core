@@ -13,6 +13,9 @@ use Symfony\Component\Tui\Widget\AbstractWidget;
  * Holds already-wrapped terminal rows captured while the source widget was
  * temporarily attached under the live WidgetContext, so theme stylesheets apply
  * and the mounted tree never retains the oversized source widget.
+ *
+ * Assumes a chrome-less, full terminal-width transcript leaf: captured lines are
+ * returned as-is and are not rewrapped, padded, or chrome-adjusted on later paints.
  */
 final class TranscriptClippedRowsWidget extends AbstractWidget
 {

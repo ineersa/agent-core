@@ -68,7 +68,9 @@ final class TuiMountedTranscriptBudgetVirtualTest extends TestCase
                 $mountedRows += \count($child->render(new RenderContext(40, 20)));
                 continue;
             }
-            $mountedRows += \count($child->getRenderCache(40, 20) ?? []);
+            $cache = $child->getRenderCache(40, 20);
+            $this->assertNotNull($cache, 'Budgeted children must have a render cache after paint');
+            $mountedRows += \count($cache);
         }
         $this->assertLessThanOrEqual(TranscriptMountedWidget::RENDERED_ROW_BUDGET, $mountedRows);
 
@@ -168,6 +170,74 @@ final class TuiMountedTranscriptBudgetVirtualTest extends TestCase
         $borderStyle = $card->getContext()->resolveElement($card, 'border');
         $this->assertNotNull($borderStyle->getColor());
         $this->assertSame([0, 255, 255], array_values($borderStyle->getColor()->toRgb()));
+    }
+
+    #[Test]
+    public function testResizeRemountsBudgetedTailWithThemedCaches(): void
+    {
+        $palette = new ThemePalette('budget-theme-resize', [
+            ThemeColorEnum::MarkdownHeading->value => 'bright_magenta',
+            ThemeColorEnum::MarkdownCode->value => 'bright_yellow',
+        ]);
+        $theme = new DefaultTheme($palette);
+        $terminal = new VirtualTerminal(columns: 80, rows: 24);
+        $tui = new Tui(terminal: $terminal);
+        $styles = new ThemeStyleSheetFactory();
+        $tui->addStyleSheet($styles->createMarkdown($palette));
+
+        $transcript = new TranscriptMountedWidget(theme: $theme);
+        $tui->add($transcript);
+        $transcript->setBlocks([
+            $this->plainLinesBlock('early', 1, 700, 'early'),
+            $this->plainLinesBlock('mid', 2, 700, 'mid'),
+            $this->plainLinesBlock('late', 3, 700, 'late'),
+            new TranscriptBlock(
+                id: 'system-md-resize',
+                kind: TranscriptBlockKindEnum::System,
+                runId: self::SESSION_ID,
+                seq: 4,
+                text: "# Heading\n\nUse `code`.\n",
+                meta: ['style' => 'markdown'],
+            ),
+        ]);
+
+        $tui->requestRender(force: true);
+        $tui->processRender();
+
+        $terminal->simulateResize(36, 24);
+        $tui->requestRender(force: true);
+        $tui->processRender();
+
+        $children = $transcript->all();
+        $this->assertNotSame([], $children);
+        $output = $terminal->getOutput();
+        $this->assertStringContainsString('late-700', $output);
+        $this->assertDoesNotMatchRegularExpression('/early-1(?:\\r|\\n|$)/', $output);
+
+        $mountedRows = 0;
+        foreach ($children as $child) {
+            if ($child instanceof TranscriptClippedRowsWidget) {
+                $mountedRows += \count($child->render(new RenderContext(36, 24)));
+                continue;
+            }
+            $cache = $child->getRenderCache(36, 24);
+            $this->assertNotNull($cache, 'Resize remount must refresh render caches at the new width');
+            $mountedRows += \count($cache);
+        }
+        $this->assertLessThanOrEqual(TranscriptMountedWidget::RENDERED_ROW_BUDGET, $mountedRows);
+
+        $markdown = null;
+        foreach ($this->walk($transcript) as $widget) {
+            if ($widget instanceof MarkdownWidget) {
+                $markdown = $widget;
+                break;
+            }
+        }
+        $this->assertInstanceOf(MarkdownWidget::class, $markdown);
+        $this->assertNotNull($markdown->getContext());
+        $headingStyle = $markdown->getContext()->resolveElement($markdown, 'heading');
+        $this->assertNotNull($headingStyle->getColor());
+        $this->assertSame([255, 0, 255], array_values($headingStyle->getColor()->toRgb()));
     }
 
     private function plainLinesBlock(string $id, int $seq, int $lineCount, string $prefix): TranscriptBlock

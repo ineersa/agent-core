@@ -7,9 +7,11 @@ namespace Ineersa\Tui\Terminal;
 /**
  * Installs Hatfield's width-caching Renderer before Symfony TUI constructs it.
  *
- * Symfony TUI 8.1 does not expose Renderer injection. Keep this installer
- * until the component provides that seam upstream and width-validation reuse
- * lands (https://github.com/ineersa/agent-core/issues/467).
+ * Symfony Tui accepts a Renderer constructor argument, but it is typed as the
+ * concrete final Renderer class, so an independent WidgetRendererInterface
+ * implementation cannot be injected. Keep this alias until upstream accepts a
+ * replaceable renderer type and width-validation reuse lands
+ * (https://github.com/ineersa/agent-core/issues/467).
  */
 final class CachedWidthValidationRendererAliasInstaller
 {

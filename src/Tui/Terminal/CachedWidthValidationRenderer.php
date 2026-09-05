@@ -5,8 +5,9 @@ declare(strict_types=1);
 /*
  * Based on Symfony TUI Renderer at the locked Composer revision.
  * Copyright Fabien Potencier and Symfony contributors. License: MIT.
- * Hatfield keeps an app-owned copy only until Symfony exposes Renderer injection
- * and upstream width-validation reuse lands (https://github.com/ineersa/agent-core/issues/467).
+ * Hatfield keeps an app-owned copy only until Symfony accepts a replaceable
+ * Renderer type (not only the concrete final class) and upstream
+ * width-validation reuse lands (https://github.com/ineersa/agent-core/issues/467).
  */
 
 namespace Ineersa\Tui\Terminal;
@@ -31,8 +32,11 @@ use Symfony\Component\Tui\Widget\Figlet\FontRegistry;
 /**
  * Symfony Renderer with unchanged-row width-validation reuse.
  *
- * Symfony TUI 8.1 constructs Renderer internally, so Hatfield installs this
- * class under Symfony\Component\Tui\Render\Renderer before Tui loads it.
+ * Symfony Tui accepts an optional Renderer constructor argument, but the
+ * parameter is typed as the concrete final Renderer class. An independent
+ * WidgetRendererInterface implementation therefore cannot be injected, so
+ * Hatfield aliases this class under Symfony\Component\Tui\Render\Renderer
+ * before Tui loads it.
  * Keep the body aligned with the locked upstream revision. The Hatfield delta
  * is the WeakMap of last validated rows and the skip of byte-identical lines at
  * the same available width.
