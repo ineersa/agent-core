@@ -23,6 +23,7 @@
             <directory>.hatfield/extensions/castor-llm-mode/tests</directory>
             <directory>.hatfield/extensions/file-rewind/tests</directory>
             <directory>.hatfield/extensions/observational-memory/tests</directory>
+            <directory>.hatfield/extensions/jbcontext/tests</directory>
         </testsuite>
     </testsuites>
     <extensions>

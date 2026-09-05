@@ -80,7 +80,7 @@ Extensions load from project `.hatfield/extensions/vendor/autoload.php` when pre
 They register **once at session start** — enablement changes require a new session.
 
 Built-in SafeGuard class may appear in defaults/`always_on` without a Composer package.
-Project packages (task-workflow, castor-llm-mode, file-rewind, observational-memory) document their own settings keys in **package-local README files** shipped with each extension repository/package. Those keys are **not** core `hatfield_docs` catalog entries.
+Project packages (task-workflow, castor-llm-mode, file-rewind, observational-memory, jbcontext) document their own settings keys in **package-local README files** shipped with each extension repository/package. Those keys are **not** core `hatfield_docs` catalog entries.
 
 Example:
 
