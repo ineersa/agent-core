@@ -184,7 +184,11 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
                 runId: self::SESSION_ID,
                 seq: 2,
                 text: '3 lines read',
-                meta: ['tool_name' => 'read'],
+                meta: [
+                    'tool_name' => 'bash',
+                    'result' => '3 lines read',
+                    'is_error' => false,
+                ],
             ),
         ]);
         $harness->screen()->setWorkingVisible(false);
@@ -192,7 +196,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
         $text = $harness->plainScreenText();
 
         $this->assertStringContainsString('●', $text, 'Tool glyph missing');
-        $this->assertStringContainsString('read', $text, 'Tool name missing');
+        $this->assertStringContainsString('bash', $text, 'Tool name missing');
         $this->assertStringContainsString('3 lines read', $text, 'Tool result text missing');
     }
 
@@ -214,7 +218,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
                 seq: 1,
                 text: 'successful tool output',
                 meta: [
-                    'tool_name' => 'read',
+                    'tool_name' => 'bash',
                     'result' => 'successful tool output',
                     'is_error' => false,
                 ],
@@ -866,6 +870,10 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
         $this->assertStringContainsString('view_image', $plain);
         $this->assertStringContainsString('path:', $plain);
         $this->assertStringContainsString('/tmp/shot.png', $plain);
+        $this->assertStringContainsString('media: image/png', $plain);
+        $this->assertStringContainsString('size: 10x20', $plain);
+        $this->assertStringContainsString('bytes: 99', $plain);
+        $this->assertStringNotContainsString('type: view_image', $plain);
         $this->assertMatchesRegularExpression(
             '/\x1b\[38;2;255;0;255mpath\x1b\[39m:/',
             $ansi,
@@ -900,7 +908,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
                 runId: self::SESSION_ID,
                 seq: 1,
                 text: $body,
-                meta: ['tool_name' => 'read', 'result' => $body, 'is_error' => false],
+                meta: ['tool_name' => 'write', 'result' => $body, 'is_error' => false],
             ),
         ]);
         $harness->screen()->setWorkingVisible(false);
@@ -930,7 +938,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
     #[Test]
     public function testVirtualLongToolResultPreviewsByDefault(): void
     {
-        $body = implode("\n", ['v0', 'v1', 'v2', 'v3']);
+        $body = implode("\n", ['v0', 'v1', 'v2', 'v3', 'v4']);
         $harness = new VirtualTuiHarness(
             sessionId: self::SESSION_ID,
             displayConfig: new TranscriptDisplayConfig(toolResultPreviewLines: 2),
@@ -942,7 +950,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
                 runId: self::SESSION_ID,
                 seq: 2,
                 text: $body,
-                meta: ['tool_name' => 'read', 'result' => $body, 'is_error' => false],
+                meta: ['tool_name' => 'write', 'result' => $body, 'is_error' => false],
             ),
         ]);
         $harness->screen()->setWorkingVisible(false);
@@ -951,8 +959,9 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
 
         $this->assertStringContainsString('v0', $text);
         $this->assertStringContainsString('v1', $text);
-        $this->assertStringNotContainsString('v3', $text);
-        $this->assertStringContainsString('more line', $text);
+        $this->assertStringNotContainsString('v2', $text);
+        $this->assertStringNotContainsString('v4', $text);
+        $this->assertStringContainsString('… 3 more lines', $text);
     }
 
     #[Test]
@@ -1312,7 +1321,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
                 runId: self::SESSION_ID,
                 seq: 1,
                 text: $body,
-                meta: ['tool_name' => 'read', 'result' => $body, 'is_error' => false],
+                meta: ['tool_name' => 'write', 'result' => $body, 'is_error' => false],
             ),
         ]);
         $harness->screen()->setWorkingVisible(false);

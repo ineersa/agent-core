@@ -108,23 +108,25 @@ final class PreviewExpansionInputListenerTest extends TestCase
         $harness->screen()->setWorkingVisible(false);
 
         $collapsed = $harness->plainScreenText();
-        $this->assertStringContainsString('deep_line_0', $collapsed);
-        $this->assertStringNotContainsString('deep_line_11', $collapsed);
-        $this->assertStringContainsString('more line', $collapsed);
+        $this->assertStringContainsString('deep_line_11', $collapsed);
+        $this->assertStringNotContainsString('deep_line_0', $collapsed);
+        $this->assertStringContainsString('earlier line', $collapsed);
 
         $harness->sendInput($sequence);
 
         $this->assertTrue($displayState->previewableBlocksExpanded);
         $expanded = $harness->plainScreenText();
         $this->assertStringContainsString('deep_line_11', $expanded);
-        $this->assertStringNotContainsString('more line', $expanded);
+        $this->assertStringNotContainsString('earlier line', $expanded);
+        $this->assertStringContainsString('deep_line_0', $expanded);
 
         $harness->sendInput($sequence);
 
         $this->assertFalse($displayState->previewableBlocksExpanded);
         $collapsedAgain = $harness->plainScreenText();
-        $this->assertStringNotContainsString('deep_line_11', $collapsedAgain);
-        $this->assertStringContainsString('more line', $collapsedAgain);
+        $this->assertStringContainsString('deep_line_11', $collapsedAgain);
+        $this->assertStringNotContainsString('deep_line_0', $collapsedAgain);
+        $this->assertStringContainsString('earlier line', $collapsedAgain);
     }
 
     #[Test]
