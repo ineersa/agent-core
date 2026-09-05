@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\E2E;
 
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
@@ -98,6 +99,7 @@ final class TmuxHarnessOwnedTeardownSafetyTest extends TestCase
     }
 
     #[Test]
+    #[Group('tui-e2e-replay')]
     public function killAllCleansSessionAfterProductShutdownWithoutForceSignals(): void
     {
         if (!TmuxHarness::isAvailable()) {
