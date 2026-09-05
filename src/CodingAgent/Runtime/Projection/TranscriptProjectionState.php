@@ -56,6 +56,15 @@ final class TranscriptProjectionState
      */
     private array $removedIds = [];
 
+    /**
+     * Highest compaction.completed runtime event seq whose rolling retention
+     * window has already been applied on this projection state.
+     *
+     * Prevents duplicate completion delivery from advancing the window twice.
+     * Reset with {@see reset()}. Canonical seq 0 never participates in dedup.
+     */
+    private int $lastAppliedCompactionEventSeq = 0;
+
     // ── State mutation ──────────────────────────────────────────────────────
 
     /**
@@ -117,6 +126,80 @@ final class TranscriptProjectionState
             // Leave stale id in dirtyOrder; drain skips missing dirty ids.
         }
         $this->removedIds[$id] = true;
+    }
+
+    /**
+     * Whether this compaction.completed event seq should apply retention.
+     *
+     * Duplicate delivery of the same positive seq returns false. Seq 0 is
+     * treated as non-dedupable and always applies.
+     */
+    public function shouldApplyCompactionRetention(int $eventSeq): bool
+    {
+        if ($eventSeq > 0 && $eventSeq <= $this->lastAppliedCompactionEventSeq) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Record that rolling retention for this compaction.completed seq ran.
+     */
+    public function markCompactionRetentionApplied(int $eventSeq): void
+    {
+        if ($eventSeq > $this->lastAppliedCompactionEventSeq) {
+            $this->lastAppliedCompactionEventSeq = $eventSeq;
+        }
+    }
+
+    /**
+     * Evict blocks strictly before {@see $floorBlockId}, keeping the floor and
+     * everything after it.
+     *
+     * ToolCall blocks before the floor remain when a retained ToolResult still
+     * references their tool_call_id, so open exchanges are not orphaned.
+     */
+    public function pruneBlocksBefore(string $floorBlockId): void
+    {
+        $floorIdx = $this->orderIndex[$floorBlockId] ?? null;
+        if (null === $floorIdx || $floorIdx <= 0) {
+            return;
+        }
+
+        /** @var array<string, true> $requiredCallIds */
+        $requiredCallIds = [];
+        $orderCount = \count($this->order);
+        for ($i = $floorIdx; $i < $orderCount; ++$i) {
+            $block = $this->blocks[$this->order[$i]] ?? null;
+            if (null === $block || TranscriptBlockKindEnum::ToolResult !== $block->kind) {
+                continue;
+            }
+            $callId = $block->meta['tool_call_id'] ?? '';
+            if (\is_string($callId) && '' !== $callId) {
+                $requiredCallIds[$callId] = true;
+            }
+        }
+
+        $toRemove = [];
+        for ($i = 0; $i < $floorIdx; ++$i) {
+            $id = $this->order[$i];
+            $block = $this->blocks[$id] ?? null;
+            if (null === $block) {
+                continue;
+            }
+            if (TranscriptBlockKindEnum::ToolCall === $block->kind) {
+                $callId = $block->meta['tool_call_id'] ?? '';
+                if (\is_string($callId) && isset($requiredCallIds[$callId])) {
+                    continue;
+                }
+            }
+            $toRemove[] = $id;
+        }
+
+        foreach ($toRemove as $id) {
+            $this->removeBlock($id);
+        }
     }
 
     // ── Accessors ────────────────────────────────────────────────────────────
@@ -192,6 +275,7 @@ final class TranscriptProjectionState
         $this->dirtyIds = [];
         $this->dirtyOrder = [];
         $this->removedIds = [];
+        $this->lastAppliedCompactionEventSeq = 0;
     }
 
     // ── Sequence counter ─────────────────────────────────────────────────────

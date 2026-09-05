@@ -148,10 +148,15 @@ final class RuntimeEventPoller
                                         $state->handle->runId,
                                         $positionTurnNo,
                                     );
-                                    $state->replaceTranscript($snapshot->transcriptBlocks);
+                                    // Route through applyTranscriptChangeSet so local UI blocks
+                                    // unknown to the isolated history projector are preserved and
+                                    // projector-evicted content cannot return via wholesale replace.
+                                    $state->applyTranscriptChangeSet(
+                                        TranscriptChangeSet::full($snapshot->transcriptBlocks),
+                                    );
                                 } else {
                                     // Before first turn: empty conversation transcript.
-                                    $state->replaceTranscript([]);
+                                    $state->applyTranscriptChangeSet(TranscriptChangeSet::full([]));
                                 }
                             } catch (\Throwable $e) {
                                 $this->logger->warning('runtime_event_poller.history_position_changed_rebuild_failed', [
@@ -161,7 +166,7 @@ final class RuntimeEventPoller
                                 ]);
                                 // Intentional degradation: clear transcript rather than show stale
                                 // discarded-tail content when projection fails.
-                                $state->replaceTranscript([]);
+                                $state->applyTranscriptChangeSet(TranscriptChangeSet::full([]));
                             }
 
                             if ('' !== $editorPromptText) {
@@ -173,7 +178,7 @@ final class RuntimeEventPoller
                                 'run_id' => null !== $state->handle ? $state->handle->runId : 'unknown',
                                 'position_turn_no' => $positionTurnNo,
                             ]);
-                            $state->replaceTranscript([]);
+                            $state->applyTranscriptChangeSet(TranscriptChangeSet::full([]));
                         }
 
                         // Skip queued follow-up dispatch, callback handlers, and processing

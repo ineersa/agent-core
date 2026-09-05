@@ -293,7 +293,11 @@ final class TuiSessionState
     public function applyTranscriptChangeSet(TranscriptChangeSet $changes): bool
     {
         if ($changes->isFull()) {
-            $next = $changes->blocks();
+            // Full snapshots come from projector-owned history. Preserve local UI
+            // blocks the runtime projector does not know about (errors, Processing…,
+            // paste/system notices) so a prune-driven or history-position replace
+            // cannot resurrect older projector content while dropping those locals.
+            $next = $this->mergeLocalUiBlocksIntoProjectorSnapshot($changes->blocks());
             if ($this->transcript === $next) {
                 return false;
             }
@@ -374,5 +378,63 @@ final class TuiSessionState
         foreach ($this->transcript as $idx => $block) {
             $this->transcriptIndexById[$block->id] = $idx;
         }
+    }
+
+    /**
+     * Append session-local UI blocks that are absent from a projector snapshot.
+     *
+     * Local Error blocks and the Processing… placeholder never enter
+     * TranscriptProjectionState. When history-position/full replace rebuilds from
+     * projector blocks, keep those locals at the tail so prune-driven snapshots
+     * neither resurrect older projector content nor drop active local UI.
+     *
+     * @param list<TranscriptBlock> $projectorBlocks
+     *
+     * @return list<TranscriptBlock>
+     */
+    private function mergeLocalUiBlocksIntoProjectorSnapshot(array $projectorBlocks): array
+    {
+        if ([] === $this->transcript) {
+            return $projectorBlocks;
+        }
+
+        $projectorIds = [];
+        foreach ($projectorBlocks as $block) {
+            $projectorIds[$block->id] = true;
+        }
+
+        $locals = [];
+        foreach ($this->transcript as $block) {
+            if (isset($projectorIds[$block->id])) {
+                continue;
+            }
+            if (!$this->isLocalUiTranscriptBlock($block)) {
+                continue;
+            }
+            $locals[] = $block;
+        }
+
+        if ([] === $locals) {
+            return $projectorBlocks;
+        }
+
+        return [...$projectorBlocks, ...$locals];
+    }
+
+    private function isLocalUiTranscriptBlock(TranscriptBlock $block): bool
+    {
+        if (TranscriptBlockKindEnum::Error === $block->kind) {
+            return true;
+        }
+
+        if (TranscriptBlockKindEnum::System !== $block->kind) {
+            return false;
+        }
+
+        // Only the ephemeral Processing… placeholder is preserved across full
+        // projector snapshots. Other local system notices are intentionally not
+        // merged: history-position/full replace must be able to drop them with
+        // the replaced conversation.
+        return str_contains($block->text, 'Processing...');
     }
 }
