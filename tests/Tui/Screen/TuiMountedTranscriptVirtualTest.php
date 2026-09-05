@@ -173,7 +173,8 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
         $text = $harness->plainScreenText();
         $this->assertStringContainsString('Hello world', $text);
         $this->assertStringContainsString('read', $text);
-        $this->assertStringContainsString('file contents', $text);
+        $this->assertStringContainsString('./README.md', $text);
+        $this->assertStringNotContainsString('file contents', $text);
     }
 
     #[Test]
