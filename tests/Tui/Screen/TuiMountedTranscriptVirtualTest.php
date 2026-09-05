@@ -101,8 +101,7 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
     #[Test]
     public function testStreamingAndToolResultPreserveWrapperAndMarkdownIdentity(): void
     {
-        $theme = new DefaultTheme(VirtualTuiHarness::defaultVirtualPalette());
-        $transcript = new TranscriptMountedWidget(theme: $theme);
+        [$transcript, $tui] = $this->attachedTranscript();
 
         $assistantStreaming = new TranscriptBlock(
             id: 'assistant-stream',
@@ -126,6 +125,7 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
             streaming: true,
         );
         $transcript->setBlocks([$assistantStreaming, $toolCall]);
+        $this->paint($tui);
 
         $childrenAfterMount = $transcript->all();
         $this->assertCount(2, $childrenAfterMount);
@@ -154,6 +154,7 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
             $toolCall->with(streaming: false),
             $toolResult,
         ]);
+        $this->paint($tui);
 
         $childrenAfterUpdate = $transcript->all();
         $this->assertCount(2, $childrenAfterUpdate, 'Tool call+result must remain one visual exchange node');
@@ -183,8 +184,7 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
         // Thesis: content update of an assistant that neighbors a completed tool exchange
         // must not reclassify the exchange secondary as standalone GENERIC, remount, or
         // reorder the semantic ToolExchangeTranscriptWidget.
-        $theme = new DefaultTheme(VirtualTuiHarness::defaultVirtualPalette());
-        $transcript = new TranscriptMountedWidget(theme: $theme);
+        [$transcript, $tui] = $this->attachedTranscript();
 
         $toolCall = new TranscriptBlock(
             id: 'tool-call-adj',
@@ -219,6 +219,7 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
             streaming: true,
         );
         $transcript->setBlocks([$toolCall, $toolResult, $assistantStreaming]);
+        $this->paint($tui);
 
         $before = $transcript->all();
         $this->assertCount(2, $before, 'Call+result collapse to one exchange before assistant');
@@ -233,6 +234,7 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
 
         $assistantUpdated = $assistantStreaming->with(text: 'partial after tool more tokens');
         $transcript->applyChangeSet(TranscriptChangeSet::incremental([$assistantUpdated]));
+        $this->paint($tui);
 
         $after = $transcript->all();
         $this->assertCount(2, $after, 'Child count must stay exchange + assistant');
@@ -251,8 +253,7 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
     #[Test]
     public function testTailAppendAndRemovalKeepExistingWrapperIdentity(): void
     {
-        $theme = new DefaultTheme(VirtualTuiHarness::defaultVirtualPalette());
-        $transcript = new TranscriptMountedWidget(theme: $theme);
+        [$transcript, $tui] = $this->attachedTranscript();
 
         $user = new TranscriptBlock(
             id: 'user-1',
@@ -269,6 +270,7 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
             text: 'second',
         );
         $transcript->setBlocks([$user, $assistant]);
+        $this->paint($tui);
 
         $before = $transcript->all();
         $this->assertCount(2, $before);
@@ -285,6 +287,7 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
             text: 'third',
         );
         $transcript->setBlocks([$user, $assistant, $extra]);
+        $this->paint($tui);
         $afterAppend = $transcript->all();
         $this->assertCount(3, $afterAppend);
         $this->assertSame($userWrapper, $afterAppend[0], 'Existing user wrapper must survive tail append');
@@ -293,6 +296,7 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
         $this->assertInstanceOf(StreamingMarkdownTranscriptWidget::class, $afterAppend[2]);
 
         $transcript->setBlocks([$user, $extra]);
+        $this->paint($tui);
         $afterRemove = $transcript->all();
         // Removing the middle assistant leaves user + later assistant; relative survivor order
         // is preserved so granular path can drop the middle node without whole-subtree rebuild.
@@ -308,8 +312,7 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
         // Thesis: ordinary tail streaming updates must not rebuild finalized historical
         // semantic wrappers or their Markdown content instances. Patch scope is asserted
         // on TranscriptVisualProjector (production contract), not a test-only mount API.
-        $theme = new DefaultTheme(VirtualTuiHarness::defaultVirtualPalette());
-        $transcript = new TranscriptMountedWidget(theme: $theme);
+        [$transcript, $tui] = $this->attachedTranscript();
 
         $history = new TranscriptBlock(
             id: 'history-user',
@@ -327,6 +330,7 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
             streaming: true,
         );
         $transcript->setBlocks([$history, $streaming]);
+        $this->paint($tui);
 
         $children = $transcript->all();
         $this->assertCount(2, $children);
@@ -344,6 +348,7 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
         $streamed = $streaming->with(text: 'partial more tokens');
         // Same object identity for history; new object for streaming tail.
         $transcript->applyChangeSet(TranscriptChangeSet::incremental([$streamed]));
+        $this->paint($tui);
 
         $after = $transcript->all();
         $this->assertCount(2, $after);
@@ -361,8 +366,7 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
     {
         // Thesis: mid-list KIND_GENERIC TextWidget content change must not append a fresh
         // widget at the end (order corruption). setText in place preserves sibling order.
-        $theme = new DefaultTheme(VirtualTuiHarness::defaultVirtualPalette());
-        $transcript = new TranscriptMountedWidget(theme: $theme);
+        [$transcript, $tui] = $this->attachedTranscript();
 
         $user = new TranscriptBlock(
             id: 'user-1',
@@ -386,6 +390,7 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
             text: 'tail answer',
         );
         $transcript->setBlocks([$user, $error, $assistant]);
+        $this->paint($tui);
 
         $before = $transcript->all();
         $this->assertCount(3, $before);
@@ -399,6 +404,7 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
 
         $updatedError = $error->with(text: 'updated middle error');
         $transcript->applyChangeSet(TranscriptChangeSet::incremental([$updatedError]));
+        $this->paint($tui);
 
         $after = $transcript->all();
         $this->assertCount(3, $after, 'Middle generic update must not change child count');
@@ -427,8 +433,7 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
         // mounted adapter must re-create the widget for the new kind and bind the node.
         // Key collision: a plain block id shaped like an exchange key maps to the same
         // stable key as a tool call carrying that tool_call_id.
-        $theme = new DefaultTheme(VirtualTuiHarness::defaultVirtualPalette());
-        $transcript = new TranscriptMountedWidget(theme: $theme);
+        [$transcript, $tui] = $this->attachedTranscript();
 
         $user = new TranscriptBlock(
             id: 'exchange:race-1',
@@ -438,6 +443,7 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
             text: 'prompt',
         );
         $transcript->setBlocks([$user]);
+        $this->paint($tui);
         $before = $transcript->all();
         $this->assertCount(1, $before);
         $this->assertInstanceOf(StreamingMarkdownTranscriptWidget::class, $before[0]);
@@ -455,12 +461,33 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
             ],
         );
         $transcript->setBlocks([$toolCall]);
+        $this->paint($tui);
 
         $after = $transcript->all();
         $this->assertCount(1, $after, 'Wrong-kind replacement must keep one mounted child');
         $this->assertNotSame($before[0], $after[0], 'Wrong-kind stable key must re-create the widget, not reuse the old one');
         $this->assertInstanceOf(ToolExchangeTranscriptWidget::class, $after[0], 'Stable key re-bound to tool exchange must mount a tool-exchange widget');
         $this->assertSame(TranscriptVisualNode::KIND_TOOL_EXCHANGE, $this->semanticNode($after[0])?->kind, 'Re-created widget must receive its node data via the semantic apply contract');
+    }
+
+    /**
+     * @return array{0: TranscriptMountedWidget, 1: Tui, 2: VirtualTerminal}
+     */
+    private function attachedTranscript(): array
+    {
+        $theme = new DefaultTheme(VirtualTuiHarness::defaultVirtualPalette());
+        $terminal = new VirtualTerminal(columns: 100, rows: 40);
+        $tui = new Tui(terminal: $terminal);
+        $transcript = new TranscriptMountedWidget(theme: $theme);
+        $tui->add($transcript);
+
+        return [$transcript, $tui, $terminal];
+    }
+
+    private function paint(Tui $tui): void
+    {
+        $tui->requestRender(force: true);
+        $tui->processRender();
     }
 
     /**
