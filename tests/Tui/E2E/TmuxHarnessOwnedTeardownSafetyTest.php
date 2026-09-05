@@ -9,12 +9,13 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Ownership predicates for TmuxHarness teardown must obey root AGENTS.md:
- * never signal root-owned or HATFIELD_SESSION_ID processes, and never use
- * blanket negative process-group signals over unexamined members.
+ * TmuxHarness teardown must obey root AGENTS.md: never signal root-owned or
+ * HATFIELD_SESSION_ID processes, never force-kill leftovers, and never destroy
+ * a tmux session while protected descendants remain (kill-session would SIGHUP
+ * them). Unreadable/empty environ is fail-closed as protected.
  *
- * Children exit by closing stdin (no signals), so this file itself never
- * violates the session-tag rule during cleanup.
+ * Children used here exit by closing stdin (no signals), so this file itself
+ * never violates the session-tag rule during cleanup.
  */
 final class TmuxHarnessOwnedTeardownSafetyTest extends TestCase
 {
@@ -49,18 +50,7 @@ final class TmuxHarnessOwnedTeardownSafetyTest extends TestCase
     }
 
     #[Test]
-    public function sourceDoesNotEmitNegativeProcessGroupSignals(): void
-    {
-        $source = (string) file_get_contents(__DIR__.'/TmuxHarness.php');
-        $this->assertDoesNotMatchRegularExpression(
-            '/posix_kill\(\s*-\s*\$/',
-            $source,
-            'TmuxHarness must not signal negative PGIDs; group members are not fully examined for HATFIELD_SESSION_ID.',
-        );
-    }
-
-    #[Test]
-    public function sessionTaggedSameUidChildIsNotSignable(): void
+    public function sessionTaggedSameUidChildIsProtected(): void
     {
         if (0 === posix_getuid()) {
             $this->markTestSkipped('Root AGENTS.md forbids signaling from UID 0; predicate proof runs as non-root.');
@@ -70,12 +60,13 @@ final class TmuxHarnessOwnedTeardownSafetyTest extends TestCase
         $harness = new TmuxHarness();
 
         $this->assertTrue($this->invokePrivate($harness, 'isSameUidProcess', [$pid]));
-        $this->assertTrue($this->invokePrivate($harness, 'hasHatfieldSessionId', [$pid]));
-        $this->assertFalse($this->invokePrivate($harness, 'isSignableOwnedProcess', [$pid]));
+        $this->assertTrue($this->invokePrivate($harness, 'isProtectedProcess', [$pid]));
+        $this->assertFalse($this->invokePrivate($harness, 'isUntaggedOwnedProcess', [$pid]));
+        $this->assertSame('HATFIELD_SESSION_ID', $this->invokePrivate($harness, 'protectedProcessReason', [$pid]));
     }
 
     #[Test]
-    public function untaggedSameUidChildIsSignable(): void
+    public function untaggedSameUidChildIsNotProtected(): void
     {
         if (0 === posix_getuid()) {
             $this->markTestSkipped('Root AGENTS.md forbids signaling from UID 0; predicate proof runs as non-root.');
@@ -85,27 +76,94 @@ final class TmuxHarnessOwnedTeardownSafetyTest extends TestCase
         $harness = new TmuxHarness();
 
         $this->assertTrue($this->invokePrivate($harness, 'isSameUidProcess', [$pid]));
-        $this->assertFalse($this->invokePrivate($harness, 'hasHatfieldSessionId', [$pid]));
-        $this->assertTrue($this->invokePrivate($harness, 'isSignableOwnedProcess', [$pid]));
+        $this->assertFalse($this->invokePrivate($harness, 'isProtectedProcess', [$pid]));
+        $this->assertTrue($this->invokePrivate($harness, 'isUntaggedOwnedProcess', [$pid]));
+    }
+
+    #[Test]
+    public function emptyEnvironIsProtectedFailClosed(): void
+    {
+        if (0 === posix_getuid()) {
+            $this->markTestSkipped('Root AGENTS.md forbids signaling from UID 0; predicate proof runs as non-root.');
+        }
+
+        // proc_open with an empty env yields an empty /proc/<pid>/environ on Linux.
+        $pid = $this->spawnChildWithEnv([], clearInheritedEnv: true);
+        $harness = new TmuxHarness();
+
+        $this->assertTrue($this->invokePrivate($harness, 'isSameUidProcess', [$pid]));
+        $this->assertTrue($this->invokePrivate($harness, 'isProtectedProcess', [$pid]));
+        $this->assertFalse($this->invokePrivate($harness, 'isUntaggedOwnedProcess', [$pid]));
+        $this->assertSame('environ-empty', $this->invokePrivate($harness, 'protectedProcessReason', [$pid]));
+    }
+
+    #[Test]
+    public function killAllCleansSessionAfterProductShutdownWithoutForceSignals(): void
+    {
+        if (!TmuxHarness::isAvailable()) {
+            $this->markTestSkipped('tmux is required for owned teardown proof');
+        }
+
+        $harness = new TmuxHarness();
+        $pane = $harness->startDetached(
+            'exec php -r '.escapeshellarg('fwrite(STDOUT, "ready\\n"); fflush(STDOUT); fread(STDIN, 1);'),
+            'tmux-harness-graceful',
+            80,
+            24,
+        );
+        $harness->waitForCaptureContains($pane, 'ready', 2.0);
+        $panePid = $harness->panePid($pane);
+        $this->assertGreaterThan(1, $panePid);
+
+        $harness->sendKey($pane, 'C-d');
+        $harness->killAll();
+        $this->assertFalse($harness->paneExists($pane));
+        $this->assertFalse(@posix_kill($panePid, 0), 'product shutdown plus harness wait must clear the pane process without force signals');
+    }
+
+    #[Test]
+    public function finalizeOwnedSessionShutdownRefusesProtectedAliveTreeWithoutDestroy(): void
+    {
+        if (0 === posix_getuid()) {
+            $this->markTestSkipped('Root AGENTS.md forbids signaling from UID 0; predicate proof runs as non-root.');
+        }
+
+        $pid = $this->spawnChildWithEnv(['HATFIELD_SESSION_ID' => 'tmux-harness-protected-leak']);
+        $harness = new TmuxHarness();
+        $this->assertTrue($this->invokePrivate($harness, 'isProtectedProcess', [$pid]));
+
+        try {
+            $this->invokePrivate($harness, 'finalizeOwnedSessionShutdown', ['tmux-harness-protected-sim', $pid]);
+            $this->fail('finalizeOwnedSessionShutdown must refuse destroy while a protected process remains');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('Refusing to destroy tmux session', $e->getMessage());
+            $this->assertStringContainsString('HATFIELD_SESSION_ID', $e->getMessage());
+            $this->assertTrue(@posix_kill($pid, 0), 'protected process must remain untouched');
+        }
     }
 
     /**
      * @param array<string, string> $extraEnv
      */
-    private function spawnChildWithEnv(array $extraEnv): int
+    private function spawnChildWithEnv(array $extraEnv, bool $clearInheritedEnv = false): int
     {
         $this->tempDir ??= TestDirectoryIsolation::createOsTempDir('tmux-harness-safety-');
-        $pidFile = $this->tempDir.'/child.pid';
+        $pidFile = $this->tempDir.'/child-'.bin2hex(random_bytes(4)).'.pid';
         @unlink($pidFile);
 
         $env = [];
-        foreach ($_ENV as $key => $value) {
-            if (\is_string($key) && \is_string($value)) {
-                $env[$key] = $value;
+        if (!$clearInheritedEnv) {
+            foreach ($_ENV as $key => $value) {
+                if (\is_string($key) && \is_string($value)) {
+                    $env[$key] = $value;
+                }
             }
+            // Ensure the session tag is either present exactly as requested or absent.
+            unset($env['HATFIELD_SESSION_ID']);
+            // Guarantee a readable non-empty environ even when PHP $_ENV is empty.
+            $env['TMUX_HARNESS_SAFETY'] = 'untagged';
+            $env['PATH'] = getenv('PATH') ?: '/usr/bin:/bin';
         }
-        // Ensure the session tag is either present exactly as requested or absent.
-        unset($env['HATFIELD_SESSION_ID']);
         foreach ($extraEnv as $key => $value) {
             $env[$key] = $value;
         }
