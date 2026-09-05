@@ -56,6 +56,10 @@ If a provider rejects a request as context-too-large, the run fails through the 
 
 Compaction records canonical session events so resume rebuilds the compacted LLM-visible history correctly. Transcript projection follows the event log — see [session-storage.md](session-storage.md).
 
+The TUI retains the most recently completed compaction segment and the current segment. The first successful compaction keeps the initial conversation. The second drops content before the first completion marker. Each later success advances that window once. Failed compactions do not advance it. Resume and history selection rebuild the same window at the selected position.
+
+Retention removes old projected blocks and mounted widgets, including local notices in the evicted segment. Canonical events remain on disk for history and replay. This is a segment limit, not a byte or rendered-row limit: one large segment can still be expensive. Full event reads are temporary and are not cached by the session event store. Child live-view caches retain projected blocks and pending questions instead of a full replay-event archive.
+
 ## Extension hooks
 
 Extensions may register `BeforeCompactionHookInterface` via the public Extension API to contribute notes within the public contract. Package-specific observational-memory settings, when that extension is installed, live under `extensions.settings.observational_memory` and are documented in that package’s own README — not as core `hatfield_docs` entries.

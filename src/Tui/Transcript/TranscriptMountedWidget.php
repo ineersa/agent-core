@@ -7,7 +7,6 @@ namespace Ineersa\Tui\Transcript;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
 use Ineersa\Tui\Theme\TuiTheme;
-use Symfony\Component\Tui\Render\RenderContext;
 use Symfony\Component\Tui\Style\Direction;
 use Symfony\Component\Tui\Style\Style;
 use Symfony\Component\Tui\Widget\AbstractWidget;
@@ -18,20 +17,13 @@ use Symfony\Component\Tui\Widget\TextWidget;
  * Minimum keyed adapter from visual patches to Symfony ContainerWidget children.
  *
  * Presentation policy and order decisions live in {@see TranscriptVisualProjector}.
- * This class maps stable visual keys to mounted widgets and applies patches:
+ * This class only maps stable visual keys to mounted widgets and applies patches:
  * content (in-place), structural (remove + tail append), full (clear + ordered re-add).
- *
- * Only the latest {@see RENDERED_ROW_BUDGET} wrapped transcript rows stay
- * mounted. Older widgets are never created. Canonical projector state remains
- * full-history. Boundary nodes that would exceed the budget are clipped to
- * their trailing rows via {@see TranscriptClippedRowsWidget}.
  *
  * Symfony owns render caching. Semantic widget {@see apply()} is data binding only.
  */
 final class TranscriptMountedWidget extends ContainerWidget
 {
-    public const int RENDERED_ROW_BUDGET = 2000;
-
     private readonly TranscriptVisualProjector $projector;
 
     /**
@@ -40,24 +32,6 @@ final class TranscriptMountedWidget extends ContainerWidget
      * @var array<string, AbstractWidget>
      */
     private array $nodes = [];
-
-    /**
-     * Stable visual key → retained node for remount after resize/trim.
-     *
-     * @var array<string, TranscriptVisualNode>
-     */
-    private array $retainedNodes = [];
-
-    /** @var list<string> */
-    private array $retainedOrder = [];
-
-    private ?int $mountedBudgetColumns = null;
-
-    private ?int $mountedBudgetRows = null;
-
-    private bool $pendingMount = false;
-
-    private bool $pendingContentDirty = false;
 
     public function __construct(
         private readonly TuiTheme $theme,
@@ -96,27 +70,6 @@ final class TranscriptMountedWidget extends ContainerWidget
         $this->applyPatch($this->projector->applyChangeSet($changes));
     }
 
-    public function beforeRender(): void
-    {
-        $context = $this->getContext();
-        if (null === $context) {
-            return;
-        }
-
-        $columns = max(1, $context->getTerminalColumns());
-        $rows = max(1, $context->getTerminalRows());
-        $geometryChanged = null === $this->mountedBudgetColumns
-            || null === $this->mountedBudgetRows
-            || $columns !== $this->mountedBudgetColumns
-            || $rows !== $this->mountedBudgetRows;
-
-        if (!$this->pendingMount && !$geometryChanged) {
-            return;
-        }
-
-        $this->mountTailForGeometry($columns, $rows);
-    }
-
     private function applyPatch(TranscriptVisualPatch $patch): void
     {
         if ($patch->isFull()) {
@@ -141,26 +94,11 @@ final class TranscriptMountedWidget extends ContainerWidget
     private function reconcileContentOnly(TranscriptVisualPatch $patch): void
     {
         foreach ($patch->upserts as $node) {
-            if (!isset($this->retainedNodes[$node->key])) {
+            $existing = $this->nodes[$node->key] ?? null;
+            if (null === $existing) {
                 $this->applyPatch($this->projector->replaceAll($this->projector->exportBlocks()));
 
                 return;
-            }
-
-            $this->retainedNodes[$node->key] = $node;
-
-            $existing = $this->nodes[$node->key] ?? null;
-            if (null === $existing) {
-                // Outside the currently mounted tail; remount lazily with geometry.
-                $this->pendingMount = true;
-                $this->pendingContentDirty = true;
-                continue;
-            }
-
-            if ($existing instanceof TranscriptClippedRowsWidget) {
-                $this->pendingMount = true;
-                $this->pendingContentDirty = true;
-                continue;
             }
 
             $bound = $this->bind($existing, $node);
@@ -171,8 +109,6 @@ final class TranscriptMountedWidget extends ContainerWidget
                 return;
             }
         }
-
-        $this->scheduleMount();
     }
 
     /**
@@ -183,30 +119,14 @@ final class TranscriptMountedWidget extends ContainerWidget
     {
         foreach ($patch->removals as $key) {
             $this->detachKey($key);
-            unset($this->retainedNodes[$key]);
-        }
-
-        if (null !== $patch->order) {
-            $this->retainedOrder = $patch->order;
-            $nextRetained = [];
-            foreach ($patch->order as $key) {
-                if (isset($this->retainedNodes[$key])) {
-                    $nextRetained[$key] = $this->retainedNodes[$key];
-                }
-            }
-            $this->retainedNodes = $nextRetained;
         }
 
         foreach ($patch->upserts as $node) {
-            $this->retainedNodes[$node->key] = $node;
-
             $existing = $this->nodes[$node->key] ?? null;
             if (null === $existing) {
-                continue;
-            }
-
-            if ($existing instanceof TranscriptClippedRowsWidget) {
-                $this->pendingContentDirty = true;
+                $widget = $this->createAndBind($node);
+                $this->add($widget);
+                $this->nodes[$node->key] = $widget;
                 continue;
             }
 
@@ -218,13 +138,11 @@ final class TranscriptMountedWidget extends ContainerWidget
                 return;
             }
         }
-
-        $this->scheduleMount();
     }
 
     /**
-     * Exceptional full path: retain projector order, then remount only the
-     * budgeted tail under real terminal geometry.
+     * Exceptional full path: clear container and re-add in supplied order.
+     * Reuses keyed widget objects when kind-compatible; O(B) is correct here.
      */
     private function reconcileFull(TranscriptVisualPatch $patch): void
     {
@@ -234,247 +152,26 @@ final class TranscriptMountedWidget extends ContainerWidget
             $desired[$node->key] = $node;
         }
 
-        $this->retainedOrder = $order;
-        $this->retainedNodes = $desired;
-        $this->pendingContentDirty = true;
-        $this->scheduleMount();
-    }
-
-    private function scheduleMount(): void
-    {
-        $context = $this->getContext();
-        if (null === $context) {
-            // Stay lazy until attached with terminal geometry. Detached
-            // measurement would miss live theme stylesheets and unbounded
-            // mounting defeats the rendered-row budget.
-            $this->pendingMount = true;
-
-            return;
-        }
-
-        $this->mountTailForGeometry(
-            max(1, $context->getTerminalColumns()),
-            max(1, $context->getTerminalRows()),
-        );
-    }
-
-    private function mountTailForGeometry(int $columns, int $rows): void
-    {
-        $plan = $this->planMountedTail($columns, $rows);
-        $desiredKeys = $plan['keys'];
-
-        if (
-            !$this->pendingContentDirty
-            && $columns === $this->mountedBudgetColumns
-            && $rows === $this->mountedBudgetRows
-            && $desiredKeys === array_keys($this->nodes)
-            && !$this->pendingMount
-        ) {
-            // Membership and geometry unchanged: keep mounted widgets/caches.
-            return;
-        }
-
         $previous = $this->nodes;
         $next = [];
-        $boundaryKey = $plan['boundaryKey'];
-        $boundaryKeep = $plan['boundaryKeep'];
-
-        foreach ($desiredKeys as $key) {
-            $node = $this->retainedNodes[$key] ?? null;
+        foreach ($order as $key) {
+            $node = $desired[$key] ?? null;
             if (null === $node) {
                 continue;
             }
-
             $existing = $previous[$key] ?? null;
-
-            if ($key === $boundaryKey && $boundaryKeep > 0) {
-                $widget = $this->createClippedBoundaryWidget($node, $key, $boundaryKeep, $columns, $rows);
-            } elseif (
-                null !== $existing
-                && !$existing instanceof TranscriptClippedRowsWidget
-                && !$this->pendingContentDirty
-            ) {
-                // bind() returns createAndBind() when the existing widget cannot reuse.
-                $widget = $this->bind($existing, $node);
-            } else {
-                // Existing clipped leaves and missing keys always rebuild; bind()
-                // already returns createAndBind() when reuse is incompatible.
-                $widget = null === $existing || $existing instanceof TranscriptClippedRowsWidget
-                    ? $this->createAndBind($node)
-                    : $this->bind($existing, $node);
-            }
-            $next[$key] = $widget;
+            $next[$key] = null === $existing
+                ? $this->createAndBind($node)
+                : $this->bind($existing, $node);
         }
 
-        // Attach before any measurement/render cache write. Detached renders resolve
-        // Markdown/subagent style elements through DefaultStyleSheet and would cache
-        // unthemed rows across the later attach (attach does not invalidate).
-        if ($desiredKeys !== array_keys($this->nodes) || array_values($next) !== array_values($this->nodes)) {
-            $this->clear();
-            foreach ($desiredKeys as $key) {
-                if (isset($next[$key])) {
-                    $this->add($next[$key]);
-                }
+        $this->clear();
+        foreach ($order as $key) {
+            if (isset($next[$key])) {
+                $this->add($next[$key]);
             }
         }
-
         $this->nodes = $next;
-        $this->mountedBudgetColumns = $columns;
-        $this->mountedBudgetRows = $rows;
-        $this->pendingMount = false;
-        $this->pendingContentDirty = false;
-    }
-
-    /**
-     * @return array{
-     *     keys: list<string>,
-     *     boundaryKey: ?string,
-     *     boundaryKeep: int
-     * }
-     */
-    private function planMountedTail(int $columns, int $rows): array
-    {
-        $gap = $this->getStyle()?->getGap() ?? 0;
-        $selectedKeys = [];
-        $usedRows = 0;
-        $boundaryKey = null;
-        $boundaryKeep = 0;
-
-        for ($i = \count($this->retainedOrder) - 1; $i >= 0; --$i) {
-            $key = $this->retainedOrder[$i];
-            $node = $this->retainedNodes[$key] ?? null;
-            if (null === $node) {
-                continue;
-            }
-
-            $existing = $this->nodes[$key] ?? null;
-            if (
-                null !== $existing
-                && !$existing instanceof TranscriptClippedRowsWidget
-                && !$this->pendingContentDirty
-            ) {
-                $rowCount = $this->measureWidgetRows($existing, $columns, $rows);
-            } else {
-                // Measure from a temporary widget; do not leave it mounted.
-                $probe = $this->createAndBind($node);
-                $rowCount = $this->withAttachedProbe(
-                    $probe,
-                    fn (AbstractWidget $attached): int => $this->measureWidgetRows($attached, $columns, $rows),
-                );
-            }
-
-            $extraGap = [] === $selectedKeys ? 0 : $gap;
-            $projected = $usedRows + $extraGap + $rowCount;
-
-            if ($projected > self::RENDERED_ROW_BUDGET) {
-                $remaining = self::RENDERED_ROW_BUDGET - $usedRows - $extraGap;
-                if ($remaining > 0) {
-                    $selectedKeys[] = $key;
-                    $usedRows += $extraGap + $remaining;
-                    $boundaryKey = $key;
-                    $boundaryKeep = $remaining;
-                } elseif ([] === $selectedKeys) {
-                    // Hard budget: keep only the trailing budget rows of this node.
-                    $selectedKeys[] = $key;
-                    $usedRows = self::RENDERED_ROW_BUDGET;
-                    $boundaryKey = $key;
-                    $boundaryKeep = self::RENDERED_ROW_BUDGET;
-                }
-                break;
-            }
-
-            $selectedKeys[] = $key;
-            $usedRows = $projected;
-        }
-
-        return [
-            'keys' => array_reverse($selectedKeys),
-            'boundaryKey' => $boundaryKey,
-            'boundaryKeep' => $boundaryKeep,
-        ];
-    }
-
-    private function createClippedBoundaryWidget(
-        TranscriptVisualNode $node,
-        string $key,
-        int $boundaryKeep,
-        int $columns,
-        int $rows,
-    ): TranscriptClippedRowsWidget {
-        $source = $this->createAndBind($node);
-        $lines = $this->withAttachedProbe(
-            $source,
-            fn (AbstractWidget $attached): array => $this->renderWidgetLines($attached, $columns, $rows),
-        );
-        $kept = array_values(\array_slice($lines, -$boundaryKeep));
-
-        return new TranscriptClippedRowsWidget(
-            lines: $kept,
-        );
-    }
-
-    /**
-     * Attach a temporary probe under the live transcript context, then detach it.
-     *
-     * Style elements (Markdown headings, subagent card borders) resolve through
-     * WidgetContext stylesheets only while attached. Detached widgets fall back to
-     * DefaultStyleSheet. Probes are never left in the mounted child list.
-     *
-     * @template T
-     *
-     * @param callable(AbstractWidget): T $callback
-     *
-     * @return T
-     */
-    private function withAttachedProbe(AbstractWidget $widget, callable $callback): mixed
-    {
-        $context = $this->getContext();
-        if (null === $context) {
-            throw new \LogicException('Transcript mount requires an attached widget context.');
-        }
-
-        if (null !== $widget->getContext()) {
-            return $callback($widget);
-        }
-
-        $context->attachChild($this, $widget);
-        try {
-            return $callback($widget);
-        } finally {
-            if ($widget->getContext() === $context) {
-                $context->detachChild($widget);
-            }
-        }
-    }
-
-    private function measureWidgetRows(AbstractWidget $widget, int $columns, int $rows): int
-    {
-        return \count($this->renderWidgetLines($widget, $columns, $rows));
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function renderWidgetLines(AbstractWidget $widget, int $columns, int $rows): array
-    {
-        $context = $this->getContext();
-        if (null === $context) {
-            throw new \LogicException('Transcript mount requires an attached widget context.');
-        }
-        if (null === $widget->getContext()) {
-            throw new \LogicException('Cannot measure a detached transcript widget; attach it first so theme stylesheets apply.');
-        }
-
-        $cacheRows = max(1, $rows);
-        $cached = $widget->getRenderCache($columns, $cacheRows);
-        if (null !== $cached) {
-            return $cached;
-        }
-
-        return $context->renderWidget(
-            $widget,
-            new RenderContext($columns, $cacheRows),
-        );
     }
 
     private function detachKey(string $key): void

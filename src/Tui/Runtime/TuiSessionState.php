@@ -305,25 +305,16 @@ final class TuiSessionState
         $this->rebuildTranscriptIndexIfStale();
         $changed = false;
 
-        // Batch removals: splice high indices first, rebuild ID map once (near-linear).
+        // Compaction can remove a whole segment. Filter once rather than splice
+        // and shift the remaining transcript for every removed block.
         if ([] !== $changes->removals) {
-            $indices = [];
-            foreach ($changes->removals as $id) {
-                $idx = $this->transcriptIndexById[$id] ?? null;
-                if (null !== $idx) {
-                    $indices[] = $idx;
-                    unset($this->transcriptIndexById[$id]);
-                }
-            }
-            if ([] !== $indices) {
-                rsort($indices, \SORT_NUMERIC);
-                foreach ($indices as $idx) {
-                    array_splice($this->transcript, $idx, 1);
-                }
-                $this->transcriptIndexById = [];
-                foreach ($this->transcript as $i => $block) {
-                    $this->transcriptIndexById[$block->id] = $i;
-                }
+            $removedIds = array_fill_keys($changes->removals, true);
+            $next = array_values(array_filter(
+                $this->transcript,
+                static fn (TranscriptBlock $block): bool => !isset($removedIds[$block->id]),
+            ));
+            if (\count($next) !== \count($this->transcript)) {
+                $this->replaceTranscript($next);
                 $changed = true;
             }
         }
@@ -398,41 +389,23 @@ final class TuiSessionState
             return false;
         }
 
-        $indices = [];
+        $kept = [];
         for ($i = 0; $i < $floorIdx; ++$i) {
-            $block = $this->transcript[$i] ?? null;
-            if (null === $block) {
-                continue;
-            }
+            $block = $this->transcript[$i];
             // Projector prune already removed owned history before the floor,
             // except ToolCall blocks retained for still-visible ToolResults.
             // Anything else still sitting before the floor is session-local UI
             // (or stale) and must leave with the evicted segment.
             if (TranscriptBlockKindEnum::ToolCall === $block->kind) {
-                continue;
-            }
-            if (isset($this->transcriptIndexById[$block->id])) {
-                $indices[] = $i;
+                $kept[] = $block;
             }
         }
 
-        if ([] === $indices) {
+        if (\count($kept) === $floorIdx) {
             return false;
         }
 
-        rsort($indices, \SORT_NUMERIC);
-        foreach ($indices as $idx) {
-            $removed = $this->transcript[$idx] ?? null;
-            array_splice($this->transcript, $idx, 1);
-            if (null !== $removed) {
-                unset($this->transcriptIndexById[$removed->id]);
-            }
-        }
-
-        $this->transcriptIndexById = [];
-        foreach ($this->transcript as $i => $block) {
-            $this->transcriptIndexById[$block->id] = $i;
-        }
+        $this->replaceTranscript([...$kept, ...\array_slice($this->transcript, $floorIdx)]);
 
         return true;
     }

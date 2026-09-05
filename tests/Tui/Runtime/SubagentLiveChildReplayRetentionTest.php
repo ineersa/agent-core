@@ -23,6 +23,8 @@ final class SubagentLiveChildReplayRetentionTest extends TestCase
             new RuntimeEvent(RuntimeEventTypeEnum::HumanInputAnswered->value, 'run-a', 2, ['question_id' => 'q1', 'answer' => 'done']),
             new RuntimeEvent(RuntimeEventTypeEnum::HumanInputRequested->value, 'run-a', 3, ['question_id' => 'q2', 'prompt' => 'two']),
             new RuntimeEvent(RuntimeEventTypeEnum::ToolQuestionRequested->value, 'run-a', 0, ['request_id' => 't1', 'prompt' => 'tool']),
+            new RuntimeEvent(RuntimeEventTypeEnum::ToolQuestionRequested->value, 'run-a', 0, ['request_id' => 'finished', 'tool_call_id' => 'tc-finished', 'prompt' => 'old tool']),
+            new RuntimeEvent(RuntimeEventTypeEnum::ToolExecutionCompleted->value, 'run-a', 4, ['tool_call_id' => 'tc-finished']),
             new RuntimeEvent(RuntimeEventTypeEnum::CompactionCompleted->value, 'run-a', 4, []),
         ];
 

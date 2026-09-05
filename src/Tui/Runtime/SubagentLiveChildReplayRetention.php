@@ -26,6 +26,24 @@ final class SubagentLiveChildReplayRetention
         $pending = [];
 
         foreach ($events as $event) {
+            if (\in_array($event->type, [
+                RuntimeEventTypeEnum::ToolExecutionCompleted->value,
+                RuntimeEventTypeEnum::ToolExecutionFailed->value,
+                RuntimeEventTypeEnum::ToolExecutionCancelled->value,
+            ], true)) {
+                $toolCallId = (string) ($event->payload['tool_call_id'] ?? '');
+                foreach ($pending as $key => $request) {
+                    if ('' !== $toolCallId
+                        && $request->runId === $event->runId
+                        && RuntimeEventTypeEnum::ToolQuestionRequested->value === $request->type
+                        && ($request->payload['tool_call_id'] ?? '') === $toolCallId
+                    ) {
+                        unset($pending[$key]);
+                    }
+                }
+                continue;
+            }
+
             if (RuntimeEventTypeEnum::HumanInputRequested->value === $event->type) {
                 $questionId = (string) ($event->payload['question_id'] ?? '');
                 if ('' === $questionId) {
