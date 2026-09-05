@@ -37,10 +37,7 @@ final readonly class JbcontextSessionStartHook implements AfterSessionStartHookI
 
         $store = JbcontextStatusStore::forSession($this->paths, $sessionId);
         $shouldDispatch = false;
-        $store->update(static function (JbcontextSessionState $current) use ($sessionId, &$shouldDispatch): JbcontextSessionState {
-            if ($current->sessionId !== $sessionId) {
-                $current = JbcontextSessionState::pending($sessionId);
-            }
+        $store->update(static function (JbcontextSessionState $current) use (&$shouldDispatch): JbcontextSessionState {
             if ($current->eligibilityStarted
                 || JbcontextSessionModeEnum::Eligible === $current->mode
                 || JbcontextSessionModeEnum::Disabled === $current->mode

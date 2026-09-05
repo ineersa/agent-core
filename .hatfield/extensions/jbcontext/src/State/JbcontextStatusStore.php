@@ -8,8 +8,9 @@ namespace Ineersa\HatfieldExt\Jbcontext\State;
  * Locked JSON status file for one Hatfield session.
  *
  * Shared by the extension-agent worker (writer) and interactive TUI/tool
- * processes (readers). All mutations take an exclusive flock on the target
- * status file so concurrent writers cannot orphan each other.
+ * processes (readers). Readers take a shared flock; mutations take an exclusive
+ * flock on the same target file so readers never observe the truncate window
+ * and concurrent writers cannot orphan each other.
  */
 final class JbcontextStatusStore
 {
@@ -43,33 +44,47 @@ final class JbcontextStatusStore
             return JbcontextSessionState::pending($this->sessionId);
         }
 
-        $raw = @file_get_contents($this->path);
-        if (false === $raw || '' === trim($raw)) {
+        $handle = @fopen($this->path, 'rb');
+        if (false === $handle) {
             return JbcontextSessionState::pending($this->sessionId);
         }
 
         try {
-            $decoded = json_decode($raw, true, 512, \JSON_THROW_ON_ERROR);
-        } catch (\JsonException) {
-            return JbcontextSessionState::pending($this->sessionId);
-        }
+            if (!flock($handle, \LOCK_SH)) {
+                return JbcontextSessionState::pending($this->sessionId);
+            }
 
-        if (!\is_array($decoded)) {
-            return JbcontextSessionState::pending($this->sessionId);
-        }
+            $raw = stream_get_contents($handle);
+            if (false === $raw || '' === trim($raw)) {
+                return JbcontextSessionState::pending($this->sessionId);
+            }
 
-        try {
-            /** @var array<string, mixed> $decoded */
-            $state = JbcontextSessionState::fromArray($decoded);
-        } catch (\InvalidArgumentException) {
-            return JbcontextSessionState::pending($this->sessionId);
-        }
+            try {
+                $decoded = json_decode($raw, true, 512, \JSON_THROW_ON_ERROR);
+            } catch (\JsonException) {
+                return JbcontextSessionState::pending($this->sessionId);
+            }
 
-        if ($state->sessionId !== $this->sessionId) {
-            return JbcontextSessionState::pending($this->sessionId);
-        }
+            if (!\is_array($decoded)) {
+                return JbcontextSessionState::pending($this->sessionId);
+            }
 
-        return $state;
+            try {
+                /** @var array<string, mixed> $decoded */
+                $state = JbcontextSessionState::fromArray($decoded);
+            } catch (\InvalidArgumentException) {
+                return JbcontextSessionState::pending($this->sessionId);
+            }
+
+            if ($state->sessionId !== $this->sessionId) {
+                return JbcontextSessionState::pending($this->sessionId);
+            }
+
+            return $state;
+        } finally {
+            flock($handle, \LOCK_UN);
+            fclose($handle);
+        }
     }
 
     public function write(JbcontextSessionState $state): void

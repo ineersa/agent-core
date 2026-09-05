@@ -49,6 +49,8 @@ Start a **new Hatfield session** after enabling. Extensions register at startup.
 4. Transient status failures retry with preferred delays 2s, 4s, 8s, 16s under a hard ~30s wall-clock budget that also covers CLI status timeouts. Exhaustion disables the session; later turns do not retry.
 5. When eligible, the worker installs managed project assets and runs incremental `jbcontext index --silent`.
 
+Eligibility is claimed once per session id (`eligibility_started`). If the controller dies after that claim and before the worker finishes, the same resumed session id does not re-dispatch; start a new session after fixing the environment. Headless or in-process runs that never fire controller session-start leave `code_search` unavailable for that process.
+
 ### Refresh cadence
 
 After eligibility, each successfully completed assistant turn (`agent_end` reason `completed`) enqueues one incremental silent reindex. Cancelled and failed turns do not. CLI work stays in the extension-agent worker; the hot hook only updates status flags and dispatches.
