@@ -38,13 +38,13 @@ use Symfony\Component\Clock\Clock;
  * Session ownership: user-facing list(), readLogTail(), and session-scoped
  * stop() operations require an owning session and expose only rows explicitly
  * accepted as background work. Internal shutdown/reap code retains an
- * unscoped stop() path for PIDs this manager instance owns.
+ * unscoped stop path for records this manager instance owns.
  *
  * Shutdown handling:
  * Call registerShutdownHandler() from production wiring (services.yaml)
  * to register a PHP shutdown function that calls shutdownCleanup() with
- * no session argument. That path reaps only background processes this
- * PHP instance started (owned PIDs), not every unfinished row in the
+ * no session argument. That path reaps only background-process records this
+ * PHP instance started (owned record IDs), not every unfinished row in the
  * shared database. This covers graceful exit (Ctrl+C, quit command,
  * normal script end) and fatal errors.
  *
@@ -69,8 +69,16 @@ final class BackgroundProcessManager
 {
     private bool $shutdownRegistered = false;
 
-    /** @var int[] PIDs launched via start() by THIS instance, used for instance-scoped shutdown cleanup. */
-    private array $ownedPids = [];
+    /**
+     * Immutable record IDs launched via start() by THIS instance.
+     *
+     * Shutdown cleanup must address the exact rows this PHP process created.
+     * Tracking OS PIDs alone is unsafe: rows can be deleted while ownership
+     * remains, and PID reuse can make fetchLatestByPid() resolve a foreign row.
+     *
+     * @var array<int, true>
+     */
+    private array $ownedRecordIds = [];
 
     public function __construct(
         private readonly ProcessStore $store,
@@ -91,7 +99,7 @@ final class BackgroundProcessManager
      *
      * On graceful shutdown (exit, Ctrl+C, fatal error), this calls
      * shutdownCleanup() with no session id, which TERM→grace→KILLs only
-     * owned PIDs from start() on this manager instance — never foreign
+     * owned records from start() on this manager instance — never foreign
      * unfinished rows from the shared background-process database.
      * On hard crash (SIGKILL, OOM, segfault), the shutdown function
      * does not fire — BG processes survive for inspection or resume.
@@ -176,12 +184,6 @@ final class BackgroundProcessManager
         $pid = $launchResult['pid'];
         $pgid = $launchResult['pgid'];
 
-        // Track for instance-scoped shutdown: only processes this PHP process
-        // started are reaped by the shutdown handler, never foreign rows from the
-        // shared background-process database (e.g. a short-lived PHAR `list`/`about`
-        // command sharing the project DB must not kill another process's work).
-        $this->ownedPids[] = $pid;
-
         // Persist entity with auto-increment DB id
         $dbId = $this->store->insertRecord([
             'pid' => $pid,
@@ -192,6 +194,10 @@ final class BackgroundProcessManager
             'status_path' => $statusFile,
             'started_at' => $now,
         ]);
+
+        // Track for instance-scoped shutdown only after the durable row exists.
+        // Ownership is the immutable record ID, never the reusable OS PID.
+        $this->ownedRecordIds[$dbId] = true;
 
         $resolvedSessionId = $sessionId ?? '';
 
@@ -441,8 +447,8 @@ final class BackgroundProcessManager
      * @param string|null $sessionId owning run for user-facing operations.
      *                               When provided, only an accepted process
      *                               in that run can be stopped; null is only
-     *                               for internal shutdown/reap calls over
-     *                               manager-owned PIDs or session-selected rows.
+     *                               for internal session-selected rows.
+     *                               Instance shutdown uses owned record IDs.
      *
      * @throws \RuntimeException when process not found or PID is invalid
      */
@@ -645,7 +651,7 @@ final class BackgroundProcessManager
     }
 
     /**
-     * Reap only PIDs started via start() on this manager instance.
+     * Reap only records started via start() on this manager instance.
      *
      * Used when shutdownCleanup() is called with no session id (PHP shutdown
      * handler path). Never reads unfinished rows from the shared database.
@@ -653,22 +659,50 @@ final class BackgroundProcessManager
     private function reapOwnedProcesses(): int
     {
         $count = 0;
-        foreach ($this->ownedPids as $pid) {
+        foreach (array_keys($this->ownedRecordIds) as $recordId) {
             try {
-                $this->stop($pid);
-                ++$count;
+                if ($this->stopOwnedRecord($recordId)) {
+                    ++$count;
+                }
             } catch (\RuntimeException $e) {
-                // Process may have exited between fetch and stop; log and continue
                 $this->logger->warning('background_process.shutdown_cleanup_error', [
                     'component' => 'tool.background_process',
                     'event_type' => 'background_process.shutdown_cleanup_error',
-                    'process_pid' => $pid,
+                    'record_id' => $recordId,
                     'error' => $e->getMessage(),
                 ]);
             }
         }
 
         return $count;
+    }
+
+    /**
+     * Stop one owned record during instance shutdown, then forget ownership.
+     *
+     * Missing rows are treated as already cleaned (session/provisional cleanup
+     * deleted them). Finished rows still count as a successful owned stop so
+     * callers can observe that ownership was processed once.
+     *
+     * @return bool True when a retained owned row was stopped (including
+     *              already-finished rows); false when the row was already gone
+     *
+     * @throws \RuntimeException for genuine stop failures on a retained owned row
+     */
+    private function stopOwnedRecord(int $recordId): bool
+    {
+        try {
+            $entity = $this->store->fetchByRecordId($recordId);
+            if (null === $entity) {
+                return false;
+            }
+
+            $this->stopProcessEntity($entity);
+
+            return true;
+        } finally {
+            unset($this->ownedRecordIds[$recordId]);
+        }
     }
 
     // ─── Private helpers ─────────────────────────────────────────────
