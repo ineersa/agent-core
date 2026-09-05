@@ -33,11 +33,6 @@ final class JbcontextStatusStore
         return $this->path;
     }
 
-    public function sessionId(): string
-    {
-        return $this->sessionId;
-    }
-
     public function read(): JbcontextSessionState
     {
         if (!is_file($this->path)) {

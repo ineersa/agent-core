@@ -11,11 +11,11 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\Defer
 use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedMetadataDTO;
 use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedSessionMetadataDTO;
 use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedToolsScopeDTO;
-use Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressChildRowDTO;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressParallelSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingleSnapshotDTO;
 use Ineersa\CodingAgent\Tests\Runtime\Controller\E2E\Replay\StreamPacingHttpClient;
+use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Tui\Terminal\DeferredCursorCommitScreenWriter;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use ShipMonk\PHPStan\DeadCode\Provider\ReflectionBasedMemberUsageProvider;
@@ -70,12 +70,12 @@ final class HatfieldDeadCodeUsageProvider extends ReflectionBasedMemberUsageProv
             return VirtualUsageData::withNote('Published Hatfield ExtensionApi contract');
         }
 
-        // Host adapter for published ExtensionApiInterface::registerToolResultHook().
-        // Concrete extensions currently register only call hooks, but the method is
-        // part of the stable public API and must remain available on the host bridge.
-        if (ExtensionToolRegistryBridge::class === $className
-            && 'registerToolResultHook' === $method->getName()) {
-            return VirtualUsageData::withNote('Published ExtensionApiInterface host implementation');
+        // Published ExtensionApiInterface::registerToolResultHook() must remain on every
+        // implementor (host bridge and test doubles). Concrete extensions currently
+        // register only call hooks, so native call analysis sees no callers.
+        if ('registerToolResultHook' === $method->getName()
+            && $method->getDeclaringClass()->implementsInterface(ExtensionApiInterface::class)) {
+            return VirtualUsageData::withNote('Published ExtensionApiInterface method with no current extension callers');
         }
 
         // Measured with this rule removed: ShipMonk reports both required
