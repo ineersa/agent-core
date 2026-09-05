@@ -430,6 +430,7 @@ final class SubagentLivePickerController
                 onHumanInputRequested: $this->onHumanInputRequested,
                 onToolQuestionRequested: $this->onToolQuestionRequested,
                 onToolTerminal: $this->onToolTerminal,
+                hydrateFromTranscript: true,
             );
         } else {
             $this->childPoller->resetProjection();

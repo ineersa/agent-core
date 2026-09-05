@@ -12,6 +12,8 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
  *
  * Child transcript/seq cache survives {@see exit()} so main/live toggles on the
  * same child can re-show cached blocks without replaying consumed JSONL pipe events.
+ * {@see $childReplayEvents} retains only unresolved HITL/tool-question requests for
+ * cached reentry redispatch, not a full event archive.
  */
 final class SubagentLiveViewState
 {
@@ -33,6 +35,8 @@ final class SubagentLiveViewState
      * Entries also store taskSummary so agent_resume can reuse the same run id for a
      * new invocation without restoring the prior task's terminal activity.
      *
+     * replayEvents holds only unresolved HITL/tool-question requests.
+     *
      * @var array<string, array{transcript: list<TranscriptBlock>, lastSeq: int, lastPoll: float, activity: RunActivityStateEnum, taskSummary: string, queuedUserMessages: array<string, string>, replayEvents: list<\Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent>}>
      */
     public array $childCaches = [];
@@ -42,7 +46,12 @@ final class SubagentLiveViewState
     /** @var array<string, string> idempotency_key => text */
     public array $childQueuedUserMessages = [];
 
-    /** @var list<\Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent> */
+    /**
+     * Unresolved HITL/tool-question requests needed to re-arm QuestionCoordinator on
+     * cached live-view reentry. Not a full child event archive.
+     *
+     * @var list<\Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent>
+     */
     public array $childReplayEvents = [];
 
     /**

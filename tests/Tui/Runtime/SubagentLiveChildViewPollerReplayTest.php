@@ -274,7 +274,7 @@ final class SubagentLiveChildViewPollerReplayTest extends TestCase
             $live->childLastSeq,
         );
 
-        $blocks = $poller->replaySnapshot($live, $reentrySnapshot);
+        $blocks = $poller->replaySnapshot($live, $reentrySnapshot, hydrateFromTranscript: true);
 
         $texts = array_map(static fn (TranscriptBlock $block): string => $block->text, $blocks);
         $this->assertContains('seed', $texts);
@@ -317,6 +317,124 @@ final class SubagentLiveChildViewPollerReplayTest extends TestCase
         $poller->poll($live, $client);
 
         $this->assertSame(2, $live->childLastSeq);
+    }
+
+    #[Test]
+    public function childReplayRetentionDropsResolvedHitlAndNonHitlBodies(): void
+    {
+        $poller = new SubagentLiveChildViewPoller($this->childLiveProjector(), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer());
+        $live = $this->liveState();
+
+        $poller->replaySnapshot(
+            $live,
+            new ChildRunTranscriptSnapshotDTO(
+                [
+                    new TranscriptBlock('b-seed', TranscriptBlockKindEnum::Question, self::CHILD_RUN_ID, 1, 'seed'),
+                    new TranscriptBlock('b-stream', TranscriptBlockKindEnum::AssistantMessage, self::CHILD_RUN_ID, 3, 'streamed body'),
+                ],
+                [
+                    new RuntimeEvent(
+                        RuntimeEventTypeEnum::HumanInputRequested->value,
+                        self::CHILD_RUN_ID,
+                        1,
+                        ['question_id' => 'q_resolved', 'prompt' => 'old'],
+                    ),
+                    new RuntimeEvent(
+                        RuntimeEventTypeEnum::HumanInputAnswered->value,
+                        self::CHILD_RUN_ID,
+                        2,
+                        ['question_id' => 'q_resolved', 'answer' => 'done'],
+                    ),
+                    new RuntimeEvent(
+                        RuntimeEventTypeEnum::AssistantTextDelta->value,
+                        self::CHILD_RUN_ID,
+                        0,
+                        ['block_id' => 'b-stream', 'delta' => 'streamed body'],
+                    ),
+                    new RuntimeEvent(
+                        RuntimeEventTypeEnum::HumanInputRequested->value,
+                        self::CHILD_RUN_ID,
+                        3,
+                        ['question_id' => 'q_open', 'prompt' => 'still waiting'],
+                    ),
+                    new RuntimeEvent(
+                        RuntimeEventTypeEnum::ToolQuestionRequested->value,
+                        self::CHILD_RUN_ID,
+                        0,
+                        ['request_id' => 'tool_open', 'prompt' => 'bg?'],
+                    ),
+                ],
+                3,
+            ),
+        );
+
+        $this->assertCount(2, $live->childReplayEvents);
+        $this->assertSame(
+            ['human_input.requested', 'tool_question.requested'],
+            array_map(static fn (RuntimeEvent $event): string => $event->type, $live->childReplayEvents),
+        );
+        $this->assertSame(
+            ['q_open', 'tool_open'],
+            array_map(
+                static fn (RuntimeEvent $event): string => (string) ($event->payload['question_id'] ?? $event->payload['request_id'] ?? ''),
+                $live->childReplayEvents,
+            ),
+        );
+
+        $client = $this->createMock(AgentSessionClient::class);
+        $client->expects($this->once())
+            ->method('events')
+            ->with(self::CHILD_RUN_ID, $this->anything())
+            ->willReturn([
+                new RuntimeEvent(
+                    RuntimeEventTypeEnum::CompactionCompleted->value,
+                    self::CHILD_RUN_ID,
+                    4,
+                    [
+                        'estimated_tokens_before' => 100,
+                        'estimated_tokens_after' => 40,
+                    ],
+                ),
+                new RuntimeEvent(
+                    RuntimeEventTypeEnum::AssistantTextDelta->value,
+                    self::CHILD_RUN_ID,
+                    0,
+                    ['block_id' => 'b-stream', 'delta' => ' after compaction'],
+                ),
+            ]);
+
+        $live->childLastPoll = 0.0;
+        $poller->poll($live, $client);
+
+        $this->assertSame(4, $live->childLastSeq);
+        $this->assertCount(2, $live->childReplayEvents, 'compaction/stream bodies must not inflate the HITL archive');
+        $this->assertSame(
+            ['q_open', 'tool_open'],
+            array_map(
+                static fn (RuntimeEvent $event): string => (string) ($event->payload['question_id'] ?? $event->payload['request_id'] ?? ''),
+                $live->childReplayEvents,
+            ),
+        );
+
+        $hit = [];
+        $poller->replaySnapshot(
+            $live,
+            new ChildRunTranscriptSnapshotDTO(
+                $live->childTranscript,
+                $live->childReplayEvents,
+                $live->childLastSeq,
+            ),
+            onHumanInputRequested: static function (RuntimeEvent $event) use (&$hit): void {
+                $hit[] = 'human:'.(string) ($event->payload['question_id'] ?? '');
+            },
+            onToolQuestionRequested: static function (RuntimeEvent $event) use (&$hit): void {
+                $hit[] = 'tool:'.(string) ($event->payload['request_id'] ?? '');
+            },
+            hydrateFromTranscript: true,
+        );
+
+        $this->assertSame(['human:q_open', 'tool:tool_open'], $hit);
+        $this->assertSame(4, $live->childLastSeq);
     }
 
     private function childLiveProjector(): TranscriptProjector

@@ -16,8 +16,10 @@ use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 /**
  * Polls a selected child run id and projects readonly live transcript blocks.
  *
- * Canonical child history is replayed once on live-view entry via {@see replaySnapshot()};
- * {@see poll()} consumes only live {@see AgentSessionClient::events()} for the child run id.
+ * Canonical child history is applied once on live-view entry via {@see replaySnapshot()}.
+ * Cached reentry hydrates the projector from transcript blocks and redispatches only
+ * unresolved HITL/tool-question requests. {@see poll()} consumes live
+ * {@see AgentSessionClient::events()} for the child run id.
  *
  * Optional HITL callbacks mirror RuntimeEventPoller so child human_input.requested
  * and tool_question.requested events can drive the shared QuestionCoordinator.
@@ -45,10 +47,11 @@ final class SubagentLiveChildViewPoller
     }
 
     /**
-     * One-time replay of a canonical child snapshot into live view state and the child projector.
+     * One-time apply of a child snapshot into live view state and the child projector.
      *
-     * Call only while {@see SubagentLiveViewState::$active} is true (picker sets this before replay).
-     * Transient seq=0 replay events do not advance {@see SubagentLiveViewState::$childLastSeq}.
+     * Call only while {@see SubagentLiveViewState::$active} is true (picker sets this before apply).
+     * Cached reentry uses transcript hydration + pending HITL redispatch; cold entry still
+     * replays canonical events once to derive presentation state.
      *
      * @param ?callable(RuntimeEvent): void $onHumanInputRequested
      * @param ?callable(RuntimeEvent): void $onToolQuestionRequested
@@ -62,8 +65,27 @@ final class SubagentLiveChildViewPoller
         ?callable $onHumanInputRequested = null,
         ?callable $onToolQuestionRequested = null,
         ?callable $onToolTerminal = null,
+        bool $hydrateFromTranscript = false,
     ): array {
         if (!$live->active || null === $live->selected) {
+            return $live->childTranscript;
+        }
+
+        $callbacks = $this->makeCallbacks($onHumanInputRequested, $onToolQuestionRequested, $onToolTerminal);
+
+        if ($hydrateFromTranscript) {
+            $this->projector->reset();
+            $this->eventApplier->hydrateProjectedTranscript($snapshot->transcriptBlocks);
+            $live->childLastSeq = $snapshot->maxSeq;
+            $live->childTranscript = $snapshot->transcriptBlocks;
+            $live->childReplayEvents = SubagentLiveChildReplayRetention::pendingHitlRequests($snapshot->replayEvents);
+
+            foreach ($live->childReplayEvents as $event) {
+                $callbacks->dispatch($event, $live->selected->agentRunId);
+            }
+
+            $live->persistCurrentChildCache();
+
             return $live->childTranscript;
         }
 
@@ -73,8 +95,6 @@ final class SubagentLiveChildViewPoller
         $scratch->activity = $live->childActivity;
         $scratch->queuedUserMessages = $live->childQueuedUserMessages;
 
-        $callbacks = $this->makeCallbacks($onHumanInputRequested, $onToolQuestionRequested, $onToolTerminal);
-
         foreach ($snapshot->replayEvents as $event) {
             $this->eventApplier->apply($scratch, $event, replayMode: true);
             $callbacks->dispatch($event, $live->selected->agentRunId);
@@ -83,12 +103,12 @@ final class SubagentLiveChildViewPoller
         $live->childActivity = $scratch->activity;
         $live->childQueuedUserMessages = $scratch->queuedUserMessages;
         $live->childLastSeq = $snapshot->maxSeq;
-        $live->childReplayEvents = $snapshot->replayEvents;
+        $live->childReplayEvents = SubagentLiveChildReplayRetention::pendingHitlRequests($snapshot->replayEvents);
         $projected = $this->projector->blocks();
         $live->childTranscript = [] !== $projected
             ? $projected
             : $snapshot->transcriptBlocks;
-        // Snapshot replay establishes the mounted baseline. Discard its full dirty
+        // Snapshot apply establishes the mounted baseline. Discard its full dirty
         // state so later live stream batches produce bounded incremental patches.
         $this->eventApplier->drainProjectedChanges();
         $live->persistCurrentChildCache();
@@ -160,7 +180,10 @@ final class SubagentLiveChildViewPoller
             if (0 !== $seq) {
                 $live->childLastSeq = $seq;
             }
-            $live->childReplayEvents[] = $event;
+            $live->childReplayEvents = SubagentLiveChildReplayRetention::pendingHitlRequests([
+                ...$live->childReplayEvents,
+                $event,
+            ]);
             $changed = true;
         }
         $this->pendingEvents = [];
