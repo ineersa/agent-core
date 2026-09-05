@@ -1,9 +1,8 @@
 ---
 name: jbcontext-semantic-search
 description: "Semantic code search with Hatfield code_search (jbcontext). Use when the relevant file or subsystem is unknown and you need meaning-based discovery before local reads."
+version: 1.0.0
 ---
-
-# managed-by: hatfield-ext-jbcontext
 
 # Semantic code search
 

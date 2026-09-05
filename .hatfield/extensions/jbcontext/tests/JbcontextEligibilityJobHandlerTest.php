@@ -22,16 +22,27 @@ final class JbcontextEligibilityJobHandlerTest extends TestCase
 {
     private string $projectDir;
     private string $packageRoot;
+    private ?string $previousHome = null;
 
     protected function setUp(): void
     {
         parent::setUp();
         $this->projectDir = TestDirectoryIsolation::createOsTempDir('jbcontext-elig-');
         $this->packageRoot = \dirname(__DIR__);
+        $home = getenv('HOME');
+        $this->previousHome = false === $home ? null : $home;
     }
 
     protected function tearDown(): void
     {
+        if (null === $this->previousHome) {
+            putenv('HOME');
+            unset($_ENV['HOME'], $_SERVER['HOME']);
+        } else {
+            putenv('HOME='.$this->previousHome);
+            $_ENV['HOME'] = $this->previousHome;
+            $_SERVER['HOME'] = $this->previousHome;
+        }
         TestDirectoryIsolation::removeDirectory($this->projectDir);
         parent::tearDown();
     }
@@ -82,6 +93,15 @@ final class JbcontextEligibilityJobHandlerTest extends TestCase
     public function eligibleRunsSilentIndexAndInstallsAssets(): void
     {
         mkdir($this->projectDir.'/.idea', 0o777, true);
+        $home = $this->projectDir.'/home';
+        mkdir($home.'/.hatfield/agents', 0o777, true);
+        file_put_contents(
+            $home.'/.hatfield/agents/scout.md',
+            "---\nname: scout\ndescription: recon\nthinking: medium\ntools:\n  - read\n---\n\nYou are a scout.\n",
+        );
+        putenv('HOME='.$home);
+        $_ENV['HOME'] = $home;
+        $_SERVER['HOME'] = $home;
         $status = json_encode([
             'type' => 'status_result',
             'indices' => [
@@ -106,6 +126,8 @@ final class JbcontextEligibilityJobHandlerTest extends TestCase
         $this->assertContains('--silent', $exec->calls()[1]['args']);
         $this->assertFileExists($this->projectDir.'/.hatfield/skills/jbcontext-semantic-search/SKILL.md');
         $this->assertFileExists($this->projectDir.'/.hatfield/agents/scout.md');
+        $this->assertStringContainsString('code_search', (string) file_get_contents($this->projectDir.'/.hatfield/agents/scout.md'));
+        $this->assertStringNotContainsString('code_search', (string) file_get_contents($home.'/.hatfield/agents/scout.md'));
     }
 
     #[Test]

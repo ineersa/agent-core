@@ -831,6 +831,7 @@ parameters:
     HatfieldExtJbcontext:
       - AppExtensionApi
       - HatfieldExtJbcontext
+      - SymfonyYaml
     AppExtensionBuiltin:
       - AppExtensionApi
       - AppRuntimeContract

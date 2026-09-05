@@ -489,6 +489,7 @@ final class TmuxHarness
     public function killAll(): void
     {
         foreach ($this->sessionNames as $session) {
+            $this->terminateOwnedSessionTree($session);
             $this->runTmux(
                 \sprintf(
                     'tmux kill-session -t %s 2>/dev/null',
@@ -499,6 +500,148 @@ final class TmuxHarness
             );
         }
         $this->sessionNames = [];
+    }
+
+    /**
+     * Deterministic owned-tree teardown for a tmux session pane before kill-session.
+     *
+     * Catalog writers and Messenger children can outlive a bare kill-session when
+     * they reparent. Signal the pane process group first so isolated HOME cleanup
+     * does not race leftover writers. Never signals root-owned PIDs.
+     */
+    private function terminateOwnedSessionTree(string $session): void
+    {
+        $panePidRaw = $this->runTmux(
+            \sprintf(
+                'tmux display-message -p -t %s:0.0 "#{pane_pid}" 2>/dev/null',
+                escapeshellarg($session),
+            ),
+            2.0,
+            throwOnTimeout: false,
+        );
+        $panePid = (int) trim($panePidRaw);
+        if ($panePid <= 1 || !$this->isSameUidProcess($panePid)) {
+            return;
+        }
+
+        $pids = $this->descendantPids($panePid);
+        $pids[] = $panePid;
+        $pids = array_values(array_unique(array_filter(
+            $pids,
+            static fn (int $pid): bool => $pid > 1,
+        )));
+
+        $pgid = @posix_getpgid($panePid);
+        if (\is_int($pgid) && $pgid > 1) {
+            @posix_kill(-$pgid, \SIGTERM);
+        }
+        foreach ($pids as $pid) {
+            if ($this->isSameUidProcess($pid) && $this->isProcessAlive($pid)) {
+                @posix_kill($pid, \SIGTERM);
+            }
+        }
+
+        $deadline = microtime(true) + 0.05;
+        while (microtime(true) < $deadline) {
+            $alive = false;
+            foreach ($pids as $pid) {
+                if ($this->isSameUidProcess($pid) && $this->isProcessAlive($pid)) {
+                    $alive = true;
+                    break;
+                }
+            }
+            if (!$alive) {
+                break;
+            }
+            usleep(10_000);
+        }
+
+        if (\is_int($pgid) && $pgid > 1) {
+            @posix_kill(-$pgid, \SIGKILL);
+        }
+        foreach ($pids as $pid) {
+            if ($this->isSameUidProcess($pid) && $this->isProcessAlive($pid)) {
+                @posix_kill($pid, \SIGKILL);
+            }
+        }
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function descendantPids(int $parentPid): array
+    {
+        if ($parentPid <= 1 || !is_dir('/proc')) {
+            return [];
+        }
+
+        $childrenByParent = [];
+        $procEntries = scandir('/proc');
+        if (false === $procEntries) {
+            return [];
+        }
+        foreach ($procEntries as $entry) {
+            if (!ctype_digit($entry)) {
+                continue;
+            }
+            $pid = (int) $entry;
+            if ($pid <= 1 || !$this->isSameUidProcess($pid)) {
+                continue;
+            }
+            $stat = @file_get_contents('/proc/'.$pid.'/stat');
+            if (false === $stat) {
+                continue;
+            }
+            $closeParen = strrpos($stat, ')');
+            if (false === $closeParen) {
+                continue;
+            }
+            $fields = preg_split('/\s+/', trim(substr($stat, $closeParen + 1)));
+            if (false === $fields) {
+                continue;
+            }
+            // /proc/<pid>/stat after ")": state ppid ...
+            $ppid = isset($fields[1]) ? (int) $fields[1] : 0;
+            if ($ppid > 1) {
+                $childrenByParent[$ppid][] = $pid;
+            }
+        }
+
+        $out = [];
+        $stack = $childrenByParent[$parentPid] ?? [];
+        while ([] !== $stack) {
+            $pid = array_pop($stack);
+            if (\in_array($pid, $out, true)) {
+                continue;
+            }
+            $out[] = $pid;
+            foreach ($childrenByParent[$pid] ?? [] as $child) {
+                $stack[] = $child;
+            }
+        }
+
+        return $out;
+    }
+
+    private function isSameUidProcess(int $pid): bool
+    {
+        if ($pid <= 1 || !is_dir('/proc/'.$pid)) {
+            return false;
+        }
+        $status = @file_get_contents('/proc/'.$pid.'/status');
+        if (false === $status) {
+            return false;
+        }
+        if (!preg_match('/^Uid:\s+(\d+)/m', $status, $matches)) {
+            return false;
+        }
+
+        return (int) $matches[1] === posix_getuid();
+    }
+
+    private function isProcessAlive(int $pid): bool
+    {
+        return $pid > 1 && @posix_kill($pid, 0);
     }
 
     // ── internal shell ─────────────────────────────────────

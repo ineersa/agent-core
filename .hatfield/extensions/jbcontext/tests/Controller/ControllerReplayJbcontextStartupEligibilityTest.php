@@ -2,8 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Tests\Runtime\Controller\E2E;
+namespace Ineersa\HatfieldExt\Jbcontext\Tests\Controller;
 
+use Ineersa\CodingAgent\Tests\Runtime\Controller\E2E\ControllerReplayE2eTestCase;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextPaths;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextSessionModeEnum;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextStatusStore;

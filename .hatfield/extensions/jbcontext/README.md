@@ -8,7 +8,7 @@ Project-level Hatfield extension that wires JetBrains Context (`jbcontext`) sema
 | Extension class | `Ineersa\HatfieldExt\Jbcontext\JbcontextExtension` |
 | Namespace | `Ineersa\HatfieldExt\Jbcontext\` |
 | PHP | `>=8.3` |
-| Requires | `ineersa/hatfield-extension-api`, `helgesverre/toon`, `psr/log` |
+| Requires | `ineersa/hatfield-extension-api`, `helgesverre/toon`, `psr/log`, `symfony/yaml` |
 
 ## Prerequisites
 
@@ -31,7 +31,7 @@ extensions:
     - Ineersa\HatfieldExt\Jbcontext\JbcontextExtension
 ```
 
-No extension-specific settings key is added. Presence on `extensions.enabled` is the only switch.
+No extension-specific settings key is added. Presence on `extensions.enabled` is the only switch. Prefer the `settings` tool (`operation=set`, `path=extensions.enabled`, `scope=project`) over editing the YAML file by hand.
 
 ```bash
 composer install -d .hatfield/extensions
@@ -47,7 +47,7 @@ Start a **new Hatfield session** after enabling. Extensions register at startup.
 2. The worker requires `.idea` and a prior index snapshot from `jbcontext status --project-path <cwd> --json-output`.
 3. If either check fails, search and refresh stay disabled for the rest of that session and the TUI shows a concise disabled status.
 4. Transient status failures retry with preferred delays 2s, 4s, 8s, 16s under a hard ~30s wall-clock budget that also covers CLI status timeouts. Exhaustion disables the session; later turns do not retry.
-5. When eligible, the worker installs managed project assets and runs incremental `jbcontext index --silent`.
+5. When eligible, the worker installs project assets and runs incremental `jbcontext index --silent`.
 
 Eligibility is claimed once per session id (`eligibility_started`). If the controller dies after that claim and before the worker finishes, the same resumed session id does not re-dispatch; start a new session after fixing the environment. Headless or in-process runs that never fire controller session-start leave `code_search` unavailable for that process.
 
@@ -67,14 +67,12 @@ Permanent model-visible tool:
 
 When eligibility is pending or disabled, the tool returns a TOON unavailable payload and never indexes.
 
-### Managed project assets
+### Project assets
 
-After eligibility succeeds, the extension may create or update:
+After eligibility succeeds, the extension may create:
 
-- `.hatfield/skills/jbcontext-semantic-search/SKILL.md`
-- `.hatfield/agents/scout.md`
-
-Both contain `# managed-by: hatfield-ext-jbcontext`. Absent or previously managed destinations are updated. User-owned project files are left alone with a collision warning. User-level `~/.hatfield` files are never modified.
+- `.hatfield/skills/jbcontext-semantic-search/SKILL.md` — bundled skill with a `version` frontmatter field. Created when absent; reinstalled when the installed version is missing or differs from the package. Same-version files stay untouched. Host skill discovery ignores unknown keys such as `version`.
+- `.hatfield/agents/scout.md` — created only when absent by copying the user-level scout (`~/.hatfield/agents/scout.md` or `~/.agents/scout.md`), adding `code_search` + the semantic skill while preserving model/thinking/tools/body. If no user scout exists, installation is skipped with a sanitized warning. Existing project scout files are never modified. User-level scout files are never modified. The package does not distribute a scout agent.
 
 Because eligibility is asynchronous after startup discovery, newly installed project assets may take effect on the **next** Hatfield session.
 

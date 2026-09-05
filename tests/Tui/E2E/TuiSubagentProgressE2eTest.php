@@ -130,15 +130,11 @@ final class TuiSubagentProgressE2eTest extends TestCase
             $this->tmux->saveAnsiSnapshot($pane, 'subagent-progress-resume');
             $this->persistComparisonArtifacts($pane, 'subagent-progress-resume');
             $this->tmux->sendKey($pane, 'C-d');
-            // Wait for natural exit before tearDown removeDirectory; killAll alone can leave a
-            // still-writing HOME catalog under the isolated tree.
-            $this->tmux->waitUntilPaneExits($pane, 10.0);
         } catch (\Throwable $e) {
             $this->tmux->saveAnsiSnapshot($pane, 'subagent-progress-resume-FAILURE');
             $this->persistComparisonArtifacts($pane, 'subagent-progress-resume-FAILURE');
             try {
                 $this->tmux->sendKey($pane, 'C-d');
-                $this->tmux->waitUntilPaneExits($pane, 10.0);
             } catch (\Throwable) {
             }
             throw $e;

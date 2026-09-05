@@ -142,8 +142,9 @@ YAML
 
         // First pass clears the known tree. A concurrent writer (for example a TUI agent
         // flushing ~/.hatfield/ai-catalog.yaml during tearDown) can recreate entries between
-        // the child walk and the final rmdir. A second immediate pass covers that race
-        // without sleeping; removeDirectoryOnce is a no-op when the path is already gone.
+        // the child walk and the final rmdir. Ownership teardown must stop writers first;
+        // a second immediate pass only absorbs the unlink/rmdir TOCTOU window and must not
+        // replace process ownership. removeDirectoryOnce is a no-op when already gone.
         self::removeDirectoryOnce($dir);
         self::removeDirectoryOnce($dir);
     }
