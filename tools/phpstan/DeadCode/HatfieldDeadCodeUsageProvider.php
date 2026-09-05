@@ -16,6 +16,7 @@ use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressChildR
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressParallelSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingleSnapshotDTO;
 use Ineersa\CodingAgent\Tests\Runtime\Controller\E2E\Replay\StreamPacingHttpClient;
+use Ineersa\Tui\Terminal\CachedWidthValidationRenderer;
 use Ineersa\Tui\Terminal\DeferredCursorCommitScreenWriter;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use ShipMonk\PHPStan\DeadCode\Provider\ReflectionBasedMemberUsageProvider;
@@ -84,6 +85,10 @@ final class HatfieldDeadCodeUsageProvider extends ReflectionBasedMemberUsageProv
             && \in_array($method->getName(), ['stream', 'withOptions'], true)
             && $method->getDeclaringClass()->implementsInterface(HttpClientInterface::class)) {
             return VirtualUsageData::withNote('Required HttpClientInterface methods reported unused after test-usage exclusion');
+        }
+
+        if (CachedWidthValidationRenderer::class === $className) {
+            return VirtualUsageData::withNote('Symfony TUI Renderer contract installed through class_alias');
         }
 
         if (DeferredCursorCommitScreenWriter::class === $className) {

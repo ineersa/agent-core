@@ -22,23 +22,17 @@ use Symfony\Component\Lock\LockFactory;
  *
  * Append/sequence/bootstrap mechanics and the decode/denormalize/schema/sort
  * primitives are delegated to {@see JsonlRunEventLog}; this class owns the
- * session path resolution, size+mtime read cache, and read diagnostics.
+ * session path resolution and read diagnostics.
+ *
+ * allFor() always returns the complete canonical stream from disk. There is no
+ * process-local decoded snapshot cache: compaction and other writers can mutate
+ * the file outside this process, and retaining every decoded body after resume
+ * kept obsolete pre-compaction payloads hot for the TUI lifetime.
  */
 final class SessionRunEventStore implements EventStoreInterface
 {
     private readonly string $sessionsBasePath;
     private readonly JsonlRunEventLog $eventLog;
-
-    /**
-     * Process-local decoded snapshot cache keyed by resolved events.jsonl path.
-     *
-     * Signature is size+mtime after clearstatcache. Resume callers may call allFor()
-     * multiple times for the same unchanged file; reuse the already-parsed list rather
-     * than re-reading/decoding/sorting. Missing/unreadable/failed reads are not cached.
-     *
-     * @var array<string, array{size: int, mtime: int, events: list<RunEvent>}>
-     */
-    private array $allForCache = [];
 
     public function __construct(
         HatfieldSessionStore $hatfieldSessionStore,
@@ -56,7 +50,7 @@ final class SessionRunEventStore implements EventStoreInterface
     {
         $path = $this->eventsPath($event->runId);
 
-        return $this->eventLog->appendMany($path, events: [$event], onWritten: $this->invalidateAllForCache(...))[0];
+        return $this->eventLog->appendMany($path, events: [$event])[0];
     }
 
     public function appendMany(array $events): array
@@ -74,7 +68,7 @@ final class SessionRunEventStore implements EventStoreInterface
 
         $path = $this->eventsPath($runId);
 
-        return $this->eventLog->appendMany($path, $events, onWritten: $this->invalidateAllForCache(...));
+        return $this->eventLog->appendMany($path, $events);
     }
 
     public function latestSequenceFor(string $runId): ?int
@@ -109,7 +103,7 @@ final class SessionRunEventStore implements EventStoreInterface
     }
 
     /**
-     * Streams events one JSONL line at a time without populating the allFor snapshot cache.
+     * Streams events one JSONL line at a time without materializing the full allFor list.
      *
      * Events are physically appended under the per-run sequence lock, so durable file order
      * is canonical sequence order (with possible sequence holes). The scan stops at the first
@@ -167,26 +161,8 @@ final class SessionRunEventStore implements EventStoreInterface
     public function allFor(string $runId): array
     {
         $path = $this->eventsPath($runId);
-
-        $preSignature = $this->fileSignature($path);
-        if (null === $preSignature) {
-            unset($this->allForCache[$path]);
-
-            return [];
-        }
-
-        $cached = $this->allForCache[$path] ?? null;
-        if (null !== $cached
-            && $cached['size'] === $preSignature['size']
-            && $cached['mtime'] === $preSignature['mtime']
-        ) {
-            return $cached['events'];
-        }
-
-        $contents = file_get_contents($path);
+        $contents = @file_get_contents($path);
         if (false === $contents) {
-            unset($this->allForCache[$path]);
-
             return [];
         }
 
@@ -199,25 +175,7 @@ final class SessionRunEventStore implements EventStoreInterface
             }
         }
 
-        $events = $this->eventLog->sortBySeq($events);
-
-        // Cache only when the file signature is stable across the read window.
-        // A concurrent append during file_get_contents can race; do not lock/retry — just skip caching.
-        $postSignature = $this->fileSignature($path);
-        if (null !== $postSignature
-            && $postSignature['size'] === $preSignature['size']
-            && $postSignature['mtime'] === $preSignature['mtime']
-        ) {
-            $this->allForCache[$path] = [
-                'size' => $postSignature['size'],
-                'mtime' => $postSignature['mtime'],
-                'events' => $events,
-            ];
-        } else {
-            unset($this->allForCache[$path]);
-        }
-
-        return $events;
+        return $this->eventLog->sortBySeq($events);
     }
 
     private function eventFromLine(string $runId, string $line): ?RunEvent
@@ -263,37 +221,6 @@ final class SessionRunEventStore implements EventStoreInterface
         }
 
         return $event;
-    }
-
-    /**
-     * Successful physical write only: drop any process-local snapshot for this path.
-     */
-    private function invalidateAllForCache(string $path): void
-    {
-        unset($this->allForCache[$path]);
-    }
-
-    /**
-     * @return array{size: int, mtime: int}|null
-     */
-    private function fileSignature(string $path): ?array
-    {
-        clearstatcache(true, $path);
-
-        if (!is_readable($path)) {
-            return null;
-        }
-
-        $size = filesize($path);
-        $mtime = filemtime($path);
-        if (false === $size || false === $mtime) {
-            return null;
-        }
-
-        return [
-            'size' => $size,
-            'mtime' => $mtime,
-        ];
     }
 
     private function eventsPath(string $runId): string

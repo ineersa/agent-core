@@ -10,8 +10,8 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 /**
  * State for interactive child live view inside the parent TUI session.
  *
- * Child transcript/seq cache survives {@see exit()} so main/live toggles on the
- * same child can re-show cached blocks without replaying consumed JSONL pipe events.
+ * Outside agents-live, no child transcript/events are retained. Every live-view
+ * entry reconstructs presentation from the child events.jsonl snapshot.
  */
 final class SubagentLiveViewState
 {
@@ -26,24 +26,10 @@ final class SubagentLiveViewState
 
     public float $childLastPoll = 0.0;
 
-    /**
-     * Per-child transcript/seq cache keyed by agentRunId so switching picker rows
-     * does not discard completed transcripts (JSONL pipe events are consumed once).
-     *
-     * Entries also store taskSummary so agent_resume can reuse the same run id for a
-     * new invocation without restoring the prior task's terminal activity.
-     *
-     * @var array<string, array{transcript: list<TranscriptBlock>, lastSeq: int, lastPoll: float, activity: RunActivityStateEnum, taskSummary: string, queuedUserMessages: array<string, string>, replayEvents: list<\Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent>}>
-     */
-    public array $childCaches = [];
-
     public RunActivityStateEnum $childActivity = RunActivityStateEnum::Idle;
 
     /** @var array<string, string> idempotency_key => text */
     public array $childQueuedUserMessages = [];
-
-    /** @var list<\Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent> */
-    public array $childReplayEvents = [];
 
     /**
      * Last combined parent|child working line pushed to ChatScreen while live view is active.
@@ -63,98 +49,16 @@ final class SubagentLiveViewState
      */
     public ?string $lastPickerFeedbackWorkingMessage = null;
 
-    public function isSameChild(SubagentLiveChildDTO $child): bool
-    {
-        return null !== $this->selected
-            && $this->selected->artifactId === $child->artifactId
-            && $this->selected->agentRunId === $child->agentRunId;
-    }
-
-    /**
-     * True when entering this child requires resetting the child projector and cache.
-     */
-    public function shouldResetProjectionFor(SubagentLiveChildDTO $child): bool
-    {
-        if (!$this->isSameChild($child)) {
-            return true;
-        }
-
-        return [] === $this->childTranscript;
-    }
-
-    public function persistCurrentChildCache(): void
-    {
-        if (null === $this->selected || '' === $this->selected->agentRunId) {
-            return;
-        }
-
-        $this->childCaches[$this->selected->agentRunId] = [
-            'transcript' => $this->childTranscript,
-            'lastSeq' => $this->childLastSeq,
-            'lastPoll' => $this->childLastPoll,
-            'activity' => $this->childActivity,
-            'taskSummary' => $this->selected->taskSummary,
-            'queuedUserMessages' => $this->childQueuedUserMessages,
-            'replayEvents' => $this->childReplayEvents,
-        ];
-    }
-
     public function enter(SubagentLiveChildDTO $child): void
     {
         $this->active = true;
-
-        if (!$this->isSameChild($child)) {
-            $this->persistCurrentChildCache();
-        }
-
-        $cached = $this->childCaches[$child->agentRunId] ?? null;
-        if (null !== $cached && [] !== $cached['transcript']) {
-            $this->selected = $child;
-            $this->childTranscript = $cached['transcript'];
-            $this->childLastSeq = $cached['lastSeq'];
-            $this->childLastPoll = $cached['lastPoll'];
-            $sameGeneration = $cached['taskSummary'] === $child->taskSummary;
-            if ($sameGeneration) {
-                $this->childActivity = $cached['activity'];
-                $this->childQueuedUserMessages = $cached['queuedUserMessages'] ?? [];
-                $this->childReplayEvents = $cached['replayEvents'] ?? [];
-            } else {
-                // Resume reuses agentRunId: keep transcript/seq continuity, adopt the
-                // newly selected catalog lifecycle, and drop prior-task transient state.
-                $this->childActivity = $child->status->toActivity() ?? RunActivityStateEnum::Completed;
-                $this->childQueuedUserMessages = [];
-                $this->childReplayEvents = [];
-                $this->persistCurrentChildCache();
-            }
-
-            return;
-        }
-
-        if ($this->shouldResetProjectionFor($child)) {
-            $this->selected = $child;
-            $this->childTranscript = [];
-            $this->childLastSeq = 0;
-            $this->childLastPoll = 0.0;
-            // KEEP: fresh-enter fallback collapses every non-active status
-            // (Completed/Done/Failed/Cancelled/Unknown) to Completed. This
-            // differs from SubagentLiveStatusEnum::toActivity() (Failed and
-            // Cancelled map to themselves) — preserved verbatim to avoid a
-            // behavior change; the next poll tick reconciles from the catalog.
-            $this->childActivity = $this->activityFromCatalogChild($child);
-
-            return;
-        }
-
         $this->selected = $child;
-        $mappedActivity = $child->status->toActivity();
-        if (null !== $mappedActivity) {
-            $this->childActivity = $mappedActivity;
-        }
+        $this->childTranscript = [];
+        $this->childLastSeq = 0;
+        $this->childLastPoll = 0.0;
+        $this->childQueuedUserMessages = [];
+        $this->childActivity = $this->activityFromCatalogChild($child);
     }
-
-    /**
-     * Leaves live view UI mode but keeps child cache for fast re-entry.
-     */
 
     /**
      * @return list<TranscriptBlock>
@@ -177,20 +81,29 @@ final class SubagentLiveViewState
         ];
     }
 
-    public function removeChildCache(string $agentRunId): void
+    public function clearProjectedState(): void
     {
-        unset($this->childCaches[$agentRunId]);
+        $this->childTranscript = [];
+        $this->childLastSeq = 0;
+        $this->childLastPoll = 0.0;
+        $this->childQueuedUserMessages = [];
+        $this->childActivity = RunActivityStateEnum::Idle;
+        $this->lastLiveWorkingMessage = null;
     }
 
     public function exit(): void
     {
         $this->active = false;
-        $this->lastLiveWorkingMessage = null;
-        $this->childQueuedUserMessages = [];
+        $this->selected = null;
+        $this->clearProjectedState();
+        $this->pickerFeedbackMessage = null;
+        $this->lastPickerFeedbackWorkingMessage = null;
     }
 
     private function activityFromCatalogChild(SubagentLiveChildDTO $child): RunActivityStateEnum
     {
+        // Fresh entry uses Completed for all inactive statuses until replay/poll
+        // reconciles the exact lifecycle; unlike toActivity(), Unknown is not preserved.
         return match (true) {
             SubagentLiveStatusEnum::WaitingHuman === $child->status => RunActivityStateEnum::WaitingHuman,
             $child->isRunning() => RunActivityStateEnum::Running,

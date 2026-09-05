@@ -148,10 +148,17 @@ final class RuntimeEventPoller
                                         $state->handle->runId,
                                         $positionTurnNo,
                                     );
-                                    $state->replaceTranscript($snapshot->transcriptBlocks);
+                                    // Full replacement restores authoritative retained history.
+                                    // Hydrate the live projector from the same snapshot so later
+                                    // compaction.completed can find prior retention markers.
+                                    $state->applyTranscriptChangeSet(
+                                        TranscriptChangeSet::full($snapshot->transcriptBlocks),
+                                    );
+                                    $this->eventApplier->hydrateProjectedTranscript($snapshot->transcriptBlocks);
                                 } else {
                                     // Before first turn: empty conversation transcript.
-                                    $state->replaceTranscript([]);
+                                    $state->applyTranscriptChangeSet(TranscriptChangeSet::full([]));
+                                    $this->eventApplier->hydrateProjectedTranscript([]);
                                 }
                             } catch (\Throwable $e) {
                                 $this->logger->warning('runtime_event_poller.history_position_changed_rebuild_failed', [
@@ -161,7 +168,8 @@ final class RuntimeEventPoller
                                 ]);
                                 // Intentional degradation: clear transcript rather than show stale
                                 // discarded-tail content when projection fails.
-                                $state->replaceTranscript([]);
+                                $state->applyTranscriptChangeSet(TranscriptChangeSet::full([]));
+                                $this->eventApplier->hydrateProjectedTranscript([]);
                             }
 
                             if ('' !== $editorPromptText) {
@@ -173,7 +181,8 @@ final class RuntimeEventPoller
                                 'run_id' => null !== $state->handle ? $state->handle->runId : 'unknown',
                                 'position_turn_no' => $positionTurnNo,
                             ]);
-                            $state->replaceTranscript([]);
+                            $state->applyTranscriptChangeSet(TranscriptChangeSet::full([]));
+                            $this->eventApplier->hydrateProjectedTranscript([]);
                         }
 
                         // Skip queued follow-up dispatch, callback handlers, and processing
@@ -274,6 +283,13 @@ final class RuntimeEventPoller
             $changes = $this->eventApplier->drainProjectedChanges();
             if (!$changes->isEmpty()) {
                 $state->applyTranscriptChangeSet($changes);
+
+                // Retention-floor advances can drop session-local UI blocks that
+                // never entered the projector. Return an authoritative snapshot so
+                // the mounted transcript matches session state.
+                if (null !== $changes->retentionFloorBlockId) {
+                    return TranscriptChangeSet::full($state->transcript);
+                }
 
                 return $changes;
             }

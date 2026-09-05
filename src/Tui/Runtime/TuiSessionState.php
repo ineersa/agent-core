@@ -305,25 +305,16 @@ final class TuiSessionState
         $this->rebuildTranscriptIndexIfStale();
         $changed = false;
 
-        // Batch removals: splice high indices first, rebuild ID map once (near-linear).
+        // Compaction can remove a whole segment. Filter once rather than splice
+        // and shift the remaining transcript for every removed block.
         if ([] !== $changes->removals) {
-            $indices = [];
-            foreach ($changes->removals as $id) {
-                $idx = $this->transcriptIndexById[$id] ?? null;
-                if (null !== $idx) {
-                    $indices[] = $idx;
-                    unset($this->transcriptIndexById[$id]);
-                }
-            }
-            if ([] !== $indices) {
-                rsort($indices, \SORT_NUMERIC);
-                foreach ($indices as $idx) {
-                    array_splice($this->transcript, $idx, 1);
-                }
-                $this->transcriptIndexById = [];
-                foreach ($this->transcript as $i => $block) {
-                    $this->transcriptIndexById[$block->id] = $i;
-                }
+            $removedIds = array_fill_keys($changes->removals, true);
+            $next = array_values(array_filter(
+                $this->transcript,
+                static fn (TranscriptBlock $block): bool => !isset($removedIds[$block->id]),
+            ));
+            if (\count($next) !== \count($this->transcript)) {
+                $this->replaceTranscript($next);
                 $changed = true;
             }
         }
@@ -344,6 +335,12 @@ final class TuiSessionState
 
             $this->transcript[$idx] = $block;
             $changed = true;
+        }
+
+        if (null !== $changes->retentionFloorBlockId) {
+            if ($this->dropLocalBlocksBeforeRetentionFloor($changes->retentionFloorBlockId)) {
+                $changed = true;
+            }
         }
 
         return $changed;
@@ -374,5 +371,42 @@ final class TuiSessionState
         foreach ($this->transcript as $idx => $block) {
             $this->transcriptIndexById[$block->id] = $idx;
         }
+    }
+
+    /**
+     * Drop session-local UI blocks that sit strictly before a retention floor.
+     *
+     * Local Error / Processing… blocks never enter the runtime projector, so
+     * projector ID removals cannot evict them. When compaction advances the
+     * rolling window, drop locals that appear before the floor marker while
+     * keeping newer locals that arrived after it.
+     */
+    private function dropLocalBlocksBeforeRetentionFloor(string $floorBlockId): bool
+    {
+        $this->rebuildTranscriptIndexIfStale();
+        $floorIdx = $this->transcriptIndexById[$floorBlockId] ?? null;
+        if (null === $floorIdx || $floorIdx <= 0) {
+            return false;
+        }
+
+        $kept = [];
+        for ($i = 0; $i < $floorIdx; ++$i) {
+            $block = $this->transcript[$i];
+            // Projector prune already removed owned history before the floor,
+            // except ToolCall blocks retained for still-visible ToolResults.
+            // Anything else still sitting before the floor is session-local UI
+            // (or stale) and must leave with the evicted segment.
+            if (TranscriptBlockKindEnum::ToolCall === $block->kind) {
+                $kept[] = $block;
+            }
+        }
+
+        if (\count($kept) === $floorIdx) {
+            return false;
+        }
+
+        $this->replaceTranscript([...$kept, ...\array_slice($this->transcript, $floorIdx)]);
+
+        return true;
     }
 }

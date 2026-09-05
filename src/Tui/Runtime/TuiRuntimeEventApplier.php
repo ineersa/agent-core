@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Runtime;
 
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotInterface;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
@@ -109,6 +110,20 @@ final readonly class TuiRuntimeEventApplier
     public function drainProjectedChanges(): TranscriptChangeSet
     {
         return $this->projector->drainChanges();
+    }
+
+    /**
+     * Hydrate the live projector from an isolated history-position snapshot.
+     *
+     * Does not mutate usage/activity. Clears projector dirty tracking so the
+     * next drain only sees post-position events. Subsequent compaction can find
+     * prior compaction.completed markers in the hydrated blocks.
+     *
+     * @param list<TranscriptBlock> $blocks
+     */
+    public function hydrateProjectedTranscript(array $blocks): void
+    {
+        $this->projector->replaceProjectedBlocks($blocks);
     }
 
     private function ingestSubagentProgress(TuiSessionState $state, RuntimeEvent $event): void

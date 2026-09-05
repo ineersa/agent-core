@@ -59,4 +59,12 @@ final readonly class TranscriptProjector implements TranscriptProjectorInterface
     {
         $this->state->reset();
     }
+
+    /**
+     * @param list<TranscriptBlock> $blocks
+     */
+    public function replaceProjectedBlocks(array $blocks): void
+    {
+        $this->state->replaceBlocks($blocks);
+    }
 }
