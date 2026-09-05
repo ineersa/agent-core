@@ -100,7 +100,7 @@ final class SessionRunEventStoreTest extends TestCase
         $this->assertSame('tool_execution_start', $events[2]->type);
     }
 
-    public function testRangeForStreamsInclusiveOrderedBoundsAcrossHolesWithoutAllForSnapshot(): void
+    public function testRangeForStreamsInclusiveOrderedBoundsAcrossHolesWithoutMaterializingAllFor(): void
     {
         $runId = 'run-'.bin2hex(random_bytes(4));
         $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started'));
@@ -307,7 +307,7 @@ final class SessionRunEventStoreTest extends TestCase
         $this->assertSame('run_started', $events[0]->type);
     }
 
-    public function testUnchangedAllForDecodesIncompatibleSchemaOnlyOnce(): void
+    public function testAllForSkipsIncompatibleSchemaOnEachRead(): void
     {
         $logger = new TestLogger();
         $store = $this->createStore($logger);
@@ -325,18 +325,19 @@ final class SessionRunEventStoreTest extends TestCase
         $second = $store->allFor($runId);
 
         $this->assertCount(1, $first);
-        $this->assertSame($first, $second);
+        $this->assertCount(1, $second);
         $this->assertSame('run_started', $first[0]->type);
         $this->assertSame('once', $first[0]->payload['marker']);
+        $this->assertSame('run_started', $second[0]->type);
 
         $skipped = array_values(array_filter(
             $logger->records,
             static fn (array $record): bool => 'session.incompatible_schema_skipped' === ($record['context']['event_type'] ?? null),
         ));
         $this->assertCount(
-            1,
+            2,
             $skipped,
-            'Unchanged allFor must reuse the decoded snapshot so the skip diagnostic is emitted only once',
+            'allFor must re-read and re-decode from disk on every call',
         );
     }
 
@@ -372,7 +373,7 @@ final class SessionRunEventStoreTest extends TestCase
         $this->assertSame('external', $second[1]->payload['source']);
     }
 
-    public function testStoreOwnedAppendInvalidatesAllForCache(): void
+    public function testStoreOwnedAppendIsVisibleOnNextAllFor(): void
     {
         $runId = 'run-'.bin2hex(random_bytes(4));
         $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started', payload: []));

@@ -39,8 +39,7 @@ final class JsonlRunEventLog
     /**
      * Allocates a contiguous seq block and appends already-validated events under the run lock.
      *
-     * @param list<RunEvent>                    $events
-     * @param callable(string $path): void|null $onWritten invoked after every successful physical write
+     * @param list<RunEvent> $events
      *
      * @return list<RunEvent>
      */
@@ -49,7 +48,6 @@ final class JsonlRunEventLog
         array $events,
         string $runLabel = 'run',
         ?int $dirMode = null,
-        ?callable $onWritten = null,
     ): array {
         $lock = $this->lockFactory->createLock('hatfield-run-'.$events[0]->runId);
         $lock->acquire(true);
@@ -65,9 +63,6 @@ final class JsonlRunEventLog
             foreach ($events as $index => $event) {
                 $persistedEvent = $this->withSeq($event, $seqBlock[$index]);
                 $this->writeEventLocked($path, $persistedEvent, $runLabel, $dirMode);
-                if (null !== $onWritten) {
-                    $onWritten($path);
-                }
                 $persisted[] = $persistedEvent;
             }
 

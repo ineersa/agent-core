@@ -6,16 +6,26 @@ namespace Ineersa\CodingAgent\Runtime\ProjectionPipeline;
 
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 
 /**
  * Projects compaction lifecycle events into transcript blocks.
  *
+ * On successful compaction.completed, also advances the rolling compaction
+ * retention window owned by {@see TranscriptProjectionState}: keep the previous
+ * completed conversation segment plus the current segment. Compaction #1 keeps
+ * conversation #1; compaction #2 evicts conversation #1; compaction #3 evicts
+ * conversation #2. Duplicate completion delivery for the same positive event
+ * seq does not advance the window twice.
+ *
  * Contributes to {@see TranscriptProjector} via Symfony EventDispatcher.
  */
 final readonly class CompactionProjectionSubscriber implements EventSubscriberInterface
 {
+    private const string LIFECYCLE_COMPACTION_COMPLETED = 'compaction_completed';
+
     public static function getSubscribedEvents(): array
     {
         return [
@@ -50,6 +60,15 @@ final readonly class CompactionProjectionSubscriber implements EventSubscriberIn
         $p = $event->payload();
         $state = $event->state;
         $runId = $event->runId();
+        $eventSeq = $event->runtimeEvent->seq;
+
+        $previousCompletedId = $this->findLatestCompactionCompletedBlockId($state);
+
+        // Duplicate positive-seq delivery is a pure no-op: do not prune again and
+        // do not append another completed marker.
+        if (!$state->advanceCompactionRetention($eventSeq, $previousCompletedId)) {
+            return;
+        }
 
         // Remove the "Compacting conversation..." streaming placeholder
         // (blocks with streaming=true for this runId).
@@ -67,7 +86,7 @@ final readonly class CompactionProjectionSubscriber implements EventSubscriberIn
             text: $text,
             meta: [
                 'category' => 'lifecycle',
-                'lifecycle' => 'compaction_completed',
+                'lifecycle' => self::LIFECYCLE_COMPACTION_COMPLETED,
                 'severity' => 'info',
                 'estimated_tokens_before' => $before,
                 'estimated_tokens_after' => $after,
@@ -98,5 +117,21 @@ final readonly class CompactionProjectionSubscriber implements EventSubscriberIn
                 'reason' => (string) ($p['reason'] ?? ''),
             ],
         ));
+    }
+
+    private function findLatestCompactionCompletedBlockId(TranscriptProjectionState $state): ?string
+    {
+        $latestId = null;
+        foreach ($state->blocks() as $block) {
+            if (TranscriptBlockKindEnum::System !== $block->kind) {
+                continue;
+            }
+            if (self::LIFECYCLE_COMPACTION_COMPLETED !== ($block->meta['lifecycle'] ?? null)) {
+                continue;
+            }
+            $latestId = $block->id;
+        }
+
+        return $latestId;
     }
 }

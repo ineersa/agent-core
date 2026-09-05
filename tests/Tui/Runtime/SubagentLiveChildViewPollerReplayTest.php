@@ -34,7 +34,7 @@ final class SubagentLiveChildViewPollerReplayTest extends TestCase
     private const string CHILD_RUN_ID = 'child_run_replay';
 
     #[Test]
-    public function replaySnapshotSetsChildLastSeqAndFiresHitlCallback(): void
+    public function replaySnapshotSetsChildLastSeqAndFiresUnresolvedHitlOnly(): void
     {
         $projector = new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState());
         $poller = new SubagentLiveChildViewPoller($projector, new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer());
@@ -45,7 +45,7 @@ final class SubagentLiveChildViewPollerReplayTest extends TestCase
                     id: 'block-hitl',
                     kind: TranscriptBlockKindEnum::Progress,
                     runId: self::CHILD_RUN_ID,
-                    seq: 2,
+                    seq: 3,
                     text: 'Approve scout plan?',
                 ),
             ],
@@ -53,40 +53,76 @@ final class SubagentLiveChildViewPollerReplayTest extends TestCase
                 new RuntimeEvent(
                     type: RuntimeEventTypeEnum::HumanInputRequested->value,
                     runId: self::CHILD_RUN_ID,
+                    seq: 1,
+                    payload: [
+                        'question_id' => 'q_resolved',
+                        'prompt' => 'old',
+                        'schema' => ['type' => 'string'],
+                    ],
+                ),
+                new RuntimeEvent(
+                    type: RuntimeEventTypeEnum::HumanInputAnswered->value,
+                    runId: self::CHILD_RUN_ID,
                     seq: 2,
                     payload: [
-                        'question_id' => 'q_replay',
+                        'question_id' => 'q_resolved',
+                        'answer' => 'done',
+                    ],
+                ),
+                new RuntimeEvent(
+                    type: RuntimeEventTypeEnum::HumanInputRequested->value,
+                    runId: self::CHILD_RUN_ID,
+                    seq: 3,
+                    payload: [
+                        'question_id' => 'q_open',
                         'prompt' => 'Approve scout plan?',
                         'schema' => ['type' => 'string'],
                     ],
                 ),
             ],
-            maxSeq: 2,
+            maxSeq: 3,
         );
 
         $live = $this->liveState();
-        $hit = false;
-        $hitRunId = null;
+        $hit = [];
 
         $blocks = $poller->replaySnapshot(
             $live,
             $snapshot,
-            onHumanInputRequested: static function (RuntimeEvent $event) use (&$hit, &$hitRunId): void {
-                $hit = true;
-                $hitRunId = $event->runId;
+            onHumanInputRequested: static function (RuntimeEvent $event) use (&$hit): void {
+                $hit[] = (string) ($event->payload['question_id'] ?? '');
             },
         );
 
-        $this->assertTrue($hit);
-        $this->assertSame(self::CHILD_RUN_ID, $hitRunId);
-        $this->assertSame(2, $live->childLastSeq);
+        $this->assertSame(['q_open'], $hit);
+        $this->assertSame(3, $live->childLastSeq);
         $this->assertSame('Approve scout plan?', $blocks[0]->text);
-        $this->assertArrayHasKey(self::CHILD_RUN_ID, $live->childCaches);
-        $this->assertSame(2, $live->childCaches[self::CHILD_RUN_ID]['lastSeq']);
     }
 
     #[Test]
-    public function pollReturnsOnlyIncrementalLiveTranscriptChangesAndPersistsCache(): void
+    public function replaySnapshotDispatchesPendingLocalToolQuestion(): void
+    {
+        $poller = new SubagentLiveChildViewPoller(
+            new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
+            new NullLogger(),
+            SubagentProgressSerializerTestSupport::denormalizer(),
+        );
+        $live = $this->liveState();
+        $hit = [];
+
+        $poller->replaySnapshot(
+            $live,
+            new ChildRunTranscriptSnapshotDTO([], [new RuntimeEvent('tool_question.requested', self::CHILD_RUN_ID, 0, ['request_id' => 'bg_open'])], 0),
+            onToolQuestionRequested: static function (RuntimeEvent $event) use (&$hit): void {
+                $hit[] = (string) ($event->payload['request_id'] ?? '');
+            },
+        );
+
+        $this->assertSame(['bg_open'], $hit);
+    }
+
+    #[Test]
+    public function pollReturnsOnlyIncrementalLiveTranscriptChanges(): void
     {
         $projector = $this->childLiveProjector();
         $poller = new SubagentLiveChildViewPoller($projector, new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer());
@@ -136,7 +172,6 @@ final class SubagentLiveChildViewPollerReplayTest extends TestCase
         $this->assertCount(1, $changes->upserts);
         $this->assertSame('A long reasoning prefix. followed by one streamed suffix.', $changes->upserts[0]->text);
         $this->assertSame(2, $live->childLastSeq);
-        $this->assertSame(2, $live->childCaches[self::CHILD_RUN_ID]['lastSeq']);
         $this->assertSame($changes->upserts[0]->text, $live->childTranscript[0]->text);
     }
 
@@ -220,76 +255,13 @@ final class SubagentLiveChildViewPollerReplayTest extends TestCase
     }
 
     #[Test]
-    public function cachedReentryReprojectsReplayAndLiveEvents(): void
-    {
-        $projector = $this->childLiveProjector();
-        $poller = new SubagentLiveChildViewPoller($projector, new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer());
-
-        $live = $this->liveState();
-        $poller->replaySnapshot(
-            $live,
-            new ChildRunTranscriptSnapshotDTO(
-                [
-                    new TranscriptBlock('b-seed', TranscriptBlockKindEnum::Question, self::CHILD_RUN_ID, 1, 'seed'),
-                ],
-                [
-                    new RuntimeEvent(
-                        RuntimeEventTypeEnum::HumanInputRequested->value,
-                        self::CHILD_RUN_ID,
-                        1,
-                        [
-                            'question_id' => 'q_seed',
-                            'prompt' => 'seed',
-                        ],
-                    ),
-                ],
-                1,
-            ),
-        );
-
-        $client = $this->createMock(AgentSessionClient::class);
-        $client->expects($this->once())
-            ->method('events')
-            ->with(self::CHILD_RUN_ID, $this->anything())
-            ->willReturn([
-                new RuntimeEvent(
-                    RuntimeEventTypeEnum::HumanInputRequested->value,
-                    self::CHILD_RUN_ID,
-                    2,
-                    [
-                        'question_id' => 'q_live',
-                        'prompt' => 'live tail',
-                    ],
-                ),
-            ]);
-
-        $live->childLastPoll = 0.0;
-        $poller->poll($live, $client);
-
-        $this->assertCount(2, $live->childReplayEvents);
-
-        $reentrySnapshot = new ChildRunTranscriptSnapshotDTO(
-            $live->childTranscript,
-            $live->childReplayEvents,
-            $live->childLastSeq,
-        );
-
-        $blocks = $poller->replaySnapshot($live, $reentrySnapshot);
-
-        $texts = array_map(static fn (TranscriptBlock $block): string => $block->text, $blocks);
-        $this->assertContains('seed', $texts);
-        $this->assertContains('live tail', $texts);
-        $this->assertCount(2, $live->childReplayEvents);
-        $this->assertCount(2, $live->childCaches[self::CHILD_RUN_ID]['replayEvents']);
-    }
-
-    #[Test]
     public function pollRetainsFailedSuffixUntilItApplies(): void
     {
         $projector = $this->createMock(TranscriptProjectorInterface::class);
         $projector->method('reset');
         $projector->method('blocks')->willReturn([]);
         $projector->method('drainChanges')->willReturn(TranscriptChangeSet::incremental([]));
+        $projector->method('replaceProjectedBlocks');
         $projector->expects($this->exactly(2))->method('accept')->willReturnOnConsecutiveCalls(
             $this->throwException(new \RuntimeException('projection failed')),
             null,

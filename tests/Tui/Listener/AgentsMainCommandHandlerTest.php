@@ -4,18 +4,24 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Listener;
 
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
+use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\AgentsMainCommandHandler;
 use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
+use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
 use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 
 final class AgentsMainCommandHandlerTest extends TestCase
 {
@@ -63,7 +69,17 @@ final class AgentsMainCommandHandlerTest extends TestCase
         $coordinator = new QuestionCoordinator();
         $controller = new QuestionController($coordinator, $screen);
 
-        return new AgentsMainCommandHandler($state, $screen, $coordinator, $controller);
+        return new AgentsMainCommandHandler(
+            $state,
+            $screen,
+            $coordinator,
+            $controller,
+            new SubagentLiveChildViewPoller(
+                new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
+                new NullLogger(),
+                SubagentProgressSerializerTestSupport::denormalizer(),
+            ),
+        );
     }
 
     private function screen(): ChatScreen

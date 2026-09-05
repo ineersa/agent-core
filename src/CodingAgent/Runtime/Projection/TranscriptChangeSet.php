@@ -10,6 +10,11 @@ namespace Ineersa\CodingAgent\Runtime\Projection;
  * Ordinary streaming/tool updates emit {@see self::MODE_INCREMENTAL} with only
  * dirty upserts and explicit removals. Bootstrap, resume, history-position replace,
  * and projector reset use {@see self::MODE_FULL}.
+ *
+ * When rolling compaction retention advances, incremental deltas may also carry
+ * {@see $retentionFloorBlockId}: the previous compaction.completed marker that is
+ * now the retained floor. Session application must drop local UI blocks strictly
+ * before that floor while keeping newer locals.
  */
 final readonly class TranscriptChangeSet
 {
@@ -17,15 +22,17 @@ final readonly class TranscriptChangeSet
     public const string MODE_INCREMENTAL = 'incremental';
 
     /**
-     * @param list<TranscriptBlock> $upserts  Ordered dirty/appended/updated blocks (incremental)
-     * @param list<string>          $removals Removed block IDs (incremental)
-     * @param list<TranscriptBlock> $blocks   Complete ordered snapshot (full only)
+     * @param list<TranscriptBlock> $upserts               Ordered dirty/appended/updated blocks (incremental)
+     * @param list<string>          $removals              Removed block IDs (incremental)
+     * @param list<TranscriptBlock> $blocks                Complete ordered snapshot (full only)
+     * @param string|null           $retentionFloorBlockId Previous compaction.completed id when retention advanced
      */
     private function __construct(
         public string $mode,
         public array $upserts = [],
         public array $removals = [],
         public array $blocks = [],
+        public ?string $retentionFloorBlockId = null,
     ) {
     }
 
@@ -41,9 +48,14 @@ final readonly class TranscriptChangeSet
      * @param list<TranscriptBlock> $upserts
      * @param list<string>          $removals
      */
-    public static function incremental(array $upserts, array $removals = []): self
+    public static function incremental(array $upserts, array $removals = [], ?string $retentionFloorBlockId = null): self
     {
-        return new self(mode: self::MODE_INCREMENTAL, upserts: $upserts, removals: $removals);
+        return new self(
+            mode: self::MODE_INCREMENTAL,
+            upserts: $upserts,
+            removals: $removals,
+            retentionFloorBlockId: $retentionFloorBlockId,
+        );
     }
 
     public function isFull(): bool
@@ -57,7 +69,7 @@ final readonly class TranscriptChangeSet
             return false;
         }
 
-        return [] === $this->upserts && [] === $this->removals;
+        return [] === $this->upserts && [] === $this->removals && null === $this->retentionFloorBlockId;
     }
 
     /**

@@ -56,6 +56,24 @@ final class TranscriptProjectionState
      */
     private array $removedIds = [];
 
+    /**
+     * Highest compaction.completed runtime event seq whose rolling retention
+     * window has already been applied on this projection state.
+     *
+     * Prevents duplicate completion delivery from advancing the window twice.
+     * Reset with {@see reset()}. Canonical seq 0 never participates in dedup.
+     */
+    private int $lastAppliedCompactionEventSeq = 0;
+
+    /**
+     * Previous compaction.completed block id that became the retention floor
+     * during the outstanding dirty window (cleared by {@see drainChanges()}).
+     *
+     * Session application uses this to drop local UI blocks that belonged to
+     * the evicted segment while keeping newer locals.
+     */
+    private ?string $pendingRetentionFloorBlockId = null;
+
     // ── State mutation ──────────────────────────────────────────────────────
 
     /**
@@ -119,6 +137,40 @@ final class TranscriptProjectionState
         $this->removedIds[$id] = true;
     }
 
+    /**
+     * Advance the rolling compaction retention window for a successful
+     * compaction.completed event.
+     *
+     * Compaction #1 keeps conversation #1 (no prior completed marker).
+     * Compaction #2 evicts conversation #1 by pruning strictly before the
+     * previous completed marker. Compaction #3 evicts conversation #2.
+     *
+     * Duplicate delivery of the same positive event seq is a pure no-op.
+     * Seq 0 is treated as non-dedupable and always applies.
+     *
+     * ToolCall blocks before the floor remain when a retained ToolResult still
+     * references their tool_call_id.
+     *
+     * @return bool True when retention advanced (caller should append the new marker)
+     */
+    public function advanceCompactionRetention(int $eventSeq, ?string $previousCompletedBlockId): bool
+    {
+        if ($eventSeq > 0 && $eventSeq <= $this->lastAppliedCompactionEventSeq) {
+            return false;
+        }
+
+        if (null !== $previousCompletedBlockId) {
+            $this->pruneBlocksBefore($previousCompletedBlockId);
+            $this->pendingRetentionFloorBlockId = $previousCompletedBlockId;
+        }
+
+        if ($eventSeq > $this->lastAppliedCompactionEventSeq) {
+            $this->lastAppliedCompactionEventSeq = $eventSeq;
+        }
+
+        return true;
+    }
+
     // ── Accessors ────────────────────────────────────────────────────────────
 
     /**
@@ -177,7 +229,10 @@ final class TranscriptProjectionState
         $this->dirtyOrder = [];
         $this->removedIds = [];
 
-        return TranscriptChangeSet::incremental($upserts, $removals);
+        $retentionFloorBlockId = $this->pendingRetentionFloorBlockId;
+        $this->pendingRetentionFloorBlockId = null;
+
+        return TranscriptChangeSet::incremental($upserts, $removals, $retentionFloorBlockId);
     }
 
     /**
@@ -192,6 +247,38 @@ final class TranscriptProjectionState
         $this->dirtyIds = [];
         $this->dirtyOrder = [];
         $this->removedIds = [];
+        $this->lastAppliedCompactionEventSeq = 0;
+        $this->pendingRetentionFloorBlockId = null;
+    }
+
+    /**
+     * Replace the projected block list without replaying events.
+     *
+     * Clears dirty/removal/pending-retention tracking. Does not change
+     * {@see $lastAppliedCompactionEventSeq} — callers that need a clean
+     * retention dedup cursor must {@see reset()} first.
+     *
+     * @param list<TranscriptBlock> $blocks
+     */
+    public function replaceBlocks(array $blocks): void
+    {
+        $this->blocks = [];
+        $this->order = [];
+        $this->orderIndex = [];
+        $this->dirtyIds = [];
+        $this->dirtyOrder = [];
+        $this->removedIds = [];
+        $this->pendingRetentionFloorBlockId = null;
+        $this->nextSeq = 0;
+
+        foreach ($blocks as $block) {
+            $this->orderIndex[$block->id] = \count($this->order);
+            $this->order[] = $block->id;
+            $this->blocks[$block->id] = $block;
+            if ($block->seq >= $this->nextSeq) {
+                $this->nextSeq = $block->seq + 1;
+            }
+        }
     }
 
     // ── Sequence counter ─────────────────────────────────────────────────────
@@ -446,6 +533,63 @@ final class TranscriptProjectionState
         }
 
         return '('.implode(', ', $parts).')';
+    }
+
+    /**
+     * Evict blocks strictly before {@see $floorBlockId}, keeping the floor and
+     * everything after it.
+     *
+     * ToolCall blocks before the floor remain when a retained ToolResult still
+     * references their tool_call_id, so open exchanges are not orphaned.
+     */
+    private function pruneBlocksBefore(string $floorBlockId): void
+    {
+        $floorIdx = $this->orderIndex[$floorBlockId] ?? null;
+        if (null === $floorIdx || $floorIdx <= 0) {
+            return;
+        }
+
+        /** @var array<string, true> $requiredCallIds */
+        $requiredCallIds = [];
+        $orderCount = \count($this->order);
+        for ($i = $floorIdx; $i < $orderCount; ++$i) {
+            $block = $this->blocks[$this->order[$i]] ?? null;
+            if (null === $block || TranscriptBlockKindEnum::ToolResult !== $block->kind) {
+                continue;
+            }
+            $callId = $block->meta['tool_call_id'] ?? '';
+            if (\is_string($callId) && '' !== $callId) {
+                $requiredCallIds[$callId] = true;
+            }
+        }
+
+        $keptBefore = [];
+        for ($i = 0; $i < $floorIdx; ++$i) {
+            $id = $this->order[$i];
+            $block = $this->blocks[$id] ?? null;
+            if (null === $block) {
+                continue;
+            }
+            if (TranscriptBlockKindEnum::ToolCall === $block->kind) {
+                $callId = $block->meta['tool_call_id'] ?? '';
+                if (\is_string($callId) && isset($requiredCallIds[$callId])) {
+                    $keptBefore[] = $id;
+                    continue;
+                }
+            }
+            unset($this->blocks[$id]);
+            if (isset($this->dirtyIds[$id])) {
+                unset($this->dirtyIds[$id]);
+            }
+            $this->removedIds[$id] = true;
+        }
+
+        $retainedTail = \array_slice($this->order, $floorIdx);
+        $this->order = [...$keptBefore, ...$retainedTail];
+        $this->orderIndex = [];
+        foreach ($this->order as $idx => $id) {
+            $this->orderIndex[$id] = $idx;
+        }
     }
 
     private function markDirty(string $id): void

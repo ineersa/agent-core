@@ -60,6 +60,7 @@ final class RuntimeEventPollerTest extends TestCase
         $this->projector->method('reset');
         $this->projector->method('blocks')->willReturn([]);
         $this->projector->method('drainChanges')->willReturn(TranscriptChangeSet::incremental([]));
+        $this->projector->method('replaceProjectedBlocks');
         $this->sessionTranscriptProvider = $this->createMock(SessionTranscriptProviderInterface::class);
         $this->sessionTranscriptProvider->method('transcriptAtPosition')->willReturn(new SessionTranscriptSnapshotDTO([], []));
         $this->logger = $this->createMock(LoggerInterface::class);
@@ -943,6 +944,8 @@ final class RuntimeEventPollerTest extends TestCase
             /** @var list<RuntimeEvent> */
             public array $accepted = [];
             public bool $wasReset = false;
+            /** @var list<TranscriptBlock> */
+            public array $hydrated = [];
 
             public function accept(RuntimeEvent $event): void
             {
@@ -951,6 +954,21 @@ final class RuntimeEventPollerTest extends TestCase
 
             public function blocks(): array
             {
+                if ([] !== $this->hydrated) {
+                    $blocks = $this->hydrated;
+                    foreach ($this->accepted as $e) {
+                        $blocks[] = new TranscriptBlock(
+                            id: 'block-seq-'.$e->seq,
+                            kind: TranscriptBlockKindEnum::AssistantMessage,
+                            runId: 'test-run',
+                            seq: $e->seq,
+                            text: (string) ($e->payload['text'] ?? ''),
+                        );
+                    }
+
+                    return $blocks;
+                }
+
                 $blocks = [];
                 foreach ($this->accepted as $e) {
                     $blocks[] = new TranscriptBlock(
@@ -968,6 +986,19 @@ final class RuntimeEventPollerTest extends TestCase
             public function drainChanges(): TranscriptChangeSet
             {
                 $blocks = $this->blocks();
+                if ([] !== $this->hydrated) {
+                    // Only emit post-hydration accepted events as incremental dirty.
+                    $blocks = [];
+                    foreach ($this->accepted as $e) {
+                        $blocks[] = new TranscriptBlock(
+                            id: 'block-seq-'.$e->seq,
+                            kind: TranscriptBlockKindEnum::AssistantMessage,
+                            runId: 'test-run',
+                            seq: $e->seq,
+                            text: (string) ($e->payload['text'] ?? ''),
+                        );
+                    }
+                }
                 $this->accepted = [];
 
                 return TranscriptChangeSet::incremental($blocks);
@@ -976,7 +1007,14 @@ final class RuntimeEventPollerTest extends TestCase
             public function reset(): void
             {
                 $this->accepted = [];
+                $this->hydrated = [];
                 $this->wasReset = true;
+            }
+
+            public function replaceProjectedBlocks(array $blocks): void
+            {
+                $this->hydrated = $blocks;
+                $this->accepted = [];
             }
         };
 
@@ -1036,6 +1074,79 @@ final class RuntimeEventPollerTest extends TestCase
 
         // lastSeq advanced to the highest seq in the batch (35, not 20)
         $this->assertSame(35, $this->state->lastSeq);
+    }
+
+    public function testHistoryPositionHydratesLiveProjectorForLaterCompactionRetention(): void
+    {
+        $this->sessionTranscriptProvider = $this->createMock(SessionTranscriptProviderInterface::class);
+        [$poller, $projector] = $this->retentionPoller();
+        $snapshot = [
+            new TranscriptBlock('u1', TranscriptBlockKindEnum::UserMessage, 'test-run', 1, 'conversation 1'),
+            new TranscriptBlock('c1', TranscriptBlockKindEnum::System, 'test-run', 2, 'Conversation compacted.', meta: ['lifecycle' => 'compaction_completed']),
+            new TranscriptBlock('u2', TranscriptBlockKindEnum::UserMessage, 'test-run', 3, 'conversation 2'),
+        ];
+        $this->sessionTranscriptProvider->method('transcriptAtPosition')
+            ->willReturn(new SessionTranscriptSnapshotDTO($snapshot, []));
+        $this->state->appendTranscriptBlock(new TranscriptBlock('old-error', TranscriptBlockKindEnum::Error, 'test-run', 99, 'stale'));
+        $this->client->expects($this->exactly(2))->method('events')->willReturnOnConsecutiveCalls(
+            [new RuntimeEvent('run.history_position_changed', 'test-run', 20, ['position_turn_no' => 2])],
+            [new RuntimeEvent('compaction.completed', 'test-run', 30, [])],
+        );
+
+        $first = $poller->poll($this->state, $this->client);
+        $this->assertInstanceOf(TranscriptChangeSet::class, $first);
+        $this->assertTrue($first->isFull());
+        $this->assertSame($snapshot, $this->state->transcript, 'History replacement also clears local errors.');
+        $this->assertSame($snapshot, $projector->blocks());
+
+        $this->state->lastPoll = 0.0;
+        $second = $poller->poll($this->state, $this->client);
+        $this->assertInstanceOf(TranscriptChangeSet::class, $second);
+        $this->assertSame(['Conversation compacted.', 'conversation 2', 'Conversation compacted.'], array_column($this->state->transcript, 'text'));
+    }
+
+    public function testCompactionRetentionDropsOldLocalsAndKeepsNewerLocals(): void
+    {
+        [$poller] = $this->retentionPoller();
+        $this->state->appendTranscriptBlock(new TranscriptBlock('old-local', TranscriptBlockKindEnum::Error, 'test-run', 99, 'old notice'));
+        $this->client->expects($this->exactly(2))->method('events')->willReturnOnConsecutiveCalls(
+            [
+                new RuntimeEvent('user.message_submitted', 'test-run', 1, ['message_id' => 'u1', 'text' => 'conversation 1']),
+                new RuntimeEvent('compaction.completed', 'test-run', 2, []),
+                new RuntimeEvent('user.message_submitted', 'test-run', 3, ['message_id' => 'u2', 'text' => 'conversation 2']),
+            ],
+            [new RuntimeEvent('compaction.completed', 'test-run', 4, [])],
+        );
+        $poller->poll($this->state, $this->client);
+        $this->state->appendTranscriptBlock(new TranscriptBlock('new-local', TranscriptBlockKindEnum::Error, 'test-run', 100, 'new notice'));
+        $this->state->lastPoll = 0.0;
+
+        $result = $poller->poll($this->state, $this->client);
+
+        $this->assertInstanceOf(TranscriptChangeSet::class, $result);
+        $this->assertTrue($result->isFull());
+        $this->assertSame($result->blocks(), $this->state->transcript);
+        $this->assertSame(['Conversation compacted.', 'conversation 2', 'new notice', 'Conversation compacted.'], array_column($result->blocks(), 'text'));
+    }
+
+    public function testMultipleCompactionsInOnePollRetainOnlyLatestWindow(): void
+    {
+        [$poller, $projector] = $this->retentionPoller();
+        $events = [];
+        for ($i = 1; $i <= 3; ++$i) {
+            $events[] = new RuntimeEvent('user.message_submitted', 'test-run', $i * 2 - 1, [
+                'message_id' => 'u'.$i, 'text' => 'conversation '.$i,
+            ]);
+            $events[] = new RuntimeEvent('compaction.completed', 'test-run', $i * 2, []);
+        }
+        $this->client->expects($this->once())->method('events')->willReturn($events);
+
+        $result = $poller->poll($this->state, $this->client);
+
+        $this->assertInstanceOf(TranscriptChangeSet::class, $result);
+        $this->assertTrue($result->isFull());
+        $this->assertSame($projector->blocks(), $result->blocks());
+        $this->assertSame(['Conversation compacted.', 'conversation 3', 'Conversation compacted.'], array_column($result->blocks(), 'text'));
     }
 
     public function testAlwaysFailingRetainedEventReachesFatalBoundaryAndReleasesSuffix(): void
@@ -1117,5 +1228,23 @@ final class RuntimeEventPollerTest extends TestCase
         $this->assertNull($this->poller->poll($this->state, $this->client));
         $this->assertSame(2, $this->state->lastSeq, 'The retained suffix must be applied after the failed event succeeds.');
         $this->assertSame(3, $attempts, 'The failed event and its following event must both be retried.');
+    }
+
+    /** @return array{RuntimeEventPoller, TranscriptProjectorInterface} */
+    private function retentionPoller(): array
+    {
+        $dispatcher = new \Symfony\Component\EventDispatcher\EventDispatcher();
+        $dispatcher->addSubscriber(new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber());
+        $dispatcher->addSubscriber(new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\CompactionProjectionSubscriber());
+        $projector = new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector(
+            $dispatcher, new \Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState(),
+        );
+
+        return [new RuntimeEventPoller(
+            new TuiRuntimeEventApplier($projector, SubagentProgressSerializerTestSupport::denormalizer()),
+            $this->logger,
+            new RuntimeExceptionBoundary($this->createStub(EventDispatcherInterface::class)),
+            $this->sessionTranscriptProvider,
+        ), $projector];
     }
 }
