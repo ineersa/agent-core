@@ -15,6 +15,7 @@ parameters:
     - .hatfield/extensions/castor-llm-mode/src
     - .hatfield/extensions/file-rewind/src
     - .hatfield/extensions/observational-memory/src
+    - .hatfield/extensions/jbcontext/src
   exclude_files:
     - .*\.test\.php$
     - .*Test\.php$
@@ -174,6 +175,11 @@ parameters:
       collectors:
         - type: classNameRegex
           value: '#^Ineersa\\HatfieldExt\\ObservationalMemory\\#'
+
+    - name: HatfieldExtJbcontext
+      collectors:
+        - type: classNameRegex
+          value: '#^Ineersa\\HatfieldExt\\Jbcontext\\#'
 
     - name: AppExtensionBuiltin
       collectors:
@@ -603,6 +609,7 @@ parameters:
       - AppRuntimeContract
       - AppRuntimeProjection
       - AppExtensionApi
+      - AppExtension
       - AppSystemPrompt
       - AppSkills
       - AppAgent
@@ -821,6 +828,9 @@ parameters:
     HatfieldExtObservationalMemory:
       - AppExtensionApi
       - HatfieldExtObservationalMemory
+    HatfieldExtJbcontext:
+      - AppExtensionApi
+      - HatfieldExtJbcontext
     AppExtensionBuiltin:
       - AppExtensionApi
       - AppRuntimeContract

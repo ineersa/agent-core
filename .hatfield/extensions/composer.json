@@ -9,7 +9,8 @@
         "ineersa/hatfield-ext-task-workflow": "@dev",
         "ineersa/hatfield-ext-castor-llm-mode": "@dev",
         "ineersa/hatfield-ext-file-rewind": "@dev",
-        "ineersa/hatfield-ext-observational-memory": "@dev"
+        "ineersa/hatfield-ext-observational-memory": "@dev",
+        "ineersa/hatfield-ext-jbcontext": "@dev"
     },
     "repositories": [
         {
@@ -31,6 +32,10 @@
         {
             "type": "path",
             "url": "observational-memory"
+        },
+        {
+            "type": "path",
+            "url": "jbcontext"
         }
     ],
     "config": {

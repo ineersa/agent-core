@@ -27,5 +27,6 @@ parameters:
         - .hatfield/extensions/castor-llm-mode/tests/*
         - .hatfield/extensions/file-rewind/tests/*
         - .hatfield/extensions/observational-memory/tests/*
+        - .hatfield/extensions/jbcontext/tests/*
     parallel:
         maximumNumberOfProcesses: 1

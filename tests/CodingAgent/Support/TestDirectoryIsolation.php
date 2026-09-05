@@ -140,20 +140,43 @@ YAML
             return;
         }
 
+        // First pass clears the known tree. A concurrent writer (for example a TUI agent
+        // flushing ~/.hatfield/ai-catalog.yaml during tearDown) can recreate entries between
+        // the child walk and the final rmdir. A second immediate pass covers that race
+        // without sleeping; removeDirectoryOnce is a no-op when the path is already gone.
+        self::removeDirectoryOnce($dir);
+        self::removeDirectoryOnce($dir);
+    }
+
+    private static function removeDirectoryOnce(string $dir): void
+    {
+        if (!is_dir($dir)) {
+            return;
+        }
+
         $iterator = new \RecursiveIteratorIterator(
             new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
             \RecursiveIteratorIterator::CHILD_FIRST,
         );
 
         foreach ($iterator as $file) {
+            $path = $file->getPathname();
             if ($file->isDir()) {
-                rmdir($file->getPathname());
+                @chmod($path, 0755);
+                if (!@rmdir($path) && is_dir($path)) {
+                    throw new \RuntimeException(\sprintf('Failed to remove directory "%s".', $path));
+                }
             } else {
-                @chmod($file->getPathname(), 0644);
-                unlink($file->getPathname());
+                @chmod($path, 0644);
+                if (!@unlink($path) && is_file($path)) {
+                    throw new \RuntimeException(\sprintf('Failed to unlink "%s".', $path));
+                }
             }
         }
 
-        rmdir($dir);
+        @chmod($dir, 0755);
+        if (!@rmdir($dir) && is_dir($dir)) {
+            throw new \RuntimeException(\sprintf('Failed to remove directory "%s".', $dir));
+        }
     }
 }
