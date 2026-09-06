@@ -1,6 +1,6 @@
 # Async Runtime Architecture
 
-Multi-process runtime topology for interactive Hatfield sessions. For diagrams and cross-cutting navigation, see [`../architecture/index.html`](../architecture/index.html) when that guide is present in the checkout.
+Multi-process runtime topology for interactive Hatfield sessions. See the [architecture guide](../architecture/README.md) for diagrams and cross-cutting navigation.
 
 ## Processes and ownership
 
@@ -17,11 +17,11 @@ The TUI talks to the controller through `AgentSessionClient` (`Runtime/Contract`
 ## Event and state flow
 
 1. User submits a message. The TUI writes a runtime command through the client.
-2. The controller admits work and launches consumers. Durable transitions land on the `run_control` transport.
+2. The controller has launched consumers before announcing readiness. It ACKs the command before handler dispatch. Acceptance does not mean execution completed, and dispatch can still fail. Durable transitions land on the `run_control` transport.
 3. `run_control` handlers append canonical `RunEvent` values to `events.jsonl` and keep the current `RunState` in the single run-control process memory (plus the payload-free operational projection).
-4. Workers execute LLM, tool, agent, MCP, or extension jobs and return results to `run_control`.
-5. Live observers receive committed events on controller stdout. Transient stream deltas use sequence `0` and stay separate from durable replay.
-6. `RuntimeEventTranslator` / `RuntimeEventMapper` consume `RunEvent` values and produce runtime protocol DTOs. They do **not** read `RunState`.
+4. LLM and tool workers return result messages to `run_control`. Tool routing also covers subagent and MCP calls. MCP lifecycle commands and extension agent jobs have separate handlers, not a universal `ToolCallResult` return path.
+5. `RuntimeEventTranslator` / `RuntimeEventMapper` consume committed `RunEvent` values and produce runtime protocol DTOs. They do **not** read `RunState`.
+6. Live observers receive these mapped events on controller stdout. Transient stream deltas use sequence `0` and stay separate from durable replay.
 7. `RuntimeEventPoller` (TUI) applies projected events to the screen.
 
 Canonical replay source is the session event log, not transient deltas. See [session-storage.md](session-storage.md).
@@ -74,6 +74,7 @@ Other notes:
 
 ## Related
 
+- Replay measurements and transition identity matrix: [session-runtime-internals.md](session-runtime-internals.md)
 - Process executable resolution: `src/CodingAgent/Runtime/Process/AGENTS.md`
 - TUI: [tui-architecture.md](tui-architecture.md)
 - Tool execution: [tool-execution.md](tool-execution.md)

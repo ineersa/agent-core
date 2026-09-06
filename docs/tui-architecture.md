@@ -1,6 +1,8 @@
 # TUI Architecture
 
-Terminal UI for Hatfield interactive sessions (`src/Tui`). Visual overview: [`../architecture/index.html`](../architecture/index.html) when present.
+Terminal UI for Hatfield interactive sessions (`src/Tui`). See the [context and projection diagrams](../architecture/context-and-projection.md).
+
+For user-facing editor and command reference, see [terminal usage](terminal-usage.md).
 
 ## Layout (single column)
 
@@ -12,11 +14,11 @@ Terminal UI for Hatfield interactive sessions (`src/Tui`). Visual overview: [`..
 6. Editor
 7. Footer
 
-`ChatScreen` is the composition root. It mounts chrome widgets, wires listeners, and owns focus among editor, overlays, and extension widgets.
+`ChatScreen` mounts the widget tree and owns focus among the editor, overlays, and extension widgets. `InteractiveMode` creates each session's screen and services through `TuiSessionCompositionFactory`, then registers listeners.
 
 ## Startup
 
-`AgentCommand` resolves an `AgentSessionClient`, then `InteractiveMode::run(...)` mounts `ChatScreen` with theme, session state, and listener registrars (session commands, compaction, hotkeys, extensions).
+`AgentCommand` resolves an `AgentSessionClient`. `InteractiveMode::run(...)` mounts `ChatScreen`, creates the per-session service scope, rebuilds the transcript, and binds session commands, compaction, hotkeys, and extensions.
 
 ## Key types
 
@@ -49,7 +51,7 @@ TUI sends commands and consumes events through `AgentSessionClient` + runtime pr
 
 Do not reach into AgentCore stores from widgets.
 
-Dependency direction follows `depfile.yaml`: TUI may depend on CodingAgent services and models when semantics match. CodingAgent must not depend on TUI. Direct TUI → AgentCore edges are allowed only where Deptrac lists them; prefer the owning CodingAgent service. `Runtime/Contract` and `Runtime/Protocol` remain for session/runtime protocol surfaces, not as a workaround boundary for ordinary CodingAgent ownership.
+Dependency direction follows `depfile.yaml`. TUI may depend on CodingAgent services and models when semantics match. CodingAgent generally must not depend on TUI, with specific approved CLI bridge edges. Direct TUI → AgentCore edges are allowed only where Deptrac lists them; prefer the owning CodingAgent service. `Runtime/Contract` and `Runtime/Protocol` remain for session/runtime protocol contracts, not as a workaround boundary for ordinary CodingAgent ownership.
 
 ## Extensions
 

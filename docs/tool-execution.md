@@ -1,6 +1,8 @@
 # Tool Execution
 
-How Hatfield registers, schedules, and executes tools inside CodingAgent. Cross-cutting diagrams: [`../architecture/index.html`](../architecture/index.html) when present.
+How Hatfield registers, schedules, and executes tools inside CodingAgent. See the
+[tool design and execution diagrams](../architecture/tools-and-mcp.md) and the
+[user-facing tool catalog](tools.md).
 
 ## Registration
 
@@ -18,7 +20,9 @@ Per-tool mode is owned by registration (`ToolDefinitionDTO`), not arbitrary sett
 File mutation tools are sequential.
 
 There is **no** global `ToolExecutor` timeout that rewrites successful late results.
-Bash, subagent, MCP, and explicit registration budgets enforce their own deadlines.
+Bash and deferred subagent supervision own their deadlines. Registration can declare
+a tool-specific budget, but MCP call-level cancellation and deadlines are not
+enforced by the current integration. MCP connection timeouts are a separate concern.
 
 Messenger default routing sends `ExecuteToolCall` to the `tool` transport. Overrides:
 
