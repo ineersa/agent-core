@@ -19,10 +19,10 @@ use Psr\Log\LoggerInterface;
  * ≥250ms and never requests 100Hz busy ticks.
  *
  * Active work (Pending eligibility, Eligible + reindexRunning) stays visible.
- * Settled outcomes (Disabled failures, Eligible idle indexed/refresh-failed)
- * stay visible for a finite dwell, then clear from the status panel. Mode /
- * generation / status-text changes and leaving active work reset the dwell.
- * Failure reasons remain in session state for on-demand `code_search`.
+ * Eligible idle never shows a success notice. Disabled failures stay visible
+ * for a finite dwell, then clear from the status panel. Mode / generation /
+ * status-text changes reset the disabled dwell. Failure reasons remain in
+ * session state for on-demand `code_search`.
  */
 final class JbcontextStatusPoller
 {
@@ -35,8 +35,8 @@ final class JbcontextStatusPoller
 
     private float $lastPollAt = 0.0;
     private ?string $lastText = null;
-    private ?string $announcedSettledKey = null;
-    private float $announcedSettledAt = 0.0;
+    private ?string $announcedDisabledKey = null;
+    private float $announcedDisabledAt = 0.0;
 
     public function __construct(
         private readonly TuiExtensionContextInterface $tui,
@@ -59,7 +59,7 @@ final class JbcontextStatusPoller
         try {
             $sessionId = $this->sessions->resolve();
             if (null === $sessionId) {
-                $this->announcedSettledKey = null;
+                $this->announcedDisabledKey = null;
                 $this->apply(null);
 
                 return;
@@ -67,7 +67,7 @@ final class JbcontextStatusPoller
 
             $store = JbcontextStatusStore::forSession($this->paths, $sessionId);
             if (!is_file($store->path())) {
-                $this->announcedSettledKey = null;
+                $this->announcedDisabledKey = null;
                 $this->apply(null);
 
                 return;
@@ -75,26 +75,25 @@ final class JbcontextStatusPoller
 
             $state = $store->read();
             if ($this->isActiveWork($state)) {
-                $this->announcedSettledKey = null;
+                $this->announcedDisabledKey = null;
                 $this->apply($state->statusText);
 
                 return;
             }
 
-            if ($this->isSettledOutcome($state)) {
-                $settledKey = $sessionId
+            if (JbcontextSessionModeEnum::Disabled === $state->mode) {
+                $disabledKey = $sessionId
                     .'#'.$state->checkGeneration
-                    .'#'.$state->mode->value
                     .'#'.(string) $state->statusText;
-                if ($this->announcedSettledKey !== $settledKey) {
-                    $this->announcedSettledKey = $settledKey;
-                    $this->announcedSettledAt = $now;
+                if ($this->announcedDisabledKey !== $disabledKey) {
+                    $this->announcedDisabledKey = $disabledKey;
+                    $this->announcedDisabledAt = $now;
                     $this->apply($state->statusText);
 
                     return;
                 }
 
-                if ($now - $this->announcedSettledAt < self::FOOTER_DWELL_SECONDS) {
+                if ($now - $this->announcedDisabledAt < self::FOOTER_DWELL_SECONDS) {
                     $this->apply($state->statusText);
 
                     return;
@@ -105,14 +104,15 @@ final class JbcontextStatusPoller
                 return;
             }
 
-            $this->announcedSettledKey = null;
+            // Eligible idle (indexed / refresh-failed): active work only in the footer.
+            $this->announcedDisabledKey = null;
             $this->apply(null);
         } catch (\Throwable) {
             $this->logger->warning('jbcontext.status.poll_failed', [
                 'component' => 'jbcontext',
                 'event_type' => 'jbcontext.status.poll_failed',
             ]);
-            $this->announcedSettledKey = null;
+            $this->announcedDisabledKey = null;
             $this->apply(null);
         }
     }
@@ -124,15 +124,6 @@ final class JbcontextStatusPoller
         }
 
         return JbcontextSessionModeEnum::Eligible === $state->mode && $state->reindexRunning;
-    }
-
-    private function isSettledOutcome(JbcontextSessionState $state): bool
-    {
-        if (JbcontextSessionModeEnum::Disabled === $state->mode) {
-            return true;
-        }
-
-        return JbcontextSessionModeEnum::Eligible === $state->mode && !$state->reindexRunning;
     }
 
     private function apply(?string $text): void
