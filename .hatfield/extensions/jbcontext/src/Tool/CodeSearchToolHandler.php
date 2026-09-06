@@ -7,6 +7,7 @@ namespace Ineersa\HatfieldExt\Jbcontext\Tool;
 use Ineersa\Hatfield\ExtensionApi\Tool\ContextualExtensionToolHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolInvocationContextDTO;
 use Ineersa\HatfieldExt\Jbcontext\Cli\JbcontextCli;
+use Ineersa\HatfieldExt\Jbcontext\Cli\JbcontextCliErrorClassifier;
 use Ineersa\HatfieldExt\Jbcontext\Cli\JbcontextPathFilter;
 use Ineersa\HatfieldExt\Jbcontext\Cli\JbcontextSearchResultNormalizer;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextPaths;
@@ -81,17 +82,25 @@ final readonly class CodeSearchToolHandler implements ContextualExtensionToolHan
             return JbcontextToolResult::unavailable('code_search timed out.');
         }
         if (!$result['ok'] || null === $result['payload']) {
+            $errorCode = (string) ($result['error'] ?? 'search_failed');
             $this->logger->warning('jbcontext.search.failed', [
                 'component' => 'jbcontext',
                 'event_type' => 'jbcontext.search.failed',
                 'run_id' => $context->runId,
-                'error' => $result['error'],
+                'error' => $errorCode,
                 'exit_code' => $result['exit_code'],
             ]);
 
+            $authGuidance = JbcontextCliErrorClassifier::userGuidance($errorCode);
+            if (null !== $authGuidance) {
+                return JbcontextToolResult::unavailable($authGuidance, [
+                    'error' => $errorCode,
+                ]);
+            }
+
             return JbcontextToolResult::unavailable(
                 'jbcontext search failed. Check CLI auth/status and try again.',
-                ['error' => $result['error']],
+                ['error' => $errorCode],
             );
         }
 

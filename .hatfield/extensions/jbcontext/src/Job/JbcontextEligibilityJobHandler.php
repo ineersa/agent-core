@@ -9,6 +9,7 @@ use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobRequestDTO;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\HatfieldExt\Jbcontext\Assets\JbcontextAssetInstaller;
 use Ineersa\HatfieldExt\Jbcontext\Cli\JbcontextCli;
+use Ineersa\HatfieldExt\Jbcontext\Cli\JbcontextCliErrorClassifier;
 use Ineersa\HatfieldExt\Jbcontext\Cli\JbcontextStatusParser;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextPaths;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextSessionModeEnum;
@@ -74,7 +75,7 @@ final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerIn
         if (!JbcontextRetrySchedule::canAttemptStatus($state->elapsedSeconds($now))) {
             $this->disable(
                 $store,
-                'jbcontext disabled: status check budget exhausted. Fix CLI auth/daemon access and restart Hatfield.',
+                'jbcontext disabled: status check budget exhausted. Fix jbcontext CLI access and restart Hatfield.',
                 'budget_exhausted',
                 $attempt,
                 $sessionId,
@@ -102,11 +103,25 @@ final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerIn
         );
         $status = $cli->status();
         if (!$status['ok'] || null === $status['payload']) {
+            $errorCode = (string) ($status['error'] ?? 'status_failed');
+            $authGuidance = JbcontextCliErrorClassifier::userGuidance($errorCode);
+            if (null !== $authGuidance) {
+                $this->disable(
+                    $store,
+                    'jbcontext disabled: '.$authGuidance,
+                    $errorCode,
+                    $attempt,
+                    $sessionId,
+                );
+
+                return;
+            }
+
             $this->handleTransient(
                 $api,
                 $store,
                 $attempt,
-                (string) ($status['error'] ?? 'status_failed'),
+                $errorCode,
                 $sessionId,
             );
 
@@ -193,7 +208,7 @@ final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerIn
         if (null === $sleep) {
             $this->disable(
                 $store,
-                'jbcontext disabled: status check failed after retries. Fix CLI auth/daemon access and restart Hatfield.',
+                'jbcontext disabled: status check failed after retries. Fix jbcontext CLI access and restart Hatfield.',
                 'status_exhausted:'.$errorCode,
                 $attempt,
                 $sessionId,

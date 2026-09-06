@@ -7,6 +7,7 @@ namespace Ineersa\HatfieldExt\Jbcontext\Tests;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecResultDTO;
+use Ineersa\HatfieldExt\Jbcontext\Cli\JbcontextCliErrorClassifier;
 use Ineersa\HatfieldExt\Jbcontext\Job\JbcontextEligibilityJobHandler;
 use Ineersa\HatfieldExt\Jbcontext\Job\JbcontextRetrySchedule;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextPaths;
@@ -170,6 +171,48 @@ final class JbcontextEligibilityJobHandlerTest extends TestCase
         foreach ($exec->calls() as $call) {
             $this->assertSame('status', $call['args'][0]);
         }
+    }
+
+    #[Test]
+    public function authenticationRequiredDisablesImmediatelyWithLoginGuidance(): void
+    {
+        mkdir($this->projectDir.'/.idea', 0o777, true);
+        $secret = 'token=super-secret-value';
+        $sleeps = [];
+        $exec = new RecordingExec([
+            new ExecResultDTO(
+                stdout: '',
+                stderr: "Authentication required\n".$secret,
+                exitCode: 1,
+            ),
+        ]);
+        $api = new TestExtensionApi($this->projectDir, $exec);
+        $handler = new JbcontextEligibilityJobHandler(
+            new TestLogger(),
+            $this->packageRoot,
+            static function (int $seconds) use (&$sleeps): void {
+                $sleeps[] = $seconds;
+            },
+        );
+
+        $handler->handle($api, ['session_id' => 'sess-auth', 'attempt' => 1], 'job', 'sess-auth');
+
+        $state = JbcontextStatusStore::forSession(JbcontextPaths::fromProjectRoot($this->projectDir), 'sess-auth')->read();
+        $this->assertSame(JbcontextSessionModeEnum::Disabled, $state->mode);
+        $this->assertSame([], $sleeps);
+        $this->assertSame([], $api->jobs);
+        $this->assertCount(1, $exec->calls());
+        $this->assertSame('status', $exec->calls()[0]['args'][0]);
+        $this->assertNotNull($state->reason);
+        $this->assertStringContainsString('jbcontext login', (string) $state->reason);
+        $this->assertStringContainsString('new Hatfield session', (string) $state->reason);
+        $this->assertSame($state->reason, $state->statusText);
+        $this->assertStringNotContainsString($secret, (string) $state->reason);
+        $this->assertStringNotContainsString('Authentication required', (string) $state->reason);
+        $this->assertSame(
+            'jbcontext disabled: '.JbcontextCliErrorClassifier::AUTH_USER_GUIDANCE,
+            $state->reason,
+        );
     }
 
     #[Test]

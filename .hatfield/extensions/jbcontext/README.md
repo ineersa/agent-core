@@ -12,7 +12,7 @@ Project-level Hatfield extension that wires JetBrains Context (`jbcontext`) sema
 
 ## Prerequisites
 
-1. Install and authenticate the `jbcontext` CLI.
+1. Install the `jbcontext` CLI and authenticate with `jbcontext login`.
 2. Open the project in a JetBrains IDE so `<project>/.idea` exists.
 3. Create the first index yourself once for the Git repository:
 
@@ -88,6 +88,7 @@ Because eligibility is asynchronous after startup discovery, newly installed pro
 |---|---|
 | Pending startup check | `jbcontext: checking index…` / tool unavailable |
 | No `.idea` or no prior snapshot | disabled status text / tool unavailable |
+| Authentication required | disabled with `jbcontext login` guidance / tool unavailable with the same guidance |
 | Transient CLI failure exhausted | disabled after retries / tool unavailable |
 | Eligible | `jbcontext: indexed` (or refreshing) / search allowed |
 

@@ -170,7 +170,7 @@ final readonly class JbcontextCli
                 'exit_code' => $result->exitCode,
                 'timed_out' => false,
                 'cancelled' => false,
-                'error' => 'empty_stdout',
+                'error' => JbcontextCliErrorClassifier::classifyEmptyStdout($result->stderr),
             ];
         }
 
