@@ -6,7 +6,6 @@ namespace Ineersa\Tui\Picker;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\ChildAgentEventsPathResolverInterface;
-use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInterface;
 use Ineersa\Tui\Export\SessionEventsExportService;
 use Ineersa\Tui\Footer\ContextUsageFormatter;
@@ -363,8 +362,6 @@ final class SubagentLivePickerController
             return;
         }
 
-        $state->subagentLiveView->removeChildCache($removed->agentRunId);
-
         if ($state->subagentLiveView->active
             && null !== $state->subagentLiveView->selected
             && $state->subagentLiveView->selected->artifactId === $artifactId) {
@@ -373,6 +370,7 @@ final class SubagentLivePickerController
                 ($this->onLeavingChildRun)($leavingRunId);
             }
             SubagentLiveMainReturn::returnToMain($state, $screen, $this->client, requestRender: false);
+            $this->childPoller->resetProjection();
         }
 
         // Remove only the dismissed snapshot row; do not import other catalog updates mid-open.
@@ -405,48 +403,24 @@ final class SubagentLivePickerController
                 ($this->onLeavingChildRun)($previous->agentRunId);
             }
             $client->endObservingChildRun($previous->agentRunId);
+            $this->childPoller->resetProjection();
+            $state->subagentLiveView->clearProjectedState();
         }
 
         $client->beginObservingChildRun($child->agentRunId);
 
-        $cached = $state->subagentLiveView->childCaches[$child->agentRunId] ?? null;
-        $hasCachedTranscript = null !== $cached && [] !== $cached['transcript'];
-
         $state->subagentLiveView->enter($child);
 
-        if ($hasCachedTranscript) {
-            // Re-entry must re-dispatch HITL/tool callbacks: leave/switch silently
-            // removed coordinator questions, and cached childLastSeq would skip the
-            // original waiting event on subsequent poll(). Request-ID dedupe in
-            // RuntimeQuestionEventHandler is the safety net if a question remains.
-            $cachedReplay = $state->subagentLiveView->childReplayEvents;
-            $this->childPoller->replaySnapshot(
-                $state->subagentLiveView,
-                new ChildRunTranscriptSnapshotDTO(
-                    $state->subagentLiveView->childTranscript,
-                    $cachedReplay,
-                    $state->subagentLiveView->childLastSeq,
-                ),
-                onHumanInputRequested: $this->onHumanInputRequested,
-                onToolQuestionRequested: $this->onToolQuestionRequested,
-                onToolTerminal: $this->onToolTerminal,
-            );
-        } else {
-            $this->childPoller->resetProjection();
-
-            $snapshot = $this->childSnapshotProvider->snapshot($child->agentRunId);
-            if ([] === $snapshot->transcriptBlocks && [] === $snapshot->replayEvents) {
-                $state->subagentLiveView->childTranscript = $state->subagentLiveView->placeholderTranscriptFor($child);
-                $state->subagentLiveView->persistCurrentChildCache();
-            } else {
-                $this->childPoller->replaySnapshot(
-                    $state->subagentLiveView,
-                    $snapshot,
-                    onHumanInputRequested: $this->onHumanInputRequested,
-                    onToolQuestionRequested: $this->onToolQuestionRequested,
-                    onToolTerminal: $this->onToolTerminal,
-                );
-            }
+        $snapshot = $this->childSnapshotProvider->snapshot($child->agentRunId);
+        $this->childPoller->replaySnapshot(
+            $state->subagentLiveView,
+            $snapshot,
+            onHumanInputRequested: $this->onHumanInputRequested,
+            onToolQuestionRequested: $this->onToolQuestionRequested,
+            onToolTerminal: $this->onToolTerminal,
+        );
+        if ([] === $state->subagentLiveView->childTranscript) {
+            $state->subagentLiveView->childTranscript = $state->subagentLiveView->placeholderTranscriptFor($child);
         }
 
         $screen->setTranscriptBlocks($state->subagentLiveView->childTranscript);

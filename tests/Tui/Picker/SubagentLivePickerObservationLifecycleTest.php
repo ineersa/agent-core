@@ -84,12 +84,11 @@ final class SubagentLivePickerObservationLifecycleTest extends TestCase
     }
 
     /**
-     * Leave silently drops coordinator questions; cached re-entry must re-dispatch HITL
-     * callbacks so the same waiting question is answerable again (poll would skip it
-     * once childLastSeq is advanced past the original event).
+     * Leave silently drops coordinator questions; reopening reconstructs from the
+     * child snapshot and rediscovers unresolved HITL.
      */
     #[Test]
-    public function testCachedReentryReenqueuesChildHitlAfterLeaveRemovesQuestion(): void
+    public function testReentryRereadsSnapshotAndReenqueuesUnresolvedHitl(): void
     {
         $harness = new VirtualTuiHarness(sessionId: 'hitl-reentry');
         $state = new TuiSessionState('hitl-reentry');
@@ -189,9 +188,10 @@ final class SubagentLivePickerObservationLifecycleTest extends TestCase
         $this->assertFalse($state->subagentLiveView->active);
         $this->assertFalse($coordinator->actionRequired());
         $this->assertFalse($coordinator->hasRequest($requestId));
-        $this->assertArrayHasKey($childRunId, $state->subagentLiveView->childCaches);
+        $this->assertSame([], $state->subagentLiveView->childTranscript);
+        $this->assertSame(0, $state->subagentLiveView->childLastSeq);
 
-        // Cached re-entry must re-fire HITL callbacks even though snapshot provider is not called again.
+        // Re-entry always rereads the durable snapshot and rediscovers unresolved HITL.
         $enter->invoke($picker, $child, $state, $harness->screen());
 
         $this->assertTrue($state->subagentLiveView->active);
@@ -199,6 +199,7 @@ final class SubagentLivePickerObservationLifecycleTest extends TestCase
         $this->assertSame($childRunId, $coordinator->activeRequest()?->runId);
         $this->assertTrue($coordinator->hasRequest($requestId));
         $this->assertSame(5, $state->subagentLiveView->childLastSeq);
+        $this->assertSame(2, $snapshotProvider->calls);
     }
 }
 
@@ -263,12 +264,16 @@ final class ObservingSpyClient implements AgentSessionClient
 
 final class FixedChildRunTranscriptSnapshotProvider implements ChildRunTranscriptSnapshotProviderInterface
 {
+    public int $calls = 0;
+
     public function __construct(private readonly ChildRunTranscriptSnapshotDTO $snapshot)
     {
     }
 
     public function snapshot(string $childRunId): ChildRunTranscriptSnapshotDTO
     {
+        ++$this->calls;
+
         return $this->snapshot;
     }
 }

@@ -85,6 +85,55 @@ final class ToolQuestionStoreTest extends IsolatedKernelTestCase
         $this->assertTrue($this->store->pollAnswer($requestId), 'pollAnswer must return true');
     }
 
+    public function testFindPendingQuestionsForRunIncludesEmittedPending(): void
+    {
+        $runId = \sprintf('run-%s', uniqid('', true));
+        $pending = ToolQuestion::create(
+            requestId: \sprintf('pending-%s', uniqid('', true)),
+            runId: $runId,
+            toolCallId: 'tc-pending',
+            toolName: 'bash',
+            pid: 1,
+            logPath: '/tmp/pending.log',
+            commandPreview: 'sleep 1',
+            prompt: 'pending?',
+        );
+        $this->store->create($pending);
+        $this->store->markEmitted($pending->requestId);
+
+        $answered = ToolQuestion::create(
+            requestId: \sprintf('answered-%s', uniqid('', true)),
+            runId: $runId,
+            toolCallId: 'tc-answered',
+            toolName: 'bash',
+            pid: 2,
+            logPath: '/tmp/answered.log',
+            commandPreview: 'sleep 2',
+            prompt: 'answered?',
+        );
+        $this->store->create($answered);
+        $this->store->answer($answered->requestId, true);
+
+        $otherRun = ToolQuestion::create(
+            requestId: \sprintf('other-%s', uniqid('', true)),
+            runId: 'other-run',
+            toolCallId: 'tc-other',
+            toolName: 'bash',
+            pid: 1,
+            logPath: '/tmp/other.log',
+            commandPreview: 'echo other',
+            prompt: 'other?',
+        );
+        $this->store->create($otherRun);
+
+        $found = $this->store->findPendingQuestionsForRun($runId);
+        $ids = array_map(static fn (ToolQuestion $q): string => $q->requestId, $found);
+
+        $this->assertContains($pending->requestId, $ids);
+        $this->assertNotContains($answered->requestId, $ids);
+        $this->assertNotContains($otherRun->requestId, $ids);
+    }
+
     // ── Test: answer / cancel idempotency ───────────────────────────────
 
     public function testAnswerAndCancelAreIdempotent(): void

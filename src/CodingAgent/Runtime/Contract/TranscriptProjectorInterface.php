@@ -36,4 +36,15 @@ interface TranscriptProjectorInterface
     public function drainChanges(): TranscriptChangeSet;
 
     public function reset(): void;
+
+    /**
+     * Replace projected transcript blocks without replaying runtime events.
+     *
+     * Used after history-position wholesale rebuild so the live projector matches
+     * the isolated snapshot and subsequent compaction.completed can find prior
+     * retention markers. Does not mutate usage/activity; clears dirty tracking.
+     *
+     * @param list<TranscriptBlock> $blocks
+     */
+    public function replaceProjectedBlocks(array $blocks): void;
 }

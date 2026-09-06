@@ -11,6 +11,7 @@ use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\SlashCommandHandler;
 use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
+use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
 use Ineersa\Tui\Runtime\SubagentLiveMainReturn;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
@@ -22,6 +23,7 @@ final class AgentsMainCommandHandler implements SlashCommandHandler
         private readonly ChatScreen $screen,
         private readonly QuestionCoordinator $questionCoordinator,
         private readonly QuestionController $questionController,
+        private readonly SubagentLiveChildViewPoller $childPoller,
         private readonly ?AgentSessionClient $client = null,
     ) {
     }
@@ -39,6 +41,7 @@ final class AgentsMainCommandHandler implements SlashCommandHandler
         }
 
         SubagentLiveMainReturn::returnToMain($this->state, $this->screen, $this->client);
+        $this->childPoller->resetProjection();
 
         return new NoOp();
     }

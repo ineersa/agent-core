@@ -313,7 +313,7 @@ final class SubagentLivePickerControllerTest extends TestCase
     }
 
     #[Test]
-    public function enterLiveViewCallsSnapshotProviderOnceAndCachesTranscript(): void
+    public function enterLiveViewRereadsSnapshotOnEveryEntry(): void
     {
         $harness = new VirtualTuiHarness(sessionId: 'picker-enter-snapshot');
         $state = new TuiSessionState('picker-enter-snapshot');
@@ -331,7 +331,7 @@ final class SubagentLivePickerControllerTest extends TestCase
         );
 
         $snapshotProvider = $this->createMock(ChildRunTranscriptSnapshotProviderInterface::class);
-        $snapshotProvider->expects($this->once())
+        $snapshotProvider->expects($this->exactly(2))
             ->method('snapshot')
             ->with('child-run-snap')
             ->willReturn(new ChildRunTranscriptSnapshotDTO([$block], [], 4));
@@ -352,9 +352,7 @@ final class SubagentLivePickerControllerTest extends TestCase
 
         $this->assertSame(4, $state->subagentLiveView->childLastSeq);
         $this->assertSame('snapshot line', $state->subagentLiveView->childTranscript[0]->text);
-        $this->assertArrayHasKey('child-run-snap', $state->subagentLiveView->childCaches);
 
-        $snapshotProvider->expects($this->never())->method('snapshot');
         $method->invoke($picker, $child, $state, $harness->screen());
         $this->assertSame(4, $state->subagentLiveView->childLastSeq);
     }
