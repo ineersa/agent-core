@@ -25,8 +25,8 @@ use Symfony\Component\Tui\Terminal\TerminalInterface;
  * installs this class under Symfony's FQCN before Tui loads it. Keep the body
  * aligned with the referenced upstream revision. The Hatfield delta is the
  * EventLoop import, deferredCursorCommitId field, scheduling call after
- * writeInternal(), cancellation in reset() and getState(), and the
- * deferred-commit methods.
+ * writeInternal(), cancellation in reset() and getState(), and the deferred-
+ * commit methods that settle overheight frames including null cursor targets.
  */
 final class DeferredCursorCommitScreenWriter
 {
@@ -541,7 +541,9 @@ final class DeferredCursorCommitScreenWriter
      * Repeat the cursor commit on the next event-loop turn after an overheight frame.
      *
      * Some terminals leave a large scrolling update partially presented until
-     * another cursor command arrives. The deferred commit does not repaint content.
+     * another cursor command arrives. Focused SelectList overlays often emit no
+     * cursor marker; the deferred commit still runs and may only hide the cursor.
+     * The deferred commit does not repaint content.
      *
      * @param array{row: int, col: int, shape: int}|null $cursorPos
      */
@@ -549,7 +551,7 @@ final class DeferredCursorCommitScreenWriter
     {
         $this->cancelDeferredCursorCommit();
 
-        if (null === $cursorPos || $lineCount <= $this->terminal->getRows()) {
+        if ($lineCount <= $this->terminal->getRows()) {
             return;
         }
 

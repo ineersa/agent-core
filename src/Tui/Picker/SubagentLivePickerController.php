@@ -82,7 +82,7 @@ final class SubagentLivePickerController
             $screen = $this->screen;
             $screen->setWorkingMessage(null);
             $screen->setStatus('agents-live', null);
-            $screen->requestRender(true);
+            $screen->requestRender();
 
             return;
         }
@@ -111,7 +111,7 @@ final class SubagentLivePickerController
             return;
         }
 
-        $this->applyPickerFeedbackToUi($feedback, requestRender: true);
+        $this->applyPickerFeedbackToUi($feedback);
     }
 
     public function closePicker(bool $requestRender = true): void
@@ -252,10 +252,10 @@ final class SubagentLivePickerController
         $state = $this->state;
         $state->subagentLiveView->pickerFeedbackMessage = $message;
         $state->subagentLiveView->lastPickerFeedbackWorkingMessage = null;
-        $this->applyPickerFeedbackToUi($message, requestRender: true);
+        $this->applyPickerFeedbackToUi($message);
     }
 
-    private function applyPickerFeedbackToUi(string $message, bool $requestRender): void
+    private function applyPickerFeedbackToUi(string $message): void
     {
         $state = $this->state;
         $screen = $this->screen;
@@ -271,9 +271,7 @@ final class SubagentLivePickerController
             $header->setText($this->buildPickerHeaderText($screen->theme()));
         }
 
-        if ($requestRender) {
-            $screen->requestRender(true);
-        }
+        $screen->requestRender();
     }
 
     private function exportSelected(
@@ -382,7 +380,6 @@ final class SubagentLivePickerController
             $this->closePicker();
             $screen->setWorkingMessage(null);
             $screen->setStatus('agents-live', null);
-            $screen->requestRender(true);
 
             return;
         }

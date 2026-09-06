@@ -81,7 +81,7 @@ final class ThemeStyleSheetFactory
     /**
      * Styles scoped to the ask_human/native question SelectListWidget class only.
      *
-     * Uses class selectors so session/model/history pickers keep Symfony defaults.
+     * Uses class selectors so other SelectListWidget overlays stay unaffected.
      */
     public function createQuestionChoiceList(ThemePalette $palette): StyleSheet
     {
@@ -91,6 +91,24 @@ final class ThemeStyleSheetFactory
         $this->addRule($rules, '.question-choice-list::label', $palette, ThemeColorEnum::Text);
         $this->addRule($rules, '.question-choice-list::description', $palette, ThemeColorEnum::Muted);
         $this->addRule($rules, '.question-choice-list::scroll-info', $palette, ThemeColorEnum::Muted);
+
+        return new StyleSheet($rules);
+    }
+
+    /**
+     * Styles scoped to session-picker SelectListWidget overlays.
+     *
+     * SessionPickerController opts in with class `picker-select-list` so other
+     * pickers keep native bold selection without Accent.
+     */
+    public function createPickerSelectList(ThemePalette $palette): StyleSheet
+    {
+        $rules = [];
+
+        $this->addRule($rules, '.picker-select-list::selected', $palette, ThemeColorEnum::Accent, bold: true);
+        $this->addRule($rules, '.picker-select-list::label', $palette, ThemeColorEnum::Text);
+        $this->addRule($rules, '.picker-select-list::description', $palette, ThemeColorEnum::Muted);
+        $this->addRule($rules, '.picker-select-list::scroll-info', $palette, ThemeColorEnum::Muted);
 
         return new StyleSheet($rules);
     }
