@@ -108,6 +108,7 @@ PHP);
             reindexPending: false,
             reindexRunning: false,
             eligibilityStarted: true,
+            checkGeneration: 1,
             updatedAt: 2.0,
         );
         $payload = json_encode($payloadState->toArray(), \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES)."\n";

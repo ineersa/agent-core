@@ -34,20 +34,22 @@ final class JbcontextStatusPollerTest extends TestCase
     }
 
     #[Test]
-    public function publishesDisabledStatusFromStoreWithoutDispatching(): void
+    public function showsDisabledStatusOnceThenClearsPanel(): void
     {
         $paths = JbcontextPaths::fromProjectRoot($this->projectDir);
         $sessionId = 'sess';
+        $disabledText = 'jbcontext disabled: no existing index snapshot. Run `jbcontext index` manually once for this repository, then restart Hatfield.';
         JbcontextStatusStore::forSession($paths, $sessionId)->write(new JbcontextSessionState(
             sessionId: $sessionId,
             mode: JbcontextSessionModeEnum::Disabled,
             reason: 'no index',
-            statusText: 'jbcontext disabled: no existing index snapshot. Run `jbcontext index` manually once for this repository, then restart Hatfield.',
+            statusText: $disabledText,
             attempt: 1,
             startedAt: 1.0,
             reindexPending: false,
             reindexRunning: false,
             eligibilityStarted: true,
+            checkGeneration: 1,
             updatedAt: 1.0,
         ));
 
@@ -57,10 +59,11 @@ final class JbcontextStatusPollerTest extends TestCase
         $locator->bindTui($tui);
 
         $poller = new JbcontextStatusPoller($tui, $paths, $locator, new TestLogger());
-        $poller->tick();
+        $this->forceTick($poller);
+        $this->assertSame($disabledText, $statuses[JbcontextStatusPoller::STATUS_KEY] ?? null);
 
-        $this->assertArrayHasKey(JbcontextStatusPoller::STATUS_KEY, $statuses);
-        $this->assertStringContainsString('no existing index snapshot', (string) $statuses[JbcontextStatusPoller::STATUS_KEY]);
+        $this->forceTick($poller);
+        $this->assertNull($statuses[JbcontextStatusPoller::STATUS_KEY] ?? null);
     }
 
     #[Test]
@@ -74,12 +77,20 @@ final class JbcontextStatusPollerTest extends TestCase
         $locator->bindTui($tui);
 
         $poller = new JbcontextStatusPoller($tui, $paths, $locator, new TestLogger());
-        $poller->tick();
+        $this->forceTick($poller);
 
         $state = JbcontextStatusStore::forSession($paths, $sessionId)->read();
         $this->assertFalse($state->eligibilityStarted);
         $this->assertSame(JbcontextSessionModeEnum::Pending, $state->mode);
         $this->assertNull($statuses[JbcontextStatusPoller::STATUS_KEY] ?? null);
+    }
+
+    private function forceTick(JbcontextStatusPoller $poller): void
+    {
+        $ref = new \ReflectionClass(JbcontextStatusPoller::class);
+        $prop = $ref->getProperty('lastPollAt');
+        $prop->setValue($poller, 0.0);
+        $poller->tick();
     }
 
     /**

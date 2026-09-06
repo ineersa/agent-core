@@ -74,6 +74,7 @@ final class CodeSearchToolHandlerTest extends TestCase
             reindexPending: false,
             reindexRunning: false,
             eligibilityStarted: true,
+            checkGeneration: 1,
             updatedAt: 1.0,
         ));
 
@@ -131,6 +132,7 @@ final class CodeSearchToolHandlerTest extends TestCase
             reindexPending: false,
             reindexRunning: false,
             eligibilityStarted: true,
+            checkGeneration: 1,
             updatedAt: 1.0,
         ));
 
@@ -195,6 +197,7 @@ final class CodeSearchToolHandlerTest extends TestCase
             reindexPending: false,
             reindexRunning: false,
             eligibilityStarted: true,
+            checkGeneration: 1,
             updatedAt: 1.0,
         ));
         $exec = new RecordingExec();
@@ -230,6 +233,7 @@ final class CodeSearchToolHandlerTest extends TestCase
             reindexPending: false,
             reindexRunning: false,
             eligibilityStarted: true,
+            checkGeneration: 1,
             updatedAt: 1.0,
         ));
 

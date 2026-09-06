@@ -20,7 +20,9 @@ use Psr\Log\LoggerInterface;
  * Interactive-session eligibility / retry / first incremental refresh worker.
  *
  * Never creates a first index. Transient status failures retry under a hard
- * ~30s wall-clock budget that includes CLI status timeouts.
+ * ~30s wall-clock budget that includes CLI status timeouts. Jobs carry a
+ * check_generation so stale workers from a previous controller attempt cannot
+ * overwrite a newer pending/eligible/disabled claim.
  */
 final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerInterface
 {
@@ -63,11 +65,23 @@ final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerIn
         $store = JbcontextStatusStore::forSession($paths, $sessionId);
         $attempt = max(1, (int) ($payload['attempt'] ?? 1));
         $now = ($this->clock)();
-
         $state = $store->read();
-        if (JbcontextSessionModeEnum::Disabled === $state->mode
-            || JbcontextSessionModeEnum::Eligible === $state->mode
-        ) {
+        $checkGeneration = $this->resolveCheckGeneration($store, $payload);
+        $state = $store->read();
+
+        if (!$this->isCurrentGeneration($state, $checkGeneration)) {
+            $this->logger->info('jbcontext.eligibility.stale_generation', [
+                'component' => 'jbcontext',
+                'event_type' => 'jbcontext.eligibility.stale_generation',
+                'session_id' => $sessionId,
+                'job_generation' => $checkGeneration,
+                'current_generation' => $state->checkGeneration,
+            ]);
+
+            return;
+        }
+
+        if (JbcontextSessionModeEnum::Pending !== $state->mode) {
             return;
         }
 
@@ -78,6 +92,7 @@ final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerIn
                 'budget_exhausted',
                 $attempt,
                 $sessionId,
+                $checkGeneration,
             );
 
             return;
@@ -90,6 +105,7 @@ final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerIn
                 'missing_idea',
                 $attempt,
                 $sessionId,
+                $checkGeneration,
             );
 
             return;
@@ -109,6 +125,7 @@ final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerIn
                 $attempt,
                 $errorCode,
                 $sessionId,
+                $checkGeneration,
                 $status['detail'] ?? null,
             );
 
@@ -122,29 +139,54 @@ final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerIn
                 'no_index',
                 $attempt,
                 $sessionId,
+                $checkGeneration,
             );
 
             return;
         }
 
-        $store->write(new JbcontextSessionState(
-            sessionId: $sessionId,
-            mode: JbcontextSessionModeEnum::Eligible,
-            reason: null,
-            statusText: 'jbcontext: indexed',
-            attempt: $attempt,
-            startedAt: $state->startedAt,
-            reindexPending: false,
-            reindexRunning: false,
-            eligibilityStarted: true,
-            updatedAt: ($this->clock)(),
-        ));
+        $becameEligible = false;
+        $store->update(function (JbcontextSessionState $current) use (
+            $sessionId,
+            $attempt,
+            $checkGeneration,
+            &$becameEligible,
+        ): JbcontextSessionState {
+            if (!$this->isCurrentGeneration($current, $checkGeneration)
+                || JbcontextSessionModeEnum::Pending !== $current->mode
+            ) {
+                $becameEligible = false;
+
+                return $current;
+            }
+
+            $becameEligible = true;
+
+            return new JbcontextSessionState(
+                sessionId: $sessionId,
+                mode: JbcontextSessionModeEnum::Eligible,
+                reason: null,
+                statusText: 'jbcontext: indexed',
+                attempt: $attempt,
+                startedAt: $current->startedAt,
+                reindexPending: false,
+                reindexRunning: false,
+                eligibilityStarted: true,
+                checkGeneration: $checkGeneration,
+                updatedAt: ($this->clock)(),
+            );
+        });
+
+        if (!$becameEligible) {
+            return;
+        }
 
         $this->logger->info('jbcontext.eligibility.ok', [
             'component' => 'jbcontext',
             'event_type' => 'jbcontext.eligibility.ok',
             'attempt' => $attempt,
             'session_id' => $sessionId,
+            'check_generation' => $checkGeneration,
             'correlation_id' => $correlationId,
         ]);
 
@@ -170,16 +212,28 @@ final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerIn
                 'correlation_id' => $correlationId,
             ]);
             // Eligibility already succeeded; incremental refresh failure does not disable search.
-            $store->update(static fn (JbcontextSessionState $s): JbcontextSessionState => $s->with(
-                statusText: 'jbcontext: indexed (refresh failed)',
-            ));
+            $store->update(function (JbcontextSessionState $s) use ($checkGeneration): JbcontextSessionState {
+                if (!$this->isCurrentGeneration($s, $checkGeneration)
+                    || JbcontextSessionModeEnum::Eligible !== $s->mode
+                ) {
+                    return $s;
+                }
+
+                return $s->with(statusText: 'jbcontext: indexed (refresh failed)');
+            });
 
             return;
         }
 
-        $store->update(static fn (JbcontextSessionState $s): JbcontextSessionState => $s->with(
-            statusText: 'jbcontext: indexed',
-        ));
+        $store->update(function (JbcontextSessionState $s) use ($checkGeneration): JbcontextSessionState {
+            if (!$this->isCurrentGeneration($s, $checkGeneration)
+                || JbcontextSessionModeEnum::Eligible !== $s->mode
+            ) {
+                return $s;
+            }
+
+            return $s->with(statusText: 'jbcontext: indexed');
+        });
     }
 
     private function handleTransient(
@@ -188,10 +242,17 @@ final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerIn
         int $attempt,
         string $errorCode,
         string $sessionId,
+        int $checkGeneration,
         ?string $detail = null,
     ): void {
         $now = ($this->clock)();
         $state = $store->read();
+        if (!$this->isCurrentGeneration($state, $checkGeneration)
+            || JbcontextSessionModeEnum::Pending !== $state->mode
+        ) {
+            return;
+        }
+
         $sleep = JbcontextRetrySchedule::sleepBeforeNextAttempt($attempt, $state->elapsedSeconds($now));
         if (null === $sleep) {
             $statusText = null !== $detail && '' !== $detail
@@ -203,22 +264,45 @@ final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerIn
                 'status_exhausted:'.$errorCode,
                 $attempt,
                 $sessionId,
+                $checkGeneration,
             );
 
             return;
         }
 
         $nextAttempt = $attempt + 1;
-        $store->write($state->with(
-            mode: JbcontextSessionModeEnum::Pending,
-            clearReason: true,
-            statusText: 'jbcontext: checking index…',
-            attempt: $attempt,
-            reindexPending: false,
-            reindexRunning: false,
-            eligibilityStarted: true,
-            updatedAt: $now,
-        ));
+        $keptPending = false;
+        $store->update(function (JbcontextSessionState $current) use (
+            $attempt,
+            $checkGeneration,
+            $now,
+            &$keptPending,
+        ): JbcontextSessionState {
+            if (!$this->isCurrentGeneration($current, $checkGeneration)
+                || JbcontextSessionModeEnum::Pending !== $current->mode
+            ) {
+                $keptPending = false;
+
+                return $current;
+            }
+
+            $keptPending = true;
+
+            return $current->with(
+                mode: JbcontextSessionModeEnum::Pending,
+                clearReason: true,
+                statusText: 'jbcontext: checking index…',
+                attempt: $attempt,
+                reindexPending: false,
+                reindexRunning: false,
+                eligibilityStarted: true,
+                updatedAt: $now,
+            );
+        });
+
+        if (!$keptPending) {
+            return;
+        }
 
         $this->logger->warning('jbcontext.eligibility.retry', [
             'component' => 'jbcontext',
@@ -228,10 +312,18 @@ final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerIn
             'delay_seconds' => $sleep,
             'error' => $errorCode,
             'session_id' => $sessionId,
+            'check_generation' => $checkGeneration,
         ]);
 
         // Bounded wait lives in the background worker so the TUI stays responsive.
         ($this->sleeper)($sleep);
+
+        $latest = $store->read();
+        if (!$this->isCurrentGeneration($latest, $checkGeneration)
+            || JbcontextSessionModeEnum::Pending !== $latest->mode
+        ) {
+            return;
+        }
 
         try {
             $api->dispatchExtensionAgentJob(new ExtensionAgentJobRequestDTO(
@@ -239,8 +331,9 @@ final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerIn
                 payload: [
                     'session_id' => $sessionId,
                     'attempt' => $nextAttempt,
+                    'check_generation' => $checkGeneration,
                 ],
-                jobId: 'jbcontext.eligibility.'.$sessionId.'.attempt.'.$nextAttempt,
+                jobId: 'jbcontext.eligibility.'.$sessionId.'.g'.$checkGeneration.'.attempt.'.$nextAttempt,
                 correlationId: $sessionId,
             ));
         } catch (\Throwable) {
@@ -249,6 +342,7 @@ final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerIn
                 'event_type' => 'jbcontext.eligibility.retry_dispatch_failed',
                 'attempt' => $nextAttempt,
                 'session_id' => $sessionId,
+                'check_generation' => $checkGeneration,
             ]);
             $this->disable(
                 $store,
@@ -256,6 +350,7 @@ final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerIn
                 'retry_dispatch_failed',
                 $attempt,
                 $sessionId,
+                $checkGeneration,
             );
         }
     }
@@ -266,20 +361,44 @@ final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerIn
         string $reason,
         int $attempt,
         string $sessionId,
+        int $checkGeneration,
     ): void {
-        $current = $store->read();
-        $store->write(new JbcontextSessionState(
-            sessionId: $sessionId,
-            mode: JbcontextSessionModeEnum::Disabled,
-            reason: $statusText,
-            statusText: $statusText,
-            attempt: $attempt,
-            startedAt: $current->startedAt,
-            reindexPending: false,
-            reindexRunning: false,
-            eligibilityStarted: true,
-            updatedAt: ($this->clock)(),
-        ));
+        $wrote = false;
+        $store->update(function (JbcontextSessionState $current) use (
+            $statusText,
+            $attempt,
+            $sessionId,
+            $checkGeneration,
+            &$wrote,
+        ): JbcontextSessionState {
+            if (!$this->isCurrentGeneration($current, $checkGeneration)
+                || JbcontextSessionModeEnum::Pending !== $current->mode
+            ) {
+                $wrote = false;
+
+                return $current;
+            }
+
+            $wrote = true;
+
+            return new JbcontextSessionState(
+                sessionId: $sessionId,
+                mode: JbcontextSessionModeEnum::Disabled,
+                reason: $statusText,
+                statusText: $statusText,
+                attempt: $attempt,
+                startedAt: $current->startedAt,
+                reindexPending: false,
+                reindexRunning: false,
+                eligibilityStarted: true,
+                checkGeneration: $checkGeneration,
+                updatedAt: ($this->clock)(),
+            );
+        });
+
+        if (!$wrote) {
+            return;
+        }
 
         $this->logger->warning('jbcontext.eligibility.disabled', [
             'component' => 'jbcontext',
@@ -287,6 +406,43 @@ final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerIn
             'reason' => $reason,
             'attempt' => $attempt,
             'session_id' => $sessionId,
+            'check_generation' => $checkGeneration,
         ]);
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    private function resolveCheckGeneration(JbcontextStatusStore $store, array $payload): int
+    {
+        if (isset($payload['check_generation'])) {
+            return max(0, (int) $payload['check_generation']);
+        }
+
+        // Direct/unit callers may omit generation. Adopt generation 1 once for
+        // an unclaimed pending file so existing handler contracts stay valid.
+        $adopted = 0;
+        $store->update(static function (JbcontextSessionState $current) use (&$adopted): JbcontextSessionState {
+            if ($current->checkGeneration > 0) {
+                $adopted = $current->checkGeneration;
+
+                return $current;
+            }
+
+            $adopted = 1;
+
+            return $current->with(
+                attempt: max(1, $current->attempt),
+                eligibilityStarted: true,
+                checkGeneration: 1,
+            );
+        });
+
+        return $adopted;
+    }
+
+    private function isCurrentGeneration(JbcontextSessionState $state, int $checkGeneration): bool
+    {
+        return $checkGeneration > 0 && $state->checkGeneration === $checkGeneration;
     }
 }

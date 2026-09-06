@@ -15,9 +15,12 @@ use Ineersa\HatfieldExt\Jbcontext\State\JbcontextStatusStore;
 use Psr\Log\LoggerInterface;
 
 /**
- * Controller-side one-shot eligibility starter for interactive sessions.
+ * Controller-side eligibility starter for interactive sessions.
  *
  * Runs in the process that owns the async extension_agent transport.
+ * Every controller session-start (including resume of the same conversation)
+ * claims a fresh check generation so stale Disabled/Eligible state cannot
+ * permanently skip rechecks after the operator fixes CLI/index access.
  */
 final readonly class JbcontextSessionStartHook implements AfterSessionStartHookInterface
 {
@@ -36,27 +39,26 @@ final readonly class JbcontextSessionStartHook implements AfterSessionStartHookI
         }
 
         $store = JbcontextStatusStore::forSession($this->paths, $sessionId);
-        $shouldDispatch = false;
-        $store->update(static function (JbcontextSessionState $current) use (&$shouldDispatch): JbcontextSessionState {
-            if ($current->eligibilityStarted
-                || JbcontextSessionModeEnum::Eligible === $current->mode
-                || JbcontextSessionModeEnum::Disabled === $current->mode
-            ) {
-                $shouldDispatch = false;
+        $claimedGeneration = 0;
+        $store->update(static function (JbcontextSessionState $current) use (&$claimedGeneration): JbcontextSessionState {
+            $claimedGeneration = $current->checkGeneration + 1;
 
-                return $current;
-            }
-
-            $shouldDispatch = true;
-
-            return $current->with(
+            return new JbcontextSessionState(
+                sessionId: $current->sessionId,
+                mode: JbcontextSessionModeEnum::Pending,
+                reason: null,
                 statusText: 'jbcontext: checking index…',
-                attempt: max(1, $current->attempt),
+                attempt: 1,
+                startedAt: microtime(true),
+                reindexPending: false,
+                reindexRunning: false,
                 eligibilityStarted: true,
+                checkGeneration: $claimedGeneration,
+                updatedAt: microtime(true),
             );
         });
 
-        if (!$shouldDispatch) {
+        if ($claimedGeneration < 1) {
             return;
         }
 
@@ -66,8 +68,9 @@ final readonly class JbcontextSessionStartHook implements AfterSessionStartHookI
                 payload: [
                     'session_id' => $sessionId,
                     'attempt' => 1,
+                    'check_generation' => $claimedGeneration,
                 ],
-                jobId: 'jbcontext.eligibility.'.$sessionId.'.attempt.1',
+                jobId: 'jbcontext.eligibility.'.$sessionId.'.g'.$claimedGeneration.'.attempt.1',
                 correlationId: $sessionId,
             ));
         } catch (\Throwable $e) {
@@ -75,15 +78,22 @@ final readonly class JbcontextSessionStartHook implements AfterSessionStartHookI
                 'component' => 'jbcontext',
                 'event_type' => 'jbcontext.eligibility.startup_dispatch_failed',
                 'session_id' => $sessionId,
+                'check_generation' => $claimedGeneration,
                 'exception_class' => $e::class,
             ]);
-            $store->update(static fn (JbcontextSessionState $current): JbcontextSessionState => $current->with(
-                mode: JbcontextSessionModeEnum::Disabled,
-                reason: 'jbcontext disabled: could not start background eligibility check.',
-                statusText: 'jbcontext disabled: could not start background eligibility check.',
-                attempt: max(1, $current->attempt),
-                eligibilityStarted: true,
-            ));
+            $store->update(static function (JbcontextSessionState $current) use ($claimedGeneration): JbcontextSessionState {
+                if ($current->checkGeneration !== $claimedGeneration) {
+                    return $current;
+                }
+
+                return $current->with(
+                    mode: JbcontextSessionModeEnum::Disabled,
+                    reason: 'jbcontext disabled: could not start background eligibility check.',
+                    statusText: 'jbcontext disabled: could not start background eligibility check.',
+                    attempt: max(1, $current->attempt),
+                    eligibilityStarted: true,
+                );
+            });
         }
     }
 }

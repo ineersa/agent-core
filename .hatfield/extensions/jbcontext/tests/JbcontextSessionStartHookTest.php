@@ -35,7 +35,7 @@ final class JbcontextSessionStartHookTest extends TestCase
     }
 
     #[Test]
-    public function claimsAndDispatchesEligibilityOnceForFreshSession(): void
+    public function claimsAndDispatchesEligibilityForFreshSession(): void
     {
         $paths = JbcontextPaths::fromProjectRoot($this->projectDir);
         $api = new TestExtensionApi($this->projectDir, new RecordingExec());
@@ -43,34 +43,36 @@ final class JbcontextSessionStartHookTest extends TestCase
         $sessionId = 'session-a';
 
         $hook->onAfterSessionStart(new AfterSessionStartHookContextDTO($sessionId));
-        $hook->onAfterSessionStart(new AfterSessionStartHookContextDTO($sessionId));
 
         $this->assertCount(1, $api->jobs);
         $this->assertSame(JbcontextEligibilityJobHandler::HANDLER_ID, $api->jobs[0]->handlerId);
         $this->assertSame($sessionId, $api->jobs[0]->payload['session_id']);
-        $this->assertSame('jbcontext.eligibility.'.$sessionId.'.attempt.1', $api->jobs[0]->jobId);
+        $this->assertSame(1, $api->jobs[0]->payload['check_generation']);
+        $this->assertSame('jbcontext.eligibility.'.$sessionId.'.g1.attempt.1', $api->jobs[0]->jobId);
 
         $state = JbcontextStatusStore::forSession($paths, $sessionId)->read();
         $this->assertTrue($state->eligibilityStarted);
+        $this->assertSame(1, $state->checkGeneration);
         $this->assertSame(JbcontextSessionModeEnum::Pending, $state->mode);
         $this->assertSame('jbcontext: checking index…', $state->statusText);
     }
 
     #[Test]
-    public function doesNotRedispatchWhenAlreadyEligibleOrDisabled(): void
+    public function reclaimsDisabledStateOnResumeAndDispatchesNewGeneration(): void
     {
         $paths = JbcontextPaths::fromProjectRoot($this->projectDir);
         $sessionId = 'session-b';
         JbcontextStatusStore::forSession($paths, $sessionId)->write(new JbcontextSessionState(
             sessionId: $sessionId,
             mode: JbcontextSessionModeEnum::Disabled,
-            reason: 'no index',
-            statusText: 'disabled',
-            attempt: 1,
+            reason: 'jbcontext disabled: status check failed after retries. Fix CLI auth/daemon access and restart Hatfield.',
+            statusText: 'jbcontext disabled: status check failed after retries. Fix CLI auth/daemon access and restart Hatfield.',
+            attempt: 5,
             startedAt: 1.0,
             reindexPending: false,
             reindexRunning: false,
             eligibilityStarted: true,
+            checkGeneration: 1,
             updatedAt: 1.0,
         ));
 
@@ -78,6 +80,33 @@ final class JbcontextSessionStartHookTest extends TestCase
         $hook = new JbcontextSessionStartHook($api, $paths, new TestLogger());
         $hook->onAfterSessionStart(new AfterSessionStartHookContextDTO($sessionId));
 
-        $this->assertSame([], $api->jobs);
+        $this->assertCount(1, $api->jobs);
+        $this->assertSame(2, $api->jobs[0]->payload['check_generation']);
+        $this->assertSame(1, $api->jobs[0]->payload['attempt']);
+        $this->assertSame('jbcontext.eligibility.'.$sessionId.'.g2.attempt.1', $api->jobs[0]->jobId);
+
+        $state = JbcontextStatusStore::forSession($paths, $sessionId)->read();
+        $this->assertSame(JbcontextSessionModeEnum::Pending, $state->mode);
+        $this->assertNull($state->reason);
+        $this->assertSame(2, $state->checkGeneration);
+        $this->assertSame(1, $state->attempt);
+        $this->assertSame('jbcontext: checking index…', $state->statusText);
+    }
+
+    #[Test]
+    public function successiveStartupsBumpGenerationEachTime(): void
+    {
+        $paths = JbcontextPaths::fromProjectRoot($this->projectDir);
+        $api = new TestExtensionApi($this->projectDir, new RecordingExec());
+        $hook = new JbcontextSessionStartHook($api, $paths, new TestLogger());
+        $sessionId = 'session-c';
+
+        $hook->onAfterSessionStart(new AfterSessionStartHookContextDTO($sessionId));
+        $hook->onAfterSessionStart(new AfterSessionStartHookContextDTO($sessionId));
+
+        $this->assertCount(2, $api->jobs);
+        $this->assertSame(1, $api->jobs[0]->payload['check_generation']);
+        $this->assertSame(2, $api->jobs[1]->payload['check_generation']);
+        $this->assertSame(2, JbcontextStatusStore::forSession($paths, $sessionId)->read()->checkGeneration);
     }
 }

@@ -7,9 +7,11 @@ namespace Ineersa\HatfieldExt\Jbcontext\Tests;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecResultDTO;
+use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterSessionStartHookContextDTO;
 use Ineersa\HatfieldExt\Jbcontext\Cli\JbcontextCliDiagnostic;
 use Ineersa\HatfieldExt\Jbcontext\Job\JbcontextEligibilityJobHandler;
 use Ineersa\HatfieldExt\Jbcontext\Job\JbcontextRetrySchedule;
+use Ineersa\HatfieldExt\Jbcontext\Job\JbcontextSessionStartHook;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextPaths;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextSessionModeEnum;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextSessionState;
@@ -239,6 +241,7 @@ final class JbcontextEligibilityJobHandlerTest extends TestCase
         $store->write(JbcontextSessionState::pending('sess-budget', 100.0)->with(
             attempt: 1,
             eligibilityStarted: true,
+            checkGeneration: 1,
             updatedAt: 100.0,
         ));
 
@@ -280,6 +283,7 @@ final class JbcontextEligibilityJobHandlerTest extends TestCase
             reindexPending: false,
             reindexRunning: false,
             eligibilityStarted: true,
+            checkGeneration: 1,
             updatedAt: 1.0,
         ));
 
@@ -302,5 +306,98 @@ final class JbcontextEligibilityJobHandlerTest extends TestCase
 
         $this->assertSame(JbcontextSessionModeEnum::Disabled, JbcontextStatusStore::forSession($paths, 'sess-a')->read()->mode);
         $this->assertSame(JbcontextSessionModeEnum::Eligible, JbcontextStatusStore::forSession($paths, 'sess-b')->read()->mode);
+    }
+
+    #[Test]
+    public function staleGenerationJobDoesNotOverwriteNewerPendingClaim(): void
+    {
+        mkdir($this->projectDir.'/.idea', 0o777, true);
+        $paths = JbcontextPaths::fromProjectRoot($this->projectDir);
+        $store = JbcontextStatusStore::forSession($paths, 'sess-stale');
+        $store->write(JbcontextSessionState::pending('sess-stale', 100.0)->with(
+            attempt: 1,
+            eligibilityStarted: true,
+            checkGeneration: 2,
+            updatedAt: 100.0,
+        ));
+
+        $exec = new RecordingExec([
+            new ExecResultDTO(
+                stdout: '',
+                stderr: 'Authentication required',
+                exitCode: 1,
+            ),
+        ]);
+        $api = new TestExtensionApi($this->projectDir, $exec);
+        $handler = new JbcontextEligibilityJobHandler(new TestLogger(), $this->packageRoot, static function (): void {});
+
+        $handler->handle(
+            $api,
+            ['session_id' => 'sess-stale', 'attempt' => 1, 'check_generation' => 1],
+            'job-old',
+            'sess-stale',
+        );
+
+        $state = $store->read();
+        $this->assertSame(JbcontextSessionModeEnum::Pending, $state->mode);
+        $this->assertSame(2, $state->checkGeneration);
+        $this->assertSame([], $exec->calls());
+        $this->assertSame([], $api->jobs);
+    }
+
+    #[Test]
+    public function resumeAfterDisabledCanBecomeEligibleOnNewGeneration(): void
+    {
+        mkdir($this->projectDir.'/.idea', 0o777, true);
+        $paths = JbcontextPaths::fromProjectRoot($this->projectDir);
+        $store = JbcontextStatusStore::forSession($paths, 'sess-recover');
+        $store->write(new JbcontextSessionState(
+            sessionId: 'sess-recover',
+            mode: JbcontextSessionModeEnum::Disabled,
+            reason: 'jbcontext disabled: status check failed after retries. Fix CLI auth/daemon access and restart Hatfield.',
+            statusText: 'jbcontext disabled: status check failed after retries. Fix CLI auth/daemon access and restart Hatfield.',
+            attempt: 5,
+            startedAt: 1.0,
+            reindexPending: false,
+            reindexRunning: false,
+            eligibilityStarted: true,
+            checkGeneration: 1,
+            updatedAt: 1.0,
+        ));
+
+        $hookApi = new TestExtensionApi($this->projectDir, new RecordingExec());
+        $hook = new JbcontextSessionStartHook($hookApi, $paths, new TestLogger());
+        $hook->onAfterSessionStart(new AfterSessionStartHookContextDTO('sess-recover'));
+
+        $this->assertSame(JbcontextSessionModeEnum::Pending, $store->read()->mode);
+        $this->assertSame(2, $store->read()->checkGeneration);
+
+        $status = json_encode([
+            'type' => 'status_result',
+            'indices' => [
+                [
+                    'indexAlias' => ['name' => 'CodeBlocks'],
+                    'snapshots' => [['revision' => 'abc', 'branches' => ['main']]],
+                ],
+            ],
+        ], \JSON_THROW_ON_ERROR);
+        $exec = new RecordingExec([
+            new ExecResultDTO(stdout: $status, stderr: '', exitCode: 0),
+            new ExecResultDTO(stdout: '', stderr: '', exitCode: 0),
+        ]);
+        $api = new TestExtensionApi($this->projectDir, $exec);
+        $handler = new JbcontextEligibilityJobHandler(new TestLogger(), $this->packageRoot, static function (): void {});
+        $handler->handle(
+            $api,
+            ['session_id' => 'sess-recover', 'attempt' => 1, 'check_generation' => 2],
+            'job',
+            'sess-recover',
+        );
+
+        $state = $store->read();
+        $this->assertSame(JbcontextSessionModeEnum::Eligible, $state->mode);
+        $this->assertNull($state->reason);
+        $this->assertSame(2, $state->checkGeneration);
+        $this->assertSame(['status', 'index'], array_map(static fn (array $c): string => $c['args'][0], $exec->calls()));
     }
 }

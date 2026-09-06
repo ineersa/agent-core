@@ -7,6 +7,7 @@ namespace Ineersa\HatfieldExt\Jbcontext\Tui;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionContextInterface;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextPaths;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextSessionLocator;
+use Ineersa\HatfieldExt\Jbcontext\State\JbcontextSessionModeEnum;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextStatusStore;
 use Psr\Log\LoggerInterface;
 
@@ -15,6 +16,10 @@ use Psr\Log\LoggerInterface;
  *
  * Eligibility starts from the controller session-start hook. Self-throttled to
  * ≥250ms and never requests 100Hz busy ticks.
+ *
+ * Disabled terminal failures are shown once, then cleared from the status
+ * panel. The failure reason remains in session state for on-demand
+ * `code_search` explanation.
  */
 final class JbcontextStatusPoller
 {
@@ -23,6 +28,7 @@ final class JbcontextStatusPoller
 
     private float $lastPollAt = 0.0;
     private ?string $lastText = null;
+    private ?string $announcedDisabledKey = null;
 
     public function __construct(
         private readonly TuiExtensionContextInterface $tui,
@@ -55,7 +61,23 @@ final class JbcontextStatusPoller
                 return;
             }
 
-            $this->apply($store->read()->statusText);
+            $state = $store->read();
+            if (JbcontextSessionModeEnum::Disabled === $state->mode) {
+                $disabledKey = $sessionId.'#'.$state->checkGeneration.'#'.(string) $state->reason;
+                if ($this->announcedDisabledKey === $disabledKey) {
+                    $this->apply(null);
+
+                    return;
+                }
+
+                $this->announcedDisabledKey = $disabledKey;
+                $this->apply($state->statusText);
+
+                return;
+            }
+
+            $this->announcedDisabledKey = null;
+            $this->apply($state->statusText);
         } catch (\Throwable) {
             $this->logger->warning('jbcontext.status.poll_failed', [
                 'component' => 'jbcontext',

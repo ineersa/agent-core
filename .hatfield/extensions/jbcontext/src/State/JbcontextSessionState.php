@@ -9,6 +9,11 @@ namespace Ineersa\HatfieldExt\Jbcontext\State;
  *
  * Written by background extension-agent jobs; read by tools and the TUI poller.
  *
+ * checkGeneration increments on every controller session-start claim so a
+ * restarted/resumed controller can recheck eligibility, while in-flight jobs
+ * from a previous controller attempt ignore themselves when their generation
+ * no longer matches.
+ *
  * @phpstan-type StateArray array{
  *     session_id: string,
  *     mode: string,
@@ -19,6 +24,7 @@ namespace Ineersa\HatfieldExt\Jbcontext\State;
  *     reindex_pending: bool,
  *     reindex_running: bool,
  *     eligibility_started: bool,
+ *     check_generation: int,
  *     updated_at: float
  * }
  */
@@ -34,10 +40,14 @@ final readonly class JbcontextSessionState
         public bool $reindexPending,
         public bool $reindexRunning,
         public bool $eligibilityStarted,
+        public int $checkGeneration,
         public float $updatedAt,
     ) {
         if ('' === trim($this->sessionId)) {
             throw new \InvalidArgumentException('JbcontextSessionState sessionId must be non-empty.');
+        }
+        if ($this->checkGeneration < 0) {
+            throw new \InvalidArgumentException('JbcontextSessionState checkGeneration must be >= 0.');
         }
     }
 
@@ -55,6 +65,7 @@ final readonly class JbcontextSessionState
             reindexPending: false,
             reindexRunning: false,
             eligibilityStarted: false,
+            checkGeneration: 0,
             updatedAt: $now,
         );
     }
@@ -83,6 +94,7 @@ final readonly class JbcontextSessionState
             reindexPending: (bool) ($data['reindex_pending'] ?? false),
             reindexRunning: (bool) ($data['reindex_running'] ?? false),
             eligibilityStarted: (bool) ($data['eligibility_started'] ?? false),
+            checkGeneration: max(0, (int) ($data['check_generation'] ?? 0)),
             updatedAt: (float) ($data['updated_at'] ?? $now),
         );
     }
@@ -102,6 +114,7 @@ final readonly class JbcontextSessionState
             'reindex_pending' => $this->reindexPending,
             'reindex_running' => $this->reindexRunning,
             'eligibility_started' => $this->eligibilityStarted,
+            'check_generation' => $this->checkGeneration,
             'updated_at' => $this->updatedAt,
         ];
     }
@@ -117,6 +130,7 @@ final readonly class JbcontextSessionState
         ?bool $reindexPending = null,
         ?bool $reindexRunning = null,
         ?bool $eligibilityStarted = null,
+        ?int $checkGeneration = null,
         ?float $updatedAt = null,
     ): self {
         return new self(
@@ -129,6 +143,7 @@ final readonly class JbcontextSessionState
             reindexPending: $reindexPending ?? $this->reindexPending,
             reindexRunning: $reindexRunning ?? $this->reindexRunning,
             eligibilityStarted: $eligibilityStarted ?? $this->eligibilityStarted,
+            checkGeneration: $checkGeneration ?? $this->checkGeneration,
             updatedAt: $updatedAt ?? microtime(true),
         );
     }

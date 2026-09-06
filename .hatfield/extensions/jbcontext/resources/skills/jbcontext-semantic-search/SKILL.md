@@ -1,7 +1,7 @@
 ---
 name: jbcontext-semantic-search
 description: "Semantic code search with Hatfield code_search (jbcontext). Use when the relevant file or subsystem is unknown and you need meaning-based discovery before local reads."
-version: 1.0.2
+version: 1.0.3
 ---
 
 # Semantic code search
@@ -19,6 +19,8 @@ Use the Hatfield `code_search` tool for meaning-based discovery when you do not 
 ## Unavailable results
 
 When `code_search` returns `available: false`, tell the user the exact tool message. Help them act on that JB Context error. Do not invent CLI flags or try to authenticate for them.
+
+If the tool says search is disabled or still checking, ask the user to restart Hatfield after fixing CLI access or creating a manual index. Restarting the same conversation is enough; a brand-new session is not required.
 
 ## Do not use for
 

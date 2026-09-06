@@ -48,6 +48,7 @@ final class JbcontextReindexCoalesceTest extends TestCase
             reindexPending: true,
             reindexRunning: true,
             eligibilityStarted: true,
+            checkGeneration: 1,
             updatedAt: 1.0,
         ));
 
@@ -79,6 +80,7 @@ final class JbcontextReindexCoalesceTest extends TestCase
             reindexPending: true,
             reindexRunning: false,
             eligibilityStarted: true,
+            checkGeneration: 1,
             updatedAt: 1.0,
         ));
 

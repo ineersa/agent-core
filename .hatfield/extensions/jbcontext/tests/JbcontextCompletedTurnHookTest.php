@@ -51,6 +51,7 @@ final class JbcontextCompletedTurnHookTest extends TestCase
             reindexPending: false,
             reindexRunning: false,
             eligibilityStarted: true,
+            checkGeneration: 1,
             updatedAt: 1.0,
         ));
 
@@ -98,6 +99,7 @@ final class JbcontextCompletedTurnHookTest extends TestCase
             reindexPending: false,
             reindexRunning: false,
             eligibilityStarted: true,
+            checkGeneration: 1,
             updatedAt: 1.0,
         ));
 
