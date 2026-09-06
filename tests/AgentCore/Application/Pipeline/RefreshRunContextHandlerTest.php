@@ -19,7 +19,7 @@ final class RefreshRunContextHandlerTest extends IsolatedKernelTestCase
     public function testRefreshPreservesHistoryAndReplaysWithoutDuplicatingContext(): void
     {
         $old = [new AgentMessage('system', [['type' => 'text', 'text' => 'old']]), new AgentMessage('user-context', [], metadata: ['source' => 'skills_context'])];
-        $tail = [new AgentMessage('user-context', [['type' => 'text', 'text' => 'compacted summary']], metadata: ['source' => 'compaction']), new AgentMessage('user', [['type' => 'text', 'text' => 'question']])];
+        $tail = [new AgentMessage('user', [['type' => 'text', 'text' => 'compacted summary']], metadata: ['compact_summary' => true]), new AgentMessage('user', [['type' => 'text', 'text' => 'question']])];
         $fresh = [new AgentMessage('system', [['type' => 'text', 'text' => 'new']]), new AgentMessage('user-context', [], metadata: ['source' => 'agents_context'])];
         $state = new RunState('refresh-test', RunStatus::Completed, messages: [...$old, ...$tail]);
         $result = (new RefreshRunContextHandler())->handle(new RefreshRunContext($state->runId, $fresh), $state);

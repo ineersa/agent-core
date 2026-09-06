@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\RefreshRunContext;
+use Ineersa\AgentCore\Domain\Run\GeneratedContext;
 use Ineersa\AgentCore\Domain\Run\RunState;
 
 final readonly class RefreshRunContextHandler implements RunMessageHandler
@@ -20,7 +21,7 @@ final readonly class RefreshRunContextHandler implements RunMessageHandler
     public function handle(object $message, RunState $state): HandlerResult
     {
         \assert($message instanceof RefreshRunContext);
-        $messages = \Ineersa\AgentCore\Domain\Message\GeneratedContext::replace($state->messages, $message->messages);
+        $messages = GeneratedContext::replace($state->messages, $message->messages);
 
         return new HandlerResult(
             nextState: $state->with(['messages' => $messages]),

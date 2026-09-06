@@ -9,6 +9,8 @@ use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\History\HistorySelectionServiceInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Message\RefreshRunContext;
+use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
 use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateService;
@@ -121,7 +123,40 @@ final class InProcessAgentSessionClientEventsTest extends IsolatedKernelTestCase
         $this->assertSame(0, self::$eventStore->allForCalls);
     }
 
-    private function client(?InMemoryRuntimeEventSink $transientSink = null): InProcessAgentSessionClient
+    #[Test]
+    public function attachRefreshesGeneratedInstructionsOnEveryResume(): void
+    {
+        $runId = self::getContainer()->get(HatfieldSessionStore::class)->createSession();
+        $bus = new TestMessageBus();
+        $client = $this->client(commandBus: $bus);
+
+        $this->assertSame($runId, $client->attach($runId)->runId);
+        $this->assertCount(1, $bus->messages);
+        $refresh = $bus->messages[0];
+        $this->assertInstanceOf(RefreshRunContext::class, $refresh);
+        $this->assertSame($runId, $refresh->runId());
+        $this->assertSame('system', $refresh->messages[0]->role);
+        $this->assertNotEmpty($refresh->messages[0]->content);
+
+        $client->attach($runId);
+        $this->assertCount(2, $bus->messages);
+        $this->assertInstanceOf(RefreshRunContext::class, $bus->messages[1]);
+    }
+
+    #[Test]
+    public function attachRejectsMissingSessionWithoutDispatchingRefresh(): void
+    {
+        $bus = new TestMessageBus();
+        try {
+            $this->client(commandBus: $bus)->attach('missing-session');
+            $this->fail('Missing session must not acquire refreshed state.');
+        } catch (\RuntimeException $error) {
+            $this->assertSame('Session "missing-session" not found.', $error->getMessage());
+        }
+        $this->assertSame([], $bus->messages);
+    }
+
+    private function client(?InMemoryRuntimeEventSink $transientSink = null, ?TestMessageBus $commandBus = null): InProcessAgentSessionClient
     {
         $container = self::getContainer();
 
@@ -138,7 +173,7 @@ final class InProcessAgentSessionClientEventsTest extends IsolatedKernelTestCase
             promptTemplateService: $container->get(PromptTemplateService::class),
             sessionMetaStore: $container->get(HatfieldSessionStore::class),
             modelResolver: $container->get(ModelResolver::class),
-            commandBus: new \Ineersa\AgentCore\Tests\Support\TestMessageBus(),
+            commandBus: $commandBus ?? new TestMessageBus(),
             transientSink: $transientSink,
         );
     }

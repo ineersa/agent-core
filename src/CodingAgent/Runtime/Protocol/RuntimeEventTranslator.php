@@ -72,6 +72,7 @@ final class RuntimeEventTranslator
             RunEventTypeEnum::ContextCompactionFailed->value => $this->onCompactionFailed(...),
             // Drop (internal bookkeeping)
             RunEventTypeEnum::ToolBatchCommitted->value => $this->drop(...),
+            RunEventTypeEnum::ContextRefreshed->value => $this->drop(...),
             RunEventTypeEnum::AgentCommandQueued->value => $this->onAgentCommandQueued(...),
             // Drop (history metadata — not user-visible; run.history_position_changed is emitted by selection handlers)
             RunEventTypeEnum::HistoryPositionSet->value => $this->drop(...),

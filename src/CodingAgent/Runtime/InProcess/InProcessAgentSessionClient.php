@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\History\HistorySelectionServiceInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\AgentCore\Domain\Message\RefreshRunContext;
 use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
@@ -31,6 +32,7 @@ use Ineersa\CodingAgent\SystemPrompt\AgentsContextRenderer;
 use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
 use Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionAnswerResolver;
 use Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface;
+use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
  * In-process implementation of AgentSessionClient.
@@ -57,7 +59,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         private readonly PromptTemplateService $promptTemplateService,
         private readonly HatfieldSessionStore $sessionMetaStore,
         private readonly ModelResolver $modelResolver,
-        private readonly \Symfony\Component\Messenger\MessageBusInterface $commandBus,
+        private readonly MessageBusInterface $commandBus,
         private readonly ?RuntimeEventSinkInterface $transientSink = null,
         private readonly ?ToolQuestionStoreInterface $toolQuestionStore = null,
         private readonly ToolQuestionAnswerResolver $answerResolver = new ToolQuestionAnswerResolver(),
@@ -80,8 +82,12 @@ final class InProcessAgentSessionClient implements AgentSessionClient
 
     public function attach(string $runId): RunHandle
     {
+        if (!$this->sessionMetaStore->exists($runId)) {
+            throw new \RuntimeException(\sprintf('Session "%s" not found.', $runId));
+        }
+
         // Update instructions without starting or advancing a model turn.
-        $this->commandBus->dispatch(new \Ineersa\AgentCore\Domain\Message\RefreshRunContext($runId, $this->buildContextMessages()));
+        $this->commandBus->dispatch(new RefreshRunContext($runId, $this->buildContextMessages()));
 
         // Attaching is a new parent lifetime: existing artifacts stay retrievable
         // but agent_resume must not continue children launched before /resume.

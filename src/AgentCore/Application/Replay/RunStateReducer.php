@@ -13,6 +13,7 @@ use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Notification\ModelNotificationCodec;
 use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\CurrentToolCallDTO;
+use Ineersa\AgentCore\Domain\Run\GeneratedContext;
 use Ineersa\AgentCore\Domain\Run\HumanInputContinuationKindEnum;
 use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
 use Ineersa\AgentCore\Domain\Run\RunOperationalToolCallStatusEnum;
@@ -587,6 +588,24 @@ final readonly class RunStateReducer
     }
 
     /**
+     * @param array<string, mixed> $payload
+     * @param list<AgentMessage>   $messages
+     */
+    private function applyContextRefreshed(array $payload, RunState $state, array &$messages): RunState
+    {
+        $context = [];
+        foreach ($payload['messages'] ?? [] as $raw) {
+            $message = AgentMessage::fromPayload($raw);
+            if (null !== $message) {
+                $context[] = $message;
+            }
+        }
+        $messages = GeneratedContext::replace($messages, $context);
+
+        return $state;
+    }
+
+    /**
      * Handle context_compacted: replace messages from payload.messages
      * with the full compacted message list.  The by-ref $messages accumulator
      * is replaced wholesale, and later events (user/assistant/tool) append
@@ -600,24 +619,6 @@ final readonly class RunStateReducer
      * - auto → Running (the follow-up AdvanceRun effect continues the LLM turn)
      * - manual → Completed (the /compact command runs on an already-completed run)
      *
-     * @param array<string, mixed> $payload
-     * @param list<AgentMessage>   $messages
-     */
-    private function applyContextRefreshed(array $payload, RunState $state, array &$messages): RunState
-    {
-        $context = [];
-        foreach ($payload['messages'] ?? [] as $raw) {
-            $message = AgentMessage::fromPayload($raw);
-            if (null !== $message) {
-                $context[] = $message;
-            }
-        }
-        $messages = \Ineersa\AgentCore\Domain\Message\GeneratedContext::replace($messages, $context);
-
-        return $state;
-    }
-
-    /**
      * @param array<string, mixed> $payload
      * @param list<AgentMessage>   $messages
      */
