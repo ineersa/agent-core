@@ -99,7 +99,7 @@ final readonly class CodeSearchToolHandler implements ContextualExtensionToolHan
             }
 
             return JbcontextToolResult::unavailable(
-                'jbcontext search failed. Check CLI auth/status and try again.',
+                'jbcontext search failed. Check CLI status and try again.',
                 ['error' => $errorCode],
             );
         }

@@ -44,7 +44,7 @@ final class JbcontextAssetInstallerTest extends TestCase
 
         $skill = $this->projectDir.'/.hatfield/skills/jbcontext-semantic-search/SKILL.md';
         $this->assertFileExists($skill);
-        $this->assertSame('1.0.0', JbcontextMarkdownFrontmatter::versionOf((string) file_get_contents($skill)));
+        $this->assertSame($this->bundledSkillVersion(), JbcontextMarkdownFrontmatter::versionOf((string) file_get_contents($skill)));
         $this->assertStringNotContainsString('managed-by:', (string) file_get_contents($skill));
     }
 
@@ -59,7 +59,7 @@ final class JbcontextAssetInstallerTest extends TestCase
         $this->installer()->install();
 
         $installed = (string) file_get_contents($dest);
-        $this->assertSame('1.0.0', JbcontextMarkdownFrontmatter::versionOf($installed));
+        $this->assertSame($this->bundledSkillVersion(), JbcontextMarkdownFrontmatter::versionOf($installed));
         $this->assertStringContainsString('Semantic code search', $installed);
     }
 
@@ -69,7 +69,7 @@ final class JbcontextAssetInstallerTest extends TestCase
         $paths = JbcontextPaths::fromProjectRoot($this->projectDir);
         $dest = $paths->skillDestinationDir.'/SKILL.md';
         mkdir(\dirname($dest), 0o777, true);
-        $custom = "---\nname: jbcontext-semantic-search\ndescription: custom\nversion: 1.0.0\n---\ncustom body\n";
+        $custom = "---\nname: jbcontext-semantic-search\ndescription: custom\nversion: ".$this->bundledSkillVersion()."\n---\ncustom body\n";
         file_put_contents($dest, $custom);
 
         $this->installer()->install();
@@ -151,5 +151,14 @@ MD);
             $logger ?? new TestLogger(),
             $this->homeDir,
         );
+    }
+
+    private function bundledSkillVersion(): string
+    {
+        $bundled = (string) file_get_contents($this->packageRoot.'/resources/skills/jbcontext-semantic-search/SKILL.md');
+        $version = JbcontextMarkdownFrontmatter::versionOf($bundled);
+        $this->assertNotNull($version);
+
+        return $version;
     }
 }

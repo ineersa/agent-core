@@ -7,8 +7,9 @@ namespace Ineersa\HatfieldExt\Jbcontext\Cli;
 /**
  * Maps known jbcontext CLI failure text to stable error codes.
  *
- * Never returns raw stderr. Auth detection is limited to the known
- * IsLoggedInGuard message so credentials and tokens are not echoed.
+ * Never returns raw stderr. Auth detection matches the known
+ * "Authentication required" phrase only; other stderr is treated as
+ * generic empty_stdout so credentials and tokens are not echoed.
  */
 final class JbcontextCliErrorClassifier
 {
@@ -26,11 +27,6 @@ final class JbcontextCliErrorClassifier
         return self::EMPTY_STDOUT;
     }
 
-    public static function isAuthenticationRequired(string $stderr): bool
-    {
-        return str_contains(strtolower($stderr), 'authentication required');
-    }
-
     public static function userGuidance(string $errorCode): ?string
     {
         if (self::AUTH_REQUIRED === $errorCode) {
@@ -38,5 +34,10 @@ final class JbcontextCliErrorClassifier
         }
 
         return null;
+    }
+
+    private static function isAuthenticationRequired(string $stderr): bool
+    {
+        return str_contains(strtolower($stderr), 'authentication required');
     }
 }
