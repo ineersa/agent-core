@@ -52,9 +52,19 @@ See [settings.md](settings.md).
 
 If a provider rejects a request as context-too-large, the run fails through the ordinary LLM error path. Hatfield does **not** auto-recover by compacting on that error. Compaction still occurs only via manual `/compact` (parents) or automatic threshold scheduling (parents).
 
-## Events and resume
+## Events, failure, and resume
 
 Compaction records canonical session events so resume rebuilds the compacted LLM-visible history correctly. Transcript projection follows the event log — see [session-storage.md](session-storage.md).
+
+On failure (`context_compaction_failed`), original messages are **preserved**
+(`messages_replaced: false`). Status resolution:
+
+- If cancel was accepted during compaction (`Cancelling`), the run becomes
+  `Cancelled`. Cancellation dominates; no `AdvanceRun` is dispatched.
+- If the compaction was holding a pending LLM turn (`continueAfterCompaction`),
+  the run returns to `Running` and dispatches `AdvanceRun` so the turn continues
+  on the original messages.
+- Otherwise (manual / maintenance compaction) the run resolves to `Completed`.
 
 The TUI retains the most recently completed compaction segment and the current segment. The first successful compaction keeps the initial conversation. The second drops content before the first completion marker. Each later success advances that window once. Failed compactions do not advance it. Resume and history selection rebuild the same window at the selected position.
 

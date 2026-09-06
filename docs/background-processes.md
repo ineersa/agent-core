@@ -25,8 +25,8 @@ After backgrounding, inspect or stop processes with `bg_status`.
 1. `bash` starts each command with a private `background_process` supervision row and `.pid` / `.status` / `.log` sidecars so it can poll, stop, and read the exact foreground result.
 2. After the threshold, the TUI may prompt the user to background it. On accept, Hatfield marks that existing row `backgrounded_at`; only then is it visible to `bg_status` and eligible for completion notification.
 3. Finished private foreground rows remain available for one five-minute scheduler interval, then recurring maintenance removes their exact row-owned sidecars and row.
-4. Accepted background rows and their exact sidecars live only while the controller owns the session. Controller shutdown stops unfinished accepted process groups and removes their rows/sidecars; controller startup performs the same cleanup to repair crash leftovers. The provisional sweep does not handle accepted rows.
-5. `bg_status stop` resolves only accepted jobs belonging to the current session, sends `SIGTERM` to the process group, waits `tools.background_process.stop_grace_seconds`, then `SIGKILL` if still alive.
+4. Accepted background rows and their exact sidecars live only while the controller owns the session. Controller **startup** and **shutdown** both stop unfinished accepted process groups and remove their rows/sidecars (startup repairs crash leftovers; shutdown cleans the live session). The provisional 300s sweep does **not** handle accepted rows.
+5. `bg_status stop` is the explicit operator/model path for an accepted job in the current session: `SIGTERM` to the process group, wait `tools.background_process.stop_grace_seconds`, then `SIGKILL` if still alive. Controller lifecycle cleanup can stop the same accepted jobs without a `bg_status` call.
 
 Tracking is **session-scoped**. `bg_status` exposes only rows explicitly accepted as background work; private foreground supervision is never listed, tailed, or stopped through that tool. Durable records live in `.hatfield/state.sqlite`; filesystem sidecars (PID/status/log) live under the configured tool path.
 

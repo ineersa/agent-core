@@ -22,6 +22,11 @@ keeps the separately published API stable and is not an internal boundary workar
 1. Install the extension package under the project `.hatfield/extensions` Composer root (or ship with the monorepo).
 2. List the extension class in `.hatfield/settings.yaml` → `extensions.enabled`.
 3. Start a **new** session — `HatfieldExtensionInterface::register(ExtensionApiInterface $api)` runs at startup.
+   Construction, logger injection, and subscriber attachment are **not** fully
+   isolated today: a throwing constructor (or uncaught failure outside
+   `register()`) can abort host startup. Treat per-extension degradation as
+   incomplete until the tracked startup-isolation fix lands; do not document a
+   guarantee that every extension failure is contained.
 
 ```php
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;

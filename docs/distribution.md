@@ -1,6 +1,9 @@
 # Distribution and release
 
 Release-level packaging: canonical PHAR, fused static binaries, checksums, installer, package mirrors.
+Architecture overview: [build and packaging](../architecture/build-and-observability.md).
+
+For end-user setup, upgrades, and troubleshooting, see [installation and upgrades](installation.md).
 
 Internals: [phar-packaging.md](phar-packaging.md) · [static-packaging.md](static-packaging.md)
 
@@ -48,6 +51,41 @@ scripts/build-distribution.sh --version=1.2.3 --commit=$(git rev-parse HEAD)
 
 ## Installer
 
+No repository checkout is required. The installer defaults to PHAR and installs
+the `hatfield` command into `~/.local/bin`. Before installing the PHAR, provide
+PHP 8.5 or later with the [required extensions](phar-packaging.md#system-php-requirements).
+
+### Install the PHAR
+
+```bash
+curl --proto '=https' --tlsv1.2 -fsSL \
+	https://raw.githubusercontent.com/ineersa/agent-core/main/installer/bash-installer \
+	| bash -s --
+```
+
+### Install the native binary
+
+The native binary includes PHP. Use `--static` on a supported Linux or macOS host:
+
+```bash
+curl --proto '=https' --tlsv1.2 -fsSL \
+	https://raw.githubusercontent.com/ineersa/agent-core/main/installer/bash-installer \
+	| bash -s -- --static
+```
+
+For either format, add the install directory to your shell's `PATH` if needed:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+hatfield --version
+```
+
+### Select a release or install directory
+
+Append `--version=vX.Y.Z` to either remote installer command to pin a release.
+Use `--install-dir="$HOME/bin"` to change the destination. From a repository checkout,
+the equivalent commands are:
+
 ```bash
 # Latest PHAR into ~/.local/bin
 bash installer/bash-installer --version=latest
@@ -59,7 +97,9 @@ bash installer/bash-installer --version=v1.2.3 --install-dir="$HOME/.local/bin"
 bash installer/bash-installer --static --version=latest
 ```
 
-Behavior (source-backed):
+### Upgrade and verification
+
+Run the installer again to upgrade or reinstall. It performs these steps:
 
 - Resolves GitHub release assets for the requested version (`latest` or explicit tag).
 - Downloads the asset plus `SHA256SUMS`, verifies the checksum, then **smokes** the
