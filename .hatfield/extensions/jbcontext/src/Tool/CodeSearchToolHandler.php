@@ -7,7 +7,6 @@ namespace Ineersa\HatfieldExt\Jbcontext\Tool;
 use Ineersa\Hatfield\ExtensionApi\Tool\ContextualExtensionToolHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolInvocationContextDTO;
 use Ineersa\HatfieldExt\Jbcontext\Cli\JbcontextCli;
-use Ineersa\HatfieldExt\Jbcontext\Cli\JbcontextCliErrorClassifier;
 use Ineersa\HatfieldExt\Jbcontext\Cli\JbcontextPathFilter;
 use Ineersa\HatfieldExt\Jbcontext\Cli\JbcontextSearchResultNormalizer;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextPaths;
@@ -90,10 +89,9 @@ final readonly class CodeSearchToolHandler implements ContextualExtensionToolHan
                 'error' => $errorCode,
                 'exit_code' => $result['exit_code'],
             ]);
-
-            $authGuidance = JbcontextCliErrorClassifier::userGuidance($errorCode);
-            if (null !== $authGuidance) {
-                return JbcontextToolResult::unavailable($authGuidance, [
+            $detail = $result['detail'] ?? null;
+            if (null !== $detail && '' !== $detail) {
+                return JbcontextToolResult::unavailable($detail, [
                     'error' => $errorCode,
                 ]);
             }

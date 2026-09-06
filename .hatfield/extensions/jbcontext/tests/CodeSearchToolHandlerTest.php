@@ -10,7 +10,7 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecResultDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolInvocationContextDTO;
 use Ineersa\HatfieldExt\Jbcontext\Cli\JbcontextCli;
-use Ineersa\HatfieldExt\Jbcontext\Cli\JbcontextCliErrorClassifier;
+use Ineersa\HatfieldExt\Jbcontext\Cli\JbcontextCliDiagnostic;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextPaths;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextSessionLocator;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextSessionModeEnum;
@@ -118,7 +118,7 @@ final class CodeSearchToolHandlerTest extends TestCase
     }
 
     #[Test]
-    public function returnsLoginGuidanceOnSearchAuthFailureWithoutLeakingStderr(): void
+    public function returnsBoundedCliStderrOnSearchFailureAndLogsOnlyStableCode(): void
     {
         $paths = JbcontextPaths::fromProjectRoot($this->projectDir);
         JbcontextStatusStore::forSession($paths, 'run-1')->write(new JbcontextSessionState(
@@ -135,18 +135,20 @@ final class CodeSearchToolHandlerTest extends TestCase
         ));
 
         $secret = 'token=super-secret-value';
+        $stderr = "Authentication required\n".$secret;
         $exec = new RecordingExec([
             new ExecResultDTO(
                 stdout: '',
-                stderr: "Authentication required\n".$secret,
+                stderr: $stderr,
                 exitCode: 1,
             ),
         ]);
+        $logger = new TestLogger();
         $handler = new CodeSearchToolHandler(
             $paths,
             new JbcontextSessionLocator(),
             new JbcontextCli($exec, $paths->projectRoot),
-            new TestLogger(),
+            $logger,
         );
 
         $result = $handler([
@@ -156,17 +158,33 @@ final class CodeSearchToolHandlerTest extends TestCase
         $this->assertIsString($result);
         $decoded = Toon::decode($result);
         $this->assertFalse($decoded['available']);
-        $this->assertSame(JbcontextCliErrorClassifier::AUTH_USER_GUIDANCE, $decoded['message']);
-        $this->assertSame(JbcontextCliErrorClassifier::AUTH_REQUIRED, $decoded['error']);
-        $this->assertStringNotContainsString($secret, $result);
-        $this->assertStringNotContainsString('Authentication required', $result);
+        $this->assertSame(JbcontextCliDiagnostic::format($stderr), $decoded['message']);
+        $this->assertSame('empty_stdout', $decoded['error']);
+        $this->assertStringContainsString('Authentication required', $result);
+        $this->assertStringContainsString($secret, $result);
+
+        $records = $logger->records;
+        $this->assertNotEmpty($records);
+        $failed = null;
+        foreach ($records as $record) {
+            if (($record['context']['event_type'] ?? null) === 'jbcontext.search.failed') {
+                $failed = $record;
+                break;
+            }
+        }
+        $this->assertNotNull($failed);
+        $this->assertSame('empty_stdout', $failed['context']['error']);
+        $encodedLog = json_encode($failed, \JSON_THROW_ON_ERROR);
+        $this->assertStringNotContainsString($secret, $encodedLog);
+        $this->assertStringNotContainsString('Authentication required', $encodedLog);
+        $this->assertStringNotContainsString('JB Context error', $encodedLog);
     }
 
     #[Test]
-    public function disabledStateSurfacesStoredAuthGuidanceToModel(): void
+    public function disabledStateSurfacesStoredCliDetailToModel(): void
     {
         $paths = JbcontextPaths::fromProjectRoot($this->projectDir);
-        $message = 'jbcontext disabled: '.JbcontextCliErrorClassifier::AUTH_USER_GUIDANCE;
+        $message = 'jbcontext disabled: '.JbcontextCliDiagnostic::format('Authentication required');
         JbcontextStatusStore::forSession($paths, 'run-1')->write(new JbcontextSessionState(
             sessionId: 'run-1',
             mode: JbcontextSessionModeEnum::Disabled,
@@ -196,5 +214,43 @@ final class CodeSearchToolHandlerTest extends TestCase
         $this->assertFalse($decoded['available']);
         $this->assertSame($message, $decoded['message']);
         $this->assertSame([], $exec->calls());
+    }
+
+    #[Test]
+    public function returnsGenericSearchFailureWhenStderrEmpty(): void
+    {
+        $paths = JbcontextPaths::fromProjectRoot($this->projectDir);
+        JbcontextStatusStore::forSession($paths, 'run-1')->write(new JbcontextSessionState(
+            sessionId: 'run-1',
+            mode: JbcontextSessionModeEnum::Eligible,
+            reason: null,
+            statusText: 'jbcontext: indexed',
+            attempt: 1,
+            startedAt: 1.0,
+            reindexPending: false,
+            reindexRunning: false,
+            eligibilityStarted: true,
+            updatedAt: 1.0,
+        ));
+
+        $exec = new RecordingExec([
+            new ExecResultDTO(stdout: '', stderr: '', exitCode: 1),
+        ]);
+        $handler = new CodeSearchToolHandler(
+            $paths,
+            new JbcontextSessionLocator(),
+            new JbcontextCli($exec, $paths->projectRoot),
+            new TestLogger(),
+        );
+
+        $result = $handler([
+            'text' => 'Example class',
+        ], new ToolInvocationContextDTO(runId: 'run-1'));
+
+        $this->assertIsString($result);
+        $decoded = Toon::decode($result);
+        $this->assertFalse($decoded['available']);
+        $this->assertSame('jbcontext search failed. Check CLI status and try again.', $decoded['message']);
+        $this->assertSame('empty_stdout', $decoded['error']);
     }
 }

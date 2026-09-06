@@ -27,7 +27,7 @@ final readonly class JbcontextCli
     }
 
     /**
-     * @return array{ok: bool, payload: ?array<string, mixed>, exit_code: int, timed_out: bool, cancelled: bool, error: ?string}
+     * @return array{ok: bool, payload: ?array<string, mixed>, exit_code: int, timed_out: bool, cancelled: bool, error: ?string, detail: ?string}
      */
     public function status(?ToolCancellationTokenInterface $cancellationToken = null): array
     {
@@ -39,7 +39,7 @@ final readonly class JbcontextCli
     }
 
     /**
-     * @return array{ok: bool, payload: ?array<string, mixed>, exit_code: int, timed_out: bool, cancelled: bool, error: ?string}
+     * @return array{ok: bool, payload: ?array<string, mixed>, exit_code: int, timed_out: bool, cancelled: bool, error: ?string, detail: ?string}
      */
     public function search(
         string $text,
@@ -124,7 +124,7 @@ final readonly class JbcontextCli
     /**
      * @param list<string> $args
      *
-     * @return array{ok: bool, payload: ?array<string, mixed>, exit_code: int, timed_out: bool, cancelled: bool, error: ?string}
+     * @return array{ok: bool, payload: ?array<string, mixed>, exit_code: int, timed_out: bool, cancelled: bool, error: ?string, detail: ?string}
      */
     private function runJson(
         array $args,
@@ -149,6 +149,7 @@ final readonly class JbcontextCli
                 'timed_out' => $result->timedOut,
                 'cancelled' => true,
                 'error' => 'cancelled',
+                'detail' => null,
             ];
         }
         if ($result->timedOut) {
@@ -159,6 +160,7 @@ final readonly class JbcontextCli
                 'timed_out' => true,
                 'cancelled' => false,
                 'error' => 'timed_out',
+                'detail' => null,
             ];
         }
 
@@ -170,7 +172,8 @@ final readonly class JbcontextCli
                 'exit_code' => $result->exitCode,
                 'timed_out' => false,
                 'cancelled' => false,
-                'error' => JbcontextCliErrorClassifier::classifyEmptyStdout($result->stderr),
+                'error' => 'empty_stdout',
+                'detail' => JbcontextCliDiagnostic::format($result->stderr),
             ];
         }
 
@@ -184,6 +187,7 @@ final readonly class JbcontextCli
                 'timed_out' => false,
                 'cancelled' => false,
                 'error' => 'malformed_json',
+                'detail' => null,
             ];
         }
 
@@ -195,6 +199,7 @@ final readonly class JbcontextCli
                 'timed_out' => false,
                 'cancelled' => false,
                 'error' => 'malformed_json',
+                'detail' => null,
             ];
         }
 
@@ -207,6 +212,7 @@ final readonly class JbcontextCli
                 'timed_out' => false,
                 'cancelled' => false,
                 'error' => 'cli_error',
+                'detail' => null,
             ];
         }
 
@@ -218,6 +224,7 @@ final readonly class JbcontextCli
                 'timed_out' => false,
                 'cancelled' => false,
                 'error' => 'exit_'.$result->exitCode,
+                'detail' => null,
             ];
         }
 
@@ -228,6 +235,7 @@ final readonly class JbcontextCli
             'timed_out' => false,
             'cancelled' => false,
             'error' => null,
+            'detail' => null,
         ];
     }
 }

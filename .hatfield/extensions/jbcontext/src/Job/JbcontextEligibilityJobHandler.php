@@ -9,7 +9,6 @@ use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobRequestDTO;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\HatfieldExt\Jbcontext\Assets\JbcontextAssetInstaller;
 use Ineersa\HatfieldExt\Jbcontext\Cli\JbcontextCli;
-use Ineersa\HatfieldExt\Jbcontext\Cli\JbcontextCliErrorClassifier;
 use Ineersa\HatfieldExt\Jbcontext\Cli\JbcontextStatusParser;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextPaths;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextSessionModeEnum;
@@ -104,25 +103,13 @@ final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerIn
         $status = $cli->status();
         if (!$status['ok'] || null === $status['payload']) {
             $errorCode = (string) ($status['error'] ?? 'status_failed');
-            $authGuidance = JbcontextCliErrorClassifier::userGuidance($errorCode);
-            if (null !== $authGuidance) {
-                $this->disable(
-                    $store,
-                    'jbcontext disabled: '.$authGuidance,
-                    $errorCode,
-                    $attempt,
-                    $sessionId,
-                );
-
-                return;
-            }
-
             $this->handleTransient(
                 $api,
                 $store,
                 $attempt,
                 $errorCode,
                 $sessionId,
+                $status['detail'] ?? null,
             );
 
             return;
@@ -201,14 +188,18 @@ final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerIn
         int $attempt,
         string $errorCode,
         string $sessionId,
+        ?string $detail = null,
     ): void {
         $now = ($this->clock)();
         $state = $store->read();
         $sleep = JbcontextRetrySchedule::sleepBeforeNextAttempt($attempt, $state->elapsedSeconds($now));
         if (null === $sleep) {
+            $statusText = null !== $detail && '' !== $detail
+                ? 'jbcontext disabled: '.$detail
+                : 'jbcontext disabled: status check failed after retries. Fix jbcontext CLI access and restart Hatfield.';
             $this->disable(
                 $store,
-                'jbcontext disabled: status check failed after retries. Fix jbcontext CLI access and restart Hatfield.',
+                $statusText,
                 'status_exhausted:'.$errorCode,
                 $attempt,
                 $sessionId,

@@ -7,7 +7,7 @@ namespace Ineersa\HatfieldExt\Jbcontext\Tests;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecResultDTO;
-use Ineersa\HatfieldExt\Jbcontext\Cli\JbcontextCliErrorClassifier;
+use Ineersa\HatfieldExt\Jbcontext\Cli\JbcontextCliDiagnostic;
 use Ineersa\HatfieldExt\Jbcontext\Job\JbcontextEligibilityJobHandler;
 use Ineersa\HatfieldExt\Jbcontext\Job\JbcontextRetrySchedule;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextPaths;
@@ -168,49 +168,64 @@ final class JbcontextEligibilityJobHandlerTest extends TestCase
 
         $state = JbcontextStatusStore::forSession(JbcontextPaths::fromProjectRoot($this->projectDir), 'sess-1')->read();
         $this->assertSame(JbcontextSessionModeEnum::Disabled, $state->mode);
+        $this->assertSame(
+            'jbcontext disabled: '.JbcontextCliDiagnostic::format('boom'),
+            $state->reason,
+        );
         foreach ($exec->calls() as $call) {
             $this->assertSame('status', $call['args'][0]);
         }
     }
 
     #[Test]
-    public function authenticationRequiredDisablesImmediatelyWithLoginGuidance(): void
+    public function exhaustedStatusFailureSurfacesBoundedCliStderr(): void
     {
         mkdir($this->projectDir.'/.idea', 0o777, true);
         $secret = 'token=super-secret-value';
+        $stderr = "Authentication required\n".$secret;
         $sleeps = [];
-        $exec = new RecordingExec([
-            new ExecResultDTO(
+        $responses = [];
+        for ($i = 0; $i < 5; ++$i) {
+            $responses[] = new ExecResultDTO(
                 stdout: '',
-                stderr: "Authentication required\n".$secret,
+                stderr: $stderr,
                 exitCode: 1,
-            ),
-        ]);
+            );
+        }
+        $exec = new RecordingExec($responses);
         $api = new TestExtensionApi($this->projectDir, $exec);
+        $now = 1_000.0;
         $handler = new JbcontextEligibilityJobHandler(
             new TestLogger(),
             $this->packageRoot,
             static function (int $seconds) use (&$sleeps): void {
                 $sleeps[] = $seconds;
             },
+            static function () use (&$now): float {
+                return $now;
+            },
         );
 
-        $handler->handle($api, ['session_id' => 'sess-auth', 'attempt' => 1], 'job', 'sess-auth');
+        for ($attempt = 1; $attempt <= 5; ++$attempt) {
+            $api->jobs = [];
+            $handler->handle($api, ['session_id' => 'sess-auth', 'attempt' => $attempt], 'job', 'sess-auth');
+            $delay = JbcontextRetrySchedule::sleepBeforeNextAttempt($attempt, $now - 1_000.0);
+            if (null !== $delay) {
+                $now += $delay;
+            }
+        }
 
         $state = JbcontextStatusStore::forSession(JbcontextPaths::fromProjectRoot($this->projectDir), 'sess-auth')->read();
         $this->assertSame(JbcontextSessionModeEnum::Disabled, $state->mode);
-        $this->assertSame([], $sleeps);
-        $this->assertSame([], $api->jobs);
-        $this->assertCount(1, $exec->calls());
-        $this->assertSame('status', $exec->calls()[0]['args'][0]);
+        $this->assertNotSame([], $sleeps);
+        $this->assertCount(5, $exec->calls());
         $this->assertNotNull($state->reason);
-        $this->assertStringContainsString('jbcontext login', (string) $state->reason);
-        $this->assertStringContainsString('new Hatfield session', (string) $state->reason);
+        $this->assertStringContainsString('JB Context error:', (string) $state->reason);
+        $this->assertStringContainsString('Authentication required', (string) $state->reason);
+        $this->assertStringContainsString($secret, (string) $state->reason);
         $this->assertSame($state->reason, $state->statusText);
-        $this->assertStringNotContainsString($secret, (string) $state->reason);
-        $this->assertStringNotContainsString('Authentication required', (string) $state->reason);
         $this->assertSame(
-            'jbcontext disabled: '.JbcontextCliErrorClassifier::AUTH_USER_GUIDANCE,
+            'jbcontext disabled: '.JbcontextCliDiagnostic::format($stderr),
             $state->reason,
         );
     }
