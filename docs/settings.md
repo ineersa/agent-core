@@ -12,7 +12,7 @@ in home or project settings. Hatfield does **not** copy defaults into your home 
 
 Later sources win via structured overlay (`AppConfigLoader`):
 
-1. AI catalog (`~/.hatfield/ai-catalog.yaml`, bootstrapped from bundled `config/ai-catalog.yaml`)
+1. AI catalog (`~/.hatfield/ai-catalog.yaml`, bootstrapped from bundled `config/ai-catalog.yaml`; providers ship disabled until enabled via settings or `providers:setup`)
 2. Built-in defaults shipped with the install (`config/hatfield.defaults.yaml`)
 3. `~/.hatfield/settings.yaml`
 4. `<project>/.hatfield/settings.yaml`
@@ -26,8 +26,9 @@ Merge rules:
 
 Known providers in user/project settings are **sparse overlays** (for example
 `{ enabled: true, api_key: env:ZAI_API_KEY }`). Full model lists and connection
-defaults come from the AI catalog. See [ai-catalog.md](ai-catalog.md) for the
-precedence diagram, `hatfield providers:update`, and version-skew warning.
+defaults come from the AI catalog. Catalog bootstrap does **not** auto-enable
+providers. See [ai-catalog.md](ai-catalog.md) for the precedence diagram,
+`hatfield providers:update`, manual `providers:setup`, and version-skew warning.
 
 Use only keys you intend to change. Full snapshots of defaults are unnecessary.
 

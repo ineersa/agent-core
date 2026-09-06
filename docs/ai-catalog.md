@@ -7,7 +7,10 @@ description: Bundled AI provider catalog, user copy, providers:update, and setti
 
 Hatfield ships a curated AI provider catalog: connection settings plus a small
 model list per known provider (`zai`, `deepseek`, `openai-codex`, `grok-cli`).
-The file is frozen in the install (`version: 1` today). Runtime never downloads
+The bundled file is frozen in the install (`version: 4` at this writing; the
+integer bumps when the bundled catalog changes). Known providers ship **with
+definitions present and `enabled: false`**. Enabling a provider is a settings /
+setup step, not an automatic first-run action. Runtime never downloads
 models.dev; only `hatfield providers:update` does, and only for metadata on
 models you already have.
 
@@ -76,6 +79,15 @@ copy, the TUI startup loaded-resources header shows:
 
 Press Ctrl+R to expand the loaded-resources detail. Resolve by running the
 command (rebases + syncs, then clears the skew).
+
+## Interactive enablement
+
+`hatfield providers:setup` (or `bin/console providers:setup`) opens a standalone
+setup TUI for enabling providers and wiring credentials. It is **manual**. First
+catalog bootstrap only copies the bundled file to `~/.hatfield/ai-catalog.yaml`;
+it does not enable providers or invent API keys. Sparse settings overlays such as
+`ai.providers.zai: { enabled: true, api_key: env:ZAI_API_KEY }` remain the
+non-interactive alternative.
 
 ## Adding a model by hand
 
