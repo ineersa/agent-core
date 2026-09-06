@@ -42,11 +42,20 @@ final class JbcontextExtensionRegistrationTest extends TestCase
         $this->assertSame(['text'], $api->tools[0]->parametersJsonSchema['required']);
         $this->assertArrayHasKey('path_filter', $api->tools[0]->parametersJsonSchema['properties']);
         $this->assertStringContainsString('src/', (string) $api->tools[0]->parametersJsonSchema['properties']['path_filter']['description']);
-        $this->assertStringContainsString('non-whitespace', (string) $api->tools[0]->description);
+        $this->assertSame(
+            'Semantic code search via jbcontext. Use to discover unfamiliar behavior or code locations. Prefer direct reads or IDE navigation for known files and symbols.',
+            $api->tools[0]->description,
+        );
+        $this->assertStringContainsString('non-whitespace', (string) $api->tools[0]->parametersJsonSchema['properties']['text']['description']);
+        $this->assertStringNotContainsString('path_filter', (string) $api->tools[0]->description);
         $this->assertSame([
-            'Read the jbcontext-semantic-search skill guidelines before the first code_search call for a discovery question.',
+            'Read promising local files and nearby code before another semantic query.',
+            'Per discovery question, optionally make one narrowed follow-up with path_filter set to a useful directory from the first hits.',
+            'Verify local source; returned snippets can be incomplete.',
+            'Treat similarity as ranking, not confidence. Empty results are not absence of the behavior.',
+            'When unavailable, use other tools or the reported guidance. Do not repeat the same failing call.',
+            'Do not use code_search to review an existing diff.',
         ], $api->tools[0]->promptGuidelines);
-        $this->assertStringNotContainsString('builds, tests, Git', (string) $api->tools[0]->description);
         $this->assertArrayHasKey(JbcontextEligibilityJobHandler::HANDLER_ID, $api->handlers);
         $this->assertCount(1, $api->afterTurnHooks);
         $this->assertCount(1, $api->sessionStartHooks);

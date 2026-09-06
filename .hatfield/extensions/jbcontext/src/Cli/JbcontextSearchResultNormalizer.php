@@ -97,7 +97,7 @@ final class JbcontextSearchResultNormalizer
         }
 
         foreach ($nonEmpty as $line) {
-            if (1 === preg_match('/^<\?(?:php)?$/i', $line)) {
+            if (1 === preg_match('/^<\?(?:php)?(?:\s+declare\s*\(\s*strict_types\s*=\s*1\s*\)\s*;)?$/i', $line)) {
                 continue;
             }
             if (1 === preg_match('/^declare\s*\(\s*strict_types\s*=\s*1\s*\)\s*;$/i', $line)) {

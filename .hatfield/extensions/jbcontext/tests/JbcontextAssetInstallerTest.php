@@ -107,6 +107,8 @@ MD);
         $this->assertContains('jbcontext-semantic-search', $parsed['frontmatter']['skills']);
         $this->assertStringContainsString('You are a scout.', $parsed['body']);
         $this->assertStringContainsString('jbcontext semantic search', $parsed['body']);
+        $this->assertStringContainsString('jbcontext-semantic-search', $parsed['body']);
+        $this->assertStringNotContainsString('Optionally narrow once', $parsed['body']);
         $this->assertSame(
             (string) file_get_contents($userScout),
             (string) file_get_contents($userScout),

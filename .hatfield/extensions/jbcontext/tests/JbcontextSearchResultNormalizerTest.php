@@ -59,6 +59,7 @@ final class JbcontextSearchResultNormalizerTest extends TestCase
             'type' => 'search_result',
             'results' => [
                 $this->hit('src/A.php', 0.99, "<?php\n\ndeclare(strict_types=1);", 1),
+                $this->hit('src/A2.php', 0.97, '<?php declare(strict_types=1);', 1),
                 $this->hit('src/B.php', 0.95, "<?php\ndeclare(strict_types=1);\n\nnamespace App;", 1),
                 $this->hit('src/C.php', 0.90, 'declare(strict_types=1);', 1),
                 $this->hit('src/D.php', 0.85, "private function acquireSessionOwnerLock(): bool\n{\n    return true;\n}", 40),
@@ -97,6 +98,7 @@ final class JbcontextSearchResultNormalizerTest extends TestCase
                 $this->hit('src/A.php', 0.99, "<?php\n\ndeclare(strict_types=1);", 1),
                 $this->hit('src/B.php', 0.90, '<?php', 1),
                 $this->hit('src/C.php', 0.80, 'declare(strict_types=1);', 1),
+                $this->hit('src/D.php', 0.70, '<?php declare(strict_types=1);', 1),
             ],
         ]));
     }

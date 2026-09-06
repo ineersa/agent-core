@@ -71,11 +71,7 @@ final class JbcontextExtension implements HatfieldExtensionInterface, TuiExtensi
 
         $api->registerTool(new ToolRegistrationDTO(
             name: 'code_search',
-            description: 'Semantic code search via jbcontext when the relevant file or subsystem is unknown. '
-                .'text is a focused non-whitespace question or code snippet. '
-                .'Optional path_filter is a project-relative directory or file such as src/ or '
-                .'src/CodingAgent/Runtime/Controller (no absolute paths or ..). '
-                .'Read the skill guidelines before calling. After hits, verify local source; similarity is ranking, not probability.',
+            description: 'Semantic code search via jbcontext. Use to discover unfamiliar behavior or code locations. Prefer direct reads or IDE navigation for known files and symbols.',
             parametersJsonSchema: [
                 'type' => 'object',
                 'additionalProperties' => false,
@@ -97,9 +93,14 @@ final class JbcontextExtension implements HatfieldExtensionInterface, TuiExtensi
                 new JbcontextCli($api->exec(), $paths->projectRoot),
                 $this->logger,
             ),
-            promptSummary: 'Use code_search for meaning-based discovery when the relevant file or subsystem is unknown; then read local files. Follow the skill guidelines.',
+            promptSummary: 'Use code_search to discover unfamiliar behavior or code locations; prefer direct reads or IDE navigation for known files and symbols.',
             promptGuidelines: [
-                'Read the jbcontext-semantic-search skill guidelines before the first code_search call for a discovery question.',
+                'Read promising local files and nearby code before another semantic query.',
+                'Per discovery question, optionally make one narrowed follow-up with path_filter set to a useful directory from the first hits.',
+                'Verify local source; returned snippets can be incomplete.',
+                'Treat similarity as ranking, not confidence. Empty results are not absence of the behavior.',
+                'When unavailable, use other tools or the reported guidance. Do not repeat the same failing call.',
+                'Do not use code_search to review an existing diff.',
             ],
             timeoutSeconds: self::TOOL_TIMEOUT_SECONDS,
         ));
