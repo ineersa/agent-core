@@ -5,15 +5,13 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Handler;
 
 use Ineersa\AgentCore\Domain\Notification\ModelNotificationDTO;
-use Symfony\Component\Messenger\Exception\RecoverableMessageHandlingException;
 
 /**
  * Signals that ExecuteLlmStep handling failed with a classified retryable
- * provider-operation error. Symfony Messenger owns max retries, delay, and
- * jitter; after exhaustion the llm WorkerMessageFailedEvent bridge rebuilds
- * one terminal non-retryable {@see \Ineersa\AgentCore\Domain\Message\LlmStepResult}.
+ * provider-operation error and carries the failure details needed after
+ * retry exhaustion. The caller owns the retry policy.
  */
-final class RetryableLlmStepFailureException extends RecoverableMessageHandlingException
+final class RetryableLlmStepFailureException extends \RuntimeException
 {
     /**
      * @param array<string, mixed>       $error
@@ -31,11 +29,6 @@ final class RetryableLlmStepFailureException extends RecoverableMessageHandlingE
         public readonly array $availableTools = [],
         public readonly int $availableToolsSchemaTokensEstimate = 0,
     ) {
-        parent::__construct(
-            message: \sprintf('Retryable LLM provider failure for run %s step %s.', $runId, $stepId),
-            previous: null,
-            retryDelay: null,
-            forceRetry: false,
-        );
+        parent::__construct(\sprintf('Retryable LLM provider failure for run %s step %s.', $runId, $stepId));
     }
 }

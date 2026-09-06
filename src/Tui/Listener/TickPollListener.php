@@ -64,7 +64,7 @@ final class TickPollListener implements TuiListenerRegistrar
             // Child-first on the shared JSONL pipe: events() re-buffers non-matching
             // run ids; polling the child run before the parent reduces child latency.
             if ($liveActive) {
-                $childBlocks = $subagentLiveChildPoller->poll(
+                $childChanges = $subagentLiveChildPoller->poll(
                     $state->subagentLiveView,
                     $client,
                     onHumanInputRequested: static function (RuntimeEvent $event) use ($client, $questionCoordinator, $state, $screen, $runtimeQuestionEventHandler): void {
@@ -77,9 +77,11 @@ final class TickPollListener implements TuiListenerRegistrar
                         $runtimeQuestionEventHandler->handleToolTerminal($event, $questionCoordinator, $questionController);
                     },
                 );
-                // Only repaint transcript when new child blocks arrive; cached blocks stay on screen.
-                if (null !== $childBlocks) {
-                    $screen->setTranscriptBlocks($childBlocks);
+                // Apply only dirty child blocks. Full replacement is reserved for
+                // live-view entry/replay; repeated full markdown reflow while streaming
+                // causes visible partial-frame artifacts on long child reasoning.
+                if (null !== $childChanges) {
+                    $screen->applyTranscriptChangeSet($childChanges);
                 }
 
                 // Reconcile selected child's terminal runtime activity into the catalog
@@ -221,7 +223,9 @@ final class TickPollListener implements TuiListenerRegistrar
                 };
                 $liveWorking = null !== $parentMsg
                     ? $parentMsg.' | '.$childMsg
-                    : $childMsg;
+                    // Empty message uses ChatScreen's static finished idle slot (● idle).
+                    // A lone "Child agent idle" would start LoaderWidget and spin.
+                    : ($state->subagentLiveView->childActivity->isActive() ? $childMsg : null);
                 // Live-view-only cache: generic tick path avoids static last-value (see comment above).
                 if ($liveWorking !== $state->subagentLiveView->lastLiveWorkingMessage) {
                     $state->subagentLiveView->lastLiveWorkingMessage = $liveWorking;

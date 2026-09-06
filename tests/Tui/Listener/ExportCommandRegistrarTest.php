@@ -10,10 +10,10 @@ use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Command\SlashCommandCatalog;
-use Ineersa\Tui\Export\SessionEventsExportService;
 use Ineersa\Tui\Listener\ExportCommandRegistrar;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionState;
+use Ineersa\Tui\Tests\Support\SessionEventsExportServiceFactory;
 use Ineersa\Tui\Tests\Support\TuiSessionServicesFactoryTrait;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
@@ -28,7 +28,7 @@ final class ExportCommandRegistrarTest extends TestCase
     public function registersExportCommandWithMetadata(): void
     {
         $catalog = new SlashCommandCatalog();
-        $registrar = new ExportCommandRegistrar(new SessionEventsExportService());
+        $registrar = new ExportCommandRegistrar(SessionEventsExportServiceFactory::create());
 
         $this->assertFalse($catalog->has('export'), 'Export should not be registered yet');
 
@@ -50,7 +50,7 @@ final class ExportCommandRegistrarTest extends TestCase
     public function repeatsBindingWithoutThrowing(): void
     {
         $catalog = new SlashCommandCatalog();
-        $registrar = new ExportCommandRegistrar(new SessionEventsExportService());
+        $registrar = new ExportCommandRegistrar(SessionEventsExportServiceFactory::create());
         $registrar->registerCatalog($catalog);
 
         // First session iteration.
@@ -66,7 +66,7 @@ final class ExportCommandRegistrarTest extends TestCase
     public function metadataDescriptionContainsExport(): void
     {
         $catalog = new SlashCommandCatalog();
-        $registrar = new ExportCommandRegistrar(new SessionEventsExportService());
+        $registrar = new ExportCommandRegistrar(SessionEventsExportServiceFactory::create());
         $registrar->registerCatalog($catalog);
         $registrar->register($this->createContext($catalog));
 

@@ -38,7 +38,11 @@ use Symfony\AI\Platform\Provider;
 use Symfony\AI\Platform\Result\InMemoryRawResult;
 use Symfony\AI\Platform\Result\RawResultInterface;
 use Symfony\AI\Platform\Result\ResultInterface;
+use Symfony\AI\Platform\Result\Stream\Delta\DeltaInterface;
 use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
+use Symfony\AI\Platform\Result\Stream\Delta\ThinkingComplete;
+use Symfony\AI\Platform\Result\Stream\Delta\ThinkingDelta;
+use Symfony\AI\Platform\Result\Stream\Delta\ThinkingStart;
 use Symfony\AI\Platform\Result\StreamResult;
 use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\AI\Platform\ResultConverterInterface;
@@ -446,7 +450,9 @@ final class PlatformIntegrationTest extends TestCase
             ],
         );
 
-        $statusReader = new MutableRunOperationalStatusReader('run-cancel');
+        // Poll 1 = before-stream; poll 2 = first delta (keep Running, emit A);
+        // poll 3 = second delta (Cancelling → abort with partial "A").
+        $statusReader = new MutableRunOperationalStatusReader('run-cancel', cancelAfterReads: 2);
         $adapter = new LlmPlatformAdapter(
             statusReader: $statusReader,
             messageConverter: new AgentMessageConverter(),
@@ -472,6 +478,77 @@ final class PlatformIntegrationTest extends TestCase
         $this->assertSame('aborted', $response->stopReason);
         $this->assertSame('A', $response->assistantMessage?->asText());
         $this->assertSame(15, $response->usage['total_tokens']);
+    }
+
+    public function testStreamingCancellationAfterLastDeltaStillAborts(): void
+    {
+        $platform = $this->createSymfonyPlatform(
+            modelClient: new FakeSymfonyModelClient(new FakeTokenUsage(promptTokens: 3, completionTokens: 1, totalTokens: 4)),
+            streamFactory: static fn (): iterable => [
+                new TextDelta('done'),
+            ],
+        );
+
+        // Keep Running through before/during polls; cancel only on the end-of-stream check.
+        $statusReader = new MutableRunOperationalStatusReader('run-cancel-end', cancelAfterReads: 2);
+        $adapter = new LlmPlatformAdapter(
+            statusReader: $statusReader,
+            messageConverter: new AgentMessageConverter(),
+            toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
+            platform: $platform,
+            transformContextHooks: [],
+            convertToLlmHooks: [],
+            streamObserver: null,
+            costCalculator: null,
+            modelResolver: null,
+            logger: new NullLogger(),
+            denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
+        );
+
+        $response = $adapter->invoke(new ModelInvocationRequest(
+            model: 'gpt-test',
+            input: new ModelInvocationInput(
+                runId: 'run-cancel-end',
+                messages: [new AgentMessage('user', [['type' => 'text', 'text' => 'cancel after stream']])],
+            ),
+        ));
+
+        $this->assertSame('aborted', $response->stopReason);
+        $this->assertSame('done', $response->assistantMessage?->asText());
+    }
+
+    public function testRepeatedThinkingSegmentsRemainCumulativeInStreamAndCanonicalMessage(): void
+    {
+        $adapter = $this->createAdapter(streamFactory: static fn (): iterable => [
+            new ThinkingStart(),
+            new ThinkingDelta("First reasoning summary.\n"),
+            new ThinkingComplete("First reasoning summary.\n"),
+            new ThinkingStart(),
+            // Segment-local text may happen to repeat the prior segment's prefix.
+            new ThinkingDelta("First reasoning summary.\nRefined independently."),
+            new ThinkingComplete("First reasoning summary.\nRefined independently."),
+        ]);
+
+        $response = $adapter->invoke(new ModelInvocationRequest(
+            model: 'gpt-test',
+            input: new ModelInvocationInput(
+                runId: 'run-reasoning-segments',
+                messages: [new AgentMessage('user', [['type' => 'text', 'text' => 'reason']])],
+            ),
+        ));
+
+        $completions = array_values(array_filter(
+            $response->deltas,
+            static fn (mixed $delta): bool => $delta instanceof ThinkingComplete,
+        ));
+        $this->assertCount(2, $completions);
+        $this->assertSame("First reasoning summary.\n", $completions[0]->getThinking());
+        $expectedThinking = "First reasoning summary.\nFirst reasoning summary.\nRefined independently.";
+        $this->assertSame($expectedThinking, $completions[1]->getThinking());
+
+        $thinking = $response->assistantMessage?->getThinking() ?? [];
+        $this->assertCount(1, $thinking);
+        $this->assertSame($expectedThinking, $thinking[0]->getContent());
     }
 
     public function testTransformHookNotificationsFlowToPlatformInvocationResult(): void
@@ -958,7 +1035,7 @@ final readonly class FakeStreamResultConverter implements ResultConverterInterfa
 
         return new StreamResult((static function () use ($streamFactory): \Generator {
             foreach ($streamFactory() as $delta) {
-                if ($delta instanceof TextDelta) {
+                if ($delta instanceof DeltaInterface) {
                     yield $delta;
                 }
             }
@@ -1053,14 +1130,16 @@ final class MutableRunOperationalStatusReader implements RunOperationalStatusRea
 {
     private int $reads = 0;
 
-    public function __construct(private readonly string $runId)
-    {
+    public function __construct(
+        private readonly string $runId,
+        private readonly int $cancelAfterReads = 1,
+    ) {
     }
 
     public function findOperationalStatus(string $runId): ?RunOperationalStatusDTO
     {
         ++$this->reads;
-        if ($runId !== $this->runId || 1 === $this->reads) {
+        if ($runId !== $this->runId || $this->reads <= $this->cancelAfterReads) {
             return null;
         }
 

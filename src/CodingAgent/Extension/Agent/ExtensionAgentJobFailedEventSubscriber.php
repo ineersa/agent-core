@@ -10,10 +10,11 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\Messenger\Event\WorkerMessageFailedEvent;
+use Symfony\Component\Messenger\Exception\WrappedExceptionsInterface;
 use Symfony\Component\Messenger\Stamp\RedeliveryStamp;
 
 /**
- * Emits a sanitized TUI/runtime event when an extension_agent job permanently fails.
+ * Emits a TUI/runtime event when an extension_agent job permanently fails.
  *
  * Scope is intentionally narrow:
  * - receiver `extension_agent` only
@@ -24,14 +25,12 @@ use Symfony\Component\Messenger\Stamp\RedeliveryStamp;
  * There is no session/env fallback. Missing run_id produces a structured
  * diagnostic log only — never a TUI event and never a main-run failure.
  *
- * Payload is fixed and privacy-safe: no exception class/message, no tool
- * output, no prompts, no raw extension payload dump.
+ * The payload uses the underlying extension handler exception message so the
+ * TUI shows the failure the extension received.
  */
 final readonly class ExtensionAgentJobFailedEventSubscriber implements EventSubscriberInterface
 {
     private const string RECEIVER = 'extension_agent';
-
-    private const string SAFE_MESSAGE = 'Extension background job failed after retrying.';
 
     private const string REASON = 'retry_exhausted';
 
@@ -67,6 +66,7 @@ final readonly class ExtensionAgentJobFailedEventSubscriber implements EventSubs
         // attempts = initial delivery + redeliveries (max_retries: 1 ⇒ attempts 2 when exhausted).
         $attempts = $retryCount + 1;
         $runId = $this->validatedRunId($message->payload);
+        $failure = $this->unwrapFailure($event->getThrowable());
 
         if (null === $runId) {
             $this->logger->error('extension_agent.job_failed.missing_run_id', [
@@ -77,15 +77,14 @@ final readonly class ExtensionAgentJobFailedEventSubscriber implements EventSubs
                 'retry_count' => $retryCount,
                 'attempts' => $attempts,
                 'reason' => self::REASON,
-                // Privacy: exception class only — never message/stack/prompts.
-                'exception_class' => $event->getThrowable()::class,
+                'exception_class' => $failure::class,
             ]);
 
             return;
         }
 
         $payload = [
-            'message' => self::SAFE_MESSAGE,
+            'message' => $failure->getMessage(),
             'reason' => self::REASON,
             'handler_id' => $message->handlerId,
             'job_id' => $message->jobId,
@@ -111,6 +110,18 @@ final readonly class ExtensionAgentJobFailedEventSubscriber implements EventSubs
                 'exception_class' => $e::class,
             ]);
         }
+    }
+
+    private function unwrapFailure(\Throwable $throwable): \Throwable
+    {
+        if (!$throwable instanceof WrappedExceptionsInterface) {
+            return $throwable;
+        }
+
+        $wrapped = $throwable->getWrappedExceptions(null, true);
+        $firstKey = array_key_first($wrapped);
+
+        return null !== $firstKey ? $wrapped[$firstKey] : $throwable;
     }
 
     /**

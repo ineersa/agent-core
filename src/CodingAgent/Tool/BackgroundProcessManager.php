@@ -35,16 +35,16 @@ use Symfony\Component\Clock\Clock;
  *  4. stop() sends SIGTERM to the process group (negative PGID), polls
  *     until exit or the configured grace deadline, then SIGKILL if still alive.
  *
- * Session ownership: user-facing list(), readLogTail(), and session-scoped
+ * Session ownership: user-facing list(), readLogTail(), and
  * stop() operations require an owning session and expose only rows explicitly
- * accepted as background work. Internal shutdown/reap code retains an
- * unscoped stop() path for PIDs this manager instance owns.
+ * accepted as background work. Instance shutdown resolves owned record IDs
+ * directly and stops them through stopProcessEntity().
  *
  * Shutdown handling:
  * Call registerShutdownHandler() from production wiring (services.yaml)
  * to register a PHP shutdown function that calls shutdownCleanup() with
- * no session argument. That path reaps only background processes this
- * PHP instance started (owned PIDs), not every unfinished row in the
+ * no session argument. That path reaps only background-process records this
+ * PHP instance started (owned record IDs), not every unfinished row in the
  * shared database. This covers graceful exit (Ctrl+C, quit command,
  * normal script end) and fatal errors.
  *
@@ -69,8 +69,16 @@ final class BackgroundProcessManager
 {
     private bool $shutdownRegistered = false;
 
-    /** @var int[] PIDs launched via start() by THIS instance, used for instance-scoped shutdown cleanup. */
-    private array $ownedPids = [];
+    /**
+     * Immutable record IDs launched via start() by THIS instance.
+     *
+     * Shutdown cleanup must address the exact rows this PHP process created.
+     * Tracking OS PIDs alone is unsafe: rows can be deleted while ownership
+     * remains, and PID reuse can make fetchLatestByPid() resolve a foreign row.
+     *
+     * @var array<int, true>
+     */
+    private array $ownedRecordIds = [];
 
     public function __construct(
         private readonly ProcessStore $store,
@@ -91,7 +99,7 @@ final class BackgroundProcessManager
      *
      * On graceful shutdown (exit, Ctrl+C, fatal error), this calls
      * shutdownCleanup() with no session id, which TERM→grace→KILLs only
-     * owned PIDs from start() on this manager instance — never foreign
+     * owned records from start() on this manager instance — never foreign
      * unfinished rows from the shared background-process database.
      * On hard crash (SIGKILL, OOM, segfault), the shutdown function
      * does not fire — BG processes survive for inspection or resume.
@@ -176,12 +184,6 @@ final class BackgroundProcessManager
         $pid = $launchResult['pid'];
         $pgid = $launchResult['pgid'];
 
-        // Track for instance-scoped shutdown: only processes this PHP process
-        // started are reaped by the shutdown handler, never foreign rows from the
-        // shared background-process database (e.g. a short-lived PHAR `list`/`about`
-        // command sharing the project DB must not kill another process's work).
-        $this->ownedPids[] = $pid;
-
         // Persist entity with auto-increment DB id
         $dbId = $this->store->insertRecord([
             'pid' => $pid,
@@ -192,6 +194,10 @@ final class BackgroundProcessManager
             'status_path' => $statusFile,
             'started_at' => $now,
         ]);
+
+        // Track for instance-scoped shutdown only after the durable row exists.
+        // Ownership is the immutable record ID, never the reusable OS PID.
+        $this->ownedRecordIds[$dbId] = true;
 
         $resolvedSessionId = $sessionId ?? '';
 
@@ -437,16 +443,13 @@ final class BackgroundProcessManager
      * to single-PID signalling only when the PGID could not be
      * determined — a rare race window immediately after process launch.
      *
-     * @param int         $pid       Process PID to stop. Must be > 0.
-     * @param string|null $sessionId owning run for user-facing operations.
-     *                               When provided, only an accepted process
-     *                               in that run can be stopped; null is only
-     *                               for internal shutdown/reap calls over
-     *                               manager-owned PIDs or session-selected rows.
+     * @param int    $pid       Process PID to stop. Must be > 0.
+     * @param string $sessionId owning run. Only an accepted background process
+     *                          in that run can be stopped.
      *
      * @throws \RuntimeException when process not found or PID is invalid
      */
-    public function stop(int $pid, ?string $sessionId = null): StopResult
+    public function stop(int $pid, string $sessionId): StopResult
     {
         // Defence-in-depth: reject non-positive PIDs that could cause
         // kill(0) or kill(-negative) to broadcast signals to the caller.
@@ -454,12 +457,10 @@ final class BackgroundProcessManager
             throw new \RuntimeException(\sprintf('Invalid PID %d for stop.', $pid));
         }
 
-        $entity = null === $sessionId
-            ? $this->store->fetchLatestByPid($pid)
-            : $this->store->fetchBackgroundedByPid($sessionId, $pid);
+        $entity = $this->store->fetchBackgroundedByPid($sessionId, $pid);
 
         if (null === $entity) {
-            throw new \RuntimeException(null === $sessionId ? \sprintf('No background process found with PID %d.', $pid) : \sprintf('No background process found with PID %d for this session.', $pid));
+            throw new \RuntimeException(\sprintf('No background process found with PID %d for this session.', $pid));
         }
 
         return $this->stopProcessEntity($entity);
@@ -527,9 +528,8 @@ final class BackgroundProcessManager
     /**
      * Terminate background processes started by this manager instance.
      *
-     * This PHP-shutdown fallback never queries the shared database. Controller
-     * session cleanup is owned by its lifecycle listener and uses immutable
-     * record IDs instead.
+     * This PHP-shutdown fallback queries only this instance's immutable record
+     * IDs. The controller lifecycle listener owns session-wide cleanup.
      *
      * @return int Number of processes terminated
      */
@@ -645,7 +645,7 @@ final class BackgroundProcessManager
     }
 
     /**
-     * Reap only PIDs started via start() on this manager instance.
+     * Reap only records started via start() on this manager instance.
      *
      * Used when shutdownCleanup() is called with no session id (PHP shutdown
      * handler path). Never reads unfinished rows from the shared database.
@@ -653,16 +653,21 @@ final class BackgroundProcessManager
     private function reapOwnedProcesses(): int
     {
         $count = 0;
-        foreach ($this->ownedPids as $pid) {
+        foreach (array_keys($this->ownedRecordIds) as $recordId) {
             try {
-                $this->stop($pid);
-                ++$count;
+                $entity = $this->store->fetchByRecordId($recordId);
+                if (null !== $entity) {
+                    $this->stopProcessEntity($entity);
+                    ++$count;
+                }
+                // Missing rows were already removed by session/provisional cleanup.
+                // Keep ownership on failure so a later cleanup can retry.
+                unset($this->ownedRecordIds[$recordId]);
             } catch (\RuntimeException $e) {
-                // Process may have exited between fetch and stop; log and continue
                 $this->logger->warning('background_process.shutdown_cleanup_error', [
                     'component' => 'tool.background_process',
                     'event_type' => 'background_process.shutdown_cleanup_error',
-                    'process_pid' => $pid,
+                    'record_id' => $recordId,
                     'error' => $e->getMessage(),
                 ]);
             }

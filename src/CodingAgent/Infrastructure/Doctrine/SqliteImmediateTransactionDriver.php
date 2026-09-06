@@ -7,7 +7,7 @@ namespace Ineersa\CodingAgent\Infrastructure\Doctrine;
 use Doctrine\DBAL\Driver\Connection as DriverConnection;
 use Doctrine\DBAL\Driver\Middleware\AbstractDriverMiddleware;
 
-final class MessengerSqliteImmediateTransactionDriver extends AbstractDriverMiddleware
+final class SqliteImmediateTransactionDriver extends AbstractDriverMiddleware
 {
     public function connect(
         #[\SensitiveParameter]
@@ -15,6 +15,6 @@ final class MessengerSqliteImmediateTransactionDriver extends AbstractDriverMidd
     ): DriverConnection {
         $connection = parent::connect($params);
 
-        return new MessengerSqliteImmediateTransactionConnection($connection);
+        return new SqliteImmediateTransactionConnection($connection);
     }
 }

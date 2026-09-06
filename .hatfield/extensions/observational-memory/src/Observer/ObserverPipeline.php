@@ -19,10 +19,12 @@ use Psr\Log\LoggerInterface;
 /**
  * Shared Observer model/render/persist pipeline for async observe-boundary jobs.
  *
- * Chunks under floor(context_window * 0.65); multi-call accumulate; zero-obs coverage valid.
+ * Chunks under the configured context-window ratio; multi-call accumulate; zero-obs coverage valid.
  */
 final readonly class ObserverPipeline
 {
+    private const int MAX_TOOL_CALLS = 6;
+
     public function __construct(
         private LoggerInterface $logger,
     ) {
@@ -176,7 +178,7 @@ final readonly class ObserverPipeline
                     ),
                 ],
                 correlationId: $jobId ?? $correlationId,
-                maxToolCalls: OmSettings::DEFAULT_AGENT_MAX_TOOL_CALLS,
+                maxToolCalls: self::MAX_TOOL_CALLS,
             ));
 
             // Zero observations and/or no tool call at all is successful coverage.

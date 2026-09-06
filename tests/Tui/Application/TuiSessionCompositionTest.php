@@ -27,12 +27,12 @@ use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Application\TuiSessionCompositionFactory;
 use Ineersa\Tui\Editor\PromptEditor;
-use Ineersa\Tui\Export\SessionEventsExportService;
 use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
 use Ineersa\Tui\Question\QuestionOverlayPromptRenderer;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Tests\Command\FixedMessageTestHandler;
+use Ineersa\Tui\Tests\Support\SessionEventsExportServiceFactory;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
@@ -100,7 +100,7 @@ final class TuiSessionCompositionTest extends TestCase
             historyProvider: $this->createStub(HistoryProviderInterface::class),
             childSnapshotProvider: $this->createStub(ChildRunTranscriptSnapshotProviderInterface::class),
             childEventsPathResolver: $this->createStub(ChildAgentEventsPathResolverInterface::class),
-            exportService: new SessionEventsExportService(),
+            exportService: SessionEventsExportServiceFactory::create(),
             runtimeQuestionEventHandler: new RuntimeQuestionEventHandler(),
             questionPromptRenderer: new QuestionOverlayPromptRenderer()
         );

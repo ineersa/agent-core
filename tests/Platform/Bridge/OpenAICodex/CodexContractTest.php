@@ -11,7 +11,9 @@ use Symfony\AI\Platform\Bridge\OpenAICodex\Contract\CodexContract;
 use Symfony\AI\Platform\Bridge\OpenAICodex\Contract\CodexToolCallNormalizer;
 use Symfony\AI\Platform\Bridge\OpenAICodex\Contract\CodexToolNormalizer;
 use Symfony\AI\Platform\Bridge\OpenAICodex\Contract\Message\CodexAssistantMessageNormalizer;
+use Symfony\AI\Platform\Capability;
 use Symfony\AI\Platform\Message\AssistantMessage;
+use Symfony\AI\Platform\Message\Content\Image;
 use Symfony\AI\Platform\Message\Content\Text;
 use Symfony\AI\Platform\Message\Content\Thinking;
 use Symfony\AI\Platform\Message\Message;
@@ -181,6 +183,26 @@ final class CodexContractTest extends TestCase
         $this->assertIsArray($userInput['content']);
         $this->assertSame('input_text', $userInput['content'][0]['type']);
         $this->assertSame('Hello world', $userInput['content'][0]['text']);
+    }
+
+    public function testUserImageUsesResponsesInputImageShape(): void
+    {
+        $dataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+        $messageBag = new MessageBag(Message::ofUser(
+            new Text('Inspect this image.'),
+            Image::fromDataUrl($dataUrl),
+        ));
+
+        $payload = CodexContract::create()->createRequestPayload(
+            new CodexModel('gpt-5.5', [Capability::INPUT_IMAGE]),
+            $messageBag,
+            [],
+        );
+
+        $this->assertSame([
+            'type' => 'input_image',
+            'image_url' => $dataUrl,
+        ], $payload['input'][0]['content'][1]);
     }
 
     public function testToolNormalizerIncludesStrictNull(): void

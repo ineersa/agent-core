@@ -123,7 +123,7 @@ final class ObserveBoundaryJobHandlerTest extends IsolatedKernelTestCase
         $this->assertNull($cleared, 'observer finally must clear activity');
 
         $this->assertInstanceOf(AgentCallRequestDTO::class, $lastRequest);
-        $this->assertSame(16, $lastRequest->maxToolCalls);
+        $this->assertSame(6, $lastRequest->maxToolCalls);
         $this->assertStringContainsString('Use feature flags', $lastRequest->input);
         $this->assertStringContainsString('CURRENT REFLECTIONS:', $lastRequest->input);
         $this->assertStringContainsString('Current local time fallback:', $lastRequest->input);

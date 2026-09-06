@@ -8,7 +8,7 @@
 # Refresh: hatfield providers:update
 # Interactive setup: bin/console providers:setup (see providers-setup-command task)
 
-version: 3
+version: 4
 
 providers:
     deepseek:
@@ -98,9 +98,19 @@ providers:
                 input: [text]
                 tool_calling: true
                 reasoning: true
-                thinking_level_map: { minimal: enabled, low: enabled, medium: enabled, high: enabled }
-                compatibility: { zai_tool_stream: true }
-                cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 }
+                thinking_level_map: { minimal: null, low: low, medium: null, high: high, xhigh: null, max: max }
+                compatibility: { supports_reasoning_effort: true, zai_tool_stream: true }
+                cost: { input: 1.40, output: 4.40, cache_read: 0.26, cache_write: 0 }
+            glm-5.3-flash:
+                name: GLM 5.3 Flash
+                context_window: 1000000
+                max_tokens: 131072
+                input: [text, image, video, pdf]
+                tool_calling: true
+                reasoning: true
+                thinking_level_map: { minimal: null, low: low, medium: null, high: high, xhigh: null, max: max }
+                compatibility: { supports_reasoning_effort: true, zai_tool_stream: true }
+                cost: { input: 0.075, output: 0.25, cache_read: 0.015, cache_write: 0 }
 
     openai-codex:
         label: 'OpenAI Codex'
@@ -122,6 +132,15 @@ providers:
             thinking_format: codex
         auth_command: 'auth:codex'
         models:
+            gpt-6-astra:
+                name: GPT-6 Astra
+                reasoning: true
+                thinking_level_map: { minimal: null, low: low, medium: medium, high: high, xhigh: xhigh, max: max }
+                tool_calling: true
+                input: [text, image]
+                context_window: 272000
+                max_tokens: 128000
+                cost: { input: 10.00, output: 50.00, cache_read: 1.00, cache_write: 12.50 }
             gpt-5.6-luna:
                 name: GPT-5.6 Luna
                 reasoning: true

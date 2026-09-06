@@ -145,9 +145,18 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
                 'errorMessage' => $state->errorMessage ?? 'Run cancelled during LLM streaming.',
             ]);
 
+            // Match ToolCallResultHandler / immediate-cancel: wake AdvanceRun so
+            // an already-queued AppendMessage drains after AgentEnd(cancelled).
+            $postCommit = [];
+            $postCancelAdvance = $this->followUpAdvanceCallback($runId, $state->turnNo, 'post-cancel-advance');
+            if (null !== $postCancelAdvance) {
+                $postCommit[] = $postCancelAdvance;
+            }
+
             return new HandlerResult(
                 nextState: $nextState,
                 events: $events,
+                postCommit: $postCommit,
             );
         }
 

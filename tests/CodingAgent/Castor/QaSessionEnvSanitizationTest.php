@@ -58,7 +58,7 @@ final class QaSessionEnvSanitizationTest extends TestCase
     {
         self::requireCastorFiles();
 
-        $dsn = 'doctrine://messenger_transport?queue_name=session_poison_x&redeliver_timeout=60';
+        $dsn = 'doctrine://messenger_transport?queue_name=session_poison_x';
         $poisoned = [];
         try {
             foreach (self::DSN_VARS as $var) {

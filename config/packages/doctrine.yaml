@@ -9,7 +9,8 @@
 #
 # options key 2 = PDO::ATTR_TIMEOUT (seconds). SQLite maps this to PRAGMA
 # busy_timeout (milliseconds = seconds × 1000), so 5 → 5000ms on both connections.
-# Reduces immediate "database is locked" under concurrent workers sharing each file.
+# Both connections use BEGIN IMMEDIATE for explicit outer transactions so competing
+# writers wait before taking a read snapshot instead of failing on read→write upgrade.
 #
 # ORM entities on the default connection:
 #   - background_process  — BackgroundProcessManager durable tracking
@@ -28,9 +29,9 @@ doctrine:
                 options:
                     2: 5
 
-            # MessengerSqliteImmediateTransactionMiddleware (connection tag only) uses
-            # BEGIN IMMEDIATE so concurrent messenger:consume workers wait on the writer
-            # slot at transaction start instead of failing on deferred read→write upgrade.
+            # SqliteImmediateTransactionMiddleware uses BEGIN IMMEDIATE so concurrent
+            # messenger:consume workers wait on the writer slot at transaction start
+            # instead of failing on deferred read→write upgrade.
             messenger_transport:
                 driver: pdo_sqlite
                 path: '%app.cwd%/.hatfield/messenger-transport.sqlite'

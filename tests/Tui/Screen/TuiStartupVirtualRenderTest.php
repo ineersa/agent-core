@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Screen;
 
 use Ineersa\Tui\CompactHeader\CompactHeaderSnapshot;
+use Ineersa\Tui\Listener\FooterStateSegmentProvider;
+use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
@@ -45,6 +47,20 @@ final class TuiStartupVirtualRenderTest extends TestCase
         $this->assertStringContainsString('Welcome to Hatfield', $screen, 'Welcome message missing');
         $this->assertStringContainsString('● idle', $screen, 'Idle working status missing');
         $this->assertStringContainsString('session '.self::SESSION_ID, $screen, 'Session id in footer missing');
+    }
+
+    #[Test]
+    public function testFooterRendersElapsedTimeToMinutePrecision(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
+        $state = new TuiSessionState(self::SESSION_ID);
+        $state->sessionStartTime = microtime(true) - 125.0;
+        $harness->screen()->addFooterProvider(new FooterStateSegmentProvider($state));
+
+        $screen = $harness->plainScreenText();
+
+        $this->assertStringContainsString('⏱ 2m', $screen);
+        $this->assertDoesNotMatchRegularExpression('/⏱ [^\n]*\d+s/', $screen);
     }
 
     #[Test]

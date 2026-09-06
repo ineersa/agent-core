@@ -64,7 +64,7 @@ final class BashTool implements HatfieldToolProviderInterface
 {
     public const string NAME = 'bash';
 
-    public const string DESCRIPTION_TEMPLATE = 'Execute a shell command with timeout. The command runs until completion, hits the timeout, or is cancelled. Long-running commands may be offered to move to background after %d seconds.';
+    public const string DESCRIPTION_TEMPLATE = 'Execute a shell command. Commands time out after %d seconds by default. Provide the timeout argument with an explicit higher value when a command needs more time. The command runs until completion, hits its timeout, or is cancelled. Long-running commands may be offered to move to background after %d seconds.';
 
     public function __construct(
         private readonly BackgroundProcessManager $manager,
@@ -280,11 +280,20 @@ final class BashTool implements HatfieldToolProviderInterface
     {
         return new ToolDefinitionDTO(
             name: self::NAME,
-            description: \sprintf(self::DESCRIPTION_TEMPLATE, $this->config->backgroundPromptThresholdSeconds),
+            description: \sprintf(
+                self::DESCRIPTION_TEMPLATE,
+                $this->config->defaultTimeoutSeconds,
+                $this->config->backgroundPromptThresholdSeconds,
+            ),
             handler: $this,
             executionMode: ToolExecutionMode::Parallel,
             promptLine: 'bash command [timeout=N] — execute a shell command with foreground supervision and optional timeout',
             promptGuidelines: [
+                \sprintf(
+                    'Bash commands time out after %d seconds by default. Always provide the timeout argument with an explicit higher value when a command needs more time, up to the %d-second maximum.',
+                    $this->config->defaultTimeoutSeconds,
+                    $this->config->maxTimeoutSeconds,
+                ),
                 'For file operations such as reading, writing, editing, or viewing files, prefer the dedicated read/write/edit/view_image tools instead of bash cat/echo/editor pipelines.',
                 'The user controls backgrounding; there is no run_in_background argument. Backgrounded commands report completion automatically, so do not poll; use bg_status with the returned PID only to inspect progress or stop the process when needed.',
                 'Output is capped to prevent excessively large responses. Very large output may be truncated and saved to a file for inspection.',

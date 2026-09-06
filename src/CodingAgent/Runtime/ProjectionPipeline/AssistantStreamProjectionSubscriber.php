@@ -111,6 +111,16 @@ final readonly class AssistantStreamProjectionSubscriber implements EventSubscri
             $p['message_id'] = (string) $p['step_id'];
         }
 
+        $existing = $state->getBlock($blockId);
+        if (null !== $existing && TranscriptBlockKindEnum::AssistantThinking === $existing->kind) {
+            // A model stream may contain several reasoning segments correlated to
+            // the same transcript block. Reopen the block without discarding the
+            // summary accumulated by earlier segments.
+            $state->updateBlock($blockId, $existing->with(streaming: true));
+
+            return;
+        }
+
         $state->addBlock(new TranscriptBlock(
             id: $blockId,
             kind: TranscriptBlockKindEnum::AssistantThinking,

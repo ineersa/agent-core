@@ -34,7 +34,7 @@ final class ExtensionAgentJobFailedProjectionSubscriberTest extends TestCase
             runId: 'run-1',
             seq: 0,
             payload: [
-                'message' => 'Extension background job failed after retrying.',
+                'message' => '[usage_limit_reached/insufficient_quota]: You have no credits left.',
                 'reason' => 'retry_exhausted',
                 'handler_id' => 'observational_memory.observe_boundary',
                 'job_id' => 'job-xyz',
@@ -48,7 +48,10 @@ final class ExtensionAgentJobFailedProjectionSubscriberTest extends TestCase
         $block = $blocks[0];
         $this->assertSame(TranscriptBlockKindEnum::Error, $block->kind);
         $this->assertSame('run-1', $block->runId);
-        $this->assertSame('Extension background job failed after retrying.', $block->text);
+        $this->assertSame(
+            '[usage_limit_reached/insufficient_quota]: You have no credits left.',
+            $block->text,
+        );
         $this->assertSame('retry_exhausted', $block->meta['reason'] ?? null);
         $this->assertSame('observational_memory.observe_boundary', $block->meta['handler_id'] ?? null);
         $this->assertSame('job-xyz', $block->meta['job_id'] ?? null);
@@ -63,7 +66,7 @@ final class ExtensionAgentJobFailedProjectionSubscriberTest extends TestCase
     }
 
     #[Test]
-    public function subscriberUsesSafeFallbackWhenMessageMissing(): void
+    public function subscriberUsesGenericFallbackWhenMessageEmpty(): void
     {
         $subscriber = new ExtensionAgentJobFailedProjectionSubscriber();
         $state = new TranscriptProjectionState();
@@ -73,6 +76,7 @@ final class ExtensionAgentJobFailedProjectionSubscriberTest extends TestCase
                 runId: 'run-2',
                 seq: 0,
                 payload: [
+                    'message' => '',
                     'reason' => 'retry_exhausted',
                 ],
             ),

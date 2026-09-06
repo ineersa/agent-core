@@ -53,6 +53,7 @@ final class SubagentLiveCommandRegistrar implements TuiListenerRegistrar, SlashC
             $screen,
             $questionCoordinator,
             $questionController,
+            $services->childPoller,
             $client,
         ));
     }

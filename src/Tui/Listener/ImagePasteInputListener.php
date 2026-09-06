@@ -17,7 +17,7 @@ use Psr\Log\LoggerInterface;
 use Symfony\Component\Tui\Event\InputEvent;
 
 /**
- * Intercepts standalone Ctrl+V (\x16) for image clipboard paste.
+ * Intercepts standalone Ctrl+V for image clipboard paste.
  *
  * Clipboard helpers run asynchronously: start() returns immediately, poll() runs
  * on TuiTickDispatcher. Bracketed text paste is unchanged (Symfony EditorWidget).
@@ -38,6 +38,7 @@ final class ImagePasteInputListener implements TuiListenerRegistrar
         $screen = $context->screen;
         $state = $context->state;
         $editor = $screen->promptEditor();
+        $editorWidget = $screen->editorWidget();
 
         $clipboardReader = $this->clipboardReader;
         $validationService = $this->validationService;
@@ -176,8 +177,9 @@ final class ImagePasteInputListener implements TuiListenerRegistrar
                 $clipboardReader,
                 $blockFactory,
                 $logger,
+                $editorWidget,
             ): void {
-                if ("\x16" !== $event->getData()) {
+                if (!$editorWidget->getKeybindings()->matches($event->getData(), 'paste_image')) {
                     return;
                 }
 

@@ -20,6 +20,7 @@ use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use Ineersa\Tui\Transcript\TranscriptGlyphs;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Tui\Render\Renderer;
@@ -34,8 +35,18 @@ final class PreviewExpansionInputListenerTest extends TestCase
 {
     use TuiRuntimeContextBuilderTrait;
 
+    /**
+     * @return iterable<string, array{0: string}>
+     */
+    public static function provideCtrlOSequences(): iterable
+    {
+        yield 'legacy' => ["\x0f"];
+        yield 'kitty' => ["\x1b[111;5u"];
+    }
+
     #[Test]
-    public function ctrlOTogglesLongToolExchangePreviewOnRealInputPath(): void
+    #[DataProvider('provideCtrlOSequences')]
+    public function ctrlOTogglesLongToolExchangePreviewOnRealInputPath(string $sequence): void
     {
         $displayConfig = new TranscriptDisplayConfig(
             toolResultPreviewLines: 2,
@@ -97,27 +108,30 @@ final class PreviewExpansionInputListenerTest extends TestCase
         $harness->screen()->setWorkingVisible(false);
 
         $collapsed = $harness->plainScreenText();
-        $this->assertStringContainsString('deep_line_0', $collapsed);
-        $this->assertStringNotContainsString('deep_line_11', $collapsed);
-        $this->assertStringContainsString('more line', $collapsed);
+        $this->assertStringContainsString('deep_line_11', $collapsed);
+        $this->assertStringNotContainsString('deep_line_0', $collapsed);
+        $this->assertStringContainsString('earlier line', $collapsed);
 
-        $harness->sendInput("\x0f");
+        $harness->sendInput($sequence);
 
         $this->assertTrue($displayState->previewableBlocksExpanded);
         $expanded = $harness->plainScreenText();
         $this->assertStringContainsString('deep_line_11', $expanded);
-        $this->assertStringNotContainsString('more line', $expanded);
+        $this->assertStringNotContainsString('earlier line', $expanded);
+        $this->assertStringContainsString('deep_line_0', $expanded);
 
-        $harness->sendInput("\x0f");
+        $harness->sendInput($sequence);
 
         $this->assertFalse($displayState->previewableBlocksExpanded);
         $collapsedAgain = $harness->plainScreenText();
-        $this->assertStringNotContainsString('deep_line_11', $collapsedAgain);
-        $this->assertStringContainsString('more line', $collapsedAgain);
+        $this->assertStringContainsString('deep_line_11', $collapsedAgain);
+        $this->assertStringNotContainsString('deep_line_0', $collapsedAgain);
+        $this->assertStringContainsString('earlier line', $collapsedAgain);
     }
 
     #[Test]
-    public function ctrlODoesNotChangeUserAssistantBlockText(): void
+    #[DataProvider('provideCtrlOSequences')]
+    public function ctrlODoesNotChangeUserAssistantBlockText(string $sequence): void
     {
         $displayState = new TranscriptDisplayState(previewableBlocksExpanded: false);
         $harness = new VirtualTuiHarness(
@@ -156,7 +170,7 @@ final class PreviewExpansionInputListenerTest extends TestCase
         $harness->screen()->setWorkingVisible(false);
 
         $before = $harness->plainScreenText();
-        $harness->sendInput("\x0f");
+        $harness->sendInput($sequence);
         $after = $harness->plainScreenText();
 
         $this->assertStringContainsString('USER_STABLE_MARKER', $before);
@@ -280,7 +294,7 @@ line9';
         $this->assertStringNotContainsString('line9', $collapsed);
         $this->assertStringContainsString('Ctrl+O to expand handoff', $collapsed);
 
-        $harness->sendInput('');
+        $harness->sendInput("\x0f");
 
         $expanded = $harness->plainScreenText();
         $this->assertStringContainsString('line9', $expanded);

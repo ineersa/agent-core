@@ -103,7 +103,11 @@ final class TuiSessionCompositionFactory
             $this->boundary,
             $this->sessionTranscriptProvider,
         );
-        $childPoller = new SubagentLiveChildViewPoller($childProjector, $this->logger, $this->denormalizer);
+        $childPoller = new SubagentLiveChildViewPoller(
+            $childProjector,
+            $this->logger,
+            $this->denormalizer,
+        );
 
         // ── Fresh question/history state ──
         $questionCoordinator = new QuestionCoordinator();

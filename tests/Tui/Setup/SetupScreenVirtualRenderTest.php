@@ -7,6 +7,7 @@ namespace Ineersa\Tui\Tests\Setup;
 use Ineersa\Tui\Setup\ProvidersSetupFlowInterface;
 use Ineersa\Tui\Setup\SetupScreen;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Tui\Terminal\ScreenBuffer;
@@ -422,7 +423,8 @@ final class SetupScreenVirtualRenderTest extends TestCase
     }
 
     #[Test]
-    public function ctrlDInsideOpenCustomSubmenuQuits(): void
+    #[DataProvider('provideCtrlDSequences')]
+    public function ctrlDInsideOpenCustomSubmenuQuits(string $sequence): void
     {
         // SettingsListWidget.onInput(quitOnCtrlD) runs BEFORE submenu forward.
         $flow = new FakeProvidersSetupFlow();
@@ -431,12 +433,21 @@ final class SetupScreenVirtualRenderTest extends TestCase
         $this->selectValue($screen, 'custom');
         $tui->handleInput("\r"); // open id submenu
         $tui->processRender();
-        $tui->handleInput("\x04"); // Ctrl+D
+        $tui->handleInput($sequence);
 
         $this->assertSame('summary', $this->phase($screen));
         $text = $this->plain($terminal);
         $this->assertStringContainsString('AI Provider Setup', $text);
         $this->assertStringNotContainsString('Add your own server', $text);
+    }
+
+    /**
+     * @return iterable<string, array{0: string}>
+     */
+    public static function provideCtrlDSequences(): iterable
+    {
+        yield 'legacy' => ["\x04"];
+        yield 'kitty' => ["\x1b[100;5u"];
     }
 
     #[Test]

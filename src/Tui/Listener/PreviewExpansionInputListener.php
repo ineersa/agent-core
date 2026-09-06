@@ -29,7 +29,8 @@ final class PreviewExpansionInputListener implements TuiListenerRegistrar
 
         $context->tui->addListener(
             static function (InputEvent $event) use ($state, $screen, $tui): void {
-                if ("\x0f" !== $event->getData()) {
+                $keys = $screen->editorWidget()->getKeybindings();
+                if (!$keys->matches($event->getData(), 'toggle_preview_expansion')) {
                     return;
                 }
 

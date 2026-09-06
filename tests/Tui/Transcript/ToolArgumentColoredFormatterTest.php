@@ -9,6 +9,7 @@ use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Transcript\ToolArgumentColoredFormatter;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 #[CoversClass(ToolArgumentColoredFormatter::class)]
@@ -45,5 +46,27 @@ final class ToolArgumentColoredFormatterTest extends TestCase
         $this->assertStringNotContainsString($textAnsi, $joined);
         $this->assertNotSame($keyAnsi, $mutedAnsi);
         $this->assertNotSame($valueAnsi, $textAnsi);
+    }
+
+    #[Test]
+    public function formatsEachTopLevelArgumentAsOneLogicalLineWithoutDroppingValues(): void
+    {
+        $theme = new DefaultTheme(new ThemePalette('formatter-test', [
+            ThemeColorEnum::ToolArgumentKey->value => '#ff00aa',
+            ThemeColorEnum::ToolArgumentValue->value => '#00ffaa',
+        ]));
+
+        $lines = (new ToolArgumentColoredFormatter())->formatColoredLines([
+            'nested' => ['items' => [1, 2], 'enabled' => true],
+            'multiline' => "first\nsecond",
+            'long' => str_repeat('x', 300).'tail-marker',
+        ], $theme);
+
+        $this->assertCount(3, $lines);
+        $plain = preg_replace('/\x1b\[[0-9;]*m/', '', implode("\n", $lines));
+        $this->assertIsString($plain);
+        $this->assertStringContainsString('nested: { items: [1, 2], enabled: true }', $plain);
+        $this->assertStringContainsString('multiline: "first\\nsecond"', $plain);
+        $this->assertStringContainsString('tail-marker', $plain);
     }
 }

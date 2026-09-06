@@ -57,6 +57,7 @@ Do this before proposing a test strategy, adding tests, running Castor tests, or
 **Lane / proof constraints (detail in testing skill + `tests/AGENTS.md`):**
 
 - Changes touching TUI runtime, `AgentSessionClient`, Messenger, `TranscriptProjector`, `RuntimeEventPoller`, or LLM-visible flow require `castor check`. Unit/container/mocked tests alone are not enough. If required tmux is unavailable, stay IN-PROGRESS with the blocker.
+- For tracked tasks, run targeted checks during implementation. `move_task(to="CODE-REVIEW")` owns the full `castor check` gate; do not run it separately before that transition. A successful transition gate satisfies the full-validation requirement for the submitted revision. Post-merge validation checks the integrated result separately.
 - TUI proof at the **lowest correct layer**: virtual/`castor test` → controller-replay → minimal `castor test:tui`. Do not default every feature to tmux. Custom smoke scripts, service-only DTO tests, picker/footer-only checks, or manual fork reports are not sole proof.
 - Replay is a regression guard, not proof of live correctness. When a user-reported hang/freeze/stuck state survives replay, trust live reproduction (`#[Group('llm-real')]`, real controller subprocess) over more fixture-only proofs.
 - Focused `castor test:llm-real` is only for provider or LLM-visible changes such as schemas, prompts, streaming, or model routing. Do not run it for every task. `castor test:controller` stays opt-in live controller E2E.

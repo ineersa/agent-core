@@ -8,9 +8,12 @@ use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingle
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
+use Ineersa\CodingAgent\Runtime\ProjectionPipeline\AssistantStreamProjectionSubscriber;
+use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ExtensionAgentJobFailedProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\ThemePalette;
@@ -181,7 +184,11 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
                 runId: self::SESSION_ID,
                 seq: 2,
                 text: '3 lines read',
-                meta: ['tool_name' => 'read'],
+                meta: [
+                    'tool_name' => 'bash',
+                    'result' => '3 lines read',
+                    'is_error' => false,
+                ],
             ),
         ]);
         $harness->screen()->setWorkingVisible(false);
@@ -189,7 +196,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
         $text = $harness->plainScreenText();
 
         $this->assertStringContainsString('●', $text, 'Tool glyph missing');
-        $this->assertStringContainsString('read', $text, 'Tool name missing');
+        $this->assertStringContainsString('bash', $text, 'Tool name missing');
         $this->assertStringContainsString('3 lines read', $text, 'Tool result text missing');
     }
 
@@ -211,7 +218,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
                 seq: 1,
                 text: 'successful tool output',
                 meta: [
-                    'tool_name' => 'read',
+                    'tool_name' => 'bash',
                     'result' => 'successful tool output',
                     'is_error' => false,
                 ],
@@ -303,6 +310,48 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
     }
 
     #[Test]
+    public function testRepeatedThinkingSegmentsRemainVisibleWhileStreamingAndAfterCompletion(): void
+    {
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addSubscriber(new AssistantStreamProjectionSubscriber());
+        $projector = new TranscriptProjector($dispatcher, new TranscriptProjectionState());
+        $blockId = self::SESSION_ID.'_step-1_thinking';
+        $accept = static function (string $type, array $payload) use ($projector): void {
+            $projector->accept(new RuntimeEvent($type, self::SESSION_ID, 0, $payload));
+        };
+
+        $accept('assistant.thinking_started', ['step_id' => 'step-1', 'block_id' => $blockId]);
+        $accept('assistant.thinking_delta', ['block_id' => $blockId, 'thinking' => "First reasoning summary.\n"]);
+        $accept('assistant.thinking_completed', [
+            'block_id' => $blockId,
+            'thinking' => "First reasoning summary.\n",
+        ]);
+        $accept('assistant.thinking_started', ['step_id' => 'step-1', 'block_id' => $blockId]);
+        $accept('assistant.thinking_delta', ['block_id' => $blockId, 'thinking' => 'Second reasoning summary.']);
+
+        $streamingHarness = new VirtualTuiHarness(sessionId: self::SESSION_ID.'-streaming');
+        $streamingHarness->screen()->setTranscriptBlocks($projector->blocks());
+        $streamingHarness->screen()->setWorkingVisible(false);
+        $streamingText = $streamingHarness->plainScreenText();
+        $this->assertStringContainsString('First reasoning summary.', $streamingText);
+        $this->assertStringContainsString('Second reasoning summary.', $streamingText);
+
+        $accept('assistant.thinking_completed', [
+            'block_id' => $blockId,
+            'thinking' => "First reasoning summary.\nSecond reasoning summary.",
+        ]);
+
+        $completedHarness = new VirtualTuiHarness(sessionId: self::SESSION_ID.'-completed');
+        $completedHarness->screen()->setTranscriptBlocks($projector->blocks());
+        $completedHarness->screen()->setWorkingVisible(false);
+        $completedText = $completedHarness->plainScreenText();
+        $this->assertStringContainsString('First reasoning summary.', $completedText);
+        $this->assertStringContainsString('Second reasoning summary.', $completedText);
+        $this->assertCount(1, $projector->blocks());
+        $this->assertFalse($projector->blocks()[0]->streaming);
+    }
+
+    #[Test]
     public function testErrorBlockShowsErrorGlyph(): void
     {
         $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
@@ -321,6 +370,35 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
 
         $this->assertStringContainsString('✕', $text, 'Error glyph missing');
         $this->assertStringContainsString('something went wrong', $text, 'Error text missing');
+    }
+
+    #[Test]
+    public function testExtensionAgentFailureRendersUnderlyingError(): void
+    {
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addSubscriber(new ExtensionAgentJobFailedProjectionSubscriber());
+        $projector = new TranscriptProjector($dispatcher, new TranscriptProjectionState());
+        $projector->accept(new RuntimeEvent(
+            type: RuntimeEventTypeEnum::ExtensionAgentJobFailed->value,
+            runId: self::SESSION_ID,
+            seq: 0,
+            payload: [
+                'message' => '[usage_limit_reached/insufficient_quota]: You have no credits left.',
+                'reason' => 'retry_exhausted',
+                'handler_id' => 'observational_memory.observe_boundary',
+                'job_id' => 'job-usage-limit',
+                'retry_count' => 1,
+                'attempts' => 2,
+            ],
+        ));
+
+        $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
+        $harness->screen()->setTranscriptBlocks($projector->blocks());
+        $harness->screen()->setWorkingVisible(false);
+        $text = $harness->plainScreenText();
+
+        $this->assertStringContainsString('✕', $text);
+        $this->assertStringContainsString('[usage_limit_reached/insufficient_quota]: You have no credits left.', $text);
     }
 
     #[Test]
@@ -792,6 +870,10 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
         $this->assertStringContainsString('view_image', $plain);
         $this->assertStringContainsString('path:', $plain);
         $this->assertStringContainsString('/tmp/shot.png', $plain);
+        $this->assertStringContainsString('media: image/png', $plain);
+        $this->assertStringContainsString('size: 10x20', $plain);
+        $this->assertStringContainsString('bytes: 99', $plain);
+        $this->assertStringNotContainsString('type: view_image', $plain);
         $this->assertMatchesRegularExpression(
             '/\x1b\[38;2;255;0;255mpath\x1b\[39m:/',
             $ansi,
@@ -826,7 +908,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
                 runId: self::SESSION_ID,
                 seq: 1,
                 text: $body,
-                meta: ['tool_name' => 'read', 'result' => $body, 'is_error' => false],
+                meta: ['tool_name' => 'write', 'result' => $body, 'is_error' => false],
             ),
         ]);
         $harness->screen()->setWorkingVisible(false);
@@ -856,7 +938,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
     #[Test]
     public function testVirtualLongToolResultPreviewsByDefault(): void
     {
-        $body = implode("\n", ['v0', 'v1', 'v2', 'v3']);
+        $body = implode("\n", ['v0', 'v1', 'v2', 'v3', 'v4']);
         $harness = new VirtualTuiHarness(
             sessionId: self::SESSION_ID,
             displayConfig: new TranscriptDisplayConfig(toolResultPreviewLines: 2),
@@ -868,7 +950,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
                 runId: self::SESSION_ID,
                 seq: 2,
                 text: $body,
-                meta: ['tool_name' => 'read', 'result' => $body, 'is_error' => false],
+                meta: ['tool_name' => 'write', 'result' => $body, 'is_error' => false],
             ),
         ]);
         $harness->screen()->setWorkingVisible(false);
@@ -877,8 +959,9 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
 
         $this->assertStringContainsString('v0', $text);
         $this->assertStringContainsString('v1', $text);
-        $this->assertStringNotContainsString('v3', $text);
-        $this->assertStringContainsString('more line', $text);
+        $this->assertStringNotContainsString('v2', $text);
+        $this->assertStringNotContainsString('v4', $text);
+        $this->assertStringContainsString('… 3 more lines', $text);
     }
 
     #[Test]
@@ -1238,7 +1321,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
                 runId: self::SESSION_ID,
                 seq: 1,
                 text: $body,
-                meta: ['tool_name' => 'read', 'result' => $body, 'is_error' => false],
+                meta: ['tool_name' => 'write', 'result' => $body, 'is_error' => false],
             ),
         ]);
         $harness->screen()->setWorkingVisible(false);

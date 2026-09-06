@@ -141,7 +141,7 @@ a successful late result into a timeout failure.
 
 | Key | Default |
 |---|---|
-| `tools.bash.default_timeout_seconds` | `300` |
+| `tools.bash.default_timeout_seconds` | `30` |
 | `tools.bash.max_timeout_seconds` | `3600` |
 | `tools.bash.background_prompt_threshold_seconds` | `15` |
 | `tools.background_process.path` | `.hatfield/tmp/bg` |

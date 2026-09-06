@@ -203,7 +203,7 @@ tools:
 
     bash:
         # Default timeout in seconds for bash commands.
-        default_timeout_seconds: 300
+        default_timeout_seconds: 30
 
         # Maximum allowed timeout that a model can request.
         # Timeouts above this are rejected with a validation error.

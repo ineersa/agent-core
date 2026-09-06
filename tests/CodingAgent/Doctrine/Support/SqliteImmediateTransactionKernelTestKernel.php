@@ -12,7 +12,7 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
  *
  * @internal
  */
-final class MessengerSqliteImmediateTransactionKernelTestKernel extends KernelTestCase
+final class SqliteImmediateTransactionKernelTestKernel extends KernelTestCase
 {
     public static function bootForSqliteWorker(): void
     {

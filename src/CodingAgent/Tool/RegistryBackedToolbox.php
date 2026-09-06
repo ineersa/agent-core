@@ -256,7 +256,7 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
                 reference: new ExecutionReference($definition->handler::class, '__invoke'),
                 name: $definition->name,
                 description: $definition->description,
-                parameters: $definition->parametersJsonSchema,
+                parameters: $this->normalizeRawParametersSchema($definition->parametersJsonSchema),
                 metadata: ['raw_arguments' => true],
             );
         }
@@ -269,6 +269,38 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
             description: $definition->description,
             parameters: $this->flattenDtoParameters($parameters, $definition->name),
         );
+    }
+
+    /**
+     * Preserve JSON object shapes that PHP arrays cannot distinguish from
+     * empty lists. Providers reject `parameters: []`, and JSON Schema
+     * requires every `properties` value to encode as an object.
+     *
+     * @param array<string, mixed> $schema
+     *
+     * @return array<string, mixed>
+     */
+    private function normalizeRawParametersSchema(array $schema, bool $root = true): array
+    {
+        if ($root && [] === $schema) {
+            return ['type' => 'object', 'properties' => new \stdClass()];
+        }
+
+        foreach ($schema as $keyword => $value) {
+            if (!\is_array($value)) {
+                continue;
+            }
+
+            if ('properties' === $keyword && [] === $value) {
+                $schema[$keyword] = new \stdClass();
+
+                continue;
+            }
+
+            $schema[$keyword] = $this->normalizeRawParametersSchema($value, false);
+        }
+
+        return $schema;
     }
 
     /**

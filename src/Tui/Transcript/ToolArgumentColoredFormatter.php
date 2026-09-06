@@ -27,20 +27,12 @@ final class ToolArgumentColoredFormatter
             return [];
         }
 
-        $yaml = trim(Yaml::dump(
-            $arguments,
-            4,
-            2,
-            Yaml::DUMP_MULTI_LINE_LITERAL_BLOCK,
-        ));
-
-        if ('' === $yaml) {
-            return [];
-        }
-
         $lines = [];
-        foreach (explode("\n", $yaml) as $line) {
-            $lines[] = $this->colorYamlLine($line, $theme);
+        foreach ($arguments as $key => $value) {
+            $line = trim(Yaml::dump([$key => $value], inline: 1, indent: 2));
+            if ('' !== $line) {
+                $lines[] = $this->colorYamlLine($line, $theme);
+            }
         }
 
         return $lines;

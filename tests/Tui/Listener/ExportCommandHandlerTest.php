@@ -12,9 +12,9 @@ use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\TranscriptMessage;
-use Ineersa\Tui\Export\SessionEventsExportService;
 use Ineersa\Tui\Listener\ExportCommandHandler;
 use Ineersa\Tui\Runtime\TuiSessionState;
+use Ineersa\Tui\Tests\Support\SessionEventsExportServiceFactory;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -56,7 +56,7 @@ final class ExportCommandHandlerTest extends TestCase
         $this->setupEventsFile('test-session', [
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
-                'payload' => ['messages' => [['role' => 'user', 'content' => 'Hi']]],
+                'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hi']]]]],
             ]),
         ]);
 
@@ -77,7 +77,7 @@ final class ExportCommandHandlerTest extends TestCase
         $this->setupEventsFile('test-session', [
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
-                'payload' => ['messages' => [['role' => 'user', 'content' => 'Hi']]],
+                'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hi']]]]],
             ]),
         ]);
 
@@ -96,7 +96,7 @@ final class ExportCommandHandlerTest extends TestCase
         $this->setupEventsFile('test-session', [
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
-                'payload' => ['messages' => [['role' => 'user', 'content' => 'Hi']]],
+                'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hi']]]]],
             ]),
         ]);
 
@@ -115,7 +115,7 @@ final class ExportCommandHandlerTest extends TestCase
         $this->setupEventsFile('test-session', [
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
-                'payload' => ['messages' => [['role' => 'user', 'content' => 'Hi']]],
+                'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hi']]]]],
             ]),
         ]);
 
@@ -171,7 +171,7 @@ final class ExportCommandHandlerTest extends TestCase
         $this->setupEventsFile('test-session', [
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
-                'payload' => ['messages' => [['role' => 'user', 'content' => 'Hello world']]],
+                'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hello world']]]]],
             ]),
             $this->makeEvent(2, 1, 'llm_step_completed', [
                 'step_id' => 's2',
@@ -210,7 +210,7 @@ final class ExportCommandHandlerTest extends TestCase
         $this->setupEventsFile('test-session', [
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
-                'payload' => ['messages' => [['role' => 'user', 'content' => 'List tools']]],
+                'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'List tools']]]]],
             ]),
             $this->makeEvent(2, 1, 'llm_step_completed', [
                 'step_id' => 's2',
@@ -248,23 +248,14 @@ final class ExportCommandHandlerTest extends TestCase
         $this->assertStringContainsString('<li>evil&lt;script&gt;</li>', $html);
         $this->assertStringNotContainsString('MCP server:', $html);
         $this->assertStringNotContainsString('tool-server', $html);
-
-        $llmCardStart = strpos($html, 'class="event event-llm_step_completed"');
-        $this->assertNotFalse($llmCardStart, 'llm_step_completed event card must be present');
-        $llmCardEnd = strpos($html, 'class="event event-agent_end"', $llmCardStart);
-        $this->assertNotFalse($llmCardEnd);
-        $llmCard = substr($html, $llmCardStart, $llmCardEnd - $llmCardStart);
-        $availablePos = strpos($llmCard, 'class="available-tools"');
-        $rawPos = strpos($llmCard, 'class="event-raw"');
-        $this->assertNotFalse($availablePos);
-        $this->assertNotFalse($rawPos);
-        $this->assertLessThan($rawPos, $availablePos, 'Available tools section must render outside Raw event details');
+        $this->assertStringContainsString('Effective model context', $html);
+        $this->assertStringNotContainsString('<summary>Raw event</summary>', $html);
 
         // Old-event absence path remains unchanged: events without snapshot still export.
         $this->setupEventsFile('old-session', [
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
-                'payload' => ['messages' => [['role' => 'user', 'content' => 'Hi']]],
+                'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hi']]]]],
             ]),
             $this->makeEvent(2, 1, 'llm_step_completed', [
                 'step_id' => 's2',
@@ -376,8 +367,8 @@ final class ExportCommandHandlerTest extends TestCase
         $this->assertLessThan($contextPos, $toolsPos);
         $this->assertLessThan($userPos, $toolsPos);
 
-        // Per-LLM-event available_tools name snapshots remain unchanged.
-        $this->assertSame(2, substr_count($html, 'class="available-tools"'));
+        // Latest available_tools snapshot only (effective context, not per-event cards).
+        $this->assertSame(1, substr_count($html, 'class="available-tools"'));
     }
 
     #[Test]
@@ -420,7 +411,7 @@ final class ExportCommandHandlerTest extends TestCase
         $eventsData = [
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
-                'payload' => ['messages' => [['role' => 'user', 'content' => 'Hello']]],
+                'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hello']]]]],
             ]),
             $this->makeEvent(2, 1, 'llm_step_completed', [
                 'step_id' => 's2',
@@ -431,7 +422,7 @@ final class ExportCommandHandlerTest extends TestCase
                 'stop_reason' => 'end_turn',
             ]),
         ];
-        $this->setupEventsFile('test-session', $eventsData);
+        $this->setupEventsFile('test-session', $eventsData, false);
 
         $sourcePath = $this->getEventsPath('test-session');
         $source = (string) file_get_contents($sourcePath);
@@ -452,7 +443,7 @@ final class ExportCommandHandlerTest extends TestCase
         $this->setupEventsFile('test-session', [
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
-                'payload' => ['messages' => [['role' => 'user', 'content' => 'Hello']]],
+                'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hello']]]]],
             ]),
             $this->makeEvent(2, 1, 'llm_step_completed', [
                 'step_id' => 's2',
@@ -484,7 +475,7 @@ final class ExportCommandHandlerTest extends TestCase
         $eventsData = [
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
-                'payload' => ['messages' => [['role' => 'user', 'content' => 'Hello']]],
+                'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hello']]]]],
             ]),
             $this->makeEvent(2, 1, 'llm_step_completed', [
                 'step_id' => 's2',
@@ -495,7 +486,7 @@ final class ExportCommandHandlerTest extends TestCase
                 'stop_reason' => 'end_turn',
             ]),
         ];
-        $this->setupEventsFile('test-session', $eventsData);
+        $this->setupEventsFile('test-session', $eventsData, false);
 
         $path = $this->projectDir.'/export.jsonl';
         $handler = $this->createHandler('test-session');
@@ -522,7 +513,7 @@ final class ExportCommandHandlerTest extends TestCase
         $this->setupEventsFile($sessionId, [
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
-                'payload' => ['messages' => [['role' => 'user', 'content' => 'Hello']]],
+                'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hello']]]]],
             ]),
         ]);
 
@@ -539,7 +530,7 @@ final class ExportCommandHandlerTest extends TestCase
         $handler = new ExportCommandHandler(
             new TuiSessionState($sessionId),
             $sessionStore,
-            new SessionEventsExportService(null),
+            SessionEventsExportServiceFactory::create(),
         );
 
         $path = $this->projectDir.'/no-db-metadata.jsonl';
@@ -559,7 +550,7 @@ final class ExportCommandHandlerTest extends TestCase
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
                 'payload' => ['messages' => [
-                    ['role' => 'user', 'content' => '<script>alert("xss")</script>'],
+                    ['role' => 'user', 'content' => [['type' => 'text', 'text' => '<script>alert("xss")</script>']]],
                 ]],
             ]),
             $this->makeEvent(2, 1, 'llm_step_completed', [
@@ -596,18 +587,33 @@ final class ExportCommandHandlerTest extends TestCase
         $this->setupEventsFile('test-session', [
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
-                'payload' => ['messages' => [['role' => 'user', 'content' => 'Run tool']]],
+                'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Run tool']]]]],
             ]),
-            $this->makeEvent(2, 1, 'tool_execution_start', [
+            $this->makeEvent(2, 1, 'llm_step_completed', [
+                'step_id' => 's2',
+                'stop_reason' => 'tool_call',
+                'assistant_message' => [
+                    'role' => 'assistant',
+                    'content' => [],
+                    'tool_calls' => [
+                        ['id' => 'tc1', 'name' => 'bash', 'arguments' => '{"command":"echo"}'],
+                    ],
+                ],
+            ]),
+            $this->makeEvent(3, 1, 'tool_execution_start', [
                 'tool_call_id' => 'tc1',
                 'tool_name' => 'bash',
                 'order_index' => 0,
             ]),
-            $this->makeEvent(3, 1, 'tool_execution_end', $this->toolEndPayload(
+            $this->makeEvent(4, 1, 'tool_execution_end', $this->toolEndPayload(
                 toolCallId: 'tc1',
                 toolName: 'bash',
                 text: '<div>Injected HTML</div>',
             )),
+            $this->makeEvent(5, 1, 'tool_batch_committed', [
+                'step_id' => 's2',
+                'turn_no' => 1,
+            ]),
         ]);
 
         $path = $this->projectDir.'/tool-escaped.html';
@@ -622,6 +628,42 @@ final class ExportCommandHandlerTest extends TestCase
         $this->assertStringContainsString('&lt;div&gt;Injected HTML&lt;/div&gt;', $html);
     }
 
+    #[Test]
+    public function htmlExportRendersNonTextContentParts(): void
+    {
+        $this->setupEventsFile('test-session', [
+            $this->makeEvent(1, 1, 'run_started', [
+                'step_id' => 's1',
+                'payload' => ['messages' => [[
+                    'role' => 'tool',
+                    'content' => [
+                        ['type' => 'text', 'text' => 'Image loaded'],
+                        [
+                            'type' => 'image_ref',
+                            'path' => '/tmp/image.png',
+                            'media_type' => 'image/png',
+                            'width' => 640,
+                            'height' => 480,
+                        ],
+                    ],
+                    'tool_call_id' => 'tc-image',
+                    'tool_name' => 'view_image',
+                ]]],
+            ]),
+        ]);
+
+        $path = $this->projectDir.'/non-text-content.html';
+        $handler = $this->createHandler('test-session');
+        $result = $handler->handle(new SlashCommand('export', $path, '/export '.$path));
+
+        $this->assertInstanceOf(TranscriptMessage::class, $result);
+        $html = (string) file_get_contents($path);
+        $this->assertStringContainsString('Image loaded', $html);
+        $this->assertStringContainsString('[image_ref content]', $html);
+        $this->assertStringContainsString('/tmp/image.png', $html);
+        $this->assertStringContainsString('&quot;media_type&quot;: &quot;image/png&quot;', $html);
+    }
+
     // ── Tool event rendering ───────────────────────────────────────────────
 
     #[Test]
@@ -630,39 +672,55 @@ final class ExportCommandHandlerTest extends TestCase
         $this->setupEventsFile('test-session', [
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
-                'payload' => ['messages' => [['role' => 'user', 'content' => 'List files']]],
+                'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'List files']]]]],
             ]),
-            $this->makeEvent(2, 1, 'tool_execution_start', [
+            $this->makeEvent(2, 1, 'llm_step_completed', [
+                'step_id' => 's2',
+                'stop_reason' => 'tool_call',
+                'assistant_message' => [
+                    'role' => 'assistant',
+                    'content' => [],
+                    'tool_calls' => [
+                        ['id' => 'tc-ls', 'name' => 'bash', 'arguments' => '{"command":"ls"}'],
+                    ],
+                ],
+            ]),
+            $this->makeEvent(3, 1, 'tool_execution_start', [
                 'tool_call_id' => 'tc-ls',
                 'tool_name' => 'bash',
                 'order_index' => 0,
             ]),
-            $this->makeEvent(3, 1, 'tool_execution_end', $this->toolEndPayload(
+            $this->makeEvent(4, 1, 'tool_execution_end', $this->toolEndPayload(
                 toolCallId: 'tc-ls',
                 toolName: 'bash',
                 text: "file1.txt\nfile2.txt",
             )),
+            $this->makeEvent(5, 1, 'tool_batch_committed', [
+                'step_id' => 's2',
+                'turn_no' => 1,
+            ]),
         ]);
 
         $path = $this->projectDir.'/tool-render.html';
         $handler = $this->createHandler('test-session');
         $handler->handle(new SlashCommand('export', $path, '/export '.$path));
 
-        $html = file_get_contents($path);
+        $html = (string) file_get_contents($path);
         $this->assertStringContainsString('bash', $html, 'Tool name should appear in output');
         $this->assertStringContainsString('file1.txt', $html);
         $this->assertStringContainsString('List files', $html);
+        $this->assertStringContainsString('message-tool', $html);
     }
 
     // ── Complete event representation ─────────────────────────────────────
 
     #[Test]
-    public function htmlIncludesRawEventJsonForEveryEvent(): void
+    public function htmlRendersEffectiveContextNotRawEventCards(): void
     {
         $this->setupEventsFile('test-session', [
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
-                'payload' => ['messages' => [['role' => 'user', 'content' => 'Hello']]],
+                'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hello']]]]],
             ]),
             $this->makeEvent(2, 1, 'turn_advanced', ['turn_no' => 1]),
             $this->makeEvent(3, 1, 'llm_step_completed', [
@@ -676,24 +734,16 @@ final class ExportCommandHandlerTest extends TestCase
             $this->makeEvent(4, 1, 'agent_end', ['reason' => 'completed']),
         ]);
 
-        $path = $this->projectDir.'/raw-json-events.html';
+        $path = $this->projectDir.'/effective-context.html';
         $handler = $this->createHandler('test-session');
         $handler->handle(new SlashCommand('export', $path, '/export '.$path));
 
-        $html = file_get_contents($path);
-
-        // Every event must produce a "Raw event" details block.
-        $rawEventCount = substr_count($html, '<summary>Raw event</summary>');
-        $this->assertSame(4, $rawEventCount, 'Every JSONL line must produce a Raw event block');
-
-        // Each event card must include the type in metadata and the full event JSON.
-        $this->assertStringContainsString('<span class="event-type">run_started</span>', $html);
-        $this->assertStringContainsString('<span class="event-type">turn_advanced</span>', $html);
-        $this->assertStringContainsString('<span class="event-type">llm_step_completed</span>', $html);
-        $this->assertStringContainsString('<span class="event-type">agent_end</span>', $html);
-
-        // Full JSON must be present in escaped <pre> blocks.
-        $this->assertStringContainsString('<pre class="event-json">', $html);
+        $html = (string) file_get_contents($path);
+        $this->assertStringContainsString('Effective model context', $html);
+        $this->assertStringContainsString('Hello', $html);
+        $this->assertStringContainsString('Response.', $html);
+        $this->assertStringNotContainsString('<summary>Raw event</summary>', $html);
+        $this->assertStringNotContainsString('class="event event-', $html);
     }
 
     #[Test]
@@ -703,7 +753,7 @@ final class ExportCommandHandlerTest extends TestCase
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
                 'payload' => ['messages' => [
-                    ['role' => 'user', 'content' => 'What is the capital of France?'],
+                    ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'What is the capital of France?']]],
                 ]],
             ]),
             $this->makeEvent(2, 1, 'llm_step_completed', [
@@ -744,8 +794,8 @@ You are a helpful assistant.
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
                 'payload' => ['messages' => [
-                    ['role' => 'system', 'content' => $instructionText],
-                    ['role' => 'user', 'content' => 'Hello'],
+                    ['role' => 'system', 'content' => [['type' => 'text', 'text' => $instructionText]]],
+                    ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hello']]],
                 ]],
             ]),
         ]);
@@ -765,37 +815,134 @@ You are a helpful assistant.
     }
 
     #[Test]
-    public function htmlIncludesNonStandardEventAsRawJson(): void
+    public function htmlRendersCompactionSummaryAndOmMetadata(): void
     {
-        // Events with types not explicitly handled by the friendly renderer
-        // must still appear as event cards with full JSON.
+        $summary = "These are condensed memories from earlier in this session.\n\n- Reflections: keep shipping.";
         $this->setupEventsFile('test-session', [
-            $this->makeEvent(1, 1, 'context_compacted', [
-                'compacted_entries' => 5,
-                'summary' => 'Previous conversation compacted.',
+            $this->makeEvent(1, 1, 'run_started', [
+                'step_id' => 's1',
+                'payload' => ['messages' => [
+                    ['role' => 'system', 'content' => [['type' => 'text', 'text' => 'System prompt']]],
+                    ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'OLD_HISTORY_SHOULD_NOT_APPEAR']]],
+                ]],
             ]),
-            $this->makeEvent(2, 1, 'model_notification', [
-                'message' => 'Rate limit approaching.',
+            $this->makeEvent(2, 1, 'llm_step_completed', [
+                'step_id' => 's2',
+                'assistant_message' => [
+                    'role' => 'assistant',
+                    'content' => [['type' => 'text', 'text' => 'OLD_ASSISTANT_SHOULD_NOT_APPEAR']],
+                ],
+                'stop_reason' => 'end_turn',
+                'available_tools' => ['bash'],
+                'available_tools_schema_tokens_estimate' => 11,
+            ]),
+            $this->makeEvent(3, 1, 'context_compacted', [
+                'trigger' => 'manual',
+                'summary_text' => $summary,
+                'messages_compacted' => 2,
+                'messages_retained' => 2,
+                'estimated_tokens_before' => 9000,
+                'estimated_tokens_after' => 1200,
+                'replacement_summary' => true,
+                'hook_metadata' => [
+                    'om_source' => 'observational_memory',
+                    'om_projection' => 'active_durable_memory',
+                    'om_has_coverage_watermark' => true,
+                ],
+                'messages' => [
+                    ['role' => 'system', 'content' => [['type' => 'text', 'text' => 'System prompt']], 'is_error' => false],
+                    [
+                        'role' => 'user',
+                        'content' => [['type' => 'text', 'text' => 'The conversation history before this point was compacted into the following handoff summary.\n\n<summary>\n'.$summary.'\n</summary>']],
+                        'is_error' => false,
+                        'metadata' => ['compact_summary' => true],
+                    ],
+                ],
+            ]),
+            $this->makeEvent(4, 1, 'agent_command_applied', [
+                'kind' => 'follow_up',
+                'message' => [
+                    'role' => 'user',
+                    'content' => [['type' => 'text', 'text' => 'POST_COMPACTION_USER']],
+                ],
+            ]),
+            $this->makeEvent(5, 1, 'llm_step_completed', [
+                'step_id' => 's3',
+                'assistant_message' => [
+                    'role' => 'assistant',
+                    'content' => [['type' => 'text', 'text' => 'POST_COMPACTION_ASSISTANT']],
+                ],
+                'stop_reason' => 'end_turn',
+                'available_tools' => ['read', 'bash'],
+                'available_tools_schema_tokens_estimate' => 42,
             ]),
         ]);
 
-        $path = $this->projectDir.'/non-standard-events.html';
+        $path = $this->projectDir.'/compaction-context.html';
         $handler = $this->createHandler('test-session');
-        $handler->handle(new SlashCommand('export', $path, '/export '.$path));
+        $result = $handler->handle(new SlashCommand('export', $path, '/export '.$path));
+        $this->assertInstanceOf(TranscriptMessage::class, $result);
+        $this->assertStringContainsString('Session exported', $result->text);
 
-        $html = file_get_contents($path);
+        $html = (string) file_get_contents($path);
+        $this->assertStringContainsString('Compaction checkpoint', $html);
+        $this->assertStringContainsString('Observational memory', $html);
+        $this->assertStringContainsString('observational_memory', $html);
+        $this->assertStringContainsString('active_durable_memory', $html);
+        $this->assertStringContainsString('Summary content is rendered once in the effective model context below.', $html);
+        $this->assertSame(1, substr_count($html, 'condensed memories from earlier in this session'));
+        $this->assertStringContainsString('OM-backed compaction summary in model context', $html);
+        $this->assertStringContainsString('POST_COMPACTION_USER', $html);
+        $this->assertStringContainsString('POST_COMPACTION_ASSISTANT', $html);
+        $this->assertStringContainsString('<li>read</li>', $html);
+        $this->assertStringContainsString('~42 schema tokens', $html);
+        $this->assertStringNotContainsString('OLD_HISTORY_SHOULD_NOT_APPEAR', $html);
+        $this->assertStringNotContainsString('OLD_ASSISTANT_SHOULD_NOT_APPEAR', $html);
+        $this->assertStringNotContainsString('class="compaction-summary"', $html);
+    }
 
-        // Every event must get a Raw event block.
-        $rawEventCount = substr_count($html, '<summary>Raw event</summary>');
-        $this->assertSame(2, $rawEventCount, 'Even non-standard events must produce Raw event blocks');
+    #[Test]
+    public function htmlRendersAuthoritativeEmptyAvailableToolsSnapshot(): void
+    {
+        $this->setupEventsFile('test-session', [
+            $this->makeEvent(1, 1, 'run_started', [
+                'step_id' => 's1',
+                'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'List tools']]]]],
+            ]),
+            $this->makeEvent(2, 1, 'llm_step_completed', [
+                'step_id' => 's2',
+                'assistant_message' => [
+                    'role' => 'assistant',
+                    'content' => [['type' => 'text', 'text' => 'Tools were available.']],
+                ],
+                'stop_reason' => 'end_turn',
+                'available_tools' => ['bash', 'read'],
+                'available_tools_schema_tokens_estimate' => 55,
+            ]),
+            $this->makeEvent(3, 1, 'llm_step_completed', [
+                'step_id' => 's3',
+                'assistant_message' => [
+                    'role' => 'assistant',
+                    'content' => [['type' => 'text', 'text' => 'Tools were cleared.']],
+                ],
+                'stop_reason' => 'end_turn',
+                'available_tools' => [],
+                'available_tools_schema_tokens_estimate' => 0,
+            ]),
+        ]);
 
-        // Event cards with the correct type in metadata.
-        $this->assertStringContainsString('<span class="event-type">context_compacted</span>', $html);
-        $this->assertStringContainsString('<span class="event-type">model_notification</span>', $html);
+        $path = $this->projectDir.'/available-tools-empty.html';
+        $handler = $this->createHandler('test-session');
+        $result = $handler->handle(new SlashCommand('export', $path, '/export '.$path));
 
-        // The full JSON for the non-standard event must be present (escaped).
-        $this->assertStringContainsString('Previous conversation compacted.', $html);
-        $this->assertStringContainsString('Rate limit approaching.', $html);
+        $this->assertInstanceOf(TranscriptMessage::class, $result);
+        $html = (string) file_get_contents($path);
+        $this->assertStringContainsString('class="available-tools available-tools-empty"', $html);
+        $this->assertStringContainsString('Available tools (0 · ~0 schema tokens)', $html);
+        $this->assertStringContainsString('Latest retained LLM snapshot recorded zero available tools.', $html);
+        $this->assertStringNotContainsString('<li>bash</li>', $html);
+        $this->assertStringNotContainsString('<li>read</li>', $html);
+        $this->assertStringNotContainsString('~55 schema tokens', $html);
     }
 
     // ── Thinking block rendering ───────────────────────────────────────────
@@ -806,7 +953,7 @@ You are a helpful assistant.
         $this->setupEventsFile('test-session', [
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
-                'payload' => ['messages' => [['role' => 'user', 'content' => 'Think about it']]],
+                'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Think about it']]]]],
             ]),
             $this->makeEvent(2, 1, 'llm_step_completed', [
                 'step_id' => 's2',
@@ -886,7 +1033,7 @@ You are a helpful assistant.
         $this->setupEventsFile('test-session', [
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
-                'payload' => ['messages' => [['role' => 'user', 'content' => 'Think']]],
+                'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Think']]]]],
             ]),
             $this->makeEvent(2, 1, 'llm_step_completed', [
                 'step_id' => 's2',
@@ -913,33 +1060,29 @@ You are a helpful assistant.
     #[Test]
     public function rendersUsageTokenStats(): void
     {
+        // Context export no longer repeats per-event usage cards; keep proving assistant text remains.
         $this->setupEventsFile('test-session', [
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
-                'payload' => ['messages' => [['role' => 'user', 'content' => 'Hi']]],
+                'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hi']]]]],
             ]),
             $this->makeEvent(2, 1, 'llm_step_completed', [
                 'step_id' => 's2',
                 'assistant_message' => [
                     'role' => 'assistant',
-                    'content' => [['type' => 'text', 'text' => 'Response.']],
+                    'content' => [['type' => 'text', 'text' => 'Hello with usage']],
                 ],
                 'stop_reason' => 'end_turn',
-                'usage' => ['input_tokens' => 7214, 'output_tokens' => 59, 'total_tokens' => 7273],
+                'usage' => ['input_tokens' => 10, 'output_tokens' => 5, 'total_tokens' => 15],
             ]),
         ]);
 
-        $path = $this->projectDir.'/usage-stats.html';
+        $path = $this->projectDir.'/usage-render.html';
         $handler = $this->createHandler('test-session');
         $handler->handle(new SlashCommand('export', $path, '/export '.$path));
 
-        $html = file_get_contents($path);
-
-        $this->assertStringContainsString('Tokens:', $html);
-        $this->assertStringContainsString('in: 7,214', $html);
-        $this->assertStringContainsString('out: 59', $html);
-        $this->assertStringContainsString('total: 7,273', $html);
-        $this->assertStringContainsString('usage-stats', $html);
+        $html = (string) file_get_contents($path);
+        $this->assertStringContainsString('Hello with usage', $html);
     }
 
     #[Test]
@@ -949,7 +1092,7 @@ You are a helpful assistant.
         $this->setupEventsFile('test-session', [
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
-                'payload' => ['messages' => [['role' => 'user', 'content' => 'Run tool']]],
+                'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Run tool']]]]],
             ]),
             $this->makeEvent(2, 1, 'llm_step_completed', [
                 'step_id' => 's2',
@@ -990,7 +1133,6 @@ You are a helpful assistant.
         $this->assertStringContainsString('tool-call-inline', $html);
         $this->assertStringContainsString('pretty-json', $html);
 
-        // tool_execution_start should also show args from the cross-reference map.
         $this->assertStringContainsString('tool-args', $html);
     }
 
@@ -1001,7 +1143,7 @@ You are a helpful assistant.
         $this->setupEventsFile('test-session', [
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
-                'payload' => ['messages' => [['role' => 'user', 'content' => 'First message']]],
+                'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'First message']]]]],
             ]),
             $this->makeEvent(2, 1, 'llm_step_completed', [
                 'step_id' => 's2',
@@ -1013,7 +1155,10 @@ You are a helpful assistant.
             ]),
             $this->makeEvent(3, 1, 'agent_command_applied', [
                 'kind' => 'follow_up',
-                'text' => 'What about the capital of Spain?',
+                'message' => [
+                    'role' => 'user',
+                    'content' => [['type' => 'text', 'text' => 'What about the capital of Spain?']],
+                ],
             ]),
         ]);
 
@@ -1030,62 +1175,64 @@ You are a helpful assistant.
     }
 
     #[Test]
-    public function rendersModelNotification(): void
+    public function unsupportedEventTypeFailsExplicitly(): void
     {
         $this->setupEventsFile('test-session', [
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
-                'payload' => ['messages' => [['role' => 'user', 'content' => 'Hi']]],
+                'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hi']]]]],
             ]),
-            $this->makeEvent(2, 1, 'model_notification', [
-                'kind' => 'delivery',
-                'text' => 'Tool call sent to bash.',
-                'tool_name' => 'bash',
-            ]),
+            [
+                'schema_version' => '1.0',
+                'run_id' => 'test-session',
+                'seq' => 2,
+                'turn_no' => 1,
+                'type' => 'not_a_real_event_type',
+                'payload' => ['text' => 'should fail'],
+                'ts' => '2026-01-01T00:00:00+00:00',
+            ],
         ]);
 
-        $path = $this->projectDir.'/model-notification.html';
+        $path = $this->projectDir.'/unsupported-event.html';
         $handler = $this->createHandler('test-session');
-        $handler->handle(new SlashCommand('export', $path, '/export '.$path));
+        $result = $handler->handle(new SlashCommand('export', $path, '/export '.$path));
 
-        $html = file_get_contents($path);
-
-        $this->assertStringContainsString('notification (delivery)', $html);
-        $this->assertStringContainsString('Tool call sent to bash.', $html);
+        $this->assertInstanceOf(TranscriptMessage::class, $result);
+        $this->assertSame('error', $result->role);
+        $this->assertStringContainsString('unsupported event type', $result->text);
+        $this->assertStringContainsString('not_a_real_event_type', $result->text);
+        $this->assertFileDoesNotExist($path);
     }
 
     #[Test]
-    public function genericRendererSurfacesTextField(): void
+    public function jsonlExportRemainsByteIdenticalToCanonicalEvents(): void
     {
-        // An event type not in the match table with a 'text' key.
-        $this->setupEventsFile('test-session', [
+        $events = [
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
-                'payload' => ['messages' => [['role' => 'user', 'content' => 'Hi']]],
+                'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hi']]]]],
             ]),
-            $this->makeEvent(2, 1, 'agent_command_rejected', [
-                'text' => 'Command was rejected.',
-                'kind' => 'rejected',
+            $this->makeEvent(2, 1, 'llm_step_completed', [
+                'step_id' => 's2',
+                'assistant_message' => [
+                    'role' => 'assistant',
+                    'content' => [['type' => 'text', 'text' => 'Hello']],
+                ],
+                'stop_reason' => 'end_turn',
             ]),
-            $this->makeEvent(3, 1, 'agent_command_queued', [
-                'text' => 'Command queued for processing.',
-                'kind' => 'follow_up',
-            ]),
-        ]);
+        ];
+        $this->setupEventsFile('test-session', $events, false);
+        $source = $this->getEventsPath('test-session');
+        $original = (string) file_get_contents($source);
 
-        $path = $this->projectDir.'/generic-render.html';
+        $path = $this->projectDir.'/identity-export.jsonl';
         $handler = $this->createHandler('test-session');
-        $handler->handle(new SlashCommand('export', $path, '/export '.$path));
+        $result = $handler->handle(new SlashCommand('export', $path, '/export '.$path));
 
-        $html = file_get_contents($path);
-
-        // Both events should surface their text in readable form.
-        $this->assertStringContainsString('Command was rejected.', $html);
-        $this->assertStringContainsString('Command queued for processing.', $html);
-
-        // But they should still have raw JSON blocks.
-        $rawCount = substr_count($html, '<summary>Raw event</summary>');
-        $this->assertSame(3, $rawCount);
+        $this->assertInstanceOf(TranscriptMessage::class, $result);
+        $this->assertFileExists($path);
+        $this->assertSame($original, (string) file_get_contents($path));
+        $this->assertSame($original, (string) file_get_contents($source));
     }
 
     #[Test]
@@ -1095,7 +1242,7 @@ You are a helpful assistant.
         $this->setupEventsFile('test-session', [
             $this->makeEvent(1, 1, 'run_started', [
                 'step_id' => 's1',
-                'payload' => ['messages' => [['role' => 'user', 'content' => '<script>evil()</script>']]],
+                'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => '<script>evil()</script>']]]]],
             ]),
             $this->makeEvent(2, 1, 'llm_step_completed', [
                 'step_id' => 's2',
@@ -1120,13 +1267,16 @@ You are a helpful assistant.
                 toolName: 'bash',
                 text: '<svg onload=alert(1)>',
             )),
-            $this->makeEvent(5, 1, 'agent_command_applied', [
-                'kind' => 'follow_up',
-                'text' => '<b>bold attempt</b>',
+            $this->makeEvent(5, 1, 'tool_batch_committed', [
+                'step_id' => 's2',
+                'turn_no' => 1,
             ]),
-            $this->makeEvent(6, 1, 'model_notification', [
-                'kind' => 'delivery',
-                'text' => '<marquee>bad</marquee>',
+            $this->makeEvent(6, 1, 'agent_command_applied', [
+                'kind' => 'follow_up',
+                'message' => [
+                    'role' => 'user',
+                    'content' => [['type' => 'text', 'text' => '<b>bold attempt</b>']],
+                ],
             ]),
         ]);
 
@@ -1160,13 +1310,18 @@ You are a helpful assistant.
      *
      * @param array<int, array<string, mixed>> $events
      */
-    private function setupEventsFile(string $sessionId, array $events = []): void
+    /**
+     * @param list<array<string, mixed>> $events
+     */
+    private function setupEventsFile(string $sessionId, array $events = [], bool $anchorHistory = true): void
     {
         $sessionDir = $this->getSessionsDir().'/'.$sessionId;
         @mkdir($sessionDir, 0777, true);
 
+        $prepared = $anchorHistory ? $this->withHistoryAnchors($events) : $events;
         $lines = '';
-        foreach ($events as $event) {
+        foreach ($prepared as $event) {
+            $event['run_id'] = $sessionId;
             $lines .= json_encode($event, \JSON_THROW_ON_ERROR)."\n";
         }
         file_put_contents($sessionDir.'/events.jsonl', $lines);
@@ -1205,6 +1360,60 @@ You are a helpful assistant.
             'payload' => $payload,
             'ts' => '2026-01-01T00:00:00+00:00',
         ];
+    }
+
+    /**
+     * @param list<array<string, mixed>> $events
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function withHistoryAnchors(array $events): array
+    {
+        $normalized = [];
+        $hasTurnAdvanced = false;
+        foreach ($events as $event) {
+            if (($event['type'] ?? null) === 'run_started') {
+                $event['turn_no'] = 0;
+            }
+            if (($event['type'] ?? null) === 'turn_advanced') {
+                $hasTurnAdvanced = true;
+            }
+            $normalized[] = $event;
+        }
+
+        if ($hasTurnAdvanced || [] === $normalized) {
+            return $normalized;
+        }
+
+        $maxSeq = 0;
+        foreach ($normalized as $event) {
+            $maxSeq = max($maxSeq, (int) ($event['seq'] ?? 0));
+        }
+
+        // Insert a retained-history anchor after run_started so HistoryReplayFilter keeps later turn events.
+        $anchor = $this->makeEvent($maxSeq + 1, 1, 'turn_advanced', ['turn_no' => 1]);
+        $out = [];
+        $inserted = false;
+        foreach ($normalized as $event) {
+            $out[] = $event;
+            if (!$inserted && ($event['type'] ?? null) === 'run_started') {
+                $out[] = $anchor;
+                $inserted = true;
+            }
+        }
+        if (!$inserted) {
+            array_unshift($out, $anchor);
+        }
+
+        // Keep seq monotonic for readability.
+        $seq = 1;
+        foreach ($out as &$event) {
+            $event['seq'] = $seq;
+            ++$seq;
+        }
+        unset($event);
+
+        return $out;
     }
 
     /** @return array<string, mixed> */
@@ -1248,7 +1457,7 @@ You are a helpful assistant.
             dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
         );
 
-        return new ExportCommandHandler($state, $sessionStore, new SessionEventsExportService($toolbox));
+        return new ExportCommandHandler($state, $sessionStore, SessionEventsExportServiceFactory::create($toolbox));
     }
 
     /**

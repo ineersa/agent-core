@@ -20,7 +20,6 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
-use Ineersa\Tui\Export\SessionEventsExportService;
 use Ineersa\Tui\Picker\PickerOverlay;
 use Ineersa\Tui\Picker\SubagentLivePickerController;
 use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
@@ -29,6 +28,7 @@ use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Tests\Support\ChildAgentExportEventsFixture;
+use Ineersa\Tui\Tests\Support\SessionEventsExportServiceFactory;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\ThemePalette;
@@ -169,7 +169,14 @@ final class SubagentLivePickerControllerTest extends TestCase
                     $childRunId,
                     1,
                     'run_started',
-                    ['payload' => ['messages' => [['role' => 'user', 'content' => 'child export unique marker']]]],
+                    [
+                        'payload' => [
+                            'messages' => [[
+                                'role' => 'user',
+                                'content' => [['type' => 'text', 'text' => 'child export unique marker']],
+                            ]],
+                        ],
+                    ],
                 ),
             ],
         );
@@ -185,6 +192,41 @@ final class SubagentLivePickerControllerTest extends TestCase
         $this->assertStringContainsString('child export unique marker', $html);
         $this->assertStringContainsString('Child agent exported to:', $this->workingMessage($harness->screen()));
         $this->assertStringContainsString($expected, $this->workingMessage($harness->screen()));
+    }
+
+    #[Test]
+    public function exportKeyReportsMalformedChildReplayWithoutThrowing(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: 'parent-session-malformed-child');
+        $state = new TuiSessionState('parent-session-malformed-child');
+        $artifactId = 'agent_malformed';
+        $childRunId = 'child-run-malformed';
+        $this->seedCatalogChild($state, $artifactId, $childRunId, 'completed');
+        ChildAgentExportEventsFixture::write(
+            $this->projectDir,
+            'parent-session-malformed-child',
+            $artifactId,
+            [
+                ChildAgentExportEventsFixture::childEvent(
+                    $childRunId,
+                    1,
+                    'run_started',
+                    ['payload' => ['messages' => []]],
+                ),
+                ChildAgentExportEventsFixture::childEvent($childRunId, 2, 'waiting_human'),
+            ],
+        );
+
+        $picker = $this->exportPicker($harness, $state);
+        $picker->open();
+        $this->invokeExportSelected($picker, $harness->screen(), $state);
+
+        $expected = $this->projectDir.'/hatfield-child-'.$artifactId.'.html';
+        $this->assertFileDoesNotExist($expected);
+        $this->assertStringContainsString(
+            'retained event replay failed',
+            (string) $state->subagentLiveView->pickerFeedbackMessage,
+        );
     }
 
     #[Test]
@@ -271,7 +313,7 @@ final class SubagentLivePickerControllerTest extends TestCase
     }
 
     #[Test]
-    public function enterLiveViewCallsSnapshotProviderOnceAndCachesTranscript(): void
+    public function enterLiveViewRereadsSnapshotOnEveryEntry(): void
     {
         $harness = new VirtualTuiHarness(sessionId: 'picker-enter-snapshot');
         $state = new TuiSessionState('picker-enter-snapshot');
@@ -289,7 +331,7 @@ final class SubagentLivePickerControllerTest extends TestCase
         );
 
         $snapshotProvider = $this->createMock(ChildRunTranscriptSnapshotProviderInterface::class);
-        $snapshotProvider->expects($this->once())
+        $snapshotProvider->expects($this->exactly(2))
             ->method('snapshot')
             ->with('child-run-snap')
             ->willReturn(new ChildRunTranscriptSnapshotDTO([$block], [], 4));
@@ -302,7 +344,7 @@ final class SubagentLivePickerControllerTest extends TestCase
             new SubagentLiveChildViewPoller(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer()),
             $snapshotProvider,
             $this->createStub(ChildAgentEventsPathResolverInterface::class),
-            new SessionEventsExportService(),
+            SessionEventsExportServiceFactory::create(),
         );
 
         $method = new \ReflectionMethod(SubagentLivePickerController::class, 'enterLiveView');
@@ -310,9 +352,7 @@ final class SubagentLivePickerControllerTest extends TestCase
 
         $this->assertSame(4, $state->subagentLiveView->childLastSeq);
         $this->assertSame('snapshot line', $state->subagentLiveView->childTranscript[0]->text);
-        $this->assertArrayHasKey('child-run-snap', $state->subagentLiveView->childCaches);
 
-        $snapshotProvider->expects($this->never())->method('snapshot');
         $method->invoke($picker, $child, $state, $harness->screen());
         $this->assertSame(4, $state->subagentLiveView->childLastSeq);
     }
@@ -543,7 +583,14 @@ final class SubagentLivePickerControllerTest extends TestCase
                     'child-run-export-persist',
                     1,
                     'run_started',
-                    ['payload' => ['messages' => [['role' => 'user', 'content' => 'persist marker']]]],
+                    [
+                        'payload' => [
+                            'messages' => [[
+                                'role' => 'user',
+                                'content' => [['type' => 'text', 'text' => 'persist marker']],
+                            ]],
+                        ],
+                    ],
                 ),
             ],
         );
@@ -608,7 +655,14 @@ final class SubagentLivePickerControllerTest extends TestCase
                     'child-dismiss-done',
                     1,
                     'run_started',
-                    ['payload' => ['messages' => [['role' => 'user', 'content' => 'dismiss feedback marker']]]],
+                    [
+                        'payload' => [
+                            'messages' => [[
+                                'role' => 'user',
+                                'content' => [['type' => 'text', 'text' => 'dismiss feedback marker']],
+                            ]],
+                        ],
+                    ],
                 ),
             ],
         );
@@ -635,7 +689,7 @@ final class SubagentLivePickerControllerTest extends TestCase
             new SubagentLiveChildViewPoller(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer()),
             $this->createStub(ChildRunTranscriptSnapshotProviderInterface::class),
             $this->createStub(ChildAgentEventsPathResolverInterface::class),
-            new SessionEventsExportService(),
+            SessionEventsExportServiceFactory::create(),
         );
     }
 
@@ -742,7 +796,7 @@ final class SubagentLivePickerControllerTest extends TestCase
             new SubagentLiveChildViewPoller(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer()),
             $this->createStub(ChildRunTranscriptSnapshotProviderInterface::class),
             $this->childEventsPathResolver(),
-            new SessionEventsExportService(),
+            SessionEventsExportServiceFactory::create(),
         );
     }
 

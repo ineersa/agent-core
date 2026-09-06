@@ -15,61 +15,59 @@ use PHPUnit\Framework\TestCase;
 /** @covers \Ineersa\Tui\Runtime\SubagentLiveViewState */
 final class SubagentLiveViewStateTest extends TestCase
 {
-    public function testEnterRestoresCachedTranscriptWhenReselectingChild(): void
+    public function testEnterResetsProjectedStateFromCatalogChild(): void
     {
         $view = new SubagentLiveViewState();
-        $child = $this->child('run-a', 'agent_a');
-        $block = new TranscriptBlock('b1', TranscriptBlockKindEnum::AssistantMessage, 'run-a', 1, 'done');
-        $view->childCaches['run-a'] = [
-            'transcript' => [$block],
-            'lastSeq' => 3,
-            'lastPoll' => 1.0,
-            'activity' => RunActivityStateEnum::Completed,
-        ];
-
-        $view->enter($child);
-
-        $this->assertSame([$block], $view->childTranscript);
-        $this->assertSame(3, $view->childLastSeq);
-        $this->assertSame(RunActivityStateEnum::Completed, $view->childActivity);
-    }
-
-    public function testPersistCurrentChildCacheStoresActiveChildSnapshot(): void
-    {
-        $view = new SubagentLiveViewState();
-        $child = $this->child('run-b', 'agent_b');
-        $view->enter($child);
         $view->childTranscript = [
-            new TranscriptBlock('b2', TranscriptBlockKindEnum::AssistantMessage, 'run-b', 2, 'cached'),
+            new TranscriptBlock('old', TranscriptBlockKindEnum::AssistantMessage, 'run-old', 9, 'stale'),
         ];
-        $view->childLastSeq = 5;
-        $view->childActivity = RunActivityStateEnum::Running;
+        $view->childLastSeq = 9;
+        $view->childQueuedUserMessages = ['k' => 'steer'];
 
-        $view->persistCurrentChildCache();
+        $view->enter($this->child('run-a', 'agent_a', SubagentLiveStatusEnum::Running));
 
-        $this->assertArrayHasKey('run-b', $view->childCaches);
-        $this->assertSame('cached', $view->childCaches['run-b']['transcript'][0]->text);
+        $this->assertTrue($view->active);
+        $this->assertSame('run-a', $view->selected?->agentRunId);
+        $this->assertSame([], $view->childTranscript);
+        $this->assertSame(0, $view->childLastSeq);
+        $this->assertSame([], $view->childQueuedUserMessages);
+        $this->assertSame(RunActivityStateEnum::Running, $view->childActivity);
     }
 
-    public function testChildQueuedMessagesPersistInCache(): void
+    public function testExitClearsSelectedAndProjectedState(): void
     {
         $view = new SubagentLiveViewState();
-        $child = $this->child('run-q', 'agent_q');
-        $view->enter($child);
+        $view->enter($this->child('run-b', 'agent_b', SubagentLiveStatusEnum::WaitingHuman));
+        $view->childTranscript = [
+            new TranscriptBlock('b2', TranscriptBlockKindEnum::AssistantMessage, 'run-b', 2, 'live'),
+        ];
+        $view->childLastSeq = 2;
         $view->childQueuedUserMessages = ['k1' => 'steer next'];
-        $view->persistCurrentChildCache();
+        $view->lastLiveWorkingMessage = 'working';
 
-        $this->assertSame(['k1' => 'steer next'], $view->childCaches['run-q']['queuedUserMessages']);
+        $view->exit();
+
+        $this->assertFalse($view->active);
+        $this->assertNull($view->selected);
+        $this->assertSame([], $view->childTranscript);
+        $this->assertSame(0, $view->childLastSeq);
+        $this->assertSame([], $view->childQueuedUserMessages);
+        $this->assertNull($view->lastLiveWorkingMessage);
+        $this->assertSame(RunActivityStateEnum::Idle, $view->childActivity);
     }
 
-    private function child(string $runId, string $artifactId): SubagentLiveChildDTO
-    {
+    private function child(
+        string $runId,
+        string $artifactId,
+        SubagentLiveStatusEnum $status = SubagentLiveStatusEnum::Completed,
+        string $taskSummary = 'task',
+    ): SubagentLiveChildDTO {
         return new SubagentLiveChildDTO(
             agentRunId: $runId,
             artifactId: $artifactId,
             agentName: 'scout',
-            status: SubagentLiveStatusEnum::Completed,
-            taskSummary: 'task',
+            status: $status,
+            taskSummary: $taskSummary,
             lastActivityAtMs: 1,
             model: 'deepseek/deepseek-v4-flash',
             reasoning: 'medium',

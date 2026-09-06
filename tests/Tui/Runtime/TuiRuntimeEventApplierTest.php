@@ -77,6 +77,36 @@ final class TuiRuntimeEventApplierTest extends TestCase
         $this->assertSame(RunActivityStateEnum::Cancelled, $state->activity);
     }
 
+    public function testPostCancelSeqZeroToolCallDoesNotAddGhostTranscriptBlock(): void
+    {
+        $applier = $this->buildApplier();
+        $state = new TuiSessionState('run-ghost', true);
+
+        $applier->apply($state, new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent(
+            type: \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum::RunCancelled->value,
+            runId: 'run-ghost',
+            seq: 10,
+            payload: ['reason' => 'cancelled'],
+        ));
+        $this->assertSame(RunActivityStateEnum::Cancelled, $state->activity);
+        $applier->drainProjectedChanges();
+
+        $applier->apply($state, new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent(
+            type: \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum::ToolCallStarted->value,
+            runId: 'run-ghost',
+            seq: 0,
+            payload: [
+                'tool_call_id' => 'call_ghost',
+                'tool_name' => 'bash',
+            ],
+        ));
+
+        $this->assertSame(RunActivityStateEnum::Cancelled, $state->activity);
+        $changes = $applier->drainProjectedChanges();
+        $this->assertSame([], $changes->upserts);
+        $this->assertSame([], $changes->removals);
+    }
+
     public function testIdleFollowUpQueuedEventDoesNotPopulatePendingQueue(): void
     {
         // Thesis: idle follow_up should not emit user.message_queued (no ⏳ flicker).

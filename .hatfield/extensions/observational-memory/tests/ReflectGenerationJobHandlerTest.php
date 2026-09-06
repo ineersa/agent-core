@@ -370,7 +370,7 @@ final class ReflectGenerationJobHandlerTest extends IsolatedKernelTestCase
         $settings = OmSettings::fromArray([
             'model' => 'llama_cpp_test/test',
             'reflector' => ['reflect_after_observation_tokens' => 1],
-            'pools' => ['observations_max_tokens' => 50],
+            'pools' => ['observations_max_tokens' => 70],
         ]);
         $paths = \Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmPaths::fromSettings($settings, $this->projectDir);
         $connection = $this->omDatabaseFactory()->connectAndMigrate($paths->databasePath, new NullLogger());
@@ -435,7 +435,7 @@ final class ReflectGenerationJobHandlerTest extends IsolatedKernelTestCase
         $this->assertSame(2, $agentCalls, 'Reflector then Dropper');
         $this->assertSame('reflector', $stages[0]['stage'] ?? null);
         $this->assertSame('dropper', $stages[1]['stage'] ?? null);
-        $this->assertSame(50, $stages[1]['target_tokens'] ?? null);
+        $this->assertSame(70, $stages[1]['target_tokens'] ?? null);
         $this->assertIsInt($stages[0]['current_tokens'] ?? null);
         $this->assertGreaterThan(0, $stages[0]['current_tokens']);
         $this->assertNull(

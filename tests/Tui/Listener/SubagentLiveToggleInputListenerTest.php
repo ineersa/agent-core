@@ -9,13 +9,14 @@ use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInter
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
-use Ineersa\Tui\Export\SessionEventsExportService;
 use Ineersa\Tui\Listener\SubagentLiveToggleInputListener;
 use Ineersa\Tui\Picker\SubagentLivePickerController;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
 use Ineersa\Tui\Runtime\TuiSessionState;
+use Ineersa\Tui\Tests\Support\SessionEventsExportServiceFactory;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -25,8 +26,18 @@ final class SubagentLiveToggleInputListenerTest extends TestCase
 {
     use TuiRuntimeContextBuilderTrait;
 
+    /**
+     * @return iterable<string, array{0: string}>
+     */
+    public static function provideCtrlBackslashSequences(): iterable
+    {
+        yield 'legacy' => ["\x1c"];
+        yield 'kitty' => ["\x1b[92;5u"];
+    }
+
     #[Test]
-    public function testCtrlBackslashReturnsFromLiveView(): void
+    #[DataProvider('provideCtrlBackslashSequences')]
+    public function testCtrlBackslashReturnsFromLiveView(string $sequence): void
     {
         $harness = new VirtualTuiHarness(sessionId: 'toggle-live');
         $state = new TuiSessionState('toggle-live');
@@ -40,7 +51,7 @@ final class SubagentLiveToggleInputListenerTest extends TestCase
             new SubagentLiveChildViewPoller(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer()),
             $this->createStub(ChildRunTranscriptSnapshotProviderInterface::class),
             $this->createStub(ChildAgentEventsPathResolverInterface::class),
-            new SessionEventsExportService(),
+            SessionEventsExportServiceFactory::create(),
         );
 
         $context = $this->buildTuiContext()
@@ -57,7 +68,7 @@ final class SubagentLiveToggleInputListenerTest extends TestCase
 
         (new SubagentLiveToggleInputListener())->register($context);
         $harness->startInputLoop();
-        $harness->sendInput("\x1c");
+        $harness->sendInput($sequence);
 
         $this->assertFalse($state->subagentLiveView->active);
     }

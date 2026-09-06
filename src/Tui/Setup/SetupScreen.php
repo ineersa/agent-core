@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Setup;
 
+use Ineersa\Tui\Terminal\CachedWidthValidationRendererAliasInstaller;
+use Ineersa\Tui\Terminal\DeferredCursorCommitScreenWriterAliasInstaller;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
 use Symfony\Component\Tui\Event\SettingChangeEvent;
 use Symfony\Component\Tui\Event\SubmitEvent;
+use Symfony\Component\Tui\Input\Key;
+use Symfony\Component\Tui\Input\Keybindings;
 use Symfony\Component\Tui\Style\Border;
 use Symfony\Component\Tui\Style\Color;
 use Symfony\Component\Tui\Style\Padding;
@@ -82,6 +86,9 @@ final class SetupScreen
         $this->listWidget = new SelectListWidget([], maxVisible: 12);
         $this->inputWidget = new InputWidget();
         $this->settingsWidget = new SettingsListWidget([], maxVisible: 16);
+        $this->applyQuitSetupBindings($this->listWidget);
+        $this->applyQuitSetupBindings($this->inputWidget);
+        $this->applyQuitSetupBindings($this->settingsWidget);
 
         // Static panel chrome — list/input/settings are mounted by applyPhaseLayout().
         $this->panelWidget->add($this->stepWidget);
@@ -106,6 +113,8 @@ final class SetupScreen
 
     public function run(?TerminalInterface $terminal = null): int
     {
+        CachedWidthValidationRendererAliasInstaller::install();
+        DeferredCursorCommitScreenWriterAliasInstaller::install();
         $this->tui = new Tui(terminal: $terminal ?? new Terminal());
         $this->mount($this->tui);
         $this->tui->run();
@@ -167,13 +176,20 @@ final class SetupScreen
 
     private function quitOnCtrlD(string $data): bool
     {
-        if ("\x04" === $data) {
+        if ($this->listWidget->getKeybindings()->matches($data, 'quit_setup')) {
             $this->finishSuccess();
 
             return true;
         }
 
         return false;
+    }
+
+    private function applyQuitSetupBindings(SelectListWidget|InputWidget|SettingsListWidget $widget): void
+    {
+        $widget->setKeybindings(new Keybindings([
+            'quit_setup' => [Key::ctrl('d')],
+        ]));
     }
 
     private function onListSelect(string $value): void
@@ -505,6 +521,7 @@ final class SetupScreen
         // unattached instance, which would orphan the previously mounted form.
         $this->panelWidget->remove($this->settingsWidget);
         $this->settingsWidget = new SettingsListWidget($this->customSettingItems(), maxVisible: 16);
+        $this->applyQuitSetupBindings($this->settingsWidget);
         $this->refreshError();
         $this->refreshFooter();
         $this->applyPhaseLayout();

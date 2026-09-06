@@ -137,7 +137,7 @@ final class OmLiveLlmSmokeTest extends IsolatedKernelTestCase
                     handler: $countingHandler, // test-local counting wrapper around real handler
                 ),
             ],
-            maxToolCalls: 16,
+            maxToolCalls: 6,
         ));
 
         $this->assertGreaterThanOrEqual(2, $invocationCount, 'Observer model must invoke record_observations at least twice');

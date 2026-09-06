@@ -20,6 +20,8 @@ use Ineersa\Tui\Runtime\TuiSessionLifecycleEventTypeEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Runtime\TuiTickDispatcher;
 use Ineersa\Tui\Screen\ChatScreen;
+use Ineersa\Tui\Terminal\CachedWidthValidationRendererAliasInstaller;
+use Ineersa\Tui\Terminal\DeferredCursorCommitScreenWriterAliasInstaller;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemeRegistry;
 use Ineersa\Tui\Theme\TuiTheme;
@@ -28,7 +30,6 @@ use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Tui\Event\TickEvent;
-use Symfony\Component\Tui\Input\Keybindings;
 use Symfony\Component\Tui\Terminal\TerminalInterface;
 use Symfony\Component\Tui\Tui;
 
@@ -188,6 +189,8 @@ final readonly class InteractiveMode
             );
 
             // ── Build screen and mount widget tree ──
+            CachedWidthValidationRendererAliasInstaller::install();
+            DeferredCursorCommitScreenWriterAliasInstaller::install();
             $tui = new Tui();
             $screen = new ChatScreen(
                 $theme,
@@ -197,13 +200,6 @@ final readonly class InteractiveMode
                 $state->transcriptDisplayState,
             );
             $screen->mount($tui);
-
-            // Apply Ctrl+J as portable newline, overriding the default new_line
-            // key list.  Both ctrl+j and shift+enter are listed so the default
-            // Shift+Enter behavior is preserved alongside the new portable key.
-            $this->promptEditor->setKeybindings(new Keybindings([
-                'new_line' => ['ctrl+j', 'shift+enter'],
-            ]));
 
             // ── Compose the per-session service scope ──
             // Fresh controllers, question/history state, command registry,

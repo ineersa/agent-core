@@ -4,14 +4,20 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Export;
 
+use Ineersa\CodingAgent\Session\Export\EffectiveModelContextProjector;
+use Ineersa\CodingAgent\Session\Export\EffectiveModelContextSnapshot;
 use Ineersa\Tui\Command\TranscriptMessage;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Platform\Tool\Tool;
 
+/**
+ * Exports canonical session events as JSONL (byte copy) or HTML (effective model context).
+ */
 final class SessionEventsExportService
 {
     public function __construct(
+        private readonly EffectiveModelContextProjector $contextProjector,
         private readonly ?ToolboxInterface $toolbox = null,
         private readonly ?LoggerInterface $logger = null,
     ) {
@@ -78,7 +84,7 @@ final class SessionEventsExportService
     }
 
     /**
-     * Generate a standalone HTML export from the canonical events JSONL.
+     * Generate a standalone HTML export of the effective current model context.
      */
     public function exportHtml(
         string $sessionId,
@@ -88,8 +94,21 @@ final class SessionEventsExportService
         string $sessionCwd = '',
         string $createdAt = '',
     ): TranscriptMessage {
-        $events = $this->parseEvents($eventsContent);
-        if ([] === $events) {
+        try {
+            $snapshot = $this->contextProjector->project($eventsContent, $sessionId);
+        } catch (\RuntimeException $exception) {
+            $this->logger?->warning('Session HTML export failed to project model context.', [
+                'component' => 'session_export',
+                'event_type' => 'session_export.context_projection_failed',
+                'session_id' => $sessionId,
+                'error_class' => $exception::class,
+                'error_message' => $exception->getMessage(),
+            ]);
+
+            return new TranscriptMessage($exception->getMessage(), 'error');
+        }
+
+        if ([] === $snapshot->messages && null === $snapshot->compaction) {
             return new TranscriptMessage(
                 \sprintf('Session %s has no events to export.', $sessionId),
                 'system',
@@ -99,7 +118,7 @@ final class SessionEventsExportService
 
         $displayName = '' !== $sessionName ? $sessionName : 'Session '.$sessionId;
         $title = self::escapeHtml($displayName);
-        $html = $this->buildHtml($title, $sessionId, $sessionCwd, $createdAt, $events);
+        $html = $this->buildHtml($title, $sessionId, $sessionCwd, $createdAt, $snapshot);
 
         $dir = \dirname($outputPath);
         if (!is_dir($dir)) {
@@ -124,8 +143,6 @@ final class SessionEventsExportService
     }
 
     /**
-     * Safely extract a string value from an array with a default.
-     *
      * @param array<string, mixed> $data
      */
     public static function strFromArray(array $data, string $key, string $default = ''): string
@@ -136,8 +153,6 @@ final class SessionEventsExportService
     }
 
     /**
-     * Safely extract an int value from an array with a default.
-     *
      * @param array<string, mixed> $data
      */
     public static function intFromArray(array $data, string $key, int $default = 0): int
@@ -147,40 +162,14 @@ final class SessionEventsExportService
         return \is_int($value) ? $value : $default;
     }
 
-    /**
-     * Safely extract a string value from a nested array path.
-     *
-     * @param array<string, mixed> $data
-     * @param list<string>         $keys
-     */
-    public static function strFromNested(array $data, array $keys, string $default = ''): string
-    {
-        $current = $data;
-        foreach ($keys as $key) {
-            if (!\is_array($current) || !\array_key_exists($key, $current)) {
-                return $default;
-            }
-            $current = $current[$key];
-        }
-
-        return \is_string($current) ? $current : $default;
-    }
-
-    // ── HTML generation ────────────────────────────────────────────────────
-
-    /**
-     * Build the full standalone HTML document.
-     *
-     * @param list<array<string, mixed>> $events
-     */
     private function buildHtml(
         string $title,
         string $sessionId,
         string $cwd,
         string $createdAt,
-        array $events,
+        EffectiveModelContextSnapshot $snapshot,
     ): string {
-        $bodyHtml = $this->renderEvents($events);
+        $bodyHtml = $this->renderContext($snapshot);
 
         $escapedTitle = $title;
         $escapedSessionId = self::escapeHtml($sessionId);
@@ -206,6 +195,7 @@ final class SessionEventsExportService
     {$this->metaIf($escapedCwd, 'CWD', $escapedCwd)}
     {$this->metaIf($escapedCreatedAt, 'Created', $escapedCreatedAt)}
   </div>
+  <p class="session-subtitle">Effective model context (current prompt snapshot)</p>
 </header>
 <main class="transcript">
 {$bodyHtml}
@@ -227,644 +217,30 @@ HTML;
         return " | {$label}: {$escapedValue}";
     }
 
-    /**
-     * Render all events into HTML blocks, grouped by turn.
-     *
-     * @param list<array<string, mixed>> $events
-     */
-    private function renderEvents(array $events): string
+    private function renderContext(EffectiveModelContextSnapshot $snapshot): string
     {
         $html = '';
-        $currentTurn = -1;
-
-        // Live toolbox snapshot for HTML only — never persisted into events/JSONL.
         $toolDefinitionsHtml = $this->renderActiveToolDefinitions();
-        $toolDefinitionsPending = '' !== $toolDefinitionsHtml;
-
-        // Cross-reference maps built from the full event stream.
-        // toolNames: tool_call_id → tool_name (from tool_execution_start).
-        // toolArgs:   tool_call_id → arguments (from llm_step_completed.assistant_message.tool_calls).
-        $toolNames = [];
-        $toolArgs = [];
-
-        // First pass — build the cross-reference maps.
-        foreach ($events as $event) {
-            $type = self::strFromArray($event, 'type');
-            $payload = \is_array($event['payload'] ?? null) ? $event['payload'] : [];
-
-            if ('tool_execution_start' === $type) {
-                $tcId = self::strFromArray($payload, 'tool_call_id');
-                $tcName = self::strFromArray($payload, 'tool_name');
-                if ('' !== $tcId && '' !== $tcName) {
-                    $toolNames[$tcId] = $tcName;
-                }
-            }
-
-            // Extract tool_call arguments from assistant_message blocks.
-            // In real events.jsonl, tool calls live at
-            //   llm_step_completed.payload.assistant_message.tool_calls[].{id,name,arguments}
-            if ('llm_step_completed' === $type) {
-                $assistantMessage = $payload['assistant_message'] ?? null;
-                if (\is_array($assistantMessage)) {
-                    $toolCalls = $assistantMessage['tool_calls'] ?? null;
-                    if (\is_array($toolCalls)) {
-                        foreach ($toolCalls as $tc) {
-                            if (!\is_array($tc)) {
-                                continue;
-                            }
-                            $tcId = self::strFromArray($tc, 'id');
-                            if ('' !== $tcId) {
-                                $tcName = self::strFromArray($tc, 'name');
-                                $tcArguments = $tc['arguments'] ?? null;
-                                if ('' !== $tcName) {
-                                    $toolNames[$tcId] = $tcName;
-                                }
-                                // Store raw arguments (may be string or array).
-                                $toolArgs[$tcId] = $tcArguments;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Second pass — render events with the cross-reference maps.
-        foreach ($events as $event) {
-            $type = self::strFromArray($event, 'type');
-            $turnNo = self::intFromArray($event, 'turn_no');
-
-            // Start a new turn group when the turn number changes.
-            if ($turnNo !== $currentTurn) {
-                if ($currentTurn >= 0) {
-                    $html .= "</div>\n"; // Close previous turn.
-                }
-                $currentTurn = $turnNo;
-                $html .= '<div class="turn">'."\n";
-                $html .= '  <div class="turn-label">Turn '.$turnNo.'</div>'."\n";
-            }
-
-            $injectTools = $toolDefinitionsPending && 'run_started' === $type;
-            $html .= $this->renderEvent(
-                $event,
-                $toolNames,
-                $toolArgs,
-                $injectTools ? $toolDefinitionsHtml : '',
-            );
-            if ($injectTools) {
-                $toolDefinitionsPending = false;
-            }
-        }
-
-        // No run_started event: still emit definitions once before closing.
-        if ($toolDefinitionsPending) {
-            if ($currentTurn < 0) {
-                $html = $toolDefinitionsHtml.$html;
-            } else {
-                $html .= $toolDefinitionsHtml;
-            }
-        }
-
-        if ($currentTurn >= 0) {
-            $html .= "</div>\n";
-        }
-
-        return $html;
-    }
-
-    /**
-     * Render a single event into its HTML representation.
-     *
-     * Every event produces an event card with metadata and the full event
-     * JSON in an escaped <pre> block (mandatory per task spec).  Known
-     * event types additionally receive a human-friendly readable summary.
-     *
-     * @param array<string, mixed>  $event
-     * @param array<string, string> $toolNames           tool_call_id → tool_name map
-     * @param array<string, mixed>  $toolArgs            tool_call_id → arguments map
-     * @param string                $toolDefinitionsHtml optional one-shot live tool dump for run_started
-     */
-    private function renderEvent(array $event, array $toolNames = [], array $toolArgs = [], string $toolDefinitionsHtml = ''): string
-    {
-        $type = self::strFromArray($event, 'type');
-        $seq = self::intFromArray($event, 'seq');
-        $ts = self::strFromArray($event, 'ts');
-        $payload = \is_array($event['payload'] ?? null) ? $event['payload'] : [];
-
-        // Friendly readable summary (may be empty for unknown / turn-advanced events).
-        $readable = match ($type) {
-            'run_started' => $this->renderRunStarted($payload, $toolDefinitionsHtml),
-            'llm_step_completed' => $this->renderAssistantMessage($payload),
-            'llm_step_failed' => $this->renderAssistantFailed($payload),
-            'llm_step_aborted' => $this->renderTurnCancelled($payload),
-            'tool_execution_start' => $this->renderToolStart($payload, $toolArgs),
-            'tool_execution_end' => $this->renderToolEnd($payload, $toolNames),
-            'agent_end' => $this->renderAgentEnd($payload),
-            'agent_command_applied' => $this->renderAgentCommandApplied($payload),
-            'model_notification' => $this->renderModelNotification($payload),
-            default => $this->renderGenericEvent($payload),
-        };
-
-        // Full event JSON (escaped) — mandatory per task spec.
-        $rawJson = json_encode($event, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES);
-        if (!\is_string($rawJson)) {
-            $rawJson = json_encode($event, \JSON_UNESCAPED_SLASHES);
-            if (!\is_string($rawJson)) {
-                $rawJson = '{}';
-            }
-        }
-        $escapedJson = self::escapeHtml($rawJson);
-
-        $html = '  <div class="event event-'.self::escapeHtml($type).'">'."\n";
-
-        // Metadata header.
-        $html .= '    <div class="event-meta">';
-        $html .= '<span class="event-type">'.self::escapeHtml($type).'</span>';
-        $html .= ' <span class="event-seq">seq '.$seq.'</span>';
-        if ('' !== $ts) {
-            $html .= ' <span class="event-ts">'.self::escapeHtml($ts).'</span>';
-        }
-        $html .= "</div>\n";
-
-        // Friendly readable content.
-        if ('' !== $readable) {
-            $html .= $readable;
-        }
-
-        // Available tools for LLM request events (absence-tolerant).
-        if (\in_array($type, ['llm_step_completed', 'llm_step_failed', 'llm_step_aborted'], true)) {
-            $html .= $this->renderAvailableTools($payload);
-        }
-
-        // Full event JSON in collapsible details block.
-        $html .= '    <details class="event-raw">'."\n";
-        $html .= '      <summary>Raw event</summary>'."\n";
-        $html .= '      <pre class="event-json">'.$escapedJson."</pre>\n";
-        $html .= "    </details>\n";
-
-        $html .= "  </div>\n";
-
-        return $html;
-    }
-
-    /**
-     * Render the run_started event: extract user/system/instruction messages.
-     *
-     * Canonical events.jsonl stores messages at payload.payload.messages.
-     *
-     * @param array<string, mixed> $payload
-     */
-    private function renderRunStarted(array $payload, string $toolDefinitionsHtml = ''): string
-    {
-        $nestedPayload = $payload['payload'] ?? null;
-        if (!\is_array($nestedPayload)) {
-            return $toolDefinitionsHtml;
-        }
-
-        $messages = $nestedPayload['messages'] ?? null;
-
-        return \is_array($messages)
-            ? $this->renderMessages($messages, $toolDefinitionsHtml)
-            : $toolDefinitionsHtml;
-    }
-
-    /**
-     * Render the llm_step_completed event: assistant text, thinking, usage, tool calls.
-     *
-     * Real events.jsonl has the assistant_message payload nested:
-     *   payload.assistant_message.{content,details.thinking,tool_calls,role}
-     *   payload.usage.{input_tokens,output_tokens,total_tokens}
-     *   payload.stop_reason
-     *
-     * @param array<string, mixed> $payload
-     */
-    private function renderAssistantMessage(array $payload): string
-    {
-        $stopReason = self::escapeHtml(self::strFromArray($payload, 'stop_reason'));
-        $assistantMessage = $payload['assistant_message'] ?? null;
-        $text = '';
-        $thinking = '';
-        if (\is_array($assistantMessage)) {
-            $content = $assistantMessage['content'] ?? null;
-            if (\is_array($content)) {
-                $text = self::escapeHtml($this->extractTextFromContentBlocks($content));
-            }
-            $thinking = self::escapeHtml(self::strFromNested($assistantMessage, ['details', 'thinking']));
-        }
-
-        $html = '  <div class="message message-assistant">'."\n";
-        $html .= '    <div class="message-role">assistant</div>'."\n";
-
-        // Thinking block.
-        if ('' !== $thinking) {
-            $html .= '    <details class="thinking-block" open>'."\n";
-            $html .= '      <summary>Thinking</summary>'."\n";
-            $html .= '      <div class="thinking-content">'.$thinking.'</div>'."\n";
-            $html .= "    </details>\n";
-        }
-
-        // Assistant text.
-        if ('' !== $text) {
-            $html .= '    <div class="message-content">'.$text.'</div>'."\n";
-        }
-
-        // Usage / token stats.
-        $usage = $payload['usage'] ?? null;
-        if (\is_array($usage)) {
-            $html .= $this->renderUsage($usage);
-        }
-
-        // Tool calls from assistant message.
-        if (\is_array($assistantMessage)) {
-            $toolCalls = $assistantMessage['tool_calls'] ?? null;
-            if (\is_array($toolCalls) && [] !== $toolCalls) {
-                $html .= $this->renderToolCalls($toolCalls);
-            }
-        }
-
-        // Stop reason / metadata.
-        if ('' !== $stopReason && 'end_turn' !== $stopReason) {
-            $html .= '    <div class="message-meta">stop: '.$stopReason.'</div>'."\n";
-        }
-
-        $html .= "  </div>\n";
-
-        return $html;
-    }
-
-    /**
-     * Render the compact available-tools audit snapshot when present.
-     *
-     * Absence-tolerant: missing/malformed snapshots produce no section so old
-     * sessions export unchanged. Never reconstructs tools from catalogs.
-     * Accepts list<string> names; MCP affiliation is the model-visible name prefix.
-     *
-     * @param array<string, mixed> $payload
-     */
-    private function renderAvailableTools(array $payload): string
-    {
-        $rawTools = $payload['available_tools'] ?? null;
-        if (!\is_array($rawTools) || [] === $rawTools) {
-            return '';
-        }
-
-        $items = [];
-        foreach ($rawTools as $entry) {
-            if (!\is_string($entry) || '' === $entry) {
-                continue;
-            }
-            $items[] = self::escapeHtml($entry);
-        }
-
-        if ([] === $items) {
-            return '';
-        }
-
-        $estimate = $payload['available_tools_schema_tokens_estimate'] ?? null;
-        $estimateInt = \is_int($estimate) ? $estimate : 0;
-        $count = \count($items);
-        $summary = \sprintf(
-            'Available tools (%d · ~%s schema tokens)',
-            $count,
-            number_format($estimateInt),
-        );
-
-        $html = '    <details class="available-tools" open>'."\n";
-        $html .= '      <summary>'.self::escapeHtml($summary)."</summary>\n";
-        $html .= "      <ul class=\"available-tools-list\">\n";
-        foreach ($items as $item) {
-            $html .= '        <li>'.$item."</li>\n";
-        }
-        $html .= "      </ul>\n";
-        $html .= "    </details>\n";
-
-        return $html;
-    }
-
-    /**
-     * @param array<string, mixed> $payload
-     */
-    private function renderAssistantFailed(array $payload): string
-    {
-        $text = self::escapeHtml(self::strFromArray($payload, 'text'));
-
-        return '  <div class="message message-error">'."\n"
-            .'    <div class="message-role">error</div>'."\n"
-            .'    <div class="message-content">'.$text.'</div>'."\n"
-            ."  </div>\n";
-    }
-
-    /**
-     * @param array<string, mixed> $payload
-     */
-    private function renderTurnCancelled(array $payload): string
-    {
-        $reason = self::escapeHtml(self::strFromArray($payload, 'reason', 'aborted'));
-
-        return '  <div class="message message-system">Turn cancelled: '.$reason."</div>\n";
-    }
-
-    /**
-     * Render a tool_execution_start event with optional arguments from the
-     * cross-reference map built during renderEvents.
-     *
-     * @param array<string, mixed> $payload
-     * @param array<string, mixed> $toolArgs tool_call_id → arguments map
-     */
-    private function renderToolStart(array $payload, array $toolArgs = []): string
-    {
-        $toolName = self::escapeHtml(self::strFromArray($payload, 'tool_name', 'unknown'));
-        $toolCallId = self::strFromArray($payload, 'tool_call_id');
-        $escapedTcId = self::escapeHtml($toolCallId);
-
-        $html = '  <div class="tool-call">'."\n";
-
-        // Show tool name and ID as the summary.
-        $summary = '<span class="tool-name">'.$toolName.'</span>';
-        if ('' !== $escapedTcId) {
-            $summary .= ' <span class="tool-call-id">'.$escapedTcId.'</span>';
-        }
-
-        // Do we have arguments to show?
-        $hasArgs = '' !== $toolCallId && \array_key_exists($toolCallId, $toolArgs);
-        if (!$hasArgs) {
-            $html .= '    <div class="tool-call-header">'.$summary."</div>\n";
-            $html .= "  </div>\n";
-
-            return $html;
-        }
-
-        $html .= '    <details open>'."\n";
-        $html .= '      <summary>'.$summary."</summary>\n";
-        $html .= '      <div class="tool-args">'.self::renderPrettyJson($toolArgs[$toolCallId])."</div>\n";
-        $html .= "    </details>\n";
-        $html .= "  </div>\n";
-
-        return $html;
-    }
-
-    /**
-     * @param array<string, mixed>  $payload
-     * @param array<string, string> $toolNames tool_call_id → tool_name map
-     */
-    private function renderToolEnd(array $payload, array $toolNames = []): string
-    {
-        // TUI stays outside AgentCore's typed serializer boundary. This single
-        // export-edge adapter reads the normalized canonical shape directly.
-        $typed = $payload['tool_result'] ?? null;
-        if (!\is_array($typed)) {
-            throw new \UnexpectedValueException('ToolExecutionEnd export requires an array tool_result payload.');
-        }
-        $toolCallId = self::strFromArray($typed, 'tool_call_id');
-        $toolName = $toolNames[$toolCallId] ?? '';
-        $isError = true === ($typed['is_error'] ?? false);
-        $result = $this->toolResultText($typed);
-        $durationMs = \is_int($payload['duration_ms'] ?? null) ? $payload['duration_ms'] : null;
-
-        $html = '  <div class="'.($isError ? 'tool-result tool-error' : 'tool-result').'">'."\n";
-        $html .= '    <details>'."\n";
-        $html .= '      <summary>Result';
-
-        if ('' !== $toolName) {
-            $html .= ': <span class="tool-name">'.self::escapeHtml($toolName).'</span>';
-        }
-        if (null !== $durationMs) {
-            $html .= ' <span class="tool-duration">('.$durationMs.'ms)</span>';
-        }
-        if ($isError) {
-            $html .= ' <span class="tool-error-label">(failed)</span>';
-        }
-
-        $html .= "</summary>\n";
-
-        if ('' !== $result) {
-            $escapedResult = self::escapeHtml($result);
-            $html .= '      <pre class="tool-output">'.$escapedResult."</pre>\n";
-        }
-
-        $html .= "    </details>\n";
-        $html .= "  </div>\n";
-
-        return $html;
-    }
-
-    /**
-     * Export-only adapter for the normalized ToolCallResult shape. It intentionally
-     * does not recreate a cross-layer serializer dependency or leak nested payload
-     * walking into other TUI code.
-     *
-     * @param array<string, mixed> $toolResult
-     */
-    private function toolResultText(array $toolResult): string
-    {
-        $result = $toolResult['result'] ?? null;
-        $content = \is_array($result) ? ($result['content'] ?? null) : null;
-        if (\is_array($content)) {
-            $parts = [];
-            foreach ($content as $part) {
-                if (\is_array($part) && 'text' === ($part['type'] ?? null) && \is_string($part['text'] ?? null)) {
-                    $parts[] = $part['text'];
-                }
-            }
-            if ([] !== $parts) {
-                return implode("\n", $parts);
-            }
-        }
-
-        $error = $toolResult['error'] ?? null;
-        if (true === ($toolResult['is_error'] ?? false) && \is_array($error)) {
-            $message = $error['message'] ?? $error['type'] ?? null;
-            if (\is_string($message)) {
-                return $message;
-            }
-        }
-
-        return '';
-    }
-
-    /**
-     * @param array<string, mixed> $payload
-     */
-    private function renderAgentEnd(array $payload): string
-    {
-        $reason = self::strFromArray($payload, 'reason');
-        $error = self::strFromArray($payload, 'error');
-
-        if ('failed' === $reason && '' !== $error) {
-            return '  <div class="message message-error">Run failed: '.self::escapeHtml($error)."</div>\n";
-        }
-        if ('cancelled' === $reason) {
-            return '  <div class="message message-system">Run cancelled.</div>'."\n";
-        }
-
-        return '  <div class="message message-system">Run completed.</div>'."\n";
-    }
-
-    /**
-     * Render agent_command_applied — user messages for subsequent turns.
-     *
-     * In real events.jsonl the payload carries:
-     *   kind: steer | follow_up | cancel | human_response
-     *   text: the message text (canonical)
-     *
-     * @param array<string, mixed> $payload
-     */
-    private function renderAgentCommandApplied(array $payload): string
-    {
-        $kind = self::strFromArray($payload, 'kind');
-        $text = self::strFromArray($payload, 'text');
-
-        if ('' === $text) {
-            return '';
-        }
-
-        $label = match ($kind) {
-            'steer', 'follow_up', 'append_message' => 'user',
-            'human_response' => 'human response',
-            'cancel' => 'cancelled',
-            default => 'command',
-        };
-
-        return '  <div class="message message-'.$label.'">'."\n"
-            .'    <div class="message-role">'.$label.'</div>'."\n"
-            .'    <div class="message-content">'.self::escapeHtml($text).'</div>'."\n"
-            ."  </div>\n";
-    }
-
-    /**
-     * Render a model_notification event (e.g. tool-call delivery notifications).
-     *
-     * Real events carry:
-     *   kind, text, tool_name, tool_call_id, severity, source
-     *
-     * @param array<string, mixed> $payload
-     */
-    private function renderModelNotification(array $payload): string
-    {
-        $text = self::strFromArray($payload, 'text');
-        $kind = self::strFromArray($payload, 'kind');
-
-        if ('' === $text && '' === $kind) {
-            return '';
-        }
-
-        $label = 'notification';
-        if ('' !== $kind) {
-            $label .= ' ('.$kind.')';
-        }
-
-        $html = '  <div class="message message-system">'."\n";
-        $html .= '    <div class="message-role">'.self::escapeHtml($label).'</div>'."\n";
-        if ('' !== $text) {
-            $html .= '    <div class="message-content">'.self::escapeHtml($text).'</div>'."\n";
-        }
-        $html .= "  </div>\n";
-
-        return $html;
-    }
-
-    /**
-     * Generic fallback renderer for unhandled event types.
-     *
-     * Attempts to surface commonly-named payload fields that are likely
-     * to contain human-interesting content without specific knowledge
-     * of the event schema.
-     *
-     * @param array<string, mixed> $payload
-     */
-    private function renderGenericEvent(array $payload): string
-    {
-        $html = '';
-
-        // Messages (user/system/developer).
-        foreach (['messages'] as $key) {
-            $msgs = $payload[$key] ?? null;
-            if (\is_array($msgs) && [] !== $msgs) {
-                $html .= $this->renderMessages($msgs);
-            }
-        }
-
-        // Common text/content fields.
-        foreach (['text', 'message', 'content', 'prompt'] as $key) {
-            $value = self::strFromArray($payload, $key);
-            if ('' !== $value) {
-                $html .= '  <div class="message message-system">'."\n";
-                $html .= '    <div class="message-role">'.$key.'</div>'."\n";
-                $html .= '    <div class="message-content">'.self::escapeHtml($value).'</div>'."\n";
-                $html .= "  </div>\n";
-            }
-        }
-
-        return $html;
-    }
-
-    // ── Reusable rendering helpers ─────────────────────────────────────────
-
-    /**
-     * Render an array of messages (each with role + content) as message blocks.
-     *
-     * Content may be a plain string or a list of typed content blocks
-     * (e.g. [{"type":"text","text":"..."}]).
-     *
-     * When $toolDefinitionsHtml is non-empty it is emitted once immediately after
-     * the first system message, or at the start of the message list if none exists.
-     *
-     * @param array<int, array<string, mixed>> $messages
-     */
-    private function renderMessages(array $messages, string $toolDefinitionsHtml = ''): string
-    {
-        $html = '';
         $toolsPending = '' !== $toolDefinitionsHtml;
 
-        foreach ($messages as $msg) {
-            if (!\is_array($msg)) {
-                continue;
-            }
+        if (null !== $snapshot->compaction) {
+            $html .= $this->renderCompactionBanner($snapshot->compaction);
+        }
 
-            $role = self::strFromArray($msg, 'role', 'unknown');
-            $content = $msg['content'] ?? '';
+        $html .= $this->renderAvailableToolsSnapshot(
+            $snapshot->availableTools,
+            $snapshot->availableToolsSchemaTokensEstimate,
+        );
 
-            // Content may be an array of typed blocks (real events.jsonl format).
-            if (\is_array($content)) {
-                $content = $this->extractTextFromContentBlocks($content);
-            }
+        foreach ($snapshot->messages as $message) {
+            $html .= $this->renderMessage($message);
 
-            if (!\is_string($content)) {
-                $content = '';
-            }
-
-            if ('' === $content) {
-                continue;
-            }
-
-            $html .= '  <div class="message message-'.self::escapeHtml($role).'">'."\n";
-            $html .= '    <div class="message-role">'.self::escapeHtml($role).'</div>'."\n";
-
-            // Long system/context instructions get details/summary treatment.
-            $contentLen = mb_strlen($content);
-            if ($contentLen > 500 && \in_array($role, ['system', 'developer', 'user-context'], true)) {
-                $html .= '    <details class="instruction-block" open>'."\n";
-                $label = match ($role) {
-                    'system' => 'System instructions',
-                    'developer' => 'Developer instructions',
-                    default => 'Context', // user-context (only remaining option)
-                };
-                $html .= '      <summary>'.self::escapeHtml($label).' ('.number_format($contentLen).' chars)</summary>'."\n";
-                $html .= '      <div class="message-content">'.self::escapeHtml($content).'</div>'."\n";
-                $html .= "    </details>\n";
-            } else {
-                $html .= '    <div class="message-content">'.self::escapeHtml($content).'</div>'."\n";
-            }
-
-            $html .= "  </div>\n";
-
-            // One-shot live tool definitions, right after System instructions.
-            if ($toolsPending && 'system' === $role) {
+            if ($toolsPending && 'system' === self::strFromArray($message, 'role')) {
                 $html .= $toolDefinitionsHtml;
                 $toolsPending = false;
             }
         }
 
-        // No system message: still emit once before the rest of the transcript.
         if ($toolsPending) {
             $html = $toolDefinitionsHtml.$html;
         }
@@ -873,11 +249,207 @@ HTML;
     }
 
     /**
-     * Live active-tool dump from Symfony AI toolbox (HTML export only).
-     *
-     * Reads current provider-visible tools at export time. Empty toolbox or
-     * missing injection produces no section — never an empty shell.
+     * @param array<string, mixed> $compaction
      */
+    private function renderCompactionBanner(array $compaction): string
+    {
+        $summaryText = self::strFromArray($compaction, 'summary_text');
+        $trigger = self::strFromArray($compaction, 'trigger', 'unknown');
+        $messagesCompacted = self::intFromArray($compaction, 'messages_compacted');
+        $messagesRetained = self::intFromArray($compaction, 'messages_retained');
+        $tokensBefore = self::intFromArray($compaction, 'estimated_tokens_before');
+        $tokensAfter = self::intFromArray($compaction, 'estimated_tokens_after');
+        $seq = self::intFromArray($compaction, 'seq');
+        $hookMetadata = \is_array($compaction['hook_metadata'] ?? null) ? $compaction['hook_metadata'] : null;
+
+        $metaParts = [];
+        if ('' !== $trigger) {
+            $metaParts[] = 'trigger: '.$trigger;
+        }
+        if ($seq > 0) {
+            $metaParts[] = 'seq '.$seq;
+        }
+        if ($messagesCompacted > 0) {
+            $metaParts[] = number_format($messagesCompacted).' messages compacted';
+        }
+        if ($messagesRetained > 0) {
+            $metaParts[] = number_format($messagesRetained).' retained';
+        }
+        if ($tokensBefore > 0 || $tokensAfter > 0) {
+            $metaParts[] = number_format($tokensBefore).' → '.number_format($tokensAfter).' tokens';
+        }
+
+        $html = '  <section class="compaction-banner">'."\n";
+        $html .= '    <div class="compaction-label">Compaction checkpoint</div>'."\n";
+        if ([] !== $metaParts) {
+            $html .= '    <div class="compaction-meta">'.self::escapeHtml(implode(' · ', $metaParts))."</div>\n";
+        }
+
+        if (null !== $hookMetadata && [] !== $hookMetadata) {
+            $source = self::strFromArray($hookMetadata, 'om_source');
+            $projection = self::strFromArray($hookMetadata, 'om_projection');
+            $html .= '    <div class="compaction-om">'."\n";
+            $html .= '      <div class="compaction-om-label">Observational memory</div>'."\n";
+            if ('' !== $source || '' !== $projection) {
+                $bits = array_filter([$source, $projection], static fn (string $value): bool => '' !== $value);
+                $html .= '      <div class="compaction-om-meta">'.self::escapeHtml(implode(' · ', $bits))."</div>\n";
+            }
+            $html .= '      <pre class="pretty-json">'.self::escapeHtml(self::encodePrettyJson($hookMetadata))."</pre>\n";
+            $html .= "    </div>\n";
+        }
+
+        if ('' === $summaryText) {
+            $html .= '    <div class="compaction-missing">Compaction checkpoint present, but summary_text is missing.</div>'."\n";
+        } else {
+            $html .= '    <div class="compaction-summary-note">Summary content is rendered once in the effective model context below.</div>'."\n";
+        }
+
+        $html .= "  </section>\n";
+
+        return $html;
+    }
+
+    /**
+     * @param list<string>|null $tools
+     */
+    private function renderAvailableToolsSnapshot(?array $tools, ?int $estimate): string
+    {
+        if (null === $tools) {
+            return '';
+        }
+
+        $items = [];
+        foreach ($tools as $entry) {
+            if ('' === $entry) {
+                continue;
+            }
+            $items[] = self::escapeHtml($entry);
+        }
+
+        $estimateLabel = null === $estimate
+            ? 'schema token estimate unavailable'
+            : \sprintf('~%s schema tokens', number_format($estimate));
+        if ([] === $items) {
+            $summary = \sprintf('Available tools (0 · %s)', $estimateLabel);
+
+            $html = '  <details class="available-tools available-tools-empty" open>'."\n";
+            $html .= '    <summary>'.self::escapeHtml($summary)."</summary>\n";
+            $html .= '    <div class="available-tools-empty-note">Latest retained LLM snapshot recorded zero available tools.</div>'."\n";
+            $html .= "  </details>\n";
+
+            return $html;
+        }
+
+        $summary = \sprintf(
+            'Available tools (%d · %s)',
+            \count($items),
+            $estimateLabel,
+        );
+
+        $html = '  <details class="available-tools" open>'."\n";
+        $html .= '    <summary>'.self::escapeHtml($summary)."</summary>\n";
+        $html .= "    <ul class=\"available-tools-list\">\n";
+        foreach ($items as $item) {
+            $html .= '      <li>'.$item."</li>\n";
+        }
+        $html .= "    </ul>\n";
+        $html .= "  </details>\n";
+
+        return $html;
+    }
+
+    /**
+     * @param array<string, mixed> $message
+     */
+    private function renderMessage(array $message): string
+    {
+        $role = self::strFromArray($message, 'role', 'unknown');
+        $metadata = \is_array($message['metadata'] ?? null) ? $message['metadata'] : [];
+        $isCompactSummary = true === ($metadata['compact_summary'] ?? false);
+        $content = \is_array($message['content'] ?? null) ? $message['content'] : [];
+        /** @var array<int, array<string, mixed>> $contentBlocks */
+        $contentBlocks = [];
+        foreach ($content as $block) {
+            if (\is_array($block)) {
+                $contentBlocks[] = $block;
+            }
+        }
+        $text = $this->extractTextFromContentBlocks($contentBlocks);
+        $cssRole = self::escapeHtml($role);
+        if ($isCompactSummary) {
+            $cssRole .= ' message-compact-summary';
+        }
+
+        $html = '  <div class="message message-'.$cssRole.'">'."\n";
+        $html .= '    <div class="message-role">'.self::escapeHtml($isCompactSummary ? 'compaction summary' : $role)."</div>\n";
+
+        if ($isCompactSummary) {
+            $html .= '    <div class="compact-summary-badge">OM-backed compaction summary in model context</div>'."\n";
+        }
+
+        if ('' !== $text) {
+            /** @var positive-int $contentLen */
+            $contentLen = mb_strlen($text);
+            if ($contentLen > 500 && \in_array($role, ['system', 'developer', 'user-context'], true)) {
+                $label = match ($role) {
+                    'system' => 'System instructions',
+                    'developer' => 'Developer instructions',
+                    default => 'Context',
+                };
+                $html .= '    <details class="instruction-block" open>'."\n";
+                $html .= '      <summary>'.self::escapeHtml($label).' ('.number_format($contentLen).' chars)</summary>'."\n";
+                $html .= '      <div class="message-content">'.self::escapeHtml($text)."</div>\n";
+                $html .= "    </details>\n";
+            } elseif ($isCompactSummary) {
+                $html .= '    <details class="compaction-in-context" open>'."\n";
+                $html .= '      <summary>'.self::escapeHtml(\sprintf('Summary in context (%s chars)', number_format($contentLen)))."</summary>\n";
+                $html .= '      <div class="message-content">'.self::escapeHtml($text)."</div>\n";
+                $html .= "    </details>\n";
+            } else {
+                $html .= '    <div class="message-content">'.self::escapeHtml($text)."</div>\n";
+            }
+        }
+
+        $thinking = '';
+        $details = $message['details'] ?? null;
+        if (\is_array($details) && \is_string($details['thinking'] ?? null)) {
+            $thinking = $details['thinking'];
+        }
+        if ('' !== $thinking) {
+            $html .= '    <details class="thinking-block" open>'."\n";
+            $html .= '      <summary>Thinking</summary>'."\n";
+            $html .= '      <div class="thinking-content">'.self::escapeHtml($thinking)."</div>\n";
+            $html .= "    </details>\n";
+        }
+
+        $toolCalls = $metadata['tool_calls'] ?? null;
+        if (\is_array($toolCalls) && [] !== $toolCalls) {
+            $html .= $this->renderToolCalls($toolCalls);
+        }
+
+        if ('tool' === $role) {
+            $meta = [];
+            $toolName = self::strFromArray($message, 'tool_name');
+            $toolCallId = self::strFromArray($message, 'tool_call_id');
+            if ('' !== $toolName) {
+                $meta[] = 'tool: '.$toolName;
+            }
+            if ('' !== $toolCallId) {
+                $meta[] = 'id: '.$toolCallId;
+            }
+            if (true === ($message['is_error'] ?? false)) {
+                $meta[] = 'error';
+            }
+            if ([] !== $meta) {
+                $html .= '    <div class="message-meta">'.self::escapeHtml(implode(' · ', $meta))."</div>\n";
+            }
+        }
+
+        $html .= "  </div>\n";
+
+        return $html;
+    }
+
     private function renderActiveToolDefinitions(): string
     {
         if (null === $this->toolbox) {
@@ -898,10 +470,7 @@ HTML;
             $name = self::escapeHtml($tool->getName());
             $description = self::escapeHtml($tool->getDescription());
             $parameters = $tool->getParameters() ?? new \stdClass();
-            $json = json_encode($parameters, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
-            if (!\is_string($json)) {
-                $json = '{}';
-            }
+            $json = self::encodePrettyJson($parameters);
 
             $html .= '    <div class="tool-definition">'."\n";
             $html .= '      <div class="tool-definition-name">'.$name."</div>\n";
@@ -916,62 +485,37 @@ HTML;
     }
 
     /**
-     * Extract plain text from typed content blocks.
-     *
-     * Real events.jsonl stores message content as:
-     *   [{"type":"text","text":"..."}]
-     *
      * @param array<int, array<string, mixed>> $blocks
      */
     private function extractTextFromContentBlocks(array $blocks): string
     {
         $parts = [];
         foreach ($blocks as $block) {
-            if (\is_array($block) && 'text' === ($block['type'] ?? null) && isset($block['text'])) {
+            if ('text' === ($block['type'] ?? null) && isset($block['text'])) {
                 $parts[] = (string) $block['text'];
+                continue;
             }
+
+            $type = self::strFromArray($block, 'type', 'unknown');
+            $parts[] = \sprintf(
+                "\n[%s content]\n%s\n",
+                $type,
+                self::encodePrettyJson($block),
+            );
         }
 
         return implode('', $parts);
     }
 
-    /**
-     * Render a usage / token stats section.
-     *
-     * @param array<string, mixed> $usage
-     */
-    private function renderUsage(array $usage): string
+    private static function encodePrettyJson(mixed $value): string
     {
-        $inputTokens = self::intFromArray($usage, 'input_tokens');
-        $outputTokens = self::intFromArray($usage, 'output_tokens');
-        $totalTokens = self::intFromArray($usage, 'total_tokens');
+        $json = json_encode($value, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
 
-        if (0 === $inputTokens && 0 === $outputTokens && 0 === $totalTokens) {
-            return '';
-        }
-
-        $html = '    <div class="usage-stats">'."\n";
-        $html .= '      <span class="usage-label">Tokens:</span>';
-        if ($inputTokens > 0) {
-            $html .= ' <span class="usage-item">in: '.number_format($inputTokens).'</span>';
-        }
-        if ($outputTokens > 0) {
-            $html .= ' <span class="usage-item">out: '.number_format($outputTokens).'</span>';
-        }
-        if ($totalTokens > 0) {
-            $html .= ' <span class="usage-item">total: '.number_format($totalTokens).'</span>';
-        }
-        $html .= "\n    </div>\n";
-
-        return $html;
+        return false === $json ? '{}' : $json;
     }
 
     /**
-     * Render tool_calls from an assistant message.
-     *
-     * Each tool call carries: id, name, arguments (JSON string or array).
-     *
-     * @param array<int, array<string, mixed>> $toolCalls
+     * @param array<int, mixed> $toolCalls
      */
     private function renderToolCalls(array $toolCalls): string
     {
@@ -996,7 +540,7 @@ HTML;
             $html .= "</summary>\n";
 
             if (null !== $tcArgs) {
-                $html .= '        <div class="tool-args">'.self::renderPrettyJson($tcArgs)."</div>\n";
+                $html .= '        <div class="tool-args">'.$this->renderPrettyJson($tcArgs)."</div>\n";
             }
 
             $html .= "      </details>\n";
@@ -1006,16 +550,8 @@ HTML;
         return $html;
     }
 
-    /**
-     * Render any value as escaped pretty-printed JSON inside a <pre> block.
-     *
-     * Accepts arrays, objects, strings, numbers — produces human-readable
-     * escaped JSON output.
-     */
-    private static function renderPrettyJson(mixed $value): string
+    private function renderPrettyJson(mixed $value): string
     {
-        // If the value is a JSON string, try to decode and re-encode for
-        // pretty-printing (e.g. tool call arguments).
         if (\is_string($value)) {
             $decoded = json_decode($value, true);
             if (null !== $decoded) {
@@ -1024,24 +560,18 @@ HTML;
         }
 
         if (\is_array($value) || \is_object($value)) {
-            $json = json_encode($value, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
+            $json = self::encodePrettyJson($value);
         } else {
-            $json = json_encode([$value], \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
-        }
-
-        if (!\is_string($json)) {
-            $json = '{}';
+            $json = self::encodePrettyJson([$value]);
         }
 
         return '<pre class="pretty-json">'.self::escapeHtml($json).'</pre>'."\n";
     }
 
-    // ── CSS ────────────────────────────────────────────────────────────────
-
     private function exportCss(): string
     {
         return <<<'CSS'
-/* Hatfield Session Export — standalone styles */
+/* Hatfield Session Export — effective model context */
 :root {
     --bg: #1a1a2e;
     --surface: #16213e;
@@ -1056,6 +586,7 @@ HTML;
     --tool-bg: #1a2a3a;
     --error-bg: #3a1a1a;
     --code-bg: #0d1117;
+    --compaction-bg: #2a2140;
     --font: system-ui, -apple-system, sans-serif;
     --mono: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
 }
@@ -1079,30 +610,17 @@ body {
     font-size: 1.5rem;
     margin-bottom: 0.5rem;
 }
-.session-meta {
+.session-meta, .session-subtitle {
     color: var(--text-muted);
     font-size: 0.85rem;
 }
-.transcript { }
-.turn {
-    margin-bottom: 1.5rem;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    overflow: hidden;
-}
-.turn-label {
-    background: var(--surface-alt);
-    color: var(--text-muted);
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    padding: 0.35rem 1rem;
-}
+.session-subtitle { margin-top: 0.5rem; }
 .message {
     padding: 0.75rem 1rem;
-    border-bottom: 1px solid var(--border);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 0.75rem;
 }
-.message:last-child { border-bottom: none; }
 .message-role {
     font-size: 0.7rem;
     text-transform: uppercase;
@@ -1112,8 +630,22 @@ body {
 }
 .message-user { background: var(--user-bg); }
 .message-assistant { background: var(--assistant-bg); }
-.message-system { background: transparent; color: var(--text-muted); font-style: italic; }
-.message-error { background: var(--error-bg); }
+.message-tool { background: var(--tool-bg); }
+.message-system,
+.message-developer,
+.message-user-context { background: var(--surface); }
+.message-user-context .message-role { color: var(--accent-dim); }
+.message-compact-summary { background: var(--compaction-bg); border-color: var(--accent-dim); }
+.compact-summary-badge {
+    display: inline-block;
+    margin-bottom: 0.5rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    background: var(--surface-alt);
+    color: var(--accent);
+    font-size: 0.72rem;
+    font-weight: 600;
+}
 .message-content {
     white-space: pre-wrap;
     word-break: break-word;
@@ -1123,10 +655,10 @@ body {
     color: var(--text-muted);
     margin-top: 0.5rem;
 }
-.thinking-block {
-    margin-bottom: 0.5rem;
-}
-.thinking-block summary {
+.thinking-block { margin: 0.5rem 0; }
+.thinking-block summary,
+.instruction-block summary,
+.compaction-in-context summary {
     color: var(--text-muted);
     font-size: 0.8rem;
     cursor: pointer;
@@ -1141,100 +673,47 @@ body {
     white-space: pre-wrap;
     color: var(--text-muted);
 }
-.tool-call, .tool-result {
-    padding: 0.5rem 1rem;
-    background: var(--tool-bg);
-    border-bottom: 1px solid var(--border);
+.compaction-banner {
+    margin-bottom: 1rem;
+    padding: 0.85rem 1rem;
+    border: 1px solid var(--accent-dim);
+    border-radius: 8px;
+    background: var(--compaction-bg);
 }
-.tool-call summary, .tool-result summary {
-    cursor: pointer;
-    font-size: 0.85rem;
-}
-.tool-name {
+.compaction-label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
     color: var(--accent);
-    font-family: var(--mono);
+    font-weight: 700;
+}
+.compaction-meta, .compaction-om-meta, .compaction-missing, .compaction-summary-note {
+    margin-top: 0.35rem;
+    color: var(--text-muted);
     font-size: 0.82rem;
 }
-.tool-call-id {
+.available-tools-empty-note {
+    margin-top: 0.4rem;
     color: var(--text-muted);
-    font-size: 0.7rem;
-}
-.tool-duration {
-    color: var(--text-muted);
-    font-size: 0.75rem;
-}
-.tool-error-label {
-    color: #ff6b6b;
-    font-size: 0.75rem;
-}
-.tool-output {
-    margin-top: 0.5rem;
-    padding: 0.75rem;
-    background: var(--code-bg);
-    border-radius: 4px;
-    font-family: var(--mono);
     font-size: 0.8rem;
-    white-space: pre-wrap;
-    overflow-x: auto;
-    max-height: 400px;
-    overflow-y: auto;
 }
-.tool-error .tool-output {
-    color: #ff6b6b;
+.compaction-om { margin-top: 0.75rem; }
+.compaction-om-label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--accent-dim);
+    margin-bottom: 0.25rem;
 }
-/* Event card */
-.event {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 0;
-    margin-bottom: 0.5rem;
-    overflow: hidden;
-}
-.event:last-child { margin-bottom: 0; }
-.event-meta {
-    background: var(--surface-alt);
-    padding: 0.25rem 0.75rem;
-    font-size: 0.72rem;
-    color: var(--text-muted);
-    display: flex;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-}
-.event-type {
-    font-weight: 600;
-    color: var(--accent);
-    font-family: var(--mono);
-}
-.event-seq {
-    color: var(--text-muted);
-}
-.event-ts {
-    color: var(--text-muted);
-    margin-left: auto;
-}
-/* Readable summary inside event card — inherit existing message/tool styles */
-.event .message,
-.event .tool-call,
-.event .tool-result {
-    border: none;
-    border-bottom: 1px solid var(--border);
-    background: transparent;
-}
-.event .message:last-child,
-.event .tool-call:last-child,
-.event .tool-result:last-child {
-    border-bottom: none;
-}
-.available-tools {
-    margin: 0.5rem 1rem 0.75rem;
+.available-tools, .tool-definitions {
+    margin: 0 0 0.75rem;
     padding: 0.5rem 0.75rem;
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 6px;
     font-size: 0.85rem;
 }
-.available-tools summary {
+.available-tools summary, .tool-definitions summary {
     cursor: pointer;
     color: var(--text-muted);
     font-weight: 600;
@@ -1242,19 +721,6 @@ body {
 .available-tools-list {
     margin: 0.4rem 0 0 1.1rem;
     color: var(--text);
-}
-.tool-definitions {
-    margin: 0.5rem 1rem 0.75rem;
-    padding: 0.5rem 0.75rem;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    font-size: 0.85rem;
-}
-.tool-definitions summary {
-    cursor: pointer;
-    color: var(--text-muted);
-    font-weight: 600;
 }
 .tool-definition {
     margin-top: 0.75rem;
@@ -1276,56 +742,18 @@ body {
     color: var(--text);
     white-space: pre-wrap;
 }
-.event-raw summary {
-    font-size: 0.72rem;
-    color: var(--text-muted);
-    cursor: pointer;
-    padding: 0.25rem 0.75rem;
-}
-.event-raw summary:hover {
-    color: var(--accent-dim);
-}
-.event-json {
-    margin: 0 0.75rem 0.5rem;
-    padding: 0.75rem;
-    background: var(--code-bg);
-    border-radius: 4px;
-    font-family: var(--mono);
-    font-size: 0.75rem;
-    white-space: pre-wrap;
-    overflow-x: auto;
-    max-height: 500px;
-    overflow-y: auto;
-    color: var(--text-muted);
-    line-height: 1.4;
-}
-.export-footer {
-    margin-top: 3rem;
-    padding-top: 1rem;
-    border-top: 1px solid var(--border);
-    color: var(--text-muted);
-    font-size: 0.75rem;
-    text-align: center;
-}
-/* Tool call header (no args) */
-.tool-call-header {
-    padding: 0.25rem 0;
-    font-size: 0.85rem;
-}
-/* Tool call / tool result inside assistant message */
 .tool-call-inline {
     padding: 0.35rem 0;
     margin: 0.25rem 0;
 }
-.tool-call-inline summary {
-    cursor: pointer;
+.tool-call-inline summary { cursor: pointer; font-size: 0.82rem; }
+.tool-name {
+    color: var(--accent);
+    font-family: var(--mono);
     font-size: 0.82rem;
 }
-/* Tool arguments / pretty JSON */
-.tool-args {
-    margin-top: 0.35rem;
-    padding: 0 0.5rem 0.5rem;
-}
+.tool-call-id { color: var(--text-muted); font-size: 0.72rem; }
+.tool-args { margin-top: 0.35rem; padding: 0 0.5rem 0.5rem; }
 .pretty-json {
     padding: 0.5rem 0.75rem;
     background: var(--code-bg);
@@ -1338,101 +766,22 @@ body {
     overflow-y: auto;
     color: var(--text-muted);
     line-height: 1.4;
-    margin: 0;
-}
-/* Usage / token stats */
-.usage-stats {
-    padding: 0.35rem 0;
-    font-size: 0.75rem;
-    color: var(--text-muted);
-}
-.usage-label {
-    font-weight: 600;
-}
-.usage-item {
-    margin-left: 0.5rem;
-    font-family: var(--mono);
-}
-/* Instruction block for long system/developer messages */
-.instruction-block summary {
-    cursor: pointer;
-    font-size: 0.8rem;
-    color: var(--accent-dim);
-    font-weight: 600;
+    margin: 0.35rem 0 0;
 }
 .instruction-block .message-content {
     max-height: 500px;
     overflow-y: auto;
     margin-top: 0.35rem;
 }
-/* Additional message role styles */
-.message-system,
-.message-developer,
-.message-user-context { background: var(--surface); }
-.message-user-context .message-role { color: var(--accent-dim); }
-.message-human { background: var(--user-bg); }
-.message-cancelled { background: transparent; color: var(--text-muted); font-style: italic; }
-.message-command { background: var(--surface); }
-/* Event card message override: preserve background for readability */
-.event .message-system,
-.event .message-developer,
-.event .message-user-context,
-.event .message-human,
-.event .message-cancelled,
-.event .message-command {
-    background: transparent;
-    border-bottom: 1px solid var(--border);
+.export-footer {
+    margin-top: 3rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    text-align: center;
 }
 details[open] > summary { margin-bottom: 0.25rem; }
 CSS;
-    }
-
-    // ── Helpers ────────────────────────────────────────────────────────────
-
-    /**
-     * Parse the raw JSONL content into an array of event arrays, sorted by seq.
-     *
-     * @return list<array<string, mixed>>
-     */
-    private function parseEvents(string $content): array
-    {
-        $events = [];
-
-        foreach (explode("\n", $content) as $lineIndex => $line) {
-            $trimmed = trim($line);
-            if ('' === $trimmed) {
-                continue;
-            }
-
-            try {
-                $event = json_decode($trimmed, true, 512, \JSON_THROW_ON_ERROR);
-            } catch (\JsonException $exception) {
-                $this->logger?->warning('Session export skipped unparseable events.jsonl line.', [
-                    'component' => 'session_export',
-                    'event_type' => 'session_export.event_line_unparseable',
-                    'line_offset' => $lineIndex,
-                    'error_class' => $exception::class,
-                    'error_message' => $exception->getMessage(),
-                ]);
-
-                continue;
-            }
-
-            if (!\is_array($event)) {
-                continue;
-            }
-
-            $events[] = $event;
-        }
-
-        // Sort by seq (canonical order).
-        usort($events, static function (array $a, array $b): int {
-            $seqA = self::intFromArray($a, 'seq');
-            $seqB = self::intFromArray($b, 'seq');
-
-            return $seqA <=> $seqB;
-        });
-
-        return $events;
     }
 }

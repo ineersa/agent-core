@@ -24,8 +24,9 @@ final class SubagentLiveToggleInputListener implements TuiListenerRegistrar
         $questionController = $services->questionController;
 
         $context->tui->addListener(
-            static function (InputEvent $event) use ($context, $state, $screen, $picker, $questionCoordinator, $questionController): void {
-                if ("\x1c" !== $event->getData()) {
+            static function (InputEvent $event) use ($context, $services, $state, $screen, $picker, $questionCoordinator, $questionController): void {
+                $keys = $screen->editorWidget()->getKeybindings();
+                if (!$keys->matches($event->getData(), 'toggle_subagent_live')) {
                     return;
                 }
 
@@ -38,6 +39,7 @@ final class SubagentLiveToggleInputListener implements TuiListenerRegistrar
                         $questionController->close();
                     }
                     SubagentLiveMainReturn::returnToMain($state, $screen, $context->client);
+                    $services->childPoller->resetProjection();
                     $screen->setWorkingMessage('Returned to main session (Ctrl+\\).');
 
                     return;

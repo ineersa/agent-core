@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Picker;
 
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
+use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
@@ -15,42 +16,45 @@ use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\Picker\FavoritePickerController;
 use Ineersa\Tui\Picker\ModelPickerController;
 use Ineersa\Tui\Runtime\TuiSessionState;
+use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Theme\TuiTheme;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\PropertyAccess\PropertyAccess;
+use Symfony\Component\Tui\Widget\SelectListWidget;
 
 /**
- * Tests for the static model picker item builder and findItemIndex.
- *
- * Does not require a running TUI or Symfony widget tree — the tested
- * methods are pure data transforms.
+ * Tests model picker item construction and input routing.
  */
 class ModelPickerControllerTest extends TestCase
 {
     private string $tempDir;
     private string $homeDir;
+    private AppConfig $appConfig;
 
     protected function setUp(): void
     {
         parent::setUp();
-        $this->tempDir = sys_get_temp_dir().'/hatfield-picker-test-'.uniqid('', true);
-        $this->homeDir = $this->tempDir.'/home';
-        mkdir($this->homeDir, 0777, true);
-        mkdir($this->homeDir.'/.hatfield', 0777, true);
-        mkdir($this->tempDir.'/project/.hatfield/sessions', 0777, true);
+        $this->tempDir = TestDirectoryIsolation::createProjectTempDir('picker');
+        $this->homeDir = TestDirectoryIsolation::createOsTempDir('picker-home');
+        TestDirectoryIsolation::createHatfieldTree($this->tempDir, withSessions: true);
+        TestDirectoryIsolation::ensureDirectory($this->homeDir.'/.hatfield');
         file_put_contents($this->homeDir.'/.hatfield/settings.yaml', "tui:\n    theme: cyberpunk\n");
     }
 
     protected function tearDown(): void
     {
-        $this->removeDir($this->tempDir);
+        TestDirectoryIsolation::removeDirectory($this->tempDir);
+        TestDirectoryIsolation::removeDirectory($this->homeDir);
         parent::tearDown();
     }
 
@@ -170,6 +174,41 @@ class ModelPickerControllerTest extends TestCase
         $this->assertNull(ModelPickerController::findItemIndex([], 'anything'));
     }
 
+    /**
+     * @return iterable<string, array{0: string}>
+     */
+    public static function provideCtrlFSequences(): iterable
+    {
+        yield 'legacy' => ["\x06"];
+        yield 'kitty' => ["\x1b[102;5u"];
+    }
+
+    #[Test]
+    #[DataProvider('provideCtrlFSequences')]
+    public function ctrlFTogglesTheSelectedFavorite(string $sequence): void
+    {
+        $modelService = $this->buildService();
+        $model = new AiModelReference('deepseek', 'deepseek-v4-pro');
+        $this->assertFalse($modelService->isFavorite($model));
+
+        $harness = new VirtualTuiHarness(sessionId: 'picker');
+        $controller = new ModelPickerController(
+            $harness->tui(),
+            $harness->screen(),
+            new TuiSessionState('picker'),
+            $modelService,
+            $this->appConfig,
+            new NullLogger(),
+        );
+        $controller->open();
+
+        $focus = $harness->tui()->getFocus();
+        $this->assertInstanceOf(SelectListWidget::class, $focus);
+        $focus->handleInput($sequence);
+
+        $this->assertTrue($modelService->isFavorite($model));
+    }
+
     // ── Helpers ──
 
     /**
@@ -188,7 +227,7 @@ class ModelPickerControllerTest extends TestCase
         }
 
         $ai = AiConfig::optionalFromArray(['ai' => $aiData]);
-        $appConfig = new AppConfig(
+        $this->appConfig = new AppConfig(
             tui: new TuiConfig(theme: 'cyberpunk'),
             logging: new LoggingConfig(),
             sessions: new SessionsConfig(),
@@ -198,13 +237,14 @@ class ModelPickerControllerTest extends TestCase
             cwd: getcwd() ?: '/',
         );
 
+        $appConfig = $this->appConfig;
         $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
         $homeWriter = new SettingsOverrideWriter($pathResolver, PropertyAccess::createPropertyAccessor(), new Filesystem());
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: new AppConfig(
                 tui: new TuiConfig(theme: 'default'),
                 logging: new LoggingConfig(),
-                cwd: $this->tempDir.'/project',
+                cwd: $this->tempDir,
             ),
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
             dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
@@ -254,25 +294,5 @@ class ModelPickerControllerTest extends TestCase
                 ],
             ],
         ];
-    }
-
-    private function removeDir(string $dir): void
-    {
-        if (!is_dir($dir)) {
-            return;
-        }
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
-        );
-        foreach ($iterator as $file) {
-            if ($file->isDir()) {
-                rmdir($file->getPathname());
-            } else {
-                chmod($file->getPathname(), 0644);
-                unlink($file->getPathname());
-            }
-        }
-        rmdir($dir);
     }
 }

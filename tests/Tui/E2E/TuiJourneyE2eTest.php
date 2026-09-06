@@ -23,6 +23,7 @@ use PHPUnit\Framework\TestCase;
  *  - Real shell prefix + follow-up after completed shell run.
  *  - A single model-interaction step submits a prompt and verifies
  *    the replay-backed assistant block appears.
+ *  - The overheight /hotkeys path boots and renders through the packaged writer.
  *  - Teardown sends Ctrl+D for a clean exit; TmuxHarness destructor
  *    kills the tmux session.
  *
@@ -62,9 +63,10 @@ final class TuiJourneyE2eTest extends TestCase
      *  1. Startup layout (logo, status, footer)
      *  2. Shell !ls prefix — real command output proof + ordering
      *  3. Inline shell on completed run + follow-up (issue #183 repro)
-     *  4. Clean exit via Ctrl+D
+     *  4. Packaged-writer integration through an overheight /hotkeys frame
+     *  5. Clean exit via Ctrl+D
      *
-     * Virtual-only: /hotkeys, slash completion/cursor, chrome ordering,
+     * Virtual-only: slash completion/cursor, chrome ordering,
      * !! rejection ({@see TuiVirtualInputTest}, {@see TuiStartupVirtualRenderTest}).
      */
     public function testJourneyCoversCoreTuiBehavior(): void
@@ -81,6 +83,7 @@ final class TuiJourneyE2eTest extends TestCase
             $this->journeyPhase1StartupLayout($pane);
             $this->journeyPhase4ShellPrefixOutput($pane);
             $this->journeyPhase9InlineShellOnCompletedRun($pane);
+            $this->journeyPhase10OverheightHotkeysUsesPackagedWriter($pane);
 
             $this->tmux->sendKey($pane, 'C-d');
         } catch (\Throwable $e) {
@@ -163,20 +166,19 @@ final class TuiJourneyE2eTest extends TestCase
             $pane,
             static function (string $cap): bool {
                 return str_contains($cap, 'bash')
-                    && str_contains($cap, 'command:')
+                    && str_contains($cap, '$ ls -1')
                     && str_contains($cap, 'ls -1');
             },
             timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
-            message: 'Direct !ls -1 never rendered bash command: card text',
+            message: 'Direct !ls -1 never rendered collapsed bash $ command card text',
             history: 2000,
         );
         $this->assertStringContainsString('bash', $plain);
-        $this->assertStringContainsString('command:', $plain);
+        $this->assertStringContainsString('$ ls -1', $plain);
         $this->assertStringContainsString('ls -1', $plain);
         $this->assertStringContainsString($marker, $plain);
 
-        // Colored/styled exchange proof: argument key is themed separately from the colon/value
-        // (ToolArgumentColoredFormatter), so plain "command:" may not appear contiguously in ANSI.
+        // Colored/styled exchange proof: collapsed bash command uses MarkdownCode styling.
         $ansi = $this->tmux->captureAnsi($pane);
         $this->assertMatchesRegularExpression(
             '/\x1b\[[0-9;]*m/',
@@ -184,9 +186,9 @@ final class TuiJourneyE2eTest extends TestCase
             'Direct-shell bash card ANSI capture must include SGR color escapes',
         );
         $this->assertMatchesRegularExpression(
-            '/command\x1b\[[0-9;]*m:\s*\x1b\[[0-9;]*m?\s*\'?ls -1\'?|command\x1b\[[0-9;]*m: \'?ls -1\'?/',
+            '/\x1b\[[0-9;]*m\$ ls -1/',
             $ansi,
-            'ANSI capture must colorize the command argument key separately from its value',
+            'ANSI capture must style the collapsed bash $ command marker',
         );
         $this->assertStringContainsString('bash', $ansi);
         $this->assertStringContainsString('ls -1', $ansi);
@@ -424,5 +426,27 @@ final class TuiJourneyE2eTest extends TestCase
                 $lastLine ?? 0,
             ),
         );
+    }
+
+    /**
+     * Integration guard for the app-owned ScreenWriter in the packaged TUI.
+     * tmux consumes terminal bytes synchronously, so real-terminal presentation
+     * latency remains covered by manual GNOME Terminal and Kitty validation.
+     */
+    private function journeyPhase10OverheightHotkeysUsesPackagedWriter(TmuxPane $pane): void
+    {
+        $this->tmux->sendKey($pane, 'C-u');
+        $this->tmux->sendLiteral($pane, '/hotkeys');
+        $this->tmux->sendKey($pane, 'Enter');
+
+        $capture = $this->tmux->waitForCaptureContains(
+            $pane,
+            'App shortcuts (Ctrl+C, Ctrl+D)',
+            timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
+            message: 'Overheight /hotkeys frame did not settle with its bottom chrome visible',
+        );
+
+        $this->assertStringContainsString('App shortcuts (Ctrl+C, Ctrl+D)', $capture);
+        $this->assertStringContainsString('◆', $capture);
     }
 }

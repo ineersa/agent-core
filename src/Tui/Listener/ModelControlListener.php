@@ -81,8 +81,8 @@ final class ModelControlListener implements TuiListenerRegistrar, SlashCommandCa
         $tui->addListener(static function (InputEvent $event) use (
             $modelService, $state, $appConfig, $screen,
         ): void {
-            // Ctrl+P is \x10
-            if ("\x10" !== $event->getData()) {
+            $keys = $screen->editorWidget()->getKeybindings();
+            if (!$keys->matches($event->getData(), 'cycle_favorite_model')) {
                 return;
             }
             $event->stopPropagation();
@@ -123,8 +123,8 @@ final class ModelControlListener implements TuiListenerRegistrar, SlashCommandCa
         $tui->addListener(static function (InputEvent $event) use (
             $modelService, $state, $screen,
         ): void {
-            // Shift+Tab sends \x1b[Z
-            if ("\x1b[Z" !== $event->getData()) {
+            $keys = $screen->editorWidget()->getKeybindings();
+            if (!$keys->matches($event->getData(), 'cycle_reasoning')) {
                 return;
             }
             $event->stopPropagation();

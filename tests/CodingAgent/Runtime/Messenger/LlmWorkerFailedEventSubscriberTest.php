@@ -12,11 +12,15 @@ use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Runtime\Messenger\LlmWorkerFailedEventSubscriber;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Event\WorkerMessageFailedEvent;
 use Symfony\Component\Messenger\Exception\HandlerFailedException;
 use Symfony\Component\Messenger\Exception\TransportException;
 use Symfony\Component\Messenger\Exception\UnrecoverableMessageHandlingException;
+use Symfony\Component\Messenger\MessageBusInterface;
+use Symfony\Component\Messenger\Transport\Receiver\ReceiverInterface;
+use Symfony\Component\Messenger\Worker;
 
 final class LlmWorkerFailedEventSubscriberTest extends TestCase
 {
@@ -151,27 +155,32 @@ final class LlmWorkerFailedEventSubscriberTest extends TestCase
     }
 
     #[Test]
-    public function logsDispatchFailureWithoutRawMessageAndDoesNotRethrow(): void
+    public function logsDispatchFailureWithoutRawMessageAndRethrowsExactException(): void
     {
-        $rawMarker = self::RAW_MARKER;
-        $commandBus = new class($rawMarker) implements \Symfony\Component\Messenger\MessageBusInterface {
-            public function __construct(private readonly string $rawMarker)
+        $dispatchFailure = new TransportException(self::RAW_MARKER);
+        $commandBus = new class($dispatchFailure) implements MessageBusInterface {
+            public function __construct(private readonly TransportException $dispatchFailure)
             {
             }
 
             public function dispatch(object $message, array $stamps = []): Envelope
             {
-                throw new TransportException($this->rawMarker);
+                throw $this->dispatchFailure;
             }
         };
         $logger = new TestLogger();
         $subscriber = new LlmWorkerFailedEventSubscriber($commandBus, $logger);
 
-        $subscriber->onWorkerMessageFailed(new WorkerMessageFailedEvent(
-            new Envelope($this->executeLlmStep()),
-            'llm',
-            $this->providerFailure(),
-        ));
+        try {
+            $subscriber->onWorkerMessageFailed(new WorkerMessageFailedEvent(
+                new Envelope($this->executeLlmStep()),
+                'llm',
+                $this->providerFailure(),
+            ));
+            $this->fail('Terminal result dispatch failure must escape the subscriber.');
+        } catch (TransportException $exception) {
+            $this->assertSame($dispatchFailure, $exception);
+        }
 
         $records = array_values(array_filter(
             $logger->records,
@@ -181,6 +190,83 @@ final class LlmWorkerFailedEventSubscriberTest extends TestCase
         $this->assertSame(TransportException::class, $records[0]['context']['exception_class'] ?? null);
         $this->assertArrayNotHasKey('exception_message', $records[0]['context']);
         $this->assertStringNotContainsString(self::RAW_MARKER, json_encode($records[0], \JSON_THROW_ON_ERROR));
+    }
+
+    #[Test]
+    public function workerDoesNotRejectOriginalEnvelopeWhenTerminalResultDispatchFails(): void
+    {
+        $message = $this->executeLlmStep();
+        $providerFailure = $this->providerFailure();
+        $handlerBus = new class($providerFailure) implements MessageBusInterface {
+            public function __construct(private readonly RetryableLlmStepFailureException $providerFailure)
+            {
+            }
+
+            public function dispatch(object $message, array $stamps = []): Envelope
+            {
+                throw $this->providerFailure;
+            }
+        };
+
+        $dispatchFailure = new TransportException(self::RAW_MARKER);
+        $terminalBus = new class($dispatchFailure) implements MessageBusInterface {
+            public function __construct(private readonly TransportException $dispatchFailure)
+            {
+            }
+
+            public function dispatch(object $message, array $stamps = []): Envelope
+            {
+                throw $this->dispatchFailure;
+            }
+        };
+
+        $receiver = new class(new Envelope($message)) implements ReceiverInterface {
+            /** @var list<Envelope> */
+            public array $acked = [];
+
+            /** @var list<Envelope> */
+            public array $rejected = [];
+
+            private bool $delivered = false;
+
+            public function __construct(private readonly Envelope $envelope)
+            {
+            }
+
+            public function get(): iterable
+            {
+                if ($this->delivered) {
+                    return;
+                }
+
+                $this->delivered = true;
+                yield $this->envelope;
+            }
+
+            public function ack(Envelope $envelope): void
+            {
+                $this->acked[] = $envelope;
+            }
+
+            public function reject(Envelope $envelope): void
+            {
+                $this->rejected[] = $envelope;
+            }
+        };
+
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addSubscriber(new LlmWorkerFailedEventSubscriber($terminalBus, new TestLogger()));
+        $worker = new Worker(['llm' => $receiver], $handlerBus, $dispatcher);
+
+        try {
+            $worker->run(['sleep' => 0]);
+            $this->fail('Worker must propagate terminal result dispatch failure.');
+        } catch (TransportException $exception) {
+            $this->assertSame($dispatchFailure, $exception);
+        }
+
+        $this->assertSame([], $receiver->acked);
+        $this->assertSame([], $receiver->rejected);
     }
 
     private function executeLlmStep(): ExecuteLlmStep

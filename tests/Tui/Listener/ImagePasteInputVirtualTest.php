@@ -18,6 +18,7 @@ use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Tui\Event\TickEvent;
@@ -40,8 +41,18 @@ final class ImagePasteInputVirtualTest extends TestCase
         parent::tearDown();
     }
 
+    /**
+     * @return iterable<string, array{0: string}>
+     */
+    public static function provideCtrlVSequences(): iterable
+    {
+        yield 'legacy' => ["\x16"];
+        yield 'kitty' => ["\x1b[118;5u"];
+    }
+
     #[Test]
-    public function ctrlVInsertsPlaceholderImmediatelyBeforeAsyncReadCompletes(): void
+    #[DataProvider('provideCtrlVSequences')]
+    public function ctrlVInsertsPlaceholderImmediatelyBeforeAsyncReadCompletes(string $sequence): void
     {
         $png = file_get_contents(__DIR__.'/../E2E/fixtures/paste-test-1x1.png');
         $this->assertNotFalse($png);
@@ -68,7 +79,7 @@ final class ImagePasteInputVirtualTest extends TestCase
         $listener->register($context);
         $harness->startInputLoop();
 
-        $harness->sendInput("\x16");
+        $harness->sendInput($sequence);
         $this->assertStringContainsString('[Image #1]', $harness->screen()->promptEditor()->getText());
         $this->assertSame(1, $state->pastedImagePasteInProgressIndex);
         $this->assertArrayNotHasKey(1, $state->pastedImagePendingByIndex);

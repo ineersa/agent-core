@@ -25,7 +25,7 @@ final readonly class BashTimeoutSchemaProvider implements SchemaProviderInterfac
     {
         return [
             'description' => \sprintf(
-                'Timeout in seconds (default: %d, max: %d). Use for commands that may hang.',
+                'Timeout in seconds (default: %d, max: %d). Provide an explicit higher value for commands that need more than the default.',
                 $this->config->defaultTimeoutSeconds,
                 $this->config->maxTimeoutSeconds,
             ),

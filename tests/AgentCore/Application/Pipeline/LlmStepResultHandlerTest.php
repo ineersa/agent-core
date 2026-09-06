@@ -126,6 +126,7 @@ final class LlmStepResultHandlerTest extends TestCase
     {
         $executionBus = new TestMessageBus();
         $stepDispatcher = new StepDispatcher(new TestMessageBus(), $executionBus);
+        $commandBus = new TestMessageBus();
 
         $commandStore = new InMemoryCommandStore();
         $handler = new LlmStepResultHandler(
@@ -139,6 +140,7 @@ final class LlmStepResultHandlerTest extends TestCase
             messageNormalizer: new AgentMessageNormalizer(),
             stepDispatcher: $stepDispatcher,
             normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
+            commandBus: $commandBus,
         );
 
         $existingMessages = [
@@ -207,6 +209,14 @@ final class LlmStepResultHandlerTest extends TestCase
         $this->assertSame(\strlen('Partial output before abort'), $abortedPayload['text_length'], 'Text length should match.');
         $this->assertNotNull($abortedPayload['text_sha256']);
         $this->assertFalse($abortedPayload['has_thinking']);
+
+        // Match ToolCallResultHandler / immediate-cancel: wake AdvanceRun so a
+        // queued AppendMessage can drain after AgentEnd(cancelled).
+        $this->assertCount(1, $result->postCommit);
+        ($result->postCommit[0])();
+        $this->assertCount(1, $commandBus->messages);
+        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\AdvanceRun::class, $commandBus->messages[0]);
+        $this->assertStringStartsWith('post-cancel-advance-', $commandBus->messages[0]->stepId());
     }
 
     public function testAbortedWithOnlyTextDoesNotAppendMessage(): void

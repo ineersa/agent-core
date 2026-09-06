@@ -24,6 +24,8 @@ use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use Ineersa\Tui\Transcript\TranscriptMountedWidget;
 use Ineersa\Tui\Widget\LiveTextWidget;
+use Symfony\Component\Tui\Input\Key;
+use Symfony\Component\Tui\Input\Keybindings;
 use Symfony\Component\Tui\Render\RenderContext;
 use Symfony\Component\Tui\Style\Padding;
 use Symfony\Component\Tui\Style\Style;
@@ -219,6 +221,20 @@ final class ChatScreen
         $tui->add($this->compactHeaderWidget);
         $tui->add($this->editorSepWidget);
         $tui->add($this->promptEditor->getWidget());
+
+        // App shortcuts live on the mounted editor so InputEvent listeners
+        // match through the context-shared KeyParser (legacy + Kitty).
+        $this->promptEditor->setKeybindings(new Keybindings([
+            // Preserve EditorWidget default Shift+Enter and add portable Ctrl+J.
+            'new_line' => ['ctrl+j', 'shift+enter'],
+            'toggle_preview_expansion' => ['ctrl+o'],
+            'toggle_loaded_resources' => ['ctrl+r'],
+            'toggle_subagent_live' => [Key::ctrl('\\')],
+            'cycle_favorite_model' => ['ctrl+p'],
+            'cycle_reasoning' => ['shift+tab'],
+            'trigger_completion' => ['tab'],
+            'paste_image' => ['ctrl+v'],
+        ]));
 
         // The PromptEditor wraps an EditorWidget that is a DI singleton
         // reused across TUI iterations during session switches.  After

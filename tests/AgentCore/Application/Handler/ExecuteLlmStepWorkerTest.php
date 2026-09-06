@@ -215,7 +215,7 @@ final class ExecuteLlmStepWorkerTest extends TestCase
         $this->assertSame(1, $platform->invocationCount);
     }
 
-    public function testRetryableProviderErrorThrowsRecoverableMessengerException(): void
+    public function testRetryableProviderErrorThrowsStructuredFailure(): void
     {
         $errorResult = new PlatformInvocationResult(
             assistantMessage: null,
@@ -249,8 +249,6 @@ final class ExecuteLlmStepWorkerTest extends TestCase
             ));
             $this->fail('Retryable provider failure must throw RetryableLlmStepFailureException.');
         } catch (RetryableLlmStepFailureException $exception) {
-            $this->assertFalse($exception->forceRetry());
-            $this->assertNull($exception->getRetryDelay());
             $this->assertTrue($exception->error['retryable'] ?? false);
             $this->assertSame('tools-ref', $exception->toolsRef);
             $this->assertSame('openai-codex/gpt-5.6-luna', $exception->model);

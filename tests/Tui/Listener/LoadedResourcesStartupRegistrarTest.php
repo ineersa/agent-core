@@ -29,6 +29,7 @@ use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\ThemeRegistry;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -88,6 +89,40 @@ final class LoadedResourcesStartupRegistrarTest extends TestCase
         $context->ticks->dispatch(new TickEvent());
 
         $this->assertFalse($harness->screen()->hasLoadedResourcesBlock());
+    }
+
+    /**
+     * @return iterable<string, array{0: string}>
+     */
+    public static function provideCtrlRSequences(): iterable
+    {
+        yield 'legacy' => ["\x12"];
+        yield 'kitty' => ["\x1b[114;5u"];
+    }
+
+    #[Test]
+    #[DataProvider('provideCtrlRSequences')]
+    public function ctrlRTogglesLoadedResourcesExpansion(string $sequence): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: 'toggle-resources');
+        $state = new TuiSessionState('toggle-resources');
+        $state->resuming = false;
+        $context = $this->buildTuiContext()
+            ->withTui($harness->tui())
+            ->withState($state)
+            ->withScreen($harness->screen())
+            ->build();
+
+        (new LoadedResourcesStartupRegistrar($this->createMinimalBuilder()))->register($context);
+        $this->assertTrue($harness->screen()->hasLoadedResourcesBlock());
+
+        $before = $harness->plainScreenText();
+        $harness->startInputLoop();
+        $harness->sendInput($sequence);
+        $after = $harness->plainScreenText();
+
+        $this->assertNotSame($before, $after);
+        $harness->stopInputLoop();
     }
 
     private function createMinimalBuilder(): LoadedResourcesSummaryBuilder
