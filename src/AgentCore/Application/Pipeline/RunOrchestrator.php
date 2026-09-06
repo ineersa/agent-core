@@ -163,6 +163,12 @@ final readonly class RunOrchestrator
         $this->activeRunContext->invalidate($message->runId());
     }
 
+    #[AsMessageHandler(bus: 'agent.command.bus')]
+    public function onRefreshRunContext(\Ineersa\AgentCore\Domain\Message\RefreshRunContext $message): void
+    {
+        $this->dispatch('context.refresh', 'command.refresh_context', $message);
+    }
+
     /**
      * Common Messenger-handler envelope: correlation log context, optional
      * root trace span, and locked pipeline processing.

@@ -138,6 +138,7 @@ final class InProcessAgentSessionClientEventsTest extends IsolatedKernelTestCase
             promptTemplateService: $container->get(PromptTemplateService::class),
             sessionMetaStore: $container->get(HatfieldSessionStore::class),
             modelResolver: $container->get(ModelResolver::class),
+            commandBus: new \Ineersa\AgentCore\Tests\Support\TestMessageBus(),
             transientSink: $transientSink,
         );
     }

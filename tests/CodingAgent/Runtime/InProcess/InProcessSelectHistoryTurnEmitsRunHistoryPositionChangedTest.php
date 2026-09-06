@@ -158,6 +158,7 @@ final class InProcessSelectHistoryTurnEmitsRunHistoryPositionChangedTest extends
             promptTemplateService: $container->get(PromptTemplateService::class),
             sessionMetaStore: $container->get(HatfieldSessionStore::class),
             modelResolver: $container->get(ModelResolver::class),
+            commandBus: new TestMessageBus(),
             transientSink: $sink,
         );
     }

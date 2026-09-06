@@ -57,6 +57,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         private readonly PromptTemplateService $promptTemplateService,
         private readonly HatfieldSessionStore $sessionMetaStore,
         private readonly ModelResolver $modelResolver,
+        private readonly \Symfony\Component\Messenger\MessageBusInterface $commandBus,
         private readonly ?RuntimeEventSinkInterface $transientSink = null,
         private readonly ?ToolQuestionStoreInterface $toolQuestionStore = null,
         private readonly ToolQuestionAnswerResolver $answerResolver = new ToolQuestionAnswerResolver(),
@@ -72,133 +73,15 @@ final class InProcessAgentSessionClient implements AgentSessionClient
             ? new RunMetadata(reasoning: $request->reasoning)
             : null;
 
-        $messages = [];
+        $messages = $this->buildContextMessages();
 
-        // Build and prepend the system prompt as the first message.
-        // This ensures the model receives system instructions before user input.
-        // CWD is sourced from AppConfig (bootstrap-resolved working directory).
-        $systemPromptText = $this->systemPromptBuilder->build();
-        if ('' !== $systemPromptText) {
-            $messages[] = new AgentMessage(
-                role: 'system',
-                content: [['type' => 'text', 'text' => $systemPromptText]],
-            );
-        }
-
-        // Discover and inject AGENTS.md project context as a synthetic user-context
-        // message (between system prompt and real user message). Only on new sessions.
-        // Note: Both the InProcess and JsonlProcess (controller subprocess) session
-        // client paths flow through this method — the controller's StartRunHandler
-        // delegates directly to this client. So a single injection point covers both.
-        $agentsContext = $this->agentsContextDiscovery->discover();
-        if ([] !== $agentsContext) {
-            $contextText = $this->agentsContextRenderer->render($agentsContext);
-            $messages[] = new AgentMessage(
-                role: 'user-context',
-                content: [['type' => 'text', 'text' => $contextText]],
-                metadata: ['source' => 'agents_context', 'files' => array_column($agentsContext, 'path')],
-            );
-        }
-
-        // Discover and inject skills context as a synthetic user-context message.
-        // Skills are discovered from configured paths, rendered into
-        // <skills_instructions> and <available_skills> blocks, and added
-        // between the AGENTS.md context and the user message. Only on new sessions.
-        $skillsContext = $this->skillsContextBuilder->build();
-        if ('' !== $skillsContext) {
-            $messages[] = new AgentMessage(
-                role: 'user-context',
-                content: [['type' => 'text', 'text' => $skillsContext]],
-                metadata: ['source' => 'skills_context'],
-            );
-        }
-
-        // Discover and inject available agent definitions for the parent model.
-        // Rendered into <agents_instructions> and <available_agents> blocks between
-        // skills context and the user message. Only on new sessions.
-        $availableAgentsContext = $this->agentsContextBuilder->build();
-        if ('' !== $availableAgentsContext) {
-            $messages[] = new AgentMessage(
-                role: 'user-context',
-                content: [['type' => 'text', 'text' => $availableAgentsContext]],
-                metadata: ['source' => 'agents_definitions_context'],
-            );
-        }
-
-        $prompt = $this->promptTemplateService->expandPromptTemplate($request->prompt);
-
-        if ('' !== $prompt) {
-            $messages[] = new AgentMessage(
-                role: 'user',
-                content: [['type' => 'text', 'text' => $prompt]],
-            );
-        }
-
-        // Callers own session allocation with the real prompt/title.
-        // This client never creates empty-prompt sessions.
-        $sessionId = trim($request->runId);
-        if ('' === $sessionId) {
-            throw new \RuntimeException('start requires an explicit runId; session creation belongs to the parent entrypoint.');
-        }
-
-        // Resolve effective model exactly once at the parent start boundary.
-        // The exact value is persisted into RunMetadata/run_started and becomes
-        // RunState.model — scheduling never re-resolves session/default later.
-        $modelRef = null !== $request->model
-            ? AiModelReference::tryParse($request->model)
-            : $this->modelResolver->resolveInitialModel(null, $sessionId);
-        if (null === $modelRef) {
-            throw new \RuntimeException(\sprintf('Cannot start run_id=%s: no effective model could be resolved.', $sessionId));
-        }
-        $effectiveModel = $modelRef->toString();
-
-        if (null !== $request->reasoning && \in_array($request->reasoning, ModelResolver::LEVELS, true)) {
-            $reasoning = $request->reasoning;
-        } else {
-            $reasoning = $this->modelResolver->resolveInitialReasoning(null, $sessionId);
-        }
-
-        $metaFields = [
-            'model' => $effectiveModel,
-            'model_provider' => $modelRef->providerId,
-            'model_name' => $modelRef->modelName,
-        ];
-        if ('' !== $reasoning) {
-            $metaFields['reasoning'] = $reasoning;
-        }
-        // Best-effort session metadata for UI/resume. The store is a no-op for
-        // missing rows (e.g. UUID child/ephemeral starts); canonical execution
-        // identity still lives on RunMetadata below.
-        $this->sessionMetaStore->updateMetadata($sessionId, $metaFields);
-
-        $metadata = new RunMetadata(
-            session: null !== $metadata ? $metadata->session : [],
-            model: $effectiveModel,
-            reasoning: $reasoning,
-            toolsScope: null !== $metadata ? $metadata->toolsScope : null,
-            contextWindow: null !== $metadata ? $metadata->contextWindow : null,
-        );
-
-        $input = new StartRunInput(
-            systemPrompt: '',
-            messages: $messages,
-            runId: $sessionId,
-            metadata: $metadata,
-        );
-
-        $runId = $this->runner->start($input);
-        $this->artifactRegistry?->beginParentLifetime($runId);
-
-        // Dispatch MCP session initialize after the run has started.
-        // Failure is non-fatal — MCP is optional infrastructure.
-        $this->mcpDispatcher?->dispatchInitialize($runId, 'start_run');
-
-        return new RunHandle(runId: $runId, status: 'running');
+        return $this->startWithContext($request, $metadata, $messages);
     }
 
     public function attach(string $runId): RunHandle
     {
-        // Passive attach only — opening a session must not reanimate or advance AgentCore state.
+        // Update instructions without starting or advancing a model turn.
+        $this->commandBus->dispatch(new \Ineersa\AgentCore\Domain\Message\RefreshRunContext($runId, $this->buildContextMessages()));
 
         // Attaching is a new parent lifetime: existing artifacts stay retrievable
         // but agent_resume must not continue children launched before /resume.
@@ -348,6 +231,139 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         }
 
         $this->mcpDispatcher->dispatchRefresh($runId);
+    }
+
+    /** @return list<AgentMessage> */
+    private function buildContextMessages(): array
+    {
+        $messages = [];
+
+        // Build and prepend the system prompt as the first message.
+        // This ensures the model receives system instructions before user input.
+        // CWD is sourced from AppConfig (bootstrap-resolved working directory).
+        $systemPromptText = $this->systemPromptBuilder->build();
+        if ('' !== $systemPromptText) {
+            $messages[] = new AgentMessage(
+                role: 'system',
+                content: [['type' => 'text', 'text' => $systemPromptText]],
+            );
+        }
+
+        // Discover and inject AGENTS.md project context as a synthetic user-context
+        // message (between system prompt and real user message), rebuilt on attach.
+        // Note: Both the InProcess and JsonlProcess (controller subprocess) session
+        // client paths flow through this method — the controller's StartRunHandler
+        // delegates directly to this client. So a single injection point covers both.
+        $agentsContext = $this->agentsContextDiscovery->discover();
+        if ([] !== $agentsContext) {
+            $contextText = $this->agentsContextRenderer->render($agentsContext);
+            $messages[] = new AgentMessage(
+                role: 'user-context',
+                content: [['type' => 'text', 'text' => $contextText]],
+                metadata: ['source' => 'agents_context', 'files' => array_column($agentsContext, 'path')],
+            );
+        }
+
+        // Discover and inject skills context as a synthetic user-context message.
+        // Skills are discovered from configured paths, rendered into
+        // <skills_instructions> and <available_skills> blocks, and added
+        // between the AGENTS.md context and the user message, rebuilt on attach.
+        $skillsContext = $this->skillsContextBuilder->build();
+        if ('' !== $skillsContext) {
+            $messages[] = new AgentMessage(
+                role: 'user-context',
+                content: [['type' => 'text', 'text' => $skillsContext]],
+                metadata: ['source' => 'skills_context'],
+            );
+        }
+
+        // Discover and inject available agent definitions for the parent model.
+        // Rendered into <agents_instructions> and <available_agents> blocks between
+        // skills context and the user message, rebuilt on attach.
+        $availableAgentsContext = $this->agentsContextBuilder->build();
+        if ('' !== $availableAgentsContext) {
+            $messages[] = new AgentMessage(
+                role: 'user-context',
+                content: [['type' => 'text', 'text' => $availableAgentsContext]],
+                metadata: ['source' => 'agents_definitions_context'],
+            );
+        }
+
+        return $messages;
+    }
+
+    /** @param list<AgentMessage> $messages */
+    private function startWithContext(StartRunRequest $request, ?RunMetadata $metadata, array $messages): RunHandle
+    {
+        $prompt = $this->promptTemplateService->expandPromptTemplate($request->prompt);
+
+        if ('' !== $prompt) {
+            $messages[] = new AgentMessage(
+                role: 'user',
+                content: [['type' => 'text', 'text' => $prompt]],
+            );
+        }
+
+        // Callers own session allocation with the real prompt/title.
+        // This client never creates empty-prompt sessions.
+        $sessionId = trim($request->runId);
+        if ('' === $sessionId) {
+            throw new \RuntimeException('start requires an explicit runId; session creation belongs to the parent entrypoint.');
+        }
+
+        // Resolve effective model exactly once at the parent start boundary.
+        // The exact value is persisted into RunMetadata/run_started and becomes
+        // RunState.model — scheduling never re-resolves session/default later.
+        $modelRef = null !== $request->model
+            ? AiModelReference::tryParse($request->model)
+            : $this->modelResolver->resolveInitialModel(null, $sessionId);
+        if (null === $modelRef) {
+            throw new \RuntimeException(\sprintf('Cannot start run_id=%s: no effective model could be resolved.', $sessionId));
+        }
+        $effectiveModel = $modelRef->toString();
+
+        if (null !== $request->reasoning && \in_array($request->reasoning, ModelResolver::LEVELS, true)) {
+            $reasoning = $request->reasoning;
+        } else {
+            $reasoning = $this->modelResolver->resolveInitialReasoning(null, $sessionId);
+        }
+
+        $metaFields = [
+            'model' => $effectiveModel,
+            'model_provider' => $modelRef->providerId,
+            'model_name' => $modelRef->modelName,
+        ];
+        if ('' !== $reasoning) {
+            $metaFields['reasoning'] = $reasoning;
+        }
+        // Best-effort session metadata for UI/resume. The store is a no-op for
+        // missing rows (e.g. UUID child/ephemeral starts); canonical execution
+        // identity still lives on RunMetadata below.
+        $this->sessionMetaStore->updateMetadata($sessionId, $metaFields);
+
+        $metadata = new RunMetadata(
+            session: null !== $metadata ? $metadata->session : [],
+            model: $effectiveModel,
+            reasoning: $reasoning,
+            toolsScope: null !== $metadata ? $metadata->toolsScope : null,
+            contextWindow: null !== $metadata ? $metadata->contextWindow : null,
+        );
+
+        $input = new StartRunInput(
+            systemPrompt: '',
+            messages: $messages,
+            runId: $sessionId,
+            metadata: $metadata,
+        );
+
+        $runId = $this->runner->start($input);
+        $this->artifactRegistry?->beginParentLifetime($runId);
+
+        // Dispatch MCP session initialize after the run has started.
+        // Failure is non-fatal — MCP is optional infrastructure.
+        $this->mcpDispatcher?->dispatchInitialize($runId, 'start_run');
+
+        return new RunHandle(runId: $runId, status: 'running');
     }
 
     /**

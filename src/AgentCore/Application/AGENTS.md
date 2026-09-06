@@ -18,6 +18,7 @@ Topology map for AgentCore application handlers. Authoritative routing: `config/
 | `CompactionStepResult` | `agent.command.bus` (transport `run_control`) | `Ineersa\CodingAgent\Application\Pipeline\CompactionStepResultHandler` |
 | `CompleteDeferredToolCall` | `agent.command.bus` (transport `run_control`) | `CompleteDeferredToolCallHandler` |
 | `InvalidateRunContext` | `agent.command.bus` (transport `run_control`) | `RunOrchestrator::onInvalidateRunContext()` clears active context only |
+| `RefreshRunContext` | `agent.command.bus` (transport `run_control`) | `RefreshRunContextHandler` replaces generated messages and commits `context_refreshed` without advancing a turn |
 
 ## Async workers (`agent.execution.bus`)
 

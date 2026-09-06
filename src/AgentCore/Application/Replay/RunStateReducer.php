@@ -102,6 +102,7 @@ final readonly class RunStateReducer
             RunEventTypeEnum::ContextCompactionRequested->value => $this->applyNoMutation($event, $state),
             RunEventTypeEnum::ContextCompactionStarted->value => $this->applyContextCompactionStarted($payload, $state),
             RunEventTypeEnum::ContextCompacted->value => $this->applyContextCompacted($payload, $state, $messages),
+            RunEventTypeEnum::ContextRefreshed->value => $this->applyContextRefreshed($payload, $state, $messages),
             RunEventTypeEnum::ContextCompactionFailed->value => $this->applyContextCompactionFailed($payload, $state),
             RunEventTypeEnum::HistoryPositionSet->value,
             RunEventTypeEnum::HistoryTailDiscarded->value => $this->applyNoMutation($event, $state),
@@ -599,6 +600,24 @@ final readonly class RunStateReducer
      * - auto → Running (the follow-up AdvanceRun effect continues the LLM turn)
      * - manual → Completed (the /compact command runs on an already-completed run)
      *
+     * @param array<string, mixed> $payload
+     * @param list<AgentMessage>   $messages
+     */
+    private function applyContextRefreshed(array $payload, RunState $state, array &$messages): RunState
+    {
+        $context = [];
+        foreach ($payload['messages'] ?? [] as $raw) {
+            $message = AgentMessage::fromPayload($raw);
+            if (null !== $message) {
+                $context[] = $message;
+            }
+        }
+        $messages = \Ineersa\AgentCore\Domain\Message\GeneratedContext::replace($messages, $context);
+
+        return $state;
+    }
+
+    /**
      * @param array<string, mixed> $payload
      * @param list<AgentMessage>   $messages
      */
