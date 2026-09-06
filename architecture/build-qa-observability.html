@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Castor QA and logging">
+<title>Build, QA, observability · Hatfield architecture</title>
+<link rel="stylesheet" href="assets/guide.css">
+</head>
+<body>
+<a class="skip" href="#content">Skip to content</a>
+<main id="content">
+<header class="site-header">
+<div class="breadcrumbs" aria-label="Breadcrumb"><a href="index.html">Architecture guide</a><span aria-hidden="true"> / </span><span>Build, QA, observability</span></div>
+<div class="eyebrow">Hatfield architecture guide · 6 September 2026</div>
+<h1>Build, QA, observability</h1>
+<p class="meta">Source baseline <code>740d92fa66dfc4763c27e43ed46135c68da4f944</code></p>
+<nav class="topnav" aria-label="Architecture guide"><a href="index.html">Overview</a><a href="startup.html">Startup and processes</a><a href="request-lifecycle.html">Request lifecycle</a><a href="run-storage.html">Run, storage, recovery</a><a href="queues-messages.html">Queues and messages</a><a href="tools-approvals-mcp.html">Tools, approvals, MCP</a><a href="extensions-subagents.html">Extensions and agents</a><a href="tui-provider-context.html">TUI and providers</a><a href="build-qa-observability.html" aria-current="page"><strong>Build, QA, observability</strong></a><a href="documentation-audit.html">Documentation audit</a></nav>
+</header>
+
+<p class="lede">All QA goes through Castor. The architecture HTML guide is maintainer documentation beside the product docs catalog, not a substitute for <code>castor docs:validate</code>.</p>
+<section>
+<h2>Castor lanes (reference)</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Command</th><th>Role</th></tr></thead>
+<tbody>
+<tr><td><code>castor check</code></td><td>Full gate: deptrac, tests, replay E2E, llm-real smoke, phpstan, dead-code, cs-check, docs:validate</td></tr>
+<tr><td><code>castor test</code> / <code>test:tui</code> / <code>test:controller-replay</code></td><td>Deterministic lanes</td></tr>
+<tr><td><code>castor docs:validate</code></td><td>Built-in docs catalog, package-safe links, size limits</td></tr>
+<tr><td><code>castor phar:build</code></td><td>Release artifact used by native packaging</td></tr>
+</tbody></table></div>
+<div class="callout note">
+<p>This architecture slice does not run Castor. Parent workflow owns product QA. Test standards live in <code>tests/AGENTS.md</code> and the testing skill.</p>
+</div>
+</section>
+<section>
+<h2>Observability</h2>
+<p>Prefer structured logs with <code>run_id</code>, <code>session_id</code>, <code>component</code>, <code>event_type</code>. Do not log raw prompts, tool output, or secrets by default. Local Datadog wiring is optional maintainer tooling under <code>docs/datadog.md</code>.</p>
+<p class="sources">Sources: <code>AGENTS.md</code>, <code>.agents/skills/testing/SKILL.md</code>, <code>docs/distribution.md</code>, <code>docs/datadog.md</code>, <code>.castor/docs.php</code>.</p>
+</section>
+
+<footer class="site-footer">
+<p>Hatfield / agent-core architecture guide · source baseline <code>740d92fa6</code> · 6 September 2026</p>
+<p>Source of truth is code and Castor-validated Markdown under <code>docs/</code>. This guide is diagram-first explanation. Packaged product docs remain the built-in catalog validated by <code>castor docs:validate</code>.</p>
+</footer>
+</main>
+</body>
+</html>

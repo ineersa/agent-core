@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="TUI projection and providers">
+<title>TUI and providers · Hatfield architecture</title>
+<link rel="stylesheet" href="assets/guide.css">
+</head>
+<body>
+<a class="skip" href="#content">Skip to content</a>
+<main id="content">
+<header class="site-header">
+<div class="breadcrumbs" aria-label="Breadcrumb"><a href="index.html">Architecture guide</a><span aria-hidden="true"> / </span><span>TUI and providers</span></div>
+<div class="eyebrow">Hatfield architecture guide · 6 September 2026</div>
+<h1>TUI and providers</h1>
+<p class="meta">Source baseline <code>740d92fa66dfc4763c27e43ed46135c68da4f944</code></p>
+<nav class="topnav" aria-label="Architecture guide"><a href="index.html">Overview</a><a href="startup.html">Startup and processes</a><a href="request-lifecycle.html">Request lifecycle</a><a href="run-storage.html">Run, storage, recovery</a><a href="queues-messages.html">Queues and messages</a><a href="tools-approvals-mcp.html">Tools, approvals, MCP</a><a href="extensions-subagents.html">Extensions and agents</a><a href="tui-provider-context.html" aria-current="page"><strong>TUI and providers</strong></a><a href="build-qa-observability.html">Build, QA, observability</a><a href="documentation-audit.html">Documentation audit</a></nav>
+</header>
+
+<p class="lede">TUI composition is per session. Deptrac is authoritative for TUI edges, including approved AgentCore dependencies and the CodingAgent CLI bridge. Providers are manual: the default bundled catalog stays disabled until <code>providers:setup</code>.</p>
+
+<div class="legend" role="note">
+<span class="swatch process"><i></i> Process / supervision</span>
+<span class="swatch module"><i></i> Module / handler</span>
+<span class="swatch storage"><i></i> Durable storage</span>
+<span class="swatch queue"><i></i> Messenger queue</span>
+<span class="swatch transient"><i></i> Transient stream</span>
+</div>
+
+<section>
+<h2>Projection chain</h2>
+<figure class="diagram compact">
+<svg role="img" aria-labelledby="tui-title" viewBox="0 0 720 180" xmlns="http://www.w3.org/2000/svg">
+
+<defs>
+  <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path d="M 0 0 L 10 5 L 0 10 z" fill="#657c71"/>
+  </marker>
+</defs>
+
+<rect x="20" y="50" width="150" height="56" rx="6" fill="#f3e7c8" stroke="#6b4f1d" stroke-width="1.5"/>
+<text x="95.0" y="72" text-anchor="middle" font-family="system-ui,sans-serif" font-size="13" font-weight="650" fill="#172733">RunEvent</text>
+<text x="95.0" y="90" text-anchor="middle" font-family="ui-monospace,monospace" font-size="11" fill="#53636c">canonical</text>
+<rect x="200" y="50" width="160" height="56" rx="6" fill="#d9eee4" stroke="#176349" stroke-width="1.5"/>
+<text x="280.0" y="72" text-anchor="middle" font-family="system-ui,sans-serif" font-size="13" font-weight="650" fill="#172733">RuntimeEventMapper</text>
+<text x="280.0" y="90" text-anchor="middle" font-family="ui-monospace,monospace" font-size="11" fill="#53636c">translator</text>
+<rect x="390" y="50" width="150" height="56" rx="6" fill="#d9eee4" stroke="#176349" stroke-width="1.5"/>
+<text x="465.0" y="72" text-anchor="middle" font-family="system-ui,sans-serif" font-size="13" font-weight="650" fill="#172733">RuntimeEvent</text>
+<text x="465.0" y="90" text-anchor="middle" font-family="ui-monospace,monospace" font-size="11" fill="#53636c">protocol DTO</text>
+<rect x="570" y="50" width="130" height="56" rx="6" fill="#d7e8f0" stroke="#1f4d63" stroke-width="1.5"/>
+<text x="635.0" y="72" text-anchor="middle" font-family="system-ui,sans-serif" font-size="13" font-weight="650" fill="#172733">TUI poller</text>
+<text x="635.0" y="90" text-anchor="middle" font-family="ui-monospace,monospace" font-size="11" fill="#53636c">visual patches</text>
+<line x1="170" y1="78" x2="200" y2="78" stroke="#657c71" stroke-width="1.5" marker-end="url(#arrow)"/>
+<line x1="360" y1="78" x2="390" y2="78" stroke="#657c71" stroke-width="1.5" marker-end="url(#arrow)"/>
+<line x1="540" y1="78" x2="570" y2="78" stroke="#657c71" stroke-width="1.5" marker-end="url(#arrow)"/>
+<rect x="200" y="130" width="320" height="40" rx="6" fill="#f6dce5" stroke="#8a3d55" stroke-width="1.5"/>
+<text x="360.0" y="154.0" text-anchor="middle" font-family="system-ui,sans-serif" font-size="13" font-weight="650" fill="#172733">seq 0 deltas bypass durable rebuild</text>
+<title id="tui-title">TUI projection</title>
+</svg>
+</figure>
+</section>
+<section>
+<h2>Provider and context</h2>
+<div class="grid2">
+<article class="panel">
+<h3>Providers</h3>
+<p>No automatic provider setup on install. Operators run <code>hatfield providers:setup</code>. Platform bridges under <code>src/Platform</code> hold protocol differences; AgentCore coordinates invocation.</p>
+</article>
+<article class="panel">
+<h3>Context budget / prompts</h3>
+<p>Skills, prompt templates, and context-budget hooks shape model-visible context before provider calls. Effective model-context export reuses history filtering rather than inventing a second interpretation.</p>
+</article>
+</div>
+<p class="sources">Sources: <code>depfile.yaml</code>, <code>docs/tui-architecture.md</code>, <code>docs/ai-catalog.md</code>, <code>docs/settings.md</code>.</p>
+</section>
+
+<footer class="site-footer">
+<p>Hatfield / agent-core architecture guide · source baseline <code>740d92fa6</code> · 6 September 2026</p>
+<p>Source of truth is code and Castor-validated Markdown under <code>docs/</code>. This guide is diagram-first explanation. Packaged product docs remain the built-in catalog validated by <code>castor docs:validate</code>.</p>
+</footer>
+</main>
+</body>
+</html>
