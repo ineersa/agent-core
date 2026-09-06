@@ -183,6 +183,7 @@ Public contracts: [`ineersa/hatfield-extension-api`](https://packagist.org/packa
 | castor-llm-mode | `ineersa/hatfield-ext-castor-llm-mode` |
 | file-rewind | `ineersa/hatfield-ext-file-rewind` |
 | observational-memory | `ineersa/hatfield-ext-observational-memory` |
+| jbcontext | `ineersa/hatfield-ext-jbcontext` |
 
 Enable classes under `extensions.enabled` in project settings; they register at **session start**.
 Package-local docs stay with each extension repository/package (for example the file-rewind README); they are not auto-merged into `hatfield_docs`.

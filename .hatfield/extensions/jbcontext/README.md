@@ -22,6 +22,27 @@ jbcontext index --project-path /path/to/project
 
 Hatfield never runs the first index. Indexes are repository-scoped by git remote id, so any checkout or worktree of that repository can become eligible when it has a local `.idea` directory and `jbcontext status --json-output` reports at least one snapshot.
 
+## Install
+
+In the Hatfield monorepo this package is path-required from `.hatfield/extensions/jbcontext`.
+
+After a Hatfield `v*` release that includes this package, consumers can require the mirrored package from GitHub (and Packagist when published):
+
+```json
+{
+  "require": {
+    "ineersa/hatfield-ext-jbcontext": "^X.Y"
+  },
+  "repositories": [
+    { "type": "vcs", "url": "https://github.com/ineersa/hatfield-ext-jbcontext" }
+  ]
+}
+```
+
+Prefer released tags. The mirror repository stays empty until the next tagged Hatfield release that runs package-split.
+
+Also require a compatible `ineersa/hatfield-extension-api` release (or monorepo path package).
+
 ## Enable
 
 ```yaml
@@ -95,4 +116,8 @@ Because eligibility is asynchronous after startup discovery, newly installed pro
 
 ## Source of truth
 
-**[ineersa/agent-core](https://github.com/ineersa/agent-core)** monorepo path `.hatfield/extensions/jbcontext/` is authoritative.
+**[ineersa/agent-core](https://github.com/ineersa/agent-core)** monorepo path `.hatfield/extensions/jbcontext/` is authoritative. The GitHub package repository is a read-only release mirror: each Hatfield `vX.Y.Z` tag updates `main` and publishes the same tag there. Do not open feature PRs against the mirror.
+
+See monorepo docs:
+
+- [docs/distribution.md](https://github.com/ineersa/agent-core/blob/main/docs/distribution.md) — package split, shared versioning, external install

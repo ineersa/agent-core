@@ -82,7 +82,7 @@ Behavior (source-backed):
 
 ## Extension package mirrors
 
-Release splitting mirrors the public Extension API and extension packages into read-only GitHub/Packagist-facing repositories. Package READMEs travel with those mirrors. Core `hatfield_docs` does **not** auto-discover installed extension docs.
+Release splitting mirrors the public Extension API and five project extensions into read-only GitHub/Packagist-facing repositories (`hatfield-extension-api`, `hatfield-ext-task-workflow`, `hatfield-ext-castor-llm-mode`, `hatfield-ext-file-rewind`, `hatfield-ext-observational-memory`, `hatfield-ext-jbcontext`). Package READMEs travel with those mirrors. Core `hatfield_docs` does **not** auto-discover installed extension docs.
 
 ## Related
 
