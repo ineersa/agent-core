@@ -1,6 +1,7 @@
 # Distribution and release
 
 Release-level packaging: canonical PHAR, fused static binaries, checksums, installer, package mirrors.
+Architecture overview: [`../architecture/index.html`](../architecture/index.html) when present.
 
 Internals: [phar-packaging.md](phar-packaging.md) · [static-packaging.md](static-packaging.md)
 
