@@ -67,9 +67,9 @@ framework:
                     allow_no_handlers: false
                     allow_no_senders: true
                 middleware:
-                    # Subagent tool routing: stamps toolName=subagent with
-                    # TransportNamesStamp(['agent']) before default YAML routes
-                    # ExecuteToolCall to tool. Runs before MCP middleware.
+                    # Subagent tool routing: stamps toolName=subagent|agent_resume
+                    # with TransportNamesStamp(['agent']) before default YAML routes
+                    # ExecuteToolCall to tool. fork stays on tool. Runs before MCP middleware.
                     - Ineersa\CodingAgent\Agent\Messenger\SubagentExecuteToolCallRoutingMiddleware
                     # MCP-aware routing: stamps MCP-backed ExecuteToolCall with
                     # TransportNamesStamp(['mcp']) so send_message routes to the

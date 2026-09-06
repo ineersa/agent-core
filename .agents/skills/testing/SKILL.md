@@ -197,15 +197,26 @@ so `config/services_test.yaml` applies. They do **not** use the PHAR (dev-only
 bundles such as DAMA are excluded from the PHAR). `castor test:controller` may
 still call `phar:ensure` for other paths; `test:llm-real` skips PHAR ensure.
 
-Controller replay tests (`test:controller-replay`) and all TUI E2E tests
-(`test:tui`, `test:tui-update`) use source `bin/console` and do not
-require PHAR.
+### Behavioral TUI / controller paths versus artifact boot
+
+Controller replay (`test:controller-replay`) and the behavioral TUI journey /
+snapshot cases under `tui-e2e-replay` use source `bin/console` with
+`APP_ENV=test`. Those interactive proofs do **not** boot the PHAR.
+
+Separately, `TuiArtifactBootE2eTest` (also in `tui-e2e-replay`, plus group
+`phar`) boots a packaged binary. `castor test:tui` and the `castor check` TUI
+lane always call `phar:ensure` and export `HATFIELD_BINARY_PATH` plus
+`HATFIELD_REQUIRE_ARTIFACT=1` so that artifact proof cannot soft-pass when the
+PHAR is missing. `castor test:tui-update` refreshes snapshots and does **not**
+itself ensure a PHAR; run `castor phar:ensure` first when artifact boot must
+remain green during a snapshot update.
 
 Pure unit/integration tests (`castor test`) remain source-based and do not
-require PHAR. PHAR smoke tests (`#[Group('phar')]`) validate the built
-artifact boots and responds to basic commands.
+require PHAR. Dedicated PHAR smoke tests (`#[Group('phar')]`, for example
+`PharSmokeTest`) validate the built artifact boots and responds to basic
+commands.
 
-Run PHAR smoke tests manually:
+Run PHAR smoke tests manually when not covered by `test:tui`:
 ```bash
 castor phar:build
 castor test --filter=PharSmokeTest
@@ -241,12 +252,13 @@ contend on SQLite writes under concurrent check lanes.
 
 | Command | What it tests | Requires |
 |---|---|---|
-| `castor check` | Full QA gate: deptrac, unit/integration (ParaTest), controller replay E2E, TUI replay E2E, live llm-real (ParaTest, port 9052), phpstan, dead-code, cs-check, docs:validate. No PHAR. | tmux, llama.cpp/proxy on 9052 |
+| `castor check` | Full QA gate: deptrac, unit/integration (ParaTest), controller replay E2E, TUI replay E2E (includes PHAR ensure for artifact boot), live llm-real (ParaTest, port 9052), phpstan, dead-code, cs-check, docs:validate. | tmux, llama.cpp/proxy on 9052 |
 | `castor test` | Unit/integration tests (ParaTest parallel by default) | Nothing (pure PHP) |
 | `castor test:llm-real` | Real LLM smoke: `ControllerSmokeTest`, `LlamaCppSmokeTest`. Run as focused opt-in validation when changes touch provider/LLM-visible code — NOT required for every normal task. | llama.cpp on port 9052 |
 | `castor test:controller-replay` | Controller replay E2E: spawns `--controller`, JSONL protocol, replay fixtures (no live LLM) | Nothing (pure PHP) |
 | `castor test:controller` | Controller E2E: spawns `--controller`, JSONL protocol (live LLM, opt-in) | llama.cpp on port 9052 |
-| `castor test:tui` | TUI E2E journey tests (replay-backed, no live LLM) | tmux |
+| `castor test:tui` | TUI E2E journey tests (replay-backed, no live LLM). Behavioral cases use source `bin/console`; lane always `phar:ensure`s for `TuiArtifactBootE2eTest`. | tmux |
+| `castor test:tui-update` | Refresh TUI snapshot baselines for `tui-e2e-replay`. Does **not** call `phar:ensure`. | tmux; PHAR only if artifact boot must pass |
 | `castor run:agent-test` | Interactive tmux session for manual inspection | tmux, llama.cpp on port 9052 |
 | `castor run:agent` | Launch agent in tmux | tmux, LLM provider |
 | `castor llm:fixtures:info` | List available replay fixtures and metadata | Nothing (pure PHP) |
@@ -358,8 +370,8 @@ Do **not** add broad journey phases for features already proven virtually. `cast
 
 **Tmux journey smoke (`TuiJourneyE2eTest`):** one long-lived session for terminal integration (startup, reasoning, shell, completion, replay model step, export, inline shell). Local-only behaviors moved to virtual tests are documented in the Journey class docblock (e.g. `/hotkeys`, `!!` → `TuiVirtualInputTest`).
 
-- Tmux/replay tests use `APP_ENV=test` + source `bin/console` (not PHAR); `config/services_test.yaml` wires `ControllerReplayHttpClientFactory` for deterministic model responses.
-- No live LLM, no `LLAMA_CPP_SMOKE_TEST`, no PHAR for replay lanes.
+- Behavioral tmux/replay cases use `APP_ENV=test` + source `bin/console`; `config/services_test.yaml` wires `ControllerReplayHttpClientFactory` for deterministic model responses.
+- No live LLM and no `LLAMA_CPP_SMOKE_TEST` for those behavioral lanes. Packaged artifact boot is a separate case inside the same group; `test:tui` / check ensure the PHAR for it.
 
 ## Virtual TUI harness
 

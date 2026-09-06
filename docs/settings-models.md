@@ -9,10 +9,11 @@ Model configuration lives under the top-level `ai:` section in Hatfield settings
 Secrets (API keys) belong in `~/.hatfield/settings.yaml` using `env:VAR` syntax, not plain text in project files when avoidable.
 
 Known providers (`zai`, `deepseek`, `openai-codex`, `grok-cli`) ship as the bundled
-`config/ai-catalog.yaml` and are copied to `~/.hatfield/ai-catalog.yaml` on first run.
-That user catalog is the source of provider/model defaults. Settings `models:` overrides
-the catalog list wholesale. Full catalog behavior (rebase, deltas-only sync, version
-skew, hand-adding models): [ai-catalog.md](ai-catalog.md).
+`config/ai-catalog.yaml` (definitions present, `enabled: false`) and are copied to
+`~/.hatfield/ai-catalog.yaml` on first run. That user catalog is the source of
+provider/model defaults; enablement is manual (`providers:setup` or sparse settings).
+Settings `models:` overrides the catalog list wholesale. Full catalog behavior
+(rebase, deltas-only sync, version skew, hand-adding models): [ai-catalog.md](ai-catalog.md).
 
 Core settings overview: [settings.md](settings.md).
 

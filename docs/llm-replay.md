@@ -1,11 +1,13 @@
 # LLM Replay Fixtures
 
 Deterministic provider/LLM regression without live model calls.
+Visual runtime context: [`../architecture/index.html`](../architecture/index.html) when present.
 
 ## Purpose
 
-Replay fixtures record HTTP/provider traffic so controller and unit tests can assert
-LLM-visible flows offline. Live `castor test:llm-real` remains opt-in for compatibility smoke.
+Replay fixtures drive offline controller and unit proofs of LLM-visible flows.
+Behavioral TUI/controller replay stays on source `bin/console` with test DI.
+Live `castor test:llm-real` remains opt-in for compatibility smoke.
 
 ## Commands
 

@@ -136,7 +136,9 @@ Pre-upgrade sessions that only have mutable `handoff.md` or numeric `handoffs/<n
 
 Shipped model tool for **implementation delegation** to an isolated child with
 inherited parent conversation context (snapshot → sanitize → compact → deferred
-single-child launch). Distinct from `subagent`:
+single-child launch). Distinct from `subagent`. Transport note: `subagent` and
+`agent_resume` route to the `agent` Messenger transport; `fork` stays on the
+default `tool` transport (see unmarked repository `docs/tool-execution.md`).
 
 | | `subagent` | `fork` |
 |---|---|---|
