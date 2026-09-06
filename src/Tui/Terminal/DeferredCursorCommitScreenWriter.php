@@ -26,7 +26,11 @@ use Symfony\Component\Tui\Terminal\TerminalInterface;
  * aligned with the referenced upstream revision. The Hatfield delta is the
  * EventLoop import, deferredCursorCommitId field, scheduling call after
  * writeInternal(), cancellation in reset() and getState(), and the
- * deferred-commit methods.
+ * deferred-commit methods. Repaints also hide the cursor and keep synchronized
+ * output open until its final position and visibility have been restored.
+ * Otherwise, ending synchronized output can expose the last painted row as the
+ * cursor position. Hiding during paint also covers terminals that ignore
+ * synchronized output.
  */
 final class DeferredCursorCommitScreenWriter
 {
@@ -234,7 +238,7 @@ final class DeferredCursorCommitScreenWriter
      */
     private function fullRender(array $newLines, ?array $cursorPos, bool $clear): void
     {
-        $buffer = "\x1b[?2026h"; // Begin synchronized output
+        $buffer = "\x1b[?2026h\x1b[?25l"; // Begin synchronized output with the cursor hidden
 
         if ($clear) {
             $buffer .= "\x1b[2J\x1b[3J\x1b[H"; // Clear screen, clear scrollback, and home
@@ -243,8 +247,6 @@ final class DeferredCursorCommitScreenWriter
         if ([] !== $newLines) {
             $buffer .= implode("\r\n", $newLines);
         }
-
-        $buffer .= "\x1b[?2026l"; // End synchronized output
 
         $this->terminal->write($buffer);
         $this->cursorRow = max(0, \count($newLines) - 1);
@@ -257,6 +259,7 @@ final class DeferredCursorCommitScreenWriter
         }
 
         $this->positionHardwareCursor($cursorPos, \count($newLines));
+        $this->terminal->write("\x1b[?2026l"); // Publish content and the restored cursor together
         $this->previousLines = $newLines;
         $this->previousWidth = $this->terminal->getColumns();
     }
@@ -277,7 +280,7 @@ final class DeferredCursorCommitScreenWriter
             return false;
         }
 
-        $buffer = "\x1b[?2026h";
+        $buffer = "\x1b[?2026h\x1b[?25l";
 
         $targetRow = max(0, \count($newLines) - 1);
         $lineDiff = $targetRow - $this->hardwareCursorRow;
@@ -316,13 +319,12 @@ final class DeferredCursorCommitScreenWriter
             $buffer .= "\x1b[{$moveUp}A";
         }
 
-        $buffer .= "\x1b[?2026l";
-
         $this->terminal->write($buffer);
         $this->cursorRow = $targetRow;
         $this->hardwareCursorRow = $targetRow;
 
         $this->positionHardwareCursor($cursorPos, \count($newLines));
+        $this->terminal->write("\x1b[?2026l");
         $this->previousLines = $newLines;
         $this->previousWidth = $this->terminal->getColumns();
 
@@ -335,7 +337,7 @@ final class DeferredCursorCommitScreenWriter
      */
     private function differentialRender(array $newLines, ?array $cursorPos, int $firstChanged, int $lastChanged, int $width): void
     {
-        $buffer = "\x1b[?2026h"; // Begin synchronized output
+        $buffer = "\x1b[?2026h\x1b[?25l"; // Begin synchronized output with the cursor hidden
 
         // Move cursor to first changed line
         $lineDiff = $firstChanged - $this->hardwareCursorRow;
@@ -413,8 +415,6 @@ final class DeferredCursorCommitScreenWriter
             }
         }
 
-        $buffer .= "\x1b[?2026l"; // End synchronized output
-
         $this->terminal->write($buffer);
 
         $this->cursorRow = max(0, \count($newLines) - 1);
@@ -422,6 +422,7 @@ final class DeferredCursorCommitScreenWriter
         $this->maxLinesRendered = max($this->maxLinesRendered, \count($newLines));
 
         $this->positionHardwareCursor($cursorPos, \count($newLines));
+        $this->terminal->write("\x1b[?2026l"); // Publish content and the restored cursor together
         $this->previousLines = $newLines;
         $this->previousWidth = $this->terminal->getColumns();
     }
