@@ -120,6 +120,117 @@ final class CodeSearchToolHandlerTest extends TestCase
     }
 
     #[Test]
+    public function filtersHeaderOnlyNoiseFromEligibleSearchHits(): void
+    {
+        $paths = JbcontextPaths::fromProjectRoot($this->projectDir);
+        StatusFixtures::replace(JbcontextStatusStore::forSession($paths, 'run-1'), new JbcontextSessionState(
+            sessionId: 'run-1',
+            mode: JbcontextSessionModeEnum::Eligible,
+            reason: null,
+            statusText: 'jbcontext: indexed',
+            attempt: 1,
+            startedAt: 1.0,
+            reindexPending: false,
+            reindexRunning: false,
+            eligibilityStarted: true,
+            checkGeneration: 1,
+            updatedAt: 1.0,
+        ));
+
+        $payload = [
+            'type' => 'search_result',
+            'results' => [
+                [
+                    'result' => [
+                        'scoredText' => ['similarity' => 0.99],
+                        'sourcePosition' => [
+                            'relativePath' => 'src/Noise.php',
+                            'startOffset' => 0,
+                            'endOffset' => 20,
+                        ],
+                        'indexItemType' => 'CHUNKS',
+                    ],
+                    'content' => "<?php\n\ndeclare(strict_types=1);",
+                    'contentStartLine' => 1,
+                ],
+                [
+                    'result' => [
+                        'scoredText' => ['similarity' => 0.9],
+                        'sourcePosition' => [
+                            'relativePath' => 'src/Example.php',
+                            'startOffset' => 10,
+                            'endOffset' => 40,
+                        ],
+                        'indexItemType' => 'CHUNKS',
+                    ],
+                    'content' => "class Example\n{\n}",
+                    'contentStartLine' => 12,
+                ],
+            ],
+            'revision' => 'abc',
+        ];
+        $exec = new RecordingExec([
+            new ExecResultDTO(stdout: json_encode($payload, \JSON_THROW_ON_ERROR), stderr: '', exitCode: 0),
+        ]);
+        $handler = new CodeSearchToolHandler(
+            $paths,
+            new JbcontextSessionLocator(),
+            new JbcontextCli($exec, $paths->projectRoot),
+            new TestLogger(),
+        );
+
+        $result = $handler([
+            'text' => 'Example class',
+        ], new ToolInvocationContextDTO(runId: 'run-1'));
+
+        $this->assertIsString($result);
+        $decoded = Toon::decode($result);
+        $this->assertTrue($decoded['available']);
+        $this->assertCount(1, $decoded['results']);
+        $this->assertSame('src/Example.php', $decoded['results'][0]['path']);
+    }
+
+    #[Test]
+    public function rejectsBlankTextAndInvalidPathFilterWithoutSearching(): void
+    {
+        $paths = JbcontextPaths::fromProjectRoot($this->projectDir);
+        StatusFixtures::replace(JbcontextStatusStore::forSession($paths, 'run-1'), new JbcontextSessionState(
+            sessionId: 'run-1',
+            mode: JbcontextSessionModeEnum::Eligible,
+            reason: null,
+            statusText: 'jbcontext: indexed',
+            attempt: 1,
+            startedAt: 1.0,
+            reindexPending: false,
+            reindexRunning: false,
+            eligibilityStarted: true,
+            checkGeneration: 1,
+            updatedAt: 1.0,
+        ));
+        $exec = new RecordingExec();
+        $handler = new CodeSearchToolHandler(
+            $paths,
+            new JbcontextSessionLocator(),
+            new JbcontextCli($exec, $paths->projectRoot),
+            new TestLogger(),
+        );
+
+        $blank = Toon::decode((string) $handler([
+            'text' => "  \n\t",
+        ], new ToolInvocationContextDTO(runId: 'run-1')));
+        $this->assertFalse($blank['available']);
+        $this->assertSame('text is required and must be a non-empty string.', $blank['message']);
+
+        $absolute = Toon::decode((string) $handler([
+            'text' => 'Example class',
+            'path_filter' => '/tmp/evil',
+        ], new ToolInvocationContextDTO(runId: 'run-1')));
+        $this->assertFalse($absolute['available']);
+        $this->assertSame('path_filter must be project-relative, not absolute.', $absolute['message']);
+        $this->assertSame([], $exec->calls());
+    }
+
+    #[Test]
     public function returnsBoundedCliStderrOnSearchFailureAndLogsOnlyStableCode(): void
     {
         $paths = JbcontextPaths::fromProjectRoot($this->projectDir);

@@ -71,10 +71,11 @@ final class JbcontextExtension implements HatfieldExtensionInterface, TuiExtensi
 
         $api->registerTool(new ToolRegistrationDTO(
             name: 'code_search',
-            description: 'Semantic code search via jbcontext for unfamiliar behavior or location. '
-                .'Use one focused natural-language query; optionally narrow once with path_filter; then read promising files. '
-                .'Prefer direct reads or IDE definition/references for known files or symbols. '
-                .'Do not use for builds, tests, Git, or diff review.',
+            description: 'Semantic code search via jbcontext when the relevant file or subsystem is unknown. '
+                .'text is a focused non-whitespace question or code snippet. '
+                .'Optional path_filter is a project-relative directory or file such as src/ or '
+                .'src/CodingAgent/Runtime/Controller (no absolute paths or ..). '
+                .'Read the skill guidelines before calling. After hits, verify local source; similarity is ranking, not probability.',
             parametersJsonSchema: [
                 'type' => 'object',
                 'additionalProperties' => false,
@@ -82,11 +83,11 @@ final class JbcontextExtension implements HatfieldExtensionInterface, TuiExtensi
                 'properties' => [
                     'text' => [
                         'type' => 'string',
-                        'description' => 'Focused natural-language semantic query or representative code snippet.',
+                        'description' => 'Focused non-whitespace natural-language question or representative code snippet.',
                     ],
                     'path_filter' => [
                         'type' => 'string',
-                        'description' => 'Optional project-relative path prefix to narrow search after an initial broad hit.',
+                        'description' => 'Optional project-relative directory or file filter, e.g. src/ or src/CodingAgent/Runtime/Controller. Absolute paths and .. are rejected.',
                     ],
                 ],
             ],
@@ -96,13 +97,9 @@ final class JbcontextExtension implements HatfieldExtensionInterface, TuiExtensi
                 new JbcontextCli($api->exec(), $paths->projectRoot),
                 $this->logger,
             ),
-            promptSummary: 'Use code_search for meaning-based discovery when the relevant file or subsystem is unknown; then read local files.',
+            promptSummary: 'Use code_search for meaning-based discovery when the relevant file or subsystem is unknown; then read local files. Follow the skill guidelines.',
             promptGuidelines: [
-                'Use one focused semantic query for unfamiliar behavior or location.',
-                'Optionally narrow once with path_filter using a project-relative directory from the best first hit.',
-                'After search hits, read promising files and nearby code before another semantic query.',
-                'Prefer direct reads or IDE definition/references when you already know the file, class, or symbol.',
-                'Do not use code_search for builds, tests, Git operations, or reviewing an existing diff.',
+                'Read the jbcontext-semantic-search skill guidelines before the first code_search call for a discovery question.',
             ],
             timeoutSeconds: self::TOOL_TIMEOUT_SECONDS,
         ));

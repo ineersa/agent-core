@@ -61,10 +61,10 @@ After eligibility, each successfully completed assistant turn (`agent_end` reaso
 Permanent model-visible tool:
 
 - required `text`
-- optional project-relative `path_filter` (absolute/`..` rejected)
+- optional project-relative `path_filter` for a directory or file (examples: `src/`, `src/CodingAgent/Runtime/Controller`). Absolute paths and `..` are rejected by the tool. Verified CLI behavior accepts directory/file filters and common globs such as `*.php`; prefer concrete project-relative directories from first hits.
 - fixed internal `--limit 8`
 - cooperative cancellation and timeout through `ExecOptionsDTO` / tool ambient context
-- top-level TOON result with ranked `path`, `start_line`, `similarity`, and `content`
+- top-level TOON result with ranked `path`, `start_line`, `similarity`, and `content` (PHP open-tag / `declare(strict_types=1);`-only chunks are dropped; remaining order and scores are preserved)
 
 When eligibility is pending or disabled, the tool returns a TOON unavailable payload and never indexes.
 

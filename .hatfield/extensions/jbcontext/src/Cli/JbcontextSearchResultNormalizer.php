@@ -62,6 +62,9 @@ final class JbcontextSearchResultNormalizer
             }
 
             $content = (string) ($row['content'] ?? '');
+            if (self::isPhpHeaderOnlyChunk($content)) {
+                continue;
+            }
 
             $out[] = [
                 'path' => $path,
@@ -72,5 +75,38 @@ final class JbcontextSearchResultNormalizer
         }
 
         return $out;
+    }
+
+    /**
+     * Drops index chunks that are only a PHP open tag and/or declare(strict_types=1).
+     * Keeps declare+namespace/code and non-PHP text.
+     */
+    private static function isPhpHeaderOnlyChunk(string $content): bool
+    {
+        $split = preg_split('/\R/u', $content);
+        $lines = false === $split ? [] : $split;
+        $nonEmpty = [];
+        foreach ($lines as $line) {
+            $trimmed = trim($line);
+            if ('' !== $trimmed) {
+                $nonEmpty[] = $trimmed;
+            }
+        }
+        if ([] === $nonEmpty) {
+            return false;
+        }
+
+        foreach ($nonEmpty as $line) {
+            if (1 === preg_match('/^<\?(?:php)?$/i', $line)) {
+                continue;
+            }
+            if (1 === preg_match('/^declare\s*\(\s*strict_types\s*=\s*1\s*\)\s*;$/i', $line)) {
+                continue;
+            }
+
+            return false;
+        }
+
+        return true;
     }
 }

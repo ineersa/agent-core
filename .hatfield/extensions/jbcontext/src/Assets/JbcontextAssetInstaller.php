@@ -27,7 +27,7 @@ final readonly class JbcontextAssetInstaller
 
 ## jbcontext semantic search
 
-When the relevant file or subsystem is unknown, use `code_search` for one focused semantic query before broad filesystem searches. Optionally narrow once with `path_filter`, then read promising files. Prefer IDE definition/references or direct reads once you know the symbol or path. Do not use semantic search for builds, tests, Git, or diff review.
+When the relevant file or subsystem is unknown, follow the `jbcontext-semantic-search` skill and use `code_search` for one focused query. Optionally narrow once with a project-relative `path_filter` such as `src/`, then verify local files. Prefer IDE definition/references or direct reads once you know the symbol or path. Do not use semantic search to review an existing diff.
 MD;
 
     public function __construct(

@@ -41,6 +41,12 @@ final class JbcontextExtensionRegistrationTest extends TestCase
         $this->assertSame('code_search', $api->tools[0]->name);
         $this->assertSame(['text'], $api->tools[0]->parametersJsonSchema['required']);
         $this->assertArrayHasKey('path_filter', $api->tools[0]->parametersJsonSchema['properties']);
+        $this->assertStringContainsString('src/', (string) $api->tools[0]->parametersJsonSchema['properties']['path_filter']['description']);
+        $this->assertStringContainsString('non-whitespace', (string) $api->tools[0]->description);
+        $this->assertSame([
+            'Read the jbcontext-semantic-search skill guidelines before the first code_search call for a discovery question.',
+        ], $api->tools[0]->promptGuidelines);
+        $this->assertStringNotContainsString('builds, tests, Git', (string) $api->tools[0]->description);
         $this->assertArrayHasKey(JbcontextEligibilityJobHandler::HANDLER_ID, $api->handlers);
         $this->assertCount(1, $api->afterTurnHooks);
         $this->assertCount(1, $api->sessionStartHooks);
