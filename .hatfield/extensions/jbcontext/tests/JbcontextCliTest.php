@@ -85,4 +85,90 @@ final class JbcontextCliTest extends TestCase
         $this->assertSame('timed_out', $timedOutResult['error']);
         $this->assertNull($timedOutResult['detail']);
     }
+
+    #[Test]
+    public function statusPassesBoundedStderrDetailForMalformedJson(): void
+    {
+        $stderr = "broken json\nfrom jbcontext";
+        $exec = new RecordingExec([
+            new ExecResultDTO(
+                stdout: '{not-json',
+                stderr: $stderr,
+                exitCode: 1,
+            ),
+        ]);
+        $cli = new JbcontextCli($exec, $this->projectDir);
+
+        $result = $cli->status();
+
+        $this->assertFalse($result['ok']);
+        $this->assertSame('malformed_json', $result['error']);
+        $this->assertSame(JbcontextCliDiagnostic::format($stderr), $result['detail']);
+        $this->assertNull($result['payload']);
+    }
+
+    #[Test]
+    public function statusPassesBoundedStderrDetailForStructuredCliError(): void
+    {
+        $stderr = "daemon unavailable\nretry later";
+        $exec = new RecordingExec([
+            new ExecResultDTO(
+                stdout: '{"type":"error","message":"daemon unavailable"}',
+                stderr: $stderr,
+                exitCode: 1,
+            ),
+        ]);
+        $cli = new JbcontextCli($exec, $this->projectDir);
+
+        $result = $cli->status();
+
+        $this->assertFalse($result['ok']);
+        $this->assertSame('cli_error', $result['error']);
+        $this->assertSame(JbcontextCliDiagnostic::format($stderr), $result['detail']);
+        $this->assertIsArray($result['payload']);
+        $this->assertSame('error', $result['payload']['type']);
+    }
+
+    #[Test]
+    public function statusPassesBoundedStderrDetailForNonZeroExitWithPayload(): void
+    {
+        $stderr = "status failed\nexit 2";
+        $exec = new RecordingExec([
+            new ExecResultDTO(
+                stdout: '{"type":"status_result","indices":[]}',
+                stderr: $stderr,
+                exitCode: 2,
+            ),
+        ]);
+        $cli = new JbcontextCli($exec, $this->projectDir);
+
+        $result = $cli->status();
+
+        $this->assertFalse($result['ok']);
+        $this->assertSame('exit_2', $result['error']);
+        $this->assertSame(JbcontextCliDiagnostic::format($stderr), $result['detail']);
+        $this->assertIsArray($result['payload']);
+        $this->assertSame('status_result', $result['payload']['type']);
+    }
+
+    #[Test]
+    public function successfulStatusIgnoresStderrAndKeepsDetailNull(): void
+    {
+        $exec = new RecordingExec([
+            new ExecResultDTO(
+                stdout: '{"type":"status_result","indices":[]}',
+                stderr: 'noise that must stay out of success detail',
+                exitCode: 0,
+            ),
+        ]);
+        $cli = new JbcontextCli($exec, $this->projectDir);
+
+        $result = $cli->status();
+
+        $this->assertTrue($result['ok']);
+        $this->assertNull($result['error']);
+        $this->assertNull($result['detail']);
+        $this->assertIsArray($result['payload']);
+        $this->assertSame('status_result', $result['payload']['type']);
+    }
 }

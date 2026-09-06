@@ -187,7 +187,7 @@ final readonly class JbcontextCli
                 'timed_out' => false,
                 'cancelled' => false,
                 'error' => 'malformed_json',
-                'detail' => null,
+                'detail' => JbcontextCliDiagnostic::format($result->stderr),
             ];
         }
 
@@ -199,7 +199,7 @@ final readonly class JbcontextCli
                 'timed_out' => false,
                 'cancelled' => false,
                 'error' => 'malformed_json',
-                'detail' => null,
+                'detail' => JbcontextCliDiagnostic::format($result->stderr),
             ];
         }
 
@@ -212,7 +212,7 @@ final readonly class JbcontextCli
                 'timed_out' => false,
                 'cancelled' => false,
                 'error' => 'cli_error',
-                'detail' => null,
+                'detail' => JbcontextCliDiagnostic::format($result->stderr),
             ];
         }
 
@@ -224,7 +224,7 @@ final readonly class JbcontextCli
                 'timed_out' => false,
                 'cancelled' => false,
                 'error' => 'exit_'.$result->exitCode,
-                'detail' => null,
+                'detail' => JbcontextCliDiagnostic::format($result->stderr),
             ];
         }
 
