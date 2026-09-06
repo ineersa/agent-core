@@ -77,17 +77,250 @@ final class JbcontextStatusPollerTest extends TestCase
         $poller->tick();
         $this->assertSame($disabledText, $statuses[JbcontextStatusPoller::STATUS_KEY] ?? null);
 
-        $now = 100.0 + JbcontextStatusPoller::DISABLED_FOOTER_DWELL_SECONDS - 0.01;
+        $now = 100.0 + JbcontextStatusPoller::FOOTER_DWELL_SECONDS - 0.01;
         $poller->tick();
         $this->assertSame($disabledText, $statuses[JbcontextStatusPoller::STATUS_KEY] ?? null);
 
-        $now = 100.0 + JbcontextStatusPoller::DISABLED_FOOTER_DWELL_SECONDS + JbcontextStatusPoller::MIN_POLL_SECONDS;
+        $now = 100.0 + JbcontextStatusPoller::FOOTER_DWELL_SECONDS + JbcontextStatusPoller::MIN_POLL_SECONDS;
         $poller->tick();
         $this->assertNull($statuses[JbcontextStatusPoller::STATUS_KEY] ?? null);
     }
 
     #[Test]
-    public function generationChangeResetsDisabledDwell(): void
+    public function clearsEligibleIndexedStatusAfterFiniteDwell(): void
+    {
+        $paths = JbcontextPaths::fromProjectRoot($this->projectDir);
+        $sessionId = 'sess';
+        $indexedText = 'jbcontext: indexed';
+        StatusFixtures::replace(JbcontextStatusStore::forSession($paths, $sessionId), new JbcontextSessionState(
+            sessionId: $sessionId,
+            mode: JbcontextSessionModeEnum::Eligible,
+            reason: null,
+            statusText: $indexedText,
+            attempt: 1,
+            startedAt: 1.0,
+            reindexPending: false,
+            reindexRunning: false,
+            eligibilityStarted: true,
+            checkGeneration: 1,
+            updatedAt: 1.0,
+        ));
+
+        $statuses = [];
+        $now = 100.0;
+        $tui = $this->tui($statuses, $sessionId);
+        $locator = new JbcontextSessionLocator();
+        $locator->bindTui($tui);
+        $poller = new JbcontextStatusPoller(
+            $tui,
+            $paths,
+            $locator,
+            new TestLogger(),
+            static function () use (&$now): float {
+                return $now;
+            },
+        );
+
+        $poller->tick();
+        $this->assertSame($indexedText, $statuses[JbcontextStatusPoller::STATUS_KEY] ?? null);
+
+        $now = 100.0 + JbcontextStatusPoller::FOOTER_DWELL_SECONDS - 0.01;
+        $poller->tick();
+        $this->assertSame($indexedText, $statuses[JbcontextStatusPoller::STATUS_KEY] ?? null);
+
+        $now = 100.0 + JbcontextStatusPoller::FOOTER_DWELL_SECONDS + JbcontextStatusPoller::MIN_POLL_SECONDS;
+        $poller->tick();
+        $this->assertNull($statuses[JbcontextStatusPoller::STATUS_KEY] ?? null);
+    }
+
+    #[Test]
+    public function keepsPendingAndRefreshingVisibleWithoutDwellClear(): void
+    {
+        $paths = JbcontextPaths::fromProjectRoot($this->projectDir);
+        $sessionId = 'sess';
+        $store = JbcontextStatusStore::forSession($paths, $sessionId);
+        StatusFixtures::replace($store, new JbcontextSessionState(
+            sessionId: $sessionId,
+            mode: JbcontextSessionModeEnum::Pending,
+            reason: null,
+            statusText: 'jbcontext: checking index…',
+            attempt: 1,
+            startedAt: 1.0,
+            reindexPending: false,
+            reindexRunning: false,
+            eligibilityStarted: true,
+            checkGeneration: 1,
+            updatedAt: 1.0,
+        ));
+
+        $statuses = [];
+        $now = 100.0;
+        $tui = $this->tui($statuses, $sessionId);
+        $locator = new JbcontextSessionLocator();
+        $locator->bindTui($tui);
+        $poller = new JbcontextStatusPoller(
+            $tui,
+            $paths,
+            $locator,
+            new TestLogger(),
+            static function () use (&$now): float {
+                return $now;
+            },
+        );
+
+        $poller->tick();
+        $this->assertSame('jbcontext: checking index…', $statuses[JbcontextStatusPoller::STATUS_KEY] ?? null);
+
+        $now += JbcontextStatusPoller::FOOTER_DWELL_SECONDS + 1.0;
+        $poller->tick();
+        $this->assertSame('jbcontext: checking index…', $statuses[JbcontextStatusPoller::STATUS_KEY] ?? null);
+
+        StatusFixtures::replace($store, new JbcontextSessionState(
+            sessionId: $sessionId,
+            mode: JbcontextSessionModeEnum::Eligible,
+            reason: null,
+            statusText: 'jbcontext: refreshing index…',
+            attempt: 1,
+            startedAt: 1.0,
+            reindexPending: false,
+            reindexRunning: true,
+            eligibilityStarted: true,
+            checkGeneration: 1,
+            updatedAt: 2.0,
+        ));
+        $now += JbcontextStatusPoller::MIN_POLL_SECONDS;
+        $poller->tick();
+        $this->assertSame('jbcontext: refreshing index…', $statuses[JbcontextStatusPoller::STATUS_KEY] ?? null);
+
+        $now += JbcontextStatusPoller::FOOTER_DWELL_SECONDS + 1.0;
+        $poller->tick();
+        $this->assertSame('jbcontext: refreshing index…', $statuses[JbcontextStatusPoller::STATUS_KEY] ?? null);
+    }
+
+    #[Test]
+    public function activeRefreshThenIdleClearsAfterBoundedDwell(): void
+    {
+        $paths = JbcontextPaths::fromProjectRoot($this->projectDir);
+        $sessionId = 'sess';
+        $store = JbcontextStatusStore::forSession($paths, $sessionId);
+        StatusFixtures::replace($store, new JbcontextSessionState(
+            sessionId: $sessionId,
+            mode: JbcontextSessionModeEnum::Eligible,
+            reason: null,
+            statusText: 'jbcontext: refreshing index…',
+            attempt: 1,
+            startedAt: 1.0,
+            reindexPending: false,
+            reindexRunning: true,
+            eligibilityStarted: true,
+            checkGeneration: 1,
+            updatedAt: 1.0,
+        ));
+
+        $statuses = [];
+        $now = 100.0;
+        $tui = $this->tui($statuses, $sessionId);
+        $locator = new JbcontextSessionLocator();
+        $locator->bindTui($tui);
+        $poller = new JbcontextStatusPoller(
+            $tui,
+            $paths,
+            $locator,
+            new TestLogger(),
+            static function () use (&$now): float {
+                return $now;
+            },
+        );
+
+        $poller->tick();
+        $this->assertSame('jbcontext: refreshing index…', $statuses[JbcontextStatusPoller::STATUS_KEY] ?? null);
+
+        StatusFixtures::replace($store, new JbcontextSessionState(
+            sessionId: $sessionId,
+            mode: JbcontextSessionModeEnum::Eligible,
+            reason: null,
+            statusText: 'jbcontext: indexed',
+            attempt: 1,
+            startedAt: 1.0,
+            reindexPending: false,
+            reindexRunning: false,
+            eligibilityStarted: true,
+            checkGeneration: 1,
+            updatedAt: 2.0,
+        ));
+        $now += JbcontextStatusPoller::MIN_POLL_SECONDS;
+        $poller->tick();
+        $this->assertSame('jbcontext: indexed', $statuses[JbcontextStatusPoller::STATUS_KEY] ?? null);
+
+        $now += JbcontextStatusPoller::FOOTER_DWELL_SECONDS + JbcontextStatusPoller::MIN_POLL_SECONDS;
+        $poller->tick();
+        $this->assertNull($statuses[JbcontextStatusPoller::STATUS_KEY] ?? null);
+    }
+
+    #[Test]
+    public function repeatedIdenticalIndexedAfterDwellDoesNotRepinForever(): void
+    {
+        $paths = JbcontextPaths::fromProjectRoot($this->projectDir);
+        $sessionId = 'sess';
+        $indexedText = 'jbcontext: indexed';
+        $store = JbcontextStatusStore::forSession($paths, $sessionId);
+        StatusFixtures::replace($store, new JbcontextSessionState(
+            sessionId: $sessionId,
+            mode: JbcontextSessionModeEnum::Eligible,
+            reason: null,
+            statusText: $indexedText,
+            attempt: 1,
+            startedAt: 1.0,
+            reindexPending: false,
+            reindexRunning: false,
+            eligibilityStarted: true,
+            checkGeneration: 1,
+            updatedAt: 1.0,
+        ));
+
+        $statuses = [];
+        $now = 100.0;
+        $tui = $this->tui($statuses, $sessionId);
+        $locator = new JbcontextSessionLocator();
+        $locator->bindTui($tui);
+        $poller = new JbcontextStatusPoller(
+            $tui,
+            $paths,
+            $locator,
+            new TestLogger(),
+            static function () use (&$now): float {
+                return $now;
+            },
+        );
+
+        $poller->tick();
+        $this->assertSame($indexedText, $statuses[JbcontextStatusPoller::STATUS_KEY] ?? null);
+
+        $now += JbcontextStatusPoller::FOOTER_DWELL_SECONDS + JbcontextStatusPoller::MIN_POLL_SECONDS;
+        $poller->tick();
+        $this->assertNull($statuses[JbcontextStatusPoller::STATUS_KEY] ?? null);
+
+        // Same generation + same statusText rewritten by a later turn finish.
+        StatusFixtures::replace($store, new JbcontextSessionState(
+            sessionId: $sessionId,
+            mode: JbcontextSessionModeEnum::Eligible,
+            reason: null,
+            statusText: $indexedText,
+            attempt: 1,
+            startedAt: 1.0,
+            reindexPending: false,
+            reindexRunning: false,
+            eligibilityStarted: true,
+            checkGeneration: 1,
+            updatedAt: 9.0,
+        ));
+        $now += JbcontextStatusPoller::MIN_POLL_SECONDS;
+        $poller->tick();
+        $this->assertNull($statuses[JbcontextStatusPoller::STATUS_KEY] ?? null);
+    }
+
+    #[Test]
+    public function generationChangeResetsSettledDwell(): void
     {
         $paths = JbcontextPaths::fromProjectRoot($this->projectDir);
         $sessionId = 'sess';

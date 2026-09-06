@@ -46,8 +46,9 @@ Start a **new Hatfield session** after enabling. Extensions register at startup.
 1. Interactive controller session start fires a public session-start hook that writes a session-scoped pending status file and dispatches one background eligibility job on the extension-agent transport. Worker/tool process loads and the TUI poller do not start eligibility.
 2. The worker requires `.idea` and a prior index snapshot from `jbcontext status --project-path <cwd> --json-output`.
 3. If either check fails, search stays unavailable until the next controller startup. The TUI status panel keeps the disabled reason for about five seconds, then clears it; `code_search` still returns the stored reason on demand.
-4. Transient status failures retry with preferred delays 2s, 4s, 8s, 16s under a hard ~30s wall-clock budget that also covers CLI status timeouts. Exhaustion disables the session; later turns do not retry.
-5. When eligible, the worker installs project assets and runs incremental `jbcontext index --silent`.
+4. Active work (`checking index…`, `refreshing index…`) stays visible while Pending or `reindexRunning`. Settled Eligible idle text (`indexed` / refresh-failed) also clears after about five seconds; identical rewrites of the same settled key do not repin the footer.
+5. Transient status failures retry with preferred delays 2s, 4s, 8s, 16s under a hard ~30s wall-clock budget that also covers CLI status timeouts. Exhaustion disables the session; later turns do not retry.
+6. When eligible, the worker installs project assets and runs incremental `jbcontext index --silent`.
 
 Every controller session-start (including resume of the same conversation) increments `check_generation` and reclaims pending eligibility, so fixing CLI auth or creating an index and restarting Hatfield recovers the same session. Jobs from an older generation are ignored so they cannot poison the newer claim. Headless or in-process runs that never fire controller session-start leave `code_search` unavailable for that process.
 
@@ -89,7 +90,8 @@ Because eligibility is asynchronous after startup discovery, newly installed pro
 | Pending startup check | `jbcontext: checking index…` / tool unavailable |
 | No `.idea` or no prior snapshot | disabled status text / tool unavailable |
 | Transient CLI failure exhausted | disabled after retries; surfaces bounded JB Context stderr when present / tool unavailable with the same detail |
-| Eligible | `jbcontext: indexed` (or refreshing) / search allowed |
+| Eligible, refreshing | `jbcontext: refreshing index…` while `reindexRunning` / search allowed |
+| Eligible, idle | brief `jbcontext: indexed` (or refresh-failed) notice for about five seconds, then clears / search allowed |
 
 ## Source of truth
 
