@@ -82,11 +82,6 @@ final class JbcontextStatusStore
         }
     }
 
-    public function write(JbcontextSessionState $state): void
-    {
-        $this->update(static fn (): JbcontextSessionState => $state);
-    }
-
     /**
      * @param callable(JbcontextSessionState): JbcontextSessionState $mutator
      */

@@ -17,6 +17,7 @@ use Ineersa\HatfieldExt\Jbcontext\State\JbcontextSessionModeEnum;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextSessionState;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextStatusStore;
 use Ineersa\HatfieldExt\Jbcontext\Tests\Support\RecordingExec;
+use Ineersa\HatfieldExt\Jbcontext\Tests\Support\StatusFixtures;
 use Ineersa\HatfieldExt\Jbcontext\Tool\CodeSearchToolHandler;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -41,7 +42,7 @@ final class CodeSearchToolHandlerTest extends TestCase
     public function returnsUnavailableWhenPendingAndNeverSearches(): void
     {
         $paths = JbcontextPaths::fromProjectRoot($this->projectDir);
-        JbcontextStatusStore::forSession($paths, 'run-1')->write(JbcontextSessionState::pending('run-1'));
+        StatusFixtures::replace(JbcontextStatusStore::forSession($paths, 'run-1'), JbcontextSessionState::pending('run-1'));
         $exec = new RecordingExec();
         $handler = new CodeSearchToolHandler(
             $paths,
@@ -64,7 +65,7 @@ final class CodeSearchToolHandlerTest extends TestCase
     public function returnsToonHitsWhenEligible(): void
     {
         $paths = JbcontextPaths::fromProjectRoot($this->projectDir);
-        JbcontextStatusStore::forSession($paths, 'run-1')->write(new JbcontextSessionState(
+        StatusFixtures::replace(JbcontextStatusStore::forSession($paths, 'run-1'), new JbcontextSessionState(
             sessionId: 'run-1',
             mode: JbcontextSessionModeEnum::Eligible,
             reason: null,
@@ -122,7 +123,7 @@ final class CodeSearchToolHandlerTest extends TestCase
     public function returnsBoundedCliStderrOnSearchFailureAndLogsOnlyStableCode(): void
     {
         $paths = JbcontextPaths::fromProjectRoot($this->projectDir);
-        JbcontextStatusStore::forSession($paths, 'run-1')->write(new JbcontextSessionState(
+        StatusFixtures::replace(JbcontextStatusStore::forSession($paths, 'run-1'), new JbcontextSessionState(
             sessionId: 'run-1',
             mode: JbcontextSessionModeEnum::Eligible,
             reason: null,
@@ -187,7 +188,7 @@ final class CodeSearchToolHandlerTest extends TestCase
     {
         $paths = JbcontextPaths::fromProjectRoot($this->projectDir);
         $message = 'jbcontext disabled: '.JbcontextCliDiagnostic::format('Authentication required');
-        JbcontextStatusStore::forSession($paths, 'run-1')->write(new JbcontextSessionState(
+        StatusFixtures::replace(JbcontextStatusStore::forSession($paths, 'run-1'), new JbcontextSessionState(
             sessionId: 'run-1',
             mode: JbcontextSessionModeEnum::Disabled,
             reason: $message,
@@ -223,7 +224,7 @@ final class CodeSearchToolHandlerTest extends TestCase
     public function returnsGenericSearchFailureWhenStderrEmpty(): void
     {
         $paths = JbcontextPaths::fromProjectRoot($this->projectDir);
-        JbcontextStatusStore::forSession($paths, 'run-1')->write(new JbcontextSessionState(
+        StatusFixtures::replace(JbcontextStatusStore::forSession($paths, 'run-1'), new JbcontextSessionState(
             sessionId: 'run-1',
             mode: JbcontextSessionModeEnum::Eligible,
             reason: null,

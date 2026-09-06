@@ -17,6 +17,7 @@ use Ineersa\HatfieldExt\Jbcontext\State\JbcontextSessionModeEnum;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextSessionState;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextStatusStore;
 use Ineersa\HatfieldExt\Jbcontext\Tests\Support\RecordingExec;
+use Ineersa\HatfieldExt\Jbcontext\Tests\Support\StatusFixtures;
 use Ineersa\HatfieldExt\Jbcontext\Tests\Support\TestExtensionApi;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -58,8 +59,9 @@ final class JbcontextEligibilityJobHandlerTest extends TestCase
         ]);
         $api = new TestExtensionApi($this->projectDir, $exec);
         $handler = new JbcontextEligibilityJobHandler(new TestLogger(), $this->packageRoot, static function (): void {});
+        $this->claimPending('sess-1');
 
-        $handler->handle($api, ['session_id' => 'sess-1', 'attempt' => 1], 'job', 'sess-1');
+        $handler->handle($api, ['session_id' => 'sess-1', 'attempt' => 1, 'check_generation' => 1], 'job', 'sess-1');
 
         $state = JbcontextStatusStore::forSession(JbcontextPaths::fromProjectRoot($this->projectDir), 'sess-1')->read();
         $this->assertSame(JbcontextSessionModeEnum::Disabled, $state->mode);
@@ -83,8 +85,9 @@ final class JbcontextEligibilityJobHandlerTest extends TestCase
         ]);
         $api = new TestExtensionApi($this->projectDir, $exec);
         $handler = new JbcontextEligibilityJobHandler(new TestLogger(), $this->packageRoot, static function (): void {});
+        $this->claimPending('sess-1');
 
-        $handler->handle($api, ['session_id' => 'sess-1', 'attempt' => 1], 'job', 'sess-1');
+        $handler->handle($api, ['session_id' => 'sess-1', 'attempt' => 1, 'check_generation' => 1], 'job', 'sess-1');
 
         $state = JbcontextStatusStore::forSession(JbcontextPaths::fromProjectRoot($this->projectDir), 'sess-1')->read();
         $this->assertSame(JbcontextSessionModeEnum::Disabled, $state->mode);
@@ -120,8 +123,9 @@ final class JbcontextEligibilityJobHandlerTest extends TestCase
         ]);
         $api = new TestExtensionApi($this->projectDir, $exec);
         $handler = new JbcontextEligibilityJobHandler(new TestLogger(), $this->packageRoot, static function (): void {});
+        $this->claimPending('sess-1');
 
-        $handler->handle($api, ['session_id' => 'sess-1', 'attempt' => 1], 'job', 'sess-1');
+        $handler->handle($api, ['session_id' => 'sess-1', 'attempt' => 1, 'check_generation' => 1], 'job', 'sess-1');
 
         $state = JbcontextStatusStore::forSession(JbcontextPaths::fromProjectRoot($this->projectDir), 'sess-1')->read();
         $this->assertSame(JbcontextSessionModeEnum::Eligible, $state->mode);
@@ -151,8 +155,9 @@ final class JbcontextEligibilityJobHandlerTest extends TestCase
         ]);
         $api = new TestExtensionApi($this->projectDir, $exec);
         $handler = new JbcontextEligibilityJobHandler(new TestLogger(), $this->packageRoot, $sleeper, $clock);
+        $this->claimPending('sess-1', 1, 1000.0);
 
-        $handler->handle($api, ['session_id' => 'sess-1', 'attempt' => 1], 'job', 'sess-1');
+        $handler->handle($api, ['session_id' => 'sess-1', 'attempt' => 1, 'check_generation' => 1], 'job', 'sess-1');
         $this->assertCount(1, $api->jobs);
         $this->assertSame(2, $api->jobs[0]->payload['attempt']);
         $this->assertSame([2], $sleeps);
@@ -161,7 +166,7 @@ final class JbcontextEligibilityJobHandlerTest extends TestCase
         for ($attempt = 2; $attempt <= \count(JbcontextRetrySchedule::DELAYS_SECONDS) + 1; ++$attempt) {
             $exec->push(new ExecResultDTO(stdout: '', stderr: 'boom', exitCode: 1));
             $api->jobs = [];
-            $handler->handle($api, ['session_id' => 'sess-1', 'attempt' => $attempt], 'job', 'sess-1');
+            $handler->handle($api, ['session_id' => 'sess-1', 'attempt' => $attempt, 'check_generation' => 1], 'job', 'sess-1');
             $delay = JbcontextRetrySchedule::sleepBeforeNextAttempt($attempt, $now - 1_000.0);
             if (null !== $delay) {
                 $now += $delay;
@@ -208,9 +213,10 @@ final class JbcontextEligibilityJobHandlerTest extends TestCase
             },
         );
 
+        $this->claimPending('sess-auth', 1, 1000.0);
         for ($attempt = 1; $attempt <= 5; ++$attempt) {
             $api->jobs = [];
-            $handler->handle($api, ['session_id' => 'sess-auth', 'attempt' => $attempt], 'job', 'sess-auth');
+            $handler->handle($api, ['session_id' => 'sess-auth', 'attempt' => $attempt, 'check_generation' => 1], 'job', 'sess-auth');
             $delay = JbcontextRetrySchedule::sleepBeforeNextAttempt($attempt, $now - 1_000.0);
             if (null !== $delay) {
                 $now += $delay;
@@ -238,7 +244,7 @@ final class JbcontextEligibilityJobHandlerTest extends TestCase
         mkdir($this->projectDir.'/.idea', 0o777, true);
         $paths = JbcontextPaths::fromProjectRoot($this->projectDir);
         $store = JbcontextStatusStore::forSession($paths, 'sess-budget');
-        $store->write(JbcontextSessionState::pending('sess-budget', 100.0)->with(
+        StatusFixtures::replace($store, JbcontextSessionState::pending('sess-budget', 100.0)->with(
             attempt: 1,
             eligibilityStarted: true,
             checkGeneration: 1,
@@ -259,7 +265,7 @@ final class JbcontextEligibilityJobHandlerTest extends TestCase
             static fn (): float => 129.0,
         );
 
-        $handler->handle($api, ['session_id' => 'sess-budget', 'attempt' => 2], 'job', 'sess-budget');
+        $handler->handle($api, ['session_id' => 'sess-budget', 'attempt' => 2, 'check_generation' => 1], 'job', 'sess-budget');
 
         $state = $store->read();
         $this->assertSame(JbcontextSessionModeEnum::Disabled, $state->mode);
@@ -273,7 +279,7 @@ final class JbcontextEligibilityJobHandlerTest extends TestCase
     {
         mkdir($this->projectDir.'/.idea', 0o777, true);
         $paths = JbcontextPaths::fromProjectRoot($this->projectDir);
-        JbcontextStatusStore::forSession($paths, 'sess-a')->write(new JbcontextSessionState(
+        StatusFixtures::replace(JbcontextStatusStore::forSession($paths, 'sess-a'), new JbcontextSessionState(
             sessionId: 'sess-a',
             mode: JbcontextSessionModeEnum::Disabled,
             reason: 'disabled a',
@@ -302,7 +308,8 @@ final class JbcontextEligibilityJobHandlerTest extends TestCase
         ]);
         $api = new TestExtensionApi($this->projectDir, $exec);
         $handler = new JbcontextEligibilityJobHandler(new TestLogger(), $this->packageRoot, static function (): void {});
-        $handler->handle($api, ['session_id' => 'sess-b', 'attempt' => 1], 'job', 'sess-b');
+        $this->claimPending('sess-b');
+        $handler->handle($api, ['session_id' => 'sess-b', 'attempt' => 1, 'check_generation' => 1], 'job', 'sess-b');
 
         $this->assertSame(JbcontextSessionModeEnum::Disabled, JbcontextStatusStore::forSession($paths, 'sess-a')->read()->mode);
         $this->assertSame(JbcontextSessionModeEnum::Eligible, JbcontextStatusStore::forSession($paths, 'sess-b')->read()->mode);
@@ -314,7 +321,7 @@ final class JbcontextEligibilityJobHandlerTest extends TestCase
         mkdir($this->projectDir.'/.idea', 0o777, true);
         $paths = JbcontextPaths::fromProjectRoot($this->projectDir);
         $store = JbcontextStatusStore::forSession($paths, 'sess-stale');
-        $store->write(JbcontextSessionState::pending('sess-stale', 100.0)->with(
+        StatusFixtures::replace($store, JbcontextSessionState::pending('sess-stale', 100.0)->with(
             attempt: 1,
             eligibilityStarted: true,
             checkGeneration: 2,
@@ -351,7 +358,7 @@ final class JbcontextEligibilityJobHandlerTest extends TestCase
         mkdir($this->projectDir.'/.idea', 0o777, true);
         $paths = JbcontextPaths::fromProjectRoot($this->projectDir);
         $store = JbcontextStatusStore::forSession($paths, 'sess-recover');
-        $store->write(new JbcontextSessionState(
+        StatusFixtures::replace($store, new JbcontextSessionState(
             sessionId: 'sess-recover',
             mode: JbcontextSessionModeEnum::Disabled,
             reason: 'jbcontext disabled: status check failed after retries. Fix CLI auth/daemon access and restart Hatfield.',
@@ -399,5 +406,73 @@ final class JbcontextEligibilityJobHandlerTest extends TestCase
         $this->assertNull($state->reason);
         $this->assertSame(2, $state->checkGeneration);
         $this->assertSame(['status', 'index'], array_map(static fn (array $c): string => $c['args'][0], $exec->calls()));
+    }
+
+    #[Test]
+    public function missingGenerationFailsClosedWithoutMutatingState(): void
+    {
+        $this->claimPending('sess-missing');
+        $logger = new TestLogger();
+        $exec = new RecordingExec([
+            new ExecResultDTO(stdout: '{"type":"status_result","indices":[]}', stderr: '', exitCode: 0),
+        ]);
+        $api = new TestExtensionApi($this->projectDir, $exec);
+        $handler = new JbcontextEligibilityJobHandler($logger, $this->packageRoot, static function (): void {});
+
+        $handler->handle($api, ['session_id' => 'sess-missing', 'attempt' => 1], 'job', 'sess-missing');
+
+        $state = JbcontextStatusStore::forSession(JbcontextPaths::fromProjectRoot($this->projectDir), 'sess-missing')->read();
+        $this->assertSame(JbcontextSessionModeEnum::Pending, $state->mode);
+        $this->assertSame(1, $state->checkGeneration);
+        $this->assertSame([], $exec->calls());
+        $this->assertTrue($this->loggerHas($logger, 'jbcontext.eligibility.missing_generation'));
+    }
+
+    #[Test]
+    public function invalidGenerationFailsClosedWithoutMutatingState(): void
+    {
+        $this->claimPending('sess-invalid');
+        $logger = new TestLogger();
+        $exec = new RecordingExec([
+            new ExecResultDTO(stdout: '{"type":"status_result","indices":[]}', stderr: '', exitCode: 0),
+        ]);
+        $api = new TestExtensionApi($this->projectDir, $exec);
+        $handler = new JbcontextEligibilityJobHandler($logger, $this->packageRoot, static function (): void {});
+
+        $handler->handle(
+            $api,
+            ['session_id' => 'sess-invalid', 'attempt' => 1, 'check_generation' => 0],
+            'job',
+            'sess-invalid',
+        );
+
+        $state = JbcontextStatusStore::forSession(JbcontextPaths::fromProjectRoot($this->projectDir), 'sess-invalid')->read();
+        $this->assertSame(JbcontextSessionModeEnum::Pending, $state->mode);
+        $this->assertSame(1, $state->checkGeneration);
+        $this->assertSame([], $exec->calls());
+        $this->assertTrue($this->loggerHas($logger, 'jbcontext.eligibility.invalid_generation'));
+    }
+
+    private function claimPending(string $sessionId, int $generation = 1, ?float $startedAt = null): void
+    {
+        $startedAt ??= microtime(true);
+        $store = JbcontextStatusStore::forSession(JbcontextPaths::fromProjectRoot($this->projectDir), $sessionId);
+        StatusFixtures::replace($store, JbcontextSessionState::pending($sessionId, $startedAt)->with(
+            attempt: 1,
+            eligibilityStarted: true,
+            checkGeneration: $generation,
+            updatedAt: $startedAt,
+        ));
+    }
+
+    private function loggerHas(TestLogger $logger, string $message): bool
+    {
+        foreach ($logger->records as $record) {
+            if ($message === $record['message']) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

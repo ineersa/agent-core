@@ -43,10 +43,9 @@ final readonly class JbcontextSessionStartHook implements AfterSessionStartHookI
         $store->update(static function (JbcontextSessionState $current) use (&$claimedGeneration): JbcontextSessionState {
             $claimedGeneration = $current->checkGeneration + 1;
 
-            return new JbcontextSessionState(
-                sessionId: $current->sessionId,
+            return $current->with(
                 mode: JbcontextSessionModeEnum::Pending,
-                reason: null,
+                clearReason: true,
                 statusText: 'jbcontext: checking index…',
                 attempt: 1,
                 startedAt: microtime(true),
@@ -57,10 +56,6 @@ final readonly class JbcontextSessionStartHook implements AfterSessionStartHookI
                 updatedAt: microtime(true),
             );
         });
-
-        if ($claimedGeneration < 1) {
-            return;
-        }
 
         try {
             $this->api->dispatchExtensionAgentJob(new ExtensionAgentJobRequestDTO(

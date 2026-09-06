@@ -14,6 +14,7 @@ use Ineersa\HatfieldExt\Jbcontext\State\JbcontextSessionModeEnum;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextSessionState;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextStatusStore;
 use Ineersa\HatfieldExt\Jbcontext\Tests\Support\RecordingExec;
+use Ineersa\HatfieldExt\Jbcontext\Tests\Support\StatusFixtures;
 use Ineersa\HatfieldExt\Jbcontext\Tests\Support\TestExtensionApi;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -62,7 +63,7 @@ final class JbcontextSessionStartHookTest extends TestCase
     {
         $paths = JbcontextPaths::fromProjectRoot($this->projectDir);
         $sessionId = 'session-b';
-        JbcontextStatusStore::forSession($paths, $sessionId)->write(new JbcontextSessionState(
+        StatusFixtures::replace(JbcontextStatusStore::forSession($paths, $sessionId), new JbcontextSessionState(
             sessionId: $sessionId,
             mode: JbcontextSessionModeEnum::Disabled,
             reason: 'jbcontext disabled: status check failed after retries. Fix CLI auth/daemon access and restart Hatfield.',

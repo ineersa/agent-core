@@ -64,6 +64,7 @@ final readonly class JbcontextCompletedTurnHook implements AfterTurnCommitHookIn
                     'session_id' => $context->runId,
                     'run_id' => $context->runId,
                     'turn_no' => $context->turnNo,
+                    'check_generation' => $state->checkGeneration,
                 ],
                 jobId: $jobId,
                 correlationId: $context->runId,

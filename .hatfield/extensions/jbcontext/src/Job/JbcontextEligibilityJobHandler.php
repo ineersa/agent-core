@@ -20,9 +20,10 @@ use Psr\Log\LoggerInterface;
  * Interactive-session eligibility / retry / first incremental refresh worker.
  *
  * Never creates a first index. Transient status failures retry under a hard
- * ~30s wall-clock budget that includes CLI status timeouts. Jobs carry a
- * check_generation so stale workers from a previous controller attempt cannot
- * overwrite a newer pending/eligible/disabled claim.
+ * ~30s wall-clock budget that includes CLI status timeouts. Jobs must carry a
+ * positive check_generation so stale workers from a previous controller attempt
+ * cannot overwrite a newer pending/eligible/disabled claim. Missing or invalid
+ * generations fail closed.
  */
 final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerInterface
 {
@@ -61,12 +62,15 @@ final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerIn
             return;
         }
 
+        $checkGeneration = $this->requireCheckGeneration($payload, $sessionId, $jobId);
+        if (null === $checkGeneration) {
+            return;
+        }
+
         $paths = JbcontextPaths::fromProjectRoot($api->getCwd());
         $store = JbcontextStatusStore::forSession($paths, $sessionId);
         $attempt = max(1, (int) ($payload['attempt'] ?? 1));
         $now = ($this->clock)();
-        $state = $store->read();
-        $checkGeneration = $this->resolveCheckGeneration($store, $payload);
         $state = $store->read();
 
         if (!$this->isCurrentGeneration($state, $checkGeneration)) {
@@ -147,7 +151,6 @@ final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerIn
 
         $becameEligible = false;
         $store->update(function (JbcontextSessionState $current) use (
-            $sessionId,
             $attempt,
             $checkGeneration,
             &$becameEligible,
@@ -162,17 +165,14 @@ final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerIn
 
             $becameEligible = true;
 
-            return new JbcontextSessionState(
-                sessionId: $sessionId,
+            return $current->with(
                 mode: JbcontextSessionModeEnum::Eligible,
-                reason: null,
+                clearReason: true,
                 statusText: 'jbcontext: indexed',
                 attempt: $attempt,
-                startedAt: $current->startedAt,
                 reindexPending: false,
                 reindexRunning: false,
                 eligibilityStarted: true,
-                checkGeneration: $checkGeneration,
                 updatedAt: ($this->clock)(),
             );
         });
@@ -367,7 +367,6 @@ final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerIn
         $store->update(function (JbcontextSessionState $current) use (
             $statusText,
             $attempt,
-            $sessionId,
             $checkGeneration,
             &$wrote,
         ): JbcontextSessionState {
@@ -381,17 +380,14 @@ final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerIn
 
             $wrote = true;
 
-            return new JbcontextSessionState(
-                sessionId: $sessionId,
+            return $current->with(
                 mode: JbcontextSessionModeEnum::Disabled,
                 reason: $statusText,
                 statusText: $statusText,
                 attempt: $attempt,
-                startedAt: $current->startedAt,
                 reindexPending: false,
                 reindexRunning: false,
                 eligibilityStarted: true,
-                checkGeneration: $checkGeneration,
                 updatedAt: ($this->clock)(),
             );
         });
@@ -413,36 +409,49 @@ final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerIn
     /**
      * @param array<string, mixed> $payload
      */
-    private function resolveCheckGeneration(JbcontextStatusStore $store, array $payload): int
+    private function requireCheckGeneration(array $payload, string $sessionId, ?string $jobId): ?int
     {
-        if (isset($payload['check_generation'])) {
-            return max(0, (int) $payload['check_generation']);
+        if (!\array_key_exists('check_generation', $payload)) {
+            $this->logger->error('jbcontext.eligibility.missing_generation', [
+                'component' => 'jbcontext',
+                'event_type' => 'jbcontext.eligibility.missing_generation',
+                'session_id' => $sessionId,
+                'job_id' => $jobId,
+            ]);
+
+            return null;
         }
 
-        // Direct/unit callers may omit generation. Adopt generation 1 once for
-        // an unclaimed pending file so existing handler contracts stay valid.
-        $adopted = 0;
-        $store->update(static function (JbcontextSessionState $current) use (&$adopted): JbcontextSessionState {
-            if ($current->checkGeneration > 0) {
-                $adopted = $current->checkGeneration;
+        $raw = $payload['check_generation'];
+        if (!\is_int($raw) && !(\is_string($raw) && is_numeric($raw))) {
+            $this->logger->error('jbcontext.eligibility.invalid_generation', [
+                'component' => 'jbcontext',
+                'event_type' => 'jbcontext.eligibility.invalid_generation',
+                'session_id' => $sessionId,
+                'job_id' => $jobId,
+            ]);
 
-                return $current;
-            }
+            return null;
+        }
 
-            $adopted = 1;
+        $checkGeneration = (int) $raw;
+        if ($checkGeneration < 1) {
+            $this->logger->error('jbcontext.eligibility.invalid_generation', [
+                'component' => 'jbcontext',
+                'event_type' => 'jbcontext.eligibility.invalid_generation',
+                'session_id' => $sessionId,
+                'job_id' => $jobId,
+                'job_generation' => $checkGeneration,
+            ]);
 
-            return $current->with(
-                attempt: max(1, $current->attempt),
-                eligibilityStarted: true,
-                checkGeneration: 1,
-            );
-        });
+            return null;
+        }
 
-        return $adopted;
+        return $checkGeneration;
     }
 
     private function isCurrentGeneration(JbcontextSessionState $state, int $checkGeneration): bool
     {
-        return $checkGeneration > 0 && $state->checkGeneration === $checkGeneration;
+        return $state->checkGeneration === $checkGeneration;
     }
 }

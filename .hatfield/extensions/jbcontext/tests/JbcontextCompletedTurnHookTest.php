@@ -16,6 +16,7 @@ use Ineersa\HatfieldExt\Jbcontext\State\JbcontextSessionModeEnum;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextSessionState;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextStatusStore;
 use Ineersa\HatfieldExt\Jbcontext\Tests\Support\RecordingExec;
+use Ineersa\HatfieldExt\Jbcontext\Tests\Support\StatusFixtures;
 use Ineersa\HatfieldExt\Jbcontext\Tests\Support\TestExtensionApi;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -41,7 +42,7 @@ final class JbcontextCompletedTurnHookTest extends TestCase
     {
         $paths = JbcontextPaths::fromProjectRoot($this->projectDir);
         $store = JbcontextStatusStore::forSession($paths, 'run-1');
-        $store->write(new JbcontextSessionState(
+        StatusFixtures::replace($store, new JbcontextSessionState(
             sessionId: 'run-1',
             mode: JbcontextSessionModeEnum::Eligible,
             reason: null,
@@ -70,6 +71,7 @@ final class JbcontextCompletedTurnHookTest extends TestCase
 
         $this->assertCount(1, $api->jobs);
         $this->assertSame(JbcontextReindexJobHandler::HANDLER_ID, $api->jobs[0]->handlerId);
+        $this->assertSame(1, $api->jobs[0]->payload['check_generation']);
         $this->assertTrue($store->read()->reindexPending);
 
         $api->jobs = [];
@@ -89,7 +91,7 @@ final class JbcontextCompletedTurnHookTest extends TestCase
     public function skipsWhenDisabled(): void
     {
         $paths = JbcontextPaths::fromProjectRoot($this->projectDir);
-        JbcontextStatusStore::forSession($paths, 'run-1')->write(new JbcontextSessionState(
+        StatusFixtures::replace(JbcontextStatusStore::forSession($paths, 'run-1'), new JbcontextSessionState(
             sessionId: 'run-1',
             mode: JbcontextSessionModeEnum::Disabled,
             reason: 'no index',

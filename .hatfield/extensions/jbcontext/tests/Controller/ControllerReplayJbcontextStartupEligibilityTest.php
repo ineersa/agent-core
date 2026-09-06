@@ -9,6 +9,7 @@ use Ineersa\HatfieldExt\Jbcontext\State\JbcontextPaths;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextSessionModeEnum;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextSessionState;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextStatusStore;
+use Ineersa\HatfieldExt\Jbcontext\Tests\Support\StatusFixtures;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
@@ -59,7 +60,7 @@ final class ControllerReplayJbcontextStartupEligibilityTest extends ControllerRe
         mkdir($this->tempDir.'/.idea', 0o777, true);
 
         $paths = JbcontextPaths::fromProjectRoot($this->tempDir);
-        JbcontextStatusStore::forSession($paths, $this->sessionId)->write(new JbcontextSessionState(
+        StatusFixtures::replace(JbcontextStatusStore::forSession($paths, $this->sessionId), new JbcontextSessionState(
             sessionId: $this->sessionId,
             mode: JbcontextSessionModeEnum::Disabled,
             reason: 'jbcontext disabled: status check failed after retries. Fix CLI auth/daemon access and restart Hatfield.',

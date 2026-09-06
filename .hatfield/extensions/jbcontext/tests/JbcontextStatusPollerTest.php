@@ -12,6 +12,7 @@ use Ineersa\HatfieldExt\Jbcontext\State\JbcontextSessionLocator;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextSessionModeEnum;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextSessionState;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextStatusStore;
+use Ineersa\HatfieldExt\Jbcontext\Tests\Support\StatusFixtures;
 use Ineersa\HatfieldExt\Jbcontext\Tui\JbcontextStatusPoller;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -34,12 +35,12 @@ final class JbcontextStatusPollerTest extends TestCase
     }
 
     #[Test]
-    public function showsDisabledStatusOnceThenClearsPanel(): void
+    public function keepsDisabledStatusForFiniteDwellThenClearsPanel(): void
     {
         $paths = JbcontextPaths::fromProjectRoot($this->projectDir);
         $sessionId = 'sess';
         $disabledText = 'jbcontext disabled: no existing index snapshot. Run `jbcontext index` manually once for this repository, then restart Hatfield.';
-        JbcontextStatusStore::forSession($paths, $sessionId)->write(new JbcontextSessionState(
+        StatusFixtures::replace(JbcontextStatusStore::forSession($paths, $sessionId), new JbcontextSessionState(
             sessionId: $sessionId,
             mode: JbcontextSessionModeEnum::Disabled,
             reason: 'no index',
@@ -54,15 +55,100 @@ final class JbcontextStatusPollerTest extends TestCase
         ));
 
         $statuses = [];
+        $now = 100.0;
         $tui = $this->tui($statuses, $sessionId);
         $locator = new JbcontextSessionLocator();
         $locator->bindTui($tui);
 
-        $poller = new JbcontextStatusPoller($tui, $paths, $locator, new TestLogger());
-        $this->forceTick($poller);
+        $poller = new JbcontextStatusPoller(
+            $tui,
+            $paths,
+            $locator,
+            new TestLogger(),
+            static function () use (&$now): float {
+                return $now;
+            },
+        );
+
+        $poller->tick();
         $this->assertSame($disabledText, $statuses[JbcontextStatusPoller::STATUS_KEY] ?? null);
 
-        $this->forceTick($poller);
+        $now = 100.0 + JbcontextStatusPoller::MIN_POLL_SECONDS;
+        $poller->tick();
+        $this->assertSame($disabledText, $statuses[JbcontextStatusPoller::STATUS_KEY] ?? null);
+
+        $now = 100.0 + JbcontextStatusPoller::DISABLED_FOOTER_DWELL_SECONDS - 0.01;
+        $poller->tick();
+        $this->assertSame($disabledText, $statuses[JbcontextStatusPoller::STATUS_KEY] ?? null);
+
+        $now = 100.0 + JbcontextStatusPoller::DISABLED_FOOTER_DWELL_SECONDS + JbcontextStatusPoller::MIN_POLL_SECONDS;
+        $poller->tick();
+        $this->assertNull($statuses[JbcontextStatusPoller::STATUS_KEY] ?? null);
+    }
+
+    #[Test]
+    public function generationChangeResetsDisabledDwell(): void
+    {
+        $paths = JbcontextPaths::fromProjectRoot($this->projectDir);
+        $sessionId = 'sess';
+        $first = 'jbcontext disabled: first failure';
+        $second = 'jbcontext disabled: second failure';
+        $store = JbcontextStatusStore::forSession($paths, $sessionId);
+        StatusFixtures::replace($store, new JbcontextSessionState(
+            sessionId: $sessionId,
+            mode: JbcontextSessionModeEnum::Disabled,
+            reason: $first,
+            statusText: $first,
+            attempt: 1,
+            startedAt: 1.0,
+            reindexPending: false,
+            reindexRunning: false,
+            eligibilityStarted: true,
+            checkGeneration: 1,
+            updatedAt: 1.0,
+        ));
+
+        $statuses = [];
+        $now = 100.0;
+        $tui = $this->tui($statuses, $sessionId);
+        $locator = new JbcontextSessionLocator();
+        $locator->bindTui($tui);
+        $poller = new JbcontextStatusPoller(
+            $tui,
+            $paths,
+            $locator,
+            new TestLogger(),
+            static function () use (&$now): float {
+                return $now;
+            },
+        );
+
+        $poller->tick();
+        $this->assertSame($first, $statuses[JbcontextStatusPoller::STATUS_KEY] ?? null);
+
+        $now += 4.0;
+        StatusFixtures::replace($store, new JbcontextSessionState(
+            sessionId: $sessionId,
+            mode: JbcontextSessionModeEnum::Disabled,
+            reason: $second,
+            statusText: $second,
+            attempt: 1,
+            startedAt: 1.0,
+            reindexPending: false,
+            reindexRunning: false,
+            eligibilityStarted: true,
+            checkGeneration: 2,
+            updatedAt: 2.0,
+        ));
+        $poller->tick();
+        $this->assertSame($second, $statuses[JbcontextStatusPoller::STATUS_KEY] ?? null);
+
+        $now += 4.0;
+        $poller->tick();
+        $this->assertSame($second, $statuses[JbcontextStatusPoller::STATUS_KEY] ?? null);
+
+        $now += JbcontextStatusPoller::MIN_POLL_SECONDS + 1.0;
+        $poller->tick();
         $this->assertNull($statuses[JbcontextStatusPoller::STATUS_KEY] ?? null);
     }
 
@@ -76,21 +162,13 @@ final class JbcontextStatusPollerTest extends TestCase
         $locator = new JbcontextSessionLocator();
         $locator->bindTui($tui);
 
-        $poller = new JbcontextStatusPoller($tui, $paths, $locator, new TestLogger());
-        $this->forceTick($poller);
+        $poller = new JbcontextStatusPoller($tui, $paths, $locator, new TestLogger(), static fn (): float => 1.0);
+        $poller->tick();
 
         $state = JbcontextStatusStore::forSession($paths, $sessionId)->read();
         $this->assertFalse($state->eligibilityStarted);
         $this->assertSame(JbcontextSessionModeEnum::Pending, $state->mode);
         $this->assertNull($statuses[JbcontextStatusPoller::STATUS_KEY] ?? null);
-    }
-
-    private function forceTick(JbcontextStatusPoller $poller): void
-    {
-        $ref = new \ReflectionClass(JbcontextStatusPoller::class);
-        $prop = $ref->getProperty('lastPollAt');
-        $prop->setValue($poller, 0.0);
-        $poller->tick();
     }
 
     /**
