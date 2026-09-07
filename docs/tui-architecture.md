@@ -34,7 +34,7 @@ output. Terminals that ignore synchronized output still receive the hide-cursor
 command before painting starts. For overheight frames with an editor cursor, it
 also repeats the cursor commit on the next event-loop turn without repainting
 content. This workaround remains because partial presentation recurred with
-synchronized restoration alone. New frames replace the pending commit, and reset
+synchronized restoration alone. New frames replace or cancel the pending commit, and reset
 or shutdown cancels it.
 
 The copy stays aligned with the pinned Symfony source. A source-hash regression
