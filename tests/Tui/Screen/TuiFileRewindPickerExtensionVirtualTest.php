@@ -107,6 +107,29 @@ final class TuiFileRewindPickerExtensionVirtualTest extends TestCase
         $this->assertSame([1, 3], $historyTurnNos);
     }
 
+    #[Test]
+    public function testMissingSessionPostsTransientRewindNotice(): void
+    {
+        $projectDir = TestDirectoryIsolation::createProjectTempDir('rewind-ext-no-session');
+        try {
+            $harness = new VirtualTuiHarness(sessionId: '');
+            $runtime = $this->buildTuiContext()
+                ->withTui($harness->tui())
+                ->withScreen($harness->screen())
+                ->withState(new TuiSessionState(''))
+                ->build();
+
+            $picker = new FileRewindPickerController($this->makeService($projectDir));
+            $picker->wire(new BridgeTuiExtensionContext($runtime));
+            $picker->open();
+            $harness->render();
+
+            $this->assertStringContainsString('File rewind requires an active session.', $harness->plainScreenText());
+        } finally {
+            TestDirectoryIsolation::removeDirectory($projectDir);
+        }
+    }
+
     private function seedCheckpoint(string $projectDir, string $runId, int $turnNo): void
     {
         $identity = RewindProjectIdentity::fromProjectRoot($projectDir);

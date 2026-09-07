@@ -30,6 +30,14 @@ interface TuiExtensionContextInterface
     public function setStatus(string $key, ?string $text): void;
 
     /**
+     * Post a one-shot status-panel notice that clears on the next nonempty submit.
+     *
+     * Persistent {@see setStatus()} rows keep their existing lifetime. Empty text
+     * is rejected; clear a key with {@see setStatus()} `$text = null`.
+     */
+    public function setTransientStatus(string $key, string $text): void;
+
+    /**
      * Register an idle-safe TUI tick callback.
      *
      * Invoked via the host {@see \Ineersa\Tui\Runtime\TuiTickDispatcher}. The bridge

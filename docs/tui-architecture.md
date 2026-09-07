@@ -76,6 +76,8 @@ Generic TUI extension contracts live in `Ineersa\Hatfield\ExtensionApi\Tui\*` an
 
 Public `TuiExtensionContextInterface` exposes status entries (`setStatus`), tick hooks (`onTick`), and native `AbstractWidget` overlays after the editor (`insertOverlayAfterEditor` / `removeOverlay` / `setFocus`); it does not expose internal widget replacement. Host bridge: `BridgeTuiExtensionContext`.
 
+One-shot status-panel notices use `setTransientStatus`. They clear on the next nonempty submit. Persistent `setStatus` rows keep their existing lifetime.
+
 ## Related
 
 - Sessions: [session-storage.md](session-storage.md)

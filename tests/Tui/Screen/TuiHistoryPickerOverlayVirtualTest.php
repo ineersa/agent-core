@@ -57,6 +57,27 @@ final class TuiHistoryPickerOverlayVirtualTest extends TestCase
         $this->assertSame(1, substr_count($screen, 'hello'));
     }
 
+    #[Test]
+    public function testEmptyHistoryPostsTransientStatusNotice(): void
+    {
+        $sessionId = 'history-empty-session';
+        $harness = new VirtualTuiHarness(sessionId: $sessionId);
+        $provider = $this->createStub(HistoryProviderInterface::class);
+        $provider->method('forSession')->willReturn(new HistoryView(prompts: [], positionTurnNo: 0));
+        $picker = new HistoryPickerController(
+            $harness->tui(),
+            $harness->screen(),
+            new TuiSessionState($sessionId),
+            $provider,
+            $this->createStub(TuiSessionSwitchServiceInterface::class),
+        );
+
+        (new HistoryCommandHandler($picker))->handle(new SlashCommand('history', '', '/history'));
+        $harness->render();
+
+        $this->assertStringContainsString('Session has no user prompts yet', $harness->plainScreenText());
+    }
+
     private function sampleHistory(): HistoryView
     {
         return new HistoryView(

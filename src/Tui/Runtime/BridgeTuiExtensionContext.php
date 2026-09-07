@@ -39,6 +39,11 @@ final readonly class BridgeTuiExtensionContext implements TuiExtensionContextInt
         $this->runtime->screen->setStatus($key, $text);
     }
 
+    public function setTransientStatus(string $key, string $text): void
+    {
+        $this->runtime->screen->setTransientStatus($key, $text);
+    }
+
     public function onTick(\Closure $listener): void
     {
         // Extensions must never force active 100Hz ticks; always return null.

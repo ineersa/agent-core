@@ -21,6 +21,7 @@ That is part of the public API. Do **not** depend on in-repo `Ineersa\Tui\*` cla
 `TuiExtensionContextInterface` exposes exactly:
 
 - `setStatus($key, $text|null)` — keyed **status-panel** rows (not the footer bar)
+- `setTransientStatus($key, $text)` — one-shot status-panel notice; cleared on the next nonempty submit. Persistent `setStatus` lifetime is unchanged.
 - `insertOverlayAfterEditor` / `removeOverlay` — overlay widgets below the editor
 - `setFocus` — focus an overlay widget
 - `onTick` — idle-safe tick callbacks (host discards return values; self-throttle)

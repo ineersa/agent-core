@@ -86,6 +86,8 @@ final class ChatScreen
     /* ── Status/working state (sole owner/writer; synced to native widgets) ── */
     /** @var array<string, string> */
     private array $statusEntries = [];
+    /** @var array<string, true> Keys posted via {@see setTransientStatus()} until the next nonempty submit. */
+    private array $transientStatusKeys = [];
     private string $workingMessage = '';
     private bool $workingVisible = true;
 
@@ -382,11 +384,54 @@ final class ChatScreen
         } else {
             $this->statusEntries[$key] = $text;
         }
+        // Persistent writes and clears demote any transient membership for this key.
+        unset($this->transientStatusKeys[$key]);
         $this->statusPanelWidget->setEntries($this->statusEntries);
     }
 
     /**
-     * Remove the transient Shift+Tab reasoning level line from the status panel.
+     * Post a one-shot status-panel notice that clears on the next nonempty submit.
+     *
+     * Does not change {@see setStatus()} lifetime: persistent rows stay until
+     * overwritten or cleared. Empty text is rejected; callers clear with
+     * {@see setStatus()} `$text = null`.
+     */
+    public function setTransientStatus(string $key, string $text): void
+    {
+        if ('' === $text) {
+            throw new \InvalidArgumentException('Transient status text must be non-empty; pass null to setStatus() to clear.');
+        }
+
+        $current = $this->statusEntries[$key] ?? null;
+        if ($text === $current && isset($this->transientStatusKeys[$key])) {
+            return;
+        }
+
+        $this->statusEntries[$key] = $text;
+        $this->transientStatusKeys[$key] = true;
+        $this->statusPanelWidget->setEntries($this->statusEntries);
+    }
+
+    /**
+     * Clear every status-panel row posted through {@see setTransientStatus()}.
+     *
+     * Persistent {@see setStatus()} rows are left alone.
+     */
+    public function clearTransientStatuses(): void
+    {
+        if ([] === $this->transientStatusKeys) {
+            return;
+        }
+
+        foreach (array_keys($this->transientStatusKeys) as $key) {
+            unset($this->statusEntries[$key]);
+        }
+        $this->transientStatusKeys = [];
+        $this->statusPanelWidget->setEntries($this->statusEntries);
+    }
+
+    /**
+     * Remove the Shift+Tab reasoning level line from the status panel.
      *
      * Does not change {@see TuiSessionState::footerReasoning}, editor border
      * colour, or footer diamond/model styling — only the panel-only notice.

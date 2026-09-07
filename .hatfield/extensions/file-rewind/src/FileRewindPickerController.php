@@ -38,7 +38,7 @@ final class FileRewindPickerController
         }
         $sessionId = $tui->getSessionId();
         if ('' === $sessionId) {
-            $tui->setStatus('rewind', 'File rewind requires an active session.');
+            $tui->setTransientStatus('rewind', 'File rewind requires an active session.');
             $tui->requestRender();
 
             return;
@@ -48,20 +48,20 @@ final class FileRewindPickerController
             return;
         }
         if (!$this->service->isEnabled()) {
-            $this->tui->setStatus('rewind', 'File rewind is disabled.');
+            $this->tui->setTransientStatus('rewind', 'File rewind is disabled.');
             $this->tui->requestRender();
 
             return;
         }
         if (!$this->service->isOperational()) {
-            $this->tui->setStatus('rewind', 'File rewind is unavailable (git missing).');
+            $this->tui->setTransientStatus('rewind', 'File rewind is unavailable (git missing).');
             $this->tui->requestRender();
 
             return;
         }
         $targets = $this->restorableTargets($sessionId);
         if ([] === $targets) {
-            $this->tui->setStatus('rewind', 'No file rewind checkpoints are available yet.');
+            $this->tui->setTransientStatus('rewind', 'No file rewind checkpoints are available yet.');
             $this->tui->requestRender();
 
             return;
@@ -212,7 +212,7 @@ final class FileRewindPickerController
             return;
         }
         if (!$this->service->hasCheckpointForTurn($sessionId, $turnNo)) {
-            $this->tui->setStatus('rewind', 'Selected checkpoint is no longer available.');
+            $this->tui->setTransientStatus('rewind', 'Selected checkpoint is no longer available.');
             $this->tui->requestRender();
 
             return;
@@ -221,7 +221,7 @@ final class FileRewindPickerController
             $this->service->restoreForTurn($sessionId, $turnNo);
             $this->tui->setStatus('rewind', null);
         } catch (\Throwable $e) {
-            $this->tui->setStatus('rewind', 'File rewind failed: '.$e->getMessage());
+            $this->tui->setTransientStatus('rewind', 'File rewind failed: '.$e->getMessage());
         }
         $this->tui->requestRender();
     }
