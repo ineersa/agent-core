@@ -371,6 +371,8 @@ final class ChatScreen
 
     public function setStatus(string $key, ?string $text): void
     {
+        // A persistent write takes ownership even when the displayed text is unchanged.
+        unset($this->transientStatusKeys[$key]);
         $current = $this->statusEntries[$key] ?? null;
         if ($text === $current) {
             return;
@@ -384,8 +386,6 @@ final class ChatScreen
         } else {
             $this->statusEntries[$key] = $text;
         }
-        // Persistent writes and clears demote any transient membership for this key.
-        unset($this->transientStatusKeys[$key]);
         $this->statusPanelWidget->setEntries($this->statusEntries);
     }
 
@@ -393,23 +393,12 @@ final class ChatScreen
      * Post a one-shot status-panel notice that clears on the next nonempty submit.
      *
      * Does not change {@see setStatus()} lifetime: persistent rows stay until
-     * overwritten or cleared. Empty text is rejected; callers clear with
-     * {@see setStatus()} `$text = null`.
+     * overwritten or cleared.
      */
     public function setTransientStatus(string $key, string $text): void
     {
-        if ('' === $text) {
-            throw new \InvalidArgumentException('Transient status text must be non-empty; pass null to setStatus() to clear.');
-        }
-
-        $current = $this->statusEntries[$key] ?? null;
-        if ($text === $current && isset($this->transientStatusKeys[$key])) {
-            return;
-        }
-
-        $this->statusEntries[$key] = $text;
+        $this->setStatus($key, $text);
         $this->transientStatusKeys[$key] = true;
-        $this->statusPanelWidget->setEntries($this->statusEntries);
     }
 
     /**

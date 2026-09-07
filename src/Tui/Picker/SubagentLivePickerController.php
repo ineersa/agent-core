@@ -82,7 +82,7 @@ final class SubagentLivePickerController
             $screen = $this->screen;
             $screen->setWorkingMessage(null);
             $screen->setStatus('agents-live', null);
-            $screen->requestRender(true);
+            $screen->requestRender();
 
             return;
         }
@@ -272,7 +272,7 @@ final class SubagentLivePickerController
         }
 
         if ($requestRender) {
-            $screen->requestRender(true);
+            $screen->requestRender();
         }
     }
 
@@ -382,7 +382,7 @@ final class SubagentLivePickerController
             $this->closePicker();
             $screen->setWorkingMessage(null);
             $screen->setStatus('agents-live', null);
-            $screen->requestRender(true);
+            $screen->requestRender();
 
             return;
         }

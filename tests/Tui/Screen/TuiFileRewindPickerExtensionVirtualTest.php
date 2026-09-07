@@ -26,6 +26,7 @@ use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\Component\Tui\Terminal\ScreenBuffer;
 
 final class TuiFileRewindPickerExtensionVirtualTest extends TestCase
 {
@@ -63,14 +64,45 @@ final class TuiFileRewindPickerExtensionVirtualTest extends TestCase
 
             $picker = new FileRewindPickerController($this->makeService($projectDir));
             $picker->wire(new BridgeTuiExtensionContext($runtime));
+            $harness->screen()->setTranscriptBlocks([(new \Ineersa\Tui\Transcript\TranscriptBlockFactory())->system(
+                runId: $sessionId,
+                text: 'Retained rewind transcript',
+                seq: 1,
+            )]);
+            $harness->render();
+            $buffer = new ScreenBuffer(width: 120, height: 40);
+            $buffer->write($harness->terminal()->consumeOutput());
             $picker->open();
 
-            $screen = $harness->plainScreenText();
+            $harness->tui()->processRender();
+            $delta = $harness->terminal()->consumeOutput();
+            $this->assertStringNotContainsString('Retained rewind transcript', $delta);
+            $this->assertStringNotContainsString("\x1b[2J", $delta);
+            $buffer->write($delta);
+            $screen = $buffer->getScreen();
             $this->assertSame(1, substr_count($screen, 'Checkpoint turn 3:'));
             $this->assertStringContainsString('checkpoint 1:', $screen);
             $this->assertStringContainsString('checkpoint 3:', $screen);
             $this->assertStringNotContainsString('checkpoint 2:', $screen);
             $this->assertStringNotContainsString('Restore files + conversation', $screen);
+
+            $harness->tui()->handleInput("\x1b[A");
+            $harness->tui()->processRender();
+            $delta = $harness->terminal()->consumeOutput();
+            $this->assertStringNotContainsString('Retained rewind transcript', $delta);
+            $buffer->write($delta);
+            $this->assertStringContainsString('Checkpoint turn 1:', $buffer->getScreen());
+
+            $harness->tui()->handleInput("\x1b");
+            $harness->tui()->processRender();
+            $delta = $harness->terminal()->consumeOutput();
+            $this->assertStringNotContainsString('Retained rewind transcript', $delta);
+            $this->assertStringNotContainsString("\x1b[2J", $delta);
+            $buffer->write($delta);
+            $this->assertStringNotContainsString('checkpoint 1:', $buffer->getScreen());
+            $this->assertStringContainsString('Retained rewind transcript', $buffer->getScreen());
+            $harness->tui()->handleInput('editor-ready');
+            $this->assertSame('editor-ready', $harness->screen()->promptEditor()->getText());
         } finally {
             TestDirectoryIsolation::removeDirectory($projectDir);
         }
@@ -125,6 +157,8 @@ final class TuiFileRewindPickerExtensionVirtualTest extends TestCase
             $harness->render();
 
             $this->assertStringContainsString('File rewind requires an active session.', $harness->plainScreenText());
+            $harness->screen()->clearTransientStatuses();
+            $this->assertStringNotContainsString('File rewind requires an active session.', $harness->plainScreenText());
         } finally {
             TestDirectoryIsolation::removeDirectory($projectDir);
         }

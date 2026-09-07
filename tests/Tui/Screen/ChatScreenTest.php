@@ -8,6 +8,7 @@ use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Footer\FooterDataProvider;
 use Ineersa\Tui\Footer\FooterSegment;
 use Ineersa\Tui\Screen\ChatScreen;
+use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
 use PHPUnit\Framework\Attributes\Test;
@@ -83,6 +84,21 @@ class ChatScreenTest extends TestCase
     }
 
     // ── Pre-mount safety ──
+
+    #[Test]
+    public function testPersistentWriteReplacesTransientLifetimeWithIdenticalText(): void
+    {
+        $harness = new VirtualTuiHarness();
+        $screen = $harness->screen();
+        $screen->setTransientStatus('notice', 'Same visible text');
+        $screen->setStatus('notice', 'Same visible text');
+        $screen->clearTransientStatuses();
+        $this->assertStringContainsString('Same visible text', $harness->plainScreenText());
+
+        $screen->setTransientStatus('notice', 'Same visible text');
+        $screen->clearTransientStatuses();
+        $this->assertStringNotContainsString('Same visible text', $harness->plainScreenText());
+    }
 
     #[Test]
     public function testInsertOverlayBeforeEditorThrowsBeforeMount(): void

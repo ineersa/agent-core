@@ -10,12 +10,13 @@ use Symfony\Component\Tui\Event\SelectEvent;
 use Symfony\Component\Tui\Event\SelectionChangeEvent;
 use Symfony\Component\Tui\Input\Key;
 use Symfony\Component\Tui\Input\Keybindings;
+use Symfony\Component\Tui\Widget\ContainerWidget;
 use Symfony\Component\Tui\Widget\SelectListWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
 
 final class FileRewindPickerController
 {
-    private ?PickerOverlay $overlay = null;
+    private ?ContainerWidget $overlay = null;
     private ?TuiExtensionContextInterface $tui = null;
     private ?string $sessionId = null;
     private ?TextWidget $headerWidget = null;
@@ -44,7 +45,7 @@ final class FileRewindPickerController
             return;
         }
         $this->sessionId = $sessionId;
-        if ($this->overlay?->isOpen() ?? false) {
+        if ($this->isOpen()) {
             return;
         }
         if (!$this->service->isEnabled()) {
@@ -71,8 +72,11 @@ final class FileRewindPickerController
 
     public function closePicker(bool $requestRender = true): void
     {
-        if (null !== $this->tui) {
-            $this->overlay?->close($this->tui, $requestRender);
+        if (null !== $this->overlay && null !== $this->tui) {
+            $this->tui->removeOverlay($this->overlay);
+            if ($requestRender) {
+                $this->tui->requestRender();
+            }
         }
         $this->overlay = null;
         $this->headerWidget = null;
@@ -81,7 +85,7 @@ final class FileRewindPickerController
 
     public function isOpen(): bool
     {
-        return $this->overlay?->isOpen() ?? false;
+        return null !== $this->overlay;
     }
 
     /**
@@ -125,8 +129,9 @@ final class FileRewindPickerController
             }
             $picker->updateHeaderForTurn($turnNo, $title);
         });
-        $this->overlay = new PickerOverlay();
-        $this->overlay->mount($tui, $list, $this->headerWidget);
+        $this->overlay = (new ContainerWidget())->add($this->headerWidget)->add($list);
+        $tui->insertOverlayAfterEditor($this->overlay);
+        $tui->setFocus($list);
         $initial = $targets[$selected];
         $this->updateHeaderForTurn($initial['turnNo'], $initial['title']);
     }
