@@ -23,7 +23,6 @@ declare(strict_types=1);
 use Castor\Attribute\AsTask;
 
 use function CastorTasks\check_lane_paratest_processes;
-use function CastorTasks\is_llm_mode;
 use function CastorTasks\phar_ensure;
 use function CastorTasks\qa_test_home_shell_prefix;
 use function CastorTasks\report_path;
@@ -46,8 +45,8 @@ function build_sequential_phpunit_command(string $pharEnv): string
 {
     $phpBin = \PHP_BINARY;
     $strictFlags = phpunit_strict_issue_flags();
-    $llmFlags = is_llm_mode() ? ' --colors=never --no-progress' : '';
-    $junitFlag = is_llm_mode() ? ' --log-junit='.report_path('phpunit-sequential.junit.xml') : '';
+    $llmFlags = ' --colors=never --no-progress';
+    $junitFlag = ' --log-junit='.report_path('phpunit-sequential.junit.xml');
 
     // Exclude phar/native-artifact groups from the default suite: they require
     // packaged artifacts and use real PHPUnit skips when inputs are absent,
@@ -119,7 +118,7 @@ function test(?string $filter = null, ?string $suite = null): void
             .' --filter='.escapeshellarg($filter)
             .' --exclude-group=tui-e2e-replay --exclude-group=llm-real --exclude-group=controller-replay'
             .' '.phpunit_strict_issue_flags()
-            .(is_llm_mode() ? ' --colors=never --no-progress --log-junit='.report_path('phpunit-filter.junit.xml') : '');
+            .' --colors=never --no-progress --log-junit='.report_path('phpunit-filter.junit.xml');
         $result = run_test_command_bounded('unit-filter', $phpunitCmd, castor_test_runner_max_seconds());
         if ('' !== $result['output']) {
             echo $result['output'];
@@ -161,8 +160,8 @@ function test(?string $filter = null, ?string $suite = null): void
 
     $bootstrap = paratest_bootstrap_path();
     $strictFlags = phpunit_strict_issue_flags();
-    $llmFlags = is_llm_mode() ? ' --colors=never --no-progress' : '';
-    $junitFlag = is_llm_mode() ? ' --log-junit='.report_path('phpunit-parallel.junit.xml') : '';
+    $llmFlags = ' --colors=never --no-progress';
+    $junitFlag = ' --log-junit='.report_path('phpunit-parallel.junit.xml');
 
     $cmd = qa_observability_env_command().' HATFIELD_QA_LANE=unit APP_ENV=test '.$pharEnv.\PHP_BINARY.' vendor/bin/paratest'
         .' --configuration=phpunit.xml.dist'
@@ -203,8 +202,8 @@ function build_check_paratest_command(): string
     $phpBin = \PHP_BINARY;
     $bootstrap = paratest_bootstrap_path();
     $strictFlags = phpunit_strict_issue_flags();
-    $llmFlags = is_llm_mode() ? ' --colors=never --no-progress' : '';
-    $junitFlag = is_llm_mode() ? ' --log-junit='.report_path('phpunit-parallel.junit.xml') : '';
+    $llmFlags = ' --colors=never --no-progress';
+    $junitFlag = ' --log-junit='.report_path('phpunit-parallel.junit.xml');
 
     $processes = check_lane_paratest_processes('unit', 4, 8);
 

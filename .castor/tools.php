@@ -12,7 +12,6 @@ declare(strict_types=1);
 use Castor\Attribute\AsTask;
 
 use function CastorTasks\ensure_dead_code_symfony_container_xml;
-use function CastorTasks\is_llm_mode;
 use function CastorTasks\regenerate_dead_code_baseline;
 use function CastorTasks\summarize_deptrac_json;
 use function CastorTasks\summarize_php_cs_fixer_json;
@@ -29,17 +28,15 @@ require_once __DIR__.'/env.php';
 function deptrac(): void
 {
     $cmd = qa_observability_env_command().' '.\PHP_BINARY.' vendor/bin/deptrac --config-file=depfile.yaml --no-progress --no-ansi'
-        .(is_llm_mode() ? ' --formatter=json' : '');
+        .' --formatter=json';
     $exitCode = 0;
     $output = [];
     exec($cmd, $output, $exitCode);
     $output = implode("\n", $output);
     echo $output.\PHP_EOL;
-    if (is_llm_mode()) {
-        $summary = summarize_deptrac_json($output);
-        if ('' !== $summary) {
-            echo $summary;
-        }
+    $summary = summarize_deptrac_json($output);
+    if ('' !== $summary) {
+        echo $summary;
     }
     if (0 !== $exitCode) {
         fail_quality(sprintf('Deptrac failed with exit code %d', $exitCode));
@@ -51,7 +48,7 @@ function deptrac(): void
 function phpstan(?string $path = null): void
 {
     $cmd = qa_observability_env_command().' '.\PHP_BINARY.' vendor/bin/phpstan analyse -c phpstan.dist.neon --no-progress'
-        .(is_llm_mode() ? ' --error-format=json --no-ansi' : '');
+        .' --error-format=json --no-ansi';
     if (null !== $path) {
         $cmd .= ' '.$path;
     }
@@ -60,11 +57,9 @@ function phpstan(?string $path = null): void
     exec($cmd, $output, $exitCode);
     $output = implode("\n", $output);
     echo $output.\PHP_EOL;
-    if (is_llm_mode()) {
-        $summary = summarize_phpstan_json($output);
-        if ('' !== $summary) {
-            echo $summary;
-        }
+    $summary = summarize_phpstan_json($output);
+    if ('' !== $summary) {
+        echo $summary;
     }
     if (0 !== $exitCode) {
         fail_quality(sprintf('PHPStan failed with exit code %d', $exitCode));
@@ -81,17 +76,15 @@ function dead_code(): void
     }
 
     $cmd = qa_observability_env_command().' '.\PHP_BINARY.' vendor/bin/phpstan analyse -c phpstan.dead-code.neon --no-progress'
-        .(is_llm_mode() ? ' --error-format=json --no-ansi' : '');
+        .' --error-format=json --no-ansi';
     $exitCode = 0;
     $output = [];
     exec($cmd, $output, $exitCode);
     $output = implode("\n", $output);
     echo $output.\PHP_EOL;
-    if (is_llm_mode()) {
-        $summary = summarize_phpstan_json($output);
-        if ('' !== $summary) {
-            echo $summary;
-        }
+    $summary = summarize_phpstan_json($output);
+    if ('' !== $summary) {
+        echo $summary;
     }
     if (0 !== $exitCode) {
         fail_quality(sprintf('Dead-code detector failed with exit code %d', $exitCode));
@@ -123,7 +116,7 @@ function dead_code_baseline(): void
 function cs_fix(string $path = ''): void
 {
     $cmd = qa_observability_env_command().' '.\PHP_BINARY.' vendor/bin/php-cs-fixer fix --config=.php-cs-fixer.dist.php --no-ansi'
-        .(is_llm_mode() ? ' --format=json --show-progress=none' : ' --diff');
+        .' --format=json --show-progress=none';
     if ('' !== $path) {
         $cmd .= ' '.escapeshellarg($path);
     }
@@ -137,7 +130,7 @@ function cs_fix(string $path = ''): void
 function cs_check(string $path = ''): void
 {
     $cmd = qa_observability_env_command().' '.\PHP_BINARY.' vendor/bin/php-cs-fixer fix --config=.php-cs-fixer.dist.php --dry-run --no-ansi'
-        .(is_llm_mode() ? ' --format=json --show-progress=none' : ' --diff');
+        .' --format=json --show-progress=none';
     if ('' !== $path) {
         $cmd .= ' '.escapeshellarg($path);
     }
@@ -146,11 +139,9 @@ function cs_check(string $path = ''): void
     exec($cmd, $output, $exitCode);
     $output = implode("\n", $output);
     echo $output.\PHP_EOL;
-    if (is_llm_mode()) {
-        $summary = summarize_php_cs_fixer_json($output);
-        if ('' !== $summary) {
-            echo $summary;
-        }
+    $summary = summarize_php_cs_fixer_json($output);
+    if ('' !== $summary) {
+        echo $summary;
     }
     if (0 !== $exitCode) {
         fail_quality(sprintf('CS check failed with exit code %d', $exitCode));
