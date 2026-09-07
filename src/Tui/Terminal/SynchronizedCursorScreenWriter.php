@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Terminal;
 
+use Revolt\EventLoop;
 use Symfony\Component\Tui\Ansi\AnsiUtils;
 use Symfony\Component\Tui\Exception\RenderException;
 use Symfony\Component\Tui\Terminal\TerminalInterface;
@@ -27,6 +28,8 @@ use Symfony\Component\Tui\Terminal\TerminalInterface;
  * Otherwise, ending synchronized output can expose the last painted row as the
  * cursor position. Hiding during paint also covers terminals that ignore
  * synchronized output.
+ * Overheight frames also repeat the cursor commit on the next event-loop turn.
+ * Keep this workaround: partial presentation has recurred with synchronization alone.
  */
 final class SynchronizedCursorScreenWriter
 {
@@ -46,6 +49,7 @@ final class SynchronizedCursorScreenWriter
 
     /** @var array{row: int, col: int, shape: int}|null */
     private ?array $previousCursorPos = null;
+    private ?string $deferredCursorCommitId = null;
 
     public function __construct(
         private readonly TerminalInterface $terminal,
@@ -118,6 +122,7 @@ final class SynchronizedCursorScreenWriter
         ['lines' => $lines, 'cursor_pos' => $cursorPos, 'first_changed' => $firstChanged, 'last_changed' => $lastChanged] = $this->prepareLines($lines);
 
         $this->writeInternal($lines, $cursorPos, $firstChanged, $lastChanged);
+        $this->scheduleDeferredCursorCommit($cursorPos, \count($lines));
         $this->previousRawLines = $rawLines;
         $this->previousCursorPos = $cursorPos;
     }
@@ -130,6 +135,7 @@ final class SynchronizedCursorScreenWriter
      */
     public function reset(): void
     {
+        $this->cancelDeferredCursorCommit();
         $this->previousLines = [];
         $this->previousRawLines = [];
         $this->previousCursorPos = null;
@@ -146,6 +152,8 @@ final class SynchronizedCursorScreenWriter
      */
     public function getState(): array
     {
+        $this->cancelDeferredCursorCommit();
+
         return [
             'line_count' => \count($this->previousLines),
             'cursor_row' => $this->hardwareCursorRow,
@@ -527,5 +535,38 @@ final class SynchronizedCursorScreenWriter
         } else {
             $this->terminal->hideCursor();
         }
+    }
+
+    /**
+     * Repeat the cursor commit on the next event-loop turn after an overheight frame.
+     *
+     * Some terminals leave a large scrolling update partially presented until
+     * another cursor command arrives. The deferred commit does not repaint content.
+     *
+     * @param array{row: int, col: int, shape: int}|null $cursorPos
+     */
+    private function scheduleDeferredCursorCommit(?array $cursorPos, int $lineCount): void
+    {
+        $this->cancelDeferredCursorCommit();
+
+        if (null === $cursorPos || $lineCount <= $this->terminal->getRows()) {
+            return;
+        }
+
+        $this->deferredCursorCommitId = EventLoop::defer(function () use ($cursorPos, $lineCount): void {
+            $this->deferredCursorCommitId = null;
+            $this->positionHardwareCursor($cursorPos, $lineCount);
+        });
+        EventLoop::unreference($this->deferredCursorCommitId);
+    }
+
+    private function cancelDeferredCursorCommit(): void
+    {
+        if (null === $this->deferredCursorCommitId) {
+            return;
+        }
+
+        EventLoop::cancel($this->deferredCursorCommitId);
+        $this->deferredCursorCommitId = null;
     }
 }
