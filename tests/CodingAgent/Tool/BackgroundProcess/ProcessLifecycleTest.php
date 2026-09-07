@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
@@ -47,39 +48,20 @@ final class ProcessLifecycleTest extends TestCase
         $this->assertFalse($this->lifecycle->isAlive(-1));
     }
 
-    #[Test]
-    public function isAliveIgnoresPhpStatCacheAfterProcessExit(): void
+    /** @return iterable<string, array{bool}> */
+    public static function exitedChildren(): iterable
     {
-        $launched = $this->lifecycle->launchProcess(
-            'exec sleep 30',
-            $this->tmpDir.'/cache.pid',
-            $this->tmpDir.'/cache.log',
-            $this->tmpDir.'/cache.status',
-        );
-        $pid = $launched['pid'];
-
-        $this->assertTrue($this->lifecycle->isAlive($pid));
-        $this->lifecycle->sendKill($pid, $launched['pgid']);
-
-        // Positive readiness: isAlive must flip false without raising the
-        // historical 1s assertProcessStopped poll. Bound is a safety cap.
-        $deadline = hrtime(true) + 200_000_000;
-        while (hrtime(true) < $deadline && $this->lifecycle->isAlive($pid)) {
-            usleep(1_000);
-        }
-
-        $this->assertFalse(
-            $this->lifecycle->isAlive($pid),
-            'Warm /proc is_dir() cache must not keep a killed PID alive',
-        );
+        yield 'reaped child with warm stat cache' => [true];
+        yield 'unreaped zombie' => [false];
     }
 
     #[Test]
-    public function isAliveTreatsZombieProcessAsDead(): void
+    #[DataProvider('exitedChildren')]
+    public function isAliveRecognizesExitedChild(bool $reap): void
     {
         $pipes = [];
         $process = proc_open(
-            ['bash', '-lc', 'sleep 30'],
+            [\PHP_BINARY, '-r', 'fread(STDIN, 1);'],
             [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
             $pipes,
         );
@@ -91,9 +73,17 @@ final class ProcessLifecycleTest extends TestCase
             $this->assertGreaterThan(0, $pid);
             $this->assertTrue($this->lifecycle->isAlive($pid));
 
-            posix_kill($pid, \SIGKILL);
+            // Closing stdin releases the child. No delayed fixture or signal race.
+            fclose($pipes[0]);
+            if ($reap) {
+                $this->assertSame(0, proc_close($process));
+                $this->assertFalse($this->lifecycle->isAlive($pid));
 
-            $deadline = hrtime(true) + 200_000_000;
+                return;
+            }
+
+            // Keep ownership without waitpid/proc_get_status, which would reap it.
+            $deadline = hrtime(true) + 2_000_000_000;
             $becameZombie = false;
             while (hrtime(true) < $deadline) {
                 $stat = @file_get_contents('/proc/'.$pid.'/stat');
@@ -114,12 +104,15 @@ final class ProcessLifecycleTest extends TestCase
                 'Unreaped zombie /proc entries must not count as alive',
             );
         } finally {
+            if (\is_resource($process)) {
+                proc_terminate($process, \SIGKILL);
+                proc_close($process);
+            }
             foreach ($pipes as $pipe) {
                 if (\is_resource($pipe)) {
                     fclose($pipe);
                 }
             }
-            proc_close($process);
         }
     }
 }
