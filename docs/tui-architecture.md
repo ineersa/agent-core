@@ -20,6 +20,23 @@ For user-facing editor and command reference, see [terminal usage](terminal-usag
 
 `AgentCommand` resolves an `AgentSessionClient`. `InteractiveMode::run(...)` mounts `ChatScreen`, creates the per-session service scope, rebuilds the transcript, and binds session commands, compaction, hotkeys, and extensions.
 
+## Frame and cursor output
+
+`InteractiveMode` and `SetupScreen` install Hatfield's
+[`SynchronizedCursorScreenWriterAliasInstaller`](../src/Tui/Terminal/SynchronizedCursorScreenWriterAliasInstaller.php)
+before constructing Symfony TUI. Symfony constructs its final `ScreenWriter`
+internally, so the installer aliases Hatfield's copy under the Symfony class name.
+
+[`SynchronizedCursorScreenWriter`](../src/Tui/Terminal/SynchronizedCursorScreenWriter.php)
+hides the hardware cursor during full, differential, and deletion repaints. It
+restores the cursor position, shape, and visibility before releasing synchronized
+output. Terminals that ignore synchronized output still receive the hide-cursor
+command before painting starts. No deferred event-loop cursor commit remains.
+
+The copy stays aligned with the pinned Symfony source. A source-hash regression
+guard detects upstream drift. [Upstream follow-up #460](https://github.com/ineersa/agent-core/issues/460)
+tracks the fix needed to remove the copy and alias installer.
+
 ## Key types
 
 | Type | Role |

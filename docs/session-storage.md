@@ -15,6 +15,18 @@ description: Session identity, storage layout, events, resume, locking, and hist
 - Canonical conversation source is append-only `events.jsonl`. Transcript projection rebuilds from events on resume.
 - There is **no** `metadata.yaml` in the session directory.
 
+## Refreshed instructions
+
+On resume, Hatfield rebuilds its system prompt, project instructions, skills catalog,
+and agent definitions. The run-control worker replaces these generated messages
+after recovering the session and appends `context_refreshed` to `events.jsonl`.
+Conversation messages and compaction summaries are preserved. Refresh does not start
+a model turn or change existing child sessions.
+
+Changing instructions or tool definitions can reduce provider prompt-cache reuse.
+The effect depends on the provider and the first changed part of the request.
+Conversation history and the session's provider cache key are not deleted.
+
 ## Directory layout
 
 Base path: `sessions.path` setting (default under project `.hatfield/sessions/`).

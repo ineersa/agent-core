@@ -21,7 +21,7 @@ use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Runtime\TuiTickDispatcher;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Terminal\CachedWidthValidationRendererAliasInstaller;
-use Ineersa\Tui\Terminal\DeferredCursorCommitScreenWriterAliasInstaller;
+use Ineersa\Tui\Terminal\SynchronizedCursorScreenWriterAliasInstaller;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemeRegistry;
 use Ineersa\Tui\Theme\TuiTheme;
@@ -190,7 +190,7 @@ final readonly class InteractiveMode
 
             // ── Build screen and mount widget tree ──
             CachedWidthValidationRendererAliasInstaller::install();
-            DeferredCursorCommitScreenWriterAliasInstaller::install();
+            SynchronizedCursorScreenWriterAliasInstaller::install();
             $tui = new Tui();
             $screen = new ChatScreen(
                 $theme,

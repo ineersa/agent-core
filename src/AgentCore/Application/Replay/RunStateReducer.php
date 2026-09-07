@@ -13,6 +13,7 @@ use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Notification\ModelNotificationCodec;
 use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\CurrentToolCallDTO;
+use Ineersa\AgentCore\Domain\Run\GeneratedContext;
 use Ineersa\AgentCore\Domain\Run\HumanInputContinuationKindEnum;
 use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
 use Ineersa\AgentCore\Domain\Run\RunOperationalToolCallStatusEnum;
@@ -102,6 +103,7 @@ final readonly class RunStateReducer
             RunEventTypeEnum::ContextCompactionRequested->value => $this->applyNoMutation($event, $state),
             RunEventTypeEnum::ContextCompactionStarted->value => $this->applyContextCompactionStarted($payload, $state),
             RunEventTypeEnum::ContextCompacted->value => $this->applyContextCompacted($payload, $state, $messages),
+            RunEventTypeEnum::ContextRefreshed->value => $this->applyContextRefreshed($payload, $state, $messages),
             RunEventTypeEnum::ContextCompactionFailed->value => $this->applyContextCompactionFailed($payload, $state),
             RunEventTypeEnum::HistoryPositionSet->value,
             RunEventTypeEnum::HistoryTailDiscarded->value => $this->applyNoMutation($event, $state),
@@ -583,6 +585,24 @@ final readonly class RunStateReducer
                 ? new CurrentOperationDTO($turnNo, $stepId, $attempt, $key)
                 : null,
         ]);
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @param list<AgentMessage>   $messages
+     */
+    private function applyContextRefreshed(array $payload, RunState $state, array &$messages): RunState
+    {
+        $context = [];
+        foreach ($payload['messages'] ?? [] as $raw) {
+            $message = AgentMessage::fromPayload($raw);
+            if (null !== $message) {
+                $context[] = $message;
+            }
+        }
+        $messages = GeneratedContext::replace($messages, $context);
+
+        return $state;
     }
 
     /**
