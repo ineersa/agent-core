@@ -14,11 +14,13 @@ use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 /**
  * Projects generic model_notification events into System transcript blocks.
  *
- * Every notification is rendered as a System block carrying the exact
- * notification text that the model received.  Structured metadata
- * (source, kind, severity, tool_call_id, …) is preserved in the block's
- * meta so downstream renderers can apply severity‑based styling (icon,
- * theme color) without text parsing or output-cap-specific checks.
+ * Every canonical model_notification occurrence is rendered as its own
+ * System block carrying the exact notification text that the model
+ * received. Structured metadata (source, kind, severity, tool_call_id, …)
+ * is preserved in the block's meta so downstream renderers can apply
+ * severity-based styling (icon, theme color) without text parsing or
+ * output-cap-specific checks. Content-stable notification ids alone do
+ * not collapse distinct events.
  */
 final readonly class ModelNotificationProjectionSubscriber implements EventSubscriberInterface
 {
@@ -39,9 +41,16 @@ final readonly class ModelNotificationProjectionSubscriber implements EventSubsc
         /** @var ModelNotificationDTO $notification */
         $notification = $this->denormalizer->denormalize($event->payload(), ModelNotificationDTO::class);
         $state = $event->state;
-
-        // DTO construction guarantees nonblank id; use it directly for stable block identity.
-        $blockId = 'model_notification_'.$notification->id;
+        $blockSeq = $state->nextSeq();
+        $eventSeq = $event->runtimeEvent->seq;
+        // Notification DTO ids are content-stable (for example late output-cap
+        // reuses one id while each canonical model_notification event gets a
+        // new seq and saved path). Key the transcript block by event seq so
+        // every occurrence stays visible in chronological order. Positive-seq
+        // replay of the same event still replaces in place.
+        $blockId = $eventSeq > 0
+            ? \sprintf('model_notification_%s_%d', $notification->id, $eventSeq)
+            : \sprintf('model_notification_%s_t%d', $notification->id, $blockSeq);
 
         // Build metadata for downstream renderers.
         $meta = [
@@ -65,7 +74,7 @@ final readonly class ModelNotificationProjectionSubscriber implements EventSubsc
             id: $blockId,
             kind: TranscriptBlockKindEnum::System,
             runId: $event->runId(),
-            seq: $state->nextSeq(),
+            seq: $blockSeq,
             text: $notification->text,
             meta: $meta,
             streaming: false,
