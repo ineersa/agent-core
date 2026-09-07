@@ -80,3 +80,4 @@ parameters:
                     - %currentWorkingDirectory%/.hatfield/extensions/castor-llm-mode/tests
                     - %currentWorkingDirectory%/.hatfield/extensions/file-rewind/tests
                     - %currentWorkingDirectory%/.hatfield/extensions/observational-memory/tests
+                    - %currentWorkingDirectory%/.hatfield/extensions/jbcontext/tests

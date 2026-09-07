@@ -275,6 +275,10 @@ services:
     arguments:
       $extensionAllowlistReader: '@Ineersa\CodingAgent\Extension\ChildRunExtensionAllowlistReaderInterface'
 
+  Ineersa\CodingAgent\Runtime\Controller\ExtensionSessionStartHookSubscriber:
+    arguments:
+      $extensionAllowlistReader: '@Ineersa\CodingAgent\Extension\ChildRunExtensionAllowlistReaderInterface'
+
   Ineersa\CodingAgent\Extension\ExtensionCompactionHookDispatcher:
     arguments:
       $extensionAllowlistReader: '@Ineersa\CodingAgent\Extension\ChildRunExtensionAllowlistReaderInterface'

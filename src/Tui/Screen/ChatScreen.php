@@ -295,6 +295,11 @@ final class ChatScreen
         $this->loadedResourcesWidget->setSummary($summary);
     }
 
+    public function setExtensionWarning(string $name, ?string $message): void
+    {
+        $this->loadedResourcesWidget->setExtensionWarning($name, $message);
+    }
+
     public function hasLoadedResourcesBlock(): bool
     {
         return $this->loadedResourcesWidget->hasContent();

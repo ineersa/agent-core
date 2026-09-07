@@ -382,6 +382,42 @@ SQL);
         $this->assertSame(1, $countNew);
     }
 
+    public function testExistingCacheItemsTableWithRowsRecordsVersionWithoutLosingData(): void
+    {
+        $connection = $this->createSqliteConnection($this->isolatedDir.'/preexisting-cache.sqlite');
+        $connection->executeStatement(
+            'CREATE TABLE cache_items (
+                item_id TEXT NOT NULL PRIMARY KEY,
+                item_data BLOB NOT NULL,
+                item_lifetime INTEGER DEFAULT NULL,
+                item_time INTEGER NOT NULL
+            )'
+        );
+        $connection->insert('cache_items', [
+            'item_id' => 'keep-me',
+            'item_data' => 'payload',
+            'item_lifetime' => null,
+            'item_time' => 1_725_000_000,
+        ]);
+
+        $migration = \DoctrineMigrations\Version20260617141001::class;
+        $executor = new ApplicationMigrationExecutor($connection, new NullLogger(), [$migration]);
+        $executor();
+
+        $this->assertSame(1, (int) $connection->fetchOne('SELECT COUNT(*) FROM cache_items'));
+        $this->assertSame('keep-me', $connection->fetchOne('SELECT item_id FROM cache_items'));
+        $this->assertSame('payload', $connection->fetchOne('SELECT item_data FROM cache_items'));
+        $this->assertNotFalse($connection->fetchOne(
+            'SELECT 1 FROM doctrine_migration_versions WHERE version = ?',
+            ['Version20260617141001'],
+        ));
+
+        (new ApplicationMigrationExecutor($connection, new NullLogger(), [$migration]))();
+
+        $this->assertSame(1, (int) $connection->fetchOne('SELECT COUNT(*) FROM cache_items'));
+        $this->assertSame(1, (int) $connection->fetchOne('SELECT COUNT(*) FROM doctrine_migration_versions'));
+    }
+
     public function testStartupExecutorBindsParametersForProviderCacheKeyBackfill(): void
     {
         $connection = $this->createSqliteConnection($this->isolatedDir.'/provider-key-backfill.sqlite');

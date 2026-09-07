@@ -87,6 +87,7 @@
             "Ineersa\\HatfieldExt\\CastorLlmMode\\": ".hatfield/extensions/castor-llm-mode/src/",
             "Ineersa\\HatfieldExt\\FileRewind\\": ".hatfield/extensions/file-rewind/src/",
             "Ineersa\\HatfieldExt\\ObservationalMemory\\": ".hatfield/extensions/observational-memory/src/",
+            "Ineersa\\HatfieldExt\\Jbcontext\\": ".hatfield/extensions/jbcontext/src/",
             "DoctrineMigrations\\MessengerTransport\\": "migrations/messenger_transport/"
         }
     },
@@ -101,6 +102,7 @@
             "Ineersa\\HatfieldExt\\CastorLlmMode\\Tests\\": ".hatfield/extensions/castor-llm-mode/tests/",
             "Ineersa\\HatfieldExt\\FileRewind\\Tests\\": ".hatfield/extensions/file-rewind/tests/",
             "Ineersa\\HatfieldExt\\ObservationalMemory\\Tests\\": ".hatfield/extensions/observational-memory/tests/",
+            "Ineersa\\HatfieldExt\\Jbcontext\\Tests\\": ".hatfield/extensions/jbcontext/tests/",
             "Ineersa\\Tools\\PHPStan\\": "tools/phpstan/"
         }
     },

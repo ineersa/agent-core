@@ -40,6 +40,13 @@ No shell string evaluation. Check exit codes via `ExecResultDTO`.
 `registerAfterTurnCommitHook()` runs when a turn reaches a stable committed boundary
 (useful for checkpoints, indexes, side ledgers). Context includes event summaries — not private host services.
 
+## Session-start hooks
+
+`registerSessionStartHook()` runs once when an interactive controller session starts,
+before the event loop and before any turn. Use it for startup background work that must
+call `dispatchExtensionAgentJob()` on the async extension_agent transport. The TUI parent
+process remains fail-closed for that dispatch path.
+
 ## Session events
 
 `sessionEvents()` returns a `SessionEventReaderInterface` for canonical session events.

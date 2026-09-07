@@ -255,7 +255,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # One-way monorepo split mirrors for Extension API + four project extensions.
+  # One-way monorepo split mirrors for Extension API + five project extensions.
   # Destination repositories are pre-provisioned outside this workflow; missing
   # MONOREPO_SPLIT_TOKEN or a missing destination repo must fail the matrix cell.
   package-split:
@@ -276,6 +276,8 @@ jobs:
             repository: hatfield-ext-file-rewind
           - directory: .hatfield/extensions/observational-memory
             repository: hatfield-ext-observational-memory
+          - directory: .hatfield/extensions/jbcontext
+            repository: hatfield-ext-jbcontext
     steps:
       - name: Require MONOREPO_SPLIT_TOKEN
         env:
@@ -284,7 +286,7 @@ jobs:
           set -euo pipefail
           if [[ -z "${MONOREPO_SPLIT_TOKEN}" ]]; then
             echo "ERROR: secret MONOREPO_SPLIT_TOKEN is missing or empty."
-            echo "Provision a least-privilege token with contents:write on the five split repositories"
+            echo "Provision a least-privilege token with contents:write on the six split repositories"
             echo "and add it as repository secret MONOREPO_SPLIT_TOKEN."
             exit 1
           fi

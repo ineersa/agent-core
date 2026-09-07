@@ -11,6 +11,7 @@ use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
+use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterSessionStartHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
 use Ineersa\Hatfield\ExtensionApi\Session\SessionEventReaderInterface;
@@ -145,6 +146,15 @@ interface ExtensionApiInterface
      * worker-failure/crash gaps are repaired by recovery/compaction reads.
      */
     public function registerAfterTurnCommitHook(AfterTurnCommitHookInterface $hook): void;
+
+    /**
+     * Register a hook invoked once when an interactive controller session starts.
+     *
+     * Runs in the controller process before the event loop and before any turn.
+     * Prefer this for startup background work that must use
+     * {@see self::dispatchExtensionAgentJob()} on the async extension_agent transport.
+     */
+    public function registerSessionStartHook(AfterSessionStartHookInterface $hook): void;
 
     /**
      * Register a public before-compaction hook.
