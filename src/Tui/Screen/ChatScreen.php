@@ -196,7 +196,6 @@ final class ChatScreen
         $tui->addStyleSheet((new ThemeStyleSheetFactory())->createHotkeyTable($this->theme->getPalette()));
         $tui->addStyleSheet((new ThemeStyleSheetFactory())->createSubagentProgressCard($this->theme->getPalette()));
         $tui->addStyleSheet((new ThemeStyleSheetFactory())->createQuestionChoiceList($this->theme->getPalette()));
-        $tui->addStyleSheet((new ThemeStyleSheetFactory())->createPickerSelectList($this->theme->getPalette()));
 
         // Theme the native working loader with the existing Working palette token.
         $workingColor = $this->theme->getPalette()->get(ThemeColorEnum::Working);

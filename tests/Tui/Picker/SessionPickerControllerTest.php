@@ -14,6 +14,7 @@ use Ineersa\Tui\Picker\SessionPickerController;
 use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\DefaultTheme;
+use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
@@ -55,7 +56,8 @@ final class SessionPickerControllerTest extends TestCase
             ],
         ];
 
-        $items = SessionPickerController::buildItemsStatic($sessions);
+        $theme = $this->createTheme();
+        $items = SessionPickerController::buildItemsStatic($sessions, $theme);
 
         $this->assertCount(2, $items);
         $this->assertSame('1', $items[0]['value']);
@@ -71,9 +73,49 @@ final class SessionPickerControllerTest extends TestCase
     #[Test]
     public function testBuildItemsStaticReturnsEmptyForEmptyInput(): void
     {
-        $items = SessionPickerController::buildItemsStatic([]);
+        $items = SessionPickerController::buildItemsStatic([], $this->createTheme());
 
         $this->assertSame([], $items);
+    }
+
+    #[Test]
+    public function testBuildItemsStaticAppliesAccentToSelectedIndex(): void
+    {
+        $sessions = [
+            ['sessionId' => '1', 'name' => 'Session A', 'displayTitle' => 'Session A'],
+            ['sessionId' => '2', 'name' => 'Session B', 'displayTitle' => 'Session B'],
+        ];
+
+        // Provide a real accent colour so ThemeColorEnum::Accent produces ANSI
+        $palette = new ThemePalette('test', [ThemeColorEnum::Accent->value => '#FF00FF']);
+        $theme = new DefaultTheme($palette);
+        $accented = SessionPickerController::buildItemsStatic($sessions, $theme, selectedIndex: 0);
+
+        $this->assertStringContainsString('#1 — Session A', $accented[0]['label']);
+        $this->assertStringContainsString('#2 — Session B', $accented[1]['label']);
+        // The accent-coloured label contains ANSI escape codes;
+        // the non-selected label does not.
+        $this->assertStringContainsString("\x1b", $accented[0]['label']);
+        $this->assertStringNotContainsString("\x1b", $accented[1]['label']);
+    }
+
+    #[Test]
+    public function testBuildItemsStaticAppliesAccentToNonZeroSelectedIndex(): void
+    {
+        $sessions = [
+            ['sessionId' => '1', 'name' => 'Session A', 'displayTitle' => 'Session A'],
+            ['sessionId' => '2', 'name' => 'Session B', 'displayTitle' => 'Session B'],
+            ['sessionId' => '3', 'name' => 'Session C', 'displayTitle' => 'Session C'],
+        ];
+
+        $palette = new ThemePalette('test', [ThemeColorEnum::Accent->value => '#FF00FF']);
+        $theme = new DefaultTheme($palette);
+        $accented = SessionPickerController::buildItemsStatic($sessions, $theme, selectedIndex: 1);
+
+        // Row 0 not accented, row 1 accented, row 2 not accented
+        $this->assertStringNotContainsString("\x1b", $accented[0]['label']);
+        $this->assertStringContainsString("\x1b", $accented[1]['label']);
+        $this->assertStringNotContainsString("\x1b", $accented[2]['label']);
     }
 
     #[Test]

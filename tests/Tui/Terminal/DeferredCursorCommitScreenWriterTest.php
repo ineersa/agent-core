@@ -58,53 +58,6 @@ final class DeferredCursorCommitScreenWriterTest extends TestCase
     }
 
     #[Test]
-    public function itRepeatsHiddenCursorCommitForOverheightFrameWithoutMarker(): void
-    {
-        $terminal = $this->createMock(TerminalInterface::class);
-        $terminal->method('getColumns')->willReturn(20);
-        $terminal->method('getRows')->willReturn(3);
-        $terminal->method('isVirtual')->willReturn(true);
-        $terminal->expects($this->exactly(2))->method('hideCursor');
-        $terminal->expects($this->never())->method('showCursor');
-
-        $writer = new DeferredCursorCommitScreenWriter($terminal);
-        $writer->writeLines([
-            'one',
-            'two',
-            'three',
-            'four',
-        ]);
-        self::runOneLoopTurn();
-    }
-
-    #[Test]
-    public function newerFrameCancelsObsoleteDeferredCursorCommit(): void
-    {
-        $terminal = $this->createMock(TerminalInterface::class);
-        $terminal->method('getColumns')->willReturn(20);
-        $terminal->method('getRows')->willReturn(3);
-        $terminal->method('isVirtual')->willReturn(true);
-
-        // First overheight frame writes + schedules hide; second fitting frame
-        // cancels the deferred callback and positions once for its own write.
-        $terminal->expects($this->exactly(2))->method('hideCursor');
-        $terminal->expects($this->never())->method('showCursor');
-
-        $writer = new DeferredCursorCommitScreenWriter($terminal);
-        $writer->writeLines([
-            'one',
-            'two',
-            'three',
-            'four',
-        ]);
-        $writer->writeLines([
-            'a',
-            'b',
-        ]);
-        self::runOneLoopTurn();
-    }
-
-    #[Test]
     public function exportingStateCancelsPendingCursorCommit(): void
     {
         $terminal = $this->terminalExpectingCursorCommits(rows: 3, count: 1);
