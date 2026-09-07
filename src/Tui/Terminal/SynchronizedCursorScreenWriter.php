@@ -9,30 +9,26 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Terminal;
 
-use Revolt\EventLoop;
 use Symfony\Component\Tui\Ansi\AnsiUtils;
 use Symfony\Component\Tui\Exception\RenderException;
 use Symfony\Component\Tui\Terminal\TerminalInterface;
 
 /**
- * Symfony's differential ScreenWriter with a deferred cursor commit for
- * overheight frames.
+ * Symfony's differential ScreenWriter with synchronized cursor restoration.
  *
  * Accepts rendered lines (the composited screen state) and writes them
  * to the terminal with minimal updates using line-level diffing.
  *
  * Symfony TUI 8.1 constructs its final ScreenWriter internally, so Hatfield
  * installs this class under Symfony's FQCN before Tui loads it. Keep the body
- * aligned with the referenced upstream revision. The Hatfield delta is the
- * EventLoop import, deferredCursorCommitId field, scheduling call after
- * writeInternal(), cancellation in reset() and getState(), and the
- * deferred-commit methods. Repaints also hide the cursor and keep synchronized
- * output open until its final position and visibility have been restored.
+ * aligned with the referenced upstream revision. Repaints hide the cursor and
+ * keep synchronized output open until its final position and visibility have
+ * been restored.
  * Otherwise, ending synchronized output can expose the last painted row as the
  * cursor position. Hiding during paint also covers terminals that ignore
  * synchronized output.
  */
-final class DeferredCursorCommitScreenWriter
+final class SynchronizedCursorScreenWriter
 {
     private const PRINTABLE_ASCII = ' !"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~';
 
@@ -50,7 +46,6 @@ final class DeferredCursorCommitScreenWriter
 
     /** @var array{row: int, col: int, shape: int}|null */
     private ?array $previousCursorPos = null;
-    private ?string $deferredCursorCommitId = null;
 
     public function __construct(
         private readonly TerminalInterface $terminal,
@@ -123,7 +118,6 @@ final class DeferredCursorCommitScreenWriter
         ['lines' => $lines, 'cursor_pos' => $cursorPos, 'first_changed' => $firstChanged, 'last_changed' => $lastChanged] = $this->prepareLines($lines);
 
         $this->writeInternal($lines, $cursorPos, $firstChanged, $lastChanged);
-        $this->scheduleDeferredCursorCommit($cursorPos, \count($lines));
         $this->previousRawLines = $rawLines;
         $this->previousCursorPos = $cursorPos;
     }
@@ -136,7 +130,6 @@ final class DeferredCursorCommitScreenWriter
      */
     public function reset(): void
     {
-        $this->cancelDeferredCursorCommit();
         $this->previousLines = [];
         $this->previousRawLines = [];
         $this->previousCursorPos = null;
@@ -153,8 +146,6 @@ final class DeferredCursorCommitScreenWriter
      */
     public function getState(): array
     {
-        $this->cancelDeferredCursorCommit();
-
         return [
             'line_count' => \count($this->previousLines),
             'cursor_row' => $this->hardwareCursorRow,
@@ -536,38 +527,5 @@ final class DeferredCursorCommitScreenWriter
         } else {
             $this->terminal->hideCursor();
         }
-    }
-
-    /**
-     * Repeat the cursor commit on the next event-loop turn after an overheight frame.
-     *
-     * Some terminals leave a large scrolling update partially presented until
-     * another cursor command arrives. The deferred commit does not repaint content.
-     *
-     * @param array{row: int, col: int, shape: int}|null $cursorPos
-     */
-    private function scheduleDeferredCursorCommit(?array $cursorPos, int $lineCount): void
-    {
-        $this->cancelDeferredCursorCommit();
-
-        if (null === $cursorPos || $lineCount <= $this->terminal->getRows()) {
-            return;
-        }
-
-        $this->deferredCursorCommitId = EventLoop::defer(function () use ($cursorPos, $lineCount): void {
-            $this->deferredCursorCommitId = null;
-            $this->positionHardwareCursor($cursorPos, $lineCount);
-        });
-        EventLoop::unreference($this->deferredCursorCommitId);
-    }
-
-    private function cancelDeferredCursorCommit(): void
-    {
-        if (null === $this->deferredCursorCommitId) {
-            return;
-        }
-
-        EventLoop::cancel($this->deferredCursorCommitId);
-        $this->deferredCursorCommitId = null;
     }
 }
