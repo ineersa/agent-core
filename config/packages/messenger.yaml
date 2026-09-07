@@ -114,6 +114,7 @@ framework:
             # Their asynchronous work remains separate Execute* effects.
             Ineersa\AgentCore\Domain\Message\AdvanceRun: run_control
             Ineersa\AgentCore\Domain\Message\CompactRun: run_control
+            Ineersa\AgentCore\Domain\Message\RefreshRunContext: run_control
             Ineersa\AgentCore\Domain\Message\ExecuteLlmStep: llm
             Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep: llm
             # Default tool transport; subagent is overridden to agent via middleware.

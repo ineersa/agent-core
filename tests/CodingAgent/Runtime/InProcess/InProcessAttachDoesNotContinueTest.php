@@ -8,11 +8,12 @@ use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\CoversMethod;
 
 /**
- * Thesis: passive attach must not dispatch AgentCore run-control methods when reopening a session.
+ * Refreshing instructions on attach must not start or advance a model turn.
  *
  * @covers \Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient::attach
  */
@@ -41,9 +42,10 @@ final class InProcessAttachDoesNotContinueTest extends IsolatedKernelTestCase
         /** @var InProcessAgentSessionClient $client */
         $client = self::getContainer()->get(InProcessAgentSessionClient::class);
 
-        $handle = $client->attach('session-attach-42');
+        $runId = self::getContainer()->get(HatfieldSessionStore::class)->createSession();
+        $handle = $client->attach($runId);
 
-        $this->assertSame('session-attach-42', $handle->runId);
+        $this->assertSame($runId, $handle->runId);
         $this->assertSame('attached', $handle->status);
         $this->assertSame([], $this->spyRunner->calls, 'attach must not call AgentRunnerInterface mutators');
     }
