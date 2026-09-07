@@ -2039,6 +2039,85 @@ final class TranscriptProjectorTest extends TestCase
         $this->assertSame('Free-standing informational nudge', $blocks[1]->text);
     }
 
+    public function testRepeatedModelNotificationsWithSameIdRemainChronological(): void
+    {
+        $this->accept('tool_execution.completed', [
+            'tool_call_id' => 'call-repeat-cap',
+            'tool_name' => 'agent_resume',
+            'result' => 'oversized handoff that the model never keeps inline',
+        ]);
+
+        $sharedId = 'stable-output-cap-id';
+        $this->accept('model.notification', [
+            'id' => $sharedId,
+            'source' => 'output_cap',
+            'kind' => 'output_capped',
+            'severity' => 'warning',
+            'delivery' => 'tool_result_replace',
+            'text' => "[Output capped]\nSaved full output: /tmp/cap-a.txt",
+            'tool_call_id' => 'call-repeat-cap',
+            'tool_name' => 'agent_resume',
+            'metadata' => ['saved_path' => '/tmp/cap-a.txt'],
+        ]);
+        $this->accept('model.notification', [
+            'id' => $sharedId,
+            'source' => 'output_cap',
+            'kind' => 'output_capped',
+            'severity' => 'warning',
+            'delivery' => 'tool_result_replace',
+            'text' => "[Output capped]\nSaved full output: /tmp/cap-b.txt",
+            'tool_call_id' => 'call-repeat-cap',
+            'tool_name' => 'agent_resume',
+            'metadata' => ['saved_path' => '/tmp/cap-b.txt'],
+        ]);
+
+        $blocks = $this->projector->blocks();
+        $this->assertCount(3, $blocks);
+        $this->assertSame(TranscriptBlockKindEnum::ToolResult, $blocks[0]->kind);
+        $this->assertSame('agent_resume completed', $blocks[0]->text);
+        $this->assertSame(TranscriptBlockKindEnum::System, $blocks[1]->kind);
+        $this->assertSame(TranscriptBlockKindEnum::System, $blocks[2]->kind);
+        $this->assertStringContainsString('/tmp/cap-a.txt', $blocks[1]->text);
+        $this->assertStringContainsString('/tmp/cap-b.txt', $blocks[2]->text);
+        $this->assertNotSame($blocks[1]->id, $blocks[2]->id);
+        $this->assertSame($sharedId, $blocks[1]->meta['notification_id']);
+        $this->assertSame($sharedId, $blocks[2]->meta['notification_id']);
+        $this->assertLessThan($blocks[2]->seq, $blocks[1]->seq);
+    }
+
+    public function testPositiveSeqModelNotificationReplayReplacesInPlace(): void
+    {
+        $payload = [
+            'id' => 'notif-replay',
+            'source' => 'output_cap',
+            'kind' => 'output_capped',
+            'severity' => 'warning',
+            'delivery' => 'context_message',
+            'text' => 'first delivery text',
+        ];
+
+        $this->projector->accept(new RuntimeEvent(
+            type: 'model.notification',
+            runId: self::RUN_ID,
+            seq: 42,
+            payload: $payload,
+        ));
+        $this->projector->accept(new RuntimeEvent(
+            type: 'model.notification',
+            runId: self::RUN_ID,
+            seq: 42,
+            payload: [
+                ...$payload,
+                'text' => 'replayed delivery text',
+            ],
+        ));
+
+        $blocks = $this->projector->blocks();
+        $this->assertCount(1, $blocks);
+        $this->assertSame('model_notification_notif-replay_42', $blocks[0]->id);
+        $this->assertSame('replayed delivery text', $blocks[0]->text);
+    }
+
     public function testAcceptsTypedRuntimeEventWithoutArrayRoundTrip(): void
     {
         $event = new RuntimeEvent(

@@ -19,6 +19,39 @@ use PHPUnit\Framework\TestCase;
  */
 final class SubagentChildRunHandoffRendererTest extends TestCase
 {
+    public function testInlineHandoffLimitCountsCharactersIncludingTheEnvelope(): void
+    {
+        $renderer = new SubagentChildRunHandoffRenderer();
+        $prefix = "Subagent scout completed.\nArtifact: agent_123\n\nHandoff:\n\n";
+        $handoff = str_repeat('é', 50000 - \strlen($prefix));
+
+        $this->assertSame($prefix.$handoff, $renderer->formatCompletedResult('scout', 'agent_123', $handoff));
+        $short = $renderer->formatCompletedResult('scout', 'agent_123', $handoff.'x');
+        $this->assertStringContainsString('exceeds 50,000 characters', $short);
+        $this->assertStringContainsString('Artifact: agent_123', $short);
+        $this->assertStringContainsString('agent_retrieve', $short);
+        $this->assertStringNotContainsString('é', $short);
+        $this->assertLessThan(50000, \strlen($short));
+
+        // The durable artifact remains complete even when inline delivery is short.
+        $markdown = $renderer->buildHandoffMarkdown(AgentArtifactStatusEnum::Completed, $handoff.'x', null, null);
+        $this->assertStringContainsString($handoff.'x', $markdown);
+    }
+
+    public function testOversizedFailureAndTimeoutKeepArtifactReferences(): void
+    {
+        $renderer = new SubagentChildRunHandoffRenderer();
+        $large = str_repeat('x', 50001);
+        foreach ([
+            $renderer->formatFailedResult('scout', 'agent_failed', $large),
+            $renderer->formatTimeoutResult('scout', 60, $large, 'agent_timeout'),
+        ] as $text) {
+            $this->assertStringContainsString('Inline handoff omitted', $text);
+            $this->assertStringContainsString('Artifact: agent_', $text);
+            $this->assertStringNotContainsString($large, $text);
+        }
+    }
+
     public function testFailedHandoffIncludesPartialContextFromChildState(): void
     {
         $renderer = new SubagentChildRunHandoffRenderer();

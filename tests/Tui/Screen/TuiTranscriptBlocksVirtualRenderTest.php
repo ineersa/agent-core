@@ -20,6 +20,7 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\AssistantStreamProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ExtensionAgentJobFailedProjectionSubscriber;
+use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ModelNotificationProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber;
@@ -598,6 +599,88 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
         $this->assertStringNotContainsString('❯', $text, 'User glyph must not appear for system-reminder');
         $this->assertStringNotContainsString('<system-reminder>', $text, 'Opening wrapper tag must not render');
         $this->assertStringNotContainsString('</system-reminder>', $text, 'Closing wrapper tag must not render');
+    }
+
+    /**
+     * Test thesis: repeated late-hook model.notification events that share one
+     * content-stable notification id still each appear in chronological TUI
+     * order with their distinct saved paths.
+     */
+    #[Test]
+    public function testRepeatedOutputCapNotificationsRemainVisibleChronologically(): void
+    {
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addSubscriber(new ToolProjectionSubscriber(
+            new SubagentProgressDisplayFormatter(),
+            SubagentProgressSerializerTestSupport::denormalizer(),
+        ));
+        $dispatcher->addSubscriber(new ModelNotificationProjectionSubscriber(
+            AttributeSerializerValidatorTestFactory::denormalizer(),
+        ));
+        $projector = new TranscriptProjector($dispatcher, new TranscriptProjectionState());
+
+        $projector->accept(new RuntimeEvent(
+            type: 'tool_execution.completed',
+            runId: self::SESSION_ID,
+            seq: 1,
+            payload: [
+                'tool_call_id' => 'call-visible-cap',
+                'tool_name' => 'agent_resume',
+                'result' => 'oversized handoff body the model no longer keeps inline',
+            ],
+        ));
+
+        $sharedId = 'stable-visible-cap-id';
+        $projector->accept(new RuntimeEvent(
+            type: 'model.notification',
+            runId: self::SESSION_ID,
+            seq: 2,
+            payload: [
+                'id' => $sharedId,
+                'source' => 'output_cap',
+                'kind' => 'output_capped',
+                'severity' => 'warning',
+                'delivery' => 'tool_result_replace',
+                'text' => "[Output capped]\nSaved full output: /tmp/visible-cap-a.txt",
+                'tool_call_id' => 'call-visible-cap',
+                'tool_name' => 'agent_resume',
+                'metadata' => ['saved_path' => '/tmp/visible-cap-a.txt'],
+            ],
+        ));
+        $projector->accept(new RuntimeEvent(
+            type: 'model.notification',
+            runId: self::SESSION_ID,
+            seq: 3,
+            payload: [
+                'id' => $sharedId,
+                'source' => 'output_cap',
+                'kind' => 'output_capped',
+                'severity' => 'warning',
+                'delivery' => 'tool_result_replace',
+                'text' => "[Output capped]\nSaved full output: /tmp/visible-cap-b.txt",
+                'tool_call_id' => 'call-visible-cap',
+                'tool_name' => 'agent_resume',
+                'metadata' => ['saved_path' => '/tmp/visible-cap-b.txt'],
+            ],
+        ));
+
+        $blocks = $projector->blocks();
+        $this->assertCount(3, $blocks);
+
+        $harness = new VirtualTuiHarness(columns: 120, rows: 40, sessionId: self::SESSION_ID);
+        $harness->screen()->setTranscriptBlocks($blocks);
+        $harness->screen()->setWorkingVisible(false);
+
+        $text = $harness->plainScreenText();
+        $pathAPos = mb_strpos($text, '/tmp/visible-cap-a.txt');
+        $pathBPos = mb_strpos($text, '/tmp/visible-cap-b.txt');
+
+        $this->assertNotFalse($pathAPos, 'First capped path missing from rendered transcript');
+        $this->assertNotFalse($pathBPos, 'Second capped path missing from rendered transcript');
+        $this->assertLessThan($pathBPos, $pathAPos, 'Repeated caps must remain chronological in the rendered transcript');
+        $this->assertSame(2, substr_count($text, '[Output capped]'));
+        $this->assertStringContainsString('agent_resume completed', $text);
+        $this->assertStringContainsString('⚠', $text, 'Warning system glyph missing');
     }
 
     #[Test]

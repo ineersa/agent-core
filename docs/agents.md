@@ -71,8 +71,9 @@ hatfield agents:init
 
 ## Foreground `subagent` tool
 
-- **Single mode:** `agent` + `task` — blocks until the child finishes; success returns full handoff inline.
+- **Single mode:** `agent` + `task` blocks until the child finishes. Success returns the full handoff inline unless the response exceeds 50,000 characters.
 - **Parallel mode:** `tasks` list — up to `agents.max_agents` children; results are bounded summaries.
+- Responses over 50,000 characters omit inline handoffs and return a notice with artifact references. The full handoffs remain available through `agent_retrieve`.
 - Default child denylist includes `settings` and `hatfield_docs` (`agents.subagent_excluded_tools`). Empty list disables the denylist.
 - **Always stripped on every child:** `subagent`, `fork`, and `agent_resume` (no nested child launches/resumes).
 - Durable timeout: `agents.subagent_tool_timeout_seconds` (default `86400`, min `60`) schedules deferred-batch interruption. This is not a generic ToolExecutor cap.
@@ -104,7 +105,7 @@ Parent-scoped continuation of an existing terminal child run via `follow_up` on 
 - Eligible statuses: `completed`, `failed`, `cancelled` when the child run/session is still usable.
 - Rejects in-flight artifacts (`running`, `needs_clarification`) and fork children.
 - Refuses oversized children when latest input tokens are near context limit (`max(75% contextWindow, 200k)`; absolute 200k when window unknown).
-- Parent result mirrors `subagent`: single = full latest handoff inline; parallel = bounded summaries.
+- Parent results follow the same single and parallel presentation rules as `subagent`, including the 50,000-character inline limit.
 - Same artifact id is preserved; each finalize appends an immutable handoff under `handoffs/<uuid>.md`.
 
 ## `agent_retrieve`

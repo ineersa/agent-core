@@ -30,7 +30,7 @@ Model-visible tools: **`subagent`** (launch), **`agent_resume`** (continue), and
 
 Exceeding `max_agents` fails fast — split only for cap overflow or true dependencies, not routine independent work.
 
-After a run, copy **`Artifact: agent_<hex>`** from the tool result. Single-mode success includes the full handoff inline; parallel results are bounded summaries — use **`agent_retrieve`** for complete handoffs. Cancelled/failed/timed-out results still include **`Artifact:`** (and **`Status: cancelled`** when cancelled).
+After a run, copy **`Artifact: agent_<hex>`** from the tool result. Single-mode success includes the full handoff inline. Parallel results include summaries. Responses over 50,000 characters omit inline handoffs and return a notice with artifact references. Use **`agent_retrieve`** for omitted handoffs or extra detail. Cancelled/failed/timed-out results still include **`Artifact:`** (and **`Status: cancelled`** when cancelled).
 
 ## Launch versus continue
 

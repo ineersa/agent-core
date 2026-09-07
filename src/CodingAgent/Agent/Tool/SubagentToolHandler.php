@@ -23,7 +23,7 @@ final class SubagentToolHandler
 {
     public const string NAME = 'subagent';
 
-    public const string DESCRIPTION_TEMPLATE = 'Launch interactive foreground subagent(s). Single mode uses "agent" and "task". Parallel mode uses "tasks" with up to %d agents per call (agents.max_agents). The tool blocks until all children finish. Single-mode results include the full child handoff inline; parallel results are bounded summaries — use agent_retrieve for complete parallel handoffs or extra detail.';
+    public const string DESCRIPTION_TEMPLATE = 'Launch interactive foreground subagent(s). Single mode uses "agent" and "task". Parallel mode uses "tasks" with up to %d agents per call (agents.max_agents). The tool blocks until all children finish. Single-mode results include the full child handoff inline; parallel results include summaries. Responses over 50,000 characters return a notice and artifact references instead. Use agent_retrieve for omitted handoffs or extra detail.';
 
     private const string EXECUTION_SERVICE_LOCATOR_KEY = 'execution';
 

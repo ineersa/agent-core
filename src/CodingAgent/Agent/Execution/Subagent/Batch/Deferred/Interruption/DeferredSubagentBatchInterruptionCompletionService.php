@@ -202,13 +202,11 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
             items: $items,
         );
 
-        $report = $this->parallelFormatter->formatReport($result);
-
         if (DeferredSubagentInterruptionKindEnum::Timeout === $kind) {
-            $message = 'Parallel subagents timed out after '.$timeoutSecs.' seconds.'."\n\n".$report;
+            $message = $this->parallelFormatter->formatReport($result, 'Parallel subagents timed out after '.$timeoutSecs.' seconds.');
             $errorEnvelope = $this->buildErrorEnvelope($message, false);
         } else {
-            $message = 'Parallel subagent tool cancelled by parent run.'."\n\n".$report;
+            $message = $this->parallelFormatter->formatReport($result, 'Parallel subagent tool cancelled by parent run.');
             $errorEnvelope = $this->buildErrorEnvelope($message, true);
         }
 
