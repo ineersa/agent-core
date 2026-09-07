@@ -286,7 +286,7 @@ export default function (pi: ExtensionAPI) {
 					const checkResult = await run(
 						pi,
 						"timeout",
-						["--kill-after=30s", `${CASTOR_CHECK_OUTER_GUARD_SECONDS}s`, "env", "LLM_MODE=true", "castor", "check"],
+						["--kill-after=30s", `${CASTOR_CHECK_OUTER_GUARD_SECONDS}s`, "castor", "check"],
 						worktree,
 						signal,
 						CASTOR_CHECK_HOST_TIMEOUT_SECONDS * 1000,

@@ -14,8 +14,6 @@ declare(strict_types=1);
 
 use Castor\Attribute\AsTask;
 
-use function CastorTasks\is_llm_mode;
-
 require_once __DIR__.'/../vendor/autoload.php';
 require_once __DIR__.'/helpers.php';
 
@@ -30,7 +28,7 @@ function log_tail(?string $level = null, int $lines = 50, ?string $search = null
     if (null !== $search) {
         $cmd .= ' --search='.escapeshellarg($search);
     }
-    $cmd .= ' --format='.(is_llm_mode() ? 'toon' : 'jsonl');
+    $cmd .= ' --format=toon';
     passthru($cmd, $exitCode);
     exit($exitCode);
 }
@@ -48,7 +46,7 @@ function log_search(string $query, ?string $level = null, ?string $from = null, 
     if (null !== $to) {
         $cmd .= ' --to='.escapeshellarg($to);
     }
-    $cmd .= ' --format='.(is_llm_mode() ? 'toon' : 'jsonl');
+    $cmd .= ' --format=toon';
     passthru($cmd, $exitCode);
     exit($exitCode);
 }
@@ -57,7 +55,7 @@ function log_search(string $query, ?string $level = null, ?string $from = null, 
 function log_files(): void
 {
     $cmd = escapeshellcmd(\PHP_BINARY).' '.__DIR__.'/../bin/console log:files';
-    $cmd .= ' --format='.(is_llm_mode() ? 'toon' : 'jsonl');
+    $cmd .= ' --format=toon';
     passthru($cmd, $exitCode);
     exit($exitCode);
 }

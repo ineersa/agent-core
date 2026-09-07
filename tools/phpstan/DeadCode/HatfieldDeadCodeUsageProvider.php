@@ -71,10 +71,10 @@ final class HatfieldDeadCodeUsageProvider extends ReflectionBasedMemberUsageProv
             return VirtualUsageData::withNote('Published Hatfield ExtensionApi contract');
         }
 
-        // Published ExtensionApiInterface::registerToolResultHook() must remain on every
-        // implementor (host bridge and test doubles). Concrete extensions currently
-        // register only call hooks, so native call analysis sees no callers.
-        if ('registerToolResultHook' === $method->getName()
+        // These published registration methods must remain on every implementor
+        // (host bridge and test doubles), even without current in-repo callers.
+        // The Castor extension was the last local rewrite-hook registration.
+        if (\in_array($method->getName(), ['registerToolResultHook', 'registerToolCallRewriteHook'], true)
             && $method->getDeclaringClass()->implementsInterface(ExtensionApiInterface::class)) {
             return VirtualUsageData::withNote('Published ExtensionApiInterface method with no current extension callers');
         }

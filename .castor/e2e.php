@@ -23,7 +23,6 @@ use function CastorTasks\check_lane_paratest_processes;
 use function CastorTasks\check_llm_generation_ready;
 use function CastorTasks\ensure_standalone_tui_qa_run_id;
 use function CastorTasks\finalize_qa_run_tui_tmux_sessions;
-use function CastorTasks\is_llm_mode;
 use function CastorTasks\phar_ensure;
 use function CastorTasks\qa_test_home_shell_prefix;
 use function CastorTasks\report_path;
@@ -51,7 +50,7 @@ function build_test_llm_real_phpunit_command(?string $filter = null): string
     }
 
     $strictFlags = phpunit_strict_issue_flags();
-    $llmFlags = is_llm_mode() ? ' --colors=never --no-progress --log-junit='.report_path('phpunit-llm-real.junit.xml') : '';
+    $llmFlags = ' --colors=never --no-progress --log-junit='.report_path('phpunit-llm-real.junit.xml');
     $envPrefix = qa_check_run_env_command().' HATFIELD_QA_LANE=llm-real APP_ENV=test LLAMA_CPP_SMOKE_TEST=1 ';
 
     // Full group: ParaTest parallel (was a single sequential PHPUnit process).
@@ -81,7 +80,7 @@ function build_test_llm_real_phpunit_command(?string $filter = null): string
 function build_test_tui_phpunit_command(?string $filter = null): string
 {
     $strictFlags = phpunit_strict_issue_flags();
-    $llmFlags = is_llm_mode() ? ' --colors=never --no-progress --log-junit='.report_path('phpunit-tui.junit.xml') : '';
+    $llmFlags = ' --colors=never --no-progress --log-junit='.report_path('phpunit-tui.junit.xml');
     $envPrefix = qa_check_run_env_command().' HATFIELD_QA_LANE=tui APP_ENV=test ';
 
     // TuiArtifactBootE2eTest hard-requires a packaged binary. Always ensure the
@@ -145,12 +144,9 @@ function test_llm_real(?string $filter = null): void
         echo $result['output'];
     }
 
-    if (is_llm_mode()) {
-        $summary = read_suite_junit_summary('llm-real');
-        if ('' !== $summary) {
-            echo "{$summary}
-";
-        }
+    $summary = read_suite_junit_summary('llm-real');
+    if ('' !== $summary) {
+        echo "{$summary}\n";
     }
 
     if (124 === $result['exitCode']) {
@@ -208,11 +204,9 @@ function test_tui(?string $filter = null): void
     }
     $duration = $result['duration'];
 
-    if (is_llm_mode()) {
-        $summary = read_suite_junit_summary('tui');
-        if ('' !== $summary) {
-            echo "{$summary}\n";
-        }
+    $summary = read_suite_junit_summary('tui');
+    if ('' !== $summary) {
+        echo "{$summary}\n";
     }
 
     if (124 === $result['exitCode']) {
@@ -237,7 +231,7 @@ function test_tui_update(): void
         .\PHP_BINARY.' vendor/bin/phpunit'
         .' --group tui-e2e-replay'
         .' --colors=never --no-progress --do-not-cache-result'
-        .(is_llm_mode() ? ' --log-junit='.report_path('phpunit-tui-update.junit.xml') : '');
+        .' --log-junit='.report_path('phpunit-tui-update.junit.xml');
     $result = run_test_command_bounded('tui-update', $cmd, castor_test_runner_max_seconds());
     if ('' !== $result['output']) {
         echo $result['output'];
@@ -285,7 +279,7 @@ function test_controller(): void
     $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
 
     $strictFlags = phpunit_strict_issue_flags();
-    $llmFlags = is_llm_mode() ? ' --colors=never --no-progress --log-junit='.report_path('phpunit-controller.junit.xml') : '';
+    $llmFlags = ' --colors=never --no-progress --log-junit='.report_path('phpunit-controller.junit.xml');
 
     $cmd = qa_observability_env_command().' APP_ENV=test '.$pharEnv.'LLAMA_CPP_SMOKE_TEST=1 '.\PHP_BINARY.' vendor/bin/phpunit'
         .' --filter=ControllerSmokeTest'
@@ -297,12 +291,9 @@ function test_controller(): void
     }
     $duration = $result['duration'];
 
-    if (is_llm_mode()) {
-        $summary = read_suite_junit_summary('controller');
-        if ('' !== $summary) {
-            echo "{$summary}
-";
-        }
+    $summary = read_suite_junit_summary('controller');
+    if ('' !== $summary) {
+        echo "{$summary}\n";
     }
 
     if (124 === $result['exitCode']) {
@@ -343,7 +334,7 @@ function test_controller_replay(): void
     // classes.  HATFIELD_BINARY_PATH is intentionally not set here.
 
     $strictFlags = phpunit_strict_issue_flags();
-    $llmFlags = is_llm_mode() ? ' --colors=never --no-progress --log-junit='.report_path('phpunit-controller-replay.junit.xml') : '';
+    $llmFlags = ' --colors=never --no-progress --log-junit='.report_path('phpunit-controller-replay.junit.xml');
 
     $cmd = qa_observability_env_command().' APP_ENV=test '.\PHP_BINARY.' vendor/bin/phpunit'
         .' --group=controller-replay'
@@ -357,11 +348,9 @@ function test_controller_replay(): void
     }
     $duration = $result['duration'];
 
-    if (is_llm_mode()) {
-        $summary = read_suite_junit_summary('controller-replay');
-        if ('' !== $summary) {
-            echo "{$summary}\n";
-        }
+    $summary = read_suite_junit_summary('controller-replay');
+    if ('' !== $summary) {
+        echo "{$summary}\n";
     }
 
     if (124 === $result['exitCode']) {

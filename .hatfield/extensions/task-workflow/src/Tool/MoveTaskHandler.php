@@ -261,11 +261,10 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
         // budget exceeds its maximum 270s lifetime, including --kill-after=30s.
         $checkResult = $this->exec->exec(
             'timeout',
-            ['--kill-after=30s', self::CASTOR_CHECK_OUTER_GUARD_SECONDS.'s', 'env', 'LLM_MODE=true', 'castor', 'check'],
+            ['--kill-after=30s', self::CASTOR_CHECK_OUTER_GUARD_SECONDS.'s', 'castor', 'check'],
             new ExecOptionsDTO(
                 cwd: $worktree,
                 timeout: $control->remainingTimeoutSeconds((float) self::CASTOR_CHECK_HOST_TIMEOUT_SECONDS),
-                env: ['LLM_MODE' => 'true'],
                 cancellationToken: $control->cancellationToken,
             ),
         );

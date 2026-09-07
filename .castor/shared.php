@@ -15,7 +15,6 @@ declare(strict_types=1);
  * =========================================================================
  */
 
-use function CastorTasks\is_llm_mode;
 use function CastorTasks\report_path;
 use function CastorTasks\summarize_junit_xml;
 
@@ -27,15 +26,15 @@ require_once __DIR__.'/helpers.php';
 /**
  * Terminate with a quality failure message.
  *
- * In LLM mode (non-aggregating) the message is written to stderr
- * and the process exits 1.  During parallel aggregation (check/test
- * running multiple steps concurrently) this throws a RuntimeException
- * so the outer runner catches it without killing sibling steps.
+ * Outside parallel aggregation the message is written to stderr and the
+ * process exits 1. During parallel aggregation (check/test running multiple
+ * steps concurrently) this throws a RuntimeException so the outer runner
+ * catches it without killing sibling steps.
  */
 function fail_quality(string $message): never
 {
     $isAggregating = isset($GLOBALS['CASTOR_CHECK_AGGREGATING']) && true === $GLOBALS['CASTOR_CHECK_AGGREGATING'];
-    if (is_llm_mode() && !$isAggregating) {
+    if (!$isAggregating) {
         fwrite(\STDERR, $message.\PHP_EOL);
         exit(1);
     }

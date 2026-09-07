@@ -7,7 +7,6 @@
         "php": ">=8.3",
         "ineersa/hatfield-extension-api": "@dev",
         "ineersa/hatfield-ext-task-workflow": "@dev",
-        "ineersa/hatfield-ext-castor-llm-mode": "@dev",
         "ineersa/hatfield-ext-file-rewind": "@dev",
         "ineersa/hatfield-ext-observational-memory": "@dev",
         "ineersa/hatfield-ext-jbcontext": "@dev"
@@ -20,10 +19,6 @@
         {
             "type": "path",
             "url": "task-workflow"
-        },
-        {
-            "type": "path",
-            "url": "castor-llm-mode"
         },
         {
             "type": "path",

@@ -12,7 +12,6 @@ use Ineersa\CodingAgent\Agent\Fork\ForkChildLaunchInputBuilder;
 use Ineersa\CodingAgent\Agent\Fork\ForkLaunchTaskDTO;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
-use Ineersa\HatfieldExt\CastorLlmMode\CastorLlmModeExtension;
 use Ineersa\HatfieldExt\ObservationalMemory\ObservationalMemoryExtension;
 use PHPUnit\Framework\Attributes\Group;
 
@@ -52,7 +51,6 @@ final class SubagentChildExtensionMetadataTest extends IsolatedKernelTestCase
         $this->assertIsArray($extensions);
         $this->assertSame([SafeGuardExtension::class], $extensions);
         $this->assertNotContains(ObservationalMemoryExtension::class, $extensions);
-        $this->assertNotContains(CastorLlmModeExtension::class, $extensions);
     }
 
     public function testForkMetadataUsesAlwaysOnWithoutLeakingOptionalGlobals(): void
@@ -86,7 +84,6 @@ final class SubagentChildExtensionMetadataTest extends IsolatedKernelTestCase
         $extensions = $prepared->startRunInput->metadata?->extensions;
         $this->assertIsArray($extensions);
         $this->assertSame([SafeGuardExtension::class], $extensions);
-        $this->assertNotContains(CastorLlmModeExtension::class, $extensions);
         $this->assertNotContains(ObservationalMemoryExtension::class, $extensions);
     }
 }

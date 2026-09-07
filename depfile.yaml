@@ -12,7 +12,6 @@ parameters:
     - ./src
     - .hatfield/extensions/extension-api/src
     - .hatfield/extensions/task-workflow/src
-    - .hatfield/extensions/castor-llm-mode/src
     - .hatfield/extensions/file-rewind/src
     - .hatfield/extensions/observational-memory/src
     - .hatfield/extensions/jbcontext/src
@@ -161,10 +160,6 @@ parameters:
         - type: classNameRegex
           value: '#^Ineersa\\HatfieldExt\\TaskWorkflow\\#'
 
-    - name: HatfieldExtCastorLlmMode
-      collectors:
-        - type: classNameRegex
-          value: '#^Ineersa\\HatfieldExt\\CastorLlmMode\\#'
 
     - name: HatfieldExtFileRewind
       collectors:
@@ -817,9 +812,6 @@ parameters:
     HatfieldExtTaskWorkflow:
       - AppExtensionApi
       - HatfieldExtTaskWorkflow
-    HatfieldExtCastorLlmMode:
-      - AppExtensionApi
-      - HatfieldExtCastorLlmMode
     HatfieldExtFileRewind:
       - AppExtensionApi
       - SymfonyTui

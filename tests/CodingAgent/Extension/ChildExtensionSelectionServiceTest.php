@@ -53,17 +53,17 @@ final class ChildExtensionSelectionServiceTest extends TestCase
     public function testForkUnionUsesEnabledNotGlobal(): void
     {
         $always = 'Ineersa\\CodingAgent\\Extension\\Builtin\\SafeGuard\\SafeGuardExtension';
-        $castor = 'Ineersa\\HatfieldExt\\CastorLlmMode\\CastorLlmModeExtension';
+        $fileRewind = 'Ineersa\\HatfieldExt\\FileRewind\\FileRewindExtension';
         $globalOnly = 'Ineersa\\HatfieldExt\\ObservationalMemory\\ObservationalMemoryExtension';
 
         $service = $this->service(
             agentsAlwaysOn: [$always],
             forksAlwaysOn: [$always],
-            forksEnabled: [$castor],
-            globallyEnabled: [$always, $castor, $globalOnly],
+            forksEnabled: [$fileRewind],
+            globallyEnabled: [$always, $fileRewind, $globalOnly],
         );
 
-        $this->assertSame([$always, $castor], $service->resolveForFork());
+        $this->assertSame([$always, $fileRewind], $service->resolveForFork());
     }
 
     public function testAssertSelectedAvailableFailsWhenNotGloballyEnabled(): void
