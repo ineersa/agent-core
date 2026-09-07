@@ -17,7 +17,7 @@ use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressParall
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingleSnapshotDTO;
 use Ineersa\CodingAgent\Tests\Runtime\Controller\E2E\Replay\StreamPacingHttpClient;
 use Ineersa\Tui\Terminal\CachedWidthValidationRenderer;
-use Ineersa\Tui\Terminal\DeferredCursorCommitScreenWriter;
+use Ineersa\Tui\Terminal\SynchronizedCursorScreenWriter;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use ShipMonk\PHPStan\DeadCode\Provider\ReflectionBasedMemberUsageProvider;
 use ShipMonk\PHPStan\DeadCode\Provider\VirtualUsageData;
@@ -91,7 +91,7 @@ final class HatfieldDeadCodeUsageProvider extends ReflectionBasedMemberUsageProv
             return VirtualUsageData::withNote('Symfony TUI Renderer contract installed through class_alias');
         }
 
-        if (DeferredCursorCommitScreenWriter::class === $className) {
+        if (SynchronizedCursorScreenWriter::class === $className) {
             return VirtualUsageData::withNote('Symfony TUI ScreenWriter contract installed through class_alias');
         }
 
