@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Setup;
 
 use Ineersa\Tui\Terminal\CachedWidthValidationRendererAliasInstaller;
-use Ineersa\Tui\Terminal\DeferredCursorCommitScreenWriterAliasInstaller;
+use Ineersa\Tui\Terminal\SynchronizedCursorScreenWriterAliasInstaller;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
 use Symfony\Component\Tui\Event\SettingChangeEvent;
@@ -114,7 +114,7 @@ final class SetupScreen
     public function run(?TerminalInterface $terminal = null): int
     {
         CachedWidthValidationRendererAliasInstaller::install();
-        DeferredCursorCommitScreenWriterAliasInstaller::install();
+        SynchronizedCursorScreenWriterAliasInstaller::install();
         $this->tui = new Tui(terminal: $terminal ?? new Terminal());
         $this->mount($this->tui);
         $this->tui->run();
