@@ -725,7 +725,7 @@ final class RegistryBackedToolboxTest extends TestCase
                 public function rewriteArguments(ToolCallContextDTO $context): ?array
                 {
                     $args = $context->arguments;
-                    $args['command'] = 'LLM_MODE=true '.$args['command'];
+                    $args['command'] = 'NO_COLOR=1 '.$args['command'];
 
                     return $args;
                 }
@@ -735,7 +735,7 @@ final class RegistryBackedToolboxTest extends TestCase
         $toolbox = $this->createToolbox($registry, rewriteHookProvider: $rewriteProvider);
         $toolbox->execute(new ToolCall('call-rw-1', 'bash', ['command' => 'castor test']));
 
-        $this->assertSame(['command' => 'LLM_MODE=true castor test'], $handler->lastArgs);
+        $this->assertSame(['command' => 'NO_COLOR=1 castor test'], $handler->lastArgs);
     }
 
     public function testRewriteHookNullReturnLeavesArgsUnchanged(): void
@@ -770,7 +770,7 @@ final class RegistryBackedToolboxTest extends TestCase
                 public function rewriteArguments(ToolCallContextDTO $context): ?array
                 {
                     $args = $context->arguments;
-                    $args['command'] = 'LLM_MODE=true '.$args['command'];
+                    $args['command'] = 'NO_COLOR=1 '.$args['command'];
 
                     return $args;
                 }
@@ -787,7 +787,7 @@ final class RegistryBackedToolboxTest extends TestCase
         $toolbox->execute(new ToolCall('call-rw-3', 'bash', ['command' => 'castor test']));
 
         // The native ToolCallRequested event must see the rewritten arguments.
-        $this->assertSame(['command' => 'LLM_MODE=true castor test'], $requestedArgs);
+        $this->assertSame(['command' => 'NO_COLOR=1 castor test'], $requestedArgs);
     }
 
     public function testMultipleRewriteHooksComposeLeftToRight(): void

@@ -49,7 +49,6 @@ Snapshot from the Markdown audit at `9f744008c`. Historical and imported documen
 | `.agents/skills/testing/SKILL.md` | corrected |
 | `.hatfield/APPEND_SYSTEM.md` | audited-accurate |
 | `.hatfield/agents/datadog-logs.md` | audited-accurate |
-| `.hatfield/extensions/castor-llm-mode/README.md` | audited-accurate |
 | `.hatfield/extensions/extension-api/AGENTS.md` | audited-accurate |
 | `.hatfield/extensions/extension-api/README.md` | audited-accurate |
 | `.hatfield/extensions/extension-api/docs/extension-api-runtime.md` | audited-accurate |

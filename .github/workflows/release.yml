@@ -270,8 +270,6 @@ jobs:
             repository: hatfield-extension-api
           - directory: .hatfield/extensions/task-workflow
             repository: hatfield-ext-task-workflow
-          - directory: .hatfield/extensions/castor-llm-mode
-            repository: hatfield-ext-castor-llm-mode
           - directory: .hatfield/extensions/file-rewind
             repository: hatfield-ext-file-rewind
           - directory: .hatfield/extensions/observational-memory

@@ -10,14 +10,11 @@ extensions:
     enabled:
         - Ineersa\HatfieldExt\TaskWorkflow\TaskWorkflowExtension
         - Ineersa\HatfieldExt\FileRewind\FileRewindExtension
-        - Ineersa\HatfieldExt\CastorLlmMode\CastorLlmModeExtension
         - Ineersa\HatfieldExt\ObservationalMemory\ObservationalMemoryExtension
         - Ineersa\HatfieldExt\Jbcontext\JbcontextExtension
     settings:
         task_workflow:
             task_root: /home/ineersa/projects/agent-core-tasks
-        castor_llm_mode:
-            enabled: true
         observational_memory:
             storage: { database: .hatfield/extensions-data/observational-memory/om.sqlite }
             model: llama_cpp/flash
@@ -30,8 +27,7 @@ forks:
     model: grok-cli/grok-composer-2.5-fast
     thinking_level: medium
     extensions:
-        enabled:
-            - Ineersa\HatfieldExt\CastorLlmMode\CastorLlmModeExtension
+        enabled: {}
         always_on: {}
 context_budget_reminders:
     early_input_tokens: 200000

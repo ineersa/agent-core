@@ -400,11 +400,10 @@ Use when investigating timeouts, parallel flakes, or â€œcheck fails under loadâ€
 ### Measure
 
 1. Work from the **exact worktree cwd**. Prefer absolute report dirs under that worktree.
-2. Solo lane or gate with junit emission (`LLM_MODE=1` so Castor writes `--log-junit`):
+2. Solo lane or gate with junit emission (Castor writes `--log-junit` by default):
 
 ```bash
 cd /path/to/exact-worktree
-export LLM_MODE=1
 export HATFIELD_QA_REPORTS_DIR="$PWD/var/reports/solo-<label>"
 castor check   # or: castor test / test:tui / test:controller-replay / test:llm-real
 ```
@@ -421,7 +420,7 @@ For known parallel/contention issues, run **from the same worktree**, concurrent
 - standalone `castor test:tui`
 - standalone `castor test:llm-real`
 
-Give each process a **unique** `HATFIELD_QA_REPORTS_DIR`, keep `LLM_MODE=1`, do not edit files while they run, and wait for all three exits. Solo green is insufficient when contention is the failure mode.
+Give each process a **unique** `HATFIELD_QA_REPORTS_DIR`, do not edit files while they run, and wait for all three exits. Solo green is insufficient when contention is the failure mode.
 
 ### Remediate
 

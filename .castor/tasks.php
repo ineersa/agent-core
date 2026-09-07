@@ -72,7 +72,6 @@ use function CastorTasks\check_llm_generation_ready;
 use function CastorTasks\cleanup_exact_qa_run_cache_roots;
 use function CastorTasks\finalize_qa_run_tui_tmux_sessions;
 use function CastorTasks\initialize_qa_check_run;
-use function CastorTasks\is_llm_mode;
 use function CastorTasks\release_castor_check_lock;
 use function CastorTasks\report_path;
 use function CastorTasks\run_quiet_command;
@@ -177,7 +176,7 @@ function _run_castor_check_body(string $root, string $qaRunId, float $checkWallD
         fail_quality('castor CLI executable not found; required for the docs:validate check lane');
     }
     $strictFlags = phpunit_strict_issue_flags();
-    $llmFlags = is_llm_mode() ? ' --colors=never --no-progress' : '';
+    $llmFlags = ' --colors=never --no-progress';
 
     // Each lane is a shell command that runs the underlying tool
     // directly — not through a Castor task closure — to stay safe
@@ -190,7 +189,7 @@ function _run_castor_check_body(string $root, string $qaRunId, float $checkWallD
         'deptrac' => [
             'cmd' => timeout_check_command(
                 qa_check_run_env_command().' '.$phpBin.' vendor/bin/deptrac --config-file=depfile.yaml --no-progress --no-ansi'
-                    .(is_llm_mode() ? ' --formatter=json' : ''),
+                    .' --formatter=json',
                 30,
             ),
         ],
@@ -206,7 +205,7 @@ function _run_castor_check_body(string $root, string $qaRunId, float $checkWallD
                 qa_check_run_env_command().' APP_ENV=test '.$phpBin.' vendor/bin/phpunit'
                     .' --group=controller-replay'
                     .' '.$strictFlags.$llmFlags
-                    .(is_llm_mode() ? ' --log-junit='.report_path('phpunit-controller-replay.junit.xml') : ''),
+                    .' --log-junit='.report_path('phpunit-controller-replay.junit.xml'),
                 150,
             ),
         ],
@@ -225,7 +224,7 @@ function _run_castor_check_body(string $root, string $qaRunId, float $checkWallD
         'phpstan' => [
             'cmd' => timeout_check_command(
                 qa_check_run_env_command().' '.$phpBin.' vendor/bin/phpstan analyse -c phpstan.dist.neon --no-progress'
-                    .(is_llm_mode() ? ' --error-format=json --no-ansi' : ''),
+                    .' --error-format=json --no-ansi',
                 90,
             ),
         ],
@@ -241,7 +240,7 @@ function _run_castor_check_body(string $root, string $qaRunId, float $checkWallD
         'cs-check' => [
             'cmd' => timeout_check_command(
                 qa_check_run_env_command().' '.$phpBin.' vendor/bin/php-cs-fixer fix --config=.php-cs-fixer.dist.php --dry-run --no-ansi'
-                    .(is_llm_mode() ? ' --format=json --show-progress=none' : ' --diff'),
+                    .' --format=json --show-progress=none',
                 30,
             ),
         ],

@@ -26,6 +26,7 @@ use function Castor\import;
 import(__DIR__.'/.castor/helpers.php');
 import(__DIR__.'/.castor/qa_tmux.php');
 import(__DIR__.'/.castor/shared.php');
+import(__DIR__.'/.castor/compact.php');
 import(__DIR__.'/.castor/process.php');
 import(__DIR__.'/.castor/phpunit.php');
 import(__DIR__.'/.castor/tasks.php');

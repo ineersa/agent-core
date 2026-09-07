@@ -586,17 +586,6 @@ function strip_vendor_extension_api_docs(string $stagingDir): void
 
 // ─── ──────────────────────────────────────────────────────────────────
 
-function is_llm_mode(): bool
-{
-    $value = getenv('LLM_MODE');
-
-    if (false === $value) {
-        return false;
-    }
-
-    return !\in_array(strtolower(trim((string) $value)), ['', '0', 'false', 'off', 'no'], true);
-}
-
 function reports_dir(): string
 {
     $custom = getenv('HATFIELD_QA_REPORTS_DIR');
@@ -2601,7 +2590,7 @@ function dead_code_phpstan_config_path(): string
  * Build the PHPStan command that regenerates phpstan.dead-code-baseline.neon.
  *
  * Baseline generation cannot use --error-format=json (conflicts with
- * --generate-baseline). LLM_MODE still needs quiet, non-TTY output.
+ * --generate-baseline). Keep quiet, non-TTY output.
  */
 function dead_code_baseline_phpstan_command(): string
 {
@@ -2610,8 +2599,7 @@ function dead_code_baseline_phpstan_command(): string
         escapeshellarg(dead_code_phpstan_config_path()).
         ' --no-progress --generate-baseline '.
         escapeshellarg(dead_code_baseline_path()).
-        ' --allow-empty-baseline'.
-        (is_llm_mode() ? ' --no-ansi' : '');
+        ' --allow-empty-baseline --no-ansi';
 }
 
 /**
