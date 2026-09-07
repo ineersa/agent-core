@@ -107,6 +107,7 @@ final class TuiSessionPickerNavigationVirtualTest extends IsolatedKernelTestCase
             $harness->render();
             $this->selectSession($harness, $list, $deleteId);
 
+            $before = $harness->terminal()->getOutput();
             $harness->terminal()->clearOutput();
             $harness->sendInput('d');
             $delta = $harness->terminal()->getOutput();
@@ -125,6 +126,7 @@ final class TuiSessionPickerNavigationVirtualTest extends IsolatedKernelTestCase
                 width: $harness->terminal()->getColumns(),
                 height: $harness->terminal()->getRows(),
             );
+            $buffer->write($before);
             $buffer->write($delta);
             $this->assertStringContainsString($confirmNeedle, $buffer->getScreen());
             $this->assertStringContainsString('Yes', $buffer->getScreen());

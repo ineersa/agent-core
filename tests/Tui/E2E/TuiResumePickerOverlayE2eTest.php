@@ -113,8 +113,7 @@ final class TuiResumePickerOverlayE2eTest extends TestCase
 
                     return str_contains($cap, '● idle')
                         && str_contains($cap, '◆')
-                        && (str_contains($cap, 'Welcome to Hatfield')
-                            || str_contains($cap, 'Welcome to Agent Core'));
+                        && str_contains($cap, 'Welcome to Hatfield');
                 },
                 timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
                 message: 'Resume picker must close and restore focused editor chrome in the current pane',
@@ -123,15 +122,12 @@ final class TuiResumePickerOverlayE2eTest extends TestCase
 
             $this->assertStringContainsString('● idle', $closed);
             $this->assertStringContainsString('◆', $closed);
-            $this->assertTrue(
-                str_contains($closed, 'Welcome to Hatfield')
-                || str_contains($closed, 'Welcome to Agent Core'),
-                'Closed pane must show the welcome/editor body again',
-            );
+            $this->assertStringContainsString('Welcome to Hatfield', $closed);
             $this->assertStringNotContainsString('arrows move, Enter resumes', $closed);
 
             $this->tmux->saveAnsiSnapshot($pane, 'resume-picker-overlay');
             $this->tmux->sendKey($pane, 'C-d');
+            $this->tmux->waitUntilPaneExits($pane);
         } catch (\Throwable $e) {
             $this->tmux->saveAnsiSnapshot($pane, 'resume-picker-overlay-FAILURE');
             // tearDown() kills the tmux tree; do not swallow secondary exit errors.
@@ -161,7 +157,7 @@ final class TuiResumePickerOverlayE2eTest extends TestCase
     private function createIsolatedProjectDir(): string
     {
         $dir = TestDirectoryIsolation::createProjectTempDir('tui-e2e');
-        @mkdir($dir.'/.hatfield', 0o777, true);
+        TestDirectoryIsolation::createHatfieldTree($dir);
 
         $allocated = TuiE2eDatabaseEnv::allocateIsolatedPaths(
             ProjectDir::get(),
