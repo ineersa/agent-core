@@ -8,6 +8,8 @@ use Ineersa\Tui\Terminal\DeferredCursorCommitScreenWriter;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Revolt\EventLoop;
+use Revolt\EventLoop\Driver;
+use Revolt\EventLoop\DriverFactory;
 use Symfony\Component\Tui\Ansi\AnsiUtils;
 use Symfony\Component\Tui\Style\CursorShape;
 use Symfony\Component\Tui\Terminal\TerminalInterface;
@@ -15,6 +17,20 @@ use Symfony\Component\Tui\Terminal\TerminalInterface;
 final class DeferredCursorCommitScreenWriterTest extends TestCase
 {
     private const string UPSTREAM_SCREEN_WRITER_SHA256 = '5b06f6b76b3d0c53e26327ee0ada88a2666ec46ca8f4eb99e826db227da9c97f';
+
+    private Driver $previousDriver;
+
+    protected function setUp(): void
+    {
+        $this->previousDriver = EventLoop::getDriver();
+        // A ParaTest worker may already have TUI timers. Run only this test's callbacks.
+        EventLoop::setDriver((new DriverFactory())->create());
+    }
+
+    protected function tearDown(): void
+    {
+        EventLoop::setDriver($this->previousDriver);
+    }
 
     #[Test]
     public function copiedWriterTracksTheLockedSymfonyRevision(): void

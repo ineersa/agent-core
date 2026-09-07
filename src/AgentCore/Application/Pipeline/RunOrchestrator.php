@@ -14,6 +14,7 @@ use Ineersa\AgentCore\Domain\Message\CompactionStepResult;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Message\InvalidateRunContext;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
+use Ineersa\AgentCore\Domain\Message\RefreshRunContext;
 use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
@@ -29,6 +30,7 @@ final readonly class RunOrchestrator
     private const string ScopeToolResult = 'result.tool';
     private const string ScopeCompactRun = 'command.compact';
     private const string ScopeCompactionResult = 'result.compaction';
+    private const string ScopeRefreshContext = 'command.refresh_context';
 
     public function __construct(
         private RunMessageProcessor $runMessageProcessor,
@@ -161,6 +163,12 @@ final readonly class RunOrchestrator
     public function onInvalidateRunContext(InvalidateRunContext $message): void
     {
         $this->activeRunContext->invalidate($message->runId());
+    }
+
+    #[AsMessageHandler(bus: 'agent.command.bus')]
+    public function onRefreshRunContext(RefreshRunContext $message): void
+    {
+        $this->dispatch('context.refresh', self::ScopeRefreshContext, $message);
     }
 
     /**

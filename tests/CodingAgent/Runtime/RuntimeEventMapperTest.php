@@ -31,6 +31,15 @@ final class RuntimeEventMapperTest extends TestCase
 
     // ── Lifecycle normalization ──────────────────────────────────────────────
 
+    public function testRefreshedInstructionsStayOutOfRuntimeStream(): void
+    {
+        $event = $this->runEvent('context_refreshed', [
+            'messages' => [['role' => 'system', 'content' => [['type' => 'text', 'text' => 'Private project instructions']]]],
+        ]);
+
+        $this->assertNull($this->mapper->toRuntimeEvent($event));
+    }
+
     public function testNormalizesRunStartedToRunStarted(): void
     {
         $event = $this->runEvent('run_started', ['step_id' => 'start-1']);
