@@ -30,7 +30,7 @@ final class SubagentParallelAggregateResultFormatter
         return $this->limitInlineHandoffs(rtrim(implode("\n", $lines)), $sorted);
     }
 
-    public function formatReport(ChildRunBatchSupervisionResultDTO $result): string
+    public function formatReport(ChildRunBatchSupervisionResultDTO $result, string $header): string
     {
         $sorted = $result->items;
         usort($sorted, static fn (ChildRunBatchItemSnapshotDTO $a, ChildRunBatchItemSnapshotDTO $b): int => $a->identity->batchIndex <=> $b->identity->batchIndex);
@@ -47,11 +47,10 @@ final class SubagentParallelAggregateResultFormatter
         }
 
         $body = rtrim(implode("\n", $lines));
-        if ('' === $body) {
-            return 'Use agent_retrieve (metadata/events/history) for partial child details.';
-        }
+        $text = $header."\n\n".('' === $body ? '' : $body."\n\n")
+            .'Use agent_retrieve (metadata/events/history) for partial child details.';
 
-        return $this->limitInlineHandoffs($body."\n\nUse agent_retrieve (metadata/events/history) for partial child details.", $sorted);
+        return $this->limitInlineHandoffs($text, $sorted);
     }
 
     /** @param list<ChildRunBatchItemSnapshotDTO> $items */

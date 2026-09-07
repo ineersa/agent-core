@@ -45,11 +45,34 @@ final class SubagentParallelAggregateResultFormatterTest extends TestCase
         $second = $this->item(2, 'Failure detail');
         $second->artifactStatus = AgentArtifactStatusEnum::Failed;
         $result = new ChildRunBatchSupervisionResultDTO(items: [$second, $first]);
-        $short = $formatter->formatReport($result);
+        $short = $formatter->formatReport($result, 'Parallel subagent execution failed for one or more children.');
         $this->assertStringContainsString('Inline handoffs omitted', $short);
         $this->assertStringContainsString("#1 completed\nArtifact: agent_1\n#2 failed\nArtifact: agent_2", $short);
         $this->assertStringNotContainsString('Failure detail', $short);
         $this->assertStringNotContainsString($first->message, $short);
+    }
+
+    public function testReportLimitIncludesFailureHeader(): void
+    {
+        $formatter = new SubagentParallelAggregateResultFormatter();
+        $header = 'Parallel subagent execution failed for one or more children.';
+        $item = $this->item(1, 'é');
+        $item->artifactStatus = AgentArtifactStatusEnum::Failed;
+        $result = new ChildRunBatchSupervisionResultDTO(items: [$item]);
+        $base = $formatter->formatReport($result, $header);
+        $item->message .= str_repeat('é', 50000 - u($base)->length());
+        $boundary = $formatter->formatReport($result, $header);
+        $this->assertSame(50000, u($boundary)->length());
+        $this->assertStringStartsWith($header."\n\n", $boundary);
+        $this->assertStringContainsString($item->message, $boundary);
+
+        $item->message .= 'x';
+        $short = $formatter->formatReport($result, $header);
+        $this->assertStringContainsString('Inline handoffs omitted', $short);
+        $this->assertStringContainsString("#1 failed\nArtifact: agent_1", $short);
+        $this->assertStringContainsString('agent_retrieve', $short);
+        $this->assertStringNotContainsString('é', $short);
+        $this->assertLessThan(50000, u($short)->length());
     }
 
     private function item(int $index, string $message): ChildRunBatchItemSnapshotDTO

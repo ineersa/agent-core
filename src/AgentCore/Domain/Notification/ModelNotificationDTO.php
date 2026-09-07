@@ -14,7 +14,8 @@ namespace Ineersa\AgentCore\Domain\Notification;
  * log, model history) render the exact text without text parsing or
  * heuristics.
  *
- * Every notification has a deterministic {@see $id} for dedup and replay.
+ * Every notification has a deterministic {@see $id} for content correlation.
+ * Separate event occurrences can share this id.
  * Wire/persisted shape uses snake_case optional tool fields; null optionals
  * are omitted by Serializer SKIP_NULL_VALUES at array boundaries.
  */
