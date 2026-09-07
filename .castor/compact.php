@@ -12,8 +12,9 @@ declare(strict_types=1);
 
 use Castor\Attribute\AsListener;
 use Castor\Event\AfterBootEvent;
-use Castor\Event\ContextCreatedEvent;
-use Symfony\Component\Console\Event\ConsoleCommandEvent;
+use Symfony\Component\Console\Command\ListCommand;
+use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Output\OutputInterface;
 
 /**
  * @param array<string, string> $values
@@ -30,37 +31,29 @@ function hatfield_castor_putenv(array $values): void
 #[AsListener(event: AfterBootEvent::class)]
 function hatfield_castor_compact_boot_env(AfterBootEvent $event): void
 {
-    unset($event);
     hatfield_castor_putenv([
         'CASTOR_DISABLE_VERSION_CHECK' => '1',
         'NO_COLOR' => '1',
         'CLICOLOR' => '0',
     ]);
-}
 
-#[AsListener(event: ContextCreatedEvent::class)]
-function hatfield_castor_compact_context_env(ContextCreatedEvent $event): void
-{
-    $event->context = $event->context->withEnvironment([
-        'CASTOR_DISABLE_VERSION_CHECK' => '1',
-        'NO_COLOR' => '1',
-        'CLICOLOR' => '0',
-    ]);
-}
+    $event->application->addCommand(new class extends ListCommand {
+        protected function configure(): void
+        {
+            parent::configure();
+            $this->getDefinition()->getOption('format')->setDefault('md');
+        }
 
-#[AsListener(event: ConsoleCommandEvent::class)]
-function hatfield_castor_compact_list_defaults(ConsoleCommandEvent $event): void
-{
-    $command = $event->getCommand();
-    if (null === $command || 'list' !== $command->getName()) {
-        return;
-    }
+        protected function execute(InputInterface $input, OutputInterface $output): int
+        {
+            // VALUE_NONE options cannot default to true. Set this after Console's
+            // final input bind, which would overwrite a console.command change.
+            $input->setOption('short', true);
+            if (!$input->hasParameterOption('--ansi', true)) {
+                $output->setDecorated(false);
+            }
 
-    $input = $event->getInput();
-    if (!$input->hasParameterOption(['--format'], true)) {
-        $input->setOption('format', 'md');
-    }
-    if (!$input->hasParameterOption(['--short'], true)) {
-        $input->setOption('short', true);
-    }
+            return parent::execute($input, $output);
+        }
+    });
 }
