@@ -4,15 +4,28 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool;
 
+use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
+use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
+use Ineersa\AgentCore\Application\Handler\ToolExecutor;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
+use Ineersa\AgentCore\Tests\Support\Builder\ToolCallBuilder;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Config\BashToolConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcessRepository;
 use Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface;
+use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
+use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber;
+use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
 use Ineersa\CodingAgent\Tests\Support\StubRunRelationshipReader;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
@@ -28,6 +41,11 @@ use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use Ineersa\CodingAgent\Tool\Validation\BashTimeout\BashTimeoutMaxValidator;
+use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
+use Ineersa\Tui\Theme\ThemeColorEnum;
+use Ineersa\Tui\Theme\ThemePalette;
+use Ineersa\Tui\Transcript\TranscriptDisplayState;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Psr\Log\NullLogger;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallArgumentsResolved;
 use Symfony\AI\Agent\Toolbox\EventListener\ValidateToolCallArgumentsListener;
@@ -142,28 +160,95 @@ final class BashToolTest extends IsolatedKernelTestCase
 
     /* ── Non-zero exit code ── */
 
-    public function testNonZeroExitCode(): void
+    #[DataProvider('commandOutcomes')]
+    public function testCommandOutcomeRendersWithMatchingStatus(string $command, string $text, bool $isError): void
     {
         $this->createManager();
+        $registry = new ToolRegistry();
+        $registry->registerTool(name: 'bash', description: 'bash', handler: $this->makeBashTool(), promptLine: 'bash');
+        $executor = new ToolExecutor(
+            defaultMode: 'sequential',
+            maxParallelism: 1,
+            resultStore: new ToolExecutionResultStore(),
+            toolbox: new RegistryBackedToolbox($registry, new RawAwareToolCallArgumentResolver(new ToolCallArgumentResolver()), NativeToolSchemaProbe::schemaFactory()),
+            contextAccessor: $this->contextAccessor,
+        );
+        $call = ToolCallBuilder::create('bash-exit')
+            ->withToolName('bash')
+            ->withArguments(['command' => $command])
+            ->withRunId(self::TEST_SESSION)
+            ->build();
+        $result = $executor->execute($call);
 
-        $result = $this->withContext(self::TEST_SESSION, function (): string {
-            return ($this->makeBashTool())(new BashArgumentsDTO(command: 'echo "before error" && exit 42'));
-        });
+        $this->assertSame($isError, $result->isError);
+        $this->assertSame($text, $result->content[0]['text']);
+        $records = $this->recordsForSession(self::TEST_SESSION);
+        $this->assertCount(1, $records, 'The command must execute exactly once');
+        $this->assertNotNull($records[0]->finishedAt);
 
-        $this->assertStringContainsString('exit code 42', $result);
-        $this->assertStringContainsString('before error', $result);
+        $message = new ExecuteToolCall(self::TEST_SESSION, 1, 'step-exit', 1, 'execute-bash-exit', $call->toolCallId, $call->toolName, $call->arguments, 0);
+        $codec = self::getContainer()->get(\Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec::class);
+        $events = [
+            new RunEvent(self::TEST_SESSION, 1, 1, RunEventTypeEnum::ToolExecutionStart->value, [
+                'tool_call_id' => $call->toolCallId,
+                'tool_name' => $call->toolName,
+                'arguments' => $call->arguments,
+            ]),
+            new RunEvent(self::TEST_SESSION, 2, 1, RunEventTypeEnum::ToolExecutionEnd->value,
+                $codec->toEventPayload(ToolCallResultFactory::fromExecuteToolCallAndToolResult($message, $result))),
+        ];
+        $translator = self::getContainer()->get(RuntimeEventTranslator::class);
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addSubscriber(new ToolProjectionSubscriber(new SubagentProgressDisplayFormatter(), self::getContainer()->get('serializer')));
+        $projector = new TranscriptProjector($dispatcher, new TranscriptProjectionState());
+        $palette = new ThemePalette('bash-exit', [
+            ThemeColorEnum::ToolOutput->value => '#39ff14',
+            ThemeColorEnum::Error->value => '#ff3366',
+            ThemeColorEnum::Text->value => '',
+        ]);
+        foreach ([false, true] as $expanded) {
+            $projector->reset();
+            $harness = new VirtualTuiHarness(
+                sessionId: self::TEST_SESSION,
+                palette: $palette,
+                displayState: new TranscriptDisplayState(previewableBlocksExpanded: $expanded),
+            );
+            $harness->screen()->setWorkingVisible(false);
+            foreach ($events as $event) {
+                $runtimeEvent = $translator->translate($event);
+                $this->assertNotNull($runtimeEvent);
+                $projector->accept($runtimeEvent);
+                $harness->screen()->setTranscriptBlocks($projector->blocks());
+                $harness->render();
+            }
+            $plain = $harness->plainScreenText();
+            foreach (array_filter(explode("\n", $text)) as $line) {
+                $this->assertStringContainsString($line, $plain);
+            }
+            $color = $isError ? '255;51;102' : '57;255;20';
+            $firstLine = preg_quote(explode("\n", $text)[0], '/');
+            $this->assertMatchesRegularExpression('/\x1b\[38;2;'.$color.'m\s*'.$firstLine.'/', $harness->ansiOutput());
+        }
+    }
+
+    public static function commandOutcomes(): iterable
+    {
+        yield 'reported exit 1 without output' => ["bash -c 'exit 1'", "Command failed with exit code 1.\n\nOutput:\n", true];
+        yield 'exit 42 retains output' => ['echo "before error" && exit 42', "Command failed with exit code 42.\n\nOutput:\nbefore error\n", true];
+        // Exit the supervision shell before its status-file write.
+        yield 'unclean exit without status' => ['exit 1; :', "Command failed with unclean exit.\n\nOutput:\n", true];
+        yield 'successful diagnostic-looking text' => ["printf 'Command failed with exit code 1.'", 'Command failed with exit code 1.', false];
     }
 
     public function testNonExistentCommand(): void
     {
         $this->createManager();
 
-        $result = $this->withContext(self::TEST_SESSION, function (): string {
+        $this->expectException(ToolCallException::class);
+        $this->expectExceptionMessage('Command failed with exit code 127.');
+        $this->withContext(self::TEST_SESSION, function (): string {
             return ($this->makeBashTool())(new BashArgumentsDTO(command: 'nonexistent_command_xyz_123'));
         });
-
-        $this->assertStringContainsString('failed', $result);
-        $this->assertStringContainsString('exit code', $result);
     }
 
     /* ── Timeout ── */
