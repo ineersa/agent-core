@@ -130,8 +130,7 @@ final readonly class DeferredSubagentBatchTerminalCompletionService
                 errorEnvelope: null,
             );
         } else {
-            $report = $this->parallelFormatter->formatReport($result);
-            $message = 'Parallel subagent execution failed for one or more children.'."\n\n".$report;
+            $message = $this->parallelFormatter->formatReport($result, 'Parallel subagent execution failed for one or more children.');
             $errorEnvelope = [
                 'error' => [
                     'type' => ToolCallException::class,

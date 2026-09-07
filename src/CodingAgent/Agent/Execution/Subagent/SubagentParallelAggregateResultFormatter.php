@@ -7,6 +7,8 @@ namespace Ineersa\CodingAgent\Agent\Execution\Subagent;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchItemSnapshotDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchSupervisionResultDTO;
 
+use function Symfony\Component\String\u;
+
 final class SubagentParallelAggregateResultFormatter
 {
     public function formatSuccess(ChildRunBatchSupervisionResultDTO $result): string
@@ -25,10 +27,10 @@ final class SubagentParallelAggregateResultFormatter
             $lines[] = '';
         }
 
-        return rtrim(implode("\n", $lines));
+        return $this->limitInlineHandoffs(rtrim(implode("\n", $lines)), $sorted);
     }
 
-    public function formatReport(ChildRunBatchSupervisionResultDTO $result): string
+    public function formatReport(ChildRunBatchSupervisionResultDTO $result, string $header): string
     {
         $sorted = $result->items;
         usort($sorted, static fn (ChildRunBatchItemSnapshotDTO $a, ChildRunBatchItemSnapshotDTO $b): int => $a->identity->batchIndex <=> $b->identity->batchIndex);
@@ -45,10 +47,27 @@ final class SubagentParallelAggregateResultFormatter
         }
 
         $body = rtrim(implode("\n", $lines));
-        if ('' === $body) {
-            return 'Use agent_retrieve (metadata/events/history) for partial child details.';
+        $text = $header."\n\n".('' === $body ? '' : $body."\n\n")
+            .'Use agent_retrieve (metadata/events/history) for partial child details.';
+
+        return $this->limitInlineHandoffs($text, $sorted);
+    }
+
+    /** @param list<ChildRunBatchItemSnapshotDTO> $items */
+    private function limitInlineHandoffs(string $text, array $items): string
+    {
+        if (u($text)->length() <= 50000) {
+            return $text;
         }
 
-        return $body."\n\nUse agent_retrieve (metadata/events/history) for partial child details.";
+        $lines = ['Parallel subagent response exceeds 50,000 characters. Inline handoffs omitted.', ''];
+        foreach ($items as $item) {
+            $lines[] = \sprintf('#%d %s', $item->identity->batchIndex, $item->artifactStatus->value ?? 'unknown');
+            $lines[] = 'Artifact: '.$item->identity->artifactId;
+        }
+        $lines[] = '';
+        $lines[] = 'Use agent_retrieve with an artifact_id to inspect each handoff.';
+
+        return implode("\n", $lines);
     }
 }

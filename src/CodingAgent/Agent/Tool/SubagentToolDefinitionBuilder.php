@@ -31,14 +31,14 @@ final class SubagentToolDefinitionBuilder
             handler: $handler,
             executionMode: ToolExecutionMode::Sequential,
             timeoutSeconds: null,
-            promptLine: 'subagent — launch one or more interactive foreground subagents; single mode returns full handoff inline',
+            promptLine: 'subagent — launch one or more interactive foreground subagents; oversized handoffs return artifact references',
             promptGuidelines: [
                 'Batch independent scouts/reviewers in one {"tasks":[{"agent":"...","task":"..."}]} call; use {"agent":"...","task":"..."} for one child or dependent/serialized work.',
                 \sprintf(
                     'Tasks in one call run concurrently (max %d).',
                     $maxAgents,
                 ),
-                'Single-mode success includes full handoff inline (agent_retrieve optional). Parallel results are bounded summaries — use agent_retrieve with each Artifact: ID for complete handoffs, failures, metadata, or history.',
+                'Single-mode success includes the full handoff inline; parallel results include summaries. Responses over 50,000 characters return a notice and artifact references instead. Use agent_retrieve with each Artifact: ID for omitted handoffs, failures, metadata, or history.',
             ],
         );
     }

@@ -7,6 +7,8 @@ namespace Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Result;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 
+use function Symfony\Component\String\u;
+
 /**
  * Builds handoff markdown and user-visible result strings for foreground child runs.
  */
@@ -106,24 +108,30 @@ TXT;
 
     public function formatCompletedResult(string $displayName, string $artifactId, string $finalMessages): string
     {
-        return \sprintf(
+        $text = \sprintf(
             "Subagent %s completed.\nArtifact: %s\n\nHandoff:\n\n%s",
             $displayName,
             $artifactId,
             $finalMessages,
         );
+
+        return $this->limitInlineHandoff($text, $artifactId, 'completed');
     }
 
     public function formatFailedResult(string $displayName, string $artifactId, string $errorMsg): string
     {
-        return \sprintf("Subagent %s failed: %s\nArtifact: %s",
+        $text = \sprintf("Subagent %s failed: %s\nArtifact: %s",
             $displayName, $errorMsg, $artifactId);
+
+        return $this->limitInlineHandoff($text, $artifactId, 'failed');
     }
 
     public function formatTimeoutResult(string $displayName, int $timeoutSeconds, string $taskSummary, string $artifactId): string
     {
-        return \sprintf("Subagent %s timed out after %d seconds. Task: %s\nArtifact: %s",
+        $text = \sprintf("Subagent %s timed out after %d seconds. Task: %s\nArtifact: %s",
             $displayName, $timeoutSeconds, $taskSummary, $artifactId);
+
+        return $this->limitInlineHandoff($text, $artifactId, 'timed out');
     }
 
     public function extractLastMessage(RunState $state): string
@@ -146,6 +154,19 @@ TXT;
         }
 
         return $lastText;
+    }
+
+    private function limitInlineHandoff(string $text, string $artifactId, string $status): string
+    {
+        if (u($text)->length() <= 50000) {
+            return $text;
+        }
+
+        return \sprintf(
+            "Subagent %s. Response exceeds 50,000 characters. Inline handoff omitted.\nArtifact: %s\nUse agent_retrieve with this artifact_id to inspect the handoff.",
+            $status,
+            $artifactId,
+        );
     }
 
     private function buildCancelledHandoffMarkdown(
