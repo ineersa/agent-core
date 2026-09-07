@@ -34,7 +34,8 @@ use Psr\Log\LoggerInterface;
  *   metadata and skips that optional HITL so those invocations stay
  *   foreground-supervised and the per-call Bash timeout can still fire.
  * - On successful completion, returns captured capped output.
- * - On non-zero exit, returns output + exit code info.
+ * - On non-zero or unclean exit, throws ToolCallException with output and
+ *   exit status so ToolExecutor preserves the failed result for the TUI.
  * - On timeout/cancellation, stops the managed process and returns
  *   partial output with a clear notice.
  * - Accepting backgrounding never launches a second copy of the command.
@@ -415,11 +416,7 @@ final class BashTool implements HatfieldToolProviderInterface
         // before treating exit code 0 as normal success, so a
         // user-stopped command can never be misreported as successful.
         if ($entity->stoppedByUser) {
-            return \sprintf(
-                "Command was stopped (exit code %d).\n\nOutput:\n%s",
-                $exitCode ?? -1,
-                $output,
-            );
+            throw new ToolCallException(\sprintf("Command was stopped (exit code %d).\n\nOutput:\n%s", $exitCode ?? -1, $output));
         }
 
         // Normal successful completion
@@ -443,23 +440,9 @@ final class BashTool implements HatfieldToolProviderInterface
             'status' => $status,
         ]);
 
-        // Build status suffix for non-zero / unclean exits
-        $statusSuffix = '';
-        if (null !== $exitCode) {
-            $statusSuffix = \sprintf('exit code %d', $exitCode);
-        } elseif (str_contains($status, 'unclean')) {
-            $statusSuffix = 'unclean exit';
-        }
-
-        if ('' !== $statusSuffix) {
-            return \sprintf(
-                "Command failed with %s.\n\nOutput:\n%s",
-                $statusSuffix,
-                $output,
-            );
-        }
-
-        // Fallback: just return the output
-        return $output;
+        // A missing exit code is an unclean completion, never a success.
+        // Do not return this diagnostic as ordinary text: that loses the
+        // failed outcome at the toolbox boundary even though it says failed.
+        throw new ToolCallException(\sprintf("Command failed with %s.\n\nOutput:\n%s", null !== $exitCode ? \sprintf('exit code %d', $exitCode) : 'unclean exit', $output));
     }
 }

@@ -112,7 +112,8 @@ two names for one interchangeable loop.
 At the terminal output boundary, Hatfield's `SynchronizedCursorScreenWriter` hides
 the hardware cursor during repaint and restores it before releasing synchronized
 output. It replaces Symfony's internally constructed writer through a startup
-alias, without a deferred cursor callback. See
+alias and repeats the cursor commit on the next event-loop turn for overheight
+frames with an editor cursor. See
 [frame and cursor output](../docs/tui-architecture.md#frame-and-cursor-output)
 for the local copy and upstream removal plan.
 

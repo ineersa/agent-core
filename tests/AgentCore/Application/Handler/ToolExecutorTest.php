@@ -19,6 +19,7 @@ use Ineersa\CodingAgent\Tool\ToolRegistry;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallRequested;
+use Symfony\AI\Agent\Toolbox\Exception\ToolNotFoundException;
 use Symfony\AI\Agent\Toolbox\Toolbox;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver;
@@ -389,11 +390,34 @@ final class ToolExecutorTest extends TestCase
         $this->assertStringContainsString('Boom!', $result->content[0]['text']);
     }
 
+    public function testMissingToolRemainsAnErrorWhenItsResultIsReused(): void
+    {
+        $executor = new ToolExecutor(
+            defaultMode: 'sequential',
+            maxParallelism: 1,
+            toolbox: new Toolbox([new SymfonySearchTool()]),
+            resultStore: new ToolExecutionResultStore(),
+        );
+        $call = ToolCallBuilder::create('missing-call')
+            ->withToolName('missing')
+            ->withRunId('missing-tool-run')
+            ->build();
+
+        $result = $executor->execute($call);
+        $reused = $executor->execute($call);
+
+        $this->assertTrue($result->isError);
+        $this->assertSame('Tool "missing" was not found, please use one of these: web_search', $result->content[0]['text']);
+        $this->assertSame(ToolNotFoundException::class, $result->details['error_type']);
+        $this->assertTrue($reused->isError);
+        $this->assertSame($result->content, $reused->content);
+        $this->assertSame('run_tool_call_dedupe', $reused->details['idempotency_reuse_reason']);
+    }
+
     public function testToolCallExceptionFromRegistryHandlerSurvivesToStructuredErrorResult(): void
     {
-        // Full production chain: ToolExecutor wraps the registry toolbox in
-        // FaultTolerantToolbox, which only converts ToolExecutionExceptionInterface.
-        // A handler ToolCallException must survive unchanged so ToolExecutor
+        // The native registry toolbox wraps handler exceptions. A handler
+        // ToolCallException must survive unchanged so ToolExecutor
         // classifies error_type/retryable/hint instead of a generic fault message.
         $handler = new class {
             public function __invoke(array $arguments): mixed

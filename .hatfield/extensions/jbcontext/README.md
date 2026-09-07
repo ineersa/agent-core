@@ -1,0 +1,123 @@
+# Hatfield jbcontext extension
+
+Project-level Hatfield extension that wires JetBrains Context (`jbcontext`) semantic search into Hatfield without creating a first index for an arbitrary directory.
+
+| | |
+|---|---|
+| Package | `ineersa/hatfield-ext-jbcontext` |
+| Extension class | `Ineersa\HatfieldExt\Jbcontext\JbcontextExtension` |
+| Namespace | `Ineersa\HatfieldExt\Jbcontext\` |
+| PHP | `>=8.3` |
+| Requires | `ineersa/hatfield-extension-api`, `helgesverre/toon`, `psr/log`, `symfony/yaml` |
+
+## Prerequisites
+
+1. Install the `jbcontext` CLI and authenticate when the CLI requires it.
+2. Open the project in a JetBrains IDE so `<project>/.idea` exists.
+3. Create the first index yourself once for the Git repository:
+
+```bash
+jbcontext index --project-path /path/to/project
+```
+
+Hatfield never runs the first index. Indexes are repository-scoped by git remote id, so any checkout or worktree of that repository can become eligible when it has a local `.idea` directory and `jbcontext status --json-output` reports at least one snapshot.
+
+## Install
+
+In the Hatfield monorepo this package is path-required from `.hatfield/extensions/jbcontext`.
+
+After a Hatfield `v*` release that includes this package, consumers can require the mirrored package from GitHub (and Packagist when published):
+
+```json
+{
+  "require": {
+    "ineersa/hatfield-ext-jbcontext": "^X.Y"
+  },
+  "repositories": [
+    { "type": "vcs", "url": "https://github.com/ineersa/hatfield-ext-jbcontext" }
+  ]
+}
+```
+
+Prefer released tags. The mirror repository stays empty until the next tagged Hatfield release that runs package-split.
+
+Also require a compatible `ineersa/hatfield-extension-api` release (or monorepo path package).
+
+## Enable
+
+```yaml
+# .hatfield/settings.yaml
+extensions:
+  enabled:
+    - Ineersa\HatfieldExt\Jbcontext\JbcontextExtension
+```
+
+No extension-specific settings key is added. Presence on `extensions.enabled` is the only switch. Prefer the `settings` tool (`operation=set`, `path=extensions.enabled`, `scope=project`) over editing the YAML file by hand.
+
+```bash
+composer install -d .hatfield/extensions
+```
+
+Start a **new Hatfield session** after enabling. Extensions register at startup.
+
+## Behavior
+
+### Startup (non-blocking)
+
+1. Interactive controller session start fires a public session-start hook that writes a session-scoped pending status file and dispatches one background eligibility job on the extension-agent transport. Worker/tool process loads and the TUI poller do not start eligibility.
+2. The worker requires `.idea` and a prior index snapshot from `jbcontext status --project-path <cwd> --json-output`.
+3. If either check fails, search stays unavailable until the next controller startup. An actionable `⚠ jbcontext: …` warning appears under `[Extensions]` in the startup loaded-resources block. `code_search` returns the stored reason on demand.
+4. jbcontext never writes to the status row or footer. Checking, refreshing, and success stay silent. A failed refresh produces a warning while search continues using the previous snapshot. Warnings clear when the problem resolves or a restarted controller begins a new check.
+5. Transient status failures retry with preferred delays 2s, 4s, 8s, 16s under a hard ~30s wall-clock budget that also covers CLI status timeouts. Exhaustion disables the session; later turns do not retry.
+6. When eligible, the worker installs project assets and runs incremental `jbcontext index --silent`.
+
+Every controller session-start (including resume of the same conversation) increments `check_generation` and reclaims pending eligibility, so fixing CLI auth or creating an index and restarting Hatfield recovers the same session. Jobs from an older generation are ignored so they cannot poison the newer claim. Warnings also appear on resumed sessions, even when the full loaded-resources list is hidden. Headless or in-process runs that never fire controller session-start leave `code_search` unavailable for that process.
+
+### Refresh cadence
+
+After eligibility, each successfully completed assistant turn (`agent_end` reason `completed`) enqueues one incremental silent reindex. Cancelled and failed turns do not. CLI work stays in the extension-agent worker; the hot hook only updates status flags and dispatches.
+
+### `code_search` tool
+
+Permanent model-visible tool:
+
+- required `text`
+- optional project-relative `path_filter` for a directory or file (examples: `src/`, `src/CodingAgent/Runtime/Controller`). Absolute paths and `..` are rejected by the tool. Directory and file filters are verified. Glob semantics are not verified; prefer concrete project-relative directories or files from first hits.
+- fixed internal `--limit 8`
+- cooperative cancellation and timeout through `ExecOptionsDTO` / tool ambient context
+- top-level TOON result with ranked `path`, `start_line`, `similarity`, and `content` (PHP open-tag / `declare(strict_types=1);`-only chunks are dropped; remaining order and scores are preserved)
+
+When eligibility is pending or disabled, the tool returns a TOON unavailable payload and never indexes.
+
+### Project assets
+
+After eligibility succeeds, the extension may create:
+
+- `.hatfield/skills/jbcontext-semantic-search/SKILL.md` — bundled skill with a `version` frontmatter field. Created when absent; reinstalled when the installed version is missing or differs from the package. Same-version files stay untouched. Host skill discovery ignores unknown keys such as `version`.
+- `.hatfield/agents/scout.md` — created only when absent by copying the user-level scout (`~/.hatfield/agents/scout.md` or `~/.agents/scout.md`), adding `code_search` + the semantic skill while preserving model/thinking/tools/body. If no user scout exists, installation is skipped with a sanitized warning. Existing project scout files are never modified. User-level scout files are never modified. The package does not distribute a scout agent.
+
+Because eligibility is asynchronous after startup discovery, newly installed project assets may take effect on the **next** Hatfield session.
+
+## Privacy and security
+
+- First indexing remains a manual operator action.
+- Status and search use the authenticated jbcontext CLI; do not log prompts, tool output, credentials, or environment values.
+- Routine logs keep stable error codes only. Tool errors and startup warnings may include bounded jbcontext stderr.
+
+## Unavailable states
+
+| State | TUI / tool |
+|---|---|
+| Pending startup check | no message / tool unavailable |
+| No `.idea` or no prior snapshot | startup warning with recovery steps / tool unavailable |
+| Transient CLI failure exhausted | startup warning with bounded JB Context stderr when present and recovery steps / tool unavailable with the same detail |
+| Eligible, refreshing or idle | no message / search allowed |
+| Refresh failed | startup warning with retry guidance / search uses the previous snapshot |
+
+## Source of truth
+
+**[ineersa/agent-core](https://github.com/ineersa/agent-core)** monorepo path `.hatfield/extensions/jbcontext/` is authoritative. The GitHub package repository is a read-only release mirror: each Hatfield `vX.Y.Z` tag updates `main` and publishes the same tag there. Do not open feature PRs against the mirror.
+
+See monorepo docs:
+
+- [docs/distribution.md](https://github.com/ineersa/agent-core/blob/main/docs/distribution.md) — package split, shared versioning, external install

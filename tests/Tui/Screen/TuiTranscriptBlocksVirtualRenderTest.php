@@ -4,24 +4,42 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Screen;
 
+use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
+use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
+use Ineersa\AgentCore\Application\Handler\ToolExecutor;
+use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
+use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
+use Ineersa\AgentCore\Tests\Support\Builder\ToolCallBuilder;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingleSnapshotDTO;
+use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\AssistantStreamProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ExtensionAgentJobFailedProjectionSubscriber;
+use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
+use Ineersa\CodingAgent\Tool\RawAwareToolCallArgumentResolver;
+use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
+use Ineersa\CodingAgent\Tool\ToolRegistry;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use Ineersa\Tui\Transcript\TranscriptGlyphs;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Tui\Ansi\AnsiUtils;
 
@@ -286,6 +304,100 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
             $ansi,
             'Successful tool result text must not use Error color',
         );
+    }
+
+    #[DataProvider('toolExecutionOutcomes')]
+    public function testToolExecutionOutcomeColorsProjectedExchange(bool $fails, bool $expanded): void
+    {
+        $handler = new class($fails) {
+            public function __construct(private readonly bool $fails)
+            {
+            }
+
+            public function __invoke(array $arguments): string
+            {
+                if ($this->fails) {
+                    throw new \RuntimeException('Private handler exception detail');
+                }
+
+                // Identical text must remain successful when a tool returns it.
+                return 'An error occurred while executing tool "bash".';
+            }
+        };
+        $registry = new ToolRegistry();
+        $registry->registerTool(name: 'bash', description: 'Test command', parametersJsonSchema: [], handler: $handler, promptLine: 'bash');
+        $executor = new ToolExecutor(
+            defaultMode: 'sequential',
+            maxParallelism: 1,
+            resultStore: new ToolExecutionResultStore(),
+            toolbox: new RegistryBackedToolbox($registry, new RawAwareToolCallArgumentResolver(new ToolCallArgumentResolver())),
+        );
+        $call = ToolCallBuilder::create('bash-call')
+            ->withToolName('bash')
+            ->withArguments(['command' => 'castor test', 'timeout' => 300])
+            ->withRunId(self::SESSION_ID)
+            ->build();
+        $result = $executor->execute($call);
+        $message = new ExecuteToolCall(self::SESSION_ID, 1, 'step-1', 1, 'execute-bash', $call->toolCallId, $call->toolName, $call->arguments, 0);
+        $codec = new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer());
+        $translator = new RuntimeEventTranslator(new EventDispatcher(), $codec);
+        $events = [
+            new RunEvent(self::SESSION_ID, 1, 1, RunEventTypeEnum::ToolExecutionStart->value, [
+                'tool_call_id' => $call->toolCallId,
+                'tool_name' => $call->toolName,
+                'arguments' => $call->arguments,
+            ]),
+            new RunEvent(self::SESSION_ID, 2, 1, RunEventTypeEnum::ToolExecutionEnd->value,
+                $codec->toEventPayload(ToolCallResultFactory::fromExecuteToolCallAndToolResult($message, $result))),
+        ];
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addSubscriber(new ToolProjectionSubscriber(new SubagentProgressDisplayFormatter(), SubagentProgressSerializerTestSupport::denormalizer()));
+        $projector = new TranscriptProjector($dispatcher, new TranscriptProjectionState());
+        $palette = new ThemePalette('execution-result', [
+            ThemeColorEnum::ToolOutput->value => '#39ff14',
+            ThemeColorEnum::Error->value => '#ff3366',
+            ThemeColorEnum::Text->value => '',
+        ]);
+
+        // The same canonical events must render correctly live and after replay.
+        foreach (['live', 'replay'] as $phase) {
+            $projector->reset();
+            $harness = new VirtualTuiHarness(
+                sessionId: self::SESSION_ID,
+                palette: $palette,
+                displayState: new TranscriptDisplayState(previewableBlocksExpanded: $expanded),
+            );
+            $harness->screen()->setWorkingVisible(false);
+            foreach ($events as $event) {
+                $runtimeEvent = $translator->translate($event);
+                $this->assertNotNull($runtimeEvent);
+                $projector->accept($runtimeEvent);
+                if ('live' === $phase) {
+                    $harness->screen()->setTranscriptBlocks($projector->blocks());
+                    $harness->render();
+                }
+            }
+            $harness->screen()->setTranscriptBlocks($projector->blocks());
+            $plain = $harness->plainScreenText();
+            $ansi = $harness->ansiOutput();
+            $this->assertStringContainsString('An error occurred while executing tool "bash".', $plain);
+            $this->assertStringNotContainsString('Private handler exception detail', $plain);
+            $this->assertMatchesRegularExpression(
+                $fails
+                    ? '/\x1b\[38;2;255;51;102m\s*An error occurred while executing tool "bash"\./'
+                    : '/\x1b\[38;2;57;255;20m\s*An error occurred while executing tool "bash"\./',
+                $ansi,
+                $phase.' result must use the outcome color, not classify the text',
+            );
+        }
+    }
+
+    public static function toolExecutionOutcomes(): iterable
+    {
+        yield 'failed collapsed' => [true, false];
+        yield 'failed expanded' => [true, true];
+        yield 'successful collapsed' => [false, false];
+        yield 'successful expanded' => [false, true];
     }
 
     #[Test]

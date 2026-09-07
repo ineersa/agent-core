@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Extension;
 
 use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterSessionStartHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorProviderInterface;
@@ -52,6 +53,11 @@ final class ExtensionHookRegistry implements PromptContributorProviderInterface,
      * @var list<array{hook: AfterTurnCommitHookInterface, owner: ?string}>
      */
     private array $afterTurnCommitHooks = [];
+
+    /**
+     * @var list<array{hook: AfterSessionStartHookInterface, owner: ?string}>
+     */
+    private array $sessionStartHooks = [];
 
     /**
      * @var list<array{hook: BeforeCompactionHookInterface, owner: ?string}>
@@ -140,6 +146,21 @@ final class ExtensionHookRegistry implements PromptContributorProviderInterface,
     public function afterTurnCommitHooks(?array $allowedOwnerClasses = null): array
     {
         return $this->filterHooks($this->afterTurnCommitHooks, $allowedOwnerClasses);
+    }
+
+    public function addSessionStartHook(AfterSessionStartHookInterface $hook): void
+    {
+        $this->sessionStartHooks[] = ['hook' => $hook, 'owner' => ExtensionRegistrationContext::currentOwnerClass()];
+    }
+
+    /**
+     * @param list<string>|null $allowedOwnerClasses
+     *
+     * @return list<AfterSessionStartHookInterface>
+     */
+    public function sessionStartHooks(?array $allowedOwnerClasses = null): array
+    {
+        return $this->filterHooks($this->sessionStartHooks, $allowedOwnerClasses);
     }
 
     public function addBeforeCompactionHook(BeforeCompactionHookInterface $hook): void

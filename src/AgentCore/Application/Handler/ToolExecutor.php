@@ -19,19 +19,19 @@ use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionPolicy;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
-use Symfony\AI\Agent\Toolbox\FaultTolerantToolbox;
+use Symfony\AI\Agent\Toolbox\Exception\ToolExecutionExceptionInterface;
+use Symfony\AI\Agent\Toolbox\Exception\ToolNotFoundException;
 use Symfony\AI\Agent\Toolbox\Source\SourceCollection;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Agent\Toolbox\ToolResult as SymfonyToolResult;
 use Symfony\AI\Platform\Result\ToolCall as SymfonyToolCall;
+use Symfony\AI\Platform\Tool\Tool;
 use Symfony\Component\Clock\ClockInterface;
 use Symfony\Component\Clock\MonotonicClock;
 
 final class ToolExecutor implements ToolExecutorInterface
 {
     private ToolExecutionPolicyResolver $policyResolver;
-
-    private ?FaultTolerantToolbox $faultTolerantToolbox;
 
     /** @var list<ToolResultProcessorInterface> */
     private readonly array $toolResultProcessors;
@@ -45,14 +45,13 @@ final class ToolExecutor implements ToolExecutorInterface
         string $defaultMode,
         int $maxParallelism,
         private readonly ToolExecutionResultStore $resultStore,
-        ?ToolboxInterface $toolbox = null,
+        private readonly ?ToolboxInterface $toolbox = null,
         private readonly ?StackToolExecutionContextAccessor $contextAccessor = null,
         private readonly ?ToolSetResolverInterface $toolSetResolver = null,
         iterable $toolResultProcessors = [],
         ?ClockInterface $clock = null,
     ) {
         $this->policyResolver = new ToolExecutionPolicyResolver($defaultMode, $maxParallelism);
-        $this->faultTolerantToolbox = null !== $toolbox ? new FaultTolerantToolbox($toolbox) : null;
         $this->toolResultProcessors = \is_array($toolResultProcessors)
             ? array_values($toolResultProcessors)
             : iterator_to_array($toolResultProcessors, false);
@@ -160,6 +159,24 @@ final class ToolExecutor implements ToolExecutorInterface
                     message: $message,
                     details: $details,
                 );
+            } elseif ($exception instanceof ToolExecutionExceptionInterface) {
+                // FaultTolerantToolbox erases failure status by returning plain
+                // text. Keep Symfony's model-safe message, but mark the domain
+                // result failed so events, replay, and the TUI retain the outcome.
+                $result = $this->errorResult(
+                    toolCallId: $toolCall->toolCallId,
+                    toolName: $toolCall->toolName,
+                    message: $this->normalizeResultText($exception->getToolCallResult()),
+                    details: ['error_type' => $exception::class],
+                );
+            } elseif ($exception instanceof ToolNotFoundException) {
+                $names = array_map(static fn (Tool $tool): string => $tool->getName(), $this->toolbox?->getTools() ?? []);
+                $result = $this->errorResult(
+                    toolCallId: $toolCall->toolCallId,
+                    toolName: $toolCall->toolName,
+                    message: \sprintf('Tool "%s" was not found, please use one of these: %s', $toolCall->toolName, implode(', ', $names)),
+                    details: ['error_type' => $exception::class],
+                );
             } else {
                 $result = $this->errorResult(
                     toolCallId: $toolCall->toolCallId,
@@ -220,7 +237,7 @@ final class ToolExecutor implements ToolExecutorInterface
 
     private function executeToolCall(ToolCall $toolCall, ToolExecutionPolicy $policy): ToolResult
     {
-        if (null === $this->faultTolerantToolbox) {
+        if (null === $this->toolbox) {
             return $this->errorResult(
                 toolCallId: $toolCall->toolCallId,
                 toolName: $toolCall->toolName,
@@ -244,7 +261,7 @@ final class ToolExecutor implements ToolExecutorInterface
 
         return $this->toDomainResult(
             $toolCall,
-            $this->executeWithContext($toolCall, $policy, fn () => $this->faultTolerantToolbox->execute(new SymfonyToolCall(
+            $this->executeWithContext($toolCall, $policy, fn () => $this->toolbox->execute(new SymfonyToolCall(
                 id: $toolCall->toolCallId,
                 name: $toolCall->toolName,
                 arguments: $toolCall->arguments,
