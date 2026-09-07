@@ -1107,6 +1107,7 @@ services:
   # start/resume both trigger MCP initialize.
   Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient:
     arguments:
+      $commandBus: '@agent.command.bus'
       $mcpDispatcher: '@Ineersa\CodingAgent\Mcp\McpSessionLifecycleDispatcher'
 
   # ─── MCP-04 / MCP-05 Dynamic MCP tool registration + invocation ────

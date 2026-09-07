@@ -188,7 +188,7 @@ final readonly class EffectiveModelContextProjector
                     $this->throwMalformedMessage($runId, $event->seq);
                 }
                 $messageLists[] = $innerPayload['messages'];
-            } elseif (RunEventTypeEnum::ContextCompacted->value === $event->type) {
+            } elseif (\in_array($event->type, [RunEventTypeEnum::ContextCompacted->value, RunEventTypeEnum::ContextRefreshed->value], true)) {
                 if (!\array_key_exists('messages', $event->payload)) {
                     $this->throwMalformedMessage($runId, $event->seq);
                 }
