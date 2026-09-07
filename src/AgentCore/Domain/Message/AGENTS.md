@@ -14,6 +14,7 @@ Transport contracts only — immutable bus payloads under `Ineersa\AgentCore\Dom
 **Run-control transitions** (transport `run_control` on `agent.command.bus`):
 
 - `AdvanceRun`, `CompactRun` — state transitions handled only by the dedicated run_control consumer
+- `RefreshRunContext` — rebuilt generated instructions from session attach; refreshes context without advancing execution
 
 **Execution payloads** (`agent.execution.bus` → `llm` / `tool` transports):
 

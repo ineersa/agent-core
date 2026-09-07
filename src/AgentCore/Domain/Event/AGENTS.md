@@ -20,4 +20,7 @@ Ordering constraints are enforced at each event write/commit call site; there is
 
 ## Maintenance
 
+`ContextRefreshed` records generated instruction messages on session attach. Replay
+replaces only the generated context; conversation and compaction summaries remain.
+
 When event types or subscriber contracts change, update this file and `../../Application/AGENTS.md` in the same change.
