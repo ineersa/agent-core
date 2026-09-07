@@ -19,6 +19,27 @@ Main owns the integrated design and product decisions. Read-only scouts can inve
 
 Treat the phases below as dependent slices, not a request for one large rewrite. Do not create all implementation tasks before the feasibility gates settle the design.
 
+## Prepare an independently approved Symfony AI 0.13 upgrade
+
+Complete this dependency migration before finalizing the concurrent consumer integration. Keep the existing fixed worker topology during the upgrade. Read the [verified upstream findings](hybrid-async-llm-runtime-plan.md#upstream-findings-and-the-symfony-ai-013-baseline) for release evidence and the distinction between lazy execution and scheduling.
+
+1. Obtain approval for the dependency upgrade as a separate tracked slice.
+2. Inspect the installed lockfile and the full 0.12-to-0.13 changes across all used Symfony AI packages.
+3. Confirm PR 2436's released `Execution` contract against tagged source, not an open PR branch.
+4. Trace `AgentInterface` implementations, decorators, mocks, direct `Agent` construction, and result consumers with IDE references.
+5. Migrate `ConfiguredModelAgentRunner` tool-loop wiring, isolated toolbox, tool budget, and fault-tolerant tool behavior to supported 0.13 facilities.
+6. Replace concrete `StreamResult` assumptions with supported consumption that actually drives streamed `Execution` to completion.
+7. Keep result consumption inside the intended error, tracing, and lifecycle scopes because work and exceptions are lazy.
+8. Verify one-shot iteration, final-result caching, streamed metadata, and resource cleanup when iteration stops early.
+9. Recheck Platform converters, provider bridges, stream errors, assistant replay, and tool-call deltas for other 0.13 changes.
+10. Run targeted Castor checks and the tracked transition's required full gate.
+
+Prove that an extension job with a streamed lazy result actually executes and completes before completion is logged. Prove that a deferred exception is propagated through the established failure path. Prove tool-budget isolation between separate executions. Do not add a second full agent orchestration loop around `Execution`.
+
+Update the dependency lock through existing project facilities and reload the IDE build model if its dependency view becomes stale. Record the new lock baseline and repeat the relevant fixed-topology measurements. Compare the async candidate against this upgraded synchronous baseline, not against a different dependency version.
+
+Do not install PR 1829's proposed Fiber strategy or assume it shipped in 0.13. Do not add PHP 8.6 as a prerequisite for `Io\Poll`. Neither change is needed to evaluate the existing Platform parallel-call facility.
+
 ## Phase 0: record a controlled baseline
 
 ### Record the source and runtime environment
@@ -83,6 +104,8 @@ Do not proceed if the estimated process saving is too small to justify the concu
 ## Phase 1: prove provider progress and Messenger ownership separately
 
 ### Experiment A: cooperative provider execution
+
+Start from Symfony's documented pattern of invoking several Platform requests before consuming their deferred results. Establish which adapters start network work lazily, then test readiness-based stream progress. Do not count an array of lazy Agent `Execution` objects as active requests: consuming those objects drives their side effects.
 
 1. Use an existing Symfony test container and local controlled transport fixtures.
 2. Admit request A and hold its response behind an explicit barrier.

@@ -21,6 +21,82 @@ The proposed work starts by proving these seams, not by replacing the controller
 
 The companion [implementation investigation procedure](hybrid-async-llm-runtime-work-plan.md) specifies the sequence, deliverables, validation, and stop conditions.
 
+## Upstream findings and the Symfony AI 0.13 baseline
+
+Follow-up verification on 2026-09-07 used GitHub's REST API through `gh`, the release notes, tagged source, and local source inspection. These findings narrow the work: concurrent HTTP already exists, but continuously concurrent Messenger consumption still needs an LLM-specific integration.
+
+### Parallel Platform calls already exist
+
+Symfony documents [parallel Platform calls](https://symfony.com/doc/current/ai/components/platform.html#parallel-platform-calls). The caller starts several invocations before consuming their deferred results:
+
+```php
+foreach ($inputs as $input) {
+	$results[] = $platform->invoke($model, $input);
+}
+
+foreach ($results as $result) {
+	echo $result->asText();
+}
+```
+
+This overlaps underlying HTTP requests. It does not provide readiness-based consumption, continuous queue admission, or independent Messenger completion. Reading results in submission order can still wait on a slow result while another is ready.
+
+Hatfield's ordinary LLM path immediately drains each invocation through `LlmPlatformAdapter`. The task is to expose cooperative request progress without duplicating the existing Platform functionality. Do not describe the project as needing to invent parallel HTTP.
+
+### PR 2436 is released, not just proposed
+
+[PR 2436, Agent to return a lazy Execution instance](https://github.com/symfony/ai/pull/2436), merged on 2026-08-29. It is included in [Symfony AI 0.13.0](https://github.com/symfony/ai/releases/tag/v0.13.0), published on 2026-08-30. The release notes list the PR, and the merge commit is an ancestor of the release tag.
+
+`AgentInterface::call()` now returns an `Execution` that implements `ResultInterface` and `IteratorAggregate`. The tagged [Execution source](https://github.com/symfony/ai/blob/v0.13.0/src/agent/src/Execution/Execution.php) establishes these contracts:
+
+- Consumption drives execution, including side effects.
+- Iteration exposes progress and result updates.
+- `onProgress()` and `onResult()` register callbacks invoked during consumption. Registration does not schedule background execution.
+- `getResult()` drives execution to the final result and caches that result.
+- For streamed execution, `getContent()` returns a stream iterable. Calling it without consuming the iterable does not finish the operation.
+- Execution iteration is one-shot. Re-iteration throws rather than rerunning side effects.
+- Reading a cached final result differs from iterating the execution again.
+
+This provides a useful observable execution lifecycle. It does not establish nonblocking I/O or make the consumer concurrent. The release's [SequentialToolExecutor](https://github.com/symfony/ai/blob/v0.13.0/src/agent/src/Toolbox/SequentialToolExecutor.php) still calls tools one after another.
+
+```mermaid
+flowchart LR
+    Call[Agent.call] --> Lazy[Lazy Execution]
+    Lazy --> Consume[Caller consumes execution]
+    Consume --> Progress[Progress and result updates]
+    Progress --> Final[Cached final result]
+    Scheduler[Concurrent consumer integration] -.->|Still required for independent progress| Consume
+```
+
+Hatfield uses the Symfony Platform directly for its main durable run loop. It uses Symfony Agent in `ConfiguredModelAgentRunner` for extension jobs. The new Agent execution object must not become a second run-state authority or replace Hatfield's orchestration merely to obtain progress callbacks.
+
+There is a concrete upgrade hazard in [ConfiguredModelAgentRunner](../../src/CodingAgent/Extension/Agent/ConfiguredModelAgentRunner.php). Its `drainResult()` fully consumes results only when they are `StreamResult`. Otherwise, it calls `getContent()` and discards the return value. A streamed 0.13 `Execution` is not `StreamResult`, so this branch can discard the iterable without driving execution. The runner could log completion without completing the extension job. The upgrade must prove consumption through the supported typed or execution API, including deferred exceptions and side effects.
+
+The same runner constructs `AgentProcessor` and registers it as both an input and output processor. The 0.13 release also includes [PR 2373](https://github.com/symfony/ai/pull/2373), which moves tool calling into Agent, and [PR 2425](https://github.com/symfony/ai/pull/2425), which fixes shared tool-call budgets across concurrent streaming calls. Audit the complete upgrade, not only the new return type. Preserve isolated tools, tool budgets, fault-tolerant results, and message history semantics.
+
+The plan now places an independently approved 0.13 upgrade before final async integration design. Keep the worker topology unchanged during that upgrade. This separates upstream API migration failures from concurrency failures. The upgrade itself is not authorized or performed by this documentation update.
+
+### The Fiber tool strategy remains a separate proposal
+
+[PR 1829](https://github.com/symfony/ai/pull/1829) remains open, with no merge date at verification time. It proposes a Fiber tool strategy and cooperative suspension. The installed 0.12 package does not contain those proposed strategy classes. Do not treat that PR as a released 0.13 concurrency implementation or design against its proposed names as stable APIs.
+
+### PHP 8.6 polling is not a prerequisite
+
+The [Io\\Poll RFC](https://wiki.php.net/rfc/poll_api) is marked implemented for PHP 8.6. The inspected CLI is PHP 8.5.5. Existing Symfony HttpClient, Amp, and Revolt facilities already support the relevant I/O mechanisms. A core poll API does not supply Messenger lifecycle integration or turn blocking handlers into cooperative code. No PHP 8.6 requirement is proposed.
+
+### Reproduce the upstream verification
+
+These read-only commands distinguish a merged PR from a reference to another merged PR and verify release inclusion:
+
+```bash
+gh api repos/symfony/ai/pulls/2436 --jq '{state,merged_at,merge_commit_sha}'
+gh api repos/symfony/ai/releases/tags/v0.13.0 --jq '{tag_name,published_at,body}'
+gh api repos/symfony/ai/compare/a8c41f830b8f03b68d6ba1f41eda25884a740a29...v0.13.0 --jq '{status,ahead_by,behind_by}'
+gh api repos/symfony/ai/pulls/1829 --jq '{state,merged_at}'
+```
+
+At verification, the comparison reported `ahead`, with 36 commits ahead and zero behind. Together with the release notes, this confirms PR 2436's inclusion in 0.13.0.
+
 ## Scope and boundaries
 
 The user asked for a detailed exploration of a hybrid architecture, explanations suitable for a PHP developer, diagrams, and a committed plan. This document does not change settings, runtime behavior, dependencies, or public APIs.
