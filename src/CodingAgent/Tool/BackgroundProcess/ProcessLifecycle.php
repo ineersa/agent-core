@@ -122,12 +122,42 @@ final class ProcessLifecycle
     /**
      * Check if a process is alive by examining /proc/<pid>.
      *
+     * Clears PHP's path cache before reading /proc so a prior is_dir()
+     * hit does not keep a dead PID "alive". Treats zombie (state Z)
+     * entries as not alive — they still occupy /proc until reaped.
+     *
      * Falls back to kill -0 when /proc is unavailable.
      */
     public function isAlive(int $pid): bool
     {
-        if (is_dir('/proc/'.$pid)) {
-            return true;
+        if ($pid <= 0) {
+            return false;
+        }
+
+        if (is_dir('/proc')) {
+            $procDir = '/proc/'.$pid;
+            clearstatcache(true, $procDir);
+
+            if (!is_dir($procDir)) {
+                return false;
+            }
+
+            $stat = @file_get_contents($procDir.'/stat');
+            if (false === $stat) {
+                return false;
+            }
+
+            // /proc/<pid>/stat: "pid (comm) state ..." — comm may contain
+            // spaces/parentheses, so state is the first token after the
+            // final ')' that closes the command name.
+            $closeParen = strrpos($stat, ')');
+            if (false === $closeParen) {
+                return false;
+            }
+
+            $state = $stat[$closeParen + 2] ?? '';
+
+            return 'Z' !== $state;
         }
 
         // Fallback: kill -0
