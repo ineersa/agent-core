@@ -26,6 +26,25 @@ final class QaSessionEnvSanitizationTest extends TestCase
 
     private const CONTROL_VAR = 'HATFIELD_SESSION_ID';
 
+    public function testQaChildrenDefaultXdebugOffAndHonorExplicitModes(): void
+    {
+        self::requireCastorFiles();
+        $previous = getenv('XDEBUG_MODE');
+        try {
+            foreach ([null, 'debug', 'coverage'] as $mode) {
+                $expected = $mode ?? 'off';
+                putenv(null === $mode ? 'XDEBUG_MODE' : 'XDEBUG_MODE='.$mode);
+                foreach ([\CastorTasks\qa_test_home_shell_prefix(), qa_observability_env_command()] as $prefix) {
+                    $code = 'echo getenv("XDEBUG_MODE"); if (function_exists("xdebug_info")) { echo "|".implode(",", xdebug_info("mode")); }';
+                    $output = shell_exec($prefix.' '.escapeshellarg(\PHP_BINARY).' -r '.escapeshellarg($code));
+                    $this->assertSame($expected.(\extension_loaded('xdebug') ? '|'.('off' === $expected ? '' : $expected) : ''), $output);
+                }
+            }
+        } finally {
+            putenv(false === $previous ? 'XDEBUG_MODE' : 'XDEBUG_MODE='.$previous);
+        }
+    }
+
     public function testObservabilityPrefixUnsetsAllSixSessionTransportDsns(): void
     {
         self::requireCastorFiles();
