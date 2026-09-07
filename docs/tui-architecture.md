@@ -62,6 +62,12 @@ tracks the fix needed to remove the copy and alias installer.
 
 Hotkey catalog: `/hotkeys` (display metadata; input routing is separate).
 
+## Picker rendering
+
+Pickers use Symfony `SelectListWidget` and `TextWidget` inside a `ContainerWidget`. The shared host `PickerOverlay` handles mounting and closing, not rendering or keyboard selection. The session picker applies its accent through Symfony's `::selected` style instead of rebuilding labels on arrow input.
+
+The file-rewind extension mounts the same native widgets through `TuiExtensionContextInterface`. It cannot import the host's internal `PickerOverlay` and does not maintain a copy. Picker changes request differential rendering. Switching the visible transcript to a child run still requests a full frame.
+
 ## Runtime boundary
 
 TUI sends commands and consumes events through `AgentSessionClient` + runtime protocol DTOs.
@@ -79,6 +85,8 @@ Dependency direction follows `depfile.yaml`. TUI may depend on CodingAgent servi
 Generic TUI extension contracts live in `Ineersa\Hatfield\ExtensionApi\Tui\*` and may depend on **Symfony TUI** public widgets only. Feature UX belongs in extension packages.
 
 Public `TuiExtensionContextInterface` exposes status entries (`setStatus`), tick hooks (`onTick`), and native `AbstractWidget` overlays after the editor (`insertOverlayAfterEditor` / `removeOverlay` / `setFocus`); it does not expose internal widget replacement. Host bridge: `BridgeTuiExtensionContext`.
+
+One-shot status-panel notices use `setTransientStatus`. They clear on the next nonempty submit. Persistent `setStatus` rows keep their existing lifetime.
 
 ## Related
 

@@ -83,6 +83,10 @@ final class SubmitListener implements TuiListenerRegistrar
                 return;
             }
 
+            // One-shot notices clear before routing so the current command can
+            // post a fresh status without racing the previous notice.
+            $screen->clearTransientStatuses();
+
             // ── Question interception: route editor text to active question ──
             if ($questionCoordinator->actionRequired()) {
                 if ($state->subagentLiveView->active && $subagentLiveInputPolicy->isAllowedLiveViewNavigationSlash($text)) {

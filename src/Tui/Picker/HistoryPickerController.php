@@ -49,7 +49,7 @@ final class HistoryPickerController
 
         $history = $this->historyProvider->forSession($state->sessionId);
         if ([] === $history->prompts) {
-            $screen->setStatus('history', 'Session has no user prompts yet');
+            $screen->setTransientStatus('history', 'Session has no user prompts yet');
             $screen->refresh();
 
             return;

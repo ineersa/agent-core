@@ -93,6 +93,10 @@ final class JbcontextExtensionRegistrationTest extends TestCase
             {
             }
 
+            public function setTransientStatus(string $key, string $text): void
+            {
+            }
+
             public function setExtensionWarning(string $name, ?string $message): void
             {
             }

@@ -237,6 +237,10 @@ final class OmSessionContextCommandTest extends IsolatedKernelTestCase
             {
             }
 
+            public function setTransientStatus(string $key, string $text): void
+            {
+            }
+
             public function onTick(\Closure $listener): void
             {
             }
@@ -291,6 +295,10 @@ final class OmSessionContextCommandTest extends IsolatedKernelTestCase
             }
 
             public function setStatus(string $key, ?string $text): void
+            {
+            }
+
+            public function setTransientStatus(string $key, string $text): void
             {
             }
 
