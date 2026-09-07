@@ -120,10 +120,7 @@ final class SessionPickerController
                 // Insert the command text into the prompt editor
                 // before closing so the cursor lands on the space
                 // after the session id, ready for the new name.
-                $screen = $this->screen;
-                $screen->promptEditor()->replaceText('/rename '.$sessionId.' ');
-                $screen->requestRender();
-
+                $this->screen->promptEditor()->replaceText('/rename '.$sessionId.' ');
                 $this->closePicker();
             },
             allowDelete: false,
@@ -392,8 +389,5 @@ final class SessionPickerController
         $listWidget->setItems(self::buildItemsStatic(
             $this->sessions,
         ));
-        if ([] !== $this->sessions) {
-            $listWidget->setSelectedIndex(0);
-        }
     }
 }

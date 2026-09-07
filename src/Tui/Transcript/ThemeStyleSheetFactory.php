@@ -106,9 +106,6 @@ final class ThemeStyleSheetFactory
         $rules = [];
 
         $this->addRule($rules, '.picker-select-list::selected', $palette, ThemeColorEnum::Accent, bold: true);
-        $this->addRule($rules, '.picker-select-list::label', $palette, ThemeColorEnum::Text);
-        $this->addRule($rules, '.picker-select-list::description', $palette, ThemeColorEnum::Muted);
-        $this->addRule($rules, '.picker-select-list::scroll-info', $palette, ThemeColorEnum::Muted);
 
         return new StyleSheet($rules);
     }

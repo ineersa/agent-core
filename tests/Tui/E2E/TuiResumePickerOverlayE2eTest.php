@@ -7,15 +7,15 @@ namespace Ineersa\Tui\Tests\E2E;
 use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\Tests\E2E\Support\TuiE2eSessionCatalogSeeder;
-use Ineersa\Tui\Tests\Support\ResumeCanonicalEventsFixture;
+use Ineersa\Tui\Widget\SelectListKeybindings;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Minimal tmux proof for overheight /resume picker open → navigate → close.
+ * Minimal tmux proof for an overheight /resume picker open → navigate → close.
  *
- * Virtual tests own label/accent and force-reset contracts. This case only
- * proves the packaged TUI settles picker chrome without stranded overlay text.
+ * Virtual tests own label/accent and differential confirm contracts. This case
+ * only proves a real finite pane settles picker focus and chrome.
  *
  * @group tui-e2e-replay
  */
@@ -44,17 +44,19 @@ final class TuiResumePickerOverlayE2eTest extends TestCase
         if (isset($this->tmux)) {
             $this->tmux->killAll();
         }
-        if (isset($this->testProjectDir)) {
-            TestDirectoryIsolation::removeDirectory($this->testProjectDir);
-        }
+        // Keep snapshot artifacts under the isolated project tree for inspection.
+        // Intentionally do not removeDirectory() here.
     }
 
     public function testResumePickerOpenNavigateCloseSettlesVisibleChrome(): void
     {
         $paths = $this->dbPaths ?? $this->fail('DB paths must be allocated before seeding');
 
+        // One more than maxVisible so the list emits a scroll indicator and
+        // exceeds a short pane without depending on scrollback leftovers.
+        $sessionCount = SelectListKeybindings::MAX_VISIBLE + 1;
         $sessionIds = [];
-        for ($i = 1; $i <= 12; ++$i) {
+        for ($i = 1; $i <= $sessionCount; ++$i) {
             $sessionIds[] = TuiE2eSessionCatalogSeeder::createSession(
                 $this->testProjectDir,
                 $paths['appEnv'],
@@ -62,8 +64,6 @@ final class TuiResumePickerOverlayE2eTest extends TestCase
                 \sprintf('seeded resume picker session %02d', $i),
             );
         }
-        $targetId = $sessionIds[array_key_last($sessionIds)];
-        ResumeCanonicalEventsFixture::write($this->testProjectDir, $targetId);
 
         $pane = $this->tmux->startDetached(
             command: $this->agentCommand(),
@@ -87,10 +87,21 @@ final class TuiResumePickerOverlayE2eTest extends TestCase
                 message: 'Resume picker header did not appear',
             );
             $this->assertStringContainsString('#'.$sessionIds[0], $opened);
-            $this->assertStringContainsString('(1/12)', $opened);
+            $this->assertStringContainsString('(1/'.$sessionCount.')', $opened);
 
             $this->tmux->sendKey($pane, 'Down');
             $this->tmux->sendKey($pane, 'Down');
+
+            $selected = $this->tmux->waitForCallback(
+                $pane,
+                static fn (string $cap): bool => str_contains($cap, '(3/'.$sessionCount.')'),
+                timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
+                message: 'Resume picker selection must reach index 3 before Escape',
+                history: 0,
+            );
+            $this->assertStringContainsString('#'.$sessionIds[2], $selected);
+            $this->assertStringContainsString('(3/'.$sessionCount.')', $selected);
+
             $this->tmux->sendKey($pane, 'Escape');
 
             $closed = $this->tmux->waitForCallback(
@@ -100,25 +111,30 @@ final class TuiResumePickerOverlayE2eTest extends TestCase
                         return false;
                     }
 
-                    return str_contains($cap, '█') && str_contains($cap, '◆');
+                    return str_contains($cap, '● idle')
+                        && str_contains($cap, '◆')
+                        && (str_contains($cap, 'Welcome to Hatfield')
+                            || str_contains($cap, 'Welcome to Agent Core'));
                 },
                 timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
-                message: 'Resume picker must close without leaving header text and must keep chrome',
-                history: 2000,
+                message: 'Resume picker must close and restore focused editor chrome in the current pane',
+                history: 0,
             );
 
-            $this->assertStringContainsString('█', $closed);
+            $this->assertStringContainsString('● idle', $closed);
             $this->assertStringContainsString('◆', $closed);
+            $this->assertTrue(
+                str_contains($closed, 'Welcome to Hatfield')
+                || str_contains($closed, 'Welcome to Agent Core'),
+                'Closed pane must show the welcome/editor body again',
+            );
             $this->assertStringNotContainsString('arrows move, Enter resumes', $closed);
 
             $this->tmux->saveAnsiSnapshot($pane, 'resume-picker-overlay');
             $this->tmux->sendKey($pane, 'C-d');
         } catch (\Throwable $e) {
             $this->tmux->saveAnsiSnapshot($pane, 'resume-picker-overlay-FAILURE');
-            try {
-                $this->tmux->sendKey($pane, 'C-d');
-            } catch (\Throwable) {
-            }
+            // tearDown() kills the tmux tree; do not swallow secondary exit errors.
             throw $e;
         }
     }
@@ -127,6 +143,8 @@ final class TuiResumePickerOverlayE2eTest extends TestCase
     {
         $paths = $this->dbPaths ?? $this->fail('DB paths must be allocated before building agent command');
 
+        // Source bin/console with APP_ENV=test (same as other journey/snapshot
+        // cases). Packaged PHAR boot is owned by TuiArtifactBootE2eTest.
         return \sprintf(
             'APP_ENV=test %sHOME=%s %s %s agent --model=llama_cpp_test/test --tools-excluded=bash 2>&1',
             TuiE2eDatabaseEnv::shellPrefixWithLowLatencyMessenger(

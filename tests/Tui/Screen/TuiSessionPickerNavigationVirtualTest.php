@@ -12,17 +12,14 @@ use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\ThemePalette;
-use Ineersa\Tui\Transcript\ThemeStyleSheetFactory;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
-use Symfony\Component\Tui\Render\Renderer;
-use Symfony\Component\Tui\Tui;
-use Symfony\Component\Tui\Widget\ContainerWidget;
+use Symfony\Component\Tui\Terminal\ScreenBuffer;
 use Symfony\Component\Tui\Widget\SelectListWidget;
 
 /**
  * Thesis: /resume picker navigation keeps plain labels and stylesheet accent,
- * and in-place feedback updates do not force ScreenWriter reset.
+ * and in-place feedback updates stay differential.
  */
 #[CoversClass(SessionPickerController::class)]
 final class TuiSessionPickerNavigationVirtualTest extends IsolatedKernelTestCase
@@ -76,31 +73,17 @@ final class TuiSessionPickerNavigationVirtualTest extends IsolatedKernelTestCase
             $this->assertSame($secondId, (string) $second['value']);
             $this->assertStringNotContainsString("\x1b", (string) $second['label']);
 
-            $itemsProp = new \ReflectionProperty(SelectListWidget::class, 'items');
-            /** @var list<array{value: string, label: string}> $items */
-            $items = $itemsProp->getValue($list);
-            $this->assertSame(
-                SessionPickerController::buildItemsStatic([
-                    ['sessionId' => $activeId, 'displayTitle' => 'Active session', 'name' => 'Active session'],
-                    ['sessionId' => $secondId, 'displayTitle' => 'Second session', 'name' => 'Second session'],
-                ]),
-                $items,
-            );
-
             $accentProbe = $harness->screen()->theme()->color(ThemeColorEnum::Accent, 'PROBE');
             $accentPrefix = substr($accentProbe, 0, (int) strpos($accentProbe, 'PROBE'));
             $this->assertNotSame('', $accentPrefix);
 
-            $renderer = new Renderer();
-            $renderer->addStyleSheet((new ThemeStyleSheetFactory())->createPickerSelectList($palette));
-            $container = new ContainerWidget();
-            $container->add($list);
-            $joined = implode("\n", $renderer->render($container, 120, 20));
+            $ansi = $harness->terminal()->getOutput();
             $this->assertStringContainsString(
                 $accentPrefix."\x1b[1m→ #".$secondId.' — Second session',
-                $joined,
-                'Selected session row must resolve picker-scoped Accent style',
+                $ansi,
+                'Selected session row must resolve picker-scoped Accent style from the attached tree',
             );
+            $this->assertStringContainsString('  #'.$activeId.' — Active session', $ansi);
         } finally {
             $harness->stopInputLoop();
         }
@@ -124,20 +107,28 @@ final class TuiSessionPickerNavigationVirtualTest extends IsolatedKernelTestCase
             $harness->render();
             $this->selectSession($harness, $list, $deleteId);
 
-            $writer = $this->screenWriter($harness->tui());
-            $writer->writeLines(['seed']);
-            $this->assertNotSame([], $this->previousLines($writer));
-
+            $harness->terminal()->clearOutput();
             $harness->sendInput('d');
-            $this->assertStringContainsString(
-                \sprintf('Delete session #%s — Maybe delete?', $deleteId),
-                $harness->plainScreenText(),
+            $delta = $harness->terminal()->getOutput();
+
+            $this->assertStringNotContainsString(
+                "\x1b[2J",
+                $delta,
+                'Confirm transition must stay differential and must not erase the screen',
             );
-            $this->assertNotSame(
-                [],
-                $this->previousLines($writer),
-                'In-place confirm must not force ScreenWriter::reset()',
+            $this->assertStringNotContainsString("\x1b[3J", $delta);
+
+            $confirmNeedle = \sprintf('Delete session #%s — Maybe delete?', $deleteId);
+            $this->assertStringContainsString($confirmNeedle, $delta);
+
+            $buffer = new ScreenBuffer(
+                width: $harness->terminal()->getColumns(),
+                height: $harness->terminal()->getRows(),
             );
+            $buffer->write($delta);
+            $this->assertStringContainsString($confirmNeedle, $buffer->getScreen());
+            $this->assertStringContainsString('Yes', $buffer->getScreen());
+            $this->assertStringContainsString('No', $buffer->getScreen());
         } finally {
             $harness->stopInputLoop();
         }
@@ -166,24 +157,5 @@ final class TuiSessionPickerNavigationVirtualTest extends IsolatedKernelTestCase
         }
 
         $this->fail('Failed to highlight session '.$sessionId);
-    }
-
-    private function screenWriter(Tui $tui): object
-    {
-        $prop = new \ReflectionProperty(Tui::class, 'screenWriter');
-
-        return $prop->getValue($tui);
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function previousLines(object $writer): array
-    {
-        $prop = new \ReflectionProperty($writer, 'previousLines');
-        /** @var list<string> $lines */
-        $lines = $prop->getValue($writer);
-
-        return $lines;
     }
 }
