@@ -49,12 +49,4 @@ Which file to look at first and why.
 
 ## jbcontext semantic search
 
-Use `code_search` to discover unfamiliar behavior or code locations. Prefer direct reads or IDE navigation for known files and symbols.
-
-- Ask one focused natural-language question or provide a representative code snippet.
-- Read promising local files and nearby code before another semantic query. Per discovery question, optionally make one narrowed follow-up with a project-relative `path_filter`, such as `src/CodingAgent/Runtime/`.
-- Verify local source. Snippets can be incomplete, similarity is ranking rather than confidence, and empty results do not prove absence.
-- When unavailable, use other tools or follow the reported guidance. Do not repeat the same failing call.
-- Do not use `code_search` to run builds or tests, perform Git operations, or review an existing diff.
-
-Use the `jbcontext-semantic-search` skill for examples and troubleshooting.
+Prefer `code_search` for fast initial searches and conceptual questions about the codebase. Follow the tool's guidance.
