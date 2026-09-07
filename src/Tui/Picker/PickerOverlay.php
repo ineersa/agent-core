@@ -43,9 +43,9 @@ final class PickerOverlay
 
         $screen->insertOverlayAfterEditor($this->container);
         $tui->setFocus($this->listWidget);
-        // Force full clear+redraw on mount so ScreenWriter does not leave stale
-        // picker rows in the overlay slot when incremental dirty regions miss prior list height.
-        $tui->requestRender(true);
+        // Keep the previous frame so the writer updates the overlay band rather
+        // than clearing and replaying the transcript. Geometry fallbacks belong to the writer.
+        $tui->requestRender();
         $this->isOpen = true;
     }
 
@@ -54,7 +54,7 @@ final class PickerOverlay
         if (null !== $this->container && null !== $this->screen) {
             $this->screen->removeOverlay($this->container);
             if ($requestRender) {
-                $this->screen->requestRender(true);
+                $this->screen->requestRender();
             }
         }
 
