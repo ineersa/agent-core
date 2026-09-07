@@ -313,12 +313,12 @@ final class AgentCommand
     private function handleHeadlessResume(RuntimeCommand $command, OutputInterface $output): void
     {
         $runId = $command->runId ?? '';
-        if ('' === $runId) {
+        if ('' === $runId || !$this->sessionStore->exists($runId)) {
             $output->write(JsonlCodec::encodeEvent(new RuntimeEvent(
                 type: 'protocol_error',
-                runId: '',
+                runId: $runId,
                 seq: 0,
-                payload: ['error' => 'resume requires runId'],
+                payload: ['error' => '' === $runId ? 'resume requires runId' : \sprintf('Session "%s" not found.', $runId)],
             )));
 
             return;

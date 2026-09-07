@@ -36,6 +36,7 @@ use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChild;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\StubRunRelationshipReader;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -407,7 +408,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
 
     public function testArtifactCanResumeDuringCurrentParentLifetimeButNotAfterAttach(): void
     {
-        $parent = 'parent-lifetime';
+        $parent = self::getContainer()->get(HatfieldSessionStore::class)->createSession();
         $artifactId = 'agent_lifetime';
         $childRunId = 'child-lifetime';
         $this->seedTerminalChild($parent, $artifactId, $childRunId, latestInputTokens: 10, contextWindow: 200_000);
