@@ -55,7 +55,7 @@ final class JbcontextSessionStartHookTest extends TestCase
         $this->assertTrue($state->eligibilityStarted);
         $this->assertSame(1, $state->checkGeneration);
         $this->assertSame(JbcontextSessionModeEnum::Pending, $state->mode);
-        $this->assertSame('jbcontext: checking index…', $state->statusText);
+        $this->assertNull($state->reason);
     }
 
     #[Test]
@@ -67,7 +67,6 @@ final class JbcontextSessionStartHookTest extends TestCase
             sessionId: $sessionId,
             mode: JbcontextSessionModeEnum::Disabled,
             reason: 'jbcontext disabled: status check failed after retries. Fix CLI auth/daemon access and restart Hatfield.',
-            statusText: 'jbcontext disabled: status check failed after retries. Fix CLI auth/daemon access and restart Hatfield.',
             attempt: 5,
             startedAt: 1.0,
             reindexPending: false,
@@ -91,7 +90,6 @@ final class JbcontextSessionStartHookTest extends TestCase
         $this->assertNull($state->reason);
         $this->assertSame(2, $state->checkGeneration);
         $this->assertSame(1, $state->attempt);
-        $this->assertSame('jbcontext: checking index…', $state->statusText);
     }
 
     #[Test]

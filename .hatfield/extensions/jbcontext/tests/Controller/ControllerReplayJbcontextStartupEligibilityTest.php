@@ -41,12 +41,12 @@ final class ControllerReplayJbcontextStartupEligibilityTest extends ControllerRe
         $this->waitForEvent('runtime.ready', $this->liveControllerReadyTimeout());
 
         $state = $this->waitForTerminalStatus(static fn (JbcontextSessionState $candidate): bool => JbcontextSessionModeEnum::Disabled === $candidate->mode
-            && self::MISSING_IDEA_STATUS === $candidate->statusText
+            && self::MISSING_IDEA_STATUS === $candidate->reason
             && true === $candidate->eligibilityStarted
             && $candidate->checkGeneration >= 1);
 
         $this->assertSame(JbcontextSessionModeEnum::Disabled, $state->mode);
-        $this->assertSame(self::MISSING_IDEA_STATUS, $state->statusText);
+        $this->assertSame(self::MISSING_IDEA_STATUS, $state->reason);
         $this->assertTrue($state->eligibilityStarted);
         $this->assertGreaterThanOrEqual(1, $state->checkGeneration);
         $this->assertDirectoryDoesNotExist($this->tempDir.'/.idea');
@@ -64,7 +64,6 @@ final class ControllerReplayJbcontextStartupEligibilityTest extends ControllerRe
             sessionId: $this->sessionId,
             mode: JbcontextSessionModeEnum::Disabled,
             reason: 'jbcontext disabled: status check failed after retries. Fix CLI auth/daemon access and restart Hatfield.',
-            statusText: 'jbcontext disabled: status check failed after retries. Fix CLI auth/daemon access and restart Hatfield.',
             attempt: 5,
             startedAt: 1.0,
             reindexPending: false,
@@ -80,13 +79,11 @@ final class ControllerReplayJbcontextStartupEligibilityTest extends ControllerRe
         $state = $this->waitForTerminalStatus(static fn (JbcontextSessionState $candidate): bool => JbcontextSessionModeEnum::Eligible === $candidate->mode
             && true === $candidate->eligibilityStarted
             && 2 === $candidate->checkGeneration
-            && null === $candidate->reason
-            && str_starts_with((string) $candidate->statusText, 'jbcontext: indexed'));
+            && null === $candidate->reason);
 
         $this->assertSame(JbcontextSessionModeEnum::Eligible, $state->mode);
         $this->assertSame(2, $state->checkGeneration);
         $this->assertNull($state->reason);
-        $this->assertStringStartsWith('jbcontext: indexed', (string) $state->statusText);
         $this->assertNotSame([], $this->stubLogLines());
         $this->assertTrue(
             (bool) array_filter(

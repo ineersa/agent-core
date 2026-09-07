@@ -66,12 +66,12 @@ Start a **new Hatfield session** after enabling. Extensions register at startup.
 
 1. Interactive controller session start fires a public session-start hook that writes a session-scoped pending status file and dispatches one background eligibility job on the extension-agent transport. Worker/tool process loads and the TUI poller do not start eligibility.
 2. The worker requires `.idea` and a prior index snapshot from `jbcontext status --project-path <cwd> --json-output`.
-3. If either check fails, search stays unavailable until the next controller startup. The TUI status panel keeps the disabled reason for about five seconds, then clears it; `code_search` still returns the stored reason on demand.
-4. Active work (`checking index…`, `refreshing index…`) stays visible while Pending or `reindexRunning`. Eligible idle (`indexed` / refresh-failed) never shows a success notice in the footer.
+3. If either check fails, search stays unavailable until the next controller startup. An actionable `⚠ jbcontext: …` warning appears under `[Extensions]` in the startup loaded-resources block. `code_search` returns the stored reason on demand.
+4. jbcontext never writes to the status row or footer. Checking, refreshing, and success stay silent. A failed refresh produces a warning while search continues using the previous snapshot. Warnings clear when the problem resolves or a restarted controller begins a new check.
 5. Transient status failures retry with preferred delays 2s, 4s, 8s, 16s under a hard ~30s wall-clock budget that also covers CLI status timeouts. Exhaustion disables the session; later turns do not retry.
 6. When eligible, the worker installs project assets and runs incremental `jbcontext index --silent`.
 
-Every controller session-start (including resume of the same conversation) increments `check_generation` and reclaims pending eligibility, so fixing CLI auth or creating an index and restarting Hatfield recovers the same session. Jobs from an older generation are ignored so they cannot poison the newer claim. Headless or in-process runs that never fire controller session-start leave `code_search` unavailable for that process.
+Every controller session-start (including resume of the same conversation) increments `check_generation` and reclaims pending eligibility, so fixing CLI auth or creating an index and restarting Hatfield recovers the same session. Jobs from an older generation are ignored so they cannot poison the newer claim. Warnings also appear on resumed sessions, even when the full loaded-resources list is hidden. Headless or in-process runs that never fire controller session-start leave `code_search` unavailable for that process.
 
 ### Refresh cadence
 
@@ -102,17 +102,17 @@ Because eligibility is asynchronous after startup discovery, newly installed pro
 
 - First indexing remains a manual operator action.
 - Status and search use the authenticated jbcontext CLI; do not log prompts, tool output, credentials, or environment values.
-- Routine logs keep stable error codes only. Model-visible tool/status text may include bounded jbcontext stderr.
+- Routine logs keep stable error codes only. Tool errors and startup warnings may include bounded jbcontext stderr.
 
 ## Unavailable states
 
 | State | TUI / tool |
 |---|---|
-| Pending startup check | `jbcontext: checking index…` / tool unavailable |
-| No `.idea` or no prior snapshot | disabled status text / tool unavailable |
-| Transient CLI failure exhausted | disabled after retries; surfaces bounded JB Context stderr when present / tool unavailable with the same detail |
-| Eligible, refreshing | `jbcontext: refreshing index…` while `reindexRunning` / search allowed |
-| Eligible, idle | no footer notice / search allowed |
+| Pending startup check | no message / tool unavailable |
+| No `.idea` or no prior snapshot | startup warning with recovery steps / tool unavailable |
+| Transient CLI failure exhausted | startup warning with bounded JB Context stderr when present and recovery steps / tool unavailable with the same detail |
+| Eligible, refreshing or idle | no message / search allowed |
+| Refresh failed | startup warning with retry guidance / search uses the previous snapshot |
 
 ## Source of truth
 

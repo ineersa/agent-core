@@ -102,7 +102,6 @@ PHP);
             sessionId: $sessionId,
             mode: JbcontextSessionModeEnum::Disabled,
             reason: 'no idea',
-            statusText: 'jbcontext disabled: project has no .idea directory. Open the project in JetBrains IDE and run jbcontext index manually before enabling search.',
             attempt: 1,
             startedAt: 1.0,
             reindexPending: false,
@@ -148,6 +147,6 @@ PHP);
         $state = $store->read();
         $this->assertSame(JbcontextSessionModeEnum::Disabled, $state->mode);
         $this->assertTrue($state->eligibilityStarted);
-        $this->assertStringContainsString('no .idea directory', (string) $state->statusText);
+        $this->assertSame('no idea', $state->reason);
     }
 }

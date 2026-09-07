@@ -17,7 +17,7 @@ use Ineersa\HatfieldExt\Jbcontext\Job\JbcontextSessionStartHook;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextPaths;
 use Ineersa\HatfieldExt\Jbcontext\State\JbcontextSessionLocator;
 use Ineersa\HatfieldExt\Jbcontext\Tool\CodeSearchToolHandler;
-use Ineersa\HatfieldExt\Jbcontext\Tui\JbcontextStatusPoller;
+use Ineersa\HatfieldExt\Jbcontext\Tui\JbcontextWarningPoller;
 use Psr\Log\LoggerAwareInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -26,7 +26,7 @@ use Psr\Log\NullLogger;
  * JetBrains Context semantic-search extension.
  *
  * Registers handlers/tools during register(). Interactive eligibility starts
- * from the controller session-start hook; the TUI poller only publishes status.
+ * from the controller session-start hook; the TUI poller only publishes startup warnings.
  */
 final class JbcontextExtension implements HatfieldExtensionInterface, TuiExtensionInterface, LoggerAwareInterface
 {
@@ -120,7 +120,7 @@ final class JbcontextExtension implements HatfieldExtensionInterface, TuiExtensi
         }
 
         $this->sessions->bindTui($context);
-        $poller = new JbcontextStatusPoller($context, $paths, $this->sessions, $this->logger);
+        $poller = new JbcontextWarningPoller($context, $paths, $this->sessions, $this->logger);
         $context->onTick(static function () use ($poller): void {
             $poller->tick();
         });

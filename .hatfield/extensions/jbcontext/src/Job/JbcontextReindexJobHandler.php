@@ -81,7 +81,6 @@ final readonly class JbcontextReindexJobHandler implements ExtensionAgentJobHand
             $claimed = true;
 
             return $current->with(
-                statusText: 'jbcontext: refreshing index…',
                 reindexPending: false,
                 reindexRunning: true,
             );
@@ -106,7 +105,8 @@ final readonly class JbcontextReindexJobHandler implements ExtensionAgentJobHand
             }
 
             return $current->with(
-                statusText: $result['ok'] ? 'jbcontext: indexed' : 'jbcontext: indexed (refresh failed)',
+                reason: $result['ok'] ? null : 'Index refresh failed; search uses the previous snapshot. Run `jbcontext index` in this project to diagnose and retry.',
+                clearReason: $result['ok'],
                 reindexRunning: false,
             );
         });

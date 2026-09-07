@@ -176,7 +176,7 @@ final class JbcontextEligibilityJobHandlerTest extends TestCase
         $state = JbcontextStatusStore::forSession(JbcontextPaths::fromProjectRoot($this->projectDir), 'sess-1')->read();
         $this->assertSame(JbcontextSessionModeEnum::Disabled, $state->mode);
         $this->assertSame(
-            'jbcontext disabled: '.JbcontextCliDiagnostic::format('boom'),
+            'jbcontext disabled: '.JbcontextCliDiagnostic::format('boom').' Resolve the CLI error and restart Hatfield.',
             $state->reason,
         );
         foreach ($exec->calls() as $call) {
@@ -231,9 +231,8 @@ final class JbcontextEligibilityJobHandlerTest extends TestCase
         $this->assertStringContainsString('JB Context error:', (string) $state->reason);
         $this->assertStringContainsString('Authentication required', (string) $state->reason);
         $this->assertStringContainsString($secret, (string) $state->reason);
-        $this->assertSame($state->reason, $state->statusText);
         $this->assertSame(
-            'jbcontext disabled: '.JbcontextCliDiagnostic::format($stderr),
+            'jbcontext disabled: '.JbcontextCliDiagnostic::format($stderr).' Resolve the CLI error and restart Hatfield.',
             $state->reason,
         );
     }
@@ -283,7 +282,6 @@ final class JbcontextEligibilityJobHandlerTest extends TestCase
             sessionId: 'sess-a',
             mode: JbcontextSessionModeEnum::Disabled,
             reason: 'disabled a',
-            statusText: 'disabled a',
             attempt: 1,
             startedAt: 1.0,
             reindexPending: false,
@@ -362,7 +360,6 @@ final class JbcontextEligibilityJobHandlerTest extends TestCase
             sessionId: 'sess-recover',
             mode: JbcontextSessionModeEnum::Disabled,
             reason: 'jbcontext disabled: status check failed after retries. Fix CLI auth/daemon access and restart Hatfield.',
-            statusText: 'jbcontext disabled: status check failed after retries. Fix CLI auth/daemon access and restart Hatfield.',
             attempt: 5,
             startedAt: 1.0,
             reindexPending: false,

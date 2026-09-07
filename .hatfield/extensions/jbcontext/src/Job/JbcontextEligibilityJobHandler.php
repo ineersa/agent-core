@@ -168,7 +168,6 @@ final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerIn
             return $current->with(
                 mode: JbcontextSessionModeEnum::Eligible,
                 clearReason: true,
-                statusText: 'jbcontext: indexed',
                 attempt: $attempt,
                 reindexPending: false,
                 reindexRunning: false,
@@ -219,7 +218,7 @@ final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerIn
                     return $s;
                 }
 
-                return $s->with(statusText: 'jbcontext: indexed (refresh failed)');
+                return $s->with(reason: 'Index refresh failed; search uses the previous snapshot. Run `jbcontext index` in this project to diagnose and retry.');
             });
 
             return;
@@ -232,7 +231,7 @@ final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerIn
                 return $s;
             }
 
-            return $s->with(statusText: 'jbcontext: indexed');
+            return $s->with(clearReason: true);
         });
     }
 
@@ -256,7 +255,7 @@ final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerIn
         $sleep = JbcontextRetrySchedule::sleepBeforeNextAttempt($attempt, $state->elapsedSeconds($now));
         if (null === $sleep) {
             $statusText = null !== $detail && '' !== $detail
-                ? 'jbcontext disabled: '.$detail
+                ? 'jbcontext disabled: '.$detail.' Resolve the CLI error and restart Hatfield.'
                 : 'jbcontext disabled: status check failed after retries. Fix jbcontext CLI access and restart Hatfield.';
             $this->disable(
                 $store,
@@ -291,7 +290,6 @@ final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerIn
             return $current->with(
                 mode: JbcontextSessionModeEnum::Pending,
                 clearReason: true,
-                statusText: 'jbcontext: checking index…',
                 attempt: $attempt,
                 reindexPending: false,
                 reindexRunning: false,
@@ -346,7 +344,7 @@ final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerIn
             ]);
             $this->disable(
                 $store,
-                'jbcontext disabled: could not schedule status retry.',
+                'jbcontext disabled: could not schedule status retry. Check Hatfield logs and restart Hatfield.',
                 'retry_dispatch_failed',
                 $attempt,
                 $sessionId,
@@ -383,7 +381,6 @@ final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerIn
             return $current->with(
                 mode: JbcontextSessionModeEnum::Disabled,
                 reason: $statusText,
-                statusText: $statusText,
                 attempt: $attempt,
                 reindexPending: false,
                 reindexRunning: false,

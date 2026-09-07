@@ -21,6 +21,7 @@ That is part of the public API. Do **not** depend on in-repo `Ineersa\Tui\*` cla
 `TuiExtensionContextInterface` exposes exactly:
 
 - `setStatus($key, $text|null)` — keyed **status-panel** rows (not the footer bar)
+- `setExtensionWarning($name, $message|null)` — keyed plain-text warnings under `[Extensions]` in startup loaded resources, including resumed sessions. Null clears a resolved warning. This does not write to the status panel or footer.
 - `insertOverlayAfterEditor` / `removeOverlay` — overlay widgets below the editor
 - `setFocus` — focus an overlay widget
 - `onTick` — idle-safe tick callbacks (host discards return values; self-throttle)

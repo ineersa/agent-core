@@ -225,6 +225,10 @@ final class OmSessionContextCommandTest extends IsolatedKernelTestCase
                 throw new \RuntimeException('lazy session boom');
             }
 
+            public function setExtensionWarning(string $name, ?string $message): void
+            {
+            }
+
             public function requestRender(bool $force = false): void
             {
             }
@@ -270,6 +274,10 @@ final class OmSessionContextCommandTest extends IsolatedKernelTestCase
     {
         return new class($sessionId) implements TuiExtensionContextInterface {
             public function __construct(public string $sessionId)
+            {
+            }
+
+            public function setExtensionWarning(string $name, ?string $message): void
             {
             }
 

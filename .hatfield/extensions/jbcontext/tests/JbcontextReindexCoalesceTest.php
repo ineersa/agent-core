@@ -43,7 +43,6 @@ final class JbcontextReindexCoalesceTest extends TestCase
             sessionId: 'run-1',
             mode: JbcontextSessionModeEnum::Eligible,
             reason: null,
-            statusText: 'jbcontext: refreshing index…',
             attempt: 1,
             startedAt: 1.0,
             reindexPending: true,
@@ -80,7 +79,6 @@ final class JbcontextReindexCoalesceTest extends TestCase
             sessionId: 'run-1',
             mode: JbcontextSessionModeEnum::Eligible,
             reason: null,
-            statusText: 'jbcontext: indexed',
             attempt: 1,
             startedAt: 1.0,
             reindexPending: true,
@@ -105,9 +103,39 @@ final class JbcontextReindexCoalesceTest extends TestCase
         $state = $store->read();
         $this->assertFalse($state->reindexRunning);
         $this->assertFalse($state->reindexPending);
-        $this->assertSame('jbcontext: indexed', $state->statusText);
+        $this->assertNull($state->reason);
         $this->assertCount(1, $exec->calls());
         $this->assertSame('index', $exec->calls()[0]['args'][0]);
+    }
+
+    #[Test]
+    public function refreshFailureKeepsSearchEligibleAndWarningClearsAfterSuccess(): void
+    {
+        $paths = JbcontextPaths::fromProjectRoot($this->projectDir);
+        $store = JbcontextStatusStore::forSession($paths, 'run-1');
+        StatusFixtures::replace($store, JbcontextSessionState::pending('run-1')->with(
+            mode: JbcontextSessionModeEnum::Eligible,
+            reindexPending: true,
+            checkGeneration: 1,
+        ));
+        $exec = new RecordingExec([
+            new ExecResultDTO(stdout: '', stderr: 'failed', exitCode: 1),
+            new ExecResultDTO(stdout: '', stderr: '', exitCode: 0),
+        ]);
+        $api = new TestExtensionApi($this->projectDir, $exec);
+        $handler = new JbcontextReindexJobHandler(new TestLogger());
+        $payload = ['session_id' => 'run-1', 'check_generation' => 1];
+        $handler->handle($api, $payload, 'first', 'run-1');
+        $failed = $store->read();
+        $this->assertSame(JbcontextSessionModeEnum::Eligible, $failed->mode);
+        $this->assertFalse($failed->reindexRunning);
+        $this->assertStringContainsString('Index refresh failed', (string) $failed->reason);
+        $this->assertStringContainsString('Run `jbcontext index`', (string) $failed->reason);
+
+        StatusFixtures::replace($store, $failed->with(reindexPending: true));
+        $handler->handle($api, $payload, 'second', 'run-1');
+        $this->assertNull($store->read()->reason);
+        $this->assertSame(JbcontextSessionModeEnum::Eligible, $store->read()->mode);
     }
 
     #[Test]
@@ -121,7 +149,6 @@ final class JbcontextReindexCoalesceTest extends TestCase
             sessionId: 'run-1',
             mode: JbcontextSessionModeEnum::Eligible,
             reason: null,
-            statusText: 'jbcontext: refreshing index…',
             attempt: 1,
             startedAt: 2.0,
             reindexPending: false,
@@ -147,7 +174,7 @@ final class JbcontextReindexCoalesceTest extends TestCase
         $this->assertSame(2, $state->checkGeneration);
         $this->assertTrue($state->reindexRunning);
         $this->assertFalse($state->reindexPending);
-        $this->assertSame('jbcontext: refreshing index…', $state->statusText);
+        $this->assertNull($state->reason);
         $this->assertSame([], $exec->calls());
     }
 
@@ -160,7 +187,6 @@ final class JbcontextReindexCoalesceTest extends TestCase
             sessionId: 'run-1',
             mode: JbcontextSessionModeEnum::Eligible,
             reason: null,
-            statusText: 'jbcontext: indexed',
             attempt: 1,
             startedAt: 1.0,
             reindexPending: true,

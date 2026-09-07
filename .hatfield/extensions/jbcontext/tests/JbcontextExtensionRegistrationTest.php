@@ -93,6 +93,10 @@ final class JbcontextExtensionRegistrationTest extends TestCase
             {
             }
 
+            public function setExtensionWarning(string $name, ?string $message): void
+            {
+            }
+
             public function onTick(\Closure $listener): void
             {
                 $this->ticks[] = $listener;

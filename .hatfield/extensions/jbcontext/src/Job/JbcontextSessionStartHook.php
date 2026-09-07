@@ -46,7 +46,6 @@ final readonly class JbcontextSessionStartHook implements AfterSessionStartHookI
             return $current->with(
                 mode: JbcontextSessionModeEnum::Pending,
                 clearReason: true,
-                statusText: 'jbcontext: checking index…',
                 attempt: 1,
                 startedAt: microtime(true),
                 reindexPending: false,
@@ -83,8 +82,7 @@ final readonly class JbcontextSessionStartHook implements AfterSessionStartHookI
 
                 return $current->with(
                     mode: JbcontextSessionModeEnum::Disabled,
-                    reason: 'jbcontext disabled: could not start background eligibility check.',
-                    statusText: 'jbcontext disabled: could not start background eligibility check.',
+                    reason: 'jbcontext disabled: could not start background eligibility check. Check Hatfield logs and restart Hatfield.',
                     attempt: max(1, $current->attempt),
                     eligibilityStarted: true,
                 );
