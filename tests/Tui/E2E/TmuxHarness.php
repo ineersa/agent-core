@@ -70,7 +70,13 @@ final class TmuxHarness
 
     public function __destruct()
     {
-        $this->killAll();
+        try {
+            $this->killAll();
+        } catch (\Throwable $e) {
+            // Never escalate destructor failures into fatal errors; tearDown should
+            // already have failed the test with the actionable leak message.
+            fwrite(\STDERR, 'TmuxHarness teardown leak: '.$e->getMessage().\PHP_EOL);
+        }
     }
 
     // ── availability ──────────────────────────────────────
@@ -489,16 +495,271 @@ final class TmuxHarness
     public function killAll(): void
     {
         foreach ($this->sessionNames as $session) {
-            $this->runTmux(
-                \sprintf(
-                    'tmux kill-session -t %s 2>/dev/null',
-                    escapeshellarg($session),
-                ),
-                self::TMUX_CMD_TIMEOUT,
-                throwOnTimeout: false,
-            );
+            $this->awaitOwnedSessionShutdownOrFail($session);
         }
         $this->sessionNames = [];
+    }
+
+    /**
+     * Tear down one owned tmux session without force-signaling processes.
+     *
+     * Product shutdown for TUI E2E is Ctrl+D from the test body. This harness
+     * path only waits for the owned pane tree to exit, then destroys the empty
+     * tmux session metadata. It never sends SIGTERM/SIGKILL/SIGHUP to pane
+     * descendants and never uses negative process-group signals.
+     *
+     * Fail closed on protected leftovers: root-owned processes, processes with
+     * HATFIELD_SESSION_ID, and processes whose environ is unreadable/empty are
+     * treated as protected. If any such process remains under the pane, do not
+     * destroy the session (tmux kill-session would SIGHUP descendants) and throw
+     * an actionable leak instead.
+     */
+    private function awaitOwnedSessionShutdownOrFail(string $session): void
+    {
+        $panePidRaw = $this->runTmux(
+            \sprintf(
+                'tmux display-message -p -t %s:0.0 "#{pane_pid}" 2>/dev/null',
+                escapeshellarg($session),
+            ),
+            2.0,
+            throwOnTimeout: false,
+        );
+        $panePid = (int) trim($panePidRaw);
+        if ($panePid <= 1) {
+            $this->destroyEmptyTmuxSession($session);
+
+            return;
+        }
+
+        $this->finalizeOwnedSessionShutdown($session, $panePid);
+    }
+
+    /**
+     * Wait for an owned pane tree to exit, then destroy empty session metadata.
+     * Never signals processes. Protected leftovers fail closed without kill-session.
+     */
+    private function finalizeOwnedSessionShutdown(string $session, int $panePid): void
+    {
+        // Safety cap only: C-d product shutdown should exit quickly; early-exit when empty.
+        $deadline = microtime(true) + 2.0;
+        while (microtime(true) < $deadline) {
+            $alive = $this->ownedPaneProcessSnapshot($panePid);
+            if ([] === $alive) {
+                $this->destroyEmptyTmuxSession($session);
+
+                return;
+            }
+
+            usleep(10_000);
+        }
+
+        $alive = $this->ownedPaneProcessSnapshot($panePid);
+        if ([] === $alive) {
+            $this->destroyEmptyTmuxSession($session);
+
+            return;
+        }
+
+        $protected = [];
+        $untagged = [];
+        foreach ($alive as $pid) {
+            if ($this->isUntaggedOwnedProcess($pid)) {
+                $untagged[] = $pid;
+            } else {
+                $protected[] = $pid;
+            }
+        }
+        if ([] !== $protected) {
+            throw new \RuntimeException($this->formatProtectedTeardownLeak($session, $panePid, $protected));
+        }
+
+        throw new \RuntimeException(\sprintf('Owned tmux session %s still has untagged pane processes after product shutdown wait (pane_pid=%d, leftovers=%s). Harness refuses force signals and kill-session while the tree is alive; fix product exit ownership or the test shutdown protocol.', $session, $panePid, implode(',', $untagged)));
+    }
+
+    private function destroyEmptyTmuxSession(string $session): void
+    {
+        $this->runTmux(
+            \sprintf(
+                'tmux kill-session -t %s 2>/dev/null',
+                escapeshellarg($session),
+            ),
+            self::TMUX_CMD_TIMEOUT,
+            throwOnTimeout: false,
+        );
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function ownedPaneProcessSnapshot(int $panePid): array
+    {
+        $pids = $this->descendantPids($panePid);
+        $pids[] = $panePid;
+
+        $alive = [];
+        foreach (array_values(array_unique($pids)) as $pid) {
+            if ($pid > 1 && $this->isProcessAlive($pid)) {
+                $alive[] = $pid;
+            }
+        }
+
+        return $alive;
+    }
+
+    /**
+     * @param list<int> $protected
+     */
+    private function formatProtectedTeardownLeak(string $session, int $panePid, array $protected): string
+    {
+        $details = [];
+        foreach ($protected as $pid) {
+            $details[] = \sprintf('%d(%s)', $pid, $this->protectedProcessReason($pid));
+        }
+
+        return \sprintf(
+            'Refusing to destroy tmux session %s: protected processes remain under pane_pid=%d [%s]. Root AGENTS.md forbids signaling root-owned or HATFIELD_SESSION_ID processes, and unreadable/empty environ is fail-closed. Do not kill-session (would SIGHUP descendants). Investigate with castor clean:cleanup:workers:list; leave protected processes alone.',
+            $session,
+            $panePid,
+            implode(', ', $details),
+        );
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function descendantPids(int $parentPid): array
+    {
+        if ($parentPid <= 1 || !is_dir('/proc')) {
+            return [];
+        }
+
+        $childrenByParent = [];
+        $procEntries = scandir('/proc');
+        if (false === $procEntries) {
+            return [];
+        }
+        foreach ($procEntries as $entry) {
+            if (!ctype_digit($entry)) {
+                continue;
+            }
+            $pid = (int) $entry;
+            if ($pid <= 1 || !$this->isSameUidProcess($pid)) {
+                continue;
+            }
+            $stat = @file_get_contents('/proc/'.$pid.'/stat');
+            if (false === $stat) {
+                continue;
+            }
+            $closeParen = strrpos($stat, ')');
+            if (false === $closeParen) {
+                continue;
+            }
+            $fields = preg_split('/\s+/', trim(substr($stat, $closeParen + 1)));
+            if (false === $fields) {
+                continue;
+            }
+            // /proc/<pid>/stat after ")": state ppid ...
+            $ppid = isset($fields[1]) ? (int) $fields[1] : 0;
+            if ($ppid > 1) {
+                $childrenByParent[$ppid][] = $pid;
+            }
+        }
+
+        $out = [];
+        $stack = $childrenByParent[$parentPid] ?? [];
+        while ([] !== $stack) {
+            $pid = array_pop($stack);
+            if (\in_array($pid, $out, true)) {
+                continue;
+            }
+            $out[] = $pid;
+            foreach ($childrenByParent[$pid] ?? [] as $child) {
+                $stack[] = $child;
+            }
+        }
+
+        return $out;
+    }
+
+    private function isSameUidProcess(int $pid): bool
+    {
+        if ($pid <= 1 || !is_dir('/proc/'.$pid)) {
+            return false;
+        }
+        $status = @file_get_contents('/proc/'.$pid.'/status');
+        if (false === $status) {
+            return false;
+        }
+        if (!preg_match('/^Uid:\s+(\d+)/m', $status, $matches)) {
+            return false;
+        }
+
+        $uid = (int) $matches[1];
+
+        return 0 !== $uid && $uid === posix_getuid();
+    }
+
+    /**
+     * Protected processes must never be signaled or SIGHUP'd via kill-session.
+     *
+     * Fail closed when environ is unreadable/empty: unknown state is treated as
+     * protected, matching the absolute no-touch rule for tagged workers.
+     */
+    private function isProtectedProcess(int $pid): bool
+    {
+        if ($pid <= 1) {
+            return true;
+        }
+
+        if (!$this->isSameUidProcess($pid)) {
+            return true;
+        }
+
+        $environ = @file_get_contents('/proc/'.$pid.'/environ');
+        if (false === $environ || '' === $environ) {
+            return true;
+        }
+
+        return str_contains($environ, 'HATFIELD_SESSION_ID=');
+    }
+
+    /**
+     * Same-UID process with a readable environ that does not carry HATFIELD_SESSION_ID.
+     * Used only for classification / leak diagnostics; harness never signals these either.
+     */
+    private function isUntaggedOwnedProcess(int $pid): bool
+    {
+        return $pid > 1
+            && $this->isSameUidProcess($pid)
+            && !$this->isProtectedProcess($pid);
+    }
+
+    private function protectedProcessReason(int $pid): string
+    {
+        if ($pid <= 1) {
+            return 'invalid-pid';
+        }
+        if (!$this->isSameUidProcess($pid)) {
+            return 'root-or-other-uid';
+        }
+
+        $environ = @file_get_contents('/proc/'.$pid.'/environ');
+        if (false === $environ) {
+            return 'environ-unreadable';
+        }
+        if ('' === $environ) {
+            return 'environ-empty';
+        }
+        if (str_contains($environ, 'HATFIELD_SESSION_ID=')) {
+            return 'HATFIELD_SESSION_ID';
+        }
+
+        return 'protected';
+    }
+
+    private function isProcessAlive(int $pid): bool
+    {
+        return $pid > 1 && @posix_kill($pid, 0);
     }
 
     // ── internal shell ─────────────────────────────────────

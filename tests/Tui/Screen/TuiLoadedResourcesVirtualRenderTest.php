@@ -8,6 +8,9 @@ use Ineersa\CodingAgent\Runtime\Contract\LoadedResourceConflictDTO;
 use Ineersa\CodingAgent\Runtime\Contract\LoadedResourceItemDTO;
 use Ineersa\CodingAgent\Runtime\Contract\LoadedResourceSectionDTO;
 use Ineersa\CodingAgent\Runtime\Contract\LoadedResourcesSummaryDTO;
+use Ineersa\Tui\Runtime\BridgeTuiExtensionContext;
+use Ineersa\Tui\Runtime\TuiSessionState;
+use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
 use PHPUnit\Framework\Attributes\Test;
@@ -18,7 +21,39 @@ use PHPUnit\Framework\TestCase;
  */
 final class TuiLoadedResourcesVirtualRenderTest extends TestCase
 {
+    use TuiRuntimeContextBuilderTrait;
+
     private const string SESSION_ID = 'virtual-loaded-resources';
+
+    #[Test]
+    public function extensionWarningsRenderInStartupResourcesEvenOnResume(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
+        $runtime = $this->buildTuiContext()
+            ->withTui($harness->tui())
+            ->withScreen($harness->screen())
+            ->withState(new TuiSessionState(self::SESSION_ID))
+            ->build();
+        $bridge = new BridgeTuiExtensionContext($runtime);
+        $bridge->setStatus('other-extension', 'Other extension status');
+        $harness->screen()->setLoadedResourcesSummary(null);
+        $bridge->setExtensionWarning('example', 'Configuration missing. Open the project settings to fix it.');
+        $screen = $harness->plainScreenText();
+        $this->assertStringContainsString("[Extensions]\n  ⚠ example: Configuration missing.", $screen);
+        $this->assertStringContainsString('Other extension status', $screen);
+        $this->assertSame(1, substr_count($screen, '⚠ example:'));
+        $this->assertLessThan(strpos($screen, 'Other extension status'), strpos($screen, '⚠ example:'));
+
+        // A late startup-summary update preserves asynchronously reported warnings.
+        $harness->screen()->setLoadedResourcesSummary(new LoadedResourcesSummaryDTO([
+            new LoadedResourceSectionDTO('Extensions', [new LoadedResourceItemDTO('example', '/extension')]),
+        ]));
+        $this->assertStringContainsString("[Extensions]  example\n  ⚠ example:", $harness->plainScreenText());
+        $bridge->setExtensionWarning('example', null);
+        $screen = $harness->plainScreenText();
+        $this->assertStringNotContainsString('⚠ example:', $screen);
+        $this->assertStringContainsString('Other extension status', $screen);
+    }
 
     #[Test]
     public function testStartupShowsLoadedResourcesBlockOnFreshSession(): void

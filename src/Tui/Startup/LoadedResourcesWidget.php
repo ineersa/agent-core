@@ -22,6 +22,9 @@ final class LoadedResourcesWidget extends AbstractWidget
     private ?LoadedResourcesSummaryDTO $summary = null;
     private bool $expanded = false;
 
+    /** @var array<string, string> */
+    private array $extensionWarnings = [];
+
     public function __construct(
         private readonly TuiTheme $theme,
     ) {
@@ -39,27 +42,44 @@ final class LoadedResourcesWidget extends AbstractWidget
         $this->invalidate();
     }
 
+    public function setExtensionWarning(string $name, ?string $message): void
+    {
+        if (($this->extensionWarnings[$name] ?? null) === $message) {
+            return;
+        }
+
+        if (null === $message) {
+            unset($this->extensionWarnings[$name]);
+        } else {
+            $this->extensionWarnings[$name] = $message;
+        }
+        $this->invalidate();
+    }
+
     public function hasContent(): bool
     {
-        return null !== $this->summary && [] !== $this->summary->nonEmptySections();
+        return [] !== $this->extensionWarnings || (null !== $this->summary && [] !== $this->summary->nonEmptySections());
     }
 
     /** @return string[] */
     public function render(RenderContext $context): array
     {
-        if (null === $this->summary) {
+        if (!$this->hasContent()) {
             return [];
         }
 
-        $sections = $this->summary->nonEmptySections();
-        if ([] === $sections) {
-            return [];
-        }
-
+        $sections = $this->summary?->nonEmptySections() ?? [];
         $lines = [];
+        $hasExtensions = false;
 
         foreach ($sections as $section) {
             $lines = array_merge($lines, $this->renderSection($section));
+            if ('Extensions' === $section->label) {
+                $hasExtensions = true;
+            }
+        }
+        if (!$hasExtensions && [] !== $this->extensionWarnings) {
+            $lines = array_merge($lines, $this->renderSection(new LoadedResourceSectionDTO('Extensions', [])));
         }
 
         $hint = $this->expanded
@@ -94,6 +114,12 @@ final class LoadedResourcesWidget extends AbstractWidget
 
         foreach ($section->conflicts as $conflict) {
             $lines[] = $theme->warning('  '.$this->formatConflict($conflict));
+        }
+
+        if ('Extensions' === $section->label) {
+            foreach ($this->extensionWarnings as $name => $message) {
+                $lines[] = $theme->warning('  ⚠ '.$name.': '.$message);
+            }
         }
 
         return $lines;

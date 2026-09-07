@@ -316,48 +316,46 @@ PHP;
     }
 
     /**
-     * @return array{url: string, pid: int, docroot: string}
+     * @return array{url: string, process: Process}
      */
     private function startServer(string $docroot): array
     {
-        $port = random_int(18000, 18999);
-        // Absolute lifetime ≤210s so a leaked fixture server cannot outlive the test runner.
-        // PID ownership/cleanup stays with stopServer(); readiness is polled separately.
-        $cmd = \sprintf(
-            'timeout --kill-after=5s 210s php -S 127.0.0.1:%d -t %s >/dev/null 2>&1 & echo $!',
-            $port,
-            escapeshellarg($docroot),
+        // Let the OS allocate the port. The owned process reports readiness only after binding.
+        $process = new Process(
+            [\PHP_BINARY, '-S', '127.0.0.1:0', '-t', $docroot],
+            $docroot,
+            ['HATFIELD_SESSION_ID' => false, 'PHP_CLI_SERVER_WORKERS' => false],
         );
-        $pid = (int) trim((string) shell_exec($cmd));
-        $this->assertGreaterThan(0, $pid, 'Failed to start fixture HTTP server');
+        $process->setTimeout(5);
+        try {
+            $process->start();
+            $url = '';
+            $ready = $process->waitUntil(static function () use ($process, &$url): bool {
+                if (1 !== preg_match('/Development Server \((http:\/\/127\.0\.0\.1:[0-9]+)\) started/', $process->getErrorOutput(), $match)) {
+                    return false;
+                }
+                $url = $match[1];
 
-        $url = 'http://127.0.0.1:'.$port;
-        $readyUrl = $url.'/SHA256SUMS';
-        $deadline = microtime(true) + 5.0;
-        $ready = false;
-        while (microtime(true) < $deadline) {
-            $body = @file_get_contents($readyUrl);
-            if (false !== $body && '' !== $body) {
-                $ready = true;
-                break;
-            }
-            usleep(20_000);
+                return true;
+            });
+            $this->assertTrue($ready && $process->isRunning(), 'Fixture HTTP server failed to start: '.$process->getErrorOutput());
+
+            return ['url' => $url, 'process' => $process];
+        } catch (\Throwable $e) {
+            // The caller has no server handle yet when startup fails.
+            $process->stop(0);
+
+            throw $e;
         }
-        $this->assertTrue($ready, 'Fixture HTTP server did not become ready at '.$readyUrl);
-
-        return ['url' => $url, 'pid' => $pid, 'docroot' => $docroot];
     }
 
     /**
-     * @param array{url: string, pid: int, docroot: string}|null $server
+     * @param array{url: string, process: Process}|null $server
      */
     private function stopServer(?array $server): void
     {
-        if (null === $server) {
-            return;
-        }
-        if ($server['pid'] > 0) {
-            posix_kill($server['pid'], \SIGTERM);
+        if (null !== $server) {
+            $server['process']->stop(0);
         }
     }
 }
