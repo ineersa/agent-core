@@ -8,11 +8,11 @@ use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\ThemeColorEnum;
-use Ineersa\Tui\Theme\TuiTheme;
 use Ineersa\Tui\Widget\SelectListKeybindings;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
-use Symfony\Component\Tui\Event\SelectionChangeEvent;
+use Symfony\Component\Tui\Style\Style;
+use Symfony\Component\Tui\Style\StyleSheet;
 use Symfony\Component\Tui\Tui;
 use Symfony\Component\Tui\Widget\SelectListWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
@@ -124,7 +124,7 @@ final class SessionPickerController
                 // after the session id, ready for the new name.
                 $screen = $this->screen;
                 $screen->promptEditor()->replaceText('/rename '.$sessionId.' ');
-                $screen->requestRender(true);
+                $screen->requestRender();
 
                 $this->closePicker();
             },
@@ -140,27 +140,21 @@ final class SessionPickerController
      * included so SelectListWidget renders items at full width instead
      * of clamping the label column to min(30, maxLabelWidth).
      *
-     * When {@see $selectedIndex} is provided, the matching row label is
-     * wrapped in the accent theme colour so the highlighted entry is
-     * visually consistent with CompletionMenu and ModelPickerController.
+     * The native selected-row style owns highlighting; labels stay plain.
      *
      * @param list<array{sessionId: string, displayTitle: string, name: string, ...}> $sessions
      *
      * @return list<array{value: string, label: string}>
      */
-    public static function buildItemsStatic(array $sessions, TuiTheme $theme, int $selectedIndex = -1): array
+    public static function buildItemsStatic(array $sessions): array
     {
         $items = [];
 
-        foreach ($sessions as $i => $s) {
+        foreach ($sessions as $s) {
             $displayTitle = $s['displayTitle'] ?? $s['name'] ?? 'Session';
             $sessionId = $s['sessionId'];
 
             $label = \sprintf('#%s — %s', $sessionId, $displayTitle);
-
-            if ($i === $selectedIndex) {
-                $label = $theme->color(ThemeColorEnum::Accent, $label);
-            }
 
             $items[] = [
                 'value' => $sessionId,
@@ -253,48 +247,19 @@ final class SessionPickerController
         // ── Keybindings ──
         $kb = SelectListKeybindings::standard();
 
-        // ── Build items ──
-        // Accent-colour the initially selected row (index 0) so the
-        // picker is visually consistent with CompletionMenu and
-        // ModelPickerController, which both use ThemeColorEnum::Accent
-        // for the highlighted entry.  SelectListWidget's native
-        // selected style (bold) layers on top.
-        $theme = $screen->theme();
-        $items = self::buildItemsStatic($sessions, $theme, selectedIndex: 0);
+        // Preserve the session picker accent without rebuilding labels on arrows.
+        $tui->addStyleSheet(new StyleSheet([
+            '.session-picker::selected' => new Style(color: $screen->theme()->getPalette()->get(ThemeColorEnum::Accent)),
+        ]));
 
         $listWidget = new SelectListWidget(
-            items: $items,
+            items: self::buildItemsStatic($sessions),
             maxVisible: SelectListKeybindings::MAX_VISIBLE,
             keybindings: $kb,
         );
+        $listWidget->addStyleClass('session-picker');
 
-        // ── Arrows → rebuild items so the newly selected row gets accent colour ──
-        // onSelectionChange fires only from cursor movement
-        // (moveCursorUp/Down etc.), not from setItems() or
-        // setSelectedIndex(), so there is no re-entrant loop.
         $picker = $this;
-        $listWidget->onSelectionChange(
-            static function (SelectionChangeEvent $event) use ($listWidget, $picker, $theme): void {
-                if ($picker->confirmingDelete) {
-                    return;
-                }
-
-                $selectedValue = $event->getItem()['value'];
-                $selectedIdx = -1;
-
-                foreach ($picker->sessions as $i => $s) {
-                    if ($s['sessionId'] === $selectedValue) {
-                        $selectedIdx = $i;
-
-                        break;
-                    }
-                }
-
-                $newItems = self::buildItemsStatic($picker->sessions, $theme, selectedIndex: $selectedIdx);
-                $listWidget->setItems($newItems);
-                $listWidget->setSelectedIndex(max(0, $selectedIdx));
-            },
-        );
 
         // ── Enter → call the on-select callback ──
         $listWidget->onSelect(static function (SelectEvent $event) use ($onSelect): void {
@@ -344,7 +309,7 @@ final class SessionPickerController
         $activeSessionId = $this->screen->sessionId();
         if ('' !== $activeSessionId && $sessionId === $activeSessionId) {
             $this->screen->setStatus('error', 'Cannot delete the current/active session');
-            $this->screen->requestRender(true);
+            $this->screen->requestRender();
 
             return;
         }
@@ -369,7 +334,7 @@ final class SessionPickerController
             ['value' => self::CONFIRM_YES, 'label' => $this->screen->theme()->color(ThemeColorEnum::Success, "\u{2713} Yes")],
             ['value' => self::CONFIRM_NO, 'label' => $this->screen->theme()->color(ThemeColorEnum::Error, "\u{2717} No")],
         ]);
-        $this->screen->requestRender(true);
+        $this->screen->requestRender();
     }
 
     private function confirmDeleteSelection(SelectEvent $event): void
@@ -401,20 +366,20 @@ final class SessionPickerController
         } catch (\RuntimeException) {
             $this->restoreSessionList($listWidget);
             $this->screen->setStatus('error', \sprintf('Session #%s no longer exists', $sessionId));
-            $this->screen->requestRender(true);
+            $this->screen->requestRender();
 
             return;
         }
 
         $this->restoreSessionList($listWidget);
         $this->screen->setStatus('session', \sprintf('Deleted session #%s', $sessionId));
-        $this->screen->requestRender(true);
+        $this->screen->requestRender();
     }
 
     private function exitConfirmMode(SelectListWidget $listWidget): void
     {
         $this->restoreSessionList($listWidget);
-        $this->screen->requestRender(true);
+        $this->screen->requestRender();
     }
 
     private function restoreSessionList(SelectListWidget $listWidget): void
@@ -428,11 +393,6 @@ final class SessionPickerController
             $header->setText($this->screen->theme()->muted(self::RESUME_HEADER));
         }
 
-        $theme = $this->screen->theme();
-        $listWidget->setItems(self::buildItemsStatic(
-            $this->sessions,
-            $theme,
-            selectedIndex: [] === $this->sessions ? -1 : 0,
-        ));
+        $listWidget->setItems(self::buildItemsStatic($this->sessions));
     }
 }

@@ -352,7 +352,9 @@ function qa_test_home_shell_prefix(): string
 
     return 'HOME='.escapeshellarg($home)
         .' HATFIELD_QA_TEST_HOME='.escapeshellarg($home)
-        .' HATFIELD_CACHE_DIR='.escapeshellarg($cache);
+        .' HATFIELD_CACHE_DIR='.escapeshellarg($cache)
+        // Disable Xdebug features in QA children unless debugging or coverage was requested.
+        .' XDEBUG_MODE='.escapeshellarg(false === getenv('XDEBUG_MODE') ? 'off' : getenv('XDEBUG_MODE'));
 }
 
 // ─── PHAR packaging constants ──────────────────────────────────────────

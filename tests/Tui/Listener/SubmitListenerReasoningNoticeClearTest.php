@@ -5,12 +5,20 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Listener;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
+use Ineersa\CodingAgent\Runtime\Protocol\HistoryView;
+use Ineersa\Tui\Command\CommandParser;
+use Ineersa\Tui\Command\SlashCommandCatalog;
+use Ineersa\Tui\Command\SlashCommandRegistry;
 use Ineersa\Tui\Command\SubagentLiveInputPolicy;
 use Ineersa\Tui\Command\SubmissionRouter;
 use Ineersa\Tui\Listener\FooterStateSegmentProvider;
+use Ineersa\Tui\Listener\HistoryCommandHandler;
 use Ineersa\Tui\Listener\SubmitListener;
+use Ineersa\Tui\Picker\HistoryPickerController;
+use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
@@ -23,12 +31,70 @@ use Symfony\Component\Tui\Event\SubmitEvent;
 use Symfony\Component\Tui\Tui;
 
 /**
- * Test thesis: starting a user turn clears the transient status-panel reasoning
- * notice (Shift+Tab) without resetting footerReasoning or footer reasoning styling.
+ * One-shot command notices clear on submission. Reasoning notices clear only
+ * after turn validation, without resetting footerReasoning or its styling.
  */
 final class SubmitListenerReasoningNoticeClearTest extends TestCase
 {
     use TuiRuntimeContextBuilderTrait;
+
+    #[Test]
+    public function testNextSubmitClearsCommandNoticeAndKeepsPersistentStatus(): void
+    {
+        $state = new TuiSessionState('transient-clear-session');
+        $state->handle = new RunHandle('run-1');
+        $state->activity = RunActivityStateEnum::Completed;
+        $client = $this->createMock(AgentSessionClient::class);
+        $client->expects($this->once())->method('send');
+        $harness = new VirtualTuiHarness(sessionId: $state->sessionId);
+        $screen = $harness->screen();
+        $screen->setStatus('om', 'poller alive');
+        $screen->setTransientStatus('history', 'Session has no user prompts yet');
+        $this->assertStringContainsString('Session has no user prompts yet', $harness->plainScreenText());
+
+        $tui = $harness->tui();
+        $this->registerSubmitListener($client, $state, $screen, $tui);
+        $tui->setFocus($screen->editorWidget());
+        $tui->handleInput('hello again');
+        $tui->handleInput("\r");
+
+        $after = $harness->plainScreenText();
+        $this->assertStringNotContainsString('Session has no user prompts yet', $after);
+        $this->assertStringContainsString('poller alive', $after);
+    }
+
+    #[Test]
+    public function testCommandReplacesPreviousNoticeButTypingAndEmptySubmitDoNot(): void
+    {
+        $state = new TuiSessionState('transient-repost-session');
+        $provider = $this->createStub(HistoryProviderInterface::class);
+        $provider->method('forSession')->willReturn(new HistoryView(prompts: [], positionTurnNo: 0));
+        $harness = new VirtualTuiHarness(sessionId: $state->sessionId);
+        $screen = $harness->screen();
+        $tui = $harness->tui();
+        $picker = new HistoryPickerController($tui, $screen, $state, $provider, $this->createStub(TuiSessionSwitchServiceInterface::class));
+        $screen->setTransientStatus('rewind', 'File rewind requires an active session.');
+        $catalog = new SlashCommandCatalog();
+        (new \Ineersa\Tui\Listener\HistoryCommandRegistrar())->registerCatalog($catalog);
+        $registry = new SlashCommandRegistry($catalog);
+        $registry->bind('history', new HistoryCommandHandler($picker));
+        $client = $this->createMock(AgentSessionClient::class);
+        $client->expects($this->never())->method('send');
+        $this->registerSubmitListener($client, $state, $screen, $tui, new SubmissionRouter(new CommandParser(), $registry));
+
+        $tui->setFocus($screen->editorWidget());
+        $tui->handleInput("\r");
+        $this->assertStringContainsString('File rewind requires an active session.', $harness->plainScreenText());
+        $tui->handleInput('/history');
+        $this->assertStringContainsString('File rewind requires an active session.', $harness->plainScreenText());
+        $tui->handleInput("\r");
+        $text = $harness->plainScreenText();
+        $this->assertStringNotContainsString('File rewind requires an active session.', $text);
+        $this->assertStringContainsString('Session has no user prompts yet', $text);
+        $tui->handleInput('/unknown-command');
+        $tui->handleInput("\r");
+        $this->assertStringNotContainsString('Session has no user prompts yet', $harness->plainScreenText());
+    }
 
     #[Test]
     public function testSubmitClearsTransientReasoningNoticeButKeepsSelectedReasoning(): void
@@ -101,6 +167,7 @@ final class SubmitListenerReasoningNoticeClearTest extends TestCase
         TuiSessionState $state,
         ChatScreen $screen,
         Tui $tui,
+        ?SubmissionRouter $router = null,
     ): void {
         $context = $this->buildTuiContext()
             ->withTui($tui)
@@ -111,9 +178,9 @@ final class SubmitListenerReasoningNoticeClearTest extends TestCase
                 tui: $tui,
                 state: $state,
                 screen: $screen,
-                submissionRouter: new SubmissionRouter(
-                    new \Ineersa\Tui\Command\CommandParser(),
-                    new \Ineersa\Tui\Command\SlashCommandRegistry(new \Ineersa\Tui\Command\SlashCommandCatalog()),
+                submissionRouter: $router ?? new SubmissionRouter(
+                    new CommandParser(),
+                    new SlashCommandRegistry(new SlashCommandCatalog()),
                 ),
             ))
             ->build();

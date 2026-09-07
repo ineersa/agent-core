@@ -82,11 +82,6 @@ function build_sequential_phpunit_command(string $pharEnv): string
 #[AsTask(name: 'test', description: 'Run unit/integration tests (ParaTest parallel by default)')]
 function test(?string $filter = null, ?string $suite = null): void
 {
-    // Prevent Xdebug overhead from hitting unit tests.
-    if (extension_loaded('xdebug')) {
-        echo "Xdebug is loaded — tests may be significantly slower.\n";
-    }
-
     // Test DB schema readiness (bounded setup; session-reaped on hang).
     @mkdir('var/test', 0755, true);
     $migrate = run_test_db_migrate_bounded(
@@ -123,7 +118,8 @@ function test(?string $filter = null, ?string $suite = null): void
             .$suiteFlag
             .' --filter='.escapeshellarg($filter)
             .' --exclude-group=tui-e2e-replay --exclude-group=llm-real --exclude-group=controller-replay'
-            .' '.phpunit_strict_issue_flags();
+            .' '.phpunit_strict_issue_flags()
+            .(is_llm_mode() ? ' --colors=never --no-progress --log-junit='.report_path('phpunit-filter.junit.xml') : '');
         $result = run_test_command_bounded('unit-filter', $phpunitCmd, castor_test_runner_max_seconds());
         if ('' !== $result['output']) {
             echo $result['output'];

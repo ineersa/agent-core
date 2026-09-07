@@ -78,6 +78,56 @@ final class SubagentLivePickerControllerTest extends TestCase
     }
 
     #[Test]
+    public function testEmptyPickerAndFeedbackRetainTranscriptFrame(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: 'picker-paint', rows: 40);
+        $state = new TuiSessionState('picker-paint');
+        $harness->screen()->setTranscriptBlocks([(new \Ineersa\Tui\Transcript\TranscriptBlockFactory())->system(
+            runId: $state->sessionId,
+            text: 'Retained transcript sentinel',
+            seq: 1,
+        )]);
+        $picker = $this->picker($harness, $state);
+        $harness->render();
+        $buffer = new ScreenBuffer(width: 120, height: 40);
+        $buffer->write($harness->terminal()->consumeOutput());
+
+        $picker->open();
+        $harness->tui()->processRender();
+        $delta = $harness->terminal()->consumeOutput();
+        $this->assertStringNotContainsString('Retained transcript sentinel', $delta);
+        $this->assertStringNotContainsString("\x1b[2J", $delta);
+        $buffer->write($delta);
+
+        $this->seedCatalogChild($state, 'agent_paint', 'child-paint', 'running');
+        $picker->open();
+        $harness->tui()->processRender();
+        $buffer->write($harness->terminal()->consumeOutput());
+
+        // Rejection updates the header and working row, not the transcript.
+        $harness->tui()->handleInput('d');
+        $harness->tui()->processRender();
+        $delta = $harness->terminal()->consumeOutput();
+        $this->assertStringNotContainsString('Retained transcript sentinel', $delta);
+        $this->assertStringNotContainsString("\x1b[2J", $delta);
+        $buffer->write($delta);
+        $this->assertStringContainsString('Cannot remove active subagent scout', $buffer->getScreen());
+
+        $state->subagentLiveCatalog->applyChildStatus('agent_paint', SubagentLiveStatusEnum::Completed);
+        $harness->tui()->handleInput('d');
+        $harness->tui()->processRender();
+        $delta = $harness->terminal()->consumeOutput();
+        $this->assertStringNotContainsString('Retained transcript sentinel', $delta);
+        $this->assertStringNotContainsString("\x1b[2J", $delta);
+        $buffer->write($delta);
+        $this->assertFalse($picker->isOpen());
+        $this->assertStringNotContainsString('Agents live', $buffer->getScreen());
+        $this->assertStringContainsString('Retained transcript sentinel', $buffer->getScreen());
+        $harness->tui()->handleInput('editor-ready');
+        $this->assertSame('editor-ready', $harness->screen()->promptEditor()->getText());
+    }
+
+    #[Test]
     public function testOpenPickerKeepsSnapshotUntilReopened(): void
     {
         $harness = new VirtualTuiHarness(sessionId: 'picker-status-snapshot');
