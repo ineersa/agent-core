@@ -78,6 +78,22 @@ This rebases the catalog onto the bundled definitions and refreshes metadata for
 known models. It does not automatically enable providers or add new models discovered
 upstream. See the [provider catalog](docs/ai-catalog.md) for update behavior.
 
+### Install optional agent definitions
+
+Agent definitions are opt-in. Install them into `~/.hatfield/agents/`:
+
+```bash
+hatfield agents:init
+```
+
+After upgrading, refresh with `hatfield agents:init --force`. This overwrites
+edits to bundled definitions, not other agents. Start a new session to load them.
+See [agent requirements and customization](docs/agents.md).
+
+Built-in skills such as `subagents` refresh automatically in `~/.hatfield/skills/`
+at startup, replacing local edits with the running build's copies. Extension skills
+follow their extension's installation and update rules instead.
+
 ### What you can do
 
 - Start in a repository and describe the task in plain language.
