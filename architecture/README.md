@@ -21,6 +21,12 @@ corrections on this task branch. View them in a Markdown renderer with Mermaid s
 | What goes into a release? | [Build and observability](build-and-observability.md): packaging, QA lanes, logging |
 | Where do logs, traces, and metrics go? | [Logging](logging.md): record enrichment, Fiber scopes, rotation, Datadog ingestion, privacy, sink failures |
 
+## Discovery proposals
+
+[PHP code mode](php-code-mode-discovery.md) compares current tool execution with a
+proposed PHP bridge. It covers process ownership, nested calls, result handling,
+approvals, cancellation, and inspection. This is not implemented architecture.
+
 ## Process topology
 
 This map keeps only process boundaries. The linked sequences expand handlers and
