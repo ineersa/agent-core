@@ -22,6 +22,37 @@ use PHPUnit\Framework\Attributes\Group;
 #[Group('db')]
 final class SubagentChildExtensionMetadataTest extends IsolatedKernelTestCase
 {
+    public function testUnavailableExtensionCauseReachesParentToolResult(): void
+    {
+        $factory = self::getContainer()->get(SubagentChildLaunchInputFactory::class);
+        $handler = new class($factory) {
+            public function __construct(private SubagentChildLaunchInputFactory $factory)
+            {
+            }
+
+            public function __invoke(array $arguments): mixed
+            {
+                return $this->factory->buildPrepared(
+                    identity: new ChildRunIdentityDTO('parent-missing', 'child-missing', 'agent_missing', 'scout', 'task', AgentArtifactKindEnum::Subagent),
+                    definition: new AgentDefinitionDTO(name: 'scout', description: 'd', tools: ['read'], model: 'llama_cpp_test/test', extensions: ['MissingExtension'], instructions: 'work'),
+                    allowedTools: ['read'], mcp: ['mode' => 'none', 'tools' => []], parentModel: 'llama_cpp_test/test',
+                );
+            }
+        };
+        $registry = new \Ineersa\CodingAgent\Tool\ToolRegistry();
+        $registry->registerTool(name: 'subagent', description: 'launch', parametersJsonSchema: [], handler: $handler, promptLine: 'subagent');
+        $executor = new \Ineersa\AgentCore\Application\Handler\ToolExecutor(
+            defaultMode: 'sequential', maxParallelism: 1,
+            toolbox: new \Ineersa\CodingAgent\Tool\RegistryBackedToolbox($registry, new \Ineersa\CodingAgent\Tool\RawAwareToolCallArgumentResolver(new \Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver())),
+            resultStore: new \Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore(),
+        );
+        $result = $executor->execute(\Ineersa\AgentCore\Tests\Support\Builder\ToolCallBuilder::create('missing-extension-call')->withToolName('subagent')->withArguments([])->build());
+        $this->assertTrue($result->isError);
+        $this->assertStringContainsString('MissingExtension', $result->content[0]['text']);
+        $this->assertStringContainsString('extensions.enabled', $result->content[0]['text']);
+        $this->assertStringNotContainsString('An error occurred while executing tool', $result->content[0]['text']);
+    }
+
     public function testSubagentMetadataPersistsAlwaysOnOnlyWhenFrontmatterOmitsExtensions(): void
     {
         $factory = self::getContainer()->get(SubagentChildLaunchInputFactory::class);

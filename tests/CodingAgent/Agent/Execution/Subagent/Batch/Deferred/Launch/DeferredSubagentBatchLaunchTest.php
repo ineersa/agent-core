@@ -428,7 +428,7 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
             ));
             $this->fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
-            $this->assertStringContainsString('Subagent batch launch failed', $e->getMessage());
+            $this->assertStringContainsString('Subagent batch launch failed: second child context blew up', $e->getMessage());
             $this->assertStringContainsString('second child context blew up', (string) $e->getPrevious()?->getMessage());
         }
 

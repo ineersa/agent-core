@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
+use Ineersa\AgentCore\Contract\Tool\DiagnosticMessageSanitizer;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
@@ -141,14 +142,16 @@ final class ToolExecutor implements ToolExecutorInterface
             $result = $this->executeToolCall($toolCall, $policy);
         } catch (\Throwable $exception) {
             if ($exception instanceof ToolCallException) {
-                $message = $exception->getMessage();
+                $message = DiagnosticMessageSanitizer::redact($exception->getMessage());
                 if (null !== $exception->hint()) {
-                    $message .= "\nHint: ".$exception->hint();
+                    $message .= "\nHint: ".DiagnosticMessageSanitizer::redact($exception->hint());
                 }
                 $details = [
                     'error_type' => ToolCallException::class,
                     'retryable' => $exception->retryable(),
-                    'hint' => $exception->hint(),
+                    'hint' => null !== $exception->hint()
+                        ? DiagnosticMessageSanitizer::redact($exception->hint())
+                        : null,
                 ];
                 if ($this->cancellationToken($toolCall)->isCancellationRequested()) {
                     $details['cancelled'] = true;
@@ -161,12 +164,16 @@ final class ToolExecutor implements ToolExecutorInterface
                 );
             } elseif ($exception instanceof ToolExecutionExceptionInterface) {
                 // FaultTolerantToolbox erases failure status by returning plain
-                // text. Keep Symfony's model-safe message, but mark the domain
-                // result failed so events, replay, and the TUI retain the outcome.
+                // text. Prefer a sanitized previous cause when available so
+                // model/TUI results stay actionable without stack/arg dumps.
+                $previous = $exception->getPrevious();
+                $message = null !== $previous && '' !== trim($previous->getMessage())
+                    ? DiagnosticMessageSanitizer::sanitize($previous->getMessage())
+                    : DiagnosticMessageSanitizer::sanitize($this->normalizeResultText($exception->getToolCallResult()));
                 $result = $this->errorResult(
                     toolCallId: $toolCall->toolCallId,
                     toolName: $toolCall->toolName,
-                    message: $this->normalizeResultText($exception->getToolCallResult()),
+                    message: $message,
                     details: ['error_type' => $exception::class],
                 );
             } elseif ($exception instanceof ToolNotFoundException) {
@@ -181,7 +188,7 @@ final class ToolExecutor implements ToolExecutorInterface
                 $result = $this->errorResult(
                     toolCallId: $toolCall->toolCallId,
                     toolName: $toolCall->toolName,
-                    message: $exception->getMessage(),
+                    message: DiagnosticMessageSanitizer::sanitize($exception->getMessage()),
                     details: ['error_type' => $exception::class],
                 );
             }

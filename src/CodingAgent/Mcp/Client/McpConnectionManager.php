@@ -4,10 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Mcp\Client;
 
+use Ineersa\AgentCore\Contract\Tool\DiagnosticMessageSanitizer;
 use Ineersa\CodingAgent\Mcp\Config\McpConfigLoader;
 use Psr\Log\LoggerInterface;
-
-use function Symfony\Component\String\u;
 
 /**
  * Broker-owned MCP connection manager.
@@ -25,31 +24,6 @@ use function Symfony\Component\String\u;
  */
 final class McpConnectionManager implements McpConnectionManagerInterface
 {
-    /**
-     * Patterns that may appear in error messages and indicate secret-bearing
-     * substrings that must not be logged or stored in catalog error messages.
-     *
-     * Each entry is [regex flag, 'replacement'].
-     *
-     * @var list<array{string, string}>
-     */
-    private const SECRET_PATTERNS = [
-        // Redact the entire authorization value (Bearer + token)
-        ['/authorization:\s*Bearer\s+\S+/i', 'authorization: Bearer <redacted>'],
-        ['/Authorization:\s*Bearer\s+\S+/i', 'Authorization: Bearer <redacted>'],
-        // Catch bare Bearer tokens not preceded by Authorization:
-        ['/bearer\s+\S+/i', 'bearer <redacted>'],
-        // URL query-like secret parameters
-        ['/[?&]api_key=\S+/i', 'api_key=<redacted>'],
-        ['/[?&]secret=\S+/i', 'secret=<redacted>'],
-        ['/[?&]token=\S+/i', 'token=<redacted>'],
-        ['/[?&]password=\S+/i', 'password=<redacted>'],
-        // Key:value style headers/bodies
-        ['/api[-_]?key\s*[:=]\s*\S+/i', 'api_key <redacted>'],
-    ];
-
-    /** Maximum allowable length for a sanitized error message. */
-    private const MAX_ERROR_MSG_LENGTH = 500;
     /**
      * Active clients keyed by "runId:serverName".
      *
@@ -228,15 +202,7 @@ final class McpConnectionManager implements McpConnectionManagerInterface
      */
     public static function sanitizeLogMessage(string $message): string
     {
-        // Truncate to a reasonable diagnostic length
-        $message = u($message)->truncate(self::MAX_ERROR_MSG_LENGTH, '...')->toString();
-
-        // Redact common secret-bearing patterns
-        foreach (self::SECRET_PATTERNS as [$pattern, $replacement]) {
-            $message = preg_replace($pattern, $replacement, $message);
-        }
-
-        return (string) $message;
+        return DiagnosticMessageSanitizer::sanitize($message);
     }
 
     /**

@@ -30,6 +30,10 @@ After backgrounding, inspect or stop processes with `bg_status`.
 
 Tracking is **session-scoped**. `bg_status` exposes only rows explicitly accepted as background work; private foreground supervision is never listed, tailed, or stopped through that tool. Durable records live in `.hatfield/state.sqlite`; filesystem sidecars (PID/status/log) live under the configured tool path.
 
+### PID identity
+
+Launch uses `setsid -f`. The wrapper publishes its PID on the launch pipe and in the `.pid` sidecar before starting the command. Status and stop use that PID, not the transient launcher PID. The command runs in a separate `bash -c`, so command syntax cannot bypass the wrapper's status recording. An unclean exit means the tracked wrapper exited without recording a status. Its result includes log and status paths for inspection, not a claim that the workload succeeded. Do not rerun a side-effecting command merely because its exit status is unavailable.
+
 ## Settings
 
 | Key | Role | Default |
