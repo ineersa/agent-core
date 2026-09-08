@@ -107,6 +107,13 @@ class Kernel extends BaseKernel
         return $this->resolveWritableDir('HATFIELD_LOG_DIR', self::HATFIELD_LOG_DIR);
     }
 
+    protected function getContainerClass(): string
+    {
+        // Several project kernels can boot in one process. Generated lazy
+        // service loaders must not reuse a class bound to another cache root.
+        return parent::getContainerClass().'_'.hash('sha256', $this->getBuildDir());
+    }
+
     /**
      * Whether this process is an installed PHAR or fused native artifact.
      *

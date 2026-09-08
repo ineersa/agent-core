@@ -214,6 +214,13 @@ final class CodexWebSocketModelClient implements ModelClientInterface
         );
 
         $fullBody = $this->buildFullRequestBody($model, $bodyPayload, $bodyOptions, $effectiveRequestId, $effectiveProvenance);
+        // Resume can choose the old baseline again even though the server's
+        // effective effort changed. Do not inherit that prior response state.
+        if ('gpt-6-astra' === $model->getName()
+            && true === ($bodyOptions[CodexRequestBodyFactory::REASONING_RESET] ?? false)
+            && null !== $lease->entry) {
+            $lease->entry->continuation = null;
+        }
         $wireBody = $this->buildWireRequestBody($lease, $fullBody);
 
         return [$lease->connection, $effectiveRequestId, $effectiveProvenance, $lease, $wireBody, $fullBody];

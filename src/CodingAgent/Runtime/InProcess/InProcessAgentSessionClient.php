@@ -89,6 +89,9 @@ final class InProcessAgentSessionClient implements AgentSessionClient
             throw new \RuntimeException(\sprintf('Session "%s" not found.', $runId));
         }
 
+        // Resume starts a new reasoning epoch, independent of the prior socket.
+        $this->sessionMetaStore->resetReasoningBaseline($runId);
+
         // Update instructions without starting or advancing a model turn.
         $this->commandBus->dispatch(new RefreshRunContext($runId, $this->buildContextMessages()));
 

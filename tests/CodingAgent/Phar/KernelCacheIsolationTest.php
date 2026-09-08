@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Phar;
 
+use Ineersa\CodingAgent\Kernel;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 
 /**
@@ -54,5 +56,30 @@ class KernelCacheIsolationTest extends IsolatedKernelTestCase
         $dir2 = $kernel->getCacheDir();
 
         $this->assertSame($dir1, $dir2, 'Cache directory must be deterministic across repeated calls.');
+    }
+
+    public function testDifferentProjectRootsDoNotReuseLoadedContainerClasses(): void
+    {
+        $first = self::getContainer()->get('kernel')->getContainer();
+        $otherProject = TestDirectoryIsolation::createProjectTempDir('kernel-cache-root');
+        $cwd = getcwd();
+        $env = getenv('HATFIELD_CWD');
+        $envArray = $_ENV;
+        $serverArray = $_SERVER;
+        $other = new Kernel('test', false);
+        try {
+            chdir($otherProject);
+            $other->boot();
+            $second = $other->getContainer();
+            $this->assertNotSame($first::class, $second::class);
+            $this->assertSame($other->getBuildDir(), $second->getParameter('kernel.build_dir'));
+        } finally {
+            $other->shutdown();
+            chdir($cwd);
+            putenv(false === $env ? 'HATFIELD_CWD' : 'HATFIELD_CWD='.$env);
+            $_ENV = $envArray;
+            $_SERVER = $serverArray;
+            TestDirectoryIsolation::removeDirectory($otherProject);
+        }
     }
 }
