@@ -97,7 +97,7 @@ final readonly class TranscriptToolRenderer
             : $this->successfulToolResultBodyColor($block);
 
         $container = new ContainerWidget();
-        $container->add(new TextWidget($theme->color($headerColor, $headerLine)));
+        $container->add(new ToolDurationHeaderWidget($headerLine, $block, $theme, $headerColor));
         $bodyWidget = $this->buildToolResultBodyWidget($block, $theme, $bodyColor, prependBlankLine: false);
         if (null !== $bodyWidget) {
             $container->add($bodyWidget);
@@ -172,11 +172,11 @@ final readonly class TranscriptToolRenderer
         if (!$fullRender && !$expanded) {
             $hint = $theme->color(ThemeColorEnum::Dim, ' (Ctrl+O to expand)');
 
-            return new TextWidget($theme->color(ThemeColorEnum::Skill, $headerLine).$hint);
+            return new ToolDurationHeaderWidget($headerLine, $resultBlock, $theme, ThemeColorEnum::Skill, $hint);
         }
 
         $container = new ContainerWidget();
-        $container->add(new TextWidget($theme->color(ThemeColorEnum::Skill, $headerLine)));
+        $container->add(new ToolDurationHeaderWidget($headerLine, $resultBlock, $theme, ThemeColorEnum::Skill));
         $bodyWidget = $this->buildToolResultBodyWidget(
             $resultBlock,
             $theme,
@@ -366,7 +366,7 @@ final readonly class TranscriptToolRenderer
         $suffix = $callBlock->streaming ? TranscriptGlyphs::STREAMING_SUFFIX : '';
         $headerLine = \sprintf('%s %s%s', TranscriptGlyphs::GLYPH_TOOL, $header, $suffix);
         $container = new ContainerWidget();
-        $container->add(new TextWidget($theme->color(ThemeColorEnum::ToolTitle, $headerLine)));
+        $container->add(new ToolDurationHeaderWidget($headerLine, $resultBlock, $theme, ThemeColorEnum::ToolTitle));
 
         $argumentsWidget = $this->buildToolArgumentsWidget($callBlock->meta['tool_name'] ?? null, $arguments, $theme);
         if (null !== $argumentsWidget) {
@@ -400,7 +400,7 @@ final readonly class TranscriptToolRenderer
         $headerLine = \sprintf('%s %s%s', TranscriptGlyphs::GLYPH_TOOL, $header, $suffix);
 
         $container = new ContainerWidget();
-        $container->add(new TextWidget($theme->color(ThemeColorEnum::ToolTitle, $headerLine)));
+        $container->add(new ToolDurationHeaderWidget($headerLine, $resultBlock, $theme, ThemeColorEnum::ToolTitle));
 
         $path = $arguments['path'] ?? null;
         if (\is_string($path) && '' !== $path) {
@@ -434,7 +434,7 @@ final readonly class TranscriptToolRenderer
         $headerLine = \sprintf('%s %s%s', TranscriptGlyphs::GLYPH_TOOL, $header, $suffix);
 
         $container = new ContainerWidget();
-        $container->add(new TextWidget($theme->color(ThemeColorEnum::ToolTitle, $headerLine)));
+        $container->add(new ToolDurationHeaderWidget($headerLine, $resultBlock, $theme, ThemeColorEnum::ToolTitle));
 
         $path = $arguments['path'] ?? '';
         if (!\is_string($path)) {
@@ -467,7 +467,7 @@ final readonly class TranscriptToolRenderer
         $suffix = $callBlock->streaming ? TranscriptGlyphs::STREAMING_SUFFIX : '';
         $headerLine = \sprintf('%s %s%s', TranscriptGlyphs::GLYPH_TOOL, $header, $suffix);
         $container = new ContainerWidget();
-        $container->add(new TextWidget($theme->color(ThemeColorEnum::ToolTitle, $headerLine)));
+        $container->add(new ToolDurationHeaderWidget($headerLine, $resultBlock, $theme, ThemeColorEnum::ToolTitle));
 
         $arguments = $callBlock->meta['arguments'] ?? null;
         if (!\is_array($arguments)) {
@@ -579,10 +579,10 @@ final readonly class TranscriptToolRenderer
         return new TextWidget(implode("\n", $lines));
     }
 
-    private function buildViewImageToolResultWidget(TranscriptBlock $block, TuiTheme $theme): TextWidget
+    private function buildViewImageToolResultWidget(TranscriptBlock $block, TuiTheme $theme): ContainerWidget
     {
         $header = \sprintf('%s %s', TranscriptGlyphs::GLYPH_TOOL, $this->toolResultHeaderLabel($block));
-        $lines = [$header];
+        $lines = [];
         $result = $block->meta['result'] ?? null;
         $bodyLines = $this->viewImageFormatter->formatToolResultLines($result);
         if ([] === $bodyLines && \is_string($result) && '' !== $result) {
@@ -600,7 +600,13 @@ final readonly class TranscriptToolRenderer
             ? ThemeColorEnum::Error
             : ThemeColorEnum::ToolOutput;
 
-        return new TextWidget($theme->color($color, implode("\n", $lines)));
+        $container = new ContainerWidget();
+        $container->add(new ToolDurationHeaderWidget($header, $block, $theme, $color));
+        if ([] !== $lines) {
+            $container->add(new TextWidget($theme->color($color, implode("\n", $lines))));
+        }
+
+        return $container;
     }
 
     private function buildViewImageToolResultBodyWidget(

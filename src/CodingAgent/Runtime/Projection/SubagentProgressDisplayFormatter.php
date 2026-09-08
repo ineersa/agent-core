@@ -145,11 +145,11 @@ final class SubagentProgressDisplayFormatter
         string $agentName,
         SubagentProgressSingleSnapshotDTO|SubagentProgressChildRowDTO $data,
     ): string {
-        if ('running' !== $status) {
+        if (!\in_array($status, ['running', 'completed', 'failed', 'cancelled'], true)) {
             return $status.' '.$agentName;
         }
 
-        $parts = [\sprintf('running %s', $agentName)];
+        $parts = [\sprintf('%s %s', $status, $agentName)];
         if ($data->toolCount > 0) {
             $parts[] = \sprintf('%d tools', $data->toolCount);
         }
@@ -157,7 +157,7 @@ final class SubagentProgressDisplayFormatter
         if (null !== $tok) {
             $parts[] = $tok;
         }
-        if ($data instanceof SubagentProgressSingleSnapshotDTO) {
+        if ($data instanceof SubagentProgressSingleSnapshotDTO || 'running' !== $status) {
             $parts[] = $this->formatElapsedHuman($data->elapsedMs);
         }
 
@@ -233,6 +233,9 @@ final class SubagentProgressDisplayFormatter
 
     private function formatElapsedHuman(int $ms): string
     {
+        if ($ms < 1000) {
+            return \sprintf('%dms', max(0, $ms));
+        }
         $seconds = (int) floor(max(0, $ms) / 1000);
         if ($seconds < 60) {
             return \sprintf('%ds', $seconds);

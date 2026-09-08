@@ -89,6 +89,7 @@ final class SubagentProgressSnapshotSerializerTest extends TestCase
                     agentRunId: 'r1',
                     terminal: true,
                     status: AgentArtifactStatusEnum::Completed,
+                    elapsedMs: 45000,
                 ),
                 'c2' => new SubagentProgressParallelChildReportDTO(
                     index: 2,
@@ -98,6 +99,7 @@ final class SubagentProgressSnapshotSerializerTest extends TestCase
                     agentRunId: 'r2',
                     terminal: false,
                     status: AgentArtifactStatusEnum::Running,
+                    elapsedMs: 12000,
                 ),
             ],
             activeTurns: ['r1' => 3, 'r2' => 1],
@@ -123,6 +125,8 @@ final class SubagentProgressSnapshotSerializerTest extends TestCase
         $this->assertSame('completed', $payload['children'][0]['status']);
         $this->assertSame('scout', $payload['children'][1]['agent_name']);
         $this->assertSame('running', $payload['children'][1]['status']);
+        $this->assertSame(45000, $payload['children'][0]['elapsed_ms']);
+        $this->assertSame(12000, $payload['children'][1]['elapsed_ms']);
     }
 
     public function testDenormalizeRoundTripAndRejectsInvalidMode(): void

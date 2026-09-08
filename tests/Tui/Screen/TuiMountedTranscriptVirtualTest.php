@@ -4,9 +4,15 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Screen;
 
+use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
+use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber;
+use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemeColorEnum;
@@ -19,6 +25,12 @@ use Ineersa\Tui\Transcript\TranscriptVisualNode;
 use Ineersa\Tui\Transcript\TranscriptVisualProjector;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Clock\Clock;
+use Symfony\Component\Clock\MockClock;
+use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Tui\Ansi\AnsiUtils;
+use Symfony\Component\Tui\Loop\TickScheduler;
+use Symfony\Component\Tui\Render\RenderContext;
 use Symfony\Component\Tui\Terminal\VirtualTerminal;
 use Symfony\Component\Tui\Tui;
 use Symfony\Component\Tui\Widget\MarkdownWidget;
@@ -37,6 +49,92 @@ use Symfony\Component\Tui\Widget\TextWidget;
 final class TuiMountedTranscriptVirtualTest extends TestCase
 {
     private const string SESSION_ID = 'virtual-mounted-transcript';
+
+    #[Test]
+    public function testToolTimersTickIndependentlyAndFreezeAcrossReplay(): void
+    {
+        $originalClock = Clock::get();
+        $clock = new MockClock('2026-09-08T12:00:00+00:00');
+        Clock::set($clock);
+        $terminal = new VirtualTerminal(columns: 100, rows: 40);
+        $tui = new Tui(terminal: $terminal);
+        $transcript = new TranscriptMountedWidget(theme: new DefaultTheme(new ThemePalette('timers', [])));
+        $tui->add($transcript);
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addSubscriber(new ToolProjectionSubscriber(
+            new SubagentProgressDisplayFormatter(),
+            SubagentProgressSerializerTestSupport::denormalizer(),
+        ));
+        $projector = new TranscriptProjector($dispatcher, new TranscriptProjectionState());
+        // Drive Symfony's real scheduler with explicit time, without a real-time interaction window.
+        $scheduler = new \ReflectionProperty(Tui::class, 'tickScheduler')->getValue($tui);
+        $this->assertInstanceOf(TickScheduler::class, $scheduler);
+        $events = [];
+        $accept = static function (string $type, array $payload) use (&$events, $projector, $transcript): void {
+            $event = new RuntimeEvent($type, self::SESSION_ID, \count($events) + 1, $payload);
+            $events[] = $event;
+            $projector->accept($event);
+            $transcript->applyChangeSet($projector->drainChanges());
+        };
+        $render = static fn (): string => AnsiUtils::stripAnsiCodes(implode("\n", $transcript->getContext()->renderWidget($transcript, new RenderContext(100, 40))));
+
+        try {
+            foreach (['first', 'second', 'third'] as $index => $id) {
+                $accept('tool_execution.started', [
+                    'tool_call_id' => $id, 'tool_name' => $id,
+                    'arguments' => 'third' === $id ? [] : ['command' => 'pwd'],
+                    'started_at' => \sprintf('2026-09-08T12:00:0%d+00:00', $index),
+                ]);
+            }
+            $tui->requestRender();
+            $tui->processRender();
+            $mounted = $transcript->all();
+            $clock->modify('+5 seconds');
+            $scheduler->runDue(1_000_000_000_000.0);
+            $live = $render();
+            $this->assertStringContainsString('first · 5s', $live);
+            $this->assertStringContainsString('second · 4s', $live);
+            $this->assertStringContainsString('third... · 3s', $live);
+            $this->assertSame($mounted, $transcript->all(), 'Timer ticks must not replace or append transcript nodes.');
+            $revision = $transcript->getRenderRevision();
+            $scheduler->runDue(1_000_000_000_001.0);
+            $this->assertSame($revision, $transcript->getRenderRevision(), 'Unchanged seconds do not invalidate the transcript.');
+
+            foreach (['completed', 'failed', 'cancelled'] as $index => $status) {
+                $id = ['first', 'second', 'third'][$index];
+                $accept('tool_execution.'.$status, [
+                    'tool_call_id' => $id, 'result' => $status,
+                    'ended_at' => '2026-09-08T12:00:06.250000+00:00',
+                ]);
+            }
+            $final = $render();
+            $this->assertStringContainsString('first · 6s', $final);
+            $this->assertStringContainsString('second · 5s', $final);
+            $this->assertStringContainsString('third · 4s', $final);
+            $this->assertNull($scheduler->getNextDelay(), 'Terminal cards release their scheduled ticks.');
+            $clock->modify('+1 hour');
+            $scheduler->runDue(1_000_000_003_600.0);
+            $this->assertSame($final, $render());
+            $projector->reset();
+            foreach ($events as $event) {
+                $projector->accept($event);
+            }
+            $transcript->setBlocks($projector->blocks());
+            $this->assertSame($final, $render(), 'Replay must use canonical duration, not the replay clock.');
+            $this->assertNull($scheduler->getNextDelay());
+            $accept('tool_execution.started', [
+                'tool_call_id' => 'detached', 'tool_name' => 'read',
+                'started_at' => '2026-09-08T12:00:00+00:00',
+            ]);
+            $this->assertNotNull($scheduler->getNextDelay());
+            $tui->clear();
+            $this->assertNull($scheduler->getNextDelay(), 'Leaving a transcript releases live timer callbacks.');
+        } finally {
+            $tui->clear();
+            $tui->stop();
+            Clock::set($originalClock);
+        }
+    }
 
     #[Test]
     public function testMountedMarkdownReceivesLiveContextAndThemedSubElements(): void

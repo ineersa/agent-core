@@ -124,6 +124,7 @@ final class SubagentResultRendererTest extends TestCase
         $this->assertStringContainsString('● scout [running]', $joined);
         $this->assertStringContainsString('38 tools', $joined);
         $this->assertStringContainsString('49k tok', $joined);
+        $this->assertStringContainsString('2m19s', $joined);
         $this->assertStringContainsString('Artifact artifacts/agents/agent_01HX', $joined);
         $this->assertStringContainsString('Run run-child-abc', $joined);
         $this->assertStringContainsString('› read: path="RuntimeEventTranslator.php"', $joined);
@@ -131,6 +132,57 @@ final class SubagentResultRendererTest extends TestCase
         $this->assertStringContainsString('in:35k', $joined);
         $this->assertStringContainsString('deepseek/deepseek-v4-flash (reasoning: high)', $joined);
         $this->assertStringContainsString('/agents-live', $joined);
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('terminalStatuses')]
+    public function testTerminalSingleCardKeepsCompactToolsTokensElapsedSummary(string $status): void
+    {
+        $progress = [
+            'mode' => 'single', 'status' => $status, 'agent_name' => 'scout',
+            'artifact_id' => 'agent_01HX', 'agent_run_id' => 'run-child-abc',
+            'task_summary' => 'inspect runtime events', 'turn_no' => 17,
+            'elapsed_ms' => 139000, 'tool_count' => 38, 'total_tokens' => 49000,
+            'input_tokens' => 35000, 'output_tokens' => 14000, 'reasoning_tokens' => 584000,
+            'cost' => 0.0104,
+            'model' => 'deepseek/deepseek-v4-flash',
+            'reasoning' => 'high',
+            'artifact_path' => 'artifacts/agents/agent_01HX',
+        ];
+        $block = new TranscriptBlock(
+            id: 'tool_result_completed_summary', kind: TranscriptBlockKindEnum::ToolResult, runId: 'run1', seq: 1,
+            text: '', meta: ['tool_name' => 'subagent', 'subagent_progress' => $this->snapshot($progress)],
+        );
+        $joined = implode("\n", $this->renderBlockLines($block));
+        $this->assertStringContainsString('scout ['.$status.']', $joined);
+        $this->assertStringContainsString('38 tools', $joined);
+        $this->assertStringContainsString('49k tok', $joined);
+        $this->assertStringContainsString('2m19s', $joined);
+        $this->assertStringContainsString('deepseek/deepseek-v4-flash (reasoning: high)', $joined);
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('subsecondDurations')]
+    public function testSubsecondSummaryMatchesPlainText(int $milliseconds, string $expected): void
+    {
+        $snapshot = $this->snapshot([
+            'mode' => 'single', 'status' => 'completed', 'agent_name' => 'scout',
+            'artifact_id' => 'agent_ms', 'agent_run_id' => 'run-child-ms',
+            'task_summary' => 'Read file', 'model' => 'test/model', 'reasoning' => 'medium',
+            'elapsed_ms' => $milliseconds,
+        ]);
+        $block = new TranscriptBlock(
+            id: 'tool_result_ms', kind: TranscriptBlockKindEnum::ToolResult, runId: 'run1', seq: 1,
+            text: '', meta: ['tool_name' => 'subagent', 'subagent_progress' => $snapshot],
+        );
+        $this->assertStringContainsString(' · '.$expected, implode("\n", $this->renderBlockLines($block)));
+        $this->assertStringContainsString(' | '.$expected, new \Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter()->format($snapshot));
+    }
+
+    public static function subsecondDurations(): iterable
+    {
+        yield [0, '0ms'];
+        yield [123, '123ms'];
+        yield [999, '999ms'];
+        yield [1000, '1s'];
     }
 
     public function testRendersWaitingHumanNeedsInputCard(): void
@@ -146,6 +198,13 @@ final class SubagentResultRendererTest extends TestCase
         $joined = implode("\n", $this->renderBlockLines($block));
         $this->assertStringContainsString('⚠ scout [needs input]', $joined);
         $this->assertStringContainsString('Ctrl+\\', $joined);
+    }
+
+    public static function terminalStatuses(): iterable
+    {
+        yield ['completed'];
+        yield ['failed'];
+        yield ['cancelled'];
     }
 
     public function testMultilineTaskSummaryDoesNotEscapeCardRail(): void
@@ -237,7 +296,8 @@ final class SubagentResultRendererTest extends TestCase
         $this->assertStringNotContainsString('Draft handoff', $joined);
     }
 
-    public function testRendersParallelProgressAsStackedCards(): void
+    #[\PHPUnit\Framework\Attributes\DataProvider('terminalStatuses')]
+    public function testRendersParallelProgressAsStackedCards(string $status): void
     {
         $progress = [
             'mode' => 'parallel', 'status' => 'running', 'completed_count' => 0, 'total_count' => 2, 'elapsed_ms' => 60000,
@@ -248,8 +308,8 @@ final class SubagentResultRendererTest extends TestCase
                     'artifact_path' => 'artifacts/agents/agent_1',
                 ],
                 [
-                    'index' => 2, 'agent_name' => 'reviewer', 'status' => 'completed', 'artifact_id' => 'agent_2', 'agent_run_id' => 'run-1', 'model' => 'test/model', 'reasoning' => 'medium',
-                    'task_summary' => 'Review patch', 'turn_no' => 1, 'active_tool' => 'read: path="AGENTS.md"',
+                    'index' => 2, 'agent_name' => 'reviewer', 'status' => $status, 'artifact_id' => 'agent_2', 'agent_run_id' => 'run-1', 'model' => 'test/model', 'reasoning' => 'medium',
+                    'task_summary' => 'Review patch', 'turn_no' => 1, 'tool_count' => 5, 'total_tokens' => 12000, 'elapsed_ms' => 45000, 'active_tool' => 'read: path="AGENTS.md"',
                 ],
             ],
         ];
@@ -266,6 +326,10 @@ final class SubagentResultRendererTest extends TestCase
         $this->assertStringContainsString('reviewer', $joined);
         $this->assertStringContainsString('Task Read docs', $joined);
         $this->assertStringContainsString('Task Review patch', $joined);
+        $this->assertStringContainsString('reviewer ['.$status.']', $joined);
+        $this->assertStringContainsString('5 tools', $joined);
+        $this->assertStringContainsString('12k tok', $joined);
+        $this->assertStringContainsString('45s', $joined);
         $this->assertStringNotContainsString('running Step', $joined);
     }
 
