@@ -159,6 +159,7 @@ final class InProcessSelectHistoryTurnEmitsRunHistoryPositionChangedTest extends
             sessionMetaStore: $container->get(HatfieldSessionStore::class),
             modelResolver: $container->get(ModelResolver::class),
             commandBus: new TestMessageBus(),
+            sessionRepairService: $this->createStub(\Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface::class),
             transientSink: $sink,
         );
     }

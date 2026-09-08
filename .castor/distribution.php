@@ -396,6 +396,8 @@ function distribution_build_micro_sfx(string $target): array
 
     $buildArgs = escapeshellarg($spcBin).' build '.escapeshellarg($extensions)
         .' --build-cli --build-micro'
+        // GD only requires PNG by default; the image tool also decodes JPEG/WebP.
+        .' --with-packages=libjpeg,libwebp'
         .' --dl-with-php='.escapeshellarg($pin['php_version'])
         .' --dl-custom-local='.escapeshellarg($customLocal);
     if ($pin['micro_fake_cli']) {

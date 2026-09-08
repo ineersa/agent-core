@@ -80,6 +80,10 @@ enum RuntimeEventTypeEnum: string
     case CommandAck = 'command.ack';
     case CommandRejected = 'command.rejected';
 
+    // Synchronous /repair outcome returned by the owning controller process.
+    // Transient JSONL/TUI only (seq=0); does not append canonical RunEvents.
+    case SessionRepairCompleted = 'session.repair.completed';
+
     // ── Tool-local questions ─────────────────────────────────────────────────────
     // Used by tool workers (e.g. BashTool) to prompt the user via the TUI
     // question overlay without entering AgentCore WaitingHuman. These events

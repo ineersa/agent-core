@@ -174,6 +174,7 @@ final class InProcessAgentSessionClientEventsTest extends IsolatedKernelTestCase
             sessionMetaStore: $container->get(HatfieldSessionStore::class),
             modelResolver: $container->get(ModelResolver::class),
             commandBus: $commandBus ?? new TestMessageBus(),
+            sessionRepairService: $this->createStub(\Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface::class),
             transientSink: $transientSink,
         );
     }

@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Runtime\Process;
 
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\RepairResult;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeTransportException;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
@@ -13,6 +14,8 @@ use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\CodingAgent\Session\Repair\RepairResultNormalizer;
 use Ineersa\CodingAgent\Tool\ToolFilterRuntimeConfig;
 use Psr\Log\LoggerInterface;
 
@@ -446,6 +449,31 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         $this->writeCommandWithRetry($cmd);
     }
 
+    public function repair(string $runId, bool $apply = true): RepairResult
+    {
+        if ('' === $runId) {
+            throw new \InvalidArgumentException('repair requires a non-empty runId.');
+        }
+
+        $this->activeRunId = $runId;
+        $this->sessionId = $runId;
+        $this->primaryRunId = $runId;
+        $this->ensureProcessRunning();
+        $this->waitForRuntimeReady();
+
+        $commandId = uniqid('cmd_', true);
+        $cmd = new RuntimeCommand(
+            id: $commandId,
+            type: 'repair',
+            runId: $runId,
+            payload: ['apply' => $apply],
+        );
+
+        $this->writeCommandWithRetry($cmd);
+
+        return $this->waitForRepairResult($commandId, $runId);
+    }
+
     public function refreshMcpCatalog(string $runId): void
     {
         if ('' === $runId) {
@@ -677,6 +705,51 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         }
 
         throw new RuntimeTransportException('Controller did not emit runtime.ready within '.$timeout.'s'."\n".$this->diagnosticOutput());
+    }
+
+    private function waitForRepairResult(string $commandId, string $runId): RepairResult
+    {
+        $timeout = 15.0;
+        $start = microtime(true);
+
+        while (microtime(true) - $start < $timeout) {
+            $repairResultEvent = null;
+            foreach ($this->readEventBatch() as $event) {
+                if ((RuntimeEventTypeEnum::SessionRepairCompleted->value === $event->type
+                    && $event->runId === $runId
+                    && ($event->payload['commandId'] ?? null) === $commandId)
+                    || (RuntimeEventTypeEnum::CommandRejected->value === $event->type
+                    && ($event->payload['commandId'] ?? null) === $commandId)) {
+                    $repairResultEvent = $event;
+
+                    continue;
+                }
+
+                if (RuntimeEventTypeEnum::RuntimeReady->value === $event->type) {
+                    $this->runtimeReadyReceived = true;
+
+                    continue;
+                }
+
+                $this->bufferEvent($event, 'read_events');
+            }
+
+            // A read batch can contain events after the repair response. Buffer
+            // the entire batch before returning so live updates are not lost.
+            if (null !== $repairResultEvent) {
+                if (RuntimeEventTypeEnum::CommandRejected->value === $repairResultEvent->type
+                    || 'completed' !== ($repairResultEvent->payload['status'] ?? null)) {
+                    throw new RuntimeTransportException('Controller repair failed for run "'.$runId.'".');
+                }
+
+                return RepairResultNormalizer::fromArray($repairResultEvent->payload);
+            }
+
+            $this->assertProcessStillRunning('waiting for session.repair.completed');
+            usleep(10_000);
+        }
+
+        throw new RuntimeTransportException('Controller did not emit session.repair.completed within '.$timeout.'s'."\n".$this->diagnosticOutput());
     }
 
     /**

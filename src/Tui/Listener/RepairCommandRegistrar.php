@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Listener;
 
-use Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface;
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
@@ -21,7 +20,6 @@ use Psr\Log\LoggerInterface;
 final class RepairCommandRegistrar implements TuiListenerRegistrar, SlashCommandCatalogRegistrar
 {
     public function __construct(
-        private readonly SessionRepairServiceInterface $repairService,
         private readonly LoggerInterface $logger,
     ) {
     }
@@ -39,7 +37,7 @@ final class RepairCommandRegistrar implements TuiListenerRegistrar, SlashCommand
 
     public function register(TuiRuntimeContext $context): void
     {
-        $handler = new RepairCommandHandler($this->repairService, $context->state, $this->logger);
+        $handler = new RepairCommandHandler($context->client, $context->state, $this->logger);
 
         $context->sessionServices->commandRegistry->bind('repair', $handler);
     }

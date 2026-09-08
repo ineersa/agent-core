@@ -27,9 +27,9 @@ require_once __DIR__.'/shared.php';
  * run:agent* launch from a session-owned COPY of the built PHAR (not
  * bin/console) so smoke/dev sessions exercise the actual shipped artifact
  * and surface packaging bugs (box.json exclusions, missing stubs,
- * autoloader differences). Sessions exec one fixed copy at
- * var/tmp/phar/sessions/hatfield.phar (same build reused untouched; new
- * build overwrites in place — safe under serialized launches). The
+ * autoloader differences). Sessions exec an immutable copy at
+ * var/tmp/phar/sessions/<sha256>/hatfield.phar. Overlapping launches reuse
+ * identical builds without replacing an older session's artifact. The
  * canonical artifact therefore has no long-lived holder: castor test/check
  * rebuild it freely even while a session is live. Swept by
  * `castor clean:cleanup` (whole var/tmp/phar tree) — no runtime GC by design.

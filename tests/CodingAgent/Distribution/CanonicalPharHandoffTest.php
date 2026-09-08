@@ -124,6 +124,10 @@ PHP;
         $this->assertNotEmpty($pin['extensions']);
         $this->assertContains('phar', $pin['extensions']);
         $this->assertContains('pcntl', $pin['extensions']);
+        // The read tool requires finfo even when startup and command listing succeed.
+        $this->assertContains('fileinfo', $pin['extensions']);
+        $this->assertContains('gd', $pin['extensions']);
+        $this->assertContains('exif', $pin['extensions']);
         $this->assertTrue((bool) ($pin['micro_fake_cli'] ?? false));
         $this->assertSame(['cli', 'micro'], $pin['sapi'] ?? null);
         $this->assertNotEmpty($pin['static_php_cli_commit'] ?? null);

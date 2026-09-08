@@ -21,6 +21,9 @@ Local builds support the **host** target only. The four-target matrix runs on ta
 
 `tools/static/pin.json` pins SPC commit, PHP patch + source hash, phpmicro commit/patch, and the SFX extension set (deliberate superset of system-PHAR guards).
 
+Native builds include `fileinfo` for MIME detection, `gd` for image resizing, and
+`exif` for JPEG orientation. GD and EXIF remain optional for system-PHP installs.
+
 ## Build flow
 
 ```bash

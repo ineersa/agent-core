@@ -257,6 +257,11 @@ final class ObservingSpyClient implements AgentSessionClient
         throw new \RuntimeException('not used');
     }
 
+    public function repair(string $runId, bool $apply = true): \Ineersa\CodingAgent\Runtime\Contract\RepairResult
+    {
+        return new \Ineersa\CodingAgent\Runtime\Contract\RepairResult(false, false, 'No repairable corruption detected.');
+    }
+
     public function compact(string $runId, ?string $customInstructions = null): void
     {
     }

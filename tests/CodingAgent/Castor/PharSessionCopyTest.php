@@ -9,13 +9,11 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Thesis: phar_materialize_session_copy() creates one fixed session copy at
- * var/tmp/phar/sessions/hatfield.phar — same build reused untouched, new build
- * overwrites in place (serialized launches). Swept by `castor clean:cleanup`.
+ * Session copies remain immutable across rebuilds and overlapping launches.
  */
 final class PharSessionCopyTest extends TestCase
 {
-    public function testMaterializeReusesFixedPathWithoutRewrite(): void
+    public function testMaterializeReusesContentAddressedPathWithoutRewrite(): void
     {
         self::requireHelpers();
 
@@ -29,27 +27,20 @@ final class PharSessionCopyTest extends TestCase
             $copy = \CastorTasks\phar_materialize_session_copy($artifact, $sessionsDir);
             $copyAgain = \CastorTasks\phar_materialize_session_copy($artifact, $sessionsDir);
 
-            $this->assertSame($sessionsDir.'/hatfield.phar', $copy);
-            $this->assertSame($copy, $copyAgain, 'same build must reuse the fixed session copy path');
+            $this->assertSame($sessionsDir.'/'.hash('sha256', $payload).'/hatfield.phar', $copy);
+            $this->assertSame($copy, $copyAgain, 'same build must reuse the immutable session copy path');
             $this->assertFileExists($copy);
             $this->assertSame(
                 hash_file('sha256', $artifact),
                 hash_file('sha256', $copy),
                 'session copy must be byte-identical to the canonical artifact',
             );
-
-            $entries = [];
-            foreach (new \FilesystemIterator($sessionsDir) as $entry) {
-                $entries[] = $entry->getFilename();
-            }
-            sort($entries);
-            $this->assertSame(['hatfield.phar'], $entries, 'sessions dir holds exactly one fixed copy');
         } finally {
             TestDirectoryIsolation::removeDirectory($work);
         }
     }
 
-    public function testDifferentBuildOverwritesFixedPathInPlace(): void
+    public function testDifferentBuildPreservesPreviousSessionArtifact(): void
     {
         self::requireHelpers();
 
@@ -64,8 +55,8 @@ final class PharSessionCopyTest extends TestCase
             file_put_contents($artifact, 'payload v2');
             $second = \CastorTasks\phar_materialize_session_copy($artifact, $sessionsDir);
 
-            $this->assertSame($first, $second, 'new build must overwrite the same fixed path');
-            $this->assertSame($sessionsDir.'/hatfield.phar', $second);
+            $this->assertNotSame($first, $second, 'new build must not replace a live session artifact');
+            $this->assertSame('payload v1', file_get_contents($first));
             $this->assertSame('payload v2', file_get_contents($second));
             $this->assertSame('payload v2', file_get_contents($artifact), 'source artifact must remain untouched');
         } finally {
@@ -73,7 +64,7 @@ final class PharSessionCopyTest extends TestCase
         }
     }
 
-    public function testCorruptDestIsRecopied(): void
+    public function testCorruptDestFailsWithoutReplacingLiveArtifact(): void
     {
         self::requireHelpers();
 
@@ -86,18 +77,14 @@ final class PharSessionCopyTest extends TestCase
             $sessionsDir = $work.'/sessions';
             $copy = \CastorTasks\phar_materialize_session_copy($artifact, $sessionsDir);
 
-            // Corrupt the dest: next materialize must detect the hash mismatch,
-            // re-copy in place to the same path, and restore correct bytes.
             file_put_contents($copy, 'corrupted');
-            $repaired = \CastorTasks\phar_materialize_session_copy($artifact, $sessionsDir);
-
-            $this->assertSame($copy, $repaired);
-            $this->assertSame(
-                hash_file('sha256', $artifact),
-                hash_file('sha256', $repaired),
-                'corrupt dest must be re-copied from the canonical artifact',
-            );
-            $this->assertSame($payload, file_get_contents($repaired));
+            try {
+                \CastorTasks\phar_materialize_session_copy($artifact, $sessionsDir);
+                $this->fail('Expected corrupt session copy to be rejected');
+            } catch (\RuntimeException $exception) {
+                $this->assertStringContainsString('Corrupt immutable session PHAR', $exception->getMessage());
+            }
+            $this->assertSame('corrupted', file_get_contents($copy));
         } finally {
             TestDirectoryIsolation::removeDirectory($work);
         }

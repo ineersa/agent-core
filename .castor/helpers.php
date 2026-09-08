@@ -1195,16 +1195,12 @@ function hatfield_phar_session_copies_dir(): string
  * WHY: run:agent sessions exec the artifact for their whole lifetime. If a
  * session ran the canonical file directly, castor test/check rebuilds of the
  * canonical artifact would swap phar:// file reads under the live process and
- * corrupt the session. Sessions exec one fixed copy at
- * var/tmp/phar/sessions/hatfield.phar instead, so the canonical artifact has
- * no long-lived holder and is rebuilt freely.
+ * corrupt the session. Sessions exec a content-addressed copy instead, so
+ * another launch after a rebuild cannot replace a live session's artifact.
  *
- * Same build → reuse without rewriting the file a live session may exec from.
- * New build → overwrite the fixed path in place. Safe only because launches
- * are serialized (single session at a time); an old session alive across a
- * rebuild would observe its binary replaced mid-execution. Absent/corrupt
- * dest is re-copied the same way. Swept by `castor clean:cleanup` (removes
- * the whole var/tmp/phar tree).
+ * Same build reuses the immutable copy. A corrupt existing copy fails closed
+ * rather than replacing bytes under a live process. Swept by
+ * `castor clean:cleanup` (removes the whole var/tmp/phar tree).
  *
  * @param string      $pharPath    canonical artifact to copy from
  * @param string|null $sessionsDir override root for session copies (tests)
@@ -1214,26 +1210,39 @@ function hatfield_phar_session_copies_dir(): string
 function phar_materialize_session_copy(string $pharPath, ?string $sessionsDir = null): string
 {
     $sessionsDir = $sessionsDir ?? hatfield_phar_session_copies_dir();
-    $dest = $sessionsDir.'/hatfield.phar';
     $hash = hash_file('sha256', $pharPath);
     if (false === $hash) {
         throw new \RuntimeException('Unable to hash PHAR artifact: '.$pharPath);
     }
 
-    // Same build → reuse without rewriting the file a live session may exec from.
-    if (is_file($dest) && hash_file('sha256', $dest) === $hash) {
-        return $dest;
-    }
+    $dest = $sessionsDir.'/'.$hash.'/hatfield.phar';
+    $filesystem = new \Symfony\Component\Filesystem\Filesystem();
+    $filesystem->mkdir(\dirname($dest));
+    $lock = (new LockFactory(new FlockStore($sessionsDir)))->createLock($hash);
+    $lock->acquire(true);
+    try {
+        if (is_file($dest)) {
+            if (hash_file('sha256', $dest) !== $hash) {
+                throw new \RuntimeException('Corrupt immutable session PHAR: '.$dest);
+            }
 
-    if (!is_dir($sessionsDir) && !mkdir($sessionsDir, 0755, true) && !is_dir($sessionsDir)) {
-        throw new \RuntimeException('Unable to create PHAR session copies directory: '.$sessionsDir);
-    }
+            return $dest;
+        }
 
-    // Fixed path, in-place overwrite on new build: safe only because launches are
-    // serialized (single session at a time) — an old session alive across a rebuild
-    // would observe its binary replaced mid-execution.
-    if (!copy($pharPath, $dest)) {
-        throw new \RuntimeException("Failed to copy PHAR artifact {$pharPath} -> {$dest}");
+        // Publish only complete, verified bytes. The canonical artifact may be
+        // rebuilt concurrently, so verify the staged copy before publication.
+        $staged = $filesystem->tempnam(\dirname($dest), '.phar-');
+        try {
+            $filesystem->copy($pharPath, $staged, true);
+            if (hash_file('sha256', $staged) !== $hash) {
+                throw new \RuntimeException('PHAR artifact changed while creating session copy: '.$pharPath);
+            }
+            $filesystem->rename($staged, $dest);
+        } finally {
+            $filesystem->remove($staged);
+        }
+    } finally {
+        $lock->release();
     }
 
     return $dest;

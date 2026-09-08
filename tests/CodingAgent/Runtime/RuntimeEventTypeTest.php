@@ -74,6 +74,7 @@ final class RuntimeEventTypeTest extends TestCase
             // Command protocol (controller <-> TUI)
             RuntimeEventTypeEnum::CommandAck,
             RuntimeEventTypeEnum::CommandRejected,
+            RuntimeEventTypeEnum::SessionRepairCompleted,
 
             // Runtime lifecycle (controller process)
             RuntimeEventTypeEnum::RuntimeReady,

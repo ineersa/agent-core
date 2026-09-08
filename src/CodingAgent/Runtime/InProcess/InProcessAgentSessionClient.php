@@ -18,6 +18,7 @@ use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Mcp\McpSessionLifecycleDispatcher;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateService;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\RepairResult;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
@@ -26,6 +27,7 @@ use Ineersa\CodingAgent\Runtime\Protocol\RunHistoryPositionChangedEventFactory;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextDiscovery;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextRenderer;
@@ -60,6 +62,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         private readonly HatfieldSessionStore $sessionMetaStore,
         private readonly ModelResolver $modelResolver,
         private readonly MessageBusInterface $commandBus,
+        private readonly SessionRepairServiceInterface $sessionRepairService,
         private readonly ?RuntimeEventSinkInterface $transientSink = null,
         private readonly ?ToolQuestionStoreInterface $toolQuestionStore = null,
         private readonly ToolQuestionAnswerResolver $answerResolver = new ToolQuestionAnswerResolver(),
@@ -206,6 +209,15 @@ final class InProcessAgentSessionClient implements AgentSessionClient
     public function compact(string $runId, ?string $customInstructions = null): void
     {
         $this->runner->compact($runId, $customInstructions);
+    }
+
+    public function repair(string $runId, bool $apply = true): RepairResult
+    {
+        if ('' === $runId) {
+            throw new \InvalidArgumentException('repair requires a non-empty runId.');
+        }
+
+        return $this->sessionRepairService->repair($runId, $apply);
     }
 
     /**

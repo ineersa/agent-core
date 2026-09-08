@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Listener;
 
-use Ineersa\CodingAgent\Session\Repair\RepairResult;
-use Ineersa\CodingAgent\Session\Repair\SessionRepairRefusalReasonEnum;
-use Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface;
+use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\RepairResult;
+use Ineersa\CodingAgent\Runtime\Contract\SessionRepairRefusalReasonEnum;
 use Ineersa\Tui\Command\CommandResult;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\SlashCommandHandler;
@@ -17,12 +17,15 @@ use Psr\Log\LoggerInterface;
 /**
  * Handler for the /repair slash command on the active session.
  *
+ * Routes through {@see AgentSessionClient} so repair executes in the owning
+ * runtime (controller process in production), not the TUI parent.
+ *
  * @internal Registered by RepairCommandRegistrar
  */
 final class RepairCommandHandler implements SlashCommandHandler
 {
     public function __construct(
-        private readonly SessionRepairServiceInterface $repairService,
+        private readonly AgentSessionClient $client,
         private readonly TuiSessionState $state,
         private readonly LoggerInterface $logger,
     ) {
@@ -48,7 +51,7 @@ final class RepairCommandHandler implements SlashCommandHandler
         }
 
         try {
-            $result = $this->repairService->repair($runId, true);
+            $result = $this->client->repair($runId, true);
         } catch (\Throwable $exception) {
             $this->logger->error('session_repair.command_failed', [
                 'run_id' => $runId,

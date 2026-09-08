@@ -16,6 +16,7 @@
         "php": ">=8.5",
         "ext-ctype": "*",
         "ext-curl": "*",
+        "ext-fileinfo": "*",
         "ext-filter": "*",
         "ext-iconv": "*",
         "ext-intl": "*",

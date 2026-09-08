@@ -70,6 +70,11 @@ final class RecordingAgentSessionClient implements AgentSessionClient
         return new RunHandle($sessionId);
     }
 
+    public function repair(string $runId, bool $apply = true): \Ineersa\CodingAgent\Runtime\Contract\RepairResult
+    {
+        return new \Ineersa\CodingAgent\Runtime\Contract\RepairResult(false, false, 'No repairable corruption detected.');
+    }
+
     public function compact(string $runId, ?string $customInstructions = null): void
     {
         $this->ops[] = ['op' => 'compact', 'runId' => $runId, 'command' => null];

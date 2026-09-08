@@ -11,7 +11,7 @@ Keep synchronized across `composer.json` `ext-*`, `bin/console` PHAR guard,
 
 - `php` ≥ 8.5
 - `ext-pdo_sqlite`, `ext-mbstring`, `ext-xml`, `ext-intl`, `ext-curl`, `ext-openssl`,
-  `ext-pcntl`, `ext-posix`, `ext-tokenizer`, `ext-ctype`, `ext-filter`, `ext-iconv`, `ext-phar`
+  `ext-pcntl`, `ext-posix`, `ext-tokenizer`, `ext-ctype`, `ext-fileinfo`, `ext-filter`, `ext-iconv`, `ext-phar`
 
 `tools/static/pin.json` may list a deliberate SFX **superset** for native builds — not identical to this system-PHAR list.
 

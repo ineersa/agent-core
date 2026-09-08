@@ -107,6 +107,11 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
             public function compact(string $runId, ?string $customInstructions = null): void
             {
             }
+
+            public function repair(string $runId, bool $apply = true): \Ineersa\CodingAgent\Runtime\Contract\RepairResult
+            {
+                return new \Ineersa\CodingAgent\Runtime\Contract\RepairResult(false, false, 'No repairable corruption detected.');
+            }
         };
 
         $this->tmpDir = TestDirectoryIsolation::createOsTempDir('hatfield_poller_test');

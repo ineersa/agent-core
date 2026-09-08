@@ -30,6 +30,7 @@ Exact optional fields evolve with mappers; assert against code + tests. Stable i
 | Cancellation | `reason`, optional `operation_id`/`operation_type`, `partial_output_available` |
 | Model/usage/cost | `provider`/`model`/`display`/`reasoning`, token/cost/context fields |
 | Extension job failed | unwrapped handler `message`, `reason`, `handler_id`, optional `job_id`, `retry_count`, `attempts` |
+| Session repair completed | `commandId`, `commandType`, `status` (`completed`\|`failed`), RepairResult scalars (`repairable_stale_cancellation_detected`, `stale_cancellation_repaired`, `message`, `refusal_reason`, `active_operations_redriven`) or failure `exception_class` |
 
 Run/turn lifecycle events often have no standardized payload yet (mapper normalization).
 

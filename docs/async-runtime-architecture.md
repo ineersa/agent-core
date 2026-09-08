@@ -68,6 +68,7 @@ Other notes:
 
 - `depfile.yaml` / `castor deptrac` are authoritative. Do not invent blanket bans that Deptrac does not enforce.
 - Product TUI may depend on CodingAgent services directly. Session/runtime protocol still uses Runtime Contract/Protocol.
+- `/repair` must go through `AgentSessionClient` into the owning controller/runtime. The process-mode TUI parent intentionally lacks `HATFIELD_RUN_CONTROL` / `LLM` / `TOOL` transport DSNs and must not call `SessionRepairService` locally.
 - Direct TUI → AgentCore edges exist only where Deptrac explicitly allows them and usually signal misplaced ownership.
 - AgentCore must not depend on CodingAgent or TUI.
 - Extension feature UX stays in extension packages; runtime ports stay generic.

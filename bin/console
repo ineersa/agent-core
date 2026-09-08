@@ -24,7 +24,7 @@ $isPhar = \str_starts_with(__FILE__, 'phar://');
 if ($isPhar) {
     // Keep synchronized with composer.json ext-* requirements,
     // installer/bash-installer, tools/static/pin.json, and docs/phar-packaging.md.
-    $requiredExtensions = ['pdo_sqlite', 'mbstring', 'xml', 'intl', 'curl', 'openssl', 'pcntl', 'posix', 'tokenizer', 'ctype', 'filter', 'iconv', 'phar'];
+    $requiredExtensions = ['pdo_sqlite', 'mbstring', 'xml', 'intl', 'curl', 'openssl', 'pcntl', 'posix', 'tokenizer', 'ctype', 'fileinfo', 'filter', 'iconv', 'phar'];
     $missing = [];
     foreach ($requiredExtensions as $ext) {
         if (!\extension_loaded($ext)) {

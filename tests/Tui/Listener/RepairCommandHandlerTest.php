@@ -4,24 +4,13 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Listener;
 
-use Ineersa\AgentCore\Application\Handler\RunLockManager;
-use Ineersa\AgentCore\Application\Handler\StepDispatcher;
-use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
-use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
-use Ineersa\AgentCore\Application\Replay\RunStateReducer;
-use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
-use Ineersa\AgentCore\Domain\Event\EventFactory;
-use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
-use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
-use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
-use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
-use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\RepairResult;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
-use Ineersa\CodingAgent\Session\Repair\RepairResult;
-use Ineersa\CodingAgent\Session\Repair\SessionRepairRefusalReasonEnum;
-use Ineersa\CodingAgent\Session\Repair\SessionRepairService;
-use Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface;
+use Ineersa\CodingAgent\Runtime\Contract\SessionRepairRefusalReasonEnum;
+use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
+use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Listener\RepairCommandHandler;
@@ -29,15 +18,13 @@ use Ineersa\Tui\Runtime\TuiSessionState;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
-use Symfony\Component\Lock\LockFactory;
-use Symfony\Component\Lock\Store\FlockStore;
 
 final class RepairCommandHandlerTest extends TestCase
 {
     #[Test]
     public function rejectsArguments(): void
     {
-        $handler = new RepairCommandHandler($this->createRepairService(), new TuiSessionState('repair'), new NullLogger());
+        $handler = new RepairCommandHandler(new RepairCommandSpyClient(), new TuiSessionState('repair'), new NullLogger());
 
         $result = $handler->handle(new SlashCommand('repair', 'apply', '/repair apply'));
 
@@ -49,7 +36,7 @@ final class RepairCommandHandlerTest extends TestCase
     #[Test]
     public function returnsNoActiveSessionWhenRunIdMissing(): void
     {
-        $handler = new RepairCommandHandler($this->createRepairService(), new TuiSessionState('repair'), new NullLogger());
+        $handler = new RepairCommandHandler(new RepairCommandSpyClient(), new TuiSessionState('repair'), new NullLogger());
 
         $result = $handler->handle(new SlashCommand('repair', '', '/repair'));
 
@@ -60,33 +47,35 @@ final class RepairCommandHandlerTest extends TestCase
     #[Test]
     public function mapsTypedRefusalToSafeUserMessage(): void
     {
-        $service = $this->createStub(SessionRepairServiceInterface::class);
-        $service->method('repair')->willReturn(new RepairResult(
+        $client = new RepairCommandSpyClient();
+        $client->result = new RepairResult(
             repairableStaleCancellationDetected: true,
             staleCancellationRepaired: false,
             message: 'internal',
             refusalReason: SessionRepairRefusalReasonEnum::DuplicateSequences,
-        ));
+        );
 
         $state = new TuiSessionState('repair');
         $state->handle = new RunHandle('run-1');
-        $handler = new RepairCommandHandler($service, $state, new NullLogger());
+        $handler = new RepairCommandHandler($client, $state, new NullLogger());
 
         $result = $handler->handle(new SlashCommand('repair', '', '/repair'));
 
         $this->assertInstanceOf(TranscriptMessage::class, $result);
         $this->assertSame('Session repair refused: duplicate event sequences.', $result->text);
         $this->assertSame('error', $result->style);
+        $this->assertSame('run-1', $client->lastRepairRunId);
+        $this->assertTrue($client->lastRepairApply);
     }
 
     #[Test]
     public function reportsActiveOperationRedrive(): void
     {
-        $service = $this->createStub(SessionRepairServiceInterface::class);
-        $service->method('repair')->willReturn(new RepairResult(false, false, 'internal', activeOperationsRedriven: 1));
+        $client = new RepairCommandSpyClient();
+        $client->result = new RepairResult(false, false, 'internal', activeOperationsRedriven: 1);
         $state = new TuiSessionState('repair');
         $state->handle = new RunHandle('run-redrive');
-        $handler = new RepairCommandHandler($service, $state, new NullLogger());
+        $handler = new RepairCommandHandler($client, $state, new NullLogger());
 
         $result = $handler->handle(new SlashCommand('repair', '', '/repair'));
 
@@ -98,13 +87,13 @@ final class RepairCommandHandlerTest extends TestCase
     #[Test]
     public function logsStructuredDegradationWhenRepairThrows(): void
     {
-        $service = $this->createStub(SessionRepairServiceInterface::class);
-        $service->method('repair')->willThrowException(new \RuntimeException('corrupt json with secrets'));
+        $client = new RepairCommandSpyClient();
+        $client->throwOnRepair = true;
 
         $logger = new TestLogger();
         $state = new TuiSessionState('repair');
         $state->handle = new RunHandle('run-err');
-        $handler = new RepairCommandHandler($service, $state, $logger);
+        $handler = new RepairCommandHandler($client, $state, $logger);
 
         $result = $handler->handle(new SlashCommand('repair', '', '/repair'));
 
@@ -117,25 +106,79 @@ final class RepairCommandHandlerTest extends TestCase
         $this->assertArrayNotHasKey('exception', $logger->records[0]['context']);
         $this->assertArrayNotHasKey('exception_message', $logger->records[0]['context']);
     }
+}
 
-    private function createRepairService(): SessionRepairService
+final class RepairCommandSpyClient implements AgentSessionClient
+{
+    public ?string $lastRepairRunId = null;
+    public ?bool $lastRepairApply = null;
+    public bool $throwOnRepair = false;
+    public RepairResult $result;
+
+    public function __construct()
     {
-        return new SessionRepairService(
-            eventStore: new InMemoryEventStore(),
-            activeRunContext: new TestActiveRunContext(),
-            runStateReducer: new RunStateReducer(
-                AttributeSerializerValidatorTestFactory::denormalizer(),
-                new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()),
-            ),
-            replayEventPreparer: new ReplayEventPreparer(),
-            eventFactory: new EventFactory(),
-            toolCallSequenceValidator: new AgentMessageToolCallSequenceValidator(),
-            lockManager: new RunLockManager(new LockFactory(new FlockStore(sys_get_temp_dir()))),
-            logger: new NullLogger(),
-            stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
-            toolBatchStore: $this->createStub(ToolBatchStoreInterface::class),
-            serializer: AttributeSerializerValidatorTestFactory::create()[0],
-            commandBus: new TestMessageBus(),
-        );
+        $this->result = new RepairResult(false, false, 'No repairable corruption detected.');
+    }
+
+    public function start(StartRunRequest $request): RunHandle
+    {
+        throw new \RuntimeException('Unexpected start()');
+    }
+
+    public function attach(string $runId): RunHandle
+    {
+        throw new \RuntimeException('Unexpected attach()');
+    }
+
+    public function send(string $runId, UserCommand $command): void
+    {
+        throw new \RuntimeException('Unexpected send()');
+    }
+
+    public function beginObservingChildRun(string $childRunId): void
+    {
+    }
+
+    public function endObservingChildRun(string $childRunId): void
+    {
+    }
+
+    public function events(string $runId, int $afterSeq = 0): iterable
+    {
+        return [];
+    }
+
+    public function shutdown(): void
+    {
+    }
+
+    public function refreshMcpCatalog(string $runId): void
+    {
+    }
+
+    public function cancel(string $runId): void
+    {
+        throw new \RuntimeException('Unexpected cancel()');
+    }
+
+    public function shellExecute(string $command, string $sessionId, string $cwd): RunHandle
+    {
+        throw new \RuntimeException('Unexpected shellExecute()');
+    }
+
+    public function compact(string $runId, ?string $customInstructions = null): void
+    {
+        throw new \RuntimeException('Unexpected compact()');
+    }
+
+    public function repair(string $runId, bool $apply = true): RepairResult
+    {
+        $this->lastRepairRunId = $runId;
+        $this->lastRepairApply = $apply;
+        if ($this->throwOnRepair) {
+            throw new \RuntimeException('corrupt json with secrets');
+        }
+
+        return $this->result;
     }
 }

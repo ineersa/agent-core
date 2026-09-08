@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Session\Repair;
+namespace Ineersa\CodingAgent\Runtime\Contract;
 
 enum SessionRepairRefusalReasonEnum: string
 {

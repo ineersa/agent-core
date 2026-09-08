@@ -1109,6 +1109,7 @@ services:
     arguments:
       $commandBus: '@agent.command.bus'
       $mcpDispatcher: '@Ineersa\CodingAgent\Mcp\McpSessionLifecycleDispatcher'
+      $sessionRepairService: '@Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface'
 
   # ─── MCP-04 / MCP-05 Dynamic MCP tool registration + invocation ────
 
@@ -1163,6 +1164,9 @@ services:
   Ineersa\CodingAgent\Session\Repair\SessionRepairService:
     arguments:
       $commandBus: '@agent.command.bus'
+
+  Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface:
+    alias: Ineersa\CodingAgent\Session\Repair\SessionRepairService
 
   Ineersa\CodingAgent\Agent\Artifact\ChildAwareEventStore:
     arguments:

@@ -75,6 +75,16 @@ interface AgentSessionClient
     public function compact(string $runId, ?string $customInstructions = null): void;
 
     /**
+     * Apply session repair for the given run in the owning runtime process.
+     *
+     * Must execute where session Doctrine Messenger DSNs are configured
+     * (controller/in-process runtime), never in the process-mode TUI parent.
+     * Returns the repair outcome synchronously so slash-command UX can report
+     * refusal/result wording without polling canonical events.
+     */
+    public function repair(string $runId, bool $apply = true): RepairResult;
+
+    /**
      * Synchronously shut down the session client's runtime (controller
      * subprocess, consumers, held locks) and clear client-local cross-run
      * buffers/observation state. Used before process re-bootstrap (/reload)
