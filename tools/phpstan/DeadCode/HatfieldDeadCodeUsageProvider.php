@@ -74,7 +74,8 @@ final class HatfieldDeadCodeUsageProvider extends ReflectionBasedMemberUsageProv
         // These published registration methods must remain on every implementor
         // (host bridge and test doubles), even without current in-repo callers.
         // The Castor extension was the last local rewrite-hook registration.
-        if (\in_array($method->getName(), ['registerToolResultHook', 'registerToolCallRewriteHook'], true)
+        // Task-workflow now installs a versioned project skill instead of registering one.
+        if (\in_array($method->getName(), ['registerToolResultHook', 'registerToolCallRewriteHook', 'registerSkill'], true)
             && $method->getDeclaringClass()->implementsInterface(ExtensionApiInterface::class)) {
             return VirtualUsageData::withNote('Published ExtensionApiInterface method with no current extension callers');
         }
