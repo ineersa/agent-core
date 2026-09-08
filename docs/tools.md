@@ -23,7 +23,7 @@ servers. Tool availability does not bypass approval policy.
 | `settings` | Read effective settings, set overrides, or remove overrides | Mutations specify user or project scope and pass approval checks. |
 | `hatfield_docs` | List and read packaged Hatfield documentation | Does not automatically discover extension-package READMEs. |
 | `subagent` | Launch a named child agent, singly or in parallel | Uses discovered agent definitions and child tool policy. |
-| `agent_resume` | Continue an existing child with a follow-up task | Child artifacts must belong to the current parent session. |
+| `agent_resume` | Continue an existing child or fork with a follow-up task | Artifacts must belong to the current parent session. Fork follow-ups must reestablish checkout ownership and inspect current file state. |
 | `agent_retrieve` | Read child handoffs, metadata, or bounded history | Retrieves existing artifacts; does not launch work. |
 | `fork` | Launch a child with inherited conversation context | Blocks for a handoff. Not a Git worktree creation tool. |
 
@@ -53,8 +53,10 @@ inspected or stopped through `bg_status`. See [background processes](background-
 ## Child agents
 
 Use named [subagents](agents.md) for role-specific tasks, `agent_resume` for follow-up
-work, and `agent_retrieve` to inspect their artifacts. A fork inherits parent context
-rather than starting only with a named role prompt. Nested child launches are blocked.
+work on an existing child or fork, and `agent_retrieve` to inspect their artifacts. A
+fork inherits parent context rather than starting only with a named role prompt.
+Resume an eligible fork instead of launching a duplicate when its context still
+applies. Nested child launches are blocked.
 
 Children do not automatically receive every parent tool or optional extension.
 MCP inheritance and explicit selectors are described in [MCP](mcp.md).

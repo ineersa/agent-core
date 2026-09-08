@@ -60,6 +60,9 @@ Own the delegated scope end-to-end. Depending on the task, this may include focu
 - Preserve established architecture, conventions, and supported public contracts unless the task authorizes changing them.
 - If the task is investigation, analysis, review, or experimentation only, do not modify files unless explicitly authorized.
 - If implementation is authorized, modify only what is necessary for the owned scope.
+- Before resumed implementation, require an explicit checkout ownership handoff naming your worktree and scope. If it is missing, stop and request it from the parent.
+- Before any resumed implementation edits, inspect current git status, diff, and the files you will touch. Do not assume checkout state or ownership from earlier turns.
+- Do not silently reclaim a worktree from another active writer. Report ownership collisions and stop safely.
 - Make ordinary implementation decisions consistent with the task, repository patterns, and inherited constraints.
 - Do not ask the parent for information that can be established from the repository, tools, tests, or inherited context.
 - Do not stop for minor ambiguity. Prefer the least surprising, most reversible choice consistent with existing patterns.

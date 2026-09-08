@@ -22,6 +22,7 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredS
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchIdentityFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchPlanDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchStatusEnum;
+use Ineersa\CodingAgent\Agent\Fork\ForkTaskPromptBuilder;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
@@ -43,12 +44,12 @@ final class AgentResumeExecutionService
         private readonly DeferredSubagentBatchIdentityFactory $identityFactory,
         private readonly AgentRunnerInterface $agentRunner,
         private readonly RunStateRebuilderInterface $runStateRebuilder,
-        private readonly RunStartedMetadataReader $metadataReader,
         private readonly RunRelationshipReaderInterface $relationshipReader,
         private readonly AgentDepthGuard $depthGuard,
         private readonly StackToolExecutionContextAccessor $contextAccessor,
         private readonly AgentsConfig $agentsConfig,
         private readonly LoggerInterface $logger,
+        private readonly ForkTaskPromptBuilder $forkTaskPromptBuilder,
     ) {
     }
 
@@ -202,7 +203,7 @@ final class AgentResumeExecutionService
                         $entry->agentRunId,
                         new AgentMessage(
                             role: 'user',
-                            content: [['type' => 'text', 'text' => $item['task']]],
+                            content: [['type' => 'text', 'text' => $this->followUpTaskText($entry, $item['task'])]],
                         ),
                     );
                 } catch (\Throwable $followUpFailure) {
@@ -341,15 +342,6 @@ final class AgentResumeExecutionService
             throw new ToolCallException(\sprintf('Artifact "%s" belongs to a previous parent lifetime and cannot be resumed after parent /resume.', $entry->artifactId), retryable: false);
         }
 
-        if (AgentArtifactKindEnum::Fork === $entry->kind) {
-            throw new ToolCallException('agent_resume cannot resume fork children.', retryable: false);
-        }
-
-        $childMeta = $this->metadataReader->readRunStartedMetadata($entry->agentRunId);
-        if (null !== $childMeta && 'fork' === ($childMeta->session->childKind ?? null)) {
-            throw new ToolCallException('agent_resume cannot resume fork children.', retryable: false);
-        }
-
         if (\in_array($entry->status, [AgentArtifactStatusEnum::Running, AgentArtifactStatusEnum::NeedsClarification], true)) {
             throw new ToolCallException(\sprintf('Artifact "%s" is already in flight (status=%s).', $entry->artifactId, $entry->status->value), retryable: false);
         }
@@ -374,6 +366,10 @@ final class AgentResumeExecutionService
 
         if (\in_array($state->status, [RunStatus::Cancelling], true)) {
             throw new ToolCallException(\sprintf('Child run "%s" is mid-cancel and cannot be resumed yet.', $entry->agentRunId), retryable: false);
+        }
+
+        if (!$state->status->isTerminal()) {
+            throw new ToolCallException(\sprintf('Child run "%s" is not terminal (status=%s). Wait for completion before resuming.', $entry->agentRunId, $state->status->value), retryable: false);
         }
 
         $this->assertContextBudgetAllowsResume($entry);
@@ -410,5 +406,14 @@ final class AgentResumeExecutionService
         if ($latestInputTokens >= $threshold) {
             throw new ToolCallException(\sprintf('Refusing to resume artifact "%s": child context is near the limit (%d latest input tokens; threshold %d). Launch a fresh subagent instead.', $entry->artifactId, $latestInputTokens, $threshold), retryable: false);
         }
+    }
+
+    private function followUpTaskText(AgentArtifactEntryDTO $entry, string $task): string
+    {
+        if (AgentArtifactKindEnum::Fork !== $entry->kind) {
+            return $task;
+        }
+
+        return $this->forkTaskPromptBuilder->buildTaskUserMessage($task);
     }
 }

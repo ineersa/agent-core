@@ -5,20 +5,23 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Agent\Execution;
 
 use Ineersa\AgentCore\Application\Dto\RunStateReplayResult;
+use Ineersa\AgentCore\Application\Handler\CommandRouter;
+use Ineersa\AgentCore\Application\Pipeline\AgentRunner;
+use Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler;
+use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
-use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
-use Ineersa\AgentCore\Domain\Event\RunEvent;
-use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
+use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
+use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
@@ -26,11 +29,14 @@ use Ineersa\CodingAgent\Agent\Execution\AgentDepthGuard;
 use Ineersa\CodingAgent\Agent\Execution\AgentResumeExecutionService;
 use Ineersa\CodingAgent\Agent\Execution\AgentResumeTaskDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
-use Ineersa\CodingAgent\Agent\Execution\RunStartedMetadataReader;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunTerminalOutcomeDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchIdentityFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Result\SubagentChildRunArtifactFinalizer;
+use Ineersa\CodingAgent\Agent\Fork\ForkTaskPromptBuilder;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChild;
@@ -61,72 +67,125 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         );
     }
 
-    public function testRejectsForkArtifactKind(): void
+    public function testResumesForkArtifactWithOwnershipFollowUpAndPreservesHandoffHistory(): void
     {
         $parent = 'parent-fork-kind';
         $artifactId = 'agent_fork_kind';
         $childRunId = 'child-fork-kind';
-        $this->registry()->create($parent, $artifactId, $childRunId, 'fork', AgentArtifactKindEnum::Fork);
-        $this->registry()->update($parent, $artifactId, status: AgentArtifactStatusEnum::Completed, summary: 'done');
+        $this->seedTerminalChild(
+            $parent,
+            $artifactId,
+            $childRunId,
+            latestInputTokens: 10,
+            contextWindow: 200_000,
+            artifactStatus: AgentArtifactStatusEnum::Completed,
+            agentName: 'fork',
+            kind: AgentArtifactKindEnum::Fork,
+        );
+        $identity = new ChildRunIdentityDTO($parent, $childRunId, $artifactId, 'fork', 'implement slice', AgentArtifactKindEnum::Fork);
+        $state = new RunState(
+            runId: $childRunId,
+            status: RunStatus::Completed,
+            messages: [
+                new AgentMessage('user', [['type' => 'text', 'text' => 'Inherited requirement: preserve ownership']]),
+                new AgentMessage('assistant', [['type' => 'text', 'text' => 'Implementation handoff']]),
+            ],
+        );
+        $originalMessages = $state->messages;
+        $finalizer = self::getContainer()->get(SubagentChildRunArtifactFinalizer::class);
+        $finalizer->apply(new ChildRunTerminalOutcomeDTO($identity, AgentArtifactStatusEnum::Completed, 'implemented slice', childState: $state));
+        $firstHandoffId = $this->registry()->listHandoffHistory($parent, $artifactId)[0]['id'];
 
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('cannot resume fork children');
+        $commandBus = new TestMessageBus();
+        $agentRunner = new AgentRunner($commandBus, self::getContainer()->get(SerializerInterface::class));
 
         $this->resume(
             parentRunId: $parent,
-            tasks: [new AgentResumeTaskDTO(artifact_id: $artifactId, task: 'continue')],
+            tasks: [new AgentResumeTaskDTO(artifact_id: $artifactId, task: 'Address review: fix ownership wording')],
             childRunId: $childRunId,
+            agentRunner: $agentRunner,
+            toolCallId: 'tc-fork-resume-1',
         );
+
+        $this->assertCount(1, $commandBus->messages);
+        $command = $commandBus->messages[0];
+        $this->assertInstanceOf(ApplyCommand::class, $command);
+        $this->assertSame($childRunId, $command->runId());
+        $followUpText = $command->payload['message']['content'][0]['text'];
+        $this->assertStringContainsString('Address review: fix ownership wording', $followUpText);
+        $this->assertStringContainsString('explicit checkout ownership handoff', $followUpText);
+        $this->assertStringContainsString('Before any resumed implementation edits, inspect current git status', $followUpText);
+
+        $entry = $this->registry()->get($parent, $artifactId);
+        $this->assertNotNull($entry);
+        $this->assertSame(AgentArtifactKindEnum::Fork, $entry->kind);
+        $this->assertSame($childRunId, $entry->agentRunId);
+        $this->assertSame(AgentArtifactStatusEnum::Running, $entry->status);
+
+        $store = new InMemoryCommandStore();
+        $router = new CommandRouter([]);
+        $mailbox = new CommandMailboxPolicy($store, $router);
+        $handler = new ApplyCommandHandler(
+            commandStore: $store,
+            commandRouter: $router,
+            commandMailboxPolicy: $mailbox,
+            eventFactory: new \Ineersa\AgentCore\Domain\Event\EventFactory(),
+            messageNormalizer: new \Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer(),
+            maxPendingCommands: 10,
+            commandBus: $commandBus,
+        );
+        $queued = $handler->handle($command, $state);
+        $this->assertNotNull($queued->nextState);
+        $continued = $mailbox->applyPendingTurnStartCommands($queued->nextState);
+        $state = $continued->state;
+        $this->assertSame($originalMessages, \array_slice($state->messages, 0, 2));
+        $this->assertSame($followUpText, $state->messages[2]->content[0]['text']);
+        // Model execution is outside this proof. Finalize its deterministic review-fix result.
+        $state = $state->with([
+            'messages' => [...$state->messages, new AgentMessage('assistant', [['type' => 'text', 'text' => 'Review-fix handoff']])],
+            'status' => RunStatus::Completed,
+        ]);
+        $finalizer->apply(new ChildRunTerminalOutcomeDTO($identity, AgentArtifactStatusEnum::Completed, 'review fixes applied', childState: $state));
+
+        $history = $this->registry()->listHandoffHistory($parent, $artifactId);
+        $this->assertCount(2, $history);
+        $secondHandoffId = $history[1]['id'];
+        $this->assertSame($firstHandoffId, $history[0]['id']);
+        $this->assertNotSame($firstHandoffId, $secondHandoffId);
+        $this->assertStringContainsString('implemented slice', $this->registry()->readHandoffHistoryEntry($parent, $artifactId, $firstHandoffId));
+        $this->assertStringContainsString('review fixes applied', $this->registry()->readHandoffHistoryEntry($parent, $artifactId, $secondHandoffId));
+
+        $resumedEntry = $this->registry()->get($parent, $artifactId);
+        $this->assertNotNull($resumedEntry);
+        $this->assertSame($artifactId, $resumedEntry->artifactId);
+        $this->assertSame($childRunId, $resumedEntry->agentRunId);
+        $this->assertSame(AgentArtifactKindEnum::Fork, $resumedEntry->kind);
     }
 
-    public function testRejectsForkChildKindFromMetadata(): void
+    public function testSubagentResumeKeepsRawFollowUpTaskText(): void
     {
-        $parent = 'parent-fork-meta';
-        $artifactId = 'agent_fork_meta';
-        $childRunId = 'child-fork-meta';
-        $this->registry()->create($parent, $artifactId, $childRunId, 'scout', AgentArtifactKindEnum::Subagent);
-        $this->registry()->update($parent, $artifactId, status: AgentArtifactStatusEnum::Completed, summary: 'done');
+        $parent = 'parent-subagent-raw';
+        $artifactId = 'agent_subagent_raw';
+        $childRunId = 'child-subagent-raw';
+        $this->seedTerminalChild($parent, $artifactId, $childRunId, latestInputTokens: 10, contextWindow: 200_000);
 
-        $eventStore = $this->createStub(EventStoreInterface::class);
-        $eventStore->method('firstFor')->willReturnCallback(static function (string $runId) use ($childRunId, $artifactId, $parent): ?RunEvent {
-            if ($runId !== $childRunId) {
-                return null;
-            }
-
-            return new RunEvent(
-                runId: $childRunId,
-                seq: 1,
-                turnNo: 0,
-                type: RunEventTypeEnum::RunStarted->value,
-                payload: [
-                    'step_id' => 's',
-                    'payload' => [
-                        'metadata' => [
-                            'session' => [
-                                'kind' => 'agent_child',
-                                'child_kind' => 'fork',
-                                'parent_run_id' => $parent,
-                                'agent_name' => 'fork',
-                                'artifact_id' => $artifactId,
-                            ],
-                            'model' => 'test/model',
-                            'reasoning' => 'medium',
-                            'tools_scope' => ['allowed_tools' => ['bash']],
-                        ],
-                    ],
-                ],
-            );
-        });
-
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('cannot resume fork children');
+        $followUps = [];
+        $agentRunner = $this->createMock(AgentRunnerInterface::class);
+        $agentRunner->expects($this->once())
+            ->method('followUp')
+            ->willReturnCallback(static function (string $runId, AgentMessage $message) use (&$followUps): void {
+                $followUps[$runId] = $message;
+            });
 
         $this->resume(
             parentRunId: $parent,
-            tasks: [new AgentResumeTaskDTO(artifact_id: $artifactId, task: 'continue')],
+            tasks: [new AgentResumeTaskDTO(artifact_id: $artifactId, task: 'continue the scout notes')],
             childRunId: $childRunId,
-            eventStore: $eventStore,
+            agentRunner: $agentRunner,
+            toolCallId: 'tc-subagent-raw',
         );
+
+        $this->assertSame('continue the scout notes', $followUps[$childRunId]->content[0]['text']);
     }
 
     public function testRejectsInFlightRunningArtifact(): void
@@ -193,6 +252,26 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         );
     }
 
+    public function testRejectsRunningForkDespiteTerminalArtifact(): void
+    {
+        $parent = 'parent-stale-fork';
+        $artifactId = 'agent_stale_fork';
+        $childRunId = 'child-stale-fork';
+        $this->seedTerminalChild($parent, $artifactId, $childRunId, latestInputTokens: 10, contextWindow: 200_000, agentName: 'fork', kind: AgentArtifactKindEnum::Fork);
+        $agentRunner = $this->createMock(AgentRunnerInterface::class);
+        $agentRunner->expects($this->never())->method('followUp');
+
+        $this->expectException(ToolCallException::class);
+        $this->expectExceptionMessage('is not terminal (status=running)');
+        $this->resume(
+            parentRunId: $parent,
+            tasks: [new AgentResumeTaskDTO(artifact_id: $artifactId, task: 'continue')],
+            childRunId: $childRunId,
+            runStatus: RunStatus::Running,
+            agentRunner: $agentRunner,
+        );
+    }
+
     public function testRejectsOversizeContextWithMissingWindowFloor(): void
     {
         $parent = 'parent-oversize-floor';
@@ -236,8 +315,8 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         $failedChildRunId = 'child-failed';
         $cancelledArtifactId = 'agent_cancelled';
         $cancelledChildRunId = 'child-cancelled';
-        $this->seedTerminalChild($parent, $failedArtifactId, $failedChildRunId, latestInputTokens: 10, contextWindow: 200_000, artifactStatus: AgentArtifactStatusEnum::Failed);
-        $this->seedTerminalChild($parent, $cancelledArtifactId, $cancelledChildRunId, latestInputTokens: 10, contextWindow: 200_000, artifactStatus: AgentArtifactStatusEnum::Cancelled);
+        $this->seedTerminalChild($parent, $failedArtifactId, $failedChildRunId, latestInputTokens: 10, contextWindow: 200_000, artifactStatus: AgentArtifactStatusEnum::Failed, agentName: 'fork', kind: AgentArtifactKindEnum::Fork);
+        $this->seedTerminalChild($parent, $cancelledArtifactId, $cancelledChildRunId, latestInputTokens: 10, contextWindow: 200_000, artifactStatus: AgentArtifactStatusEnum::Cancelled, agentName: 'fork', kind: AgentArtifactKindEnum::Fork);
 
         $followUps = [];
         $agentRunner = $this->createMock(AgentRunnerInterface::class);
@@ -258,8 +337,8 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
             executionMode: ChildRunBatchExecutionModeEnum::Parallel,
         );
 
-        $this->assertSame('verify failure fix', $followUps[$failedChildRunId]->content[0]['text']);
-        $this->assertSame('continue cancellation-safe work', $followUps[$cancelledChildRunId]->content[0]['text']);
+        $this->assertStringContainsString('verify failure fix', $followUps[$failedChildRunId]->content[0]['text']);
+        $this->assertStringContainsString('continue cancellation-safe work', $followUps[$cancelledChildRunId]->content[0]['text']);
         $this->assertSame(AgentArtifactStatusEnum::Running, $this->registry()->get($parent, $failedArtifactId)?->status);
         $this->assertSame(AgentArtifactStatusEnum::Running, $this->registry()->get($parent, $cancelledArtifactId)?->status);
 
@@ -277,36 +356,6 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         $this->registry()->create($parent, $artifactId, $childRunId, 'scout', AgentArtifactKindEnum::Subagent);
         $this->registry()->update($parent, $artifactId, status: AgentArtifactStatusEnum::Completed, summary: 'done');
 
-        $parentEventStore = $this->createStub(EventStoreInterface::class);
-        $parentEventStore->method('firstFor')->willReturnCallback(static function (string $runId) use ($parent): ?RunEvent {
-            if ($runId !== $parent) {
-                return null;
-            }
-
-            return new RunEvent(
-                runId: $parent,
-                seq: 1,
-                turnNo: 0,
-                type: RunEventTypeEnum::RunStarted->value,
-                payload: [
-                    'step_id' => 's',
-                    'payload' => [
-                        'metadata' => [
-                            'session' => [
-                                'kind' => 'agent_child',
-                                'parent_run_id' => 'grandparent',
-                                'agent_name' => 'scout',
-                                'artifact_id' => 'agent_parent',
-                            ],
-                            'model' => 'test/model',
-                            'reasoning' => 'medium',
-                            'tools_scope' => ['allowed_tools' => []],
-                        ],
-                    ],
-                ],
-            );
-        });
-
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('is an agent child; nested launches are not supported');
 
@@ -314,7 +363,6 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
             parentRunId: $parent,
             tasks: [new AgentResumeTaskDTO(artifact_id: $artifactId, task: 'continue')],
             childRunId: $childRunId,
-            eventStore: $parentEventStore,
             relationshipReader: StubRunRelationshipReader::child($parent, 'grandparent'),
         );
     }
@@ -474,7 +522,6 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         string $parentRunId,
         array $tasks,
         ?string $childRunId = null,
-        ?EventStoreInterface $eventStore = null,
         RunStatus $runStatus = RunStatus::Completed,
         ?AgentRunnerInterface $agentRunner = null,
         string $toolCallId = 'tc-resume-1',
@@ -493,12 +540,6 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
             );
         }
 
-        $eventStore ??= $this->createStub(EventStoreInterface::class);
-        $metadataReader = new RunStartedMetadataReader(
-            $eventStore,
-            AttributeSerializerValidatorTestFactory::denormalizer(),
-        );
-
         $service = new AgentResumeExecutionService(
             artifactRegistry: $this->registry(),
             batchRepository: self::getContainer()->get(DeferredSubagentBatchRepository::class),
@@ -506,12 +547,12 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
             identityFactory: new DeferredSubagentBatchIdentityFactory(),
             agentRunner: $agentRunner ?? $this->createStub(AgentRunnerInterface::class),
             runStateRebuilder: $runStateRebuilder,
-            metadataReader: $metadataReader,
             relationshipReader: $relationshipReader ?? StubRunRelationshipReader::topLevel($parentRunId),
             depthGuard: new AgentDepthGuard(),
             contextAccessor: $contextAccessor,
             agentsConfig: new AgentsConfig(maxAgents: 4),
             logger: $logger ?? new NullLogger(),
+            forkTaskPromptBuilder: new ForkTaskPromptBuilder(),
         );
 
         return $contextAccessor->with(
@@ -538,8 +579,10 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         int $latestInputTokens,
         ?int $contextWindow,
         AgentArtifactStatusEnum $artifactStatus = AgentArtifactStatusEnum::Completed,
+        string $agentName = 'scout',
+        AgentArtifactKindEnum $kind = AgentArtifactKindEnum::Subagent,
     ): void {
-        $this->registry()->create($parent, $artifactId, $childRunId, 'scout', AgentArtifactKindEnum::Subagent);
+        $this->registry()->create($parent, $artifactId, $childRunId, $agentName, $kind);
         $this->registry()->update($parent, $artifactId, status: $artifactStatus, summary: 'done');
 
         /** @var SerializerInterface $serializer */
@@ -568,7 +611,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         $row->batchIndex = 1;
         $row->childRunId = $childRunId;
         $row->artifactId = $artifactId;
-        $row->agentName = 'scout';
+        $row->agentName = $agentName;
         $row->task = 'seed';
         $row->launchModel = 'test/model';
         $row->launchReasoning = 'medium';
