@@ -452,6 +452,47 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
     //  Helpers
     // ──────────────────────────────────────────────
 
+    public function testAstraBaselineSurvivesWorkerRecreationAndResetsForNewEpoch(): void
+    {
+        $data = $this->standardAiData();
+        $data['providers']['openai-codex']['compatibility'] = ['thinking_format' => 'codex'];
+        $data['providers']['openai-codex']['models']['gpt-6-astra'] = [
+            'name' => 'Astra', 'reasoning' => true,
+            'thinking_level_map' => ['low' => 'low', 'medium' => 'medium', 'high' => 'high'],
+            'compatibility' => ['supports_reasoning_configuration_updates' => true],
+        ];
+        $id = $this->writeSessionMetadata('astra', ['model' => 'openai-codex/gpt-6-astra', 'reasoning' => 'medium']);
+        $store = static::getContainer()->get(HatfieldSessionStore::class);
+        $input = new ModelInvocationInput(runId: $id);
+        $messages = new MessageBag(\Symfony\AI\Platform\Message\Message::ofUser('Hello'));
+        $resolver = $this->createResolver($data);
+        $resolver->resolve('', new MessageBag(), $input, new ModelResolutionOptions());
+        $this->assertNull($store->findSession($id)->reasoningBaseline);
+
+        $first = $resolver->resolve('', $messages, $input, new ModelResolutionOptions());
+        $this->assertSame(['reasoning' => ['effort' => 'medium', 'summary' => 'auto'], 'codex_reasoning_reset' => true], $first->reasoningOptions);
+        foreach (['medium', 'high', 'low'] as $effort) {
+            $store->updateMetadata($id, ['reasoning' => $effort]);
+            $this->entityManager->clear();
+            $result = $this->createResolver($data)->resolve('', $messages, $input, new ModelResolutionOptions());
+            $this->assertSame('medium', $result->reasoningOptions['reasoning']['effort']);
+            $this->assertSame($effort, $result->reasoningOptions['codex_reasoning_update']);
+        }
+
+        $override = $resolver->resolve('openai-codex/gpt-6-astra', $messages, $input, new ModelResolutionOptions(['thinking_level' => 'high']));
+        $this->assertSame(['reasoning' => ['effort' => 'high', 'summary' => 'auto']], $override->reasoningOptions);
+        $this->assertSame('medium', $store->findSession($id)->reasoningBaseline['effort']);
+
+        $store->resetReasoningBaseline($id);
+        $resumed = $resolver->resolve('', $messages, $input, new ModelResolutionOptions());
+        $this->assertSame(['reasoning' => ['effort' => 'low', 'summary' => 'auto'], 'codex_reasoning_reset' => true], $resumed->reasoningOptions);
+        $store->updateMetadata($id, ['model' => 'openai-codex/gpt-test']);
+        $this->assertNull($store->findSession($id)->reasoningBaseline);
+        $store->updateMetadata($id, ['model' => 'openai-codex/gpt-6-astra', 'reasoning' => 'high']);
+        $changed = $resolver->resolve('', $messages, $input, new ModelResolutionOptions());
+        $this->assertSame(['reasoning' => ['effort' => 'high', 'summary' => 'auto'], 'codex_reasoning_reset' => true], $changed->reasoningOptions);
+    }
+
     private function createResolver(array $aiData, ?RunStartedMetadataReader $childMetadataReader = null): SessionAwareModelResolver
     {
         $hatfieldSessionStore = new HatfieldSessionStore(

@@ -71,6 +71,11 @@ class HatfieldSession
     #[ORM\Column(type: 'string', nullable: true)]
     public ?string $reasoning = null;
 
+    /** Fixed provider effort for the active model epoch; null until its first request.
+     * @var array{model: string, effort: string}|null */
+    #[ORM\Column(name: 'reasoning_baseline', type: 'json', nullable: true)]
+    public ?array $reasoningBaseline = null;
+
     /** User-visible session display name, initialized from the first user message
      * and later renameable via /rename. Capped at 200 characters. */
     #[ORM\Column(type: 'string', length: 200, options: ['default' => ''])]

@@ -8,7 +8,7 @@
 # Refresh: hatfield providers:update
 # Interactive setup: bin/console providers:setup (see providers-setup-command task)
 
-version: 4
+version: 5
 
 providers:
     deepseek:
@@ -135,6 +135,8 @@ providers:
             gpt-6-astra:
                 name: GPT-6 Astra
                 reasoning: true
+                compatibility:
+                    supports_reasoning_configuration_updates: true
                 thinking_level_map: { minimal: null, low: low, medium: medium, high: high, xhigh: xhigh, max: max }
                 tool_calling: true
                 input: [text, image]

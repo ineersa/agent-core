@@ -148,6 +148,9 @@ final class HatfieldSessionStore
             $dirty = true;
         }
         if (\array_key_exists('model', $meta) && \is_string($meta['model'])) {
+            if ($entity->model !== $meta['model']) {
+                $entity->reasoningBaseline = null;
+            }
             $entity->model = $meta['model'];
             $dirty = true;
         }
@@ -203,6 +206,36 @@ final class HatfieldSessionStore
     public function exists(string $sessionId): bool
     {
         return null !== $this->fetchEntityOrNull($sessionId);
+    }
+
+    /**
+     * Claim the first request's effort. Return null for that first request,
+     * or the fixed effort for subsequent requests in the same model epoch.
+     */
+    public function claimReasoningBaseline(string $sessionId, string $model, string $effort): ?string
+    {
+        $entity = $this->fetchEntityOrNull($sessionId);
+        if (null === $entity) {
+            return null;
+        }
+
+        if ($model === ($entity->reasoningBaseline['model'] ?? null)) {
+            return $entity->reasoningBaseline['effort'];
+        }
+
+        $entity->reasoningBaseline = ['model' => $model, 'effort' => $effort];
+        $this->entityManager->flush();
+
+        return null;
+    }
+
+    public function resetReasoningBaseline(string $sessionId): void
+    {
+        $entity = $this->fetchEntityOrNull($sessionId);
+        if (null !== $entity && null !== $entity->reasoningBaseline) {
+            $entity->reasoningBaseline = null;
+            $this->entityManager->flush();
+        }
     }
 
     /**
