@@ -812,6 +812,7 @@ parameters:
     HatfieldExtTaskWorkflow:
       - AppExtensionApi
       - HatfieldExtTaskWorkflow
+      - SymfonyYaml
     HatfieldExtFileRewind:
       - AppExtensionApi
       - SymfonyTui

@@ -28,9 +28,8 @@ final class ForkTaskPromptBuilderTest extends TestCase
         $this->assertStringContainsString($task, $message);
         $this->assertStringContainsString('You are a fork delegated by a parent agent.', $message);
         $this->assertStringContainsString('compacted snapshot', $message);
-        $this->assertStringContainsString('explicit checkout ownership handoff', $message);
-        $this->assertStringContainsString('Before any resumed implementation edits, inspect current git status', $message);
-        $this->assertStringContainsString('Do not silently reclaim a worktree from another active writer.', $message);
+        $this->assertStringNotContainsString('task-board', $message);
+        $this->assertStringNotContainsString('explicit checkout ownership handoff', $message);
     }
 
     public function testBuildTaskUserMessageDefinesCompactHandoffContract(): void

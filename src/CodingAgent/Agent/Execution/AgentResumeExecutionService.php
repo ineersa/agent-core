@@ -13,7 +13,6 @@ use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactEntryDTO;
-use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
@@ -22,7 +21,6 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredS
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchIdentityFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchPlanDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchStatusEnum;
-use Ineersa\CodingAgent\Agent\Fork\ForkTaskPromptBuilder;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
@@ -49,7 +47,6 @@ final class AgentResumeExecutionService
         private readonly StackToolExecutionContextAccessor $contextAccessor,
         private readonly AgentsConfig $agentsConfig,
         private readonly LoggerInterface $logger,
-        private readonly ForkTaskPromptBuilder $forkTaskPromptBuilder,
     ) {
     }
 
@@ -203,7 +200,7 @@ final class AgentResumeExecutionService
                         $entry->agentRunId,
                         new AgentMessage(
                             role: 'user',
-                            content: [['type' => 'text', 'text' => $this->followUpTaskText($entry, $item['task'])]],
+                            content: [['type' => 'text', 'text' => $item['task']]],
                         ),
                     );
                 } catch (\Throwable $followUpFailure) {
@@ -406,14 +403,5 @@ final class AgentResumeExecutionService
         if ($latestInputTokens >= $threshold) {
             throw new ToolCallException(\sprintf('Refusing to resume artifact "%s": child context is near the limit (%d latest input tokens; threshold %d). Launch a fresh subagent instead.', $entry->artifactId, $latestInputTokens, $threshold), retryable: false);
         }
-    }
-
-    private function followUpTaskText(AgentArtifactEntryDTO $entry, string $task): string
-    {
-        if (AgentArtifactKindEnum::Fork !== $entry->kind) {
-            return $task;
-        }
-
-        return $this->forkTaskPromptBuilder->buildTaskUserMessage($task);
     }
 }

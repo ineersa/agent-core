@@ -24,3 +24,6 @@ callgraph.html
 # Hatfield extensions path-repo install artifacts (generated)
 /.hatfield/extensions/vendor/
 /.hatfield/extensions/composer.lock
+
+# Versioned task-workflow skill installed from its extension package
+/.hatfield/skills/task-workflow/

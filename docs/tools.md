@@ -23,7 +23,7 @@ servers. Tool availability does not bypass approval policy.
 | `settings` | Read effective settings, set overrides, or remove overrides | Mutations specify user or project scope and pass approval checks. |
 | `hatfield_docs` | List and read packaged Hatfield documentation | Does not automatically discover extension-package READMEs. |
 | `subagent` | Launch a named child agent, singly or in parallel | Uses discovered agent definitions and child tool policy. |
-| `agent_resume` | Continue an existing child or fork with a follow-up task | Artifacts must belong to the current parent session. Fork follow-ups must reestablish checkout ownership and inspect current file state. |
+| `agent_resume` | Continue an existing child or fork with a follow-up task | Artifacts must belong to the current parent session. |
 | `agent_retrieve` | Read child handoffs, metadata, or bounded history | Retrieves existing artifacts; does not launch work. |
 | `fork` | Launch a child with inherited conversation context | Blocks for a handoff. Not a Git worktree creation tool. |
 

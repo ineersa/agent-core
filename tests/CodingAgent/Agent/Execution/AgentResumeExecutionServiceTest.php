@@ -36,7 +36,6 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredS
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Result\SubagentChildRunArtifactFinalizer;
-use Ineersa\CodingAgent\Agent\Fork\ForkTaskPromptBuilder;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChild;
@@ -67,7 +66,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         );
     }
 
-    public function testResumesForkArtifactWithOwnershipFollowUpAndPreservesHandoffHistory(): void
+    public function testResumesForkWithUnmodifiedFollowUpAndPreservesHandoffHistory(): void
     {
         $parent = 'parent-fork-kind';
         $artifactId = 'agent_fork_kind';
@@ -112,9 +111,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         $this->assertInstanceOf(ApplyCommand::class, $command);
         $this->assertSame($childRunId, $command->runId());
         $followUpText = $command->payload['message']['content'][0]['text'];
-        $this->assertStringContainsString('Address review: fix ownership wording', $followUpText);
-        $this->assertStringContainsString('explicit checkout ownership handoff', $followUpText);
-        $this->assertStringContainsString('Before any resumed implementation edits, inspect current git status', $followUpText);
+        $this->assertSame('Address review: fix ownership wording', $followUpText);
 
         $entry = $this->registry()->get($parent, $artifactId);
         $this->assertNotNull($entry);
@@ -552,7 +549,6 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
             contextAccessor: $contextAccessor,
             agentsConfig: new AgentsConfig(maxAgents: 4),
             logger: $logger ?? new NullLogger(),
-            forkTaskPromptBuilder: new ForkTaskPromptBuilder(),
         );
 
         return $contextAccessor->with(
