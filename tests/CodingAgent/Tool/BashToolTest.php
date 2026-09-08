@@ -181,7 +181,14 @@ final class BashToolTest extends IsolatedKernelTestCase
         $result = $executor->execute($call);
 
         $this->assertSame($isError, $result->isError);
-        $this->assertSame($text, $result->content[0]['text']);
+        if (str_starts_with($text, 'Command failed with unclean exit.')) {
+            $this->assertStringStartsWith($text, $result->content[0]['text']);
+            $this->assertStringContainsString("\nLog: ", $result->content[0]['text']);
+            $this->assertStringContainsString("\nPID: ", $result->content[0]['text']);
+            $this->assertStringContainsString("\nRecord: ", $result->content[0]['text']);
+        } else {
+            $this->assertSame($text, $result->content[0]['text']);
+        }
         $records = $this->recordsForSession(self::TEST_SESSION);
         $this->assertCount(1, $records, 'The command must execute exactly once');
         $this->assertNotNull($records[0]->finishedAt);
@@ -236,7 +243,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         yield 'reported exit 1 without output' => ["bash -c 'exit 1'", "Command failed with exit code 1.\n\nOutput:\n", true];
         yield 'exit 42 retains output' => ['echo "before error" && exit 42', "Command failed with exit code 42.\n\nOutput:\nbefore error\n", true];
         // Exit the supervision shell before its status-file write.
-        yield 'unclean exit without status' => ['exit 1; :', "Command failed with unclean exit.\n\nOutput:\n", true];
+        yield 'unclean exit without status' => ['exit 1; :', 'Command failed with unclean exit.', true];
         yield 'successful diagnostic-looking text' => ["printf 'Command failed with exit code 1.'", 'Command failed with exit code 1.', false];
     }
 

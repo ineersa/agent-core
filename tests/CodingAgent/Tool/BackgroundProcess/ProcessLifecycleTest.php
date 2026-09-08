@@ -49,6 +49,66 @@ final class ProcessLifecycleTest extends TestCase
     }
 
     #[Test]
+    public function launchProcessTracksWrapperPidNotTransientLauncher(): void
+    {
+        $pidFile = $this->tmpDir.'/wrapper.pid';
+        $statusFile = $this->tmpDir.'/wrapper.status';
+        $logFile = $this->tmpDir.'/wrapper.log';
+        $ready = $this->tmpDir.'/ready';
+        $hold = $this->tmpDir.'/hold';
+
+        $command = \sprintf(
+            'echo ready > %s; while [ ! -f %s ]; do sleep 0.01; done; echo done',
+            escapeshellarg($ready),
+            escapeshellarg($hold),
+        );
+
+        $launch = $this->lifecycle->launchProcess($command, $pidFile, $logFile, $statusFile);
+
+        try {
+            $deadline = hrtime(true) + 2_000_000_000;
+            while (hrtime(true) < $deadline && !is_file($ready)) {
+                usleep(1_000);
+            }
+
+            $this->assertFileExists($ready, 'Workload must start under the tracked wrapper');
+            $this->assertFileExists($pidFile);
+            $this->assertSame(
+                $launch['pid'],
+                (int) trim((string) file_get_contents($pidFile)),
+                'Tracked PID must match the wrapper PID file',
+            );
+            $this->assertTrue($this->lifecycle->isAlive($launch['pid']));
+            $this->assertNull($this->lifecycle->readStatusFile($statusFile));
+        } finally {
+            file_put_contents($hold, 'x');
+            $deadline = hrtime(true) + 2_000_000_000;
+            while (hrtime(true) < $deadline && null === $this->lifecycle->readStatusFile($statusFile)) {
+                usleep(1_000);
+            }
+            if ($this->lifecycle->isAlive($launch['pid'])) {
+                $this->lifecycle->sendKill($launch['pid'], $launch['pgid']);
+            }
+        }
+
+        $this->assertSame(0, $this->lifecycle->readStatusFile($statusFile));
+        $this->assertStringContainsString('done', (string) file_get_contents($logFile));
+    }
+
+    #[Test]
+    public function pidPathHelpersReadWrapperSidecar(): void
+    {
+        $statusPath = $this->tmpDir.'/abc.status';
+        $pidPath = $this->tmpDir.'/abc.pid';
+        file_put_contents($pidPath, "4321\n");
+
+        $this->assertSame($pidPath, $this->lifecycle->pidPathForStatusPath($statusPath));
+        $this->assertSame(4321, $this->lifecycle->readPidFile($pidPath));
+        $this->assertNull($this->lifecycle->readPidFile($this->tmpDir.'/missing.pid'));
+        $this->assertNull($this->lifecycle->pidPathForStatusPath($this->tmpDir.'/abc.log'));
+    }
+
+    #[Test]
     public function logTailPreservesUtf8BoundariesAndNewestOutput(): void
     {
         $box = "\u{2500}";

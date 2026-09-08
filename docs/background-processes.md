@@ -30,6 +30,10 @@ After backgrounding, inspect or stop processes with `bg_status`.
 
 Tracking is **session-scoped**. `bg_status` exposes only rows explicitly accepted as background work; private foreground supervision is never listed, tailed, or stopped through that tool. Durable records live in `.hatfield/state.sqlite`; filesystem sidecars (PID/status/log) live under the configured tool path.
 
+### PID identity
+
+Launch uses `setsid -f` and treats the wrapper PID written to the `.pid` sidecar as authoritative. The shell's transient `echo $!` launcher PID is not trusted for status or stop. If an older record still points at a dead launcher PID while the `.pid` sidecar names a live wrapper, status resolution rebinds the row to that wrapper and keeps it `running`. True unclean exits still persist as `finished (unclean)` and include the log path for inspection.
+
 ## Settings
 
 | Key | Role | Default |

@@ -70,8 +70,12 @@ final class ProcessLifecycle
             escapeshellarg($statusFile),
         );
 
-        // Launch with setsid (new process group) and capture PID via $!
-        $launcher = 'setsid bash -c '.escapeshellarg($shellCode).' & echo $!';
+        // Always force setsid to fork (-f). Without -f, util-linux setsid may
+        // fork only when the caller is already a process-group leader; the
+        // shell's "setsid … & echo $!" then tracks that short-lived forked
+        // setsid helper instead of the durable bash wrapper. The wrapper PID
+        // is authoritative and is written to $pidFile before any workload runs.
+        $launcher = 'setsid -f bash -c '.escapeshellarg($shellCode).' & echo $!';
 
         $output = [];
         $exitCode = -1;
@@ -81,9 +85,16 @@ final class ProcessLifecycle
             throw new \RuntimeException('Failed to launch background process: setsid returned exit code '.$exitCode.'. (pid file: '.$pidFile.')');
         }
 
-        $pid = (int) $output[0];
-        if ($pid <= 0) {
-            throw new \RuntimeException('Failed to launch background process: invalid PID ('.$output[0].').');
+        $launcherPid = (int) $output[0];
+        if ($launcherPid <= 0) {
+            throw new \RuntimeException('Failed to launch background process: invalid launcher PID ('.$output[0].').');
+        }
+
+        // Wait for the wrapper to publish its PID. Do not trust $launcherPid:
+        // with setsid -f it is often a transient helper that exits immediately.
+        $pid = $this->waitForPidFile($pidFile);
+        if (null === $pid || $pid <= 0) {
+            throw new \RuntimeException('Failed to launch background process: wrapper PID file was not written ('.$pidFile.').');
         }
 
         $pgid = $this->resolvePgid($pid);
@@ -199,6 +210,44 @@ final class ProcessLifecycle
         }
 
         return (int) $trimmed;
+    }
+
+    /**
+     * Read the wrapper PID recorded by the shell harness.
+     *
+     * @return int|null Wrapper PID, or null when the file is missing/unreadable
+     */
+    public function readPidFile(?string $pidPath): ?int
+    {
+        if (!\is_string($pidPath) || '' === $pidPath || !is_file($pidPath)) {
+            return null;
+        }
+
+        $raw = @file_get_contents($pidPath);
+        if (false === $raw) {
+            return null;
+        }
+
+        $trimmed = trim($raw);
+        if ('' === $trimmed || !ctype_digit($trimmed)) {
+            return null;
+        }
+
+        $pid = (int) $trimmed;
+
+        return $pid > 0 ? $pid : null;
+    }
+
+    /**
+     * Derive the sibling .pid path for a recorded .status path.
+     */
+    public function pidPathForStatusPath(string $statusPath): ?string
+    {
+        if (!str_ends_with($statusPath, '.status')) {
+            return null;
+        }
+
+        return substr($statusPath, 0, -7).'.pid';
     }
 
     /**
@@ -376,5 +425,24 @@ final class ProcessLifecycle
         }
 
         return true;
+    }
+
+    /**
+     * Wait until the wrapper writes its PID file.
+     *
+     * Bound is a safety cap; readiness is the pid file contents.
+     */
+    private function waitForPidFile(string $pidFile): ?int
+    {
+        $deadline = hrtime(true) + 2_000_000_000;
+        while (hrtime(true) < $deadline) {
+            $pid = $this->readPidFile($pidFile);
+            if (null !== $pid) {
+                return $pid;
+            }
+            usleep(1_000);
+        }
+
+        return $this->readPidFile($pidFile);
     }
 }
