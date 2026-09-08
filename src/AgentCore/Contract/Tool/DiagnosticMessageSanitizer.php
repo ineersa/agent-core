@@ -27,14 +27,21 @@ final class DiagnosticMessageSanitizer
         ['/[?&]token=\S+/i', 'token=<redacted>'],
         ['/[?&]password=\S+/i', 'password=<redacted>'],
         ['/api[-_]?key\s*[:=]\s*\S+/i', 'api_key <redacted>'],
+        ['/(token|password|secret)\s*["\']?\s*[:=]\s*["\']?[^\s,"\'}]+/i', '$1=<redacted>'],
+        ['#(https?://)[^\s/@]+:[^\s/@]+@#i', '$1<redacted>@'],
+        ['/\b(?:gh[pousr]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+)\b/', '<redacted>'],
     ];
 
     private const int MAX_LENGTH = 500;
 
-    public static function sanitize(string $message): string
+    public static function sanitize(string $message, int $maxLength = self::MAX_LENGTH): string
     {
-        $message = u($message)->truncate(self::MAX_LENGTH, '...')->toString();
+        return u(self::redact($message))->truncate($maxLength, '...')->toString();
+    }
 
+    /** Explicit tool output already has the central output-cap contract. */
+    public static function redact(string $message): string
+    {
         foreach (self::SECRET_PATTERNS as [$pattern, $replacement]) {
             $message = preg_replace($pattern, $replacement, $message) ?? $message;
         }

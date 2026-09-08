@@ -25,6 +25,11 @@ final class DiagnosticMessageSanitizerTest extends TestCase
 
     public static function messages(): iterable
     {
+        yield 'credentials in diagnostic formats' => [
+            'password=hidden token: private https://user:pass@example.test ghp_examplecredential',
+            ['<redacted>', 'example.test'],
+            ['hidden', 'private', 'user:pass', 'ghp_examplecredential'],
+        ];
         yield 'plain actionable cause' => [
             'Selected extension "MissingExt" is not in extensions.enabled',
             ['Selected extension "MissingExt" is not in extensions.enabled'],

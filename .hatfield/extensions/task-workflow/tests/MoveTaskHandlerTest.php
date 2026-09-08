@@ -273,7 +273,7 @@ final class MoveTaskHandlerTest extends TestCase
             $this->assertStringContainsString('move_task partial failure.', $message);
             $this->assertStringContainsString('Failed step: PR creation.', $message);
             $this->assertStringContainsString('Current task status: IN-PROGRESS', $message);
-            $this->assertStringContainsString('pushOnly=true', $message);
+            $this->assertStringContainsString('pushOnly skips PR creation, not QA', $message);
             $this->assertStringContainsString('QA reports:', $message);
             $this->assertStringContainsString('qa-partial-auth', $message);
             $this->assertStringContainsString('Session/run: run-move-test', $message);

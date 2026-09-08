@@ -324,15 +324,14 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
                 'Cause: '.$this->sanitizeDiagnostic($e->getMessage()).'.',
                 'Task remains IN-PROGRESS: '.$this->store->rel($this->store->resolveTaskRoot(), $task->path).'.',
                 'Session/run: '.$runId.'.',
-                'Next: fix the push failure, then retry move_task(to="CODE-REVIEW"). Do not recreate the branch or re-run QA unless needed.',
+                'Next: inspect remote branch state before retrying. A new CODE-REVIEW attempt runs the mandatory QA gate again.',
             ]);
-            throw new \RuntimeException($this->formatPartialTransitionFailure(attempted: 'IN-PROGRESS → CODE-REVIEW', completed: $completed, failedStep: 'git push', cause: $this->sanitizeDiagnostic($e->getMessage()), task: $task, runId: $runId, nextAction: 'Fix the push failure, then retry move_task(to="CODE-REVIEW"). Do not recreate the branch or re-run QA unless needed.', qaReportDir: $qaReportDir), 0, $e);
+            throw new \RuntimeException($this->formatPartialTransitionFailure(attempted: 'IN-PROGRESS → CODE-REVIEW', completed: $completed, failedStep: 'git push', cause: $this->sanitizeDiagnostic($e->getMessage()), task: $task, runId: $runId, nextAction: 'Inspect remote branch state before retrying. A new CODE-REVIEW attempt runs the mandatory QA gate again.', qaReportDir: $qaReportDir), 0, $e);
         }
         if ($pushResult instanceof ExecResultDTO) {
             return $this->fromExecResult($pushResult, $control, 'Interrupted during push.');
         }
         $completed[] = 'Pushed '.$branch.' to origin.';
-        $completed[] = trim($pushResult);
         $persistEvidence([
             'Attempted IN-PROGRESS → CODE-REVIEW.',
             'Completed: castor check passed; pushed '.$branch.' to origin.',
@@ -361,9 +360,9 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
                     'Cause: '.$cause.'.',
                     'Task remains IN-PROGRESS: '.$this->store->rel($this->store->resolveTaskRoot(), $task->path).'.',
                     'Session/run: '.$runId.'.',
-                    'Next: create the PR manually or retry move_task(to="CODE-REVIEW", pushOnly=true) after auth is available. Do not re-run QA or push unless needed.',
+                    'Next: restore GitHub authentication and inspect existing PRs before retrying. CODE-REVIEW retries run mandatory QA again; pushOnly skips PR creation, not QA.',
                 ]);
-                throw new \RuntimeException($this->formatPartialTransitionFailure(attempted: 'IN-PROGRESS → CODE-REVIEW', completed: $completed, failedStep: 'PR creation', cause: $cause, task: $task, runId: $runId, nextAction: 'Create the PR manually (gh pr create --head '.$branch.') or retry move_task(to="CODE-REVIEW", pushOnly=true) after auth is available. Do not re-run QA or push unless needed.', qaReportDir: $qaReportDir));
+                throw new \RuntimeException($this->formatPartialTransitionFailure(attempted: 'IN-PROGRESS → CODE-REVIEW', completed: $completed, failedStep: 'PR creation', cause: $cause, task: $task, runId: $runId, nextAction: 'Restore GitHub authentication and inspect existing PRs before retrying. CODE-REVIEW retries run mandatory QA again; pushOnly skips PR creation, not QA.', qaReportDir: $qaReportDir));
             }
 
             $existingPr = $this->pr->findExistingPr($this->codeRoot, $branch, $control);
@@ -394,9 +393,9 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
                         'Cause: '.$cause.'.',
                         'Task remains IN-PROGRESS: '.$this->store->rel($this->store->resolveTaskRoot(), $task->path).'.',
                         'Session/run: '.$runId.'.',
-                        'Next: create the PR manually or retry move_task(to="CODE-REVIEW", pushOnly=true). Do not re-run QA or push unless needed.',
+                        'Next: inspect existing PRs and resolve the reported cause before retrying. CODE-REVIEW retries run mandatory QA again; pushOnly skips PR creation, not QA.',
                     ]);
-                    throw new \RuntimeException($this->formatPartialTransitionFailure(attempted: 'IN-PROGRESS → CODE-REVIEW', completed: $completed, failedStep: 'PR creation', cause: $cause, task: $task, runId: $runId, nextAction: 'Create the PR manually (gh pr create --head '.$branch.') or retry move_task(to="CODE-REVIEW", pushOnly=true). Do not re-run QA or push unless needed.', qaReportDir: $qaReportDir), 0, $e);
+                    throw new \RuntimeException($this->formatPartialTransitionFailure(attempted: 'IN-PROGRESS → CODE-REVIEW', completed: $completed, failedStep: 'PR creation', cause: $cause, task: $task, runId: $runId, nextAction: 'Inspect existing PRs and resolve the reported cause before retrying. CODE-REVIEW retries run mandatory QA again; pushOnly skips PR creation, not QA.', qaReportDir: $qaReportDir), 0, $e);
                 }
                 if ($prUrl instanceof ExecResultDTO) {
                     return $this->fromExecResult($prUrl, $control, 'Interrupted during PR creation.');
@@ -409,6 +408,13 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
             $completed[] = 'Skipped PR creation (pushOnly: true).';
         }
 
+        // Preserve the PR identity even if result delivery or the final board
+        // move is interrupted. This is evidence, not permission to skip QA.
+        $persistEvidence([
+            ...$completed,
+            'Session/run: '.$runId.'.',
+            'Task remains IN-PROGRESS pending final metadata move.',
+        ]);
         array_push($notes, ...$completed);
 
         return TaskMarkdown::updateField($text, 'Status', TaskStatusEnum::CODE_REVIEW->value);
@@ -521,8 +527,9 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
     private function sanitizeDiagnostic(string $raw): string
     {
         $scrubbed = preg_replace('#https?://\S+#i', '<url>', $raw) ?? $raw;
+        $scrubbed = preg_replace('/bearer\s+\S+/i', 'Bearer <redacted>', $scrubbed) ?? $scrubbed;
         $scrubbed = preg_replace('/(authorization|token|api[_-]?key|bearer|password|secret)\s*[:=]\s*\S+/i', '$1=<redacted>', $scrubbed) ?? $scrubbed;
-        $scrubbed = preg_replace('/\bgh_[A-Za-z0-9_]+\b/', '<redacted>', $scrubbed) ?? $scrubbed;
+        $scrubbed = preg_replace('/\b(?:gh[pousr]?_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+)\b/', '<redacted>', $scrubbed) ?? $scrubbed;
         $scrubbed = preg_replace("/\n{3,}/", "\n\n", $scrubbed) ?? $scrubbed;
 
         return u(trim($scrubbed))->truncate(1200)->toString();

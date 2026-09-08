@@ -166,7 +166,7 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
             // cause instead of Symfony's generic getToolCallResult() text.
             // Do not dump stacks/args; sanitize only the previous message.
             $cause = null !== $previous ? $previous->getMessage() : $e->getMessage();
-            throw new ToolCallException(DiagnosticMessageSanitizer::sanitize($cause), retryable: false, previous: $previous ?? $e);
+            throw new ToolCallException(DiagnosticMessageSanitizer::sanitize($cause, 8000), retryable: false, hint: 'Tool call: '.$rewrittenCall->getId().'. Inspect the recorded result and tool-specific diagnostic references before retrying.', previous: $previous ?? $e);
         }
     }
 

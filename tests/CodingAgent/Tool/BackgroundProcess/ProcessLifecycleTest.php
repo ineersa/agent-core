@@ -54,24 +54,18 @@ final class ProcessLifecycleTest extends TestCase
         $pidFile = $this->tmpDir.'/wrapper.pid';
         $statusFile = $this->tmpDir.'/wrapper.status';
         $logFile = $this->tmpDir.'/wrapper.log';
-        $ready = $this->tmpDir.'/ready';
-        $hold = $this->tmpDir.'/hold';
-
-        $command = \sprintf(
-            'echo ready > %s; while [ ! -f %s ]; do sleep 0.01; done; echo done',
-            escapeshellarg($ready),
-            escapeshellarg($hold),
+        $server = stream_socket_server('tcp://127.0.0.1:0');
+        $this->assertIsResource($server);
+        $address = stream_socket_get_name($server, false);
+        $command = escapeshellarg(\PHP_BINARY).' -r '.escapeshellarg(
+            '$socket = stream_socket_client("tcp://'.$address.'"); fread($socket, 1); echo "done";',
         );
 
         $launch = $this->lifecycle->launchProcess($command, $pidFile, $logFile, $statusFile);
-
+        $connection = null;
         try {
-            $deadline = hrtime(true) + 2_000_000_000;
-            while (hrtime(true) < $deadline && !is_file($ready)) {
-                usleep(1_000);
-            }
-
-            $this->assertFileExists($ready, 'Workload must start under the tracked wrapper');
+            $connection = stream_socket_accept($server, 2);
+            $this->assertIsResource($connection, 'Workload must connect under the tracked wrapper');
             $this->assertFileExists($pidFile);
             $this->assertSame(
                 $launch['pid'],
@@ -81,7 +75,11 @@ final class ProcessLifecycleTest extends TestCase
             $this->assertTrue($this->lifecycle->isAlive($launch['pid']));
             $this->assertNull($this->lifecycle->readStatusFile($statusFile));
         } finally {
-            file_put_contents($hold, 'x');
+            if (\is_resource($connection)) {
+                fwrite($connection, 'x');
+                fclose($connection);
+            }
+            fclose($server);
             $deadline = hrtime(true) + 2_000_000_000;
             while (hrtime(true) < $deadline && null === $this->lifecycle->readStatusFile($statusFile)) {
                 usleep(1_000);
@@ -96,16 +94,23 @@ final class ProcessLifecycleTest extends TestCase
     }
 
     #[Test]
-    public function pidPathHelpersReadWrapperSidecar(): void
+    public function commandExitAndHeredocCannotBypassStatusRecording(): void
     {
-        $statusPath = $this->tmpDir.'/abc.status';
-        $pidPath = $this->tmpDir.'/abc.pid';
-        file_put_contents($pidPath, "4321\n");
-
-        $this->assertSame($pidPath, $this->lifecycle->pidPathForStatusPath($statusPath));
-        $this->assertSame(4321, $this->lifecycle->readPidFile($pidPath));
-        $this->assertNull($this->lifecycle->readPidFile($this->tmpDir.'/missing.pid'));
-        $this->assertNull($this->lifecycle->pidPathForStatusPath($this->tmpDir.'/abc.log'));
+        $statusPath = $this->tmpDir.'/command.status';
+        $logPath = $this->tmpDir.'/command.log';
+        $launch = $this->lifecycle->launchProcess("cat <<'END'\nheredoc output\nEND\nexit 7", $this->tmpDir.'/command.pid', $logPath, $statusPath);
+        try {
+            $deadline = hrtime(true) + 2_000_000_000;
+            while (hrtime(true) < $deadline && null === $this->lifecycle->readStatusFile($statusPath)) {
+                usleep(1_000);
+            }
+            $this->assertSame(7, $this->lifecycle->readStatusFile($statusPath));
+            $this->assertSame("heredoc output\n", file_get_contents($logPath));
+        } finally {
+            if ($this->lifecycle->isAlive($launch['pid'])) {
+                $this->lifecycle->sendKill($launch['pid'], $launch['pgid']);
+            }
+        }
     }
 
     #[Test]

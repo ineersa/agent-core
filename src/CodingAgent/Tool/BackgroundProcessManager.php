@@ -327,12 +327,10 @@ final class BackgroundProcessManager
         // process is still running and no persisted column changed.
         // This avoids unnecessary DB writes during polling loops that
         // call find() every ~100 ms.
-        $pidBeforeResolve = $entity->pid;
         $wasFinished = null !== $entity->finishedAt;
         $this->resolveEntityStatus($entity);
 
-        $becameTerminal = !$wasFinished && null !== $entity->finishedAt;
-        if ($becameTerminal || $entity->pid !== $pidBeforeResolve) {
+        if (!$wasFinished && null !== $entity->finishedAt) {
             $this->store->flush();
         }
 
@@ -388,12 +386,10 @@ final class BackgroundProcessManager
             return null;
         }
 
-        $pidBeforeResolve = $entity->pid;
         $wasFinished = null !== $entity->finishedAt;
         $this->resolveEntityStatus($entity);
 
-        $becameTerminal = !$wasFinished && null !== $entity->finishedAt;
-        if ($becameTerminal || $entity->pid !== $pidBeforeResolve) {
+        if (!$wasFinished && null !== $entity->finishedAt) {
             $this->store->flush();
         }
 
@@ -689,11 +685,7 @@ final class BackgroundProcessManager
      *  1. DB finished_at — already resolved, trust the persisted status.
      *  2. Status file   — process finished normally, wrapper wrote exit code.
      *  3. /proc/<pid>   — still alive, mark as Running.
-     *  4. .pid sibling  — if the tracked PID is gone but the wrapper PID
-     *     file names a different live process, rebind to that wrapper and
-     *     keep Running. This repairs false unclean exits when launch
-     *     tracked a short-lived setsid helper instead of the wrapper.
-     *  5. None of above — process is gone without a status file
+     *  4. None of above — process is gone without a status file
      *     (crash / SIGKILL / unclean exit). Mark as FinishedUnclean.
      *
      * Mutates the entity in place; caller is responsible for flush.
@@ -723,26 +715,6 @@ final class BackgroundProcessManager
             return BackgroundProcessStatusEnum::Running;
         }
 
-        // Repair: tracked PID vanished without a status file, but the
-        // wrapper PID file still names a live supervision shell.
-        $pidPath = $this->lifecycle->pidPathForStatusPath($entity->statusPath);
-        $wrapperPid = null !== $pidPath ? $this->lifecycle->readPidFile($pidPath) : null;
-        if (null !== $wrapperPid && $wrapperPid !== $pid && $this->lifecycle->isAlive($wrapperPid)) {
-            $entity->pid = $wrapperPid;
-            $entity->pgid = $this->lifecycle->resolvePgid($wrapperPid) ?? $entity->pgid;
-            $entity->status = BackgroundProcessStatusEnum::Running;
-
-            $this->logger->info('background_process.pid_rebound', [
-                'component' => 'tool.background_process',
-                'event_type' => 'background_process.pid_rebound',
-                'process_pid' => $wrapperPid,
-                'previous_pid' => $pid,
-                'log_path' => $entity->logPath,
-            ]);
-
-            return BackgroundProcessStatusEnum::Running;
-        }
-
         // Process is gone but no status file written (crash / SIGKILL / unclean exit)
         $now = Clock::get()->now();
         $entity->markFinishedUnclean($now);
@@ -751,7 +723,6 @@ final class BackgroundProcessManager
             'component' => 'tool.background_process',
             'event_type' => 'background_process.finished_unclean',
             'process_pid' => $pid,
-            'log_path' => $entity->logPath,
         ]);
 
         return BackgroundProcessStatusEnum::FinishedUnclean;

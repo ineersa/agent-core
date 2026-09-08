@@ -142,15 +142,15 @@ final class ToolExecutor implements ToolExecutorInterface
             $result = $this->executeToolCall($toolCall, $policy);
         } catch (\Throwable $exception) {
             if ($exception instanceof ToolCallException) {
-                $message = DiagnosticMessageSanitizer::sanitize($exception->getMessage());
+                $message = DiagnosticMessageSanitizer::redact($exception->getMessage());
                 if (null !== $exception->hint()) {
-                    $message .= "\nHint: ".DiagnosticMessageSanitizer::sanitize($exception->hint());
+                    $message .= "\nHint: ".DiagnosticMessageSanitizer::redact($exception->hint());
                 }
                 $details = [
                     'error_type' => ToolCallException::class,
                     'retryable' => $exception->retryable(),
                     'hint' => null !== $exception->hint()
-                        ? DiagnosticMessageSanitizer::sanitize($exception->hint())
+                        ? DiagnosticMessageSanitizer::redact($exception->hint())
                         : null,
                 ];
                 if ($this->cancellationToken($toolCall)->isCancellationRequested()) {

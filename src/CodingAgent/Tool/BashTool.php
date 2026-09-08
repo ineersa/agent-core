@@ -445,11 +445,13 @@ final class BashTool implements HatfieldToolProviderInterface
         // A missing exit code is an unclean completion, never a success.
         // Do not return this diagnostic as ordinary text: that loses the
         // failed outcome at the toolbox boundary even though it says failed.
-        $failure = null !== $exitCode ? \sprintf('exit code %d', $exitCode) : 'unclean exit';
+        $failure = null !== $exitCode
+            ? \sprintf('Command failed with exit code %d.', $exitCode)
+            : 'Command supervision ended without an exit status.';
         $logHint = null === $exitCode && '' !== $entity->logPath
-            ? \sprintf("\n\nLog: %s\nPID: %d\nRecord: %d\nInspect with bg_status log/list; do not assume the command is still running unless those facilities show Running.", $entity->logPath, $pid, $entity->id)
+            ? \sprintf("\n\nThe supervisor exited without recording the command's final status. Workload outcome is unknown; do not blindly rerun it.\nLog: %s\nStatus file: %s\nPID: %d\nRecord: %d\nInspect these files with read. Foreground records are not exposed by bg_status.", $entity->logPath, $entity->statusPath, $pid, $entity->id)
             : '';
 
-        throw new ToolCallException(\sprintf("Command failed with %s.\n\nOutput:\n%s%s", $failure, $output, $logHint));
+        throw new ToolCallException(\sprintf("%s\n\nOutput:\n%s%s", $failure, $output, $logHint));
     }
 }
