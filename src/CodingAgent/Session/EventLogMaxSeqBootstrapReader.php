@@ -118,7 +118,7 @@ final class EventLogMaxSeqBootstrapReader
             return $path;
         }
 
-        return substr($path, 0, 128).'…'.substr($path, -64);
+        return mb_strcut($path, 0, 128, 'UTF-8').'…'.mb_strcut($path, -64, null, 'UTF-8');
     }
 
     private function appendBoundedDiagnostic(string &$buffer, string $chunk): void
@@ -144,7 +144,7 @@ final class EventLogMaxSeqBootstrapReader
             return;
         }
 
-        $buffer .= substr($chunk, 0, $remaining).'…';
+        $buffer .= mb_strcut($chunk, 0, $remaining, 'UTF-8').'…';
     }
 
     private function truncateDiagnostic(string $text): string
@@ -154,6 +154,6 @@ final class EventLogMaxSeqBootstrapReader
             return $trimmed;
         }
 
-        return substr($trimmed, 0, 512).'…';
+        return mb_strcut($trimmed, 0, 512, 'UTF-8').'…';
     }
 }

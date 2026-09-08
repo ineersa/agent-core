@@ -192,6 +192,6 @@ final class SessionCacheInspectCommand
             return $value;
         }
 
-        return substr($value, 0, $len).'…';
+        return mb_strcut($value, 0, $len, 'UTF-8').'…';
     }
 }

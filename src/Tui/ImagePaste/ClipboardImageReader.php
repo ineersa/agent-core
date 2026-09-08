@@ -10,6 +10,8 @@ use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
 
+use function Symfony\Component\String\u;
+
 /**
  * Reads image/png (or convertible) clipboard data via wl-paste, xclip, or pngpaste.
  *
@@ -423,11 +425,7 @@ final class ClipboardImageReader implements ClipboardImageReaderInterface
 
     private function sanitizeDiagnostic(string $diagnostic): string
     {
-        if (\strlen($diagnostic) > 500) {
-            return substr($diagnostic, 0, 500).'…';
-        }
-
-        return $diagnostic;
+        return u($diagnostic)->truncate(500, '…')->toString();
     }
 
     private function isWayland(): bool

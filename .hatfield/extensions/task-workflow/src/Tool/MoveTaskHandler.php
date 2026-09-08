@@ -18,6 +18,8 @@ use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskMarkdown;
 use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskStatusEnum;
 use Ineersa\HatfieldExt\TaskWorkflow\Worktree\WorktreeManager;
 
+use function Symfony\Component\String\u;
+
 final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerInterface
 {
     private const int CASTOR_CHECK_WALL_SECONDS = 210;
@@ -365,7 +367,7 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
             $message .= "\n".'QA reports: '.$reportDir;
         }
 
-        return $message."\n".'First failure:'."\n".substr($snippet, 0, 1200);
+        return $message."\n".'First failure:'."\n".u($snippet)->truncate(1200)->toString();
     }
 
     /**

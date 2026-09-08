@@ -13,6 +13,8 @@ use Symfony\Component\Tui\Ansi\AnsiUtils;
 use Symfony\Component\Tui\Render\RenderContext;
 use Symfony\Component\Tui\Widget\AbstractWidget;
 
+use function Symfony\Component\String\u;
+
 /**
  * Semantic subagent progress card: owns typed snapshot → plain lines → themed rails.
  *
@@ -445,11 +447,8 @@ final class SubagentProgressCardWidget extends AbstractWidget
         if ('' === $text) {
             return '';
         }
-        if (\strlen($text) <= $max) {
-            return $text;
-        }
 
-        return substr($text, 0, $max - 1).'…';
+        return u($text)->truncate($max, '…')->toString();
     }
 
     private function childStatusFromLine(string $line): string

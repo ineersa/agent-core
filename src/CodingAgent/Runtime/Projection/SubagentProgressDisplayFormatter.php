@@ -9,6 +9,8 @@ use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressParall
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingleSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotInterface;
 
+use function Symfony\Component\String\u;
+
 /**
  * Builds compact inline transcript text for structured subagent progress snapshots.
  *
@@ -252,10 +254,6 @@ final class SubagentProgressDisplayFormatter
 
     private function truncate(string $text, int $max): string
     {
-        if (\strlen($text) <= $max) {
-            return $text;
-        }
-
-        return substr($text, 0, $max - 1).'…';
+        return u($text)->truncate($max, '…')->toString();
     }
 }

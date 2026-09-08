@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\HatfieldExt\TaskWorkflow\Ide;
 
+use function Symfony\Component\String\u;
+
 /**
  * Package-private one-shot JetBrains MCP client for task-workflow lifecycle.
  *
@@ -115,10 +117,7 @@ final class JetBrainsMcpClient
         $scrubbed = preg_replace('#https?://\S+#i', '<url>', $raw) ?? $raw;
         $scrubbed = preg_replace('/(authorization|token|api[_-]?key|bearer)\s*[:=]\s*\S+/i', '$1=<redacted>', $scrubbed) ?? $scrubbed;
         $scrubbed = preg_replace('/\s+/', ' ', trim($scrubbed)) ?? trim($scrubbed);
-        if (\strlen($scrubbed) > 240) {
-            return substr($scrubbed, 0, 240).'…';
-        }
 
-        return $scrubbed;
+        return u($scrubbed)->truncate(240, '…')->toString();
     }
 }

@@ -623,6 +623,6 @@ final class FileMentionIndexBuilder
             return;
         }
 
-        $buffer .= substr($chunk, 0, $remaining).'…';
+        $buffer .= mb_strcut($chunk, 0, $remaining, 'UTF-8').'…';
     }
 }

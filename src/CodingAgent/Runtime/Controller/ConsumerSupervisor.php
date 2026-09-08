@@ -362,7 +362,10 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
     {
         $tail = ($this->stderrTails[$key] ?? '').$chunk;
         if (\strlen($tail) > self::STDERR_TAIL_MAX_BYTES) {
-            $tail = substr($tail, -self::STDERR_TAIL_MAX_BYTES);
+            // Keep the byte budget, but never start mid-codepoint when the
+            // truncated tail is later logged as a diagnostic string.
+            $start = \strlen($tail) - self::STDERR_TAIL_MAX_BYTES;
+            $tail = mb_strcut($tail, $start, self::STDERR_TAIL_MAX_BYTES, 'UTF-8');
         }
 
         $this->stderrTails[$key] = $tail;
