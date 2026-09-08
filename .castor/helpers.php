@@ -2548,7 +2548,8 @@ function ensure_dead_code_symfony_container_xml(): string
     $root = project_root_dir();
     $cacheRoot = dead_code_cache_root_dir();
     $target = $cacheRoot.'/symfony-container.xml';
-    $source = $cacheRoot.'/dev/Ineersa_CodingAgent_KernelDevDebugContainer.xml';
+    // Kernel::getContainerClass() isolates generated classes by build directory.
+    $source = $cacheRoot.'/dev/Ineersa_CodingAgent_KernelDevDebugContainer_'.hash('sha256', $cacheRoot.'/dev').'.xml';
 
     if (is_file($target) && !unlink($target)) {
         throw new \RuntimeException(\sprintf('Unable to remove stale dead-code container XML "%s".', $target));
