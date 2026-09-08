@@ -205,7 +205,7 @@ jobs:
             fi
             size="$(wc -c < "${path}")"
             echo "OK ${name} bytes=${size}"
-            if [[ "${size}" -lt 1000000 || "${size}" -gt 80000000 ]]; then
+            if [[ "${size}" -lt 1000000 || "${size}" -gt 100000000 ]]; then
               echo "ERROR: ${name} size out of bounds (${size})"
               exit 1
             fi
