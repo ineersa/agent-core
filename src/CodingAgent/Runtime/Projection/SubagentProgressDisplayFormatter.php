@@ -231,6 +231,9 @@ final class SubagentProgressDisplayFormatter
 
     private function formatElapsedHuman(int $ms): string
     {
+        if ($ms < 1000) {
+            return \sprintf('%dms', max(0, $ms));
+        }
         $seconds = (int) floor(max(0, $ms) / 1000);
         if ($seconds < 60) {
             return \sprintf('%ds', $seconds);

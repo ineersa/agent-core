@@ -132,6 +132,31 @@ final class SubagentResultRendererTest extends TestCase
         $this->assertStringContainsString('deepseek/deepseek-v4-flash (reasoning: high)', $joined);
     }
 
+    #[\PHPUnit\Framework\Attributes\DataProvider('subsecondDurations')]
+    public function testSubsecondSummaryMatchesPlainText(int $milliseconds, string $expected): void
+    {
+        $snapshot = $this->snapshot([
+            'mode' => 'single', 'status' => 'completed', 'agent_name' => 'scout',
+            'artifact_id' => 'agent_ms', 'agent_run_id' => 'run-child-ms',
+            'task_summary' => 'Read file', 'model' => 'test/model', 'reasoning' => 'medium',
+            'elapsed_ms' => $milliseconds,
+        ]);
+        $block = new TranscriptBlock(
+            id: 'tool_result_ms', kind: TranscriptBlockKindEnum::ToolResult, runId: 'run1', seq: 1,
+            text: '', meta: ['tool_name' => 'subagent', 'subagent_progress' => $snapshot],
+        );
+        $this->assertStringContainsString(' · '.$expected, implode("\n", $this->renderBlockLines($block)));
+        $this->assertStringContainsString(' | '.$expected, new \Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter()->format($snapshot));
+    }
+
+    public static function subsecondDurations(): iterable
+    {
+        yield [0, '0ms'];
+        yield [123, '123ms'];
+        yield [999, '999ms'];
+        yield [1000, '1s'];
+    }
+
     public function testRendersWaitingHumanNeedsInputCard(): void
     {
         $progress = [

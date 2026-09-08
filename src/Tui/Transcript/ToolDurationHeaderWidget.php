@@ -64,8 +64,12 @@ final class ToolDurationHeaderWidget extends TextWidget
         }
         $elapsed = '';
         if (\is_int($durationMs)) {
-            $seconds = intdiv(max(0, $durationMs), 1000);
+            $durationMs = max(0, $durationMs);
+            $seconds = intdiv($durationMs, 1000);
             $elapsed = $seconds < 60 ? $seconds.'s' : intdiv($seconds, 60).'m'.($seconds % 60).'s';
+            if ($durationMs < 1000) {
+                $elapsed = $durationMs.'ms';
+            }
             $elapsed = $this->theme->color(ThemeColorEnum::Dim, ' · '.$elapsed);
         }
         $text = $this->theme->color($this->color, $this->header).$elapsed.$this->suffix;
