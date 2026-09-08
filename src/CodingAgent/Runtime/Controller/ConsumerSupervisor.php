@@ -362,7 +362,13 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
     {
         $tail = ($this->stderrTails[$key] ?? '').$chunk;
         if (\strlen($tail) > self::STDERR_TAIL_MAX_BYTES) {
-            $tail = substr($tail, -self::STDERR_TAIL_MAX_BYTES);
+            // Skip leading UTF-8 continuation bytes, but retain the raw end:
+            // the next process chunk may complete its final code point.
+            $start = \strlen($tail) - self::STDERR_TAIL_MAX_BYTES;
+            while (isset($tail[$start]) && (\ord($tail[$start]) & 0xC0) === 0x80) {
+                ++$start;
+            }
+            $tail = substr($tail, $start);
         }
 
         $this->stderrTails[$key] = $tail;

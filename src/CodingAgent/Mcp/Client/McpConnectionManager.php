@@ -7,6 +7,8 @@ namespace Ineersa\CodingAgent\Mcp\Client;
 use Ineersa\CodingAgent\Mcp\Config\McpConfigLoader;
 use Psr\Log\LoggerInterface;
 
+use function Symfony\Component\String\u;
+
 /**
  * Broker-owned MCP connection manager.
  *
@@ -227,9 +229,7 @@ final class McpConnectionManager implements McpConnectionManagerInterface
     public static function sanitizeLogMessage(string $message): string
     {
         // Truncate to a reasonable diagnostic length
-        if (\strlen($message) > self::MAX_ERROR_MSG_LENGTH) {
-            $message = substr($message, 0, self::MAX_ERROR_MSG_LENGTH - 3).'...';
-        }
+        $message = u($message)->truncate(self::MAX_ERROR_MSG_LENGTH, '...')->toString();
 
         // Redact common secret-bearing patterns
         foreach (self::SECRET_PATTERNS as [$pattern, $replacement]) {

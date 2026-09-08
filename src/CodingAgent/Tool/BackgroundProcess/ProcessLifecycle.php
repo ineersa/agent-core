@@ -282,6 +282,15 @@ final class ProcessLifecycle
         // Read tail via shell for large files
         $tailCmd = \sprintf('tail -c %d %s 2>/dev/null', $maxChars, escapeshellarg($logPath));
         $content = @shell_exec($tailCmd);
+        if (\is_string($content)) {
+            // The byte-limited tail may begin inside a UTF-8 code point.
+            // Drop only that partial prefix; keep the newest output intact.
+            $start = 0;
+            while (isset($content[$start]) && (\ord($content[$start]) & 0xC0) === 0x80) {
+                ++$start;
+            }
+            $content = substr($content, $start);
+        }
 
         return new LogTailResult(
             logPath: $logPath,

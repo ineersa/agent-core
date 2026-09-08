@@ -48,6 +48,34 @@ final class SubagentResultRendererTest extends TestCase
         $this->assertStringNotContainsString(' turns', $joined);
     }
 
+    public function testCardTruncationKeepsValidUtf8ForMultibyteTaskSummary(): void
+    {
+        $box = "\u{2500}";
+        $this->assertTrue(mb_check_encoding($box, 'UTF-8'));
+        $task = str_repeat($box, 160);
+        $progress = [
+            'mode' => 'single', 'status' => 'running', 'agent_name' => 'scout',
+            'artifact_id' => 'agent_utf8', 'task_summary' => $task, 'agent_run_id' => 'child-run-utf8',
+            'model' => 'test/model', 'reasoning' => 'medium',
+            'turn_no' => 1, 'llm_step_count' => 1, 'elapsed_ms' => 1000,
+            'assistant_excerpt' => str_repeat($box, 260),
+        ];
+        $block = new TranscriptBlock(
+            id: 'tool_result_utf8',
+            kind: TranscriptBlockKindEnum::ToolResult,
+            runId: 'run1',
+            seq: 1,
+            text: '',
+            meta: ['tool_name' => 'subagent', 'subagent_progress' => $this->snapshot($progress)],
+            streaming: true,
+        );
+
+        $joined = implode("\n", $this->renderBlockLines($block));
+        $this->assertTrue(mb_check_encoding($joined, 'UTF-8'));
+        $this->assertStringContainsString('Task '.$box.$box, $joined);
+        $this->assertStringContainsString('…', $joined);
+    }
+
     public function testFooterRendersSingularLlmStepWithoutTurnLabel(): void
     {
         $progress = [

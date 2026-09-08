@@ -184,6 +184,27 @@ final class McpResultMapperTest extends TestCase
         }
     }
 
+    public function testTruncatesMultibyteErrorTextWithoutSplittingCodePoints(): void
+    {
+        $box = "\u{2500}";
+        $this->assertTrue(mb_check_encoding($box, 'UTF-8'));
+        $longText = str_repeat($box, 600);
+
+        try {
+            $this->mapper->map([
+                'content' => [
+                    ['type' => 'text', 'text' => $longText],
+                ],
+                'isError' => true,
+            ]);
+            $this->fail('Expected ToolCallException');
+        } catch (ToolCallException $e) {
+            $this->assertTrue(mb_check_encoding($e->getMessage(), 'UTF-8'));
+            $this->assertStringEndsWith('...', $e->getMessage());
+            $this->assertStringContainsString($box, $e->getMessage());
+        }
+    }
+
     public function testRedactsBearerTokenInErrorText(): void
     {
         try {

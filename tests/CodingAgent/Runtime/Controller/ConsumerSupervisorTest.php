@@ -56,6 +56,37 @@ final class ConsumerSupervisorTest extends TestCase
         $this->assertSame([], $this->consumerKeysRunning($supervisor), 'shutdown must clear tracked consumers');
     }
 
+    public function testStderrTailByteBudgetDoesNotStartMidCodePoint(): void
+    {
+        $box = "\u{2500}";
+        $this->assertTrue(mb_check_encoding($box, 'UTF-8'));
+        $this->logger = new TestLogger();
+        $locator = $this->createStub(AppExecutableLocator::class);
+        $config = new RuntimeProcessConfig($locator, __DIR__);
+        $supervisor = new ConsumerSupervisor($this->logger, $config);
+
+        $method = new \ReflectionMethod(ConsumerSupervisor::class, 'appendStderrTail');
+        $maxBytes = (new \ReflectionClass(ConsumerSupervisor::class))->getConstant('STDERR_TAIL_MAX_BYTES');
+        $this->assertIsInt($maxBytes);
+
+        // Pure 3-byte characters: a naive substr(..., -$maxBytes) starts
+        // mid-codepoint because STDERR_TAIL_MAX_BYTES % 3 !== 0.
+        $this->assertNotSame(0, $maxBytes % 3);
+        $payload = str_repeat($box, (int) ceil(($maxBytes + 8) / 3)).'END';
+        $this->assertTrue(mb_check_encoding($payload, 'UTF-8'));
+        $method->invoke($supervisor, 'llm#0', $payload);
+
+        $tails = (new \ReflectionProperty(ConsumerSupervisor::class, 'stderrTails'))->getValue($supervisor);
+        $this->assertIsArray($tails);
+        $tail = $tails['llm#0'] ?? null;
+        $this->assertIsString($tail);
+        $this->assertTrue(mb_check_encoding($tail, 'UTF-8'));
+        $this->assertLessThanOrEqual($maxBytes, \strlen($tail));
+        $this->assertStringStartsWith($box, $tail);
+        $this->assertStringEndsWith('END', $tail);
+        $this->assertSame(str_repeat($box, intdiv($maxBytes - 3, 3)).'END', $tail);
+    }
+
     public function testLaunchUsesMemoryLimitNotTimeLimit(): void
     {
         $argvFile = tempnam(sys_get_temp_dir(), 'hatfield-consumer-argv-');

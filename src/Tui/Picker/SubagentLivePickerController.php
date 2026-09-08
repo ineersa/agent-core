@@ -23,6 +23,8 @@ use Symfony\Component\Tui\Tui;
 use Symfony\Component\Tui\Widget\SelectListWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
 
+use function Symfony\Component\String\u;
+
 /**
  * Picker for /agents-live subagent live view — select a child subagent run for interactive steering.
  */
@@ -136,9 +138,7 @@ final class SubagentLivePickerController
         $items = [];
         foreach ($children as $child) {
             $task = PickerListLabelFormatter::sanitizeTitle($child->taskSummary);
-            if (\strlen($task) > 48) {
-                $task = substr($task, 0, 45).'...';
-            }
+            $task = u($task)->truncate(48, '...')->toString();
             $statusLabel = $child->needsAttention() ? '⚠ needs input' : $child->statusLabel();
             $runShort = \strlen($child->agentRunId) > 12 ? substr($child->agentRunId, 0, 12).'…' : $child->agentRunId;
             $label = \sprintf('%s [%s] %s run:%s — %s', $child->agentName, $statusLabel, $child->artifactId, $runShort, $task);

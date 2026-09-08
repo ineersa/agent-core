@@ -118,7 +118,7 @@ final class EventLogMaxSeqBootstrapReader
             return $path;
         }
 
-        return substr($path, 0, 128).'…'.substr($path, -64);
+        return mb_strcut($path, 0, 128, 'UTF-8').'…'.mb_strcut($path, -64, null, 'UTF-8');
     }
 
     private function appendBoundedDiagnostic(string &$buffer, string $chunk): void
@@ -132,19 +132,14 @@ final class EventLogMaxSeqBootstrapReader
         }
 
         $remaining = 512 - \strlen($buffer);
-        if ($remaining <= 0) {
-            $buffer .= '…';
-
-            return;
-        }
-
         if (\strlen($chunk) <= $remaining) {
             $buffer .= $chunk;
 
             return;
         }
 
-        $buffer .= substr($chunk, 0, $remaining).'…';
+        // Process chunks can split a code point. Cut the combined diagnostic.
+        $buffer = mb_strcut($buffer.$chunk, 0, 512, 'UTF-8').'…';
     }
 
     private function truncateDiagnostic(string $text): string
@@ -154,6 +149,6 @@ final class EventLogMaxSeqBootstrapReader
             return $trimmed;
         }
 
-        return substr($trimmed, 0, 512).'…';
+        return mb_strcut($trimmed, 0, 512, 'UTF-8').'…';
     }
 }

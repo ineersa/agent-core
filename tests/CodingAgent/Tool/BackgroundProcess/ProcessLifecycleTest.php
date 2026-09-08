@@ -48,6 +48,25 @@ final class ProcessLifecycleTest extends TestCase
         $this->assertFalse($this->lifecycle->isAlive(-1));
     }
 
+    #[Test]
+    public function logTailPreservesUtf8BoundariesAndNewestOutput(): void
+    {
+        $box = "\u{2500}";
+        $log = $this->tmpDir.'/unicode.log';
+        $text = str_repeat($box, 10).'END';
+        file_put_contents($log, $text);
+
+        foreach ([7, 8, 9] as $budget) {
+            $result = $this->lifecycle->readLogTail($log, $budget);
+
+            $this->assertTrue(mb_check_encoding($result->content, 'UTF-8'));
+            $this->assertTrue($result->truncated);
+            $this->assertSame(\strlen($text), $result->totalBytes);
+            $this->assertLessThanOrEqual($budget, \strlen($result->content));
+            $this->assertSame(str_repeat($box, intdiv($budget - 3, 3)).'END', $result->content);
+        }
+    }
+
     /** @return iterable<string, array{bool}> */
     public static function exitedChildren(): iterable
     {
