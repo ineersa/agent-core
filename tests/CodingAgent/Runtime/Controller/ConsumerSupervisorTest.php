@@ -72,7 +72,7 @@ final class ConsumerSupervisorTest extends TestCase
         // Pure 3-byte characters: a naive substr(..., -$maxBytes) starts
         // mid-codepoint because STDERR_TAIL_MAX_BYTES % 3 !== 0.
         $this->assertNotSame(0, $maxBytes % 3);
-        $payload = str_repeat($box, (int) ceil(($maxBytes + 8) / 3));
+        $payload = str_repeat($box, (int) ceil(($maxBytes + 8) / 3)).'END';
         $this->assertTrue(mb_check_encoding($payload, 'UTF-8'));
         $method->invoke($supervisor, 'llm#0', $payload);
 
@@ -83,6 +83,8 @@ final class ConsumerSupervisorTest extends TestCase
         $this->assertTrue(mb_check_encoding($tail, 'UTF-8'));
         $this->assertLessThanOrEqual($maxBytes, \strlen($tail));
         $this->assertStringStartsWith($box, $tail);
+        $this->assertStringEndsWith('END', $tail);
+        $this->assertSame(str_repeat($box, intdiv($maxBytes - 3, 3)).'END', $tail);
     }
 
     public function testLaunchUsesMemoryLimitNotTimeLimit(): void

@@ -132,19 +132,14 @@ final class EventLogMaxSeqBootstrapReader
         }
 
         $remaining = 512 - \strlen($buffer);
-        if ($remaining <= 0) {
-            $buffer .= '…';
-
-            return;
-        }
-
         if (\strlen($chunk) <= $remaining) {
             $buffer .= $chunk;
 
             return;
         }
 
-        $buffer .= mb_strcut($chunk, 0, $remaining, 'UTF-8').'…';
+        // Process chunks can split a code point. Cut the combined diagnostic.
+        $buffer = mb_strcut($buffer.$chunk, 0, 512, 'UTF-8').'…';
     }
 
     private function truncateDiagnostic(string $text): string

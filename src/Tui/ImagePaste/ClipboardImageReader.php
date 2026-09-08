@@ -425,7 +425,9 @@ final class ClipboardImageReader implements ClipboardImageReaderInterface
 
     private function sanitizeDiagnostic(string $diagnostic): string
     {
-        return u($diagnostic)->truncate(500, '…')->toString();
+        $text = u($diagnostic);
+
+        return $text->length() > 500 ? $text->slice(0, 500)->append('…')->toString() : $diagnostic;
     }
 
     private function isWayland(): bool

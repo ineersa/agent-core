@@ -118,6 +118,8 @@ final class JetBrainsMcpClient
         $scrubbed = preg_replace('/(authorization|token|api[_-]?key|bearer)\s*[:=]\s*\S+/i', '$1=<redacted>', $scrubbed) ?? $scrubbed;
         $scrubbed = preg_replace('/\s+/', ' ', trim($scrubbed)) ?? trim($scrubbed);
 
-        return u($scrubbed)->truncate(240, '…')->toString();
+        $text = u($scrubbed);
+
+        return $text->length() > 240 ? $text->slice(0, 240)->append('…')->toString() : $scrubbed;
     }
 }
