@@ -1,12 +1,12 @@
 # PHP code-mode discovery
 
-Discovery for `2026-09-08-discover-a-php-code-mode-tool-for-programmatic-tool-calls`, dated 2026-09-08. Source baseline is `0175446eca68f3db6aa6f3e07f9d3123524c0d19`. This report proposes behavior for approval. It does not define a supported API or implement code mode.
+Discovery for `2026-09-08-discover-a-php-code-mode-tool-for-programmatic-tool-calls`, dated 2026-09-08. Source baseline is `0175446eca68f3db6aa6f3e07f9d3123524c0d19`. The trust model below incorporates the user's clarification after the initial report. Other recommendations remain subject to approval. This report does not define a supported API or implement code mode.
 
 ## Recommendation
 
-Use one PHP script subprocess with one synchronous `tool(name, arguments)` bridge. Keep dispatch, credentials, hooks, and artifact ownership in Hatfield, outside the script process. Run nested calls serially in the current session. Return only the script's selected final value and a bounded execution summary to the model.
+Use one PHP script subprocess with one synchronous `tool(name, arguments)` bridge. Keep tool dispatch, provider clients, hooks, and artifact ownership in Hatfield, outside the script process. Run nested calls serially in the current session. Return only the script's selected final value and a bounded execution summary to the model.
 
-Do not implement this as `eval()` in a worker, a direct registry-handler call, or a wrapper around bash. A separate PHP process alone is not sufficient isolation. The script must have no direct access to the checkout, credentials, network, application autoloader, or host processes. Existing SafeGuard hooks inspect tool calls, not arbitrary PHP instructions.
+Run PHP separately for cancellation, resource limits, and crash isolation, not as an OS security sandbox. The user confirmed the same arbitrary-code trust model as bash. Bootstrap only the `tool()` bridge, without the Hatfield application autoloader or container. Normal hooks and approvals apply to bridge calls. Direct PHP filesystem, network, and process operations have the host permissions available to the launched process, just as code launched through bash does.
 
 The reusable execution foundation is `ToolExecutor` with `RegistryBackedToolbox`, not individual handlers. It needs a narrow host-side adapter for nested identity, capability checks, typed outcomes, and non-model result delivery. Today neither class provides that complete contract. In particular, MCP loses structured values, approval continuation can repeat script side effects, and normal result projection adds results to model history. [S1–S6]
 
@@ -53,19 +53,19 @@ The final returned value follows the same safe value types. Capture stdout and s
 
 For example, a script can call two already-available MCP data tools, filter rows, sum amounts, and return a CSV string. This requires no new database or export tool. Use fixed existing runtime names and arguments in a future fixture. The only model-visible data would be the CSV and execution summary, not the source rows.
 
-## Isolation and permission boundary
+## Trust model and process ownership
 
-Recommend an OS-enforced sandbox around an owned PHP subprocess, launched with Symfony Process. Mount only the runtime and bridge bootstrap read-only, plus a private bounded scratch directory. Clear inherited environment and descriptors except the bridge channels. Do not mount the checkout, home, session database, credentials, or application vendor tree. Deny outbound networking, host IPC, process creation after startup, tracing, and access to host process information. Constrain CPU, memory, wall time, file size, descriptor count, process count, and total artifact bytes.
+The user rejected a stronger security boundary than the existing bash tool. Code mode runs trusted arbitrary PHP in an owned subprocess launched with Symfony Process. An OS sandbox, filesystem or network deny policy, and Linux-specific containment are not prerequisites. This replaces the initial sandbox recommendation.
 
-PHP settings such as `disable_functions`, `open_basedir`, and `memory_limit` can add restrictions but are not the security boundary. Dynamic extensions, FFI, stream wrappers, includes, and executable-loading paths need explicit containment. Selecting and proving the platform sandbox is implementation work that remains blocked on the platform decision. No sandbox means code mode is unavailable, not an unsandboxed fallback.
+Provide only `tool()` as the application bridge. Do not load the application Composer autoloader or pass the container, extension API, registry, or provider clients to the script. This keeps internal agent services out of the supplied runtime. It is not a claim that arbitrary PHP cannot explicitly load files or launch commands. Such deliberate circumvention is outside this feature's scope, as it is with bash.
 
-The repository has an optional `pi-bwrap` wrapper for developer Castor launches. It depends on an external executable and can be skipped. It is not evidence of a packaged, mandatory per-script sandbox. `ExtensionExecBridge` reuses Symfony Process and cooperative cancellation, but it does not establish the required sandbox or descendant containment. Reuse these facilities where their contracts apply, not their names as proof of isolation. [S12]
+Use explicit process ownership, working directory, startup environment, bounded IPC and output, memory and execution budgets, and deterministic teardown. These protect runtime reliability, not against a hostile script. `ExtensionExecBridge` provides existing Symfony Process and cooperative cancellation facilities. The optional developer `pi-bwrap` launcher remains unrelated to code-mode requirements. [S12]
 
 The host broker computes the permitted tool set from the current parent execution context. Check each request against that set, current visibility, and exclusions. Recheck after rewrite hooks and before the handler, since registry definitions can change. A snapshot must not preserve a capability that has since been revoked. Run every applicable call hook, including SafeGuard, under host-owned correlation. Keep extension code trusted host code; do not grant the script extension API objects.
 
-Exclude `subagent`, `fork`, and `agent_resume`, recursive code mode, and any alternative child launch or continuation entry. Reject human-input and deferred-agent outcomes before forwarding them to generic completion handling. Name filtering alone is insufficient: extensions can use `agent()` or dispatch extension agent jobs, and bash can invoke the application CLI. The existing child-run tool filters and `RunRelationshipReader` nested-launch guard do not restrict these operations on a normal parent run. [S13]
+Exclude `subagent`, `fork`, and `agent_resume` from the bridge, including aliases or rewrites to these tools and supported wrappers that launch or continue child agents. Do not expose recursive code mode or route deferred-agent outcomes through generic completion handling. Extensions have separate `agent()` and extension-job entry points, so bridge registration must not provide those as alternative orchestration APIs. The script receives none of these host objects. Existing child-run filters provide policy precedent, not a sandbox for parent-run PHP. [S13]
 
-The exclusion therefore requires execution-purpose context enforced at host child launch and continuation boundaries, including extension jobs. Unreviewed tool handlers or arbitrary shell wrappers that can bypass that boundary must be unavailable through code mode. Remote MCP servers remain trusted external services; Hatfield cannot prove that an arbitrary server never starts an agent internally. Approval must settle whether exclusion means Hatfield child orchestration or all remote computation. Do not promise the latter while allowing arbitrary MCP servers.
+The exclusion concerns orchestration exposed through the bridge. It does not require banning bash, auditing arbitrary remote MCP implementations for internal agent use, or preventing PHP from deliberately invoking an application CLI. Built-ins, extension tools, and currently available MCP tools remain composition targets under their existing policies. No new global restriction on arbitrary code execution is proposed.
 
 ## Approval, cancellation, and partial effects
 
@@ -75,7 +75,7 @@ For recommended v1, propagate each nested call through normal policy, but transl
 
 If interactive nested approval is required, the alternative is an owned live script process paused on the exact nested response, with host approval correlation and a deadline. A crash still terminates the script; it must not restart from the beginning. This adds controller ownership and waiting-state work. Persisting arbitrary PHP locals or replaying earlier calls is a workflow engine and is outside scope.
 
-The outer supervisor owns the script, pipes, scratch directory, and pending broker requests. Cancellation closes admission to further calls, cancels the owned nested request where supported, stops the script, and reaps owned processes. Teardown must not signal unrelated workers, root-owned workers, or active-session workers. No parallel nested calls, background script execution, or detached child processes in v1.
+The outer supervisor owns the script, pipes, scratch directory, and pending broker requests. Cancellation closes admission to further calls, cancels the owned nested request where supported, stops the script, and reaps owned processes. Teardown must not signal unrelated workers, root-owned workers, or active-session workers. Code mode provides no parallel nested calls or background script execution in v1. Direct PHP process creation retains the bash-equivalent trust model rather than a new security guarantee against detached processes.
 
 MCP cancellation is presently a blocker for a strong end-to-end guarantee. `McpConnectionManager` and `McpToolInvoker` explicitly do not propagate per-call deadlines or cancellation to the SDK. Killing the script or stopping the wait does not prove remote work stopped. Coordinate with tracked task `add-proper-mcp-tool-call-cancellation`; either require that work or approve an explicit uncertain-remote-outcome contract. Never kill shared MCP workers as a substitute. [S4]
 
@@ -91,26 +91,24 @@ Use the outer tool-call ID plus a host-generated nested call ID and monotonic or
 
 Keep the detailed call ledger and permitted payloads in owned local artifacts. Only compact references belong in outer canonical history. Existing `OutputCap` already provides run-hashed temporary text storage, locking, path checks, and cleanup; its 24-hour stale cleanup means these references are not durable session history. It also persists rendered text only and does not supply a bounded structured call ledger. Reuse storage and read facilities, but explicitly implement the missing structured/binary retention contract rather than using subagent artifacts as a general-purpose store. [S5]
 
-Inspection should use existing bounded `read` for the ledger and text artifacts, and `view_image` for supported images under ordinary permissions. Expired or quota-omitted data must say so. The script gets no raw host artifact path mounted into its sandbox. Approval must choose retention and payload privacy: retaining arbitrary outputs locally can retain secrets, even when model history and logs do not contain them. Recommend private owner-only artifacts, short retention, and metadata-only records when payload retention is prohibited.
+Inspection should use existing bounded `read` for the ledger and text artifacts, and `view_image` for supported images under ordinary permissions. Expired or quota-omitted data must say so. Artifact references do not grant extra host permissions or imply isolation from direct PHP file access. Approval must choose retention and payload privacy: retaining arbitrary outputs locally can retain secrets, even when model history and logs do not contain them. Recommend private owner-only artifacts, short retention, and metadata-only records when payload retention is prohibited.
 
 ## Alternatives and decisions for approval
 
-In-process PHP preserves values without IPC but exposes application state and host permissions. Reject it. A separate unsandboxed PHP process limits accidental state corruption but still bypasses SafeGuard. Reject it too. A PHP subset interpreter could constrain capabilities, but it introduces a language/runtime maintenance project and contradicts the small-facility goal. An OS-sandboxed PHP process is the recommended option, subject to platform proof.
+In-process PHP preserves values without IPC but shares worker state and complicates cancellation and crash recovery. Prefer a separate PHP process with a minimal bridge bootstrap and no application autoloader. An OS sandbox or PHP subset interpreter would impose a stronger security model than bash and add work the user has not requested. Neither is part of the recommendation.
 
 The following product decisions remain open:
 
 1. Approve fail-closed nested approval for v1, or require live-process approval waiting. No automatic script restart in either case.
-2. Choose supported platforms and sandbox dependency policy. Recommend Linux-first with mandatory containment and no fallback; distribution support has not been approved.
-3. Approve a restricted composition set where indirect launch cannot be prevented, and define the remote-MCP trust boundary. Built-ins, extensions, and available MCP tools remain target categories, not unconditional permission to invoke every handler.
-4. Choose resource ceilings and artifact retention/privacy. Recommend implementation constants initially, not a new settings family. Numeric budgets need approval and sandbox proof, not arbitrary defaults in this report.
-5. Choose the bundled pure-PHP library set, including whether explicit TOON decoding is required in v1.
-6. Require MCP cancellation work before release, or approve accurate unknown-remote-outcome reporting as a limitation.
+2. Choose resource ceilings and artifact retention/privacy. Recommend implementation constants initially, not a new settings family. Numeric budgets need approval and focused lifecycle proof, not arbitrary defaults in this report.
+3. Choose whether to bundle a standalone TOON decoder. Do not load the full application autoloader or add another host bridge for it.
+4. Require MCP cancellation work before release, or approve accurate unknown-remote-outcome reporting as a limitation.
 
 These are recorded decisions for subsequent approval, not reasons to invent product behavior during discovery.
 
 ## Implementation slices after approval
 
-First prove the selected sandbox can enforce the permission and teardown contract in supported packaged runtimes. Keep this in CodingAgent process ownership using Symfony Process; no PHP execution feature before containment passes.
+First establish the owned PHP subprocess and minimal `tool()` bootstrap without the application autoloader. Keep this in CodingAgent process ownership using Symfony Process. Prove cancellation, resource limits, crash handling, and teardown in supported packaged runtimes. No sandbox dependency is required.
 
 Next preserve typed invocation outcomes before presentation. Cover native values, explicit hook denial and suspension, and MCP structured content. Keep App-owned adapters in CodingAgent and neutral execution contracts in AgentCore only where genuinely shared. Do not move extension API or MCP dependencies into AgentCore. Follow `depfile.yaml`, and avoid a new public ExtensionApi contract unless the approved design requires it.
 
@@ -120,20 +118,20 @@ Finally add the one script tool registration and minimal usage documentation. No
 
 ## Deterministic proof plan
 
-This report changes documentation only. Main and the read-only scout loaded the testing skill and `tests/AGENTS.md` before test investigation. No production feature or sandbox correctness is claimed.
+This report changes documentation only. Main and the read-only scout loaded the testing skill and `tests/AGENTS.md` before test investigation. No production feature or process-lifecycle correctness is claimed.
 
 After approval, prove value and policy behavior at unit/container level with `castor test`. Use existing `ToolExecutorTest`, `ExtensionToolHookEventSubscriberTest`, `McpResultMapperTest`, and `OutputCapToolResultProcessorContractTest` as contract entry points, not templates for duplicate test layers. DB-touching cases must use the isolated kernel container.
 
 The required cases are:
 
 - Two fixed data-tool responses, deterministic join/filter/sum, and exact CSV. Assert intermediate rows are absent from model messages and present in the permitted inspection artifact. Include structured null, object/list distinction, plain text, and explicit TOON decoding if supported.
-- A denied write after one completed call. Assert the write handler never executes, the completed call remains recorded, and later calls never dispatch. Repeat for an approval requirement, hook failure, rewrite to an excluded tool, and indirect child launch.
+- A denied bridge write after one completed call. Assert the write handler never executes, the completed call remains recorded, and later calls never dispatch. Repeat for an approval requirement, hook failure, rewrite to an excluded tool, and a supported wrapper that would launch or resume a child agent.
 - A failed nested call after a successful side effect. Assert the bounded cause, nested identity, retained operation reference, terminal outer failure, and no automatic retry. Simulate delivery loss after dispatch and assert unknown rather than failed outcome. Redeliver the outer envelope and prove it does not repeat the side effect.
 - Cancellation while a nested request is held at a pipe/socket barrier. Assert admission closes, the owned script exits, the nested request receives cancellation where supported, and all owned resources are reaped. For uncancellable MCP, prove the documented unknown remote outcome without claiming remote termination.
 - Oversized text, structured content, binary content, and excessive stdout. Assert limits at transport and storage boundaries, valid inspection references, expiry/quota notices, and no raw payload in logs or canonical model details.
-- Real sandbox attempts to read a sentinel outside scratch, access a local network endpoint, load application code, inspect inherited secrets, or spawn a process. Assert denial using deterministic fixtures. Include parent crash and invalid IPC frames. Unit mocks cannot prove OS containment.
+- Real subprocess bootstrap without the application autoloader or container. Prove a bridge call works and an attempt to use an unprovided internal application service fails without executing it. Include resource exhaustion, parent crash, malformed IPC, and owned-process teardown with deterministic barriers. Do not assert that direct PHP filesystem, network, or process operations are sandbox-denied.
 
-Each normal case must finish within 10 seconds. Use readiness barriers, not arbitrary sleeps or timeout increases. Every test owns its processes and temporary directories. Add one controller-replay case for nested-result routing and final-only model history. Use minimal live schema proof only when the tool is implemented; do not use a live LLM to test aggregation or sandbox policy. The eventual CODE-REVIEW transition owns `castor check`; discovery validation is only `castor docs:validate` plus source/citation inspection.
+Each normal case must finish within 10 seconds. Use readiness barriers, not arbitrary sleeps or timeout increases. Every test owns its processes and temporary directories. Add one controller-replay case for nested-result routing and final-only model history. Use minimal live schema proof only when the tool is implemented; do not use a live LLM to test aggregation or bridge policy. The eventual CODE-REVIEW transition owns `castor check`; discovery validation is only `castor docs:validate` plus source/citation inspection.
 
 ## Source references
 
