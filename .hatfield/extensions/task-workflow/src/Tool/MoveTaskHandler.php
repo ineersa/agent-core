@@ -59,7 +59,7 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
         $lock = new TaskBoardLock(TaskBoardLock::lockPathForRoot($taskRoot));
 
         $locked = $lock->withLock(
-            function () use ($taskRoot, $taskQuery, $arguments, $control): mixed {
+            function () use ($taskRoot, $taskQuery, $arguments, $control, $context): mixed {
                 if (null !== ($interrupt = $control->interrupted('Cancelled before resolving task.'))) {
                     return $interrupt;
                 }
@@ -80,7 +80,8 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
                     throw new \RuntimeException('Failed to read task file: '.$task->path);
                 }
 
-                $notes = ['Moved '.$task->status->value.' → '.$to->value.'.'];
+                // Do not claim the status move until the transition and board write succeed.
+                $notes = [];
 
                 if (TaskStatusEnum::ARCHIVE === $to) {
                     $text = $this->transitionToArchive($text, $task, $notes);
@@ -101,7 +102,7 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
                     }
                     $text = $progress;
                 } elseif (TaskStatusEnum::IN_PROGRESS === $task->status && TaskStatusEnum::CODE_REVIEW === $to) {
-                    $review = $this->transitionInProgressToCodeReview($text, $task, $arguments, $notes, $control);
+                    $review = $this->transitionInProgressToCodeReview($text, $task, $arguments, $notes, $control, $context->runId);
                     if (\is_array($review)) {
                         return $review;
                     }
@@ -133,6 +134,7 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
                     $notes[] = 'Summary: '.$arguments['summary'];
                 }
 
+                array_unshift($notes, 'Moved '.$task->status->value.' → '.$to->value.'.');
                 $text = TaskMarkdown::appendLog($text, $notes);
                 $target = $this->store->moveFileWithMetadata($task, $to, $text, $taskRoot);
 
@@ -233,6 +235,7 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
         array $arguments,
         array &$notes,
         InvocationControl $control,
+        string $runId,
     ): string|array {
         $branch = $task->branch;
         if (null === $branch || '' === $branch) {
@@ -256,7 +259,11 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
             return $interrupt;
         }
 
-        $notes[] = 'Running deterministic castor check in worktree (Castor wall '.self::CASTOR_CHECK_WALL_SECONDS.'s; outer cleanup guard '.self::CASTOR_CHECK_OUTER_GUARD_SECONDS.'s)...';
+        $completed = [];
+        $qaReportDir = null;
+        $persistEvidence = function (array $lines) use (&$text, $task): void {
+            $text = $this->persistPartialEvidence($task, $text, $lines);
+        };
 
         $checkStart = microtime(true);
         // timeout(1) allows cleanup grace beyond Castor's fixed 210s wall; the host
@@ -275,26 +282,64 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
         }
         $checkDuration = microtime(true) - $checkStart;
         $checkKilled = 124 === $checkResult->exitCode || 137 === $checkResult->exitCode;
+        $qaReportDir = $this->extractQaReportDir($worktree, $checkResult);
 
         if (0 !== $checkResult->exitCode) {
             $reason = $checkKilled
                 ? 'outer cleanup guard after Castor\'s '.self::CASTOR_CHECK_WALL_SECONDS.'s wall ('.self::CASTOR_CHECK_OUTER_GUARD_SECONDS.'s)'
                 : 'exit code '.$checkResult->exitCode;
-            throw new \RuntimeException($this->formatCastorCheckFailure($reason, $worktree, $checkResult));
+            $failure = $this->formatCastorCheckFailure($reason, $worktree, $checkResult);
+            $persistEvidence([
+                'Attempted IN-PROGRESS → CODE-REVIEW.',
+                'Failed step: castor check ('.$reason.').',
+                'Task remains IN-PROGRESS: '.$this->store->rel($this->store->resolveTaskRoot(), $task->path).'.',
+                'Session/run: '.$runId.'.',
+                ...(null !== $qaReportDir ? ['QA reports: '.$qaReportDir.'.'] : []),
+                'Next: fix the failures, re-validate with focused Castor commands, then retry move_task(to="CODE-REVIEW").',
+            ]);
+            throw new \RuntimeException($this->formatPartialTransitionFailure(attempted: 'IN-PROGRESS → CODE-REVIEW', completed: $completed, failedStep: 'castor check', cause: $failure, task: $task, runId: $runId, nextAction: 'Fix the failures, re-validate with focused Castor commands, then retry move_task(to="CODE-REVIEW"). Do not assume push or PR already happened.', qaReportDir: $qaReportDir));
         }
 
-        $notes[] = 'castor check passed ('.number_format($checkDuration, 1).'s).';
+        $completed[] = 'castor check passed ('.number_format($checkDuration, 1).'s).';
+        $persistEvidence([
+            'Attempted IN-PROGRESS → CODE-REVIEW.',
+            'Completed: castor check passed ('.number_format($checkDuration, 1).'s).',
+            ...(null !== $qaReportDir ? ['QA reports: '.$qaReportDir.'.'] : []),
+            'Session/run: '.$runId.'.',
+            'Task remains IN-PROGRESS pending push/PR.',
+        ]);
 
         if (null !== ($interrupt = $control->interrupted('Cancelled before push.'))) {
             return $interrupt;
         }
 
-        $pushResult = $this->pr->pushTaskBranch($this->codeRoot, $branch, $control);
+        try {
+            $pushResult = $this->pr->pushTaskBranch($this->codeRoot, $branch, $control);
+        } catch (\RuntimeException $e) {
+            $persistEvidence([
+                'Attempted IN-PROGRESS → CODE-REVIEW.',
+                'Completed: castor check passed.',
+                ...(null !== $qaReportDir ? ['QA reports: '.$qaReportDir.'.'] : []),
+                'Failed step: git push.',
+                'Cause: '.$this->sanitizeDiagnostic($e->getMessage()).'.',
+                'Task remains IN-PROGRESS: '.$this->store->rel($this->store->resolveTaskRoot(), $task->path).'.',
+                'Session/run: '.$runId.'.',
+                'Next: fix the push failure, then retry move_task(to="CODE-REVIEW"). Do not recreate the branch or re-run QA unless needed.',
+            ]);
+            throw new \RuntimeException($this->formatPartialTransitionFailure(attempted: 'IN-PROGRESS → CODE-REVIEW', completed: $completed, failedStep: 'git push', cause: $this->sanitizeDiagnostic($e->getMessage()), task: $task, runId: $runId, nextAction: 'Fix the push failure, then retry move_task(to="CODE-REVIEW"). Do not recreate the branch or re-run QA unless needed.', qaReportDir: $qaReportDir), 0, $e);
+        }
         if ($pushResult instanceof ExecResultDTO) {
             return $this->fromExecResult($pushResult, $control, 'Interrupted during push.');
         }
-        $notes[] = 'Pushed '.$branch.' to origin.';
-        $notes[] = trim($pushResult);
+        $completed[] = 'Pushed '.$branch.' to origin.';
+        $completed[] = trim($pushResult);
+        $persistEvidence([
+            'Attempted IN-PROGRESS → CODE-REVIEW.',
+            'Completed: castor check passed; pushed '.$branch.' to origin.',
+            ...(null !== $qaReportDir ? ['QA reports: '.$qaReportDir.'.'] : []),
+            'Session/run: '.$runId.'.',
+            'Task remains IN-PROGRESS pending PR creation.',
+        ]);
 
         $pushOnly = isset($arguments['pushOnly']) && true === $arguments['pushOnly'];
         if (!$pushOnly) {
@@ -307,7 +352,18 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
                 return $this->fromExecResult($ghStatus, $control, 'Interrupted while checking gh auth.');
             }
             if (!$ghStatus['available']) {
-                throw new \RuntimeException('Branch pushed, but cannot create PR: '.($ghStatus['reason'] ?? 'unknown')."\n\n".'To skip PR creation and move without a PR, pass pushOnly: true.'."\n".'To create a PR manually: gh pr create --head '.$branch);
+                $cause = $this->sanitizeDiagnostic((string) ($ghStatus['reason'] ?? 'unknown'));
+                $persistEvidence([
+                    'Attempted IN-PROGRESS → CODE-REVIEW.',
+                    'Completed: castor check passed; pushed '.$branch.' to origin.',
+                    ...(null !== $qaReportDir ? ['QA reports: '.$qaReportDir.'.'] : []),
+                    'Failed step: PR creation.',
+                    'Cause: '.$cause.'.',
+                    'Task remains IN-PROGRESS: '.$this->store->rel($this->store->resolveTaskRoot(), $task->path).'.',
+                    'Session/run: '.$runId.'.',
+                    'Next: create the PR manually or retry move_task(to="CODE-REVIEW", pushOnly=true) after auth is available. Do not re-run QA or push unless needed.',
+                ]);
+                throw new \RuntimeException($this->formatPartialTransitionFailure(attempted: 'IN-PROGRESS → CODE-REVIEW', completed: $completed, failedStep: 'PR creation', cause: $cause, task: $task, runId: $runId, nextAction: 'Create the PR manually (gh pr create --head '.$branch.') or retry move_task(to="CODE-REVIEW", pushOnly=true) after auth is available. Do not re-run QA or push unless needed.', qaReportDir: $qaReportDir));
             }
 
             $existingPr = $this->pr->findExistingPr($this->codeRoot, $branch, $control);
@@ -315,7 +371,7 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
                 return $this->fromExecResult($existingPr, $control, 'Interrupted while listing PRs.');
             }
             if (null !== $existingPr) {
-                $notes[] = 'PR already exists: '.$existingPr;
+                $completed[] = 'PR already exists: '.$existingPr;
                 $text = TaskMarkdown::updateField($text, 'PR URL', $existingPr);
                 $text = TaskMarkdown::updateField($text, 'PR Status', 'open');
             } else {
@@ -326,17 +382,34 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
                     ? $arguments['prBody']
                     : 'Task: '.$task->title."\nBranch: ".$branch."\n\nAuto-created by move_task (CODE-REVIEW).";
                 $prBase = isset($arguments['prBaseBranch']) && \is_string($arguments['prBaseBranch']) ? $arguments['prBaseBranch'] : null;
-                $prUrl = $this->pr->createPr($this->codeRoot, $branch, $prTitle, $prBody, $prBase, $control);
+                try {
+                    $prUrl = $this->pr->createPr($this->codeRoot, $branch, $prTitle, $prBody, $prBase, $control);
+                } catch (\RuntimeException $e) {
+                    $cause = $this->sanitizeDiagnostic($e->getMessage());
+                    $persistEvidence([
+                        'Attempted IN-PROGRESS → CODE-REVIEW.',
+                        'Completed: castor check passed; pushed '.$branch.' to origin.',
+                        ...(null !== $qaReportDir ? ['QA reports: '.$qaReportDir.'.'] : []),
+                        'Failed step: PR creation.',
+                        'Cause: '.$cause.'.',
+                        'Task remains IN-PROGRESS: '.$this->store->rel($this->store->resolveTaskRoot(), $task->path).'.',
+                        'Session/run: '.$runId.'.',
+                        'Next: create the PR manually or retry move_task(to="CODE-REVIEW", pushOnly=true). Do not re-run QA or push unless needed.',
+                    ]);
+                    throw new \RuntimeException($this->formatPartialTransitionFailure(attempted: 'IN-PROGRESS → CODE-REVIEW', completed: $completed, failedStep: 'PR creation', cause: $cause, task: $task, runId: $runId, nextAction: 'Create the PR manually (gh pr create --head '.$branch.') or retry move_task(to="CODE-REVIEW", pushOnly=true). Do not re-run QA or push unless needed.', qaReportDir: $qaReportDir), 0, $e);
+                }
                 if ($prUrl instanceof ExecResultDTO) {
                     return $this->fromExecResult($prUrl, $control, 'Interrupted during PR creation.');
                 }
-                $notes[] = 'Created PR: '.$prUrl;
+                $completed[] = 'Created PR: '.$prUrl;
                 $text = TaskMarkdown::updateField($text, 'PR URL', $prUrl);
                 $text = TaskMarkdown::updateField($text, 'PR Status', 'open');
             }
         } else {
-            $notes[] = 'Skipped PR creation (pushOnly: true).';
+            $completed[] = 'Skipped PR creation (pushOnly: true).';
         }
+
+        array_push($notes, ...$completed);
 
         return TaskMarkdown::updateField($text, 'Status', TaskStatusEnum::CODE_REVIEW->value);
     }
@@ -368,6 +441,91 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
         }
 
         return $message."\n".'First failure:'."\n".u($snippet)->truncate(1200)->toString();
+    }
+
+    /**
+     * Persist completed/failed step evidence on the current task file without changing status.
+     *
+     * @param list<string> $lines
+     */
+    private function persistPartialEvidence(TaskInfo $task, string $text, array $lines): string
+    {
+        $safe = [];
+        foreach ($lines as $line) {
+            $sanitized = $this->sanitizeDiagnostic($line);
+            if ('' !== $sanitized) {
+                $safe[] = $sanitized;
+            }
+        }
+        if ([] === $safe) {
+            return $text;
+        }
+
+        $updated = TaskMarkdown::appendLog($text, $safe);
+        if (false === file_put_contents($task->path, $updated)) {
+            throw new \RuntimeException('Failed to write partial transition evidence to task file: '.$task->path);
+        }
+
+        return $updated;
+    }
+
+    /**
+     * @param list<string> $completed
+     */
+    private function formatPartialTransitionFailure(
+        string $attempted,
+        array $completed,
+        string $failedStep,
+        string $cause,
+        TaskInfo $task,
+        string $runId,
+        string $nextAction,
+        ?string $qaReportDir = null,
+    ): string {
+        $taskRoot = $this->store->resolveTaskRoot();
+        $relPath = $this->store->rel($taskRoot, $task->path);
+        $lines = [
+            'move_task partial failure.',
+            'Attempted: '.$attempted.'.',
+            'Completed steps:',
+        ];
+        if ([] === $completed) {
+            $lines[] = '- (none)';
+        } else {
+            foreach ($completed as $step) {
+                $lines[] = '- '.$this->sanitizeDiagnostic($step);
+            }
+        }
+        $lines[] = 'Failed step: '.$failedStep.'.';
+        $lines[] = 'Cause: '.$this->sanitizeDiagnostic($cause);
+        $lines[] = 'Current task status: '.$task->status->value.' ('.$relPath.').';
+        $lines[] = 'Task identity: '.$task->file.'; Session/run: '.$runId.'.';
+        if (null !== $qaReportDir && '' !== $qaReportDir) {
+            $lines[] = 'QA reports: '.$qaReportDir.'.';
+        }
+        $lines[] = 'Next: '.$nextAction;
+
+        return implode("\n", $lines);
+    }
+
+    private function extractQaReportDir(string $worktree, ExecResultDTO $result): ?string
+    {
+        $output = trim($result->stdout."\n".$result->stderr);
+        if (!preg_match('/QA run:\s*(qa-[A-Za-z0-9_-]+)/', $output, $matches)) {
+            return null;
+        }
+
+        return $worktree.'/var/reports/'.$matches[1];
+    }
+
+    private function sanitizeDiagnostic(string $raw): string
+    {
+        $scrubbed = preg_replace('#https?://\S+#i', '<url>', $raw) ?? $raw;
+        $scrubbed = preg_replace('/(authorization|token|api[_-]?key|bearer|password|secret)\s*[:=]\s*\S+/i', '$1=<redacted>', $scrubbed) ?? $scrubbed;
+        $scrubbed = preg_replace('/\bgh_[A-Za-z0-9_]+\b/', '<redacted>', $scrubbed) ?? $scrubbed;
+        $scrubbed = preg_replace("/\n{3,}/", "\n\n", $scrubbed) ?? $scrubbed;
+
+        return u(trim($scrubbed))->truncate(1200)->toString();
     }
 
     /**

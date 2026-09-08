@@ -233,6 +233,137 @@ final class MoveTaskHandlerTest extends TestCase
     }
 
     #[Test]
+    public function moveTaskToCodeReviewReportsPartialFailureAfterPushWhenGhAuthFails(): void
+    {
+        // Thesis: after successful castor check + push, PR auth failure must keep the task
+        // IN-PROGRESS, persist durable board evidence, and report completed/failed steps.
+        $slug = '2026-01-01-cr-partial-auth';
+        $branch = 'task/'.$slug;
+        $worktree = $this->worktreesBase.'/'.$slug;
+
+        $inner = new StubExec(function (string $command, array $args, ?ExecOptionsDTO $options) use ($worktree): ExecResultDTO {
+            if ('timeout' === $command) {
+                $reports = $worktree.'/var/reports/qa-partial-auth';
+                mkdir($reports, 0o755, true);
+                file_put_contents($reports.'/check-test.log', "quality: ok\n");
+
+                return new ExecResultDTO("QA run: qa-partial-auth\nquality: ok", '', 0);
+            }
+            if ('gh' === $command && \in_array('auth', $args, true)) {
+                return new ExecResultDTO('', 'gh is not authenticated: github.com token=gh_secret_token_value', 1);
+            }
+
+            return ($this->gitStubForCodeReview(timeoutExitCode: 0))($command, $args, $options);
+        });
+        $recording = new RecordingExec($inner);
+        $handler = $this->makeHandler($recording);
+
+        file_put_contents($this->boardRoot.'/TODO/'.$slug.'.md', TaskMarkdown::renderTask('CR partial auth'));
+        ($handler)(['task' => $slug, 'to' => 'IN-PROGRESS', 'worktreeBase' => $this->worktreesBase], $this->ctx());
+
+        try {
+            ($handler)([
+                'task' => $slug,
+                'from' => 'IN-PROGRESS',
+                'to' => 'CODE-REVIEW',
+            ], $this->ctx());
+            $this->fail('Expected RuntimeException when PR auth fails after push');
+        } catch (\RuntimeException $e) {
+            $message = $e->getMessage();
+            $this->assertStringContainsString('move_task partial failure.', $message);
+            $this->assertStringContainsString('Failed step: PR creation.', $message);
+            $this->assertStringContainsString('Current task status: IN-PROGRESS', $message);
+            $this->assertStringContainsString('pushOnly=true', $message);
+            $this->assertStringContainsString('QA reports:', $message);
+            $this->assertStringContainsString('qa-partial-auth', $message);
+            $this->assertStringContainsString('Session/run: run-move-test', $message);
+            $this->assertStringNotContainsString('gh_secret_token_value', $message);
+            $this->assertStringNotContainsString('Moved IN-PROGRESS → CODE-REVIEW', $message);
+        }
+
+        $this->assertFileExists($this->boardRoot.'/IN-PROGRESS/'.$slug.'.md');
+        $this->assertFileDoesNotExist($this->boardRoot.'/CODE-REVIEW/'.$slug.'.md');
+        $board = (string) file_get_contents($this->boardRoot.'/IN-PROGRESS/'.$slug.'.md');
+        $this->assertStringContainsString('Completed: castor check passed; pushed '.$branch.' to origin.', $board);
+        $this->assertStringContainsString('Failed step: PR creation.', $board);
+        $this->assertStringContainsString('Task remains IN-PROGRESS:', $board);
+        $this->assertStringContainsString('Session/run: run-move-test.', $board);
+        $this->assertStringNotContainsString('gh_secret_token_value', $board);
+        $this->assertStringNotContainsString('Moved IN-PROGRESS → CODE-REVIEW', $board);
+
+        $this->assertNotEmpty(array_filter(
+            $recording->calls(),
+            static fn (array $c): bool => 'git' === $c['command'] && \in_array('push', $c['args'], true),
+        ));
+        $this->assertEmpty(array_filter(
+            $recording->calls(),
+            static fn (array $c): bool => 'gh' === $c['command'] && \in_array('create', $c['args'], true),
+        ));
+    }
+
+    #[Test]
+    public function moveTaskToCodeReviewReportsPartialFailureWhenPushFailsAfterQa(): void
+    {
+        // Thesis: QA success followed by push failure must not claim a status move and must
+        // persist recoverable board evidence with the QA directory and safe next action.
+        $slug = '2026-01-01-cr-partial-push';
+        $branch = 'task/'.$slug;
+        $worktree = $this->worktreesBase.'/'.$slug;
+
+        $inner = new StubExec(function (string $command, array $args, ?ExecOptionsDTO $options) use ($worktree): ExecResultDTO {
+            if ('timeout' === $command) {
+                $reports = $worktree.'/var/reports/qa-partial-push';
+                mkdir($reports, 0o755, true);
+                file_put_contents($reports.'/check-test.log', "quality: ok\n");
+
+                return new ExecResultDTO("QA run: qa-partial-push\nquality: ok", '', 0);
+            }
+            if ('git' === $command && \in_array('push', $args, true)) {
+                return new ExecResultDTO('', 'fatal: Authentication failed for https://example.com/repo.git/', 1);
+            }
+
+            return ($this->gitStubForCodeReview(timeoutExitCode: 0))($command, $args, $options);
+        });
+        $recording = new RecordingExec($inner);
+        $handler = $this->makeHandler($recording);
+
+        file_put_contents($this->boardRoot.'/TODO/'.$slug.'.md', TaskMarkdown::renderTask('CR partial push'));
+        ($handler)(['task' => $slug, 'to' => 'IN-PROGRESS', 'worktreeBase' => $this->worktreesBase], $this->ctx());
+
+        try {
+            ($handler)([
+                'task' => $slug,
+                'from' => 'IN-PROGRESS',
+                'to' => 'CODE-REVIEW',
+            ], $this->ctx());
+            $this->fail('Expected RuntimeException when push fails after QA');
+        } catch (\RuntimeException $e) {
+            $message = $e->getMessage();
+            $this->assertStringContainsString('move_task partial failure.', $message);
+            $this->assertStringContainsString('Failed step: git push.', $message);
+            $this->assertStringContainsString('Current task status: IN-PROGRESS', $message);
+            $this->assertStringContainsString('qa-partial-push', $message);
+            $this->assertStringContainsString('<url>', $message);
+            $this->assertStringNotContainsString('https://example.com/repo.git', $message);
+            $this->assertStringNotContainsString('Moved IN-PROGRESS → CODE-REVIEW', $message);
+        }
+
+        $this->assertFileExists($this->boardRoot.'/IN-PROGRESS/'.$slug.'.md');
+        $this->assertFileDoesNotExist($this->boardRoot.'/CODE-REVIEW/'.$slug.'.md');
+        $board = (string) file_get_contents($this->boardRoot.'/IN-PROGRESS/'.$slug.'.md');
+        $this->assertStringContainsString('Completed: castor check passed.', $board);
+        $this->assertStringContainsString('Failed step: git push.', $board);
+        $this->assertStringContainsString('QA reports:', $board);
+        $this->assertStringContainsString('qa-partial-push', $board);
+        $this->assertStringNotContainsString('Moved IN-PROGRESS → CODE-REVIEW', $board);
+
+        $this->assertEmpty(array_filter(
+            $recording->calls(),
+            static fn (array $c): bool => 'gh' === $c['command'] && \in_array('create', $c['args'], true),
+        ));
+    }
+
+    #[Test]
     public function refusesDirtyIntegrationCheckout(): void
     {
         file_put_contents($this->repoRoot.'/dirty.txt', 'x');
