@@ -66,6 +66,15 @@ or provider compatibility rules. Unsupported levels are rejected or coerced per 
 
 `ai.default_reasoning` supplies the session default; TUI `/model` flows may persist sparse overrides.
 
+Codex Astra's model compatibility flag `supports_reasoning_configuration_updates`
+keeps the first request's reasoning effort fixed for the active session. Later
+requests insert the selected effort as a `configuration_update` before new input.
+This applies to plain WebSocket, cached WebSocket, and SSE. Resume or a model
+change starts a new baseline from the current selection. Explicit compaction
+overrides remain separate. The flag defaults to false and is enabled only for
+`gpt-6-astra` in the bundled catalog. A settings-level `models` map replaces the
+catalog models, so pinned Astra definitions must include the flag to enable it.
+
 ## HTTP client (`ai.http`)
 
 Controls outbound LLM HTTP behavior (timeouts, proxies, and related transport options as defined in defaults).

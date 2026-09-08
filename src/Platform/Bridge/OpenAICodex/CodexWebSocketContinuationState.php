@@ -39,11 +39,24 @@ final class CodexWebSocketContinuationState
             return null;
         }
 
+        $update = null;
+        if ('gpt-6-astra' === ($currentRequestBody['model'] ?? null)) {
+            foreach ($currentInput as $item) {
+                if ('configuration_update' === ($item['type'] ?? null)) {
+                    $update = $item;
+                }
+            }
+            $currentInput = self::withoutConfigurationUpdates($currentInput);
+        }
+
         /** @var list<array<string, mixed>> $baseline */
         $baseline = array_merge(
             $this->lastRequestBody['input'] ?? [],
             $this->lastResponseItems,
         );
+        if ('gpt-6-astra' === ($currentRequestBody['model'] ?? null)) {
+            $baseline = self::withoutConfigurationUpdates($baseline);
+        }
 
         if (\count($currentInput) < \count($baseline)) {
             return null;
@@ -55,6 +68,9 @@ final class CodexWebSocketContinuationState
         }
 
         $delta = \array_slice($currentInput, \count($baseline));
+        if ([] !== $delta && null !== $update) {
+            array_unshift($delta, $update);
+        }
 
         return [
             'previous_response_id' => $this->lastResponseId,
@@ -79,5 +95,17 @@ final class CodexWebSocketContinuationState
         }
 
         return new self($fullRequestBody, $responseId, $canonicalItems);
+    }
+
+    /**
+     * Updates are wire-only controls, absent from reconstructed chat history.
+     *
+     * @param list<array<string, mixed>> $input
+     *
+     * @return list<array<string, mixed>>
+     */
+    private static function withoutConfigurationUpdates(array $input): array
+    {
+        return array_values(array_filter($input, static fn (array $item): bool => 'configuration_update' !== ($item['type'] ?? null)));
     }
 }

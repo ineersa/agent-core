@@ -16,6 +16,7 @@ use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\CodingAgent\Config\ReasoningOptionsResolver;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Symfony\AI\Platform\Bridge\OpenAICodex\CodexRequestBodyFactory;
 use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\Component\Uid\Uuid;
 use Symfony\Component\Uid\UuidV7;
@@ -47,8 +48,6 @@ final class SessionAwareModelResolver implements ModelResolverInterface
         ModelInvocationInput $input,
         ModelResolutionOptions $options,
     ): ResolvedModel {
-        unset($messages);
-
         $sessionId = $input->runId ?? '';
 
         // Non-empty $defaultModel is an explicit override (e.g. compaction
@@ -96,6 +95,24 @@ final class SessionAwareModelResolver implements ModelResolverInterface
 
             $compatFeatures = $this->resolveCompatFeatures($modelRef);
             $reasoningOptions = $this->resolveReasoningOptions($modelRef, $reasoning);
+
+            // Explicit model/thinking overrides belong to separate operations such
+            // as compaction. They must not claim or mutate the chat baseline.
+            if (null === $explicitModel && null === $explicitReasoning
+                && 'codex' === $this->catalog->getProvider($modelRef->providerId)?->type
+                && 'gpt-6-astra' === $modelRef->modelName
+                && true === $this->catalog->getModel($modelRef)?->compatibility?->supportsReasoningConfigurationUpdates
+                && [] !== $messages->withoutSystemMessage()->getMessages()
+                && \is_string($reasoningOptions['reasoning']['effort'] ?? null)) {
+                $effort = $reasoningOptions['reasoning']['effort'];
+                $baseline = $this->sessionMetadataStore->claimReasoningBaseline($sessionId, $modelRef->toString(), $effort);
+                if (null !== $baseline) {
+                    $reasoningOptions['reasoning']['effort'] = $baseline;
+                    $reasoningOptions[CodexRequestBodyFactory::REASONING_UPDATE] = $effort;
+                } else {
+                    $reasoningOptions[CodexRequestBodyFactory::REASONING_RESET] = true;
+                }
+            }
 
             // Pass 'reasoning' compat when options are present (z.ai off sends disabled thinking).
             if ([] !== $reasoningOptions && !\in_array(ReasoningOptionsFeatureShaper::FEATURE, $compatFeatures, true)) {

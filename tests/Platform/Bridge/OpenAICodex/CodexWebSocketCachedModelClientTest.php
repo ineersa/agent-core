@@ -548,6 +548,99 @@ final class CodexWebSocketCachedModelClientTest extends TestCase
         $this->assertSame([], $prop->getValue($cache));
     }
 
+    public function testAstraReasoningSelectionChangeKeepsBaselineAndPrependsConfigurationUpdateOnDelta(): void
+    {
+        $cacheKey = '0194eeee-bbbb-7ccc-8ddd-aaaaaaaaaaaa';
+        self::assertUuidVersion7($cacheKey);
+
+        $connectCount = 0;
+        $frames = [];
+        $connection = $this->createStreamingConnection($frames);
+
+        $connector = $this->createMock(CodexWebSocketConnectorInterface::class);
+        $connector->method('connect')->willReturnCallback(static function () use (&$connectCount, $connection): WebsocketConnection {
+            ++$connectCount;
+
+            return $connection;
+        });
+
+        $client = new CodexWebSocketModelClient(
+            $connector,
+            new CodexWebSocketUrlResolver(),
+            new CodexWebSocketHandshakeHeadersFactory(),
+            new CodexRequestBodyFactory(),
+            'https://chatgpt.com/backend-api',
+            'access',
+            'acct-1',
+            transport: CodexTransportEnum::WebsocketCached,
+            connectionCache: new CodexWebSocketConnectionCache(),
+        );
+
+        $options = [
+            'prompt_cache_key' => $cacheKey,
+            'reasoning' => ['effort' => 'medium', 'summary' => 'auto'],
+        ];
+        $firstPayload = ['input' => [['role' => 'user', 'content' => 'first']]];
+        $first = $client->request(new CodexModel('gpt-6-astra'), $firstPayload, $options);
+        $this->assertInstanceOf(RawWebSocketResult::class, $first);
+        iterator_to_array($first->getDataStream());
+
+        $secondOptions = [
+            'prompt_cache_key' => $cacheKey,
+            'reasoning' => ['effort' => 'medium', 'summary' => 'auto'],
+            CodexRequestBodyFactory::REASONING_UPDATE => 'high',
+        ];
+        $secondPayload = [
+            'input' => [
+                ['role' => 'user', 'content' => 'first'],
+                ['type' => 'message', 'role' => 'assistant', 'content' => 'ok'],
+                ['role' => 'user', 'content' => 'second'],
+            ],
+        ];
+        $second = $client->request(new CodexModel('gpt-6-astra'), $secondPayload, $secondOptions);
+        iterator_to_array($second->getDataStream());
+
+        $this->assertSame(1, $connectCount);
+        $this->assertCount(2, $frames);
+
+        $firstFrame = json_decode($frames[0], true, flags: \JSON_THROW_ON_ERROR);
+        $this->assertSame('medium', $firstFrame['reasoning']['effort']);
+        $this->assertSame([['role' => 'user', 'content' => 'first']], $firstFrame['input']);
+
+        $secondFrame = json_decode($frames[1], true, flags: \JSON_THROW_ON_ERROR);
+        $this->assertSame('resp_cached_1', $secondFrame['previous_response_id']);
+        $this->assertSame('medium', $secondFrame['reasoning']['effort']);
+        $this->assertCount(2, $secondFrame['input']);
+        $this->assertSame('configuration_update', $secondFrame['input'][0]['type']);
+        $this->assertSame('high', $secondFrame['input'][0]['reasoning']['effort']);
+        $this->assertSame('second', $secondFrame['input'][1]['content']);
+
+        foreach (['high', 'low'] as $index => $effort) {
+            $secondPayload['input'][] = ['type' => 'message', 'role' => 'assistant', 'content' => 'ok'];
+            $secondPayload['input'][] = ['role' => 'user', 'content' => 'next-'.$index];
+            $secondOptions[CodexRequestBodyFactory::REASONING_UPDATE] = $effort;
+            $result = $client->request(new CodexModel('gpt-6-astra'), $secondPayload, $secondOptions);
+            iterator_to_array($result->getDataStream());
+            $frame = json_decode($frames[$index + 2], true, flags: \JSON_THROW_ON_ERROR);
+            $this->assertSame('resp_cached_1', $frame['previous_response_id']);
+            $this->assertSame('medium', $frame['reasoning']['effort']);
+            $this->assertSame([
+                ['type' => 'configuration_update', 'reasoning' => ['effort' => $effort]],
+                ['role' => 'user', 'content' => 'next-'.$index],
+            ], $frame['input']);
+        }
+
+        $secondPayload['input'][] = ['type' => 'message', 'role' => 'assistant', 'content' => 'ok'];
+        $secondPayload['input'][] = ['role' => 'user', 'content' => 'resumed'];
+        $result = $client->request(new CodexModel('gpt-6-astra'), $secondPayload, $options + [CodexRequestBodyFactory::REASONING_RESET => true]);
+        iterator_to_array($result->getDataStream());
+        $resumed = json_decode($frames[4], true, flags: \JSON_THROW_ON_ERROR);
+        $this->assertArrayNotHasKey('previous_response_id', $resumed);
+        $this->assertArrayNotHasKey(CodexRequestBodyFactory::REASONING_RESET, $resumed);
+        $this->assertSame($secondPayload['input'], $resumed['input']);
+        $this->assertSame('medium', $resumed['reasoning']['effort']);
+    }
+
     /**
      * @param list<string> $frames
      */
