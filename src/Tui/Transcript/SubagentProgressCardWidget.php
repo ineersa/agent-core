@@ -209,7 +209,9 @@ final class SubagentProgressCardWidget extends AbstractWidget
             if (null !== $tok) {
                 $parts[] = $tok;
             }
-            $parts[] = $this->formatElapsedHuman($progress->elapsedMs);
+            if ($progress instanceof SubagentProgressSingleSnapshotDTO || !$this->isActiveStatus($status)) {
+                $parts[] = $this->formatElapsedHuman($progress->elapsedMs);
+            }
         }
 
         return implode(' · ', $parts);

@@ -104,6 +104,12 @@ final class ControllerReplayToolCompletionTest extends ControllerReplayE2eTestCa
         );
         $this->assertArrayNotHasKey('run.failed', $byType, $this->collectDiagnostics($events));
 
+        $startedAt = $byType['tool_execution.started'][0]['payload']['started_at'] ?? null;
+        $endedAt = $byType['tool_execution.completed'][0]['payload']['ended_at'] ?? null;
+        $this->assertIsString($startedAt);
+        $this->assertIsString($endedAt);
+        $this->assertGreaterThanOrEqual(new \DateTimeImmutable($startedAt), new \DateTimeImmutable($endedAt));
+
         $this->assertFileExists($this->targetPath);
         $this->assertSame(self::FILE_CONTENT, (string) file_get_contents($this->targetPath));
 

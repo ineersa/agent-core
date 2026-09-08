@@ -28,7 +28,8 @@ use Symfony\Component\Clock\MockClock;
  */
 final class DeferredSubagentBatchProgressSnapshotFactoryTest extends TestCase
 {
-    public function testSingleTerminalElapsedFreezesFromChildTimestamps(): void
+    #[\PHPUnit\Framework\Attributes\DataProvider('terminalStatuses')]
+    public function testSingleTerminalElapsedFreezesFromChildTimestamps(RunStatus $status): void
     {
         $clock = new MockClock(new \DateTimeImmutable('2026-01-01T00:05:00Z'));
         $factory = $this->factory($clock);
@@ -41,7 +42,7 @@ final class DeferredSubagentBatchProgressSnapshotFactoryTest extends TestCase
                 artifactId: 'agent_1',
                 startedAt: $started,
                 terminalCompletedAt: $terminal,
-                projection: $this->projection(RunStatus::Completed, toolCount: 38, totalTokens: 49000),
+                projection: $this->projection($status, toolCount: 38, totalTokens: 49000),
             ),
             startedAt: $started,
         );
@@ -116,6 +117,13 @@ final class DeferredSubagentBatchProgressSnapshotFactoryTest extends TestCase
         $this->assertSame(45000, $later->children[0]->elapsedMs);
         $this->assertSame(310000, $later->children[1]->elapsedMs);
         $this->assertSame(330000, $later->elapsedMs);
+    }
+
+    public static function terminalStatuses(): iterable
+    {
+        yield [RunStatus::Completed];
+        yield [RunStatus::Failed];
+        yield [RunStatus::Cancelled];
     }
 
     private function factory(MockClock $clock): DeferredSubagentBatchProgressSnapshotFactory

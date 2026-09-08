@@ -363,31 +363,24 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
             return 0;
         }
 
-        $end = $this->clock->now();
-        foreach ($batch->children as $child) {
-            if (null === $child->terminalCompletedAt) {
-                return $this->elapsedMsBetween($batch->startedAt, $end);
-            }
-        }
-
         $latestTerminal = null;
         foreach ($batch->children as $child) {
             if (null === $child->terminalCompletedAt) {
-                continue;
+                return $this->elapsedMsBetween($batch->startedAt, $this->clock->now());
             }
             if (null === $latestTerminal || $child->terminalCompletedAt > $latestTerminal) {
                 $latestTerminal = $child->terminalCompletedAt;
             }
         }
 
-        return $this->elapsedMsBetween($batch->startedAt, $latestTerminal ?? $end);
+        return $this->elapsedMsBetween($batch->startedAt, $latestTerminal ?? $this->clock->now());
     }
 
     private function elapsedMsBetween(\DateTimeImmutable $startedAt, \DateTimeImmutable $endedAt): int
     {
-        $delta = $endedAt->getTimestamp() - $startedAt->getTimestamp();
+        $delta = (float) $endedAt->format('U.u') - (float) $startedAt->format('U.u');
 
-        return max(0, $delta * 1000);
+        return max(0, (int) round($delta * 1000));
     }
 
     /**

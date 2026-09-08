@@ -155,7 +155,9 @@ final class SubagentProgressDisplayFormatter
         if (null !== $tok) {
             $parts[] = $tok;
         }
-        $parts[] = $this->formatElapsedHuman($data->elapsedMs);
+        if ($data instanceof SubagentProgressSingleSnapshotDTO || 'running' !== $status) {
+            $parts[] = $this->formatElapsedHuman($data->elapsedMs);
+        }
 
         return implode(' | ', $parts);
     }

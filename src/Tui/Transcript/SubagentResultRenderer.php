@@ -57,12 +57,12 @@ final readonly class SubagentResultRenderer
         }
 
         if ('' !== $resultText) {
-            return $this->buildFallbackWidget($resultText, $theme, $this->resultColor($block));
+            return $this->buildFallbackWidget($block, $resultText, $theme, $this->resultColor($block));
         }
 
         $suffix = $block->streaming ? TranscriptGlyphs::STREAMING_SUFFIX : '';
 
-        return new TextWidget($theme->color(ThemeColorEnum::ToolOutput, TranscriptGlyphs::GLYPH_TOOL.' subagent').$suffix);
+        return new ToolDurationHeaderWidget(TranscriptGlyphs::GLYPH_TOOL.' subagent', $block, $theme, ThemeColorEnum::ToolOutput, $suffix);
     }
 
     private function buildProgressWidget(
@@ -95,17 +95,20 @@ final readonly class SubagentResultRenderer
         return $container;
     }
 
-    private function buildFallbackWidget(string $resultText, TuiTheme $theme, ThemeColorEnum $resultColor): TextWidget
+    private function buildFallbackWidget(TranscriptBlock $block, string $resultText, TuiTheme $theme, ThemeColorEnum $resultColor): ContainerWidget
     {
         $lines = explode("\n", trim($resultText));
-        $header = $theme->color(ThemeColorEnum::BorderAccent, '╭─ subagent');
         $body = [];
         foreach ($lines as $line) {
             $body[] = $theme->color(ThemeColorEnum::BorderAccent, '│ ').$theme->color($resultColor, $line);
         }
         $bottom = $theme->color(ThemeColorEnum::BorderAccent, '╰─');
 
-        return new TextWidget(implode("\n", array_merge([$header], $body, [$bottom])));
+        $container = new ContainerWidget();
+        $container->add(new ToolDurationHeaderWidget('╭─ subagent', $block, $theme, ThemeColorEnum::BorderAccent));
+        $container->add(new TextWidget(implode("\n", [...$body, $bottom])));
+
+        return $container;
     }
 
     private function buildResultTextWidget(string $resultText, TuiTheme $theme, ThemeColorEnum $resultColor): TextWidget

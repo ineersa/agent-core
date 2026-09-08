@@ -193,6 +193,7 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
             meta: [
                 'tool_call_id' => $toolCallId,
                 'tool_name' => $toolName,
+                ...isset($p['started_at']) ? ['started_at' => $p['started_at']] : [],
             ],
             streaming: true,
         ));
@@ -253,7 +254,6 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
         $state = $event->state;
         $toolCallId = (string) ($p['tool_call_id'] ?? '');
         $result = (string) ($p['result'] ?? '');
-        $durationMs = isset($p['duration_ms']) ? (int) $p['duration_ms'] : null;
         $blockId = 'tool_result_'.$toolCallId;
 
         $existing = $state->getBlock($blockId);
@@ -285,10 +285,8 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
         $meta = [
             'tool_call_id' => $toolCallId,
             'is_error' => false,
+            ...$this->terminalTimingMeta($p, $existing),
         ];
-        if (null !== $durationMs) {
-            $meta['duration_ms'] = $durationMs;
-        }
         if ('' !== $result) {
             $meta['result'] = $result;
         }
@@ -325,6 +323,7 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
         $meta = [
             'tool_call_id' => $toolCallId,
             'is_error' => true,
+            ...$this->terminalTimingMeta($p, $existing),
         ];
         if ('' !== $result) {
             $meta['result'] = $result;
@@ -359,10 +358,12 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
         $timedOut = (bool) ($p['timed_out'] ?? false);
 
         $meta = [
+            ...($state->getBlock($blockId)->meta ?? []),
             'tool_call_id' => $toolCallId,
             'cancelled' => true,
             'timed_out' => $timedOut,
             'is_error' => true,
+            ...$this->terminalTimingMeta($p, $state->getBlock($blockId)),
         ];
 
         $text = $timedOut ? 'Timed out' : 'Cancelled';
@@ -399,5 +400,32 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
     public function onRunCancelled(TranscriptProjectionEvent $event): void
     {
         $event->state->removeOrphanedToolCallBlocks();
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     *
+     * @return array<string, mixed>
+     */
+    private function terminalTimingMeta(array $payload, ?TranscriptBlock $existing): array
+    {
+        $meta = [];
+        $start = $existing?->meta['started_at'] ?? null;
+        $end = $payload['ended_at'] ?? null;
+        if (\is_string($start)) {
+            $meta['started_at'] = $start;
+        }
+        if (\is_string($end)) {
+            $meta['ended_at'] = $end;
+        }
+        if (isset($payload['duration_ms'])) {
+            $meta['duration_ms'] = max(0, (int) $payload['duration_ms']);
+        } elseif (\is_string($start) && \is_string($end)) {
+            $meta['duration_ms'] = max(0, (int) round(
+                ((float) new \DateTimeImmutable($end)->format('U.u') - (float) new \DateTimeImmutable($start)->format('U.u')) * 1000,
+            ));
+        }
+
+        return $meta;
     }
 }
