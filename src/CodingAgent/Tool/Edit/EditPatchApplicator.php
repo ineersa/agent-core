@@ -168,7 +168,7 @@ final class EditPatchApplicator
     {
         $oneLine = str_replace("\n", '\\n', $text);
         if (\strlen($oneLine) > 80) {
-            return substr($oneLine, 0, 77).'...';
+            return mb_strcut($oneLine, 0, 77, 'UTF-8').'...';
         }
 
         return $oneLine;

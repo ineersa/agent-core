@@ -209,7 +209,7 @@ final class EditPatchParser
     private function preview(string $line): string
     {
         if (\strlen($line) > 80) {
-            return substr($line, 0, 77).'...';
+            return mb_strcut($line, 0, 77, 'UTF-8').'...';
         }
 
         return $line;

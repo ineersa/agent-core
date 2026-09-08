@@ -165,6 +165,24 @@ PATCH;
         }
     }
 
+    public function testStaleUnicodeContextProducesSerializableErrorWithoutChangingFile(): void
+    {
+        $targetPath = $this->tmpDir.'/unicode-stale.txt';
+        $original = "actual context\n";
+        file_put_contents($targetPath, $original);
+        $needle = '    // '.str_repeat('─', 46);
+
+        try {
+            ($this->editFileTool)(new EditFileArgumentsDTO(path: $targetPath, patch: "@@\n ".$needle."\n-old\n+new"));
+            $this->fail('Expected ToolCallException');
+        } catch (ToolCallException $e) {
+            $this->assertStringContainsString('E_PATCH_STALE', $e->getMessage());
+            $this->assertStringContainsString('    // '.str_repeat('─', 23).'...', $e->hint());
+            $this->assertJson(json_encode(['message' => $e->getMessage(), 'hint' => $e->hint()], \JSON_THROW_ON_ERROR));
+            $this->assertSame($original, file_get_contents($targetPath));
+        }
+    }
+
     public function testAmbiguousSeekHintFailsFast(): void
     {
         $targetPath = $this->tmpDir.'/ambiguous.txt';

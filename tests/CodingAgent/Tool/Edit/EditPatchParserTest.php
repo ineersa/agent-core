@@ -19,6 +19,19 @@ final class EditPatchParserTest extends TestCase
         $this->parser = new EditPatchParser();
     }
 
+    public function testMalformedUnicodeBodyProducesSerializableError(): void
+    {
+        $line = 'oops '.str_repeat('─', 46);
+
+        try {
+            $this->parser->parse("@@\n".$line);
+            $this->fail('Expected ToolCallException');
+        } catch (ToolCallException $e) {
+            $this->assertStringContainsString('Invalid hunk body line: "oops '.str_repeat('─', 24).'..."', $e->getMessage());
+            $this->assertJson(json_encode(['message' => $e->getMessage(), 'hint' => $e->hint()], \JSON_THROW_ON_ERROR));
+        }
+    }
+
     public function testSingleTrailingEndPatchMarkerIsTolerated(): void
     {
         $patch = <<<'PATCH'
