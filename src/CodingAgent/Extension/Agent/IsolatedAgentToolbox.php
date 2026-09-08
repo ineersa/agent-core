@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Extension\Agent;
 
+use Ineersa\AgentCore\Contract\Tool\DiagnosticMessageSanitizer;
 use Ineersa\CodingAgent\Tool\SingleToolFactory;
 use Ineersa\Hatfield\ExtensionApi\Agent\AgentToolDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ExtensionToolHandlerInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
+use Symfony\AI\Agent\Toolbox\Exception\ToolExecutionException;
+use Symfony\AI\Agent\Toolbox\Exception\ToolExecutionExceptionInterface;
 use Symfony\AI\Agent\Toolbox\Exception\ToolNotFoundException;
 use Symfony\AI\Agent\Toolbox\Toolbox;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
@@ -86,6 +89,21 @@ final class IsolatedAgentToolbox implements ToolboxInterface
             logger: $this->logger ?? new NullLogger(),
         );
 
-        return $toolbox->execute($toolCall);
+        try {
+            return $toolbox->execute($toolCall);
+        } catch (ToolExecutionExceptionInterface $e) {
+            // FaultTolerantToolbox converts ToolExecutionExceptionInterface into
+            // a model-visible ToolResult via getToolCallResult(), which is generic.
+            // Translate here into an actionable ToolResult so extension-agent tools
+            // keep failed visibility without coupling to MCP sanitizers.
+            if (!$e instanceof ToolExecutionException) {
+                throw $e;
+            }
+
+            $previous = $e->getPrevious();
+            $cause = null !== $previous ? $previous->getMessage() : $e->getMessage();
+
+            return new ToolResult($toolCall, DiagnosticMessageSanitizer::sanitize($cause));
+        }
     }
 }

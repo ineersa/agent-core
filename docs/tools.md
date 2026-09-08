@@ -70,6 +70,19 @@ MCP servers advertise their own tool names and schemas. `/mcp` shows configured
 servers and discovered tools. [MCP configuration](mcp.md) controls availability.
 IDE tools are supplied by the configured integration, not by the fixed built-in list.
 
+## Failure diagnostics
+
+Tool failures retain a failed outcome in runtime events and the transcript.
+Handler exceptions expose a bounded cause instead of a generic execution error.
+Common credential patterns are redacted before display. Redaction cannot identify
+arbitrary secrets embedded in prose; tool handlers must not include sensitive
+arguments or environment values in exception messages.
+
+Results retain the tool-call identity. Available task, log, and status references
+describe where to inspect partial work before retrying. A failed tool call does
+not imply that earlier side effects were rolled back. Bash supervision failure
+does not establish the workload's exit status. See [Background processes](background-processes.md).
+
 ## Related
 
 - [Terminal usage](terminal-usage.md)

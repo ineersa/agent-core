@@ -46,8 +46,6 @@ final class ProcessLifecycle
     public function launchProcess(string $command, string $pidFile, string $logFile, string $statusFile): array
     {
         // Preflight: verify setsid is available before attempting launch.
-        // The shell pipeline "setsid … & echo $!" cannot detect setsid
-        // failure because the shell exit code is from echo $!, not setsid.
         exec('command -v setsid', $_, $rc);
         if (0 !== $rc) {
             throw new \RuntimeException('setsid is required but not found on this platform.');
@@ -63,15 +61,22 @@ final class ProcessLifecycle
         //  5. Waits for the child on the normal path, stores child RC
         //     in a variable before echo so exit reflects child outcome
         $shellCode = \sprintf(
-            'echo $$ > %s; exec >> %s 2>&1; %s & CHILD_PID=$!; STATUS_FILE=%s; trap \'kill -TERM $CHILD_PID 2>/dev/null; wait $CHILD_PID 2>/dev/null; echo $? > $STATUS_FILE; exit\' TERM; wait $CHILD_PID 2>/dev/null; RC=$?; echo $RC > $STATUS_FILE; exit $RC',
+            'echo $$ > %s || exit 1; echo $$; exec >> %s 2>&1; bash -c %s & CHILD_PID=$!; STATUS_FILE=%s; trap \'kill -TERM $CHILD_PID 2>/dev/null; wait $CHILD_PID 2>/dev/null; echo $? > $STATUS_FILE; exit\' TERM; wait $CHILD_PID 2>/dev/null; RC=$?; echo $RC > $STATUS_FILE; exit $RC',
             escapeshellarg($pidFile),
             escapeshellarg($logFile),
-            $command,
+            escapeshellarg($command),
             escapeshellarg($statusFile),
         );
 
-        // Launch with setsid (new process group) and capture PID via $!
-        $launcher = 'setsid bash -c '.escapeshellarg($shellCode).' & echo $!';
+        // Always force setsid to fork (-f). Without -f, util-linux setsid may
+        // fork only when the caller is already a process-group leader; the
+        // shell's "setsid … & echo $!" then tracks that short-lived forked
+        // setsid helper instead of the durable bash wrapper. The wrapper PID
+        // is authoritative. Publish it on the launch pipe before redirecting
+        // stdout to the log: EOF acknowledges readiness without polling a file.
+        // Keep the command in its own bash -c so heredocs/exit cannot consume
+        // or bypass the supervisor's wait/status-writing code.
+        $launcher = 'setsid -f bash -c '.escapeshellarg($shellCode);
 
         $output = [];
         $exitCode = -1;
@@ -83,7 +88,7 @@ final class ProcessLifecycle
 
         $pid = (int) $output[0];
         if ($pid <= 0) {
-            throw new \RuntimeException('Failed to launch background process: invalid PID ('.$output[0].').');
+            throw new \RuntimeException('Failed to launch background process: invalid wrapper PID ('.$output[0].').');
         }
 
         $pgid = $this->resolvePgid($pid);

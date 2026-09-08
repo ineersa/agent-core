@@ -49,6 +49,71 @@ final class ProcessLifecycleTest extends TestCase
     }
 
     #[Test]
+    public function launchProcessTracksWrapperPidNotTransientLauncher(): void
+    {
+        $pidFile = $this->tmpDir.'/wrapper.pid';
+        $statusFile = $this->tmpDir.'/wrapper.status';
+        $logFile = $this->tmpDir.'/wrapper.log';
+        $server = stream_socket_server('tcp://127.0.0.1:0');
+        $this->assertIsResource($server);
+        $address = stream_socket_get_name($server, false);
+        $command = escapeshellarg(\PHP_BINARY).' -r '.escapeshellarg(
+            '$socket = stream_socket_client("tcp://'.$address.'"); fread($socket, 1); echo "done";',
+        );
+
+        $launch = $this->lifecycle->launchProcess($command, $pidFile, $logFile, $statusFile);
+        $connection = null;
+        try {
+            $connection = stream_socket_accept($server, 2);
+            $this->assertIsResource($connection, 'Workload must connect under the tracked wrapper');
+            $this->assertFileExists($pidFile);
+            $this->assertSame(
+                $launch['pid'],
+                (int) trim((string) file_get_contents($pidFile)),
+                'Tracked PID must match the wrapper PID file',
+            );
+            $this->assertTrue($this->lifecycle->isAlive($launch['pid']));
+            $this->assertNull($this->lifecycle->readStatusFile($statusFile));
+        } finally {
+            if (\is_resource($connection)) {
+                fwrite($connection, 'x');
+                fclose($connection);
+            }
+            fclose($server);
+            $deadline = hrtime(true) + 2_000_000_000;
+            while (hrtime(true) < $deadline && null === $this->lifecycle->readStatusFile($statusFile)) {
+                usleep(1_000);
+            }
+            if ($this->lifecycle->isAlive($launch['pid'])) {
+                $this->lifecycle->sendKill($launch['pid'], $launch['pgid']);
+            }
+        }
+
+        $this->assertSame(0, $this->lifecycle->readStatusFile($statusFile));
+        $this->assertStringContainsString('done', (string) file_get_contents($logFile));
+    }
+
+    #[Test]
+    public function commandExitAndHeredocCannotBypassStatusRecording(): void
+    {
+        $statusPath = $this->tmpDir.'/command.status';
+        $logPath = $this->tmpDir.'/command.log';
+        $launch = $this->lifecycle->launchProcess("cat <<'END'\nheredoc output\nEND\nexit 7", $this->tmpDir.'/command.pid', $logPath, $statusPath);
+        try {
+            $deadline = hrtime(true) + 2_000_000_000;
+            while (hrtime(true) < $deadline && null === $this->lifecycle->readStatusFile($statusPath)) {
+                usleep(1_000);
+            }
+            $this->assertSame(7, $this->lifecycle->readStatusFile($statusPath));
+            $this->assertSame("heredoc output\n", file_get_contents($logPath));
+        } finally {
+            if ($this->lifecycle->isAlive($launch['pid'])) {
+                $this->lifecycle->sendKill($launch['pid'], $launch['pgid']);
+            }
+        }
+    }
+
+    #[Test]
     public function logTailPreservesUtf8BoundariesAndNewestOutput(): void
     {
         $box = "\u{2500}";

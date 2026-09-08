@@ -491,10 +491,14 @@ final class RegistryBackedToolboxTest extends TestCase
         });
 
         $toolbox = new FaultTolerantToolbox($this->createToolbox($registry, $dispatcher));
-        $result = $toolbox->execute(new ToolCall('call-failed', 'failing', ['path' => 'x']));
-
-        // Native Toolbox wraps non-ToolExecutionExceptionInterface throwables.
-        $this->assertSame('An error occurred while executing tool "failing".', (string) $result->getResult());
+        try {
+            $toolbox->execute(new ToolCall('call-failed', 'failing', ['path' => 'x']));
+            $this->fail('Expected ToolCallException with actionable handler cause');
+        } catch (ToolCallException $caught) {
+            $this->assertSame('boom', $caught->getMessage());
+            $this->assertFalse($caught->retryable());
+            $this->assertSame($exception, $caught->getPrevious());
+        }
         $this->assertInstanceOf(ToolCallFailed::class, $failedEvent);
         $this->assertSame($handler, $failedEvent->getTool());
         $this->assertSame('failing', $failedEvent->getDefinition()->getName());

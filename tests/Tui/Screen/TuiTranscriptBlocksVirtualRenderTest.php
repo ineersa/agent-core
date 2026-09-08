@@ -318,11 +318,11 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
             public function __invoke(array $arguments): string
             {
                 if ($this->fails) {
-                    throw new \RuntimeException('Private handler exception detail');
+                    throw new \RuntimeException('Selected extension "MissingExt" is not in extensions.enabled (Bearer sk-secret-token)');
                 }
 
-                // Identical text must remain successful when a tool returns it.
-                return 'An error occurred while executing tool "bash".';
+                // Successful result text must remain successful even if it looks like a failure label.
+                return 'Selected extension "MissingExt" is not in extensions.enabled (Bearer sk-secret-token)';
             }
         };
         $registry = new ToolRegistry();
@@ -381,12 +381,19 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
             $harness->screen()->setTranscriptBlocks($projector->blocks());
             $plain = $harness->plainScreenText();
             $ansi = $harness->ansiOutput();
-            $this->assertStringContainsString('An error occurred while executing tool "bash".', $plain);
-            $this->assertStringNotContainsString('Private handler exception detail', $plain);
+            $this->assertStringContainsString(
+                $fails
+                    ? 'Selected extension "MissingExt" is not in extensions.enabled (bearer <redacted>'
+                    : 'Selected extension "MissingExt" is not in extensions.enabled (Bearer sk-secret-token)',
+                $plain,
+            );
+            if ($fails) {
+                $this->assertStringNotContainsString('sk-secret-token', $plain);
+            }
             $this->assertMatchesRegularExpression(
                 $fails
-                    ? '/\x1b\[38;2;255;51;102m\s*An error occurred while executing tool "bash"\./'
-                    : '/\x1b\[38;2;57;255;20m\s*An error occurred while executing tool "bash"\./',
+                    ? '/\x1b\[38;2;255;51;102m\s*Selected extension "MissingExt" is not in extensions.enabled \(bearer <redacted>\)?/'
+                    : '/\x1b\[38;2;57;255;20m\s*Selected extension "MissingExt" is not in extensions.enabled \(Bearer sk-secret-token\)/',
                 $ansi,
                 $phase.' result must use the outcome color, not classify the text',
             );

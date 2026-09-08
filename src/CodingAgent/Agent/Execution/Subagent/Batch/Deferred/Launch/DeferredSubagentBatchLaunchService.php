@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch;
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
+use Ineersa\AgentCore\Contract\Tool\DiagnosticMessageSanitizer;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
@@ -195,7 +196,7 @@ final class DeferredSubagentBatchLaunchService
                 ]);
             }
 
-            throw new ToolCallException('Subagent batch launch failed.', retryable: false, previous: $e->getPrevious() ?? $e);
+            throw $this->launchFailedException($e->getPrevious() ?? $e);
         }
 
         if ([] === $preparedChildren) {
@@ -240,7 +241,7 @@ final class DeferredSubagentBatchLaunchService
                 ]);
             }
 
-            throw new ToolCallException('Subagent batch launch failed.', retryable: false, previous: $e->getPrevious() ?? $e);
+            throw $this->launchFailedException($e->getPrevious() ?? $e);
         }
 
         $launchedIndices = $this->batchPreparation->collectLaunchedBatchIndices(
@@ -262,6 +263,16 @@ final class DeferredSubagentBatchLaunchService
         }
 
         return new DeferredToolCompletionOutcome($lifecycleId);
+    }
+
+    private function launchFailedException(\Throwable $cause): ToolCallException
+    {
+        $detail = DiagnosticMessageSanitizer::sanitize($cause->getMessage());
+        $message = '' === $detail
+            ? 'Subagent batch launch failed.'
+            : \sprintf('Subagent batch launch failed: %s', $detail);
+
+        return new ToolCallException($message, retryable: false, previous: $cause);
     }
 
     private function reconcileLaunchSuccessFromArtifacts(

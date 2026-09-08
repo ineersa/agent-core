@@ -422,7 +422,7 @@ final class ToolExecutorTest extends TestCase
         $handler = new class {
             public function __invoke(array $arguments): mixed
             {
-                throw new ToolCallException('Registry tool failed', retryable: true, hint: 'Adjust the arguments');
+                throw new ToolCallException('Registry tool failed '.str_repeat('x', 700).' END', retryable: true, hint: 'Adjust the arguments');
             }
         };
         $registry = new ToolRegistry();
@@ -451,6 +451,7 @@ final class ToolExecutorTest extends TestCase
         $this->assertTrue($result->details['retryable']);
         $this->assertSame('Adjust the arguments', $result->details['hint']);
         $this->assertStringContainsString('Registry tool failed', $result->content[0]['text']);
+        $this->assertStringContainsString(str_repeat('x', 700).' END', $result->content[0]['text'], 'Explicit tool output must retain the existing central output-cap contract.');
     }
 
     public function testFlatDtoArgumentsResolveThroughExecutor(): void
@@ -534,6 +535,45 @@ final class ToolExecutorTest extends TestCase
         $this->assertSame(ToolCallException::class, $result->details['error_type']);
         $this->assertFalse($result->details['retryable']);
         $this->assertStringContainsString('The type of the "path" attribute', $result->content[0]['text']);
+    }
+
+    public function testRegistryHandlerRuntimeExceptionSurfacesSanitizedCauseInErrorResult(): void
+    {
+        $handler = new class {
+            public function __invoke(array $arguments): mixed
+            {
+                throw new \RuntimeException('Selected extension "MissingExt" is not in extensions.enabled (Bearer sk-secret-token)'."\n".str_repeat('diagnostic ', 70)."\nNext: inspect the task record.");
+            }
+        };
+        $registry = new ToolRegistry();
+        $registry->registerTool(name: 'registry_tool', description: 'Registry tool', parametersJsonSchema: [], handler: $handler, promptLine: 'registry_tool');
+
+        $toolbox = new RegistryBackedToolbox(
+            registry: $registry,
+            argumentResolver: new RawAwareToolCallArgumentResolver(new ToolCallArgumentResolver()),
+        );
+        $executor = new ToolExecutor(
+            defaultMode: 'parallel',
+            maxParallelism: 4,
+            toolbox: $toolbox,
+            resultStore: new ToolExecutionResultStore(),
+        );
+
+        $result = $executor->execute(ToolCallBuilder::create('call-runtime-cause')
+            ->withToolName('registry_tool')
+            ->withArguments(['x' => 1])
+            ->withOrderIndex(0)
+            ->withRunId('run-runtime-cause')
+            ->build());
+
+        $this->assertTrue($result->isError);
+        $this->assertSame('call-runtime-cause', $result->toolCallId);
+        $this->assertSame(ToolCallException::class, $result->details['error_type']);
+        $this->assertFalse($result->details['retryable']);
+        $this->assertStringContainsString('Selected extension "MissingExt" is not in extensions.enabled', $result->content[0]['text']);
+        $this->assertStringContainsString('bearer <redacted>', $result->content[0]['text']);
+        $this->assertStringNotContainsString('sk-secret-token', $result->content[0]['text']);
+        $this->assertStringContainsString('Next: inspect the task record.', $result->content[0]['text'], 'Partial-operation guidance must survive the generic exception boundary.');
     }
 
     public function testContextAccessorSetsCorrectValues(): void
