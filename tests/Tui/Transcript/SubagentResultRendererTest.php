@@ -96,6 +96,7 @@ final class SubagentResultRendererTest extends TestCase
         $this->assertStringContainsString('● scout [running]', $joined);
         $this->assertStringContainsString('38 tools', $joined);
         $this->assertStringContainsString('49k tok', $joined);
+        $this->assertStringContainsString('2m19s', $joined);
         $this->assertStringContainsString('Artifact artifacts/agents/agent_01HX', $joined);
         $this->assertStringContainsString('Run run-child-abc', $joined);
         $this->assertStringContainsString('› read: path="RuntimeEventTranslator.php"', $joined);
@@ -103,6 +104,31 @@ final class SubagentResultRendererTest extends TestCase
         $this->assertStringContainsString('in:35k', $joined);
         $this->assertStringContainsString('deepseek/deepseek-v4-flash (reasoning: high)', $joined);
         $this->assertStringContainsString('/agents-live', $joined);
+    }
+
+    public function testCompletedSingleCardKeepsCompactToolsTokensElapsedSummary(): void
+    {
+        $progress = [
+            'mode' => 'single', 'status' => 'completed', 'agent_name' => 'scout',
+            'artifact_id' => 'agent_01HX', 'agent_run_id' => 'run-child-abc',
+            'task_summary' => 'inspect runtime events', 'turn_no' => 17,
+            'elapsed_ms' => 139000, 'tool_count' => 38, 'total_tokens' => 49000,
+            'input_tokens' => 35000, 'output_tokens' => 14000, 'reasoning_tokens' => 584000,
+            'cost' => 0.0104,
+            'model' => 'deepseek/deepseek-v4-flash',
+            'reasoning' => 'high',
+            'artifact_path' => 'artifacts/agents/agent_01HX',
+        ];
+        $block = new TranscriptBlock(
+            id: 'tool_result_completed_summary', kind: TranscriptBlockKindEnum::ToolResult, runId: 'run1', seq: 1,
+            text: '', meta: ['tool_name' => 'subagent', 'subagent_progress' => $this->snapshot($progress)],
+        );
+        $joined = implode("\n", $this->renderBlockLines($block));
+        $this->assertStringContainsString('✓ scout [completed]', $joined);
+        $this->assertStringContainsString('38 tools', $joined);
+        $this->assertStringContainsString('49k tok', $joined);
+        $this->assertStringContainsString('2m19s', $joined);
+        $this->assertStringContainsString('deepseek/deepseek-v4-flash (reasoning: high)', $joined);
     }
 
     public function testRendersWaitingHumanNeedsInputCard(): void
@@ -221,7 +247,7 @@ final class SubagentResultRendererTest extends TestCase
                 ],
                 [
                     'index' => 2, 'agent_name' => 'reviewer', 'status' => 'completed', 'artifact_id' => 'agent_2', 'agent_run_id' => 'run-1', 'model' => 'test/model', 'reasoning' => 'medium',
-                    'task_summary' => 'Review patch', 'turn_no' => 1, 'active_tool' => 'read: path="AGENTS.md"',
+                    'task_summary' => 'Review patch', 'turn_no' => 1, 'tool_count' => 5, 'total_tokens' => 12000, 'elapsed_ms' => 45000, 'active_tool' => 'read: path="AGENTS.md"',
                 ],
             ],
         ];
@@ -238,6 +264,10 @@ final class SubagentResultRendererTest extends TestCase
         $this->assertStringContainsString('reviewer', $joined);
         $this->assertStringContainsString('Task Read docs', $joined);
         $this->assertStringContainsString('Task Review patch', $joined);
+        $this->assertStringContainsString('#2 ✓ reviewer [completed]', $joined);
+        $this->assertStringContainsString('5 tools', $joined);
+        $this->assertStringContainsString('12k tok', $joined);
+        $this->assertStringContainsString('45s', $joined);
         $this->assertStringNotContainsString('running Step', $joined);
     }
 

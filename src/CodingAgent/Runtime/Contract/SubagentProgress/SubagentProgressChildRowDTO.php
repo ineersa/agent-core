@@ -31,6 +31,8 @@ final readonly class SubagentProgressChildRowDTO
         public string $model,
         #[Assert\NotBlank]
         public string $reasoning,
+        #[Assert\GreaterThanOrEqual(0)]
+        public int $elapsedMs = 0,
         public int $turnNo = 0,
         #[Assert\GreaterThanOrEqual(0)]
         public int $toolCount = 0,

@@ -123,6 +123,7 @@ final class SubagentProgressSnapshotBuilder
                 taskSummary: $report->task,
                 turnNo: $activeTurns[$agentRunId] ?? 0,
                 enrichment: $enrichment,
+                elapsedMs: $report->elapsedMs,
             );
         }
 
@@ -151,6 +152,7 @@ final class SubagentProgressSnapshotBuilder
         string $taskSummary,
         int $turnNo,
         SubagentChildProgressSummary $enrichment,
+        int $elapsedMs,
     ): SubagentProgressChildRowDTO {
         return new SubagentProgressChildRowDTO(
             index: $index,
@@ -161,6 +163,7 @@ final class SubagentProgressSnapshotBuilder
             taskSummary: $taskSummary,
             model: $enrichment->model,
             reasoning: $enrichment->reasoning,
+            elapsedMs: max(0, $elapsedMs),
             turnNo: $turnNo,
             toolCount: $enrichment->toolCount,
             llmStepCount: $enrichment->llmStepCount,

@@ -201,7 +201,7 @@ final class SubagentProgressCardWidget extends AbstractWidget
         $prefix = null === $childIndex ? '' : \sprintf('#%d ', $childIndex);
         $parts = [\sprintf('%s%s %s [%s]', $prefix, $glyph, $agentName, $badge)];
 
-        if ($this->isActiveStatus($status)) {
+        if ($this->isActiveStatus($status) || \in_array($status, ['completed', 'failed', 'cancelled'], true)) {
             if ($progress->toolCount > 0) {
                 $parts[] = \sprintf('%d tools', $progress->toolCount);
             }
@@ -209,9 +209,7 @@ final class SubagentProgressCardWidget extends AbstractWidget
             if (null !== $tok) {
                 $parts[] = $tok;
             }
-            if ($progress instanceof SubagentProgressSingleSnapshotDTO) {
-                $parts[] = $this->formatElapsedHuman($progress->elapsedMs);
-            }
+            $parts[] = $this->formatElapsedHuman($progress->elapsedMs);
         }
 
         return implode(' · ', $parts);
