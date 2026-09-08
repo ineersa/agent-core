@@ -6,6 +6,8 @@ namespace Ineersa\CodingAgent\Mcp\Tool;
 
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 
+use function Symfony\Component\String\u;
+
 /**
  * Maps MCP callTool results (content blocks + isError flag) to
  * normal Hatfield tool output strings or structured ToolCallException.
@@ -112,9 +114,7 @@ final class McpResultMapper
         // Truncate long error messages — MCP servers may return
         // arbitrary-length text that should not appear verbatim in
         // LLM-visible exception messages.
-        if (\strlen($joined) > self::MAX_ERROR_TEXT_LENGTH) {
-            $joined = substr($joined, 0, self::MAX_ERROR_TEXT_LENGTH - 3).'...';
-        }
+        $joined = u($joined)->truncate(self::MAX_ERROR_TEXT_LENGTH, '...')->toString();
 
         // Redact common secret-bearing patterns (Bearer tokens,
         // API keys, passwords).  Use the same patterns as the

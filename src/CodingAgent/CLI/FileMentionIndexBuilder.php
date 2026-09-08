@@ -611,18 +611,13 @@ final class FileMentionIndexBuilder
         }
 
         $remaining = self::STDERR_DIAGNOSTIC_LIMIT - \strlen($buffer);
-        if ($remaining <= 0) {
-            $buffer .= '…';
-
-            return;
-        }
-
         if (\strlen($chunk) <= $remaining) {
             $buffer .= $chunk;
 
             return;
         }
 
-        $buffer .= substr($chunk, 0, $remaining).'…';
+        // Process chunks can split a code point. Cut the combined diagnostic.
+        $buffer = mb_strcut($buffer.$chunk, 0, self::STDERR_DIAGNOSTIC_LIMIT, 'UTF-8').'…';
     }
 }

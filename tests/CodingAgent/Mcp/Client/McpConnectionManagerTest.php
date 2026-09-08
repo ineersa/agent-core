@@ -532,6 +532,13 @@ class McpConnectionManagerTest extends TestCase
                 );
             }
         }
+
+        $box = "\u{2500}";
+        $this->assertTrue(mb_check_encoding($box, 'UTF-8'));
+        $sanitizedUnicode = McpConnectionManager::sanitizeLogMessage(str_repeat($box, 600));
+        $this->assertTrue(mb_check_encoding($sanitizedUnicode, 'UTF-8'));
+        $this->assertStringEndsWith('...', $sanitizedUnicode);
+        $this->assertStringContainsString($box, $sanitizedUnicode);
     }
 
     /**

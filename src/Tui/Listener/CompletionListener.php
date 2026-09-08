@@ -263,14 +263,9 @@ final class CompletionListener implements TuiListenerRegistrar
             }
 
             // UTF-8 code-point-safe removal of the last character.
-            // Sufficient for ASCII slash command contexts; falls back
-            // to byte-level substr for resilience.
-            $trimmed = preg_replace('/.$/usD', '', $current);
-            if (null === $trimmed || $trimmed === $current) {
-                return substr($current, 0, -1);
-            }
-
-            return $trimmed;
+            // If the input cannot be decoded, close the overlay rather
+            // than guessing a byte-level editor mutation.
+            return preg_replace('/.$/usD', '', $current);
         }
 
         // Printable character — append.

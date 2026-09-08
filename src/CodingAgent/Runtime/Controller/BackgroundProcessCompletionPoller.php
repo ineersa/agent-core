@@ -14,6 +14,8 @@ use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Psr\Log\LoggerInterface;
 use Revolt\EventLoop;
 
+use function Symfony\Component\String\u;
+
 /**
  * Polls for completed background processes that should notify the user.
  *
@@ -223,9 +225,7 @@ final class BackgroundProcessCompletionPoller
             default => null !== $exitCode ? (string) $exitCode : '?',
         };
 
-        $commandPreview = \strlen($process->command) > 200
-            ? substr($process->command, 0, 197).'...'
-            : $process->command;
+        $commandPreview = u($process->command)->truncate(200, '...')->toString();
 
         $notification = \sprintf(
             "[BG_PROCESS_DONE] PID %d finished (exit %s)\nCommand: %s\n\nOutput (last %d chars):\n%s",

@@ -452,6 +452,29 @@ final class SubagentLivePickerControllerTest extends TestCase
     }
 
     #[Test]
+    public function buildItemsKeepsValidUtf8WhenTruncatingMultibyteTaskSummary(): void
+    {
+        $box = "\u{2500}";
+        $this->assertTrue(mb_check_encoding($box, 'UTF-8'));
+        $state = new TuiSessionState('picker-utf8-row');
+        $this->seedCatalogChild(
+            $state,
+            'agent_utf8',
+            'utf8-run-id-long',
+            'running',
+            agentName: 'scout',
+            task: str_repeat($box, 80),
+        );
+
+        $items = SubagentLivePickerController::buildItems($state->subagentLiveCatalog->all());
+        $this->assertCount(1, $items);
+        $label = $items[0]['label'];
+        $this->assertTrue(mb_check_encoding($label, 'UTF-8'));
+        $this->assertStringContainsString('...', $label);
+        $this->assertStringContainsString($box, $label);
+    }
+
+    #[Test]
     public function testArrowNavigationMovesSingleNativeHighlight(): void
     {
         $base = VirtualTuiHarness::defaultVirtualPalette();

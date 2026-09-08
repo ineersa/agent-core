@@ -340,10 +340,7 @@ MD;
     private function truncateHandoffText(string $text, int $maxLen): string
     {
         $trimmed = trim($text);
-        if (\strlen($trimmed) <= $maxLen) {
-            return $trimmed;
-        }
 
-        return substr($trimmed, 0, $maxLen - 3).'...';
+        return u($trimmed)->truncate($maxLen, '...')->toString();
     }
 }

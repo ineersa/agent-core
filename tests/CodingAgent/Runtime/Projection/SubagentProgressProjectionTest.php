@@ -69,6 +69,32 @@ final class SubagentProgressProjectionTest extends TestCase
         $this->assertSame(2, $progress->llmStepCount);
     }
 
+    public function testProgressFormatterTruncationKeepsValidUtf8(): void
+    {
+        $box = "\u{2500}";
+        $this->assertTrue(mb_check_encoding($box, 'UTF-8'));
+        $this->accept('tool_execution.started', [
+            'tool_call_id' => 'tc_utf8', 'tool_name' => 'subagent',
+        ]);
+        $this->accept('tool_execution.output_delta', [
+            'tool_call_id' => 'tc_utf8',
+            'tool_name' => 'subagent',
+            'subagent_progress' => [
+                'mode' => 'single', 'status' => 'running', 'agent_name' => 'scout',
+                'artifact_id' => 'agent_utf8', 'agent_run_id' => 'child-utf8',
+                'task_summary' => str_repeat($box, 160),
+                'model' => 'test/model', 'reasoning' => 'medium', 'turn_no' => 1,
+                'llm_step_count' => 1, 'elapsed_ms' => 1000,
+                'assistant_excerpt' => str_repeat($box, 260),
+            ],
+        ]);
+
+        $block = $this->projector->blocks()[0];
+        $this->assertTrue(mb_check_encoding($block->text, 'UTF-8'));
+        $this->assertStringContainsString('…', $block->text);
+        $this->assertStringContainsString('Task: '.$box, $block->text);
+    }
+
     public function testParallelSubagentProgressRendersChildSingleWidgetSections(): void
     {
         $this->accept('tool_execution.started', [

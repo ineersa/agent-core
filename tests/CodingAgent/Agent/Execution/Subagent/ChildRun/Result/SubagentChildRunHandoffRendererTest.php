@@ -86,4 +86,37 @@ final class SubagentChildRunHandoffRendererTest extends TestCase
         $this->assertStringContainsString('Found root cause in CodexWebSocketModelClient send path.', $markdown);
         $this->assertStringContainsString('Use agent_retrieve (metadata/events/history) for more child details.', $markdown);
     }
+
+    public function testPartialContextTruncationKeepsValidUtf8(): void
+    {
+        $box = "\u{2500}";
+        $this->assertTrue(mb_check_encoding($box, 'UTF-8'));
+        $renderer = new SubagentChildRunHandoffRenderer();
+        $excerpt = str_repeat($box, 900);
+        $childState = new RunState(
+            runId: 'a5089241-a55a-5794-9353-b7cc43cb30fc',
+            status: RunStatus::Failed,
+            turnNo: 1,
+            lastSeq: 1,
+            errorMessage: 'failed',
+            messages: [
+                new AgentMessage(role: 'assistant', content: [['type' => 'text', 'text' => $excerpt]]),
+            ],
+        );
+
+        $markdown = $renderer->buildHandoffMarkdown(
+            status: AgentArtifactStatusEnum::Failed,
+            summary: 'failed',
+            failureReason: 'failed',
+            needsClarification: null,
+            artifactId: 'agent_utf8',
+            agentName: 'scout',
+            agentRunId: 'a5089241-a55a-5794-9353-b7cc43cb30fc',
+            childState: $childState,
+        );
+
+        $this->assertTrue(mb_check_encoding($markdown, 'UTF-8'));
+        $this->assertStringContainsString('...', $markdown);
+        $this->assertStringContainsString($box, $markdown);
+    }
 }
