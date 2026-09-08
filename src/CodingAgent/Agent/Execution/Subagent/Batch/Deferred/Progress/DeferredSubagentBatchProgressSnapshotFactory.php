@@ -69,7 +69,7 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
             $child->childRunId,
             $child->task,
             null !== $cp ? $cp->childTurnNo : 0,
-            $this->elapsedMsSince($batch->startedAt),
+            $this->childElapsedMs($child, $batch),
             $enrichment,
             $forcedStatus,
         );
@@ -94,7 +94,7 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
         }
 
         return $this->progressSnapshotBuilder->parallelSnapshot(
-            $reports, $activeTurns, $this->elapsedMsSince($batch->startedAt), $enrichmentByRun, 'cancelled',
+            $reports, $activeTurns, $this->batchElapsedMs($batch), $enrichmentByRun, 'cancelled',
         );
     }
 
@@ -120,7 +120,7 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
             : $this->identityOnlyEnrichment($child);
 
         $turnNo = null !== $cp ? $cp->childTurnNo : 0;
-        $elapsed = $this->elapsedMsSince($batch->startedAt);
+        $elapsed = $this->childElapsedMs($child, $batch);
 
         $status = null !== $cp
             ? $this->mapChildProgressStatus($cp->childStatus)
@@ -153,7 +153,7 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
         }
 
         return $this->progressSnapshotBuilder->parallelSnapshot(
-            $reports, $activeTurns, $this->elapsedMsSince($batch->startedAt),
+            $reports, $activeTurns, $this->batchElapsedMs($batch),
             $enrichmentByRun, $this->resolveAggregateStatus($snapshots),
         );
     }
@@ -170,7 +170,7 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
                 identity: $identity, terminal: $state->terminal,
                 artifactStatus: $state->artifactStatus, message: $state->message,
             ),
-            report: $this->buildChildReport($child, $state),
+            report: $this->buildChildReport($child, $state, $batch),
             turnNo: $state->turnNo,
             enrichment: $state->enrichment,
         );
@@ -187,7 +187,7 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
         if (null !== $cp && $cp->childStatus->isTerminal()) {
             $state = $this->resolveChildProgressState($child);
 
-            return $this->forcedCancelResult($identity, $child, $state, $state->turnNo, $state->enrichment);
+            return $this->forcedCancelResult($identity, $batch, $child, $state, $state->turnNo, $state->enrichment);
         }
 
         // Projected-nonterminal: preserve turnNo + enrichment, override terminal/status/message
@@ -201,14 +201,14 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
                 enrichment: $rs->enrichment,
             );
 
-            return $this->forcedCancelResult($identity, $child, $cs, $rs->turnNo, $rs->enrichment);
+            return $this->forcedCancelResult($identity, $batch, $child, $cs, $rs->turnNo, $rs->enrichment);
         }
 
         // Unprojected: identity-only enrichment from launch
         $enrichment = $this->identityOnlyEnrichment($child);
 
         return $this->forcedCancelResult(
-            $identity, $child,
+            $identity, $batch, $child,
             new DeferredSubagentBatchChildProgressStateDTO(
                 terminal: true,
                 artifactStatus: AgentArtifactStatusEnum::Cancelled,
@@ -220,13 +220,19 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
         );
     }
 
-    private function forcedCancelResult(ChildRunIdentityDTO $identity, DeferredSubagentChildProjectionDTO $child, DeferredSubagentBatchChildProgressStateDTO $state, int $turnNo, SubagentChildProgressSummary $enrichment): DeferredSubagentBatchChildProgressBuildDTO
-    {
+    private function forcedCancelResult(
+        ChildRunIdentityDTO $identity,
+        DeferredSubagentBatchProjectionDTO $batch,
+        DeferredSubagentChildProjectionDTO $child,
+        DeferredSubagentBatchChildProgressStateDTO $state,
+        int $turnNo,
+        SubagentChildProgressSummary $enrichment,
+    ): DeferredSubagentBatchChildProgressBuildDTO {
         return new DeferredSubagentBatchChildProgressBuildDTO(
             snapshot: new ChildRunBatchItemSnapshotDTO(
                 identity: $identity, terminal: $state->terminal, artifactStatus: $state->artifactStatus, message: $state->message,
             ),
-            report: $this->buildChildReport($child, $state),
+            report: $this->buildChildReport($child, $state, $batch),
             turnNo: $turnNo,
             enrichment: $enrichment,
         );
@@ -270,19 +276,6 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
             $child->launchModel,
             $child->launchReasoning,
             $child->artifactId,
-        );
-    }
-
-    private function buildChildReport(DeferredSubagentChildProjectionDTO $child, DeferredSubagentBatchChildProgressStateDTO $state): SubagentProgressParallelChildReportDTO
-    {
-        return new SubagentProgressParallelChildReportDTO(
-            index: $child->batchIndex,
-            agentName: $child->agentName,
-            task: $child->task,
-            artifactId: $child->artifactId,
-            agentRunId: $child->childRunId,
-            terminal: $state->terminal,
-            status: $state->artifactStatus,
         );
     }
 
@@ -330,16 +323,64 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
         };
     }
 
-    private function elapsedMsSince(?\DateTimeImmutable $startedAt): int
-    {
+    private function buildChildReport(
+        DeferredSubagentChildProjectionDTO $child,
+        DeferredSubagentBatchChildProgressStateDTO $state,
+        DeferredSubagentBatchProjectionDTO $batch,
+    ): SubagentProgressParallelChildReportDTO {
+        return new SubagentProgressParallelChildReportDTO(
+            index: $child->batchIndex,
+            agentName: $child->agentName,
+            task: $child->task,
+            artifactId: $child->artifactId,
+            agentRunId: $child->childRunId,
+            terminal: $state->terminal,
+            status: $state->artifactStatus,
+            elapsedMs: $this->childElapsedMs($child, $batch),
+        );
+    }
+
+    private function childElapsedMs(
+        DeferredSubagentChildProjectionDTO $child,
+        DeferredSubagentBatchProjectionDTO $batch,
+    ): int {
+        $startedAt = $child->startedAt ?? $batch->startedAt;
         if (null === $startedAt) {
             return 0;
         }
 
-        $now = $this->clock->now();
-        $delta = $now->getTimestamp() - $startedAt->getTimestamp();
+        $endedAt = $child->terminalCompletedAt;
+        if (null === $endedAt) {
+            return $this->elapsedMsBetween($startedAt, $this->clock->now());
+        }
 
-        return max(0, $delta * 1000);
+        return $this->elapsedMsBetween($startedAt, $endedAt);
+    }
+
+    private function batchElapsedMs(DeferredSubagentBatchProjectionDTO $batch): int
+    {
+        if (null === $batch->startedAt) {
+            return 0;
+        }
+
+        $latestTerminal = null;
+        foreach ($batch->children as $child) {
+            if (null === $child->terminalCompletedAt) {
+                return $this->elapsedMsBetween($batch->startedAt, $this->clock->now());
+            }
+            if (null === $latestTerminal || $child->terminalCompletedAt > $latestTerminal) {
+                $latestTerminal = $child->terminalCompletedAt;
+            }
+        }
+
+        return $this->elapsedMsBetween($batch->startedAt, $latestTerminal ?? $this->clock->now());
+    }
+
+    private function elapsedMsBetween(\DateTimeImmutable $startedAt, \DateTimeImmutable $endedAt): int
+    {
+        $delta = (float) $endedAt->format('U.u') - (float) $startedAt->format('U.u');
+
+        return max(0, (int) round($delta * 1000));
     }
 
     /**

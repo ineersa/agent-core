@@ -263,6 +263,7 @@ final class RuntimeEventTranslator
     {
         $p = $runEvent->payload;
         $payload = [
+            'started_at' => $runEvent->createdAt->format('Y-m-d\TH:i:s.uP'),
             'tool_call_id' => (string) ($p['tool_call_id'] ?? ''),
             'tool_name' => (string) ($p['tool_name'] ?? ''),
             'order_index' => (int) ($p['order_index'] ?? 0),
@@ -322,6 +323,7 @@ final class RuntimeEventTranslator
         $orderIndex = $typedResult->orderIndex;
 
         $payload = [
+            'ended_at' => $runEvent->createdAt->format('Y-m-d\TH:i:s.uP'),
             'tool_call_id' => $toolCallId,
             'is_error' => $isError,
             'order_index' => $orderIndex,

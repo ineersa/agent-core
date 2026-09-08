@@ -217,6 +217,7 @@ final class SubagentProgressProjectionTest extends TestCase
         $completed['status'] = 'completed';
         $completed['turn_no'] = 3;
         $completed['tool_count'] = 5;
+        $completed['total_tokens'] = 9000;
         $completed['artifact_path'] = 'artifacts/agents/agent_done';
 
         $this->accept('tool_execution.output_delta', [
@@ -232,7 +233,7 @@ final class SubagentProgressProjectionTest extends TestCase
         ]);
 
         $block = $this->projector->blocks()[0];
-        $this->assertStringContainsString('completed scout', $block->text);
+        $this->assertStringContainsString('completed scout | 5 tools | 9k tok | 5s', $block->text);
         $this->assertStringNotContainsString('running scout', $block->text);
         $this->assertStringContainsString('agent_done', $block->text);
         $this->assertStringContainsString('Done.', $block->text);

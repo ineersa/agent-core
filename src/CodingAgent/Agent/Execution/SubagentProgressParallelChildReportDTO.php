@@ -19,6 +19,7 @@ final readonly class SubagentProgressParallelChildReportDTO
         public string $agentRunId,
         public bool $terminal,
         public AgentArtifactStatusEnum $status,
+        public int $elapsedMs = 0,
     ) {
     }
 }

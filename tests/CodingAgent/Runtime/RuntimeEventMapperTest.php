@@ -31,6 +31,24 @@ final class RuntimeEventMapperTest extends TestCase
 
     // ── Lifecycle normalization ──────────────────────────────────────────────
 
+    public function testToolTimingUsesCanonicalEventTimestamps(): void
+    {
+        $start = new \DateTimeImmutable('2026-09-08T12:00:00.125000+00:00');
+        $end = new \DateTimeImmutable('2026-09-08T12:00:06.375000+00:00');
+        $started = $this->mapper->toRuntimeEvent(new RunEvent(
+            $this->runId, 1, 1, 'tool_execution_start', ['tool_call_id' => 'timed', 'tool_name' => 'read'], createdAt: $start,
+        ));
+        $this->assertNotNull($started);
+        $this->assertSame('2026-09-08T12:00:00.125000+00:00', $started->payload['started_at']);
+        foreach ([false, true] as $isError) {
+            $ended = $this->mapper->toRuntimeEvent(new RunEvent(
+                $this->runId, 2, 1, 'tool_execution_end', $this->toolEndPayload('timed', $isError), createdAt: $end,
+            ));
+            $this->assertNotNull($ended);
+            $this->assertSame('2026-09-08T12:00:06.375000+00:00', $ended->payload['ended_at']);
+        }
+    }
+
     public function testRefreshedInstructionsStayOutOfRuntimeStream(): void
     {
         $event = $this->runEvent('context_refreshed', [
