@@ -100,7 +100,7 @@ final class IsolatedAgentToolboxTest extends TestCase
 
         $result = $toolbox->execute(new ToolCall('c2', 'ext_read', ['path' => 'a.txt']));
 
-        $this->assertSame('An error occurred while executing tool "ext_read".', (string) $result->getResult());
+        $this->assertSame('isolated boom', (string) $result->getResult());
     }
 
     public function testRawArgumentsArePassedThroughWithoutValidation(): void

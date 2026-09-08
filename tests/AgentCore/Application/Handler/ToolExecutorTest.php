@@ -536,6 +536,44 @@ final class ToolExecutorTest extends TestCase
         $this->assertStringContainsString('The type of the "path" attribute', $result->content[0]['text']);
     }
 
+    public function testRegistryHandlerRuntimeExceptionSurfacesSanitizedCauseInErrorResult(): void
+    {
+        $handler = new class {
+            public function __invoke(array $arguments): mixed
+            {
+                throw new \RuntimeException('Selected extension "MissingExt" is not in extensions.enabled (Bearer sk-secret-token)');
+            }
+        };
+        $registry = new ToolRegistry();
+        $registry->registerTool(name: 'registry_tool', description: 'Registry tool', parametersJsonSchema: [], handler: $handler, promptLine: 'registry_tool');
+
+        $toolbox = new RegistryBackedToolbox(
+            registry: $registry,
+            argumentResolver: new RawAwareToolCallArgumentResolver(new ToolCallArgumentResolver()),
+        );
+        $executor = new ToolExecutor(
+            defaultMode: 'parallel',
+            maxParallelism: 4,
+            toolbox: $toolbox,
+            resultStore: new ToolExecutionResultStore(),
+        );
+
+        $result = $executor->execute(ToolCallBuilder::create('call-runtime-cause')
+            ->withToolName('registry_tool')
+            ->withArguments(['x' => 1])
+            ->withOrderIndex(0)
+            ->withRunId('run-runtime-cause')
+            ->build());
+
+        $this->assertTrue($result->isError);
+        $this->assertSame('call-runtime-cause', $result->toolCallId);
+        $this->assertSame(ToolCallException::class, $result->details['error_type']);
+        $this->assertFalse($result->details['retryable']);
+        $this->assertStringContainsString('Selected extension "MissingExt" is not in extensions.enabled', $result->content[0]['text']);
+        $this->assertStringContainsString('bearer <redacted>', $result->content[0]['text']);
+        $this->assertStringNotContainsString('sk-secret-token', $result->content[0]['text']);
+    }
+
     public function testContextAccessorSetsCorrectValues(): void
     {
         $accessor = new StackToolExecutionContextAccessor();

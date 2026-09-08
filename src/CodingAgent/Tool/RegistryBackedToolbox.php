@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tool;
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
+use Ineersa\AgentCore\Contract\Tool\DiagnosticMessageSanitizer;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Extension\ChildRunExtensionAllowlistReaderInterface;
 use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
@@ -161,7 +162,11 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
                 throw new ToolCallException($previous->getMessage(), retryable: false, previous: $previous);
             }
 
-            throw $e;
+            // Preserve failed semantics while exposing a bounded actionable
+            // cause instead of Symfony's generic getToolCallResult() text.
+            // Do not dump stacks/args; sanitize only the previous message.
+            $cause = null !== $previous ? $previous->getMessage() : $e->getMessage();
+            throw new ToolCallException(DiagnosticMessageSanitizer::sanitize($cause), retryable: false, previous: $previous ?? $e);
         }
     }
 
