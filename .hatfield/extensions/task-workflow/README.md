@@ -1,8 +1,6 @@
 # Hatfield task-workflow extension
 
-Native Hatfield port of the pi `task-workflow` extension. It registers task board tools, slash commands, system prompt guidance, and the package-local `task-workflow` skill for the external task workflow.
-
-When the extension is enabled, `TaskWorkflowExtension` registers its packaged skill directory (`skills/task-workflow/`) through `ExtensionApiInterface::registerSkill()`. No separate skill install step is required.
+Native Hatfield port of the pi `task-workflow` extension. It registers task board tools, slash commands, and system prompt guidance. It installs the `task-workflow` skill into the project.
 
 This package requires `ineersa/hatfield-extension-api` for `Ineersa\Hatfield\ExtensionApi\*` contracts. In this monorepo that dependency is a path repository; released consumers install the published API package.
 
@@ -23,3 +21,15 @@ If dependencies are already installed and only autoload maps changed, `composer 
 Enable `Ineersa\HatfieldExt\TaskWorkflow\TaskWorkflowExtension` in `.hatfield/settings.yaml` under `extensions.enabled`, then **start a new Hatfield session** — extensions register at startup; an existing TUI session will not show new tools or slash commands until restart.
 
 See `docs/settings.md` (`extensions.enabled`, `extensions.settings.task_workflow`) for configuration.
+
+## Skill install
+
+On `register()`, the extension installs or refreshes the project skill at `.hatfield/skills/task-workflow/`:
+
+- create the skill directory when absent
+- refresh the whole bundled skill tree, including `references/`, when the installed `SKILL.md` frontmatter `version` is missing or differs from the package
+- leave same-version installs untouched so local edits survive
+
+Host skill discovery loads the installed copy from `.hatfield/skills/`. The extension does not register a duplicate package copy. Host discovery ignores unknown frontmatter keys such as `version`.
+
+Tracked-work fork resume ownership rules live in this skill, not in global `fork` or `agent_resume` tool text.

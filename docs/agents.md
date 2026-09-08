@@ -85,11 +85,9 @@ Use `subagent` when no existing child run matches the task and you need a new na
 
 Use `agent_resume` when an existing child run in the same parent session already contains useful progress or an incomplete handoff. Resume the existing run instead of launching a duplicate child. Identify the run with the artifact/run identifier returned by the earlier launch; across parent sessions, launch a new child with the prior handoff as context.
 
-For tracked work, record each launched or returned reviewer/subagent identity in the task work log with its role, artifact/run ID, target revision, and scope. `forkRun` metadata is reserved for the implementation fork ID. Keep each role's own handoff format authoritative; task metadata retains only identity/revision/scope plus outcome, validation, and unresolved blockers.
-
 Do not use `subagent` to continue an existing child, and do not use `agent_resume` as a fresh-task launcher. A resumed child keeps its existing identity and session history; provide a focused continuation instruction.
 
-Child runs cannot resume or launch other children. Resume is same-parent-session scoped and rejects fork children; each new fork requires an explicit ownership handoff.
+Child runs cannot resume or launch other children. Resume is same-parent-session scoped. Eligible forks may be resumed with `agent_resume`.
 
 ## `agent_resume`
 
@@ -103,7 +101,7 @@ Parent-scoped continuation of an existing terminal child run via `follow_up` on 
 | `tasks` | Parallel list of `{artifact_id,task}` (cap `agents.max_agents`) |
 
 - Eligible statuses: `completed`, `failed`, `cancelled` when the child run/session is still usable.
-- Rejects in-flight artifacts (`running`, `needs_clarification`) and fork children.
+- Rejects in-flight artifacts (`running`, `needs_clarification`). Same-parent-current-lifetime forks are resumable; foreign-session, previous-lifetime, and otherwise ineligible targets still fail with actionable errors.
 - Refuses oversized children when latest input tokens are near context limit (`max(75% contextWindow, 200k)`; absolute 200k when window unknown).
 - Parent results follow the same single and parallel presentation rules as `subagent`, including the 50,000-character inline limit.
 - Same artifact id is preserved; each finalize appends an immutable handoff under `handoffs/<uuid>.md`.
@@ -152,6 +150,8 @@ default `tool` transport (see unmarked repository `docs/tool-execution.md`).
 
 Arguments: required `task`; optional `model`, `thinking`. Blocks until the fork completes
 and returns a dense handoff through deferred tool completion.
+
+To continue an eligible terminal fork in the same parent session, use `agent_resume` with the fork artifact/run id and a focused follow-up. Do not launch a duplicate `fork` when the existing child context still applies.
 
 Fork settings details: [settings-agents.md](settings-agents.md).
 

@@ -13,7 +13,6 @@ use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactEntryDTO;
-use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
@@ -43,7 +42,6 @@ final class AgentResumeExecutionService
         private readonly DeferredSubagentBatchIdentityFactory $identityFactory,
         private readonly AgentRunnerInterface $agentRunner,
         private readonly RunStateRebuilderInterface $runStateRebuilder,
-        private readonly RunStartedMetadataReader $metadataReader,
         private readonly RunRelationshipReaderInterface $relationshipReader,
         private readonly AgentDepthGuard $depthGuard,
         private readonly StackToolExecutionContextAccessor $contextAccessor,
@@ -341,15 +339,6 @@ final class AgentResumeExecutionService
             throw new ToolCallException(\sprintf('Artifact "%s" belongs to a previous parent lifetime and cannot be resumed after parent /resume.', $entry->artifactId), retryable: false);
         }
 
-        if (AgentArtifactKindEnum::Fork === $entry->kind) {
-            throw new ToolCallException('agent_resume cannot resume fork children.', retryable: false);
-        }
-
-        $childMeta = $this->metadataReader->readRunStartedMetadata($entry->agentRunId);
-        if (null !== $childMeta && 'fork' === ($childMeta->session->childKind ?? null)) {
-            throw new ToolCallException('agent_resume cannot resume fork children.', retryable: false);
-        }
-
         if (\in_array($entry->status, [AgentArtifactStatusEnum::Running, AgentArtifactStatusEnum::NeedsClarification], true)) {
             throw new ToolCallException(\sprintf('Artifact "%s" is already in flight (status=%s).', $entry->artifactId, $entry->status->value), retryable: false);
         }
@@ -374,6 +363,10 @@ final class AgentResumeExecutionService
 
         if (\in_array($state->status, [RunStatus::Cancelling], true)) {
             throw new ToolCallException(\sprintf('Child run "%s" is mid-cancel and cannot be resumed yet.', $entry->agentRunId), retryable: false);
+        }
+
+        if (!$state->status->isTerminal()) {
+            throw new ToolCallException(\sprintf('Child run "%s" is not terminal (status=%s). Wait for completion before resuming.', $entry->agentRunId, $state->status->value), retryable: false);
         }
 
         $this->assertContextBudgetAllowsResume($entry);

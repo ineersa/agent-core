@@ -51,6 +51,19 @@ Give the fork the goal, acceptance criteria, constraints, known entry points, ow
 
 Use no scout when main has enough context. Use one scout for a bounded unknown in an unfamiliar area. Use parallel scouts only for independent security, high-risk, or cross-module questions. Batch independent subagents in one parallel call. Use a single call for one child or dependent work. Retrieve full artifacts only when the summaries lack evidence needed for the decision.
 
+## Resuming a tracked fork
+
+Use `agent_resume` for an eligible terminal fork in the same parent session when the existing child context still applies. Do not launch a duplicate fork for that continuation.
+
+Before the resumed fork edits files:
+
+1. The follow-up task must name the exact checkout or worktree and the resumed scope.
+2. The follow-up task must require inspection of current file state.
+3. If that ownership handoff is missing, the resumed fork must stop and request it from the parent.
+4. Record the ownership change with the required ownership log below.
+
+These tracked-work resume rules live in the task-workflow skill. Global `fork` and `agent_resume` tools stay free of task-board-specific ownership policy.
+
 ## Role routing
 
 | Role | Use |

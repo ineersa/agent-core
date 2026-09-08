@@ -55,7 +55,7 @@ Every valid discovered definition is foreground-launchable. Background launch is
 
 ## Launch versus continue
 
-`subagent` starts a new named child. `agent_resume` continues an existing child using its artifact/run identifier and must not be used to create fresh work. When relevant child context exists, resume it instead of launching a duplicate. Resume is parent-scoped; child runs cannot resume or launch children. Fork children are not resumable.
+`subagent` starts a new named child. `agent_resume` continues an existing child or fork using its artifact/run identifier and must not be used to create fresh work. When relevant child context exists, resume it instead of launching a duplicate. Resume is parent-scoped; child runs cannot resume or launch children. Resumed forks keep identity and conversation.
 
 ## Example (project scout)
 

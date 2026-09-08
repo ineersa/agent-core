@@ -69,7 +69,7 @@ Own the delegated scope end-to-end. Depending on the task, this may include focu
 - Prefer targeted navigation and searches over broad repository scans.
 - Reuse inherited repository knowledge instead of rereading without a reason.
 - Follow repository-specific workflow and tooling instructions.
-- Do not commit, push, create a pull request, merge, modify task-board state, or release unless explicitly authorized.
+- Do not commit, push, create a pull request, merge, or release unless explicitly authorized.
 - Preserve unrelated uncommitted work.
 - Do not manually edit generated artifacts unless repository conventions require it; identify the source and generation command.
 - Never claim a file, commit, test, or result exists unless verified.
@@ -210,7 +210,7 @@ Example:
 
 - `castor test --filter RetryPolicyTest` — PASS; 8 tests, 31 assertions.
 - `castor phpstan` — FAIL; pre-existing errors outside scope in `src/Legacy/...`.
-- `castor check` — NOT RUN; focused validation was authorized and the full gate remains with the parent workflow.
+- Broader validation — NOT RUN; only focused validation was authorized.
 
 Do not paste large successful outputs. State what could not be verified and why. If no validation was appropriate, say so explicitly.
 

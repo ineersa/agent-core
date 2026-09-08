@@ -11,3 +11,5 @@ Read [implementation-ownership.md](implementation-ownership.md) and [specificati
 5. Re-review the new revision. Resume the eligible prior reviewer with `agent_resume` and provide the new commit or diff, prior findings, and resolution summary. Launch a new reviewer only when the prior reviewer cannot resume. Require a specification-fidelity review. Record the active role, artifact or run ID, target revision, and scope. If the reviewer requests changes, repeat from step 3.
 6. When the reviewer approves, call `move_task(to="CODE-REVIEW")` to push the branch and create or update the PR.
 7. Record the reviewer identity, revision, scope, decision, commit, validation, and unresolved blockers with `update_task`.
+
+When resuming an eligible terminal fork for tracked work, follow the tracked-work fork resume rules in the skill router and [implementation-ownership.md](implementation-ownership.md).

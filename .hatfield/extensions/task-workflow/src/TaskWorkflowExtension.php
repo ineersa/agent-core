@@ -8,6 +8,7 @@ use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
+use Ineersa\HatfieldExt\TaskWorkflow\Assets\TaskWorkflowSkillInstaller;
 use Ineersa\HatfieldExt\TaskWorkflow\Command\TasksCommandHandler;
 use Ineersa\HatfieldExt\TaskWorkflow\Exec\GitExecutor;
 use Ineersa\HatfieldExt\TaskWorkflow\Pr\PrManager;
@@ -21,14 +22,30 @@ use Ineersa\HatfieldExt\TaskWorkflow\Tool\MoveTaskHandler;
 use Ineersa\HatfieldExt\TaskWorkflow\Tool\TaskListFormatter;
 use Ineersa\HatfieldExt\TaskWorkflow\Tool\UpdateTaskHandler;
 use Ineersa\HatfieldExt\TaskWorkflow\Worktree\WorktreeManager;
+use Psr\Log\LoggerAwareInterface;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 
-final readonly class TaskWorkflowExtension implements HatfieldExtensionInterface
+final class TaskWorkflowExtension implements HatfieldExtensionInterface, LoggerAwareInterface
 {
+    private LoggerInterface $logger;
+
+    public function __construct()
+    {
+        $this->logger = new NullLogger();
+    }
+
+    public function setLogger(LoggerInterface $logger): void
+    {
+        $this->logger = $logger;
+    }
+
     public function register(ExtensionApiInterface $api): void
     {
         $settings = $api->getSettings('task_workflow');
         $config = TaskWorkflowSettings::fromArray($settings);
         $codeRoot = $api->getCwd();
+        $packageRoot = \dirname(__DIR__);
 
         $exec = $api->exec();
         $git = new GitExecutor($exec);
@@ -38,8 +55,8 @@ final readonly class TaskWorkflowExtension implements HatfieldExtensionInterface
         $taskRoot = $store->resolveTaskRoot();
         $formatter = new TaskListFormatter($store);
 
-        // Package-local skill root: absolute directory containing SKILL.md.
-        $api->registerSkill(\dirname(__DIR__).'/skills/task-workflow');
+        // Project skill discovery loads the installed copy.
+        (new TaskWorkflowSkillInstaller($codeRoot, $packageRoot, $this->logger))->install();
 
         $api->registerPromptContributor(new WorkflowPrompt($taskRoot));
 
