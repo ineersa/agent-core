@@ -66,13 +66,37 @@ final class LlmProviderErrorClassifierTest extends TestCase
     public static function httpStatusProvider(): array
     {
         return [
-            [400, LlmProviderErrorClassifier::CATEGORY_BAD_REQUEST],
+            [404, LlmProviderErrorClassifier::CATEGORY_BAD_REQUEST],
             [401, LlmProviderErrorClassifier::CATEGORY_AUTH],
             [403, LlmProviderErrorClassifier::CATEGORY_AUTH],
             [408, LlmProviderErrorClassifier::CATEGORY_TIMEOUT],
             [429, LlmProviderErrorClassifier::CATEGORY_RATE_LIMIT],
             [500, LlmProviderErrorClassifier::CATEGORY_SERVER],
             [503, LlmProviderErrorClassifier::CATEGORY_SERVER],
+        ];
+    }
+
+    #[DataProvider('retryableBadRequestProvider')]
+    public function testHttp400UsesBoundedProviderRetries(string $type, string $contentType): void
+    {
+        $result = $this->classifier->classify([
+            'type' => $type,
+            'http_status_code' => 400,
+            'response_content_type' => $contentType,
+        ]);
+
+        $this->assertTrue($result['retryable']);
+        $this->assertSame(LlmProviderErrorClassifier::CATEGORY_BAD_REQUEST, $result['error_category']);
+        $this->assertSame('LLM provider rejected the request.', $result['user_message']);
+        $this->assertSame($contentType, $result['response_content_type']);
+    }
+
+    public static function retryableBadRequestProvider(): array
+    {
+        return [
+            'HTML gateway error' => [BadRequestException::class, 'text/html'],
+            'structured provider error' => [BadRequestException::class, 'application/json'],
+            'generic HTTP exception' => [\RuntimeException::class, 'application/json'],
         ];
     }
 
