@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchLifecyclePolicyDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Lifecycle\DeferredSubagentBatchLifecycleDeliveryService;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
@@ -120,6 +121,10 @@ final readonly class DeferredSubagentBatchInterruptionService
         // Wait for generic deferred registration before cancelling children
         $deferredStatus = $this->deferredToolCompletionRepository->status($batchLifecycleId);
         if (null === $deferredStatus) {
+            // Children may already be launched before parent tool registration.
+            // Cancel them immediately on parent-cancel/timeout intent; completion
+            // still waits for deferred registration so the parent tool can finish.
+            $this->cancelStartedChildren($projection, $effectiveKind);
             $this->logger->info('deferred_subagent_batch.interruption_waiting_for_registration', [
                 'batch_lifecycle_id' => $batchLifecycleId,
                 'kind' => $effectiveKind->value,
@@ -136,6 +141,15 @@ final readonly class DeferredSubagentBatchInterruptionService
             return;
         }
 
+        $this->cancelStartedChildren($projection, $effectiveKind);
+
+        $this->deliveryService->deliver($batchLifecycleId);
+    }
+
+    private function cancelStartedChildren(
+        DeferredSubagentBatchProjectionDTO $projection,
+        DeferredSubagentInterruptionKindEnum $effectiveKind,
+    ): void {
         $policy = $this->lifecyclePolicy;
         $isSingle = ChildRunBatchExecutionModeEnum::Single === $projection->executionMode;
         $cancelReason = match ($effectiveKind) {
@@ -147,7 +161,6 @@ final readonly class DeferredSubagentBatchInterruptionService
                 : $policy->parentCancelParallelReason,
         };
 
-        // Cancel each potentially-started non-terminal child once
         foreach ($projection->children as $child) {
             if (DeferredSubagentChildLaunchStatusEnum::Failed === $child->launchStatus) {
                 continue;
@@ -163,7 +176,5 @@ final readonly class DeferredSubagentBatchInterruptionService
 
             $this->agentRunner->cancel($child->childRunId, $cancelReason);
         }
-
-        $this->deliveryService->deliver($batchLifecycleId);
     }
 }

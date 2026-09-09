@@ -11,6 +11,7 @@ use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
+use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Tests\Support\Builder\ToolCallBuilder;
 use Ineersa\CodingAgent\Tool\Arguments\ReadFileArgumentsDTO;
 use Ineersa\CodingAgent\Tool\RawAwareToolCallArgumentResolver;
@@ -452,6 +453,62 @@ final class ToolExecutorTest extends TestCase
         $this->assertSame('Adjust the arguments', $result->details['hint']);
         $this->assertStringContainsString('Registry tool failed', $result->content[0]['text']);
         $this->assertStringContainsString(str_repeat('x', 700).' END', $result->content[0]['text'], 'Explicit tool output must retain the existing central output-cap contract.');
+    }
+
+    public function testDeferredOutcomeSurvivesCancellationOverwrite(): void
+    {
+        $outcome = new DeferredToolCompletionOutcome('deferred-survive-1');
+        $toolbox = new class($outcome) implements ToolboxInterface {
+            public function __construct(private DeferredToolCompletionOutcome $outcome)
+            {
+            }
+
+            public function getTools(): array
+            {
+                return [];
+            }
+
+            public function execute(SymfonyToolCall $toolCall): SymfonyToolResult
+            {
+                unset($toolCall);
+
+                return new SymfonyToolResult(
+                    new SymfonyToolCall(id: 'call-deferred', name: 'fork', arguments: []),
+                    $this->outcome,
+                );
+            }
+        };
+        $executor = new ToolExecutor(
+            defaultMode: 'parallel',
+            maxParallelism: 4,
+            toolbox: $toolbox,
+            resultStore: new ToolExecutionResultStore(),
+            contextAccessor: new StackToolExecutionContextAccessor(),
+        );
+
+        $token = new class implements CancellationTokenInterface {
+            private int $hits = 0;
+
+            public function isCancellationRequested(): bool
+            {
+                ++$this->hits;
+
+                // Before execute: false; after execute: true
+                return $this->hits > 1;
+            }
+        };
+
+        $result = $executor->execute(ToolCallBuilder::create('call-deferred')
+            ->withToolName('fork')
+            ->withArguments([])
+            ->withOrderIndex(0)
+            ->withContext(['cancel_token' => $token])
+            ->build());
+
+        $this->assertFalse($result->isError);
+        $this->assertInstanceOf(DeferredToolCompletionOutcome::class, $result->details['raw_result'] ?? null);
+        $this->assertSame('deferred-survive-1', $result->details['raw_result']->deferredId);
+        $this->assertArrayNotHasKey('stale_due_to_cancel', $result->details ?? []);
     }
 
     public function testFlatDtoArgumentsResolveThroughExecutor(): void

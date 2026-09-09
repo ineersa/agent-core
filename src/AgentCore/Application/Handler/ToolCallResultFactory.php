@@ -32,6 +32,39 @@ final class ToolCallResultFactory
                 ? $toolResult->details['tool_idempotency_key']
                 : $message->toolIdempotencyKey;
 
+        $error = null;
+        if ($toolResult->isError) {
+            $details = \is_array($toolResult->details) ? $toolResult->details : [];
+            if (true === ($details['cancelled'] ?? false)) {
+                $error = [
+                    'type' => 'cancelled',
+                    'message' => (string) ($toolResult->content[0]['text'] ?? 'Tool execution cancelled.'),
+                ];
+                if (isset($details['retryable'])) {
+                    $error['retryable'] = $details['retryable'];
+                }
+                if (\array_key_exists('hint', $details)) {
+                    $error['hint'] = $details['hint'];
+                }
+            } elseif (isset($details['error_type']) && \is_string($details['error_type']) && '' !== $details['error_type']) {
+                $error = [
+                    'type' => $details['error_type'],
+                    'message' => (string) ($toolResult->content[0]['text'] ?? 'Tool execution failed.'),
+                ];
+                if (isset($details['retryable'])) {
+                    $error['retryable'] = $details['retryable'];
+                }
+                if (\array_key_exists('hint', $details)) {
+                    $error['hint'] = $details['hint'];
+                }
+            } else {
+                $error = [
+                    'type' => 'tool_error',
+                    'message' => (string) ($toolResult->content[0]['text'] ?? 'Tool execution failed.'),
+                ];
+            }
+        }
+
         return new ToolCallResult(
             runId: $message->runId(),
             turnNo: $message->turnNo(),
@@ -49,7 +82,7 @@ final class ToolCallResultFactory
                 'arguments' => $message->args,
             ],
             isError: $toolResult->isError,
-            error: null,
+            error: $error,
         );
     }
 
