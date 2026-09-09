@@ -25,5 +25,6 @@ callgraph.html
 /.hatfield/extensions/vendor/
 /.hatfield/extensions/composer.lock
 
-# Versioned task-workflow skill installed from its extension package
+# Versioned skills installed from extension packages
 /.hatfield/skills/task-workflow/
+/.hatfield/skills/jbcontext-semantic-search/
