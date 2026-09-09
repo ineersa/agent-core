@@ -532,6 +532,67 @@ PHP
         $this->assertSame(1, $extensionReflection->getStaticPropertyValue('subscriberCalls'));
     }
 
+    public function testLifecycleFailuresDoNotPreventLaterExtensionsOrRepeatLoading(): void
+    {
+        foreach (['construct', 'logger', 'register', 'subscribe'] as $stage) {
+            $class = 'LifecycleFailure'.ucfirst($stage);
+            $source = <<<'PHP'
+<?php
+namespace HatfieldExtTest;
+class CLASS_NAME implements \Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface, \Psr\Log\LoggerAwareInterface, \Symfony\Component\EventDispatcher\EventSubscriberInterface, \Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionInterface
+{
+    public function registerTui(\Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionContextInterface $context): void {}
+    public function __construct() { self::fail('construct'); }
+    public function setLogger(\Psr\Log\LoggerInterface $logger): void { self::fail('logger'); }
+    public function register(\Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface $api): void { self::fail('register'); }
+    public static function getSubscribedEvents(): array { self::fail('subscribe'); return []; }
+    private static function fail(string $stage): void
+    {
+        if ('FAILURE_STAGE' === $stage) { throw new \RuntimeException('lifecycle-'.$stage); }
+    }
+}
+PHP;
+            $path = $this->extensionsDir.'/'.$class.'.php';
+            file_put_contents($path, str_replace(['CLASS_NAME', 'FAILURE_STAGE'], [$class, $stage], $source));
+            require $path;
+            $valid = new class implements HatfieldExtensionInterface, \Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionInterface {
+                public static int $calls = 0;
+
+                public function registerTui(\Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionContextInterface $context): void
+                {
+                }
+
+                public function register(\Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface $api): void
+                {
+                    ++self::$calls;
+                }
+            };
+            $valid::$calls = 0;
+            $logger = new TestLogger();
+            $manager = new ExtensionManager(
+                $this->createAppConfig($this->extensionsDir, ['HatfieldExtTest\\'.$class, $valid::class]),
+                new InMemoryExtensionApiBridge(),
+                $logger,
+                new \Symfony\Component\EventDispatcher\EventDispatcher(),
+            );
+            $diagnostics = $manager->loadExtensions();
+            $this->assertCount(1, $diagnostics);
+            $this->assertStringContainsString('lifecycle-'.$stage, $diagnostics[0]);
+            $outcomes = $manager->getLoadOutcomes();
+            $this->assertCount(2, $outcomes);
+            $this->assertFalse($outcomes[0]->loaded);
+            $this->assertTrue($outcomes[1]->loaded);
+            $this->assertSame($diagnostics[0], $outcomes[0]->errorMessage);
+            $this->assertCount(1, $manager->getTuiExtensions());
+            $this->assertInstanceOf($valid::class, $manager->getTuiExtensions()[0]);
+            $this->assertSame('error', $logger->records[0]['level']);
+            $this->assertSame($diagnostics, $manager->loadExtensions());
+            $this->assertSame($outcomes, $manager->getLoadOutcomes());
+            $this->assertSame(1, $valid::$calls);
+            $this->assertCount(1, $logger->records);
+        }
+    }
+
     // ── Helpers ──
 
     private function dummyToolCallHook(string $label = 'test'): ToolCallHookInterface

@@ -73,7 +73,7 @@ final class ExtensionManager
      * Load all enabled extensions.
      *
      * Returns diagnostic messages for any extension that failed to
-     * register. An empty array means all extensions loaded cleanly.
+     * load. An empty array means all extensions loaded cleanly.
      *
      * Safe to call even when no extensions are configured or
      * when the extension autoload file is absent.
@@ -186,36 +186,42 @@ final class ExtensionManager
             return null;
         }
 
-        if (!class_exists($className)) {
-            $msg = \sprintf('Extension class "%s" not found — skipping.', $className);
-            $this->logger->warning($msg, ['class' => $className]);
-            $this->loadOutcomes[] = new LoadedExtensionItemDTO($className, false, $msg);
-
-            return $msg;
-        }
-
-        $instance = new $className();
-
-        if (!$instance instanceof HatfieldExtensionInterface) {
-            $msg = \sprintf('Extension class "%s" does not implement HatfieldExtensionInterface — skipping.', $className);
-            $this->logger->warning($msg, ['class' => $className]);
-            $this->loadOutcomes[] = new LoadedExtensionItemDTO($className, false, $msg);
-
-            return $msg;
-        }
-
-        // Inject the host logger before register() so LoggerAware extensions can
-        // log registration failures with the process-local Monolog channel.
-        if ($instance instanceof LoggerAwareInterface) {
-            $instance->setLogger($this->logger);
-        }
-
         try {
+            if (!class_exists($className)) {
+                $msg = \sprintf('Extension class "%s" not found — skipping.', $className);
+                $this->logger->warning($msg, ['class' => $className]);
+                $this->loadOutcomes[] = new LoadedExtensionItemDTO($className, false, $msg);
+
+                return $msg;
+            }
+
+            $instance = new $className();
+
+            if (!$instance instanceof HatfieldExtensionInterface) {
+                $msg = \sprintf('Extension class "%s" does not implement HatfieldExtensionInterface — skipping.', $className);
+                $this->logger->warning($msg, ['class' => $className]);
+                $this->loadOutcomes[] = new LoadedExtensionItemDTO($className, false, $msg);
+
+                return $msg;
+            }
+
+            // Inject the host logger before register() so LoggerAware extensions can
+            // log registration failures with the process-local Monolog channel.
+            if ($instance instanceof LoggerAwareInterface) {
+                $instance->setLogger($this->logger);
+            }
+
             ExtensionRegistrationContext::withOwner($className, function () use ($instance): void {
                 $instance->register($this->extensionApi);
             });
+
+            // Native subscribers attach before success is recorded. Partial
+            // registrations are not rolled back when attachment fails.
+            if ($instance instanceof EventSubscriberInterface) {
+                $this->eventDispatcher->addSubscriber($instance);
+            }
         } catch (\Throwable $e) {
-            $msg = \sprintf('Extension "%s" failed to register: %s', $className, $e->getMessage());
+            $msg = \sprintf('Extension "%s" failed to load: %s', $className, $e->getMessage());
             $this->logger->error($msg, [
                 'class' => $className,
                 'exception' => $e,
@@ -228,12 +234,6 @@ final class ExtensionManager
         $this->loadOutcomes[] = new LoadedExtensionItemDTO($className, true);
         if ($instance instanceof TuiExtensionInterface) {
             $this->tuiExtensions[] = $instance;
-        }
-
-        // Native Symfony EventSubscriberInterface extensions subscribe to the
-        // host dispatcher (ConsoleEvents, etc.) without a custom hook registry.
-        if ($instance instanceof EventSubscriberInterface) {
-            $this->eventDispatcher->addSubscriber($instance);
         }
 
         return null;
