@@ -208,8 +208,14 @@ final class CancelListener implements TuiListenerRegistrar
                 }
 
                 SubagentLiveAttention::markActiveChildrenCancelledForParentCancel($state, $screen);
-                $state->activity = RunActivityStateEnum::Cancelling;
-                $screen->setWorkingMessage('Cancelling...');
+                // Do not reopen Cancelling if cancel completed to Cancelled while
+                // client->cancel() was in flight; sticky Cancelling blocks follow-ups.
+                if (RunActivityStateEnum::Cancelled === $state->activity) {
+                    $screen->setWorkingMessage('');
+                } else {
+                    $state->activity = RunActivityStateEnum::Cancelling;
+                    $screen->setWorkingMessage('Cancelling...');
+                }
 
                 return;
             }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tool;
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
+use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 
 /**
  * Shared runtime helper for tool authors providing cancellable execution checkpoints.
@@ -28,7 +29,9 @@ final readonly class ToolRuntime
      * Checks the ambient ToolContext cancellation token both before and after
      * the callback. If cancelled before execution, throws immediately. If
      * cancelled during execution (detected after the callback), throws with
-     * a stale-result message.
+     * a stale-result message — except for deferred completion outcomes, which
+     * must remain available so parent interruption can register and cancel
+     * owned child runs.
      *
      * @param callable(): mixed $callback the tool logic to execute
      *
@@ -48,7 +51,11 @@ final readonly class ToolRuntime
 
         $result = $callback();
 
-        if (null !== $context && $context->cancellationToken()->isCancellationRequested()) {
+        if (
+            null !== $context
+            && $context->cancellationToken()->isCancellationRequested()
+            && !$result instanceof DeferredToolCompletionOutcome
+        ) {
             throw new \RuntimeException(\sprintf('A result for tool "%s" was produced but is already stale due to run cancellation.', $context->toolName()));
         }
 

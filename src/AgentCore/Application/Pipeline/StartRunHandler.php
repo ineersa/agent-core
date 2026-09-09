@@ -56,6 +56,13 @@ final readonly class StartRunHandler implements RunMessageHandler
             return new HandlerResult(postCommit: $postCommit);
         }
 
+        // Cancel before StartRun must stick. Reserved child run ids can receive
+        // AgentRunner::cancel while still Queued/model-null; starting afterward
+        // would revive a cancelled child and miss parent interruption.
+        if (\in_array($state->status, [RunStatus::Cancelled, RunStatus::Cancelling], true)) {
+            return new HandlerResult();
+        }
+
         $messages = [] === $message->payload->messages ? $state->messages : $message->payload->messages;
 
         $canonicalModel = $this->requireCanonicalModel($message);

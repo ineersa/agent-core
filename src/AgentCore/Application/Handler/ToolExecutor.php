@@ -210,7 +210,11 @@ final class ToolExecutor implements ToolExecutorInterface
             $cancelled = \is_array($details) ? ($details['cancelled'] ?? false) : false;
             $alreadyCancelled = true === $cancelled;
 
-            if (!$alreadyCancelled) {
+            // Deferred launch outcomes must survive parent cancel so batch
+            // interruption can register, cancel owned children, and complete.
+            // Overwriting them with a stale error leaves children running and
+            // parent deferred completion waiting forever for registration.
+            if (!$alreadyCancelled && !$this->isDeferredOutcomeResult($result)) {
                 $errorType = \is_array($details) ? ($details['error_type'] ?? null) : null;
                 if (ToolCallException::class === $errorType) {
                     $details['cancelled'] = true;
@@ -596,6 +600,16 @@ final class ToolExecutor implements ToolExecutorInterface
         }
 
         return ($details['raw_result'] ?? null) instanceof ToolExecutionHumanInputSuspension;
+    }
+
+    private function isDeferredOutcomeResult(ToolResult $result): bool
+    {
+        $details = $result->details;
+        if (!\is_array($details)) {
+            return false;
+        }
+
+        return ($details['raw_result'] ?? null) instanceof DeferredToolCompletionOutcome;
     }
 
     private function nowMicros(): int

@@ -172,6 +172,13 @@ final class DeferredSubagentBatchLaunchService
             parentModel: $plan->parentModel,
         );
 
+        // Parent cancel/timeout can land while children are still Reserved.
+        // Do not prepare/start after interruption intent is durable; return the
+        // deferred outcome so registration can complete interruption delivery.
+        if ($this->hasInterruptionIntent($lifecycleId)) {
+            return new DeferredToolCompletionOutcome($lifecycleId);
+        }
+
         try {
             $preparedChildren = $prepare($projection);
         } catch (DeferredSubagentBatchPreparationFailure $e) {
@@ -263,6 +270,18 @@ final class DeferredSubagentBatchLaunchService
         }
 
         return new DeferredToolCompletionOutcome($lifecycleId);
+    }
+
+    /**
+     * Fresh DB read of interruption intent after reserve.
+     *
+     * @phpstan-impure
+     */
+    private function hasInterruptionIntent(string $lifecycleId): bool
+    {
+        $projection = $this->batchRepository->findByLifecycleId($lifecycleId);
+
+        return null !== $projection && null !== $projection->interruptionKind;
     }
 
     private function launchFailedException(\Throwable $cause): ToolCallException

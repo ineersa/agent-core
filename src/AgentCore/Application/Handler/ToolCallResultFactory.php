@@ -32,6 +32,21 @@ final class ToolCallResultFactory
                 ? $toolResult->details['tool_idempotency_key']
                 : $message->toolIdempotencyKey;
 
+        $error = null;
+        if ($toolResult->isError && \is_array($toolResult->details) && true === ($toolResult->details['cancelled'] ?? false)) {
+            $details = $toolResult->details;
+            $error = [
+                'type' => 'cancelled',
+                'message' => (string) ($toolResult->content[0]['text'] ?? 'Tool execution cancelled.'),
+            ];
+            if (isset($details['retryable'])) {
+                $error['retryable'] = $details['retryable'];
+            }
+            if (\array_key_exists('hint', $details)) {
+                $error['hint'] = $details['hint'];
+            }
+        }
+
         return new ToolCallResult(
             runId: $message->runId(),
             turnNo: $message->turnNo(),
@@ -49,7 +64,7 @@ final class ToolCallResultFactory
                 'arguments' => $message->args,
             ],
             isError: $toolResult->isError,
-            error: null,
+            error: $error,
         );
     }
 

@@ -132,6 +132,25 @@ class CancelListenerTest extends TestCase
     // ── Idle/terminal — no cancel sent ──────────────────────────
 
     #[Test]
+    public function doesNotReopenTerminalActivityAfterCancelCompletesDuringDispatch(): void
+    {
+        $this->state->activity = RunActivityStateEnum::Running;
+        $this->state->handle = new RunHandle('run-race');
+
+        $this->client->expects($this->once())
+            ->method('cancel')
+            ->with('run-race')
+            ->willReturnCallback(function (): void {
+                $this->state->activity = RunActivityStateEnum::Cancelled;
+            });
+
+        $this->dispatchCancelEvent();
+
+        $this->assertSame(RunActivityStateEnum::Cancelled, $this->state->activity);
+        $this->assertFalse($this->state->activity->isActive());
+    }
+
+    #[Test]
     public function cancelIdleDoesNotCallClient(): void
     {
         $this->state->activity = RunActivityStateEnum::Idle;
