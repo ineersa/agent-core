@@ -10,6 +10,8 @@ use Mcp\Client as SdkClient;
 use Mcp\Client\Transport\HttpTransport;
 use Mcp\Client\Transport\StdioTransport;
 use Mcp\Client\Transport\TransportInterface;
+use Symfony\Component\HttpClient\CurlHttpClient;
+use Symfony\Component\HttpClient\Psr18Client;
 
 /**
  * Creates MCP client adapters from typed server definitions.
@@ -66,10 +68,11 @@ final class McpSdkClientFactory
             );
         }
 
-        // HTTP transport
+        // Avoid Amp auto-discovery: the SDK can resume an Amp I/O suspension with an MCP timeout error.
         return new HttpTransport(
             endpoint: $server->url ?? throw new \RuntimeException('HTTP transport requires a URL.'),
             headers: $server->headers,
+            httpClient: new Psr18Client(new CurlHttpClient()),
         );
     }
 
