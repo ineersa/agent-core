@@ -390,7 +390,7 @@ sequenceDiagram
     Bridge->>Hooks: Evaluate exact nested call
     Hooks-->>Bridge: Require approval before handler execution
     Note over Bridge,Hooks: Recommended v1 behavior, pending approval
-    Bridge->>Store: First call completed; second call not executed
+    Bridge->>Store: First call completed, second call not executed
     Bridge-->>PHP: Terminal approval-required stop
     Bridge->>RC: Complete outer call with reason and references
     RC-->>Model: Matching outer tool result
