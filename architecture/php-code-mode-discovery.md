@@ -38,7 +38,9 @@ export tools.
 
 The proposed v1 has one script input, one `tool(name, arguments)` bridge, serial
 calls, and one final return value. It has no workflow definitions, automatic
-retries, saved program state, child-agent orchestration, or cross-session execution.
+retries, saved program state, script-controlled child-agent orchestration, or
+cross-session execution. Hatfield owns one PHP-driven child run internally; that
+does not expose subagent or fork launch to the script.
 
 ## Where existing execution can be reused
 
@@ -95,60 +97,145 @@ Sources: [ToolRegistry](../src/CodingAgent/Tool/ToolRegistry.php),
 
 ## Proposed process and call flow
 
-PHP runs in a separate process for cancellation, resource limits, and crash
-isolation. It receives a minimal bootstrap with `tool()`, not the application
-Composer autoloader, container, registry, or provider clients.
+The proposed execution owner is a PHP-driven child run. It reuses run identity,
+pending tool calls, result collection, and child lifecycle instead of building a
+second tool-execution service. PHP supplies the next action where an ordinary
+agent would ask an LLM. This integration is not implemented yet.
 
-The diagram uses **script owner** and **host bridge** as proposed responsibilities,
-not names of existing classes. Their exact runtime placement remains to be designed.
-This sequence shows successful completion. Approval and failure exits appear below.
+PHP runs in a separate process for cancellation, resource limits, and crash
+isolation. Its minimal Tool API supplies `tool()` and an internal IPC client,
+without the application container, registry, or provider clients. The host bridge
+connects that client to the child run. It does not execute tools itself.
+
+This sequence shows proposed successful completion. Existing Messenger message
+names identify the intended reuse; admitting PHP-driven steps and delivering their
+results still need run-control changes.
 
 ```mermaid
 %%{init: {"sequence": {"wrap": true, "width": 110, "actorMargin": 20, "diagramMarginX": 10, "messageMargin": 30}}}%%
 sequenceDiagram
     participant Model
-    participant Owner as Script owner
+    participant Owner as Child lifecycle owner
     participant PHP as PHP subprocess
-    participant Bridge as Host bridge
+    participant Bridge as Tool API host connection
+    participant Child as PHP-driven child run control
     participant Worker as Existing tool or mcp consumer
-    participant Store as Owned artifacts
-    participant RC as run_control
+    participant RC as Parent run_control
 
     Model->>Owner: Outer code-mode call with script source
-    Owner->>Owner: Reserve outer execution identity
-    Owner->>PHP: Start minimal bootstrap and script
+    Owner->>Child: Create owned child identity linked to outer call
+    Owner->>PHP: Start Tool API bootstrap and native PHP script
     loop Each serial tool call
         PHP->>Bridge: tool(name, arguments) over bounded IPC
-        Bridge->>Bridge: Assign nested ID and check current tool access
-        Bridge->>Store: Record dispatch intent and correlation
-        Bridge->>Worker: Nested request through execution bus
+        Bridge->>Child: Submit next call, not a raw execution envelope
+        Child->>Child: Validate access and commit pending step identity
+        Child->>Worker: ExecuteToolCall through execution bus
         Worker->>Worker: ToolExecutor, toolbox, hooks, handler
-        Worker-->>Bridge: Internal nested outcome
-        Bridge->>Store: Record outcome and permitted payload
+        Worker-->>Child: ToolCallResult through command bus
+        Child->>Child: Match pending call and record outcome
+        Child-->>Bridge: Result for waiting PHP invocation
         Bridge-->>PHP: Typed value or terminal stop
         PHP->>PHP: Filter, aggregate, or transform values
     end
     PHP-->>Owner: Final return value
     Owner->>Owner: Reap process and finalize host-owned status
-    Owner->>RC: Outer result with bounded value and inspection reference
+    Owner->>Child: Complete child with final value and status
+    Child-->>RC: Child completion delivers outer result
     RC-->>Model: One matching tool result, then next model step
 ```
 
-Nested requests and responses are new internal routing work. The existing worker
-and result handler currently serve top-level calls. A nested response must return
-to the bridge without creating an extra model tool message.
+The script must not publish `ExecuteToolCall` directly. That would require application
+message classes, transport configuration, and run identity inside the script. It
+would also skip admission of the pending call that run control expects to complete.
+
+`ToolCallResultHandler` checks the active step and batch. `AdvanceRunHandler` normally
+continues toward `ExecuteLlmStep`. A PHP-driven child therefore needs a way to admit
+script-supplied calls and return results to PHP instead of advancing an LLM turn.
+No fake assistant responses or LLM calls should be needed to drive this run.
+
+Child lifecycle is the reuse target, not proof that ordinary subagent defaults fit.
+Model configuration, compaction, prompt history, tool inheritance, approval policy,
+and completion handling must be checked before selecting the exact integration.
+The child's tool set must not widen the parent's available tools.
 
 MCP calls must still reach the MCP consumer that owns the connections. A direct
 invoker call from another worker would bypass routing and could reconnect through
-a second client. The script owner also cannot occupy the only tool worker while
-waiting for that worker to execute a nested built-in call. Controller-owned
-supervision or an explicit worker handoff must resolve this dependency. Increasing
-worker counts is not a deadlock fix.
+a second client. The design must establish which existing session-scoped connection
+the new child uses rather than assume a parent client is available under its ID.
+The script owner also cannot occupy the only tool worker while waiting for that
+worker to execute a call. Existing child supervision is the first place to resolve
+this ownership. Increasing worker counts is not a deadlock fix.
 
 Sources: [ExecuteToolCallWorker](../src/AgentCore/Application/Handler/ExecuteToolCallWorker.php),
+[ToolCallResultHandler](../src/AgentCore/Application/Pipeline/ToolCallResultHandler.php),
+[AdvanceRunHandler](../src/AgentCore/Application/Pipeline/AdvanceRunHandler.php),
+[child lifecycle](../src/CodingAgent/Agent/Execution/ChildRun/Lifecycle/ChildRunBatchLaunchService.php),
 [MCP routing middleware](../src/CodingAgent/Mcp/Messenger/McpExecuteToolCallRoutingMiddleware.php),
 [Messenger routes](../config/packages/messenger.yaml),
 [McpToolInvoker](../src/CodingAgent/Mcp/Tool/McpToolInvoker.php).
+
+## Minimal Tool API and persistent connection
+
+The Tool API follows the Extension API's dependency direction: scripts use a small
+supported interface, not Hatfield internals. It does not need extension registration
+or lifecycle methods, or a separately published package for v1.
+
+PHP does not autoload functions through PSR-4. The bootstrap must explicitly load
+the file defining `tool()`, or use a minimal loader with a Composer `autoload.files`
+entry. That loader may load the small IPC implementation. It must not load the
+application's full `vendor/autoload.php`.
+
+```mermaid
+flowchart LR
+    Bootstrap[Minimal bootstrap] --> API[Tool API function file]
+    API --> Client[Internal IPC client]
+    Script[Native PHP script] --> Function[tool with evaluated arguments]
+    Function --> Client
+    Client <-->|Persistent local request and response| Host[Host connection to child run]
+    Host --> RC[Child run control]
+    RC -->|Messenger| Consumers[Existing consumers]
+```
+
+The client encodes a request, waits for the correlated reply, and decodes the result.
+Hatfield supplies run IDs, tool-call IDs, policy context, and transport configuration.
+Those are not script parameters. The client has no registry or MCP logic.
+
+One local connection lasts for the script's lifetime. A dedicated socket is a
+candidate transport, separate from stdout and stderr so `echo` and PHP warnings
+cannot corrupt requests. The exact transport and message fields remain internal
+design choices. A closed connection reports interrupted delivery without resending
+the call, because the operation may already have caused side effects.
+
+Launching a Hatfield CLI process for every call would still need child identity,
+pending-call admission, response correlation, and cancellation. It would also repeat
+process startup and application bootstrap. The persistent connection avoids that
+cost while Messenger remains the execution transport. No new tool consumer is
+required merely to receive the script's local requests.
+
+### Native PHP provides the execution state
+
+There is no custom AST interpreter. PHP evaluates variables, branches, loops, and
+arguments, then waits inside `tool()` until Hatfield returns a result. Its live call
+stack holds the script state. An AST alone cannot determine calls that depend on
+earlier tool results.
+
+```mermaid
+sequenceDiagram
+    participant PHP as Native PHP execution
+    participant API as tool()
+    participant Run as PHP-driven child run
+    PHP->>PHP: Evaluate arguments using current local values
+    PHP->>API: Invoke tool
+    API->>Run: Submit request over existing local connection
+    Note over PHP,API: PHP blocks here with its variables and call stack intact
+    Run-->>API: Correlated result after Messenger execution
+    API-->>PHP: Return value
+    PHP->>PHP: Continue loop, branch, or final return
+```
+
+The PHP process must stay alive while waiting. If it dies, the child records the
+partial outcome and ends. Neither reconnect nor child-run recovery restarts the
+script automatically.
 
 ## Values must separate from model presentation
 
@@ -280,14 +367,17 @@ stores the request, and the answer requeues that call with typed correlation. Th
 is safe for one unstarted handler. It is not safe for an outer script that has
 already performed writes.
 
+The sequence abbreviates the local connection and Messenger delivery. The child
+run owns admission and recorded outcomes, as in the full execution sequence above.
+
 ```mermaid
 %%{init: {"sequence": {"wrap": true, "width": 110, "actorMargin": 20, "diagramMarginX": 10, "messageMargin": 30}}}%%
 sequenceDiagram
     participant PHP as PHP script
-    participant Bridge as Host bridge
+    participant Bridge as PHP-driven child run
     participant Hooks as Existing approval hooks
     participant Worker as Tool handler
-    participant Store as Call ledger
+    participant Store as Child execution records
     participant RC as Outer completion through run_control
     participant Model
 
@@ -318,6 +408,12 @@ the exact nested response while the user answers. That needs live-process owners
 correlated approval delivery, and a deadline. A crash still ends the script.
 Persisting PHP locals or replaying earlier calls would introduce workflow recovery
 that is outside scope.
+
+The child-run design makes existing per-call approval continuation worth evaluating
+again: the child could resume only its waiting tool call while PHP remains blocked.
+Whether that works without normal subagent approval restrictions remains an open
+integration question. This report does not treat the earlier stop recommendation
+as a finalized requirement.
 
 Sources: [approval suspension and answer handling](../src/CodingAgent/Extension/ExtensionToolHookEventSubscriber.php),
 [run-control continuation](../src/AgentCore/Application/Pipeline/ApplyCommandHandler.php),
@@ -379,18 +475,19 @@ Sources: [executor outcome reuse](../src/AgentCore/Application/Handler/ToolExecu
 
 ## Inspection stays separate from model history
 
-Each nested call gets a host-generated ID and ordinal under the outer tool-call ID.
-The ledger records tool identity, dispatch and terminal status, duration, and any
-handler-provided operation reference. Payload retention follows the approved privacy
-and storage limits.
+Each script tool call gets a host-generated ID in the PHP-driven child run, with
+correlation to the parent's outer tool-call ID. Existing child events and artifacts
+are the first choice for inspectable call history, not a parallel operation ledger.
+Records include dispatch and terminal status, duration, and any handler-provided
+operation reference. Payload retention follows the approved privacy and storage limits.
 
 ```mermaid
 flowchart LR
-    Outcome[Nested call and result] --> Ledger[Owned ledger and permitted payload artifacts]
+    Outcome[Child tool call and result] --> Ledger[Child events and permitted payload artifacts]
     Outcome --> Logs[Correlation IDs, status, bounded sanitized cause]
     Ledger --> Read[Explicit inspection with read or view_image]
     Final[Final script value and host status] --> Cap[Existing output cap]
-    Cap --> History[Outer tool result in canonical history]
+    Cap --> History[Outer tool result in parent canonical history]
     History --> Model[Next model request]
     Ledger --> Ref[Compact inspection reference]
     Ref --> History
@@ -406,7 +503,8 @@ supported images. Returning a reference does not mount data into PHP or grant ne
 permissions. Direct PHP file access still follows host permissions.
 
 Logs exclude script source, raw arguments, raw outputs, credentials, and stack dumps.
-Only the final value and compact status references enter model history by default.
+Only the final value and compact status references enter parent model history by default.
+The child needs inspectable execution records, not a fabricated model conversation.
 Local artifacts can still contain secrets. The recommendation is owner-only access,
 short retention, and metadata-only records where payload retention is prohibited.
 Pattern-based error redaction is not proof that arbitrary data is non-sensitive.
@@ -432,19 +530,28 @@ Four product decisions remain:
 | TOON decoding | Decide whether to bundle a standalone decoder without the application autoloader |
 | MCP cancellation | Require cancellation work or explicitly approve unknown-remote-outcome reporting |
 
+The child-run approach is the preferred integration to investigate, not an existing
+LLM-free execution mode. The first slice must resolve pending-step admission,
+PHP continuation, child tool policy, and MCP session ownership before implementation
+can rely on it. Current subagent approval defaults must not decide code-mode behavior
+implicitly.
+
 The implementation can then proceed in this order:
 
 ```mermaid
 flowchart LR
-    Process[Owned PHP process and minimal bootstrap] --> Values[Typed outcomes before presentation, including MCP data]
-    Values --> Bridge[Serial bridge and internal nested routing]
-    Bridge --> Records[Attempt evidence, inspection artifacts, bounded final output]
+    Run[PHP-driven child admission and continuation] --> Process[Owned PHP process and minimal Tool API]
+    Process --> Values[Typed outcomes before presentation, including MCP data]
+    Values --> Bridge[Persistent connection to existing Messenger execution]
+    Bridge --> Records[Child events, artifacts, and bounded parent result]
     Records --> Tool[One tool registration and usage documentation]
 ```
 
 Process work includes crash handling and teardown in supported packaged runtimes.
 Routing work must preserve MCP connection ownership and avoid worker self-deadlock.
-The bridge retains current access policy and excludes agent orchestration.
+The bridge retains current access policy and excludes script-controlled agent
+orchestration. No AST interpreter, per-call CLI bootstrap, or new tool consumer is
+part of the proposed design.
 
 CodingAgent owns concrete process, tool, MCP, and extension adapters. AgentCore gets
 only neutral contracts that genuinely belong to shared execution. The
@@ -468,6 +575,9 @@ skill and `tests/AGENTS.md` were loaded before test investigation.
 | Cancellation during a nested request | Admission closes; owned process exits; nested cancellation or explicit unknown remote outcome | Process test with pipe or socket barrier |
 | Oversized structured, text, binary, and stdout output | Transport and storage limits hold; inspectable references or explicit omission; no raw payload in logs or model details | Codec, artifact, and projection tests |
 | Minimal bootstrap and owner crash | Bridge works without application autoload; internal service access is unavailable; owned resources are reaped | Real subprocess test |
+| PHP-driven child continuation | Results match admitted steps and return to PHP without an LLM call or automatic script restart | Run-control and controller replay tests |
+| Conditional tool calls | Native PHP chooses the next call from the prior result while preserving local variables | Real subprocess with deterministic tool responses |
+| Shared consumer reuse | One available tool worker does not deadlock; MCP calls reach the owning session connection; parent cancellation reaches the child | Controller replay with deterministic barriers |
 
 Existing entry points include `ToolExecutorTest`, `ExtensionToolHookEventSubscriberTest`,
 `McpResultMapperTest`, and `OutputCapToolResultProcessorContractTest`. DB-touching
