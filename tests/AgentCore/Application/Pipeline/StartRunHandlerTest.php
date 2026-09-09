@@ -109,6 +109,57 @@ final class StartRunHandlerTest extends TestCase
         $this->assertSame([], $redelivery->events);
     }
 
+    public function testCancelledQueuedStateDoesNotStart(): void
+    {
+        $handler = new StartRunHandler(
+            eventFactory: new EventFactory(),
+            normalizer: TestSerializerFactory::normalizer(),
+        );
+
+        $cancelled = RunStateBuilder::create('run-cancel-before-start')
+            ->withStatus(RunStatus::Cancelled)
+            ->withVersion(2)
+            ->withTurnNo(0)
+            ->withLastSeq(3)
+            ->withModel(null)
+            ->withErrorMessage('Parent run cancelled subagent tool.')
+            ->build();
+
+        $result = $handler->handle(
+            StartRunMessageBuilder::create('run-cancel-before-start')->build(),
+            $cancelled,
+        );
+
+        $this->assertNull($result->nextState);
+        $this->assertSame([], $result->events);
+        $this->assertSame([], $result->postCommit);
+    }
+
+    public function testCancellingQueuedStateDoesNotStart(): void
+    {
+        $handler = new StartRunHandler(
+            eventFactory: new EventFactory(),
+            normalizer: TestSerializerFactory::normalizer(),
+        );
+
+        $cancelling = RunStateBuilder::create('run-cancelling-before-start')
+            ->withStatus(RunStatus::Cancelling)
+            ->withVersion(1)
+            ->withTurnNo(0)
+            ->withLastSeq(1)
+            ->withModel(null)
+            ->build();
+
+        $result = $handler->handle(
+            StartRunMessageBuilder::create('run-cancelling-before-start')->build(),
+            $cancelling,
+        );
+
+        $this->assertNull($result->nextState);
+        $this->assertSame([], $result->events);
+        $this->assertSame([], $result->postCommit);
+    }
+
     public function testCommittedStartRedeliveryRearmsInitialAdvanceWhenKickoffNeverRan(): void
     {
         $commandBus = new TestMessageBus();

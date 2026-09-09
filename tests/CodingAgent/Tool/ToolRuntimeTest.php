@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Tool;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
+use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use PHPUnit\Framework\TestCase;
 
@@ -65,6 +66,22 @@ final class ToolRuntimeTest extends TestCase
                 $this->toolRuntime->run(static fn (): string => 'result');
             },
         );
+    }
+
+    public function testRunReturnsDeferredOutcomeWhenCancelledAfter(): void
+    {
+        $token = $this->createMock(CancellationTokenInterface::class);
+        $token->expects($this->exactly(2))
+            ->method('isCancellationRequested')
+            ->willReturnOnConsecutiveCalls(false, true);
+
+        $outcome = new DeferredToolCompletionOutcome('deferred-1');
+        $result = $this->contextAccessor->with(
+            $this->contextWithToken($token),
+            fn (): DeferredToolCompletionOutcome => $this->toolRuntime->run(static fn (): DeferredToolCompletionOutcome => $outcome),
+        );
+
+        $this->assertSame($outcome, $result);
     }
 
     public function testRunWithoutContextSucceeds(): void
