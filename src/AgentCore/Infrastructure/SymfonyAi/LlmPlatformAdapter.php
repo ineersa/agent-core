@@ -507,8 +507,8 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
     /**
      * Extract privacy-safe response diagnostics from a DeferredResult.
      *
-     * Returns structural HTTP metadata only. Provider-controlled free-text fields
-     * and raw response bodies are never copied into diagnostics.
+     * JSON errors retain structural metadata only. Non-JSON HTTP errors include
+     * a bounded excerpt with common credentials redacted for gateway diagnosis.
      *
      * @return array<string, mixed>
      */
@@ -547,12 +547,16 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         try {
             $headers = $response->getHeaders(false);
             $diag['response_content_type'] = $headers['content-type'][0] ?? null;
+            $requestId = $headers['x-request-id'][0] ?? $headers['request-id'][0] ?? null;
+            if (null !== $requestId) {
+                $diag['response_request_id'] = \Ineersa\AgentCore\Contract\Tool\DiagnosticMessageSanitizer::sanitize($requestId, 200);
+            }
         } catch (\Throwable $exception) {
             $this->logDiagnosticFailure('headers', $exception);
         }
 
         // Try to parse response body for structured error fields.
-        // For non-JSON bodies, record only safe metadata — never raw body content.
+        // JSON error messages may echo conversation content, so omit free text.
         try {
             $body = $response->getContent(false);
         } catch (\Throwable $exception) {
@@ -574,9 +578,13 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
                 $diag['response_error_param'] = $error['param'] ?? null;
             }
         } else {
-            // Non-JSON body — never store raw body content.
-            // Only safe metadata is recorded.
             $diag['response_body_is_json'] = false;
+            if (null !== $diag['http_status_code'] && $diag['http_status_code'] >= 400) {
+                $redacted = \Ineersa\AgentCore\Contract\Tool\DiagnosticMessageSanitizer::redact($body);
+                $redacted = mb_scrub($redacted, 'UTF-8');
+                $diag['response_body_preview'] = mb_strcut($redacted, 0, 2048, 'UTF-8');
+                $diag['response_body_truncated'] = \strlen($redacted) > 2048;
+            }
         }
 
         return $diag;

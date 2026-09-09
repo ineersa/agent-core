@@ -85,6 +85,9 @@ final class HeadlessControllerLlmWorkerPoolProcessTest extends ControllerReplayE
     {
         // Keep tool pool tiny so this topology case only asserts llm workers.
         return <<<'YAML'
+logging:
+    # This test reads launch records. Do not inherit the product log threshold.
+    level: info
 tools:
     execution:
         max_parallelism: 1

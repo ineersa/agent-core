@@ -110,6 +110,31 @@ final class LlmPlatformAdapterTest extends TestCase
         $this->assertSame(LlmProviderErrorClassifier::CATEGORY_UNKNOWN, $result->error['error_category'] ?? null);
     }
 
+    public function testNonJsonErrorPreviewIsRedactedAndByteBounded(): void
+    {
+        $adapter = $this->createAdapter($this->createStub(SymfonyPlatformInterface::class));
+        $method = new \ReflectionMethod(LlmPlatformAdapter::class, 'extractResponseDiagnostics');
+        foreach ([400, 502, 503, 200] as $status) {
+            $body = '<h1>Bad Request</h1> token=private-token '.str_repeat('é', 503 === $status ? 1 : 1500);
+            $response = $this->createStub(ResponseInterface::class);
+            $response->method('getStatusCode')->willReturn($status);
+            $response->method('getContent')->willReturn($body);
+            $response->method('getHeaders')->willReturn(['content-type' => ['text/html'], 'x-request-id' => ['req-123']]);
+            $deferred = new DeferredResult(new ResultConverter(), new RawHttpResult($response), ['stream' => true]);
+            $diag = $method->invoke($adapter, $deferred);
+            if (200 === $status) {
+                $this->assertArrayNotHasKey('response_body_preview', $diag);
+                continue;
+            }
+            $this->assertStringStartsWith('<h1>Bad Request</h1> token=<redacted>', $diag['response_body_preview']);
+            $this->assertStringNotContainsString('private-token', $diag['response_body_preview']);
+            $this->assertLessThanOrEqual(2048, \strlen($diag['response_body_preview']));
+            $this->assertTrue(mb_check_encoding($diag['response_body_preview'], 'UTF-8'));
+            $this->assertSame(503 !== $status, $diag['response_body_truncated']);
+            $this->assertSame('req-123', $diag['response_request_id']);
+        }
+    }
+
     public function testExtractResponseDiagnosticsOmitsProviderControlledFreeText(): void
     {
         $secret = 'LEAKED_PROVIDER_SECRET_MARKER_adapter_7e4d';

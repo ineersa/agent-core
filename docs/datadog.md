@@ -102,6 +102,18 @@ the environment also keeps auto mode off.
 
 Use `castor datadog:smoke` to inspect package status, `ddtrace` load, and today's log path.
 
+## Provider failure diagnostics
+
+The `llm.provider.stream_error` warning includes HTTP status, content type, and
+the response request ID when available. For non-JSON HTTP errors, it also includes
+`response_body_preview`, capped at 2,048 UTF-8 bytes, and `response_body_truncated`.
+The existing diagnostic sanitizer redacts common credential patterns before truncation.
+JSON error bodies retain structural metadata only.
+
+Redaction is best-effort. Non-JSON error pages can echo request content that the
+sanitizer does not recognize. Treat these logs as sensitive and review excerpts
+before sharing them.
+
 ## Related
 
 - Logging keys: [settings.md](settings.md)
