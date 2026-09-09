@@ -316,7 +316,7 @@ logging:
     level: warning
 
     # Number of daily rotated log files to retain before deletion.
-    max_files: 14
+    max_files: 2
 
 # ---------------------------------------------------------------------------
 # Prompt templates
