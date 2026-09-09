@@ -208,9 +208,8 @@ final class CancelListener implements TuiListenerRegistrar
                 }
 
                 SubagentLiveAttention::markActiveChildrenCancelledForParentCancel($state, $screen);
-                // Do not reopen a terminal activity if cancel completed while
-                // client->cancel() was in flight. Sticky Cancelling after a
-                // terminal Cancelled/Failed/Completed leaves follow-ups blocked.
+                // Do not reopen Cancelling if cancel completed to Cancelled while
+                // client->cancel() was in flight; sticky Cancelling blocks follow-ups.
                 if (RunActivityStateEnum::Cancelled === $state->activity) {
                     $screen->setWorkingMessage('');
                 } else {

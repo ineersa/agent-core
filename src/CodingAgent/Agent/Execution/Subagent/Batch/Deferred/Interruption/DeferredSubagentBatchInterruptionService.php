@@ -118,7 +118,8 @@ final readonly class DeferredSubagentBatchInterruptionService
             $effectiveKind = $projection->interruptionKind ?? $kind;
         }
 
-        // Wait for generic deferred registration before cancelling children
+        // Cancel reserved/launched children immediately; completion still waits
+        // for generic deferred registration so the parent tool can finish.
         $deferredStatus = $this->deferredToolCompletionRepository->status($batchLifecycleId);
         if (null === $deferredStatus) {
             // Children may already be launched before parent tool registration.

@@ -33,35 +33,17 @@ final class ToolCallResultFactory
                 : $message->toolIdempotencyKey;
 
         $error = null;
-        if ($toolResult->isError) {
+        if ($toolResult->isError && \is_array($toolResult->details) && true === ($toolResult->details['cancelled'] ?? false)) {
             $details = \is_array($toolResult->details) ? $toolResult->details : [];
-            if (true === ($details['cancelled'] ?? false)) {
-                $error = [
-                    'type' => 'cancelled',
-                    'message' => (string) ($toolResult->content[0]['text'] ?? 'Tool execution cancelled.'),
-                ];
-                if (isset($details['retryable'])) {
-                    $error['retryable'] = $details['retryable'];
-                }
-                if (\array_key_exists('hint', $details)) {
-                    $error['hint'] = $details['hint'];
-                }
-            } elseif (isset($details['error_type']) && \is_string($details['error_type']) && '' !== $details['error_type']) {
-                $error = [
-                    'type' => $details['error_type'],
-                    'message' => (string) ($toolResult->content[0]['text'] ?? 'Tool execution failed.'),
-                ];
-                if (isset($details['retryable'])) {
-                    $error['retryable'] = $details['retryable'];
-                }
-                if (\array_key_exists('hint', $details)) {
-                    $error['hint'] = $details['hint'];
-                }
-            } else {
-                $error = [
-                    'type' => 'tool_error',
-                    'message' => (string) ($toolResult->content[0]['text'] ?? 'Tool execution failed.'),
-                ];
+            $error = [
+                'type' => 'cancelled',
+                'message' => (string) ($toolResult->content[0]['text'] ?? 'Tool execution cancelled.'),
+            ];
+            if (isset($details['retryable'])) {
+                $error['retryable'] = $details['retryable'];
+            }
+            if (\array_key_exists('hint', $details)) {
+                $error['hint'] = $details['hint'];
             }
         }
 
