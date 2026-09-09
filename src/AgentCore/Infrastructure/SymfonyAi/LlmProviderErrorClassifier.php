@@ -53,12 +53,7 @@ final class LlmProviderErrorClassifier
         $errorType = \is_string($error['type'] ?? null) ? $error['type'] : '';
         $statusCode = \is_int($error['http_status_code'] ?? null) ? $error['http_status_code'] : null;
 
-        // Providers also return intermittent HTTP 400s, including HTML gateway
-        // responses. Let the existing bounded Messenger retry budget handle them.
-        [$category, $retryable, $userMessage] = (400 === $statusCode
-            ? [self::CATEGORY_BAD_REQUEST, true, 'LLM provider rejected the request.']
-            : null)
-            ?? $this->classifyPermanentException($errorType)
+        [$category, $retryable, $userMessage] = $this->classifyPermanentException($errorType)
             ?? $this->classifyStatus($statusCode)
             ?? $this->classifyTransientStreamException($errorType)
             ?? [self::CATEGORY_PROVIDER, true, 'LLM provider request failed.'];
@@ -119,7 +114,7 @@ final class LlmProviderErrorClassifier
     private function classifyStatus(?int $statusCode): ?array
     {
         return match ($statusCode) {
-            404, 405, 413, 415, 422, 501 => [self::CATEGORY_BAD_REQUEST, false, 'LLM provider rejected the request.'],
+            400, 404, 405, 413, 415, 422, 501 => [self::CATEGORY_BAD_REQUEST, false, 'LLM provider rejected the request.'],
             401, 403 => [self::CATEGORY_AUTH, false, 'LLM provider authentication or authorization failed. Check your credentials.'],
             408, 425 => [self::CATEGORY_TIMEOUT, false, 'LLM provider request timed out after HTTP retries were exhausted.'],
             429 => [self::CATEGORY_RATE_LIMIT, false, 'LLM provider rate limit remained active after HTTP retries were exhausted.'],
