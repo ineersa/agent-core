@@ -51,12 +51,38 @@ final class LlmHttpRetryPolicyTest extends TestCase
     public function testSymfonyStrategyDoesNotRetryBasedOnResponseText(): void
     {
         $mock = new MockHttpClient([
-            new MockResponse('overloaded service unavailable', ['http_code' => 400]),
+            new MockResponse('overloaded service unavailable', ['http_code' => 422]),
         ]);
         $client = $this->retryableClient($mock, new LlmHttpRetryPolicy(maxRetries: 2, baseDelayMs: 0));
 
-        $this->assertSame(400, $client->request('POST', 'https://api.test/chat')->getStatusCode());
+        $this->assertSame(422, $client->request('POST', 'https://api.test/chat')->getStatusCode());
         $this->assertSame(1, $mock->getRequestsCount());
+    }
+
+    public function testHttp400RetriesHtmlAndJsonResponsesUntilSuccess(): void
+    {
+        $mock = new MockHttpClient([
+            new MockResponse('<html>Bad Request</html>', ['http_code' => 400, 'response_headers' => ['content-type: text/html']]),
+            new MockResponse('{"error":"invalid_request"}', ['http_code' => 400, 'response_headers' => ['content-type: application/json']]),
+            new MockResponse('ok', ['http_code' => 200]),
+        ]);
+        $client = $this->retryableClient($mock, new LlmHttpRetryPolicy(baseDelayMs: 0));
+
+        $this->assertSame('ok', $client->request('POST', 'https://api.test/chat')->getContent(false));
+        $this->assertSame(3, $mock->getRequestsCount());
+    }
+
+    public function testPersistentHttp400StopsAfterRetryBudget(): void
+    {
+        $mock = new MockHttpClient([
+            new MockResponse('Bad Request', ['http_code' => 400]),
+            new MockResponse('Bad Request', ['http_code' => 400]),
+            new MockResponse('Bad Request', ['http_code' => 400]),
+        ]);
+        $client = $this->retryableClient($mock, new LlmHttpRetryPolicy(baseDelayMs: 0));
+
+        $this->assertSame(400, $client->request('POST', 'https://api.test/chat')->getStatusCode());
+        $this->assertSame(3, $mock->getRequestsCount());
     }
 
     public function testHttpClientOptions(): void

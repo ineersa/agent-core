@@ -14,7 +14,7 @@ final class LlmHttpRetryPolicy
     public const int DEFAULT_BASE_DELAY_MS = 1_000;
     public const int DEFAULT_MAX_DELAY_MS = 60_000;
 
-    private const array RETRYABLE_STATUS_CODES = [0, 408, 425, 429, 500, 502, 503, 504];
+    private const array RETRYABLE_STATUS_CODES = [0, 400, 408, 425, 429, 500, 502, 503, 504];
 
     public readonly int $timeout;
     public readonly int $maxDuration;
