@@ -215,8 +215,9 @@ final class ExtensionManager
                 $instance->register($this->extensionApi);
             });
 
-            // Native subscribers attach before success is recorded. Partial
-            // registrations are not rolled back when attachment fails.
+            // Native Symfony subscribers use the host dispatcher for console
+            // events without a custom hook registry. Attach before recording success.
+            // Partial registrations are not rolled back when attachment fails.
             if ($instance instanceof EventSubscriberInterface) {
                 $this->eventDispatcher->addSubscriber($instance);
             }
