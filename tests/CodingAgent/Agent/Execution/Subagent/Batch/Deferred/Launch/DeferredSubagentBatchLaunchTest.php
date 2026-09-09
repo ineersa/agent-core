@@ -453,6 +453,62 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         $this->assertDirectoryDoesNotExist($pathResolver->resolveArtifactDir($parentRunId, $thirdChild->artifactId));
     }
 
+    public function testLaunchSkipsPrepareAndStartWhenInterruptionIntentAlreadyPersisted(): void
+    {
+        $parentRunId = 'parent-batch-interrupt-before-launch';
+        $toolCallId = 'call-batch-interrupt-before-launch';
+        $identityFactory = new DeferredSubagentBatchIdentityFactory();
+        $lifecycleId = $identityFactory->batchLifecycleId($parentRunId, $toolCallId);
+        $child = $identityFactory->childIdentity($parentRunId, $toolCallId, 1);
+
+        $repo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
+        $repo->reserveBatch(
+            lifecycleId: $lifecycleId,
+            parentRunId: $parentRunId,
+            parentTurnNo: 2,
+            parentToolCallId: $toolCallId,
+            parentOrderIndex: 0,
+            executionMode: ChildRunBatchExecutionModeEnum::Single,
+            totalChildCount: 1,
+            deadlineAt: new \DateTimeImmutable('+600 seconds'),
+            childIntents: [
+                // Match withToolContext parentModel so reserveBatch re-entry accepts the intents.
+                ['batchIndex' => 1, 'childRunId' => $child['childRunId'], 'artifactId' => $child['artifactId'], 'agentName' => 'batch-a', 'task' => 'Late start', 'launchModel' => 'test-model', 'launchReasoning' => 'medium'],
+            ],
+        );
+        $row = $repo->findEntityByLifecycleId($lifecycleId);
+        $this->assertNotNull($row);
+        $repo->persistInterruptionIntent(
+            $lifecycleId,
+            \Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum::ParentCancelled,
+            new \DateTimeImmutable(),
+            $row->projectionVersion,
+        );
+
+        $agentRunner = $this->createMock(AgentRunnerInterface::class);
+        $agentRunner->expects($this->never())->method('start');
+        $agentRunner->expects($this->never())->method('cancel');
+
+        $service = $this->buildBatchLaunchService($agentRunner, [$this->parallelDefinition('batch-a')]);
+        $outcome = $this->withToolContext($parentRunId, $toolCallId, static fn () => $service->launch(
+            $parentRunId,
+            [new SubagentTaskDTO(agent: 'batch-a', task: 'Late start')],
+            ChildRunBatchExecutionModeEnum::Single,
+        ));
+
+        $this->assertInstanceOf(DeferredToolCompletionOutcome::class, $outcome);
+        $this->assertSame($lifecycleId, $outcome->deferredId);
+
+        $batch = $repo->findByLifecycleId($lifecycleId);
+        $this->assertNotNull($batch);
+        $this->assertSame(DeferredSubagentChildLaunchStatusEnum::Reserved, $batch->children[0]->launchStatus);
+        $this->assertSame(
+            \Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum::ParentCancelled,
+            $batch->interruptionKind,
+        );
+        $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Reserved, $batch->launchStatus);
+    }
+
     public function testInsertReservedChildrenRebindsExistingTerminalChildOntoNewBatch(): void
     {
         $childRunId = 'child-resume-rebind-01';

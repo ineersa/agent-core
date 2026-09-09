@@ -34,7 +34,7 @@ final class ToolCallResultFactory
 
         $error = null;
         if ($toolResult->isError && \is_array($toolResult->details) && true === ($toolResult->details['cancelled'] ?? false)) {
-            $details = \is_array($toolResult->details) ? $toolResult->details : [];
+            $details = $toolResult->details;
             $error = [
                 'type' => 'cancelled',
                 'message' => (string) ($toolResult->content[0]['text'] ?? 'Tool execution cancelled.'),

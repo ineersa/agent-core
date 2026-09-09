@@ -459,8 +459,11 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
 
         $batch = $repo->findByLifecycleId($lifecycle);
         $this->assertSame($intentKind, $batch->interruptionKind, 'First-wins intent unchanged after opposite kind');
-        $this->assertGreaterThanOrEqual(1, \count($cancelCalls), 'Launched children already cancelled before registration');
+        // Pre-registration interrupt re-issues cancel for still-nonterminal launched children.
+        $this->assertCount(2, $cancelCalls, 'Opposite kind before registration recancels only the active child');
         $this->assertSame($c2['childRunId'], $cancelCalls[0]['runId']);
+        $this->assertSame($c2['childRunId'], $cancelCalls[1]['runId']);
+        $this->assertNotContains($c1['childRunId'], array_column($cancelCalls, 'runId'), 'Completed child must not be cancelled');
 
         // STEP 2: Register generic deferred completion
         $deferred = self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class);
@@ -480,14 +483,22 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         // STEP 3: Invoke OPPOSITE kind with registration — proves persisted first-wins controls actual behavior
         $interruptionService->interrupt($lifecycle, $oppositeKind);
 
-        // Only child 2 (active, not completed) should be cancelled (idempotent re-cancel after registration)
-        $this->assertGreaterThanOrEqual(1, \count($cancelCalls), 'Active child cancelled');
+        // Child 2 remains the only cancelled child; completed child 1 is never cancelled.
+        // After registration, cancelStartedChildren may re-issue cancel for the still-active child.
+        $this->assertCount(3, $cancelCalls, 'Active child cancelled again after registration; completed child untouched');
         $this->assertSame($c2['childRunId'], $cancelCalls[0]['runId']);
+        $this->assertSame($c2['childRunId'], $cancelCalls[1]['runId']);
+        $this->assertSame($c2['childRunId'], $cancelCalls[2]['runId']);
+        $this->assertNotContains($c1['childRunId'], array_column($cancelCalls, 'runId'));
 
         if (DeferredSubagentInterruptionKindEnum::Timeout === $intentKind) {
             $this->assertSame('Parallel subagent timed out.', $cancelCalls[0]['reason']);
+            $this->assertSame('Parallel subagent timed out.', $cancelCalls[1]['reason']);
+            $this->assertSame('Parallel subagent timed out.', $cancelCalls[2]['reason']);
         } else {
             $this->assertSame('Parent run cancelled parallel subagent tool.', $cancelCalls[0]['reason']);
+            $this->assertSame('Parent run cancelled parallel subagent tool.', $cancelCalls[1]['reason']);
+            $this->assertSame('Parent run cancelled parallel subagent tool.', $cancelCalls[2]['reason']);
         }
 
         // Verify parent-cancel forced progress vs timeout no extra progress
@@ -972,7 +983,15 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $interruptionService->interrupt($lifecycle, $oppositeKind);
         $batch = $repo->findByLifecycleId($lifecycle);
         $this->assertSame($intentKind, $batch->interruptionKind, 'Opposite kind before registration does not override first-wins');
-        $this->assertGreaterThanOrEqual(1, \count($cancelCalls), 'Launched children cancelled before registration');
+        if ('natural_terminal' === $variant) {
+            // Observation after the first interrupt marks the child terminal, so
+            // the opposite-kind interrupt must not cancel again.
+            $this->assertCount(1, $cancelCalls, 'Terminal child must not be recancelled');
+        } else {
+            $this->assertCount(2, $cancelCalls, 'Opposite kind before registration recancels the still-active child');
+            $this->assertSame($c1['childRunId'], $cancelCalls[1]['runId']);
+        }
+        $this->assertSame($c1['childRunId'], $cancelCalls[0]['runId']);
         $this->assertCount(0, $commandBus->messages, 'No completion before registration');
 
         $deferred = self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class);
@@ -992,12 +1011,18 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $interruptionService->interrupt($lifecycle, $oppositeKind);
 
         if ($expectCancel) {
-            $this->assertGreaterThanOrEqual(1, \count($cancelCalls));
+            $this->assertCount(3, $cancelCalls, 'Active child cancelled again after registration');
             $this->assertSame($c1['childRunId'], $cancelCalls[0]['runId']);
+            $this->assertSame($c1['childRunId'], $cancelCalls[1]['runId']);
+            $this->assertSame($c1['childRunId'], $cancelCalls[2]['runId']);
             if ('timeout' === $kind) {
                 $this->assertSame('Subagent timed out.', $cancelCalls[0]['reason']);
+                $this->assertSame('Subagent timed out.', $cancelCalls[1]['reason']);
+                $this->assertSame('Subagent timed out.', $cancelCalls[2]['reason']);
             } else {
                 $this->assertSame('Parent run cancelled subagent tool.', $cancelCalls[0]['reason']);
+                $this->assertSame('Parent run cancelled subagent tool.', $cancelCalls[1]['reason']);
+                $this->assertSame('Parent run cancelled subagent tool.', $cancelCalls[2]['reason']);
             }
         } else {
             // natural_terminal: first interrupt cancels the still-running child
