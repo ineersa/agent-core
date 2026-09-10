@@ -20,6 +20,8 @@ use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Bridge\Generic\CompletionsModel;
 use Symfony\AI\Platform\Provider;
 use Symfony\AI\Platform\ProviderInterface;
+use Symfony\Component\HttpClient\MockHttpClient;
+use Symfony\Component\HttpClient\Response\MockResponse;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
@@ -294,6 +296,38 @@ final class SymfonyAiProviderFactoryTest extends TestCase
         $providers = $factory->createProviders();
 
         $this->assertSame($sentinel, $providers['custom']);
+    }
+
+    public function testInjectedTransportRetriesHttp400WithinConfiguredBudget(): void
+    {
+        $transport = new MockHttpClient([
+            new MockResponse('rejected', ['http_code' => 400]),
+            new MockResponse('rejected again', ['http_code' => 400]),
+            new MockResponse('ok'),
+        ]);
+        $builder = $this->createMock(SymfonyAiProviderBuilderInterface::class);
+        $builder->method('supports')->willReturn(true);
+        $builder->expects($this->once())->method('build')->willReturnCallback(
+            function (AiProviderConfig $provider, HttpClientInterface $client): ProviderInterface {
+                $response = $client->request('POST', 'https://example.test/responses');
+                $this->assertSame('ok', $response->getContent());
+                $this->assertSame(2, $response->getInfo('retry_count'));
+
+                return new Provider($provider->id, [], [], new ProjectedSymfonyModelCatalog(hatfieldModels: [], modelClass: CompletionsModel::class, providerId: $provider->id));
+            },
+        );
+        $ai = new AiConfig(
+            http: new AiHttpConfig(maxRetries: 2, baseDelayMs: 0),
+            providers: ['test' => new AiProviderConfig(id: 'test', type: 'custom', enabled: true)],
+        );
+        $factory = new SymfonyAiProviderFactory(
+            new AppConfig(tui: new TuiConfig(theme: 'cyberpunk'), logging: new LoggingConfig(), ai: $ai, catalog: new HatfieldModelCatalog($ai)),
+            $this->createStub(EventDispatcherInterface::class),
+            [$builder],
+            httpClient: $transport,
+        );
+
+        $factory->createProviders();
     }
 
     /**

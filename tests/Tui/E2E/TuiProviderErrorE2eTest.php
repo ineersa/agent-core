@@ -179,6 +179,8 @@ final class TuiProviderErrorE2eTest extends TestCase
         @mkdir($dir.'/.hatfield', 0o777, true);
 
         $settings = TuiE2eDatabaseEnv::replayBaseSettings();
+        // This journey proves terminal error presentation, not HTTP backoff.
+        $settings['ai']['http']['max_retries'] = 0;
 
         TuiE2eDatabaseEnv::writeReplaySettings($dir, $settings);
 

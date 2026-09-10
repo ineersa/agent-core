@@ -38,14 +38,19 @@ Remove once upstream no longer realpaths AT_EXECFN on Linux.
    `var/tmp/static-php-cli/phpmicro/<commit>/`), then apply the tracked Linux self-path patch.
 3. `spc download --with-php=8.5.8 --custom-local=php-micro:<path> …` then verify
    `php-8.5.8.tar.xz` SHA-256 against the pin.
-4. `spc build` with `--no-smoke-test=micro` (upstream bare-micro segfault workaround).
+4. `spc build` with `--with-packages=libjpeg,libwebp,nghttp2` and
+   `--no-smoke-test=micro` (upstream bare-micro segfault workaround).
+   `nghttp2` enables cURL HTTP/2 support so Symfony selects cURL instead of Amp.
+   The build fails if the compiled CLI does not report `CURL_VERSION_HTTP2`.
 5. `spc micro:combine <phar> --with-micro=buildroot/bin/micro.sfx --output=<artifact>`.
 6. Native fused-artifact smoke runs `./hatfield` via a symlink in an isolated CWD so the
    relative-invocation crash cannot be masked by absolute paths.
 7. `castor distribution:verify` (version/list + topology).
 
 Release cache path includes `var/tmp/static-php-cli` (SPC + phpmicro) and
-`var/tmp/static-build`, keyed by `pin.json` + `composer.lock`.
+`var/tmp/static-build`, keyed by `pin.json`, `composer.lock`, and
+`.castor/distribution.php`. Only exact cache matches are restored to avoid
+reusing libraries built without newly required features.
 
 ## Host prerequisites
 

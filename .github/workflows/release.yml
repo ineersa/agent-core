@@ -100,9 +100,7 @@ jobs:
           path: |
             var/tmp/static-php-cli
             var/tmp/static-build
-          key: spc-${{ matrix.target }}-${{ hashFiles('tools/static/pin.json', 'composer.lock') }}
-          restore-keys: |
-            spc-${{ matrix.target }}-
+          key: spc-${{ matrix.target }}-${{ hashFiles('tools/static/pin.json', 'composer.lock', '.castor/distribution.php') }}
 
       - name: Install static build prerequisites
         uses: ./.github/actions/static-prerequisites

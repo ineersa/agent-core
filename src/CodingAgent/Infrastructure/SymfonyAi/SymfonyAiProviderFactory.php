@@ -82,10 +82,6 @@ class SymfonyAiProviderFactory
      */
     private function getHttpClient(): HttpClientInterface
     {
-        if (null !== $this->httpClient) {
-            return $this->httpClient;
-        }
-
         $http = $this->appConfig->ai?->http;
         $policy = new LlmHttpRetryPolicy(
             timeout: $http?->timeout,
@@ -94,7 +90,8 @@ class SymfonyAiProviderFactory
             baseDelayMs: $http?->baseDelayMs,
             maxDelayMs: $http?->maxDelayMs,
         );
-        $baseClient = HttpClient::create($policy->httpClientOptions());
+        // Autowired transports need the same retry policy as the default client.
+        $baseClient = ($this->httpClient ?? HttpClient::create())->withOptions($policy->httpClientOptions());
 
         return new RetryableHttpClient(
             $baseClient,

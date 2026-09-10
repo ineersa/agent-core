@@ -397,7 +397,8 @@ function distribution_build_micro_sfx(string $target): array
     $buildArgs = escapeshellarg($spcBin).' build '.escapeshellarg($extensions)
         .' --build-cli --build-micro'
         // GD only requires PNG by default; the image tool also decodes JPEG/WebP.
-        .' --with-packages=libjpeg,libwebp'
+        // nghttp2 enables curl HTTP/2; without it Symfony auto-selects Amp.
+        .' --with-packages=libjpeg,libwebp,nghttp2'
         .' --dl-with-php='.escapeshellarg($pin['php_version'])
         .' --dl-custom-local='.escapeshellarg($customLocal);
     if ($pin['micro_fake_cli']) {
@@ -408,6 +409,13 @@ function distribution_build_micro_sfx(string $target): array
     $buildArgs .= ' 2>&1';
     echo "SPC build micro...\n";
     \CastorTasks\run_checked($buildArgs, $workDir);
+
+    \CastorTasks\run_checked(
+        escapeshellarg($workDir.'/buildroot/bin/php').' -r '.escapeshellarg(
+            'if (!(curl_version()["features"] & CURL_VERSION_HTTP2)) { fwrite(STDERR, "Static curl requires HTTP/2 support\n"); exit(1); }'
+        ),
+        $workDir
+    );
 
     $microSfx = $workDir.'/buildroot/bin/micro.sfx';
     if (!is_file($microSfx)) {
