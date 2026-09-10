@@ -65,6 +65,35 @@ final class CtrlCInputInterceptorTest extends TestCase
         $harness->stopInputLoop();
     }
 
+    /**
+     * The editor binds `delete_char_forward` to [Delete, Ctrl+D, Shift+Delete];
+     * only Ctrl+D may quit, so the Delete keys must stay editing keys.
+     *
+     * @return iterable<string, array{0: string}>
+     */
+    public static function provideDeleteKeySequences(): iterable
+    {
+        yield 'legacy delete' => ["\x1b[3~"];
+        yield 'legacy shift+delete' => ["\x1b[3;2~"];
+    }
+
+    #[Test]
+    #[DataProvider('provideDeleteKeySequences')]
+    public function deleteKeyEditsInsteadOfQuitting(string $sequence): void
+    {
+        $harness = $this->startHarness();
+        $harness->screen()->promptEditor()->typeText('abc');
+        // Move the cursor before the trailing character so forward
+        // delete has something to remove.
+        $harness->sendInput("\x1b[D");
+
+        $harness->sendInput($sequence);
+
+        $this->assertTrue($harness->tui()->isRunning());
+        $this->assertSame('ab', $harness->screen()->editorText());
+        $harness->stopInputLoop();
+    }
+
     #[Test]
     #[DataProvider('provideCtrlCSequences')]
     public function ctrlCClearsNonEmptyEditor(string $sequence): void

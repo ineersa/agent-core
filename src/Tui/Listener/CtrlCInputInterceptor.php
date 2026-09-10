@@ -7,6 +7,7 @@ namespace Ineersa\Tui\Listener;
 use Ineersa\Tui\Layout\InputPriority;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Symfony\Component\Tui\Event\InputEvent;
+use Symfony\Component\Tui\Input\Key;
 
 /**
  * Intercepts Ctrl+D (quit) and Ctrl+C (cancel / double-press quit).
@@ -14,8 +15,8 @@ use Symfony\Component\Tui\Event\InputEvent;
  * Registered at priority {@see InputPriority::GLOBAL_INTERRUPT} so it runs before other input handlers.
  *
  * Matching uses the mounted editor widget's effective keybindings
- * (`copy` / `delete_char_forward`) so legacy control bytes and Kitty
- * CSI-u sequences stay synchronized with Symfony TUI protocol state.
+ * (`copy`) and shared key parser (Ctrl+D) so legacy control bytes and
+ * Kitty CSI-u sequences stay synchronized with Symfony TUI protocol state.
  *
  * Ctrl+D → immediate quit
  * Ctrl+C (with editor text) → clear editor
@@ -44,13 +45,16 @@ final class CtrlCInputInterceptor implements TuiListenerRegistrar
             static function (InputEvent $event) use ($tui, $screen, $editor, &$ctrlCLast): void {
                 $data = $event->getData();
                 $keys = $editor->getKeybindings();
+                $parser = $keys->getParser();
 
-                if ($keys->getParser()->isKeyRelease($data)) {
+                if ($parser->isKeyRelease($data)) {
                     return;
                 }
 
-                // Ctrl+D (editor delete_char_forward) → quit
-                if ($keys->matches($data, 'delete_char_forward')) {
+                // Ctrl+D → quit. The editor's `delete_char_forward`
+                // action also binds Delete and Shift+Delete, so match
+                // the Ctrl+D key itself; only Ctrl+D exits.
+                if ($parser->matches($data, Key::ctrl('d'))) {
                     $event->stopPropagation();
                     $tui->stop();
 
