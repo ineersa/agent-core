@@ -76,9 +76,9 @@ class SymfonyAiProviderFactory
     /**
      * Return a configured HttpClient for outgoing LLM requests.
      *
-     * An explicitly injected client is used directly. Otherwise Symfony's
-     * RetryableHttpClient owns transport/status retries, backoff, and standard
-     * Retry-After handling.
+     * Applies timeout/max-duration options to the injected or default transport.
+     * Transport maxRetries stay at 0; application LlmRequestRetryExecutor owns
+     * the single retry budget from ai.http.max_retries.
      */
     private function getHttpClient(): HttpClientInterface
     {
@@ -86,7 +86,9 @@ class SymfonyAiProviderFactory
         $policy = new LlmHttpRetryPolicy(
             timeout: $http?->timeout,
             maxDuration: $http?->maxDuration,
-            maxRetries: $http?->maxRetries,
+            // Application LlmRequestRetryExecutor owns retries; keep transport at 0
+            // even when ai.http.max_retries is set for the application budget.
+            maxRetries: 0,
             baseDelayMs: $http?->baseDelayMs,
             maxDelayMs: $http?->maxDelayMs,
         );

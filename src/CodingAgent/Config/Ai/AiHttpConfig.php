@@ -11,15 +11,17 @@ namespace Ineersa\CodingAgent\Config\Ai;
  * Each value supports a plain integer, a numeric string, or the
  * `env:VARNAME` syntax to reference an environment variable.
  *
- * When a value is null, the consumer (e.g. {@see LlmHttpRetryPolicy})
- * applies its own default. This config object only resolves explicit
- * values; defaults are not embedded here.
+ * When a value is null, consumers apply their own defaults:
+ * `timeout`/`max_duration` → {@see LlmHttpRetryPolicy}; `max_retries`/
+ * delay fields → {@see \Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy}
+ * (application retry budget). Transport HTTP retries stay at 0.
  *
- * @see \Ineersa\CodingAgent\Infrastructure\SymfonyAi\Http\LlmHttpRetryPolicy Default values
+ * @see \Ineersa\CodingAgent\Infrastructure\SymfonyAi\Http\LlmHttpRetryPolicy Timeout defaults
+ * @see \Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy Retry budget defaults
  *
  * @param int|null $timeout     Per-request timeout in seconds
  * @param int|null $maxDuration Total request duration budget in seconds
- * @param int|null $maxRetries  Max retry attempts (0 = no retries)
+ * @param int|null $maxRetries  Application retries after the initial attempt (0 = no retries)
  * @param int|null $baseDelayMs Base retry backoff delay in milliseconds
  * @param int|null $maxDelayMs  Maximum delay for any single retry in ms
  */

@@ -298,11 +298,10 @@ final class SymfonyAiProviderFactoryTest extends TestCase
         $this->assertSame($sentinel, $providers['custom']);
     }
 
-    public function testInjectedTransportRetriesHttp400WithinConfiguredBudget(): void
+    public function testInjectedTransportDoesNotStackRetriesWhenAiHttpMaxRetriesConfigured(): void
     {
         $transport = new MockHttpClient([
             new MockResponse('rejected', ['http_code' => 400]),
-            new MockResponse('rejected again', ['http_code' => 400]),
             new MockResponse('ok'),
         ]);
         $builder = $this->createMock(SymfonyAiProviderBuilderInterface::class);
@@ -310,8 +309,10 @@ final class SymfonyAiProviderFactoryTest extends TestCase
         $builder->expects($this->once())->method('build')->willReturnCallback(
             function (AiProviderConfig $provider, HttpClientInterface $client): ProviderInterface {
                 $response = $client->request('POST', 'https://example.test/responses');
-                $this->assertSame('ok', $response->getContent());
-                $this->assertSame(2, $response->getInfo('retry_count'));
+                $this->assertSame(400, $response->getStatusCode());
+                $this->assertSame(0, $response->getInfo('retry_count') ?? 0);
+                // RetryableHttpClient may not increment MockHttpClient count for deferred requests;
+                // the decisive proof is retry_count remaining 0 with maxRetries forced to 0.
 
                 return new Provider($provider->id, [], [], new ProjectedSymfonyModelCatalog(hatfieldModels: [], modelClass: CompletionsModel::class, providerId: $provider->id));
             },

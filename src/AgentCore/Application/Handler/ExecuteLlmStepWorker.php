@@ -111,43 +111,8 @@ final readonly class ExecuteLlmStepWorker
                 ], $invoke)
             ;
 
-            // One-shot retry for thinking-only provider responses.
-            // Providers like DeepSeek can intermittently return
-            // reasoning-only output (thinking, no text, no tool calls)
-            // due to cache-state shifts or server-side slot contention.
-            // A single immediate retry often resolves this without
-            // user-visible failure (session 16 regression).
-            // The retry runs the identical request — no prompt content
-            // is added to RunState.messages and no transient
-            // instructions leak into persisted history.
-            if ($this->isThinkingOnlyResponse($response)) {
-                $this->logger->warning('llm.request.retrying_thinking_only', [
-                    'run_id' => $message->runId(),
-                    'turn_no' => $message->turnNo(),
-                    'step_id' => $message->stepId(),
-                    'event_type' => 'llm.request.retrying_thinking_only',
-                ]);
-
-                // Retry exactly once (also tracer-wrapped if available).
-                $response = null === $this->tracer
-                    ? $invoke()
-                    : $this->tracer->inSpan('llm.call', [
-                        'run_id' => $message->runId(),
-                        'turn_no' => $message->turnNo(),
-                        'step_id' => $message->stepId(),
-                    ], $invoke)
-                ;
-            }
-
-            // Thinking-only assistant messages (no text content, no
-            // tool calls) are not valid conversation turns. Providers
-            // like DeepSeek can produce reasoning-only responses when
-            // max_tokens is exhausted mid-thinking, and replaying these
-            // empty messages causes HTTP 400 "content or tool_calls
-            // must be set". Convert to an error before structured logging
-            // so it counts as a failure.  The one-shot retry above may
-            // already have recovered; this guard catches the final
-            // (possibly retried) result.
+            // Adapter owns thinking-only / empty-stream recovery inside the shared
+            // application retry budget. Any leftover empty success here is terminal.
             $assistantMessage = $response->assistantMessage;
             if (null !== $assistantMessage
                 && null === $response->error
@@ -170,21 +135,13 @@ final readonly class ExecuteLlmStepWorker
                     availableTools: $response->availableTools,
                     availableToolsSchemaTokensEstimate: $response->availableToolsSchemaTokensEstimate,
                 );
+                $assistantMessage = null;
             }
 
             $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
 
-            // Detect a fully empty platform response before logging so the
-            // deficiency is reported as an error, not a silent success.
-            $assistantMessage = $response->assistantMessage;
             $hasStreamDeltas = [] !== $response->deltas();
             if (null === $assistantMessage && !$hasStreamDeltas && null === $response->error) {
-                // Fully empty platform result: no assistant message, no stream
-                // deltas, and no error. A finish_reason/stopReason alone (no
-                // content) still counts as empty here.
-                // Treat as an error
-                // rather than fabricating placeholder text that enters the
-                // conversation history.
                 $response = new PlatformInvocationResult(
                     assistantMessage: null,
                     deltas: $response->deltas,
@@ -229,14 +186,6 @@ final readonly class ExecuteLlmStepWorker
                 }
 
                 $this->logger->warning('llm.request.failed', $logCtx);
-
-                // Retryable provider-operation failures (including Codex WebSocket
-                // idle/buffer timeouts) fail handling so the llm transport's
-                // Symfony retry strategy redelivers the same ExecuteLlmStep.
-                // Terminal/HTTP-exhausted failures still dispatch LlmStepResult.
-                if (true === ($response->error['retryable'] ?? false)) {
-                    throw new RetryableLlmStepFailureException(runId: $message->runId(), stepId: $message->stepId(), error: $response->error, toolsRef: $message->toolsRef, model: $response->model, reasoning: $response->reasoning, modelNotifications: $response->modelNotifications, availableTools: $response->availableTools, availableToolsSchemaTokensEstimate: $response->availableToolsSchemaTokensEstimate);
-                }
             } else {
                 $this->logger->info('llm.request.completed', [
                     'duration_ms' => round($durationMs, 3),
@@ -263,9 +212,6 @@ final readonly class ExecuteLlmStepWorker
                 availableTools: $response->availableTools,
                 availableToolsSchemaTokensEstimate: $response->availableToolsSchemaTokensEstimate,
             );
-        } catch (RetryableLlmStepFailureException $exception) {
-            // Must escape the worker so Messenger can redeliver ExecuteLlmStep.
-            throw $exception;
         } catch (\Throwable $exception) {
             $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
 
@@ -299,27 +245,5 @@ final readonly class ExecuteLlmStepWorker
         } finally {
             RunLogContext::leave();
         }
-    }
-
-    /**
-     * Returns true when the platform returned reasoning-only output
-     * (thinking content, no text, no tool calls) without an explicit error.
-     *
-     * These are not valid conversation turns and must not be persisted
-     * in RunState.messages — they cause HTTP 400 "content or tool_calls
-     * must be set" when replayed on the next turn (DeepSeek, session 6).
-     *
-     * callers are expected to retry once before conceding failure
-     * (session 16 regression: intermittent reasoning-only output from
-     *  provider cache-state shifts resolves on simple immediate retry).
-     */
-    private function isThinkingOnlyResponse(PlatformInvocationResult $response): bool
-    {
-        $assistantMessage = $response->assistantMessage;
-
-        return null !== $assistantMessage
-            && null === $response->error
-            && !$assistantMessage->hasToolCalls()
-            && null === $assistantMessage->asText();
     }
 }

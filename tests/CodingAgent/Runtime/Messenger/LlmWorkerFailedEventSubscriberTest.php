@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Messenger;
 
-use Ineersa\AgentCore\Application\Handler\RetryableLlmStepFailureException;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
@@ -15,11 +14,9 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Event\WorkerMessageFailedEvent;
-use Symfony\Component\Messenger\Exception\HandlerFailedException;
 use Symfony\Component\Messenger\Exception\TransportException;
 use Symfony\Component\Messenger\Exception\UnrecoverableMessageHandlingException;
 use Symfony\Component\Messenger\MessageBusInterface;
-use Symfony\Component\Messenger\Transport\Receiver\ReceiverInterface;
 use Symfony\Component\Messenger\Worker;
 
 final class LlmWorkerFailedEventSubscriberTest extends TestCase
@@ -35,7 +32,7 @@ final class LlmWorkerFailedEventSubscriberTest extends TestCase
         $event = new WorkerMessageFailedEvent(
             new Envelope($this->executeLlmStep()),
             'llm',
-            $this->providerFailure(),
+            new UnrecoverableMessageHandlingException(self::RAW_MARKER),
         );
         $event->setForRetry();
 
@@ -53,7 +50,7 @@ final class LlmWorkerFailedEventSubscriberTest extends TestCase
         $subscriber->onWorkerMessageFailed(new WorkerMessageFailedEvent(
             new Envelope($this->executeLlmStep()),
             'tool',
-            $this->providerFailure(),
+            new UnrecoverableMessageHandlingException(self::RAW_MARKER),
         ));
 
         $this->assertSame([], $commandBus->messages);
@@ -68,14 +65,14 @@ final class LlmWorkerFailedEventSubscriberTest extends TestCase
         $subscriber->onWorkerMessageFailed(new WorkerMessageFailedEvent(
             new Envelope(new \stdClass()),
             'llm',
-            $this->providerFailure(),
+            new UnrecoverableMessageHandlingException(self::RAW_MARKER),
         ));
 
         $this->assertSame([], $commandBus->messages);
     }
 
     #[Test]
-    public function dispatchesGenericTerminalResultForFinalNonProviderFailure(): void
+    public function dispatchesGenericTerminalResultForFinalWorkerFailure(): void
     {
         $commandBus = new TestMessageBus();
         $logger = new TestLogger();
@@ -108,139 +105,30 @@ final class LlmWorkerFailedEventSubscriberTest extends TestCase
     }
 
     #[Test]
-    public function dispatchesSanitizedTerminalResultAfterFinalRetryableFailure(): void
+    public function rethrowsWhenTerminalResultDispatchFails(): void
     {
-        $commandBus = new TestMessageBus();
-        $logger = new TestLogger();
-        $subscriber = new LlmWorkerFailedEventSubscriber($commandBus, $logger);
-        $message = $this->executeLlmStep();
-        $wrapped = new HandlerFailedException(
-            new Envelope($message),
-            [$this->providerFailure()],
+        $dispatchFailure = new TransportException('command bus unavailable');
+        $handlerBus = $this->createStub(MessageBusInterface::class);
+        $handlerBus->method('dispatch')->willThrowException(
+            new UnrecoverableMessageHandlingException(self::RAW_MARKER),
         );
+        $terminalBus = $this->createMock(MessageBusInterface::class);
+        $terminalBus->expects($this->once())->method('dispatch')->willThrowException($dispatchFailure);
 
-        $subscriber->onWorkerMessageFailed(new WorkerMessageFailedEvent(
-            new Envelope($message),
-            'llm',
-            $wrapped,
-        ));
-
-        $this->assertCount(1, $commandBus->messages);
-        $result = $commandBus->messages[0];
-        $this->assertInstanceOf(LlmStepResult::class, $result);
-        $this->assertSame(self::RUN_ID, $result->runId());
-        $this->assertSame(2, $result->turnNo());
-        $this->assertSame('step-llm-1', $result->stepId());
-        $this->assertSame(1, $result->attempt());
-        $this->assertSame('idem-llm-1', $result->idempotencyKey());
-        $this->assertSame('tools-ref-1', $result->toolsRef);
-        $this->assertSame('openai-codex/gpt-5.6-luna', $result->model);
-        $this->assertSame('medium', $result->reasoning);
-        $this->assertSame(['bash', 'edit'], $result->availableTools);
-        $this->assertSame(12, $result->availableToolsSchemaTokensEstimate);
-        $this->assertSame('error', $result->stopReason);
-        $this->assertFalse($result->error['retryable'] ?? true);
-        $this->assertSame('LLM provider request failed.', $result->error['user_message'] ?? null);
-        $this->assertSame('LLM provider request failed.', $result->error['message'] ?? null);
-        $this->assertArrayNotHasKey('response_body_preview', $result->error);
-        $this->assertArrayNotHasKey('response_error_message', $result->error);
-        $this->assertStringNotContainsString(self::RAW_MARKER, json_encode($result->error, \JSON_THROW_ON_ERROR));
-
-        $records = array_values(array_filter(
-            $logger->records,
-            static fn (array $record): bool => 'llm.worker_failed.terminal_result_dispatched' === $record['message'],
-        ));
-        $this->assertCount(1, $records);
-        $this->assertStringNotContainsString(self::RAW_MARKER, json_encode($records[0], \JSON_THROW_ON_ERROR));
-    }
-
-    #[Test]
-    public function logsDispatchFailureWithoutRawMessageAndRethrowsExactException(): void
-    {
-        $dispatchFailure = new TransportException(self::RAW_MARKER);
-        $commandBus = new class($dispatchFailure) implements MessageBusInterface {
-            public function __construct(private readonly TransportException $dispatchFailure)
-            {
-            }
-
-            public function dispatch(object $message, array $stamps = []): Envelope
-            {
-                throw $this->dispatchFailure;
-            }
-        };
-        $logger = new TestLogger();
-        $subscriber = new LlmWorkerFailedEventSubscriber($commandBus, $logger);
-
-        try {
-            $subscriber->onWorkerMessageFailed(new WorkerMessageFailedEvent(
-                new Envelope($this->executeLlmStep()),
-                'llm',
-                $this->providerFailure(),
-            ));
-            $this->fail('Terminal result dispatch failure must escape the subscriber.');
-        } catch (TransportException $exception) {
-            $this->assertSame($dispatchFailure, $exception);
-        }
-
-        $records = array_values(array_filter(
-            $logger->records,
-            static fn (array $record): bool => 'llm.worker_failed.terminal_result_dispatch_failed' === $record['message'],
-        ));
-        $this->assertCount(1, $records);
-        $this->assertSame(TransportException::class, $records[0]['context']['exception_class'] ?? null);
-        $this->assertArrayNotHasKey('exception_message', $records[0]['context']);
-        $this->assertStringNotContainsString(self::RAW_MARKER, json_encode($records[0], \JSON_THROW_ON_ERROR));
-    }
-
-    #[Test]
-    public function workerDoesNotRejectOriginalEnvelopeWhenTerminalResultDispatchFails(): void
-    {
         $message = $this->executeLlmStep();
-        $providerFailure = $this->providerFailure();
-        $handlerBus = new class($providerFailure) implements MessageBusInterface {
-            public function __construct(private readonly RetryableLlmStepFailureException $providerFailure)
-            {
-            }
-
-            public function dispatch(object $message, array $stamps = []): Envelope
-            {
-                throw $this->providerFailure;
-            }
-        };
-
-        $dispatchFailure = new TransportException(self::RAW_MARKER);
-        $terminalBus = new class($dispatchFailure) implements MessageBusInterface {
-            public function __construct(private readonly TransportException $dispatchFailure)
-            {
-            }
-
-            public function dispatch(object $message, array $stamps = []): Envelope
-            {
-                throw $this->dispatchFailure;
-            }
-        };
-
-        $receiver = new class(new Envelope($message)) implements ReceiverInterface {
+        $receiver = new class($message) implements \Symfony\Component\Messenger\Transport\Receiver\ReceiverInterface {
             /** @var list<Envelope> */
             public array $acked = [];
-
             /** @var list<Envelope> */
             public array $rejected = [];
 
-            private bool $delivered = false;
-
-            public function __construct(private readonly Envelope $envelope)
+            public function __construct(private readonly object $message)
             {
             }
 
             public function get(): iterable
             {
-                if ($this->delivered) {
-                    return;
-                }
-
-                $this->delivered = true;
-                yield $this->envelope;
+                yield new Envelope($this->message);
             }
 
             public function ack(Envelope $envelope): void
@@ -278,28 +166,6 @@ final class LlmWorkerFailedEventSubscriberTest extends TestCase
             attempt: 1,
             idempotencyKey: 'idem-llm-1',
             toolsRef: 'tools-ref-1',
-        );
-    }
-
-    private function providerFailure(): RetryableLlmStepFailureException
-    {
-        return new RetryableLlmStepFailureException(
-            runId: self::RUN_ID,
-            stepId: 'step-llm-1',
-            error: [
-                'type' => 'provider_error',
-                'message' => self::RAW_MARKER,
-                'retryable' => true,
-                'error_category' => 'provider',
-                'user_message' => 'LLM provider request failed.',
-                'response_body_preview' => self::RAW_MARKER,
-                'response_error_message' => self::RAW_MARKER,
-            ],
-            toolsRef: 'tools-ref-1',
-            model: 'openai-codex/gpt-5.6-luna',
-            reasoning: 'medium',
-            availableTools: ['bash', 'edit'],
-            availableToolsSchemaTokensEstimate: 12,
         );
     }
 }

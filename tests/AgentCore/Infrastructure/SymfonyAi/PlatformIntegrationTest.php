@@ -517,6 +517,98 @@ final class PlatformIntegrationTest extends TestCase
         $this->assertSame('done', $response->assistantMessage?->asText());
     }
 
+    public function testThinkingOnlyStreamRecoversWithinApplicationBudget(): void
+    {
+        $calls = 0;
+        $adapter = $this->createAdapterWithRetryPolicy(
+            maxRetries: 2,
+            streamFactory: static function () use (&$calls): iterable {
+                ++$calls;
+                if (1 === $calls) {
+                    return [
+                        new ThinkingStart(),
+                        new ThinkingDelta('reasoning only'),
+                        new ThinkingComplete('reasoning only'),
+                    ];
+                }
+
+                return [new TextDelta('recovered')];
+            },
+        );
+
+        $result = $adapter->invoke(new ModelInvocationRequest(
+            model: 'gpt-test',
+            input: new ModelInvocationInput(
+                runId: 'run-thinking-recover',
+                messages: [new AgentMessage('user', [['type' => 'text', 'text' => 'reason']])],
+            ),
+        ));
+
+        $this->assertNull($result->error);
+        $this->assertSame('recovered', $result->assistantMessage?->asText());
+        $this->assertSame(2, $calls);
+    }
+
+    public function testThinkingOnlyStreamExhaustsApplicationBudget(): void
+    {
+        $calls = 0;
+        $adapter = $this->createAdapterWithRetryPolicy(
+            maxRetries: 1,
+            streamFactory: static function () use (&$calls): iterable {
+                ++$calls;
+
+                return [
+                    new ThinkingStart(),
+                    new ThinkingDelta('still thinking'),
+                    new ThinkingComplete('still thinking'),
+                ];
+            },
+        );
+
+        $result = $adapter->invoke(new ModelInvocationRequest(
+            model: 'gpt-test',
+            input: new ModelInvocationInput(
+                runId: 'run-thinking-exhaust',
+                messages: [new AgentMessage('user', [['type' => 'text', 'text' => 'reason']])],
+            ),
+        ));
+
+        $this->assertSame(2, $calls);
+        $this->assertSame('empty_assistant_content', $result->error['type'] ?? null);
+        $this->assertFalse($result->error['retryable'] ?? true);
+        $this->assertTrue($result->error['retry_exhausted'] ?? false);
+        $this->assertSame(1, $result->error['retry_attempt_index'] ?? null);
+        $this->assertSame([], $result->deltas);
+    }
+
+    public function testEmptyStreamExhaustsApplicationBudget(): void
+    {
+        $calls = 0;
+        $adapter = $this->createAdapterWithRetryPolicy(
+            maxRetries: 1,
+            streamFactory: static function () use (&$calls): iterable {
+                ++$calls;
+
+                return [];
+            },
+        );
+
+        $result = $adapter->invoke(new ModelInvocationRequest(
+            model: 'gpt-test',
+            input: new ModelInvocationInput(
+                runId: 'run-empty-stream',
+                messages: [new AgentMessage('user', [['type' => 'text', 'text' => 'empty']])],
+            ),
+        ));
+
+        $this->assertSame(2, $calls);
+        $this->assertSame('empty_response', $result->error['type'] ?? null);
+        $this->assertFalse($result->error['retryable'] ?? true);
+        $this->assertTrue($result->error['retry_exhausted'] ?? false);
+        $this->assertSame([], $result->deltas);
+        $this->assertNull($result->assistantMessage);
+    }
+
     public function testRepeatedThinkingSegmentsRemainCumulativeInStreamAndCanonicalMessage(): void
     {
         $adapter = $this->createAdapter(streamFactory: static fn (): iterable => [
@@ -527,6 +619,9 @@ final class PlatformIntegrationTest extends TestCase
             // Segment-local text may happen to repeat the prior segment's prefix.
             new ThinkingDelta("First reasoning summary.\nRefined independently."),
             new ThinkingComplete("First reasoning summary.\nRefined independently."),
+            // Final text keeps this out of the thinking-only retry path while still
+            // proving cumulative ThinkingComplete rewriting above.
+            new TextDelta('done'),
         ]);
 
         $response = $adapter->invoke(new ModelInvocationRequest(
@@ -914,10 +1009,52 @@ final class PlatformIntegrationTest extends TestCase
      * Create an LlmPlatformAdapter with a fake Symfony AI backend,
      * a simple text-delta stream, and the given transform hooks.
      *
-     * @param \Closure(): iterable<mixed>             $streamFactory
-     * @param iterable<TransformContextHookInterface> $transformHooks
-     * @param iterable<ConvertToLlmHookInterface>     $convertHooks
+     * @param \Closure(): iterable<mixed> $streamFactory
      */
+    private function createAdapterWithRetryPolicy(int $maxRetries, ?\Closure $streamFactory = null): LlmPlatformAdapter
+    {
+        $modelClient = new FakeSymfonyModelClient(new FakeTokenUsage());
+        $platform = $this->createSymfonyPlatform($modelClient, $streamFactory ?? static function (): \Generator {
+            yield new TextDelta('response');
+        });
+
+        return new LlmPlatformAdapter(
+            statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
+            messageConverter: new AgentMessageConverter(),
+            toolDescriptionProcessor: new DynamicToolDescriptionProcessor(
+                new class implements ToolboxInterface {
+                    public function execute(ToolCall $toolCall): ToolResult
+                    {
+                        return new ToolResult($toolCall, new \Symfony\AI\Platform\Message\Content\Text(''));
+                    }
+
+                    public function getToolIterator(): \Traversable
+                    {
+                        return new \ArrayIterator([]);
+                    }
+
+                    public function getTools(): array
+                    {
+                        return [];
+                    }
+                },
+            ),
+            platform: $platform,
+            transformContextHooks: [],
+            convertToLlmHooks: [],
+            streamObserver: null,
+            costCalculator: null,
+            modelResolver: null,
+            logger: new NullLogger(),
+            denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
+            requestRetryPolicy: new \Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy(
+                maxRetries: $maxRetries,
+                baseDelayMs: 0,
+            ),
+            clock: new \Symfony\Component\Clock\MockClock(),
+        );
+    }
+
     private function createAdapter(
         ?\Closure $streamFactory = null,
         iterable $transformHooks = [],

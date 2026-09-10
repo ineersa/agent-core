@@ -52,10 +52,12 @@ final class LlmProviderErrorClassifier
     {
         $errorType = \is_string($error['type'] ?? null) ? $error['type'] : '';
         $statusCode = \is_int($error['http_status_code'] ?? null) ? $error['http_status_code'] : null;
+        $message = \is_string($error['message'] ?? null) ? $error['message'] : '';
 
         [$category, $retryable, $userMessage] = $this->classifyPermanentException($errorType)
             ?? $this->classifyStatus($statusCode)
             ?? $this->classifyTransientStreamException($errorType)
+            ?? $this->classifyTransientMessage($message)
             ?? [self::CATEGORY_PROVIDER, true, 'LLM provider request failed.'];
 
         $result = array_replace($error, [
@@ -77,16 +79,6 @@ final class LlmProviderErrorClassifier
     /** @return array{string, bool, string}|null */
     private function classifyPermanentException(string $type): ?array
     {
-        if (is_a($type, AuthenticationException::class, true)) {
-            return [self::CATEGORY_AUTH, false, 'LLM provider authentication failed. Check your credentials.'];
-        }
-
-        foreach (self::BAD_REQUEST_EXCEPTIONS as $exceptionClass) {
-            if (is_a($type, $exceptionClass, true)) {
-                return [self::CATEGORY_BAD_REQUEST, false, 'LLM provider rejected the request.'];
-            }
-        }
-
         if (is_a($type, CancelledException::class, true)) {
             return [self::CATEGORY_UNKNOWN, false, 'LLM request was cancelled.'];
         }
@@ -99,12 +91,22 @@ final class LlmProviderErrorClassifier
             return [self::CATEGORY_UNKNOWN, false, 'LLM request failed before reaching a retryable provider condition.'];
         }
 
+        if (is_a($type, AuthenticationException::class, true)) {
+            return [self::CATEGORY_AUTH, true, 'LLM provider authentication failed. Retrying with current credentials.'];
+        }
+
+        foreach (self::BAD_REQUEST_EXCEPTIONS as $exceptionClass) {
+            if (is_a($type, $exceptionClass, true)) {
+                return [self::CATEGORY_BAD_REQUEST, true, 'LLM provider rejected the request.'];
+            }
+        }
+
         if (is_a($type, TimeoutExceptionInterface::class, true)) {
-            return [self::CATEGORY_TIMEOUT, false, 'LLM provider request timed out after HTTP retries were exhausted.'];
+            return [self::CATEGORY_TIMEOUT, true, 'LLM provider request timed out.'];
         }
 
         if (is_a($type, TransportExceptionInterface::class, true)) {
-            return [self::CATEGORY_NETWORK, false, 'LLM provider transport failed after HTTP retries were exhausted.'];
+            return [self::CATEGORY_NETWORK, true, 'LLM provider transport failed.'];
         }
 
         return null;
@@ -114,11 +116,11 @@ final class LlmProviderErrorClassifier
     private function classifyStatus(?int $statusCode): ?array
     {
         return match ($statusCode) {
-            400, 404, 405, 413, 415, 422, 501 => [self::CATEGORY_BAD_REQUEST, false, 'LLM provider rejected the request.'],
-            401, 403 => [self::CATEGORY_AUTH, false, 'LLM provider authentication or authorization failed. Check your credentials.'],
-            408, 425 => [self::CATEGORY_TIMEOUT, false, 'LLM provider request timed out after HTTP retries were exhausted.'],
-            429 => [self::CATEGORY_RATE_LIMIT, false, 'LLM provider rate limit remained active after HTTP retries were exhausted.'],
-            500, 502, 503, 504 => [self::CATEGORY_SERVER, false, 'LLM provider server error remained after HTTP retries were exhausted.'],
+            400, 404, 405, 413, 415, 422, 501 => [self::CATEGORY_BAD_REQUEST, true, 'LLM provider rejected the request.'],
+            401, 403 => [self::CATEGORY_AUTH, true, 'LLM provider authentication or authorization failed.'],
+            408, 425 => [self::CATEGORY_TIMEOUT, true, 'LLM provider request timed out.'],
+            429 => [self::CATEGORY_RATE_LIMIT, true, 'LLM provider rate limit interrupted the request.'],
+            500, 502, 503, 504 => [self::CATEGORY_SERVER, true, 'LLM provider server error interrupted the request.'],
             default => null,
         };
     }
@@ -132,6 +134,33 @@ final class LlmProviderErrorClassifier
 
         if (is_a($type, ServerException::class, true)) {
             return [self::CATEGORY_SERVER, true, 'LLM provider server error interrupted the response stream.'];
+        }
+
+        return null;
+    }
+
+    /** @return array{string, bool, string}|null */
+    private function classifyTransientMessage(string $message): ?array
+    {
+        $normalized = strtolower($message);
+        if ('' === $normalized) {
+            return null;
+        }
+
+        if (str_contains($normalized, 'idle timeout')
+            || str_contains($normalized, 'timed out')
+            || str_contains($normalized, 'timeout')
+            || str_contains($normalized, 'buffer timeout')
+        ) {
+            return [self::CATEGORY_TIMEOUT, true, 'LLM provider request timed out.'];
+        }
+
+        if (str_contains($normalized, 'connection closed')
+            || str_contains($normalized, 'connection reset')
+            || str_contains($normalized, 'broken pipe')
+            || str_contains($normalized, 'network')
+        ) {
+            return [self::CATEGORY_NETWORK, true, 'LLM provider transport failed.'];
         }
 
         return null;

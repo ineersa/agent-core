@@ -35,7 +35,7 @@ final class LlmPlatformAdapterTest extends TestCase
             new \RuntimeException('Codex WebSocket request frame could not be sent.'),
         );
 
-        $adapter = $this->createAdapter($platform);
+        $adapter = $this->createAdapter($platform, maxRetries: 0);
 
         $result = $adapter->invoke(new ModelInvocationRequest(
             model: 'openai-codex/gpt-5.6-sol',
@@ -52,7 +52,9 @@ final class LlmPlatformAdapterTest extends TestCase
         $this->assertSame([], $result->deltas);
         $this->assertSame([], $result->usage);
         $this->assertIsArray($result->error);
-        $this->assertTrue($result->error['retryable'] ?? false);
+        // Application budget owns retries; invoke() returns terminal after exhaustion.
+        $this->assertFalse($result->error['retryable'] ?? true);
+        $this->assertTrue($result->error['retry_exhausted'] ?? false);
         $this->assertSame(LlmProviderErrorClassifier::CATEGORY_PROVIDER, $result->error['error_category'] ?? null);
         $this->assertSame(\RuntimeException::class, $result->error['type'] ?? null);
         $this->assertSame(
@@ -62,34 +64,36 @@ final class LlmPlatformAdapterTest extends TestCase
         $this->assertSame('openai-codex/gpt-5.6-sol', $result->error['request_model'] ?? null);
     }
 
-    public function testTypedStreamServerFailureIsRetryableByMessengerTransport(): void
+    public function testTypedStreamServerFailureExhaustsApplicationRetryBudget(): void
     {
         $platform = $this->createStub(SymfonyPlatformInterface::class);
         $platform->method('invoke')->willThrowException(new ServerException());
 
-        $result = $this->createAdapter($platform)->invoke(new ModelInvocationRequest(
+        $result = $this->createAdapter($platform, maxRetries: 2)->invoke(new ModelInvocationRequest(
             model: 'openai-codex/gpt-5.6-sol',
             input: new ModelInvocationInput(runId: 'run-provider-default-retry', turnNo: 1, stepId: 'step-provider-error'),
         ));
 
         $this->assertSame('error', $result->stopReason);
         $this->assertIsArray($result->error);
-        $this->assertTrue($result->error['retryable'] ?? false);
+        $this->assertFalse($result->error['retryable'] ?? true);
+        $this->assertTrue($result->error['retry_exhausted'] ?? false);
         $this->assertSame(LlmProviderErrorClassifier::CATEGORY_SERVER, $result->error['error_category'] ?? null);
     }
 
-    public function testTypedHttpServerFailureIsTerminalAfterSymfonyRetries(): void
+    public function testTypedHttpServerFailureExhaustsApplicationRetryBudget(): void
     {
         $platform = $this->createStub(SymfonyPlatformInterface::class);
         $platform->method('invoke')->willThrowException(new ServerException(503));
 
-        $result = $this->createAdapter($platform)->invoke(new ModelInvocationRequest(
+        $result = $this->createAdapter($platform, maxRetries: 1)->invoke(new ModelInvocationRequest(
             model: 'openai-codex/gpt-5.6-sol',
             input: new ModelInvocationInput(runId: 'run-http-retries-exhausted', turnNo: 1, stepId: 'step-http-error'),
         ));
 
         $this->assertIsArray($result->error);
         $this->assertFalse($result->error['retryable'] ?? true);
+        $this->assertTrue($result->error['retry_exhausted'] ?? false);
         $this->assertSame(503, $result->error['http_status_code'] ?? null);
         $this->assertSame(LlmProviderErrorClassifier::CATEGORY_SERVER, $result->error['error_category'] ?? null);
     }
@@ -323,7 +327,7 @@ final class LlmPlatformAdapterTest extends TestCase
         $this->assertStringNotContainsString($secret, $encoded, 'Sensitive exception/header/body text must never reach diagnostic logs.');
     }
 
-    private function createAdapter(SymfonyPlatformInterface $platform): LlmPlatformAdapter
+    private function createAdapter(SymfonyPlatformInterface $platform, int $maxRetries = 0): LlmPlatformAdapter
     {
         return new LlmPlatformAdapter(
             statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
@@ -336,6 +340,11 @@ final class LlmPlatformAdapterTest extends TestCase
             costCalculator: null,
             logger: new NullLogger(),
             denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
+            requestRetryPolicy: new \Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy(
+                maxRetries: $maxRetries,
+                baseDelayMs: 0,
+            ),
+            clock: new \Symfony\Component\Clock\MockClock(),
         );
     }
 }

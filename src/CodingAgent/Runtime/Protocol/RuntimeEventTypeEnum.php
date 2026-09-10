@@ -105,6 +105,12 @@ enum RuntimeEventTypeEnum: string
 
     case ExtensionAgentJobFailed = 'extension_agent.job_failed';
 
+    // ── LLM request retries ───────────────────────────────────────────────────
+    // Transient JSONL/TUI only (seq=0). Emitted before each application-level
+    // retry delay so the working status can show attempt/budget/reason/delay.
+
+    case LlmRequestRetrying = 'llm.request_retrying';
+
     // ── Runtime lifecycle (controller process) ─────────────────────────────
 
     case RuntimeReady = 'runtime.ready';

@@ -10,7 +10,9 @@ final class LlmHttpRetryPolicy
 {
     public const int DEFAULT_TIMEOUT = 30;
     public const int DEFAULT_MAX_DURATION = 120;
-    public const int DEFAULT_MAX_RETRIES = 2;
+    // Transport-layer retries stay at 0 so application-level LlmRequestRetryExecutor
+    // owns the single bounded budget (default five retries beyond the initial attempt).
+    public const int DEFAULT_MAX_RETRIES = 0;
     public const int DEFAULT_BASE_DELAY_MS = 1_000;
     public const int DEFAULT_MAX_DELAY_MS = 60_000;
 

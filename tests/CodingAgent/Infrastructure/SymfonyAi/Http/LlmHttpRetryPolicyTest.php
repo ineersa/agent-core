@@ -66,7 +66,7 @@ final class LlmHttpRetryPolicyTest extends TestCase
             new MockResponse('{"error":"invalid_request"}', ['http_code' => 400, 'response_headers' => ['content-type: application/json']]),
             new MockResponse('ok', ['http_code' => 200]),
         ]);
-        $client = $this->retryableClient($mock, new LlmHttpRetryPolicy(baseDelayMs: 0));
+        $client = $this->retryableClient($mock, new LlmHttpRetryPolicy(maxRetries: 2, baseDelayMs: 0));
 
         $this->assertSame('ok', $client->request('POST', 'https://api.test/chat')->getContent(false));
         $this->assertSame(3, $mock->getRequestsCount());
@@ -79,10 +79,22 @@ final class LlmHttpRetryPolicyTest extends TestCase
             new MockResponse('Bad Request', ['http_code' => 400]),
             new MockResponse('Bad Request', ['http_code' => 400]),
         ]);
-        $client = $this->retryableClient($mock, new LlmHttpRetryPolicy(baseDelayMs: 0));
+        $client = $this->retryableClient($mock, new LlmHttpRetryPolicy(maxRetries: 2, baseDelayMs: 0));
 
         $this->assertSame(400, $client->request('POST', 'https://api.test/chat')->getStatusCode());
         $this->assertSame(3, $mock->getRequestsCount());
+    }
+
+    public function testDefaultTransportBudgetIsZeroSoApplicationOwnsRetries(): void
+    {
+        $mock = new MockHttpClient([
+            new MockResponse('Bad Request', ['http_code' => 400]),
+            new MockResponse('ok', ['http_code' => 200]),
+        ]);
+        $client = $this->retryableClient($mock, new LlmHttpRetryPolicy(baseDelayMs: 0));
+
+        $this->assertSame(400, $client->request('POST', 'https://api.test/chat')->getStatusCode());
+        $this->assertSame(1, $mock->getRequestsCount());
     }
 
     public function testHttpClientOptions(): void

@@ -77,12 +77,19 @@ catalog models, so pinned Astra definitions must include the flag to enable it.
 
 ## HTTP client (`ai.http`)
 
-Controls outbound LLM HTTP behavior (timeouts, proxies, and related transport options as defined in defaults).
-If unset, the app injects a safe default HTTP timeout so requests cannot hang forever.
+Controls outbound LLM HTTP timeouts and the **application** retry budget for one platform invocation.
 
-## LLM transport retries
+| Key | Default | Meaning |
+|---|---|---|
+| `timeout` | `30` | Idle timeout per HTTP request (seconds) |
+| `max_duration` | `120` | Total request duration budget (seconds) |
+| `max_retries` | `5` | Retries after the initial attempt (six attempts total) |
+| `base_delay_ms` | `1000` | Exponential backoff base delay |
+| `max_delay_ms` | `60000` | Cap for a single backoff delay |
 
-HTTP provider failures retry through Symfony `RetryableHttpClient` under `ai.http` (status/transport/`Retry-After`). Mid-stream and WebSocket provider-operation failures retry by redelivering the same `ExecuteLlmStep` envelope through the `llm` Messenger transport retry strategy. Explicit permanent errors, cancellations, programming errors, context overflow, and HTTP failures already exhausted by HttpClient remain terminal and emit `llm_step_failed` then `agent_end(reason=failed)`.
+Transport-layer `RetryableHttpClient` retries stay at **0**. `LlmRequestRetryExecutor` owns the single bounded budget, including HTTP status errors, idle timeouts, failed stream chunks, and thinking-only recoveries. Retry progress is emitted as transient `llm.request_retrying` (seq=`0`) for the TUI working status. User cancellation stops further attempts and backoff. Failed partial streams are discarded before the next attempt; tool side effects are not replayed.
+
+After the application budget is exhausted, failures are terminal (`retryable: false`) and emit `llm_step_failed` then `agent_end(reason=failed)`. Messenger `llm` transport retries are not a second hidden LLM retry budget for these classified provider errors.
 
 ## Model reference format
 

@@ -91,6 +91,9 @@ final class RuntimeEventTypeTest extends TestCase
             // Extension agent jobs
             RuntimeEventTypeEnum::ExtensionAgentJobFailed,
 
+            // LLM request retries
+            RuntimeEventTypeEnum::LlmRequestRetrying,
+
             // Compaction
             RuntimeEventTypeEnum::CompactionStarted,
             RuntimeEventTypeEnum::CompactionCompleted,
