@@ -21,6 +21,8 @@ use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultDecisionDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultHookInterface;
 use Monolog\Level;
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 
@@ -631,6 +633,106 @@ PHP;
                 return $this->label;
             }
         };
+    }
+
+    #[RunInSeparateProcess]
+    #[PreserveGlobalState(false)]
+    public function testExtensionAutoloadWithoutPrependKeepsHostSymfonyTuiRenderer(): void
+    {
+        $hostVendor = \dirname(__DIR__, 3).'/vendor';
+        require $hostVendor.'/autoload.php';
+
+        $fakeTuiRoot = $this->extensionsDir.'/.hatfield/extensions/vendor/symfony/tui';
+        mkdir($fakeTuiRoot.'/Render', 0755, true);
+        file_put_contents($fakeTuiRoot.'/Render/Renderer.php', <<<'PHP'
+<?php
+
+namespace Symfony\Component\Tui\Render;
+
+final class Renderer
+{
+    public function render($root, int $columns, int $rows): array
+    {
+        return ['shadowed'];
+    }
+}
+PHP);
+
+        $fakeRootExport = var_export($fakeTuiRoot, true);
+        file_put_contents($this->autoloadPath, <<<PHP
+<?php
+
+\$loader = new Composer\Autoload\ClassLoader();
+\$loader->addPsr4('Symfony\\\\Component\\\\Tui\\\\', {$fakeRootExport}.'/');
+\$loader->register(false);
+PHP);
+
+        $config = $this->createAppConfig(
+            cwd: $this->extensionsDir,
+            extensions: ['NoSuch\\NonExistentExtension'],
+        );
+        $manager = new ExtensionManager(
+            $config,
+            new InMemoryExtensionApiBridge(),
+            new TestLogger(),
+            new \Symfony\Component\EventDispatcher\EventDispatcher(),
+        );
+        $manager->loadExtensions();
+
+        $rendererClass = new \ReflectionClass(\Symfony\Component\Tui\Render\Renderer::class);
+        $this->assertSame($hostVendor.'/symfony/tui/Render/Renderer.php', $rendererClass->getFileName());
+        $this->assertTrue(method_exists(\Symfony\Component\Tui\Render\Renderer::class, 'renderFrame'));
+        $this->assertFalse(method_exists(\Symfony\Component\Tui\Render\Renderer::class, 'render'));
+    }
+
+    #[RunInSeparateProcess]
+    #[PreserveGlobalState(false)]
+    public function testPrependedExtensionAutoloadCanShadowHostSymfonyTuiRenderer(): void
+    {
+        $hostVendor = \dirname(__DIR__, 3).'/vendor';
+        require $hostVendor.'/autoload.php';
+
+        $fakeTuiRoot = $this->extensionsDir.'/.hatfield/extensions/vendor/symfony/tui';
+        mkdir($fakeTuiRoot.'/Render', 0755, true);
+        file_put_contents($fakeTuiRoot.'/Render/Renderer.php', <<<'PHP'
+<?php
+
+namespace Symfony\Component\Tui\Render;
+
+final class Renderer
+{
+    public function render($root, int $columns, int $rows): array
+    {
+        return ['shadowed'];
+    }
+}
+PHP);
+
+        $fakeRootExport = var_export($fakeTuiRoot, true);
+        file_put_contents($this->autoloadPath, <<<PHP
+<?php
+
+\$loader = new Composer\Autoload\ClassLoader();
+\$loader->addPsr4('Symfony\\\\Component\\\\Tui\\\\', {$fakeRootExport}.'/');
+\$loader->register(true);
+PHP);
+
+        $config = $this->createAppConfig(
+            cwd: $this->extensionsDir,
+            extensions: ['NoSuch\\NonExistentExtension'],
+        );
+        $manager = new ExtensionManager(
+            $config,
+            new InMemoryExtensionApiBridge(),
+            new TestLogger(),
+            new \Symfony\Component\EventDispatcher\EventDispatcher(),
+        );
+        $manager->loadExtensions();
+
+        $rendererClass = new \ReflectionClass(\Symfony\Component\Tui\Render\Renderer::class);
+        $this->assertSame($fakeTuiRoot.'/Render/Renderer.php', $rendererClass->getFileName());
+        $this->assertFalse(method_exists(\Symfony\Component\Tui\Render\Renderer::class, 'renderFrame'));
+        $this->assertTrue(method_exists(\Symfony\Component\Tui\Render\Renderer::class, 'render'));
     }
 
     /**
