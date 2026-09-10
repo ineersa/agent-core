@@ -595,46 +595,6 @@ PHP;
         }
     }
 
-    // ── Helpers ──
-
-    private function dummyToolCallHook(string $label = 'test'): ToolCallHookInterface
-    {
-        return new class($label) implements ToolCallHookInterface {
-            public function __construct(private readonly string $label)
-            {
-            }
-
-            public function onToolCall(ToolCallContextDTO $context): ToolCallDecisionDTO
-            {
-                return ToolCallDecisionDTO::allow();
-            }
-
-            public function label(): string
-            {
-                return $this->label;
-            }
-        };
-    }
-
-    private function dummyToolResultHook(string $label = 'test'): ToolResultHookInterface
-    {
-        return new class($label) implements ToolResultHookInterface {
-            public function __construct(private readonly string $label)
-            {
-            }
-
-            public function onToolResult(ToolResultContextDTO $context): ToolResultDecisionDTO
-            {
-                return ToolResultDecisionDTO::keep();
-            }
-
-            public function label(): string
-            {
-                return $this->label;
-            }
-        };
-    }
-
     #[RunInSeparateProcess]
     #[PreserveGlobalState(false)]
     public function testExtensionAutoloadWithoutPrependKeepsHostSymfonyTuiRenderer(): void
@@ -733,6 +693,46 @@ PHP);
         $this->assertSame($fakeTuiRoot.'/Render/Renderer.php', $rendererClass->getFileName());
         $this->assertFalse(method_exists(\Symfony\Component\Tui\Render\Renderer::class, 'renderFrame'));
         $this->assertTrue(method_exists(\Symfony\Component\Tui\Render\Renderer::class, 'render'));
+    }
+
+    // ── Helpers ──
+
+    private function dummyToolCallHook(string $label = 'test'): ToolCallHookInterface
+    {
+        return new class($label) implements ToolCallHookInterface {
+            public function __construct(private readonly string $label)
+            {
+            }
+
+            public function onToolCall(ToolCallContextDTO $context): ToolCallDecisionDTO
+            {
+                return ToolCallDecisionDTO::allow();
+            }
+
+            public function label(): string
+            {
+                return $this->label;
+            }
+        };
+    }
+
+    private function dummyToolResultHook(string $label = 'test'): ToolResultHookInterface
+    {
+        return new class($label) implements ToolResultHookInterface {
+            public function __construct(private readonly string $label)
+            {
+            }
+
+            public function onToolResult(ToolResultContextDTO $context): ToolResultDecisionDTO
+            {
+                return ToolResultDecisionDTO::keep();
+            }
+
+            public function label(): string
+            {
+                return $this->label;
+            }
+        };
     }
 
     /**
