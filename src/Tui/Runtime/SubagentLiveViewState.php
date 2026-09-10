@@ -28,6 +28,9 @@ final class SubagentLiveViewState
 
     public RunActivityStateEnum $childActivity = RunActivityStateEnum::Idle;
 
+    /** Transient child LLM retry working-status override from llm.request_retrying. */
+    public ?string $llmRetryWorkingMessage = null;
+
     /** @var array<string, string> idempotency_key => text */
     public array $childQueuedUserMessages = [];
 
@@ -58,6 +61,7 @@ final class SubagentLiveViewState
         $this->childLastPoll = 0.0;
         $this->childQueuedUserMessages = [];
         $this->childActivity = $this->activityFromCatalogChild($child);
+        $this->llmRetryWorkingMessage = null;
     }
 
     /**
@@ -89,6 +93,7 @@ final class SubagentLiveViewState
         $this->childQueuedUserMessages = [];
         $this->childActivity = RunActivityStateEnum::Idle;
         $this->lastLiveWorkingMessage = null;
+        $this->llmRetryWorkingMessage = null;
     }
 
     public function exit(): void

@@ -10,8 +10,6 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Exception\AuthenticationException;
 use Symfony\AI\Platform\Exception\BadRequestException;
-use Symfony\AI\Platform\Exception\ContentFilterException;
-use Symfony\AI\Platform\Exception\ExceedContextSizeException;
 use Symfony\AI\Platform\Exception\RateLimitExceededException;
 use Symfony\AI\Platform\Exception\ServerException;
 use Symfony\Component\HttpClient\Exception\TimeoutException;
@@ -27,7 +25,7 @@ final class LlmProviderErrorClassifierTest extends TestCase
     }
 
     #[DataProvider('permanentExceptionProvider')]
-    public function testKnownPermanentExceptionsAreNotRetryable(string $type, string $category): void
+    public function testLocalAndCancelledFailuresRemainNonRetryable(string $type, string $category): void
     {
         $result = $this->classifier->classify(['type' => $type, 'message' => 'arbitrary provider prose']);
 
@@ -39,19 +37,13 @@ final class LlmProviderErrorClassifierTest extends TestCase
     public static function permanentExceptionProvider(): array
     {
         return [
-            [AuthenticationException::class, LlmProviderErrorClassifier::CATEGORY_AUTH],
-            [BadRequestException::class, LlmProviderErrorClassifier::CATEGORY_BAD_REQUEST],
-            [ContentFilterException::class, LlmProviderErrorClassifier::CATEGORY_BAD_REQUEST],
-            [ExceedContextSizeException::class, LlmProviderErrorClassifier::CATEGORY_BAD_REQUEST],
             [CancelledException::class, LlmProviderErrorClassifier::CATEGORY_UNKNOWN],
             [\TypeError::class, LlmProviderErrorClassifier::CATEGORY_UNKNOWN],
-            [TimeoutException::class, LlmProviderErrorClassifier::CATEGORY_TIMEOUT],
-            [TransportException::class, LlmProviderErrorClassifier::CATEGORY_NETWORK],
         ];
     }
 
     #[DataProvider('httpStatusProvider')]
-    public function testHttpFailuresAreTerminalAfterSymfonyRetries(int $status, string $category): void
+    public function testHttpStatusClassification(int $status, string $category, bool $retryable): void
     {
         $result = $this->classifier->classify([
             'type' => \RuntimeException::class,
@@ -59,20 +51,20 @@ final class LlmProviderErrorClassifierTest extends TestCase
             'http_status_code' => $status,
         ]);
 
-        $this->assertFalse($result['retryable']);
+        $this->assertSame($retryable, $result['retryable']);
         $this->assertSame($category, $result['error_category']);
     }
 
     public static function httpStatusProvider(): array
     {
         return [
-            [400, LlmProviderErrorClassifier::CATEGORY_BAD_REQUEST],
-            [401, LlmProviderErrorClassifier::CATEGORY_AUTH],
-            [403, LlmProviderErrorClassifier::CATEGORY_AUTH],
-            [408, LlmProviderErrorClassifier::CATEGORY_TIMEOUT],
-            [429, LlmProviderErrorClassifier::CATEGORY_RATE_LIMIT],
-            [500, LlmProviderErrorClassifier::CATEGORY_SERVER],
-            [503, LlmProviderErrorClassifier::CATEGORY_SERVER],
+            [400, LlmProviderErrorClassifier::CATEGORY_BAD_REQUEST, true],
+            [401, LlmProviderErrorClassifier::CATEGORY_AUTH, true],
+            [403, LlmProviderErrorClassifier::CATEGORY_AUTH, true],
+            [408, LlmProviderErrorClassifier::CATEGORY_TIMEOUT, true],
+            [429, LlmProviderErrorClassifier::CATEGORY_RATE_LIMIT, true],
+            [500, LlmProviderErrorClassifier::CATEGORY_SERVER, true],
+            [503, LlmProviderErrorClassifier::CATEGORY_SERVER, true],
         ];
     }
 
@@ -100,11 +92,46 @@ final class LlmProviderErrorClassifierTest extends TestCase
             'http_status_code' => 403,
         ]);
 
-        $this->assertFalse($result['retryable']);
+        $this->assertTrue($result['retryable']);
         $this->assertSame(LlmProviderErrorClassifier::CATEGORY_AUTH, $result['error_category']);
     }
 
-    public function testUnknownProviderOperationFailureIsRetryableWithoutMessageMatching(): void
+    public function testHttp400AndAuthExceptionsAreRetryable(): void
+    {
+        $bad = $this->classifier->classify([
+            'type' => BadRequestException::class,
+            'message' => 'gateway html',
+            'http_status_code' => 400,
+        ]);
+        $this->assertTrue($bad['retryable']);
+        $this->assertSame(LlmProviderErrorClassifier::CATEGORY_BAD_REQUEST, $bad['error_category']);
+
+        $auth = $this->classifier->classify([
+            'type' => AuthenticationException::class,
+            'message' => 'unauthorized',
+        ]);
+        $this->assertTrue($auth['retryable']);
+        $this->assertSame(LlmProviderErrorClassifier::CATEGORY_AUTH, $auth['error_category']);
+    }
+
+    public function testTimeoutAndTransportExceptionsAreRetryable(): void
+    {
+        $timeout = $this->classifier->classify([
+            'type' => TimeoutException::class,
+            'message' => 'Idle timeout reached for https://api.example/chat',
+        ]);
+        $this->assertTrue($timeout['retryable']);
+        $this->assertSame(LlmProviderErrorClassifier::CATEGORY_TIMEOUT, $timeout['error_category']);
+
+        $transport = $this->classifier->classify([
+            'type' => TransportException::class,
+            'message' => 'Connection closed before HTTP/2 settings could be received',
+        ]);
+        $this->assertTrue($transport['retryable']);
+        $this->assertSame(LlmProviderErrorClassifier::CATEGORY_NETWORK, $transport['error_category']);
+    }
+
+    public function testCodexIdleTimeoutMessageIsRetryableTimeout(): void
     {
         $result = $this->classifier->classify([
             'type' => \RuntimeException::class,
@@ -112,16 +139,16 @@ final class LlmProviderErrorClassifierTest extends TestCase
         ]);
 
         $this->assertTrue($result['retryable']);
-        $this->assertSame(LlmProviderErrorClassifier::CATEGORY_PROVIDER, $result['error_category']);
-        $this->assertSame('LLM provider request failed.', $result['user_message']);
+        $this->assertSame(LlmProviderErrorClassifier::CATEGORY_TIMEOUT, $result['error_category']);
+        $this->assertSame('LLM provider request timed out.', $result['user_message']);
         $this->assertSame('Codex WebSocket idle timeout.', $result['message']);
     }
 
-    public function testUnknownFailureDoesNotInspectMessageTextForClassification(): void
+    public function testUnknownFailureWithoutTimeoutTokensStaysGenericRetryableProvider(): void
     {
         $result = $this->classifier->classify([
             'type' => \RuntimeException::class,
-            'message' => '[server_error/server_error] overloaded timeout please try again',
+            'message' => '[server_error/server_error] overloaded please try again',
         ]);
 
         $this->assertTrue($result['retryable']);

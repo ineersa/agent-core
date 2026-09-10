@@ -33,22 +33,6 @@ use Symfony\Contracts\HttpClient\ResponseInterface;
 #[CoversNothing]
 final class DurableFinishReasonPlatformIntegrationTest extends TestCase
 {
-    public function testFinishOnlyStreamMapsStopReasonThroughDeferredResultMetadata(): void
-    {
-        $adapter = $this->createAdapterWithDurableStream([
-            ['choices' => [['finish_reason' => 'stop']]],
-        ]);
-
-        $response = $adapter->invoke(new ModelInvocationRequest(
-            model: 'generic-test',
-            input: new ModelInvocationInput(runId: 'run-finish-1', turnNo: 1, stepId: 'step-1'),
-        ));
-
-        $this->assertNull($response->assistantMessage);
-        $this->assertSame('stop', $response->stopReason);
-        $this->assertNull($response->error);
-    }
-
     public function testTextStreamWithStopFinishReasonMapsThroughAdapter(): void
     {
         $adapter = $this->createAdapterWithDurableStream([

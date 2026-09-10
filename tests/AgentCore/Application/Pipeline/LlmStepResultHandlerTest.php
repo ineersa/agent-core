@@ -627,7 +627,7 @@ final class LlmStepResultHandlerTest extends TestCase
         $this->assertCount(0, $commandBus->messages);
     }
 
-    public function testNonRetryableErrorEmitsTerminalAgentEndWithoutRetry(): void
+    public function testTerminalExhaustedProviderErrorEmitsAgentEndWithoutRetry(): void
     {
         $commandBus = new TestMessageBus();
         $classifier = new \Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier();
@@ -646,11 +646,15 @@ final class LlmStepResultHandlerTest extends TestCase
             commandBus: $commandBus,
         );
 
+        // Application retry executor marks exhaustion as terminal before LlmStepResultHandler.
         $error = $classifier->classify([
             'type' => \Symfony\AI\Platform\Exception\AuthenticationException::class,
             'message' => 'invalid api key',
             'http_status_code' => 401,
         ]);
+        $error['retryable'] = false;
+        $error['retry_exhausted'] = true;
+        $error['user_message'] = 'LLM provider authentication or authorization failed after retries were exhausted.';
         $this->assertFalse($error['retryable'] ?? true);
 
         $state = new RunState(

@@ -15,7 +15,7 @@ use PHPUnit\Framework\TestCase;
  *
  * Uses a replay fixture that returns a 429 HTTP error JSON body. The TUI
  * must display an error block (✕) with sanitized text explaining that the
- * rate limit remained after HTTP retries were exhausted and must NOT display
+ * rate limit remained after retries were exhausted and must NOT display
  * the raw sentinel string from the fixture body.
  *
  * Design:
@@ -102,7 +102,7 @@ final class TuiProviderErrorE2eTest extends TestCase
                 'Transcript must NOT show assistant block for provider error fixture',
             );
 
-            // 2. Sanitized terminal text must explain that Symfony HTTP retries were exhausted.
+            // 2. Sanitized terminal text must explain that application retries were exhausted.
             $fullCapture = $this->tmux->capturePlainWithHistory($pane, 2000);
             $this->assertStringContainsString(
                 'rate limit',
@@ -110,14 +110,14 @@ final class TuiProviderErrorE2eTest extends TestCase
                 'Sanitized rate limit message must be visible in transcript',
             );
             $this->assertStringContainsString(
-                'after http retries were exhausted',
+                'after retries were exhausted',
                 strtolower($fullCapture),
-                'Terminal HTTP retry exhaustion must be visible in transcript',
+                'Terminal retry exhaustion must be visible in transcript',
             );
             $this->assertStringNotContainsString(
                 'retryable',
                 strtolower($fullCapture),
-                'Terminal HTTP exhaustion must not promise another retry',
+                'Terminal exhaustion must not promise another retry',
             );
 
             // 3. Raw sentinel body text must NOT be visible.

@@ -762,6 +762,57 @@ final class TickPollListenerTest extends TestCase
         $this->assertFalse($reject, 'Parent WaitingHuman question must not be self-healed as orphaned');
     }
 
+    public function testTickRendersLlmRetryWorkingMessageAndClearsOnStreamStart(): void
+    {
+        $runId = 'retry-working-line';
+        $applier = new TuiRuntimeEventApplier(
+            new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
+            SubagentProgressSerializerTestSupport::denormalizer(),
+        );
+        $listener = $this->createTickPollListener();
+
+        $state = new TuiSessionState($runId);
+        $state->handle = new RunHandle($runId);
+        $state->activity = RunActivityStateEnum::Running;
+
+        $theme = new DefaultTheme(new ThemePalette('test'));
+        $promptEditor = new PromptEditor();
+        $screen = new ChatScreen($theme, $runId, $promptEditor);
+        $screen->setWorkingVisible(true);
+        $screen->setWorkingMessage('Working...');
+
+        $handler = $this->registerTickHandler($listener, $state, screen: $screen);
+
+        $applier->apply($state, new RuntimeEvent(
+            type: RuntimeEventTypeEnum::LlmRequestRetrying->value,
+            runId: $runId,
+            seq: 0,
+            payload: [
+                'attempt' => 1,
+                'max_attempts' => 5,
+                'delay_ms' => 1000,
+                'reason' => 'LLM provider request timed out.',
+            ],
+        ));
+
+        ($handler)();
+        $this->assertSame(
+            'Retrying LLM 1/5 in 1.0s — LLM provider request timed out.',
+            $this->workingMessage($screen),
+        );
+
+        $applier->apply($state, new RuntimeEvent(
+            type: RuntimeEventTypeEnum::AssistantMessageStarted->value,
+            runId: $runId,
+            seq: 0,
+            payload: [],
+        ));
+
+        ($handler)();
+        $this->assertNull($state->llmRetryWorkingMessage);
+        $this->assertSame('Working...', $this->workingMessage($screen));
+    }
+
     public function testParentWaitingHumanTickHidesWorkingRowAndClearsQuestionPendingStatus(): void
     {
         $parentRunId = 'parent-hitl-chrome';

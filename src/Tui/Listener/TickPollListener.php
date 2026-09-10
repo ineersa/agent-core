@@ -212,13 +212,13 @@ final class TickPollListener implements TuiListenerRegistrar
                     RunActivityStateEnum::Cancelling === $state->activity => 'Cancelling...',
                     RunActivityStateEnum::Idle === $state->activity || $state->activity->isTerminal() => null,
                     null === $state->handle && $state->activity->isActive() => null,
-                    default => 'Working...',
+                    default => $state->llmRetryWorkingMessage ?? 'Working...',
                 };
                 $childMsg = match ($state->subagentLiveView->childActivity) {
                     RunActivityStateEnum::WaitingHuman => 'Child waiting for your input...',
                     RunActivityStateEnum::Cancelling => 'Child cancelling...',
                     default => $state->subagentLiveView->childActivity->isActive()
-                        ? 'Child agent working...'
+                        ? ($state->subagentLiveView->llmRetryWorkingMessage ?? 'Child agent working...')
                         : 'Child agent idle',
                 };
                 $liveWorking = null !== $parentMsg
@@ -258,7 +258,7 @@ final class TickPollListener implements TuiListenerRegistrar
                 // Resumed sessions replay activity but have no live handle until
                 // start_run/follow_up attaches the controller — do not show Working.
                 null === $state->handle && $state->activity->isActive() => null,
-                default => 'Working...',
+                default => $state->llmRetryWorkingMessage ?? 'Working...',
             };
 
             SubagentLiveAttention::syncMainAttention($state, $screen);

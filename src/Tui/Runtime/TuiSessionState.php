@@ -102,6 +102,12 @@ final class TuiSessionState
     /** Last runtime polling error message surfaced/logged for diagnostics. */
     public string $lastRuntimePollError = '';
 
+    /**
+     * Transient LLM retry working-status override from llm.request_retrying.
+     * Cleared on terminal activity or successful stream start.
+     */
+    public ?string $llmRetryWorkingMessage = null;
+
     // ── Footer/runtime projection state ──
     // Updated by FooterStateListener on each poll.
     public string $footerModel = '';
