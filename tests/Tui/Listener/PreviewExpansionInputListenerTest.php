@@ -11,6 +11,8 @@ use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Command\Hotkey\HotkeyRegistry;
 use Ineersa\Tui\Listener\AppHotkeyRegistrar;
 use Ineersa\Tui\Listener\PreviewExpansionInputListener;
+use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
+use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
@@ -299,5 +301,113 @@ line9';
         $expanded = $harness->plainScreenText();
         $this->assertStringContainsString('line9', $expanded);
         $this->assertStringNotContainsString('Ctrl+O to expand handoff', $expanded);
+    }
+
+    #[Test]
+    public function ctrlOTogglesLiveViewChildTranscriptWithoutSwappingToMain(): void
+    {
+        $displayConfig = new TranscriptDisplayConfig(toolResultPreviewLines: 2);
+        $displayState = new TranscriptDisplayState(previewableBlocksExpanded: false);
+        $harness = new VirtualTuiHarness(
+            sessionId: 'live-preview-toggle-session',
+            displayConfig: $displayConfig,
+            displayState: $displayState,
+        );
+
+        $state = new TuiSessionState('live-preview-toggle-session');
+        $state->transcriptDisplayState = $displayState;
+
+        $context = $this->buildTuiContext()
+            ->withTui($harness->tui())
+            ->withState($state)
+            ->withScreen($harness->screen())
+            ->build();
+
+        (new PreviewExpansionInputListener())->register($context);
+        $harness->startInputLoop();
+
+        // Parent transcript stays in session state but must not be rendered while live view owns the screen.
+        $state->transcript = [
+            new TranscriptBlock(
+                id: 'main-1',
+                kind: TranscriptBlockKindEnum::UserMessage,
+                runId: 'live-preview-toggle-session',
+                seq: 1,
+                text: 'MAIN_TRANSCRIPT_SHOULD_NOT_RENDER',
+            ),
+        ];
+
+        $child = new SubagentLiveChildDTO(
+            agentRunId: 'child-run-1',
+            artifactId: 'agent_live',
+            agentName: 'scout',
+            status: SubagentLiveStatusEnum::Running,
+            taskSummary: 'inspect',
+            lastActivityAtMs: 1,
+            model: 'deepseek/deepseek-v4-flash',
+            reasoning: 'medium',
+        );
+        $state->subagentLiveView->enter($child);
+
+        $resultLines = [];
+        for ($i = 0; $i < 12; ++$i) {
+            $resultLines[] = 'child_line_'.$i;
+        }
+        $state->subagentLiveView->childTranscript = [
+            new TranscriptBlock(
+                id: 'tc-child',
+                kind: TranscriptBlockKindEnum::ToolCall,
+                runId: 'child-run-1',
+                seq: 1,
+                text: 'bash',
+                meta: [
+                    'tool_call_id' => 'call-child',
+                    'tool_name' => 'bash',
+                    'arguments' => ['command' => 'echo child'],
+                ],
+            ),
+            new TranscriptBlock(
+                id: 'tr-child',
+                kind: TranscriptBlockKindEnum::ToolResult,
+                runId: 'child-run-1',
+                seq: 2,
+                text: 'bash',
+                meta: [
+                    'tool_call_id' => 'call-child',
+                    'tool_name' => 'bash',
+                    'result' => implode("\n", $resultLines),
+                    'is_error' => false,
+                ],
+            ),
+        ];
+        $childTranscript = $state->subagentLiveView->childTranscript;
+
+        $harness->screen()->setTranscriptBlocks($childTranscript);
+        $harness->screen()->setWorkingVisible(false);
+
+        $collapsed = $harness->plainScreenText();
+        $this->assertStringContainsString('child_line_11', $collapsed);
+        $this->assertStringNotContainsString('child_line_0', $collapsed);
+        $this->assertStringNotContainsString('MAIN_TRANSCRIPT_SHOULD_NOT_RENDER', $collapsed);
+
+        $harness->sendInput("\x0f");
+
+        $this->assertTrue($displayState->previewableBlocksExpanded);
+        $expanded = $harness->plainScreenText();
+        $this->assertStringContainsString('child_line_0', $expanded);
+        $this->assertStringNotContainsString('MAIN_TRANSCRIPT_SHOULD_NOT_RENDER', $expanded);
+
+        $harness->sendInput("\x0f");
+
+        $this->assertFalse($displayState->previewableBlocksExpanded);
+        $collapsedAgain = $harness->plainScreenText();
+        $this->assertStringContainsString('child_line_11', $collapsedAgain);
+        $this->assertStringNotContainsString('child_line_0', $collapsedAgain);
+        $this->assertStringNotContainsString('MAIN_TRANSCRIPT_SHOULD_NOT_RENDER', $collapsedAgain);
+
+        // Live-view ownership and its projected child transcript stay untouched by the toggle.
+        $this->assertTrue($state->subagentLiveView->active);
+        $this->assertSame($child, $state->subagentLiveView->selected);
+        $this->assertSame($childTranscript, $state->subagentLiveView->childTranscript);
     }
 }
