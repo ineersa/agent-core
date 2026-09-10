@@ -310,9 +310,12 @@ final class SymfonyAiProviderFactoryTest extends TestCase
             function (AiProviderConfig $provider, HttpClientInterface $client): ProviderInterface {
                 $response = $client->request('POST', 'https://example.test/responses');
                 $this->assertSame(400, $response->getStatusCode());
-                $this->assertSame(0, $response->getInfo('retry_count') ?? 0);
-                // RetryableHttpClient may not increment MockHttpClient count for deferred requests;
-                // the decisive proof is retry_count remaining 0 with maxRetries forced to 0.
+                // Factory applies timeout options only; it does not wrap RetryableHttpClient,
+                // so a single 400 is not retried even when ai.http.max_retries is set.
+                // withOptions() returns a fresh MockHttpClient sharing the response queue;
+                // assert against that client, not the pre-options injectee.
+                $this->assertInstanceOf(MockHttpClient::class, $client);
+                $this->assertSame(1, $client->getRequestsCount());
 
                 return new Provider($provider->id, [], [], new ProjectedSymfonyModelCatalog(hatfieldModels: [], modelClass: CompletionsModel::class, providerId: $provider->id));
             },

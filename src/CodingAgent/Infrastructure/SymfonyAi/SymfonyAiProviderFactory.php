@@ -6,7 +6,7 @@ namespace Ineersa\CodingAgent\Infrastructure\SymfonyAi;
 
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
 use Ineersa\CodingAgent\Config\AppConfig;
-use Ineersa\CodingAgent\Infrastructure\SymfonyAi\Http\LlmHttpRetryPolicy;
+use Ineersa\CodingAgent\Infrastructure\SymfonyAi\Http\LlmHttpClientOptions;
 use Ineersa\Platform\Bridge\Generic\DurableResultConverter;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Platform\Bridge\Generic\Completions\ModelClient as GenericCompletionsModelClient;
@@ -17,7 +17,6 @@ use Symfony\AI\Platform\Provider;
 use Symfony\AI\Platform\ProviderInterface;
 use Symfony\Component\HttpClient\EventSourceHttpClient;
 use Symfony\Component\HttpClient\HttpClient;
-use Symfony\Component\HttpClient\RetryableHttpClient;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
@@ -77,29 +76,19 @@ class SymfonyAiProviderFactory
      * Return a configured HttpClient for outgoing LLM requests.
      *
      * Applies timeout/max-duration options to the injected or default transport.
-     * Transport maxRetries stay at 0; application LlmRequestRetryExecutor owns
-     * the single retry budget from ai.http.max_retries.
+     * Application {@see \Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryExecutor}
+     * owns retries from `ai.http.max_retries`; this method does not wrap
+     * {@see \Symfony\Component\HttpClient\RetryableHttpClient}.
      */
     private function getHttpClient(): HttpClientInterface
     {
         $http = $this->appConfig->ai?->http;
-        $policy = new LlmHttpRetryPolicy(
+        $options = new LlmHttpClientOptions(
             timeout: $http?->timeout,
             maxDuration: $http?->maxDuration,
-            // Application LlmRequestRetryExecutor owns retries; keep transport at 0
-            // even when ai.http.max_retries is set for the application budget.
-            maxRetries: 0,
-            baseDelayMs: $http?->baseDelayMs,
-            maxDelayMs: $http?->maxDelayMs,
         );
-        // Autowired transports need the same retry policy as the default client.
-        $baseClient = ($this->httpClient ?? HttpClient::create())->withOptions($policy->httpClientOptions());
 
-        return new RetryableHttpClient(
-            $baseClient,
-            $policy->retryStrategy(),
-            maxRetries: $policy->maxRetries,
-        );
+        return ($this->httpClient ?? HttpClient::create())->withOptions($options->httpClientOptions());
     }
 
     /**

@@ -87,7 +87,7 @@ Controls outbound LLM HTTP timeouts and the **application** retry budget for one
 | `base_delay_ms` | `1000` | Exponential backoff base delay |
 | `max_delay_ms` | `60000` | Cap for a single backoff delay |
 
-Transport-layer `RetryableHttpClient` retries stay at **0**. `LlmRequestRetryExecutor` owns the single bounded budget, including HTTP status errors, idle timeouts, failed stream chunks, and thinking-only recoveries. Retry progress is emitted as transient `llm.request_retrying` (seq=`0`) for the TUI working status. User cancellation stops further attempts and backoff. Failed partial streams are discarded before the next attempt; tool side effects are not replayed.
+`LlmRequestRetryExecutor` owns the single bounded budget, including HTTP status errors, idle timeouts, failed stream chunks, and thinking-only recoveries. Outbound LLM HTTP clients apply only `timeout` / `max_duration`; they are not wrapped in Symfony `RetryableHttpClient`. Retry progress is emitted as transient `llm.request_retrying` (seq=`0`) for the TUI working status. User cancellation stops further attempts and backoff. Failed partial streams are discarded before the next attempt; tool side effects are not replayed.
 
 After the application budget is exhausted, failures are terminal (`retryable: false`) and emit `llm_step_failed` then `agent_end(reason=failed)`. Messenger `llm` transport retries are not a second hidden LLM retry budget for these classified provider errors.
 
