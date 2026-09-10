@@ -7,7 +7,7 @@ namespace Ineersa\Tui\Terminal;
 /**
  * Installs Hatfield's ScreenWriter before Symfony TUI constructs its final writer.
  *
- * Symfony TUI 8.1 does not expose ScreenWriter injection. Keep this installer
+ * Symfony TUI 8.2 does not expose ScreenWriter injection. Keep this installer
  * until the component restores the cursor within synchronized output upstream.
  */
 final class SynchronizedCursorScreenWriterAliasInstaller
