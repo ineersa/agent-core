@@ -190,7 +190,7 @@ class QuestionControllerTest extends TestCase
         $accentProbe = $theme->color(ThemeColorEnum::Accent, 'PROBE');
         $renderer = new Renderer();
         $renderer->addStyleSheet((new ThemeStyleSheetFactory())->createQuestionChoiceList($palette));
-        $rendered = $renderer->render($container, 96, 30);
+        $rendered = $renderer->renderFrame($container, 96, 30)->toArray();
         $joined = implode("\n", $rendered);
         $plainLines = array_map(
             static fn (string $line): string => trim(preg_replace('/\x1b\[[0-9;]*m/', '', $line) ?? $line, " \t\r\n"),

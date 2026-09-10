@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Setup;
 
-use Ineersa\Tui\Terminal\CachedWidthValidationRendererAliasInstaller;
 use Ineersa\Tui\Terminal\SynchronizedCursorScreenWriterAliasInstaller;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
@@ -113,7 +112,6 @@ final class SetupScreen
 
     public function run(?TerminalInterface $terminal = null): int
     {
-        CachedWidthValidationRendererAliasInstaller::install();
         SynchronizedCursorScreenWriterAliasInstaller::install();
         $this->tui = new Tui(terminal: $terminal ?? new Terminal());
         $this->mount($this->tui);
@@ -124,6 +122,10 @@ final class SetupScreen
 
     private function wireListListeners(): void
     {
+        // 8.2 keeps per-widget listeners across detach/reattach. Replacing the
+        // phase layout would otherwise stack duplicate Enter/Esc handlers.
+        $this->listWidget->off(SelectEvent::class);
+        $this->listWidget->off(CancelEvent::class);
         $this->listWidget->onSelect(function (SelectEvent $event): void {
             $value = $event->getValue();
             if ('' === $value) {
@@ -148,6 +150,8 @@ final class SetupScreen
 
     private function wireInputListeners(): void
     {
+        $this->inputWidget->off(SubmitEvent::class);
+        $this->inputWidget->off(CancelEvent::class);
         $this->inputWidget->onSubmit(function (SubmitEvent $_): void {
             $this->onInputSubmit(trim($this->inputWidget->getValue()));
         });
@@ -159,6 +163,8 @@ final class SetupScreen
 
     private function wireSettingsListeners(): void
     {
+        $this->settingsWidget->off(SettingChangeEvent::class);
+        $this->settingsWidget->off(CancelEvent::class);
         $this->settingsWidget->onChange(function (SettingChangeEvent $event): void {
             $this->onCustomSettingChange($event->getId(), $event->getValue());
         });
@@ -1142,9 +1148,9 @@ final class SetupScreen
 
     private function applyPhaseLayout(): void
     {
-        // ContainerWidget::remove → WidgetTree::detach → AbstractWidget::detach()
-        // clears $listeners. Always remove all focusables first, then wire
-        // unconditionally after the add that mounts the active widget.
+        // 8.2 retains per-widget listeners across detach/reattach. Remount the
+        // active focusable here; wire* methods call off() before on* so Enter/Esc
+        // handlers do not stack across phase changes.
         $this->panelWidget->remove($this->listWidget);
         $this->panelWidget->remove($this->inputWidget);
         $this->panelWidget->remove($this->settingsWidget);

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Terminal;
 
 use Ineersa\Tui\Terminal\SynchronizedCursorScreenWriter;
+use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -12,12 +13,15 @@ use Revolt\EventLoop;
 use Revolt\EventLoop\Driver;
 use Revolt\EventLoop\DriverFactory;
 use Symfony\Component\Tui\Ansi\AnsiUtils;
+use Symfony\Component\Tui\Render\ArrayLineBuffer;
 use Symfony\Component\Tui\Style\CursorShape;
+use Symfony\Component\Tui\Terminal\TerminalInterface;
 use Symfony\Component\Tui\Terminal\VirtualTerminal;
 
+#[AllowMockObjectsWithoutExpectations]
 final class SynchronizedCursorScreenWriterTest extends TestCase
 {
-    private const string UPSTREAM_SCREEN_WRITER_SHA256 = '5b06f6b76b3d0c53e26327ee0ada88a2666ec46ca8f4eb99e826db227da9c97f';
+    private const string UPSTREAM_SCREEN_WRITER_SHA256 = '05f85e00e3ab414d82af6245c89befa52bef12b310bbc47123e5fa767c1ab5cb';
 
     private Driver $previousDriver;
 
@@ -40,14 +44,14 @@ final class SynchronizedCursorScreenWriterTest extends TestCase
         $terminal = new VirtualTerminal(columns: 20, rows: 3);
         $writer = new SynchronizedCursorScreenWriter($terminal);
         $lines = ['one', 'two', 'three', 'abc'.AnsiUtils::cursorMarker(CursorShape::Bar)];
-        $writer->writeLines($lines);
+        $writer->writeFrame($this->frame($lines));
 
         match ($action) {
             'reset' => $writer->reset(),
             'shutdown' => $writer->getState(),
-            'short' => $writer->writeLines([$lines[3]]),
-            'unfocused' => $writer->writeLines(['one', 'two', 'three', 'abc']),
-            'new cursor' => $writer->writeLines(['one', 'two', 'three', 'abcd'.AnsiUtils::cursorMarker(CursorShape::Bar)]),
+            'short' => $writer->writeFrame($this->frame([$lines[3]])),
+            'unfocused' => $writer->writeFrame($this->frame(['one', 'two', 'three', 'abc'])),
+            'new cursor' => $writer->writeFrame($this->frame(['one', 'two', 'three', 'abcd'.AnsiUtils::cursorMarker(CursorShape::Bar)])),
             default => null,
         };
         $terminal->clearOutput();
@@ -91,11 +95,11 @@ final class SynchronizedCursorScreenWriterTest extends TestCase
         $terminal = new VirtualTerminal(columns: 20, rows: 3);
         $writer = new SynchronizedCursorScreenWriter($terminal);
         if ([] !== $before) {
-            $writer->writeLines($before);
+            $writer->writeFrame($this->frame($before));
             $terminal->clearOutput();
         }
 
-        $writer->writeLines($after);
+        $writer->writeFrame($this->frame($after));
 
         $output = $terminal->getOutput();
         $this->assertStringStartsWith("\x1b[?2026h\x1b[?25l", $output);
@@ -120,18 +124,53 @@ final class SynchronizedCursorScreenWriterTest extends TestCase
     }
 
     #[Test]
+    public function itDifferentiallyShrinksTrailingOverlayRowsOnPhysicalTerminals(): void
+    {
+        // Mirrors #477 picker close: overheight shrink with an intact transcript prefix
+        // must not clear+replay via redrawViewport.
+        $output = new VirtualTerminal(columns: 20, rows: 3);
+        $terminal = $this->createStub(TerminalInterface::class);
+        $terminal->method('getColumns')->willReturn(20);
+        $terminal->method('getRows')->willReturn(3);
+        $terminal->method('isVirtual')->willReturn(false);
+        $terminal->method('write')->willReturnCallback($output->write(...));
+        $terminal->method('showCursor')->willReturnCallback($output->showCursor(...));
+        $terminal->method('hideCursor')->willReturnCallback($output->hideCursor(...));
+
+        $writer = new SynchronizedCursorScreenWriter($terminal);
+        $editor = 'abc'.AnsiUtils::cursorMarker(CursorShape::Bar);
+        $writer->writeFrame($this->frame(['one', 'two', $editor, 'overlay-a', 'overlay-b']));
+        $output->clearOutput();
+
+        $writer->writeFrame($this->frame(['one', 'two', $editor]));
+
+        $delta = $output->getOutput();
+        $this->assertStringNotContainsString("\x1b[2J", $delta);
+        $this->assertStringNotContainsString('one', $delta);
+        $this->assertStringNotContainsString('two', $delta);
+        $this->assertStringStartsWith("\x1b[?2026h\x1b[?25l", $delta);
+        $this->assertStringEndsWith("\x1b[?2026l", $delta);
+    }
+
+    #[Test]
     public function itKeepsTheCursorHiddenWhenTheEditorLosesFocus(): void
     {
         $terminal = new VirtualTerminal(columns: 20, rows: 3);
         $writer = new SynchronizedCursorScreenWriter($terminal);
-        $writer->writeLines(['one', 'abc'.AnsiUtils::cursorMarker(CursorShape::Bar), 'footer']);
+        $writer->writeFrame($this->frame(['one', 'abc'.AnsiUtils::cursorMarker(CursorShape::Bar), 'footer']));
         $terminal->clearOutput();
 
-        $writer->writeLines(['two', 'abc', 'footer']);
+        $writer->writeFrame($this->frame(['two', 'abc', 'footer']));
 
         $output = $terminal->getOutput();
         $this->assertStringStartsWith("\x1b[?2026h\x1b[?25l", $output);
         $this->assertStringEndsWith("\x1b[?25l\x1b[?2026l", $output);
         $this->assertStringNotContainsString("\x1b[?25h", $output);
+    }
+
+    /** @param list<string> $lines */
+    private function frame(array $lines): ArrayLineBuffer
+    {
+        return new ArrayLineBuffer($lines);
     }
 }

@@ -18,6 +18,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\PreserveGlobalState;
 use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Tui\Terminal\ScreenBuffer;
 use Symfony\Component\Tui\Terminal\TerminalInterface;
 use Symfony\Component\Tui\Terminal\VirtualTerminal;
@@ -45,14 +46,16 @@ final class PickerOverlayTest extends TestCase
         SynchronizedCursorScreenWriterAliasInstaller::install();
         $output = new VirtualTerminal(columns: 100, rows: 24);
         // Exercise the writer's physical-viewport decisions without a live process.
+        $dispatcher = new EventDispatcher();
         $terminal = $this->createStub(TerminalInterface::class);
+        $terminal->method('getEventDispatcher')->willReturn($dispatcher);
         $terminal->method('getColumns')->willReturn(100);
         $terminal->method('getRows')->willReturn(24);
         $terminal->method('isVirtual')->willReturn(false);
         $terminal->method('write')->willReturnCallback($output->write(...));
         $terminal->method('showCursor')->willReturnCallback($output->showCursor(...));
         $terminal->method('hideCursor')->willReturnCallback($output->hideCursor(...));
-        $tui = new Tui(terminal: $terminal);
+        $tui = new Tui(terminal: $terminal, eventDispatcher: $dispatcher);
         $screen = new ChatScreen(new DefaultTheme(new ThemePalette('test', [])), 'picker-paint', new PromptEditor());
         $screen->mount($tui);
         $screen->setTranscriptBlocks([(new TranscriptBlockFactory())->system(

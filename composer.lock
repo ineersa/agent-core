@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "a2c51d8b87248d78962a112e621bae89",
+    "content-hash": "f375cd00181b0b80f8d3e4a54872d8d8",
     "packages": [
         {
             "name": "amphp/amp",
@@ -9069,16 +9069,16 @@
         },
         {
             "name": "symfony/tui",
-            "version": "8.1.x-dev",
+            "version": "8.2.x-dev",
             "source": {
                 "type": "git",
                 "url": "https://github.com/symfony/tui.git",
-                "reference": "94c5b0ecce2c5ce41ab9460b84f48b2ab1366baf"
+                "reference": "11815c044d4f43a7773719e98d6901e9a7976a9f"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/symfony/tui/zipball/94c5b0ecce2c5ce41ab9460b84f48b2ab1366baf",
-                "reference": "94c5b0ecce2c5ce41ab9460b84f48b2ab1366baf",
+                "url": "https://api.github.com/repos/symfony/tui/zipball/11815c044d4f43a7773719e98d6901e9a7976a9f",
+                "reference": "11815c044d4f43a7773719e98d6901e9a7976a9f",
                 "shasum": ""
             },
             "require": {
@@ -9091,6 +9091,7 @@
                 "league/commonmark": "^2.9",
                 "tempest/highlight": "^2.16"
             },
+            "default-branch": true,
             "type": "library",
             "autoload": {
                 "psr-4": {
@@ -9123,7 +9124,7 @@
                 "tui"
             ],
             "support": {
-                "source": "https://github.com/symfony/tui/tree/8.1"
+                "source": "https://github.com/symfony/tui/tree/8.2"
             },
             "funding": [
                 {
@@ -9143,7 +9144,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2026-08-21T06:21:39+00:00"
+            "time": "2026-09-06T09:49:49+00:00"
         },
         {
             "name": "symfony/type-info",
