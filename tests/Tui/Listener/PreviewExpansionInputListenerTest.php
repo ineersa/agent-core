@@ -226,7 +226,7 @@ final class PreviewExpansionInputListenerTest extends TestCase
         $root->add($widget);
         $lines = (new Renderer(
             (new ThemeStyleSheetFactory())->createHotkeyTable($harness->screen()->theme()->getPalette()),
-        ))->render($root, 100, 40);
+        ))->renderFrame($root, 100, 40)->toArray();
         $styled = implode("\n", $lines);
         $this->assertStringContainsString('Ctrl+O', $styled);
         $this->assertStringContainsString('Keyboard shortcuts', $styled);

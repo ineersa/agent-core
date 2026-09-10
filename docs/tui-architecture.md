@@ -22,6 +22,10 @@ For user-facing editor and command reference, see [terminal usage](terminal-usag
 
 ## Frame and cursor output
 
+Hatfield no longer replaces Symfony's `Renderer`. Symfony TUI 8.2 caches maximum
+visible widths on `LineBufferInterface` and skips per-row width rescans when the
+cached maximum fits the available columns.
+
 `InteractiveMode` and `SetupScreen` install Hatfield's
 [`SynchronizedCursorScreenWriterAliasInstaller`](../src/Tui/Terminal/SynchronizedCursorScreenWriterAliasInstaller.php)
 before constructing Symfony TUI. Symfony constructs its final `ScreenWriter`

@@ -44,7 +44,7 @@
         "symfony/ai-platform": "^0.12",
         "symfony/validator": "^8.0",
         "symfony/uid": "^8.0",
-        "symfony/tui": "8.1.x-dev",
+        "symfony/tui": "8.2.x-dev",
         "symfony/ai-generic-platform": "^0.12",
         "symfony/ai-open-responses-platform": "^0.12",
         "monolog/monolog": "^3.10",

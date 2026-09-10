@@ -517,7 +517,7 @@ final class SubagentResultRendererTest extends TestCase
         $root = new ContainerWidget();
         $root->add($factory->buildWidget($block, $theme));
 
-        return (new Renderer())->render($root, max($width, 1), 24);
+        return (new Renderer())->renderFrame($root, max($width, 1), 24)->toArray();
     }
 
     private function theme(): DefaultTheme

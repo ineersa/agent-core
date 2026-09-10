@@ -13,6 +13,7 @@ use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Tui\Terminal\TerminalInterface;
 use Symfony\Component\Tui\Tui;
 use Symfony\Component\Tui\Widget\AbstractWidget;
@@ -34,13 +35,15 @@ class ChatScreenTest extends TestCase
     {
         parent::setUp();
 
+        $dispatcher = new EventDispatcher();
         $terminal = $this->createStub(TerminalInterface::class);
+        $terminal->method('getEventDispatcher')->willReturn($dispatcher);
         $terminal->method('getColumns')->willReturn(120);
         $terminal->method('getRows')->willReturn(40);
         $terminal->method('isKittyProtocolActive')->willReturn(false);
         $terminal->method('isVirtual')->willReturn(true);
 
-        $this->tui = new Tui(terminal: $terminal);
+        $this->tui = new Tui(terminal: $terminal, eventDispatcher: $dispatcher);
 
         $theme = new readonly class implements TuiTheme {
             public function color(ThemeColorEnum $color, string $text): string

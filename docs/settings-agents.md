@@ -79,6 +79,9 @@ Behavioral detail (discoverable vs on-demand-only, `/skill:<name>`, frontmatter)
 Extensions load from project `.hatfield/extensions/vendor/autoload.php` when present.
 They register **once at session start** — enablement changes require a new session.
 
+Keep `.hatfield/extensions/composer.json` with `config.prepend-autoloader: false`.
+Otherwise the extensions autoloader can shadow host packages such as `symfony/tui`.
+
 Built-in SafeGuard class may appear in defaults/`always_on` without a Composer package.
 Project packages (task-workflow, file-rewind, observational-memory, jbcontext) document their own settings keys in **package-local README files** shipped with each extension repository/package. Those keys are **not** core `hatfield_docs` catalog entries.
 
