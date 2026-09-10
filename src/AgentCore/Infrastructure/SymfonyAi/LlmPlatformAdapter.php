@@ -6,6 +6,7 @@ namespace Ineersa\AgentCore\Infrastructure\SymfonyAi;
 
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Hook\ConvertToLlmHookInterface;
+use Ineersa\AgentCore\Contract\Hook\LlmRequestRetryObserverInterface;
 use Ineersa\AgentCore\Contract\Hook\LlmStreamObserverInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Hook\TransformContextHookInterface;
@@ -20,6 +21,8 @@ use Ineersa\AgentCore\Domain\Model\ModelResolutionOptions;
 use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
 use Ineersa\AgentCore\Domain\Notification\ModelNotificationCodec;
 use Ineersa\AgentCore\Domain\Notification\ModelNotificationDTO;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryExecutor;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy;
 use Ineersa\Platform\Result\CancellableRawResultInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Agent\Input;
@@ -45,6 +48,8 @@ use Symfony\AI\Platform\Result\Stream\Delta\ToolInputDelta;
 use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\AI\Platform\TokenUsage\TokenUsageInterface;
 use Symfony\AI\Platform\Tool\Tool;
+use Symfony\Component\Clock\ClockInterface;
+use Symfony\Component\Clock\NativeClock;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
 final readonly class LlmPlatformAdapter implements PlatformInterface
@@ -68,10 +73,38 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         private readonly ProviderRequestPreparer $providerRequestPreparer = new ProviderRequestPreparer(),
         private readonly LlmProviderErrorClassifier $errorClassifier = new LlmProviderErrorClassifier(),
         private readonly AgentMessageToolCallSequenceValidator $toolCallSequenceValidator = new AgentMessageToolCallSequenceValidator(),
+        private readonly ?LlmRequestRetryObserverInterface $retryObserver = null,
+        private readonly LlmRequestRetryPolicy $requestRetryPolicy = new LlmRequestRetryPolicy(),
+        private readonly ClockInterface $clock = new NativeClock(),
     ) {
     }
 
     public function invoke(ModelInvocationRequest $request): PlatformInvocationResult
+    {
+        $runId = $request->input->runId ?? '';
+        $stepId = $request->input->stepId;
+
+        $executor = new LlmRequestRetryExecutor(
+            policy: $this->requestRetryPolicy,
+            clock: $this->clock,
+            retryObserver: $this->retryObserver,
+            logger: $this->logger,
+        );
+
+        return $executor->execute(
+            invoke: fn (): PlatformInvocationResult => $this->invokeOnce($request),
+            // Build token lazily so the executor does not consume a status-reader
+            // poll before invokeOnce/consumeStream. Stream cancellation accounting
+            // remains owned by consumeStream.
+            isCancelled: function () use ($request): bool {
+                return $this->cancellationToken($request)->isCancellationRequested();
+            },
+            runId: $runId,
+            stepId: $stepId,
+        );
+    }
+
+    private function invokeOnce(ModelInvocationRequest $request): PlatformInvocationResult
     {
         $cancelToken = $this->cancellationToken($request);
         $messages = $this->resolveContextMessages($request->input);
@@ -453,12 +486,45 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         }
 
         $assistantMessage = $this->buildAssistantMessage($deltas);
+        $stopReason = $aborted ? 'aborted' : $this->resolveStopReason($assistantMessage, $deferredResult);
+
+        if (!$aborted) {
+            $thinkingOnly = null !== $assistantMessage
+                && !$assistantMessage->hasToolCalls()
+                && null === $assistantMessage->asText();
+            $emptyStream = null === $assistantMessage && [] === $deltas;
+            if ($thinkingOnly || $emptyStream) {
+                $type = $thinkingOnly ? 'empty_assistant_content' : 'empty_response';
+                $message = $thinkingOnly
+                    ? 'LLM provider returned reasoning without a final assistant response.'
+                    : 'LLM provider returned an empty response.';
+
+                return new PlatformInvocationResult(
+                    assistantMessage: null,
+                    deltas: [],
+                    usage: $this->extractUsage($deferredResult, $modelName),
+                    stopReason: 'error',
+                    error: [
+                        'type' => $type,
+                        'message' => $message,
+                        'retryable' => true,
+                        'error_category' => 'provider',
+                        'user_message' => $message,
+                    ],
+                    model: $modelName,
+                    reasoning: (string) ($requestSummary['reasoning'] ?? ''),
+                    modelNotifications: $modelNotifications,
+                    availableTools: $availableTools,
+                    availableToolsSchemaTokensEstimate: $availableToolsSchemaTokensEstimate,
+                );
+            }
+        }
 
         return new PlatformInvocationResult(
             assistantMessage: $assistantMessage,
             deltas: $deltas,
             usage: $this->extractUsage($deferredResult, $modelName),
-            stopReason: $aborted ? 'aborted' : $this->resolveStopReason($assistantMessage, $deferredResult),
+            stopReason: $stopReason,
             error: null,
             model: $modelName,
             reasoning: (string) ($requestSummary['reasoning'] ?? ''),

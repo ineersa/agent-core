@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Tests\Application\Handler;
 
 use Ineersa\AgentCore\Application\Handler\ExecuteLlmStepWorker;
-use Ineersa\AgentCore\Application\Handler\RetryableLlmStepFailureException;
 use Ineersa\AgentCore\Contract\Model\PlatformInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
@@ -30,20 +29,19 @@ use Symfony\Component\Messenger\Exception\UnrecoverableMessageHandlingException;
  *  - If the retry returns valid assistant content, the step succeeds with
  *    no error and the platform is invoked exactly twice.
  *  - If both attempts return reasoning-only, the step fails with
- *    empty_assistant_content and the platform is invoked exactly twice.
+ *    empty_assistant_content is terminal at the worker (adapter owns recovery).
  *  - A single valid response proceeds normally (zero retries).
  */
 final class ExecuteLlmStepWorkerTest extends TestCase
 {
-    public function testRetrySucceedsWhenFirstAttemptIsThinkingOnly(): void
+    public function testThinkingOnlyResultIsTerminalWithoutSeparateWorkerRetryBudget(): void
     {
+        // Shared application retry budget lives in LlmPlatformAdapter.
+        // Worker stubs receive already-final platform results and must not re-invoke.
         $thinkingOnly = new AssistantMessage(new Thinking('reasoning...'));
-        $validResponse = new AssistantMessage(new Text('Hello there'));
-
-        $platform = $this->createAlternatingPlatform([$thinkingOnly, $validResponse]);
+        $platform = $this->createAlternatingPlatform([$thinkingOnly, new AssistantMessage(new Text('should-not-run'))]);
         $testBus = new TestMessageBus();
         $testLogger = new TestLogger();
-
         $worker = new ExecuteLlmStepWorker($platform, $testBus, logger: $testLogger);
 
         $worker(new ExecuteLlmStep(
@@ -56,57 +54,13 @@ final class ExecuteLlmStepWorkerTest extends TestCase
         ));
 
         $this->assertCount(1, $testBus->messages);
-
         /** @var LlmStepResult $result */
         $result = $testBus->messages[0];
-        $this->assertInstanceOf(LlmStepResult::class, $result);
-        $this->assertNotNull($result->assistantMessage, 'Retry must succeed with a valid assistant message.');
-        $this->assertSame('Hello there', $result->assistantMessage->asText());
-        $this->assertNull($result->error, 'No error when retry succeeds.');
-
-        // Platform must have been invoked exactly twice.
-        $this->assertSame(2, $platform->invocationCount);
-
-        // A retry warning must be logged.
-        $retryLogs = $this->filterLogsByEventType($testLogger, 'llm.request.retrying_thinking_only');
-        $this->assertCount(1, $retryLogs, 'Must log exactly one retry warning.');
-    }
-
-    public function testFailsWhenBothAttemptsAreThinkingOnly(): void
-    {
-        $thinkingOnly = new AssistantMessage(new Thinking('reasoning...again'));
-
-        $platform = $this->createAlternatingPlatform([$thinkingOnly, $thinkingOnly]);
-        $testBus = new TestMessageBus();
-        $testLogger = new TestLogger();
-
-        $worker = new ExecuteLlmStepWorker($platform, $testBus, logger: $testLogger);
-
-        $worker(new ExecuteLlmStep(
-            runId: 'run-2',
-            turnNo: 1,
-            stepId: 'step-2',
-            attempt: 1,
-            idempotencyKey: 'key-2',
-            toolsRef: 'tools-2',
-        ));
-
-        $this->assertCount(1, $testBus->messages);
-
-        /** @var LlmStepResult $result */
-        $result = $testBus->messages[0];
-        $this->assertInstanceOf(LlmStepResult::class, $result);
-        $this->assertNull($result->assistantMessage, 'Both attempts thinking-only: assistant must be null.');
-        $this->assertNotNull($result->error, 'Both attempts thinking-only: must be an error.');
+        $this->assertNull($result->assistantMessage);
         $this->assertSame('empty_assistant_content', $result->error['type'] ?? null);
-        $this->assertFalse($result->error['retryable'] ?? true, 'empty_assistant_content must be non-retryable.');
-
-        // Platform must have been invoked exactly twice (not thrice).
-        $this->assertSame(2, $platform->invocationCount);
-
-        // Exactly one retry warning must be logged.
-        $retryLogs = $this->filterLogsByEventType($testLogger, 'llm.request.retrying_thinking_only');
-        $this->assertCount(1, $retryLogs, 'Must log exactly one retry warning.');
+        $this->assertFalse($result->error['retryable'] ?? true);
+        $this->assertSame(1, $platform->invocationCount);
+        $this->assertCount(0, $this->filterLogsByEventType($testLogger, 'llm.request.retrying_thinking_only'));
     }
 
     public function testSingleValidResponseProceedsNormally(): void
@@ -215,8 +169,10 @@ final class ExecuteLlmStepWorkerTest extends TestCase
         $this->assertSame(1, $platform->invocationCount);
     }
 
-    public function testRetryableProviderErrorThrowsStructuredFailure(): void
+    public function testProviderErrorDispatchesTerminalLlmStepResultWithoutMessengerRetryThrow(): void
     {
+        // Application retry budget is owned by LlmPlatformAdapter. The worker
+        // always posts LlmStepResult; it must not throw for retryable flags.
         $errorResult = new PlatformInvocationResult(
             assistantMessage: null,
             usage: [],
@@ -224,9 +180,10 @@ final class ExecuteLlmStepWorkerTest extends TestCase
             error: [
                 'type' => 'provider_error',
                 'message' => 'Codex WebSocket idle timeout.',
-                'retryable' => true,
+                'retryable' => false,
+                'retry_exhausted' => true,
                 'error_category' => 'provider',
-                'user_message' => 'LLM provider request failed.',
+                'user_message' => 'LLM provider request failed after retries were exhausted.',
             ],
             model: 'openai-codex/gpt-5.6-luna',
             reasoning: 'medium',
@@ -238,53 +195,22 @@ final class ExecuteLlmStepWorkerTest extends TestCase
         $testBus = new TestMessageBus();
         $worker = new ExecuteLlmStepWorker($platform, $testBus, logger: new TestLogger());
 
-        try {
-            $worker(new ExecuteLlmStep(
-                runId: 'run-retryable',
-                turnNo: 2,
-                stepId: 'step-retryable',
-                attempt: 1,
-                idempotencyKey: 'key-retryable',
-                toolsRef: 'tools-ref',
-            ));
-            $this->fail('Retryable provider failure must throw RetryableLlmStepFailureException.');
-        } catch (RetryableLlmStepFailureException $exception) {
-            $this->assertTrue($exception->error['retryable'] ?? false);
-            $this->assertSame('tools-ref', $exception->toolsRef);
-            $this->assertSame('openai-codex/gpt-5.6-luna', $exception->model);
-            $this->assertSame('medium', $exception->reasoning);
-            $this->assertSame(['bash', 'edit'], $exception->availableTools);
-            $this->assertSame(12, $exception->availableToolsSchemaTokensEstimate);
-        }
-
-        $this->assertSame([], $testBus->messages);
-        $this->assertSame(1, $platform->invocationCount);
-    }
-
-    public function testThinkingOnlyRetryReusesMessageModel(): void
-    {
-        $thinkingOnly = new AssistantMessage(new Thinking('reasoning'));
-        $validResponse = new AssistantMessage(new Text('recovered'));
-        $platform = $this->createAlternatingPlatform([$thinkingOnly, $validResponse]);
-        $testBus = new TestMessageBus();
-
-        $worker = new ExecuteLlmStepWorker(
-            $platform,
-            $testBus,
-            logger: new TestLogger(),
-        );
-
         $worker(new ExecuteLlmStep(
-            runId: 'session-retry',
-            turnNo: 1,
-            stepId: 'step-retry',
+            runId: 'run-retryable',
+            turnNo: 2,
+            stepId: 'step-retryable',
             attempt: 1,
-            idempotencyKey: 'key-retry',
-            toolsRef: 'tools',
+            idempotencyKey: 'key-retryable',
+            toolsRef: 'tools-ref',
         ));
 
-        $this->assertSame(2, $platform->invocationCount);
-        $this->assertSame(['', ''], $platform->requestModels);
+        $this->assertCount(1, $testBus->messages);
+        $result = $testBus->messages[0];
+        $this->assertInstanceOf(LlmStepResult::class, $result);
+        $this->assertTrue($result->error['retry_exhausted'] ?? false);
+        $this->assertFalse($result->error['retryable'] ?? true);
+        $this->assertSame('openai-codex/gpt-5.6-luna', $result->model);
+        $this->assertSame(1, $platform->invocationCount);
     }
 
     public function testForwardsCoordinatorPreparedMessagesToPlatform(): void

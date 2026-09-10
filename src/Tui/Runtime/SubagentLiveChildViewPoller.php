@@ -79,6 +79,7 @@ final class SubagentLiveChildViewPoller
         $scratch = new TuiSessionState($live->selected->agentRunId);
         $scratch->activity = $live->childActivity;
         $scratch->queuedUserMessages = $live->childQueuedUserMessages;
+        $scratch->llmRetryWorkingMessage = $live->llmRetryWorkingMessage;
 
         $pendingQuestions = [];
         foreach ($snapshot->replayEvents as $event) {
@@ -104,6 +105,7 @@ final class SubagentLiveChildViewPoller
 
         $live->childActivity = $scratch->activity;
         $live->childQueuedUserMessages = $scratch->queuedUserMessages;
+        $live->llmRetryWorkingMessage = $scratch->llmRetryWorkingMessage;
         $live->childLastSeq = $snapshot->maxSeq;
         $projected = $this->projector->blocks();
         $live->childTranscript = [] !== $projected
@@ -159,6 +161,7 @@ final class SubagentLiveChildViewPoller
         $scratch = new TuiSessionState($live->selected->agentRunId);
         $scratch->activity = $live->childActivity;
         $scratch->queuedUserMessages = $live->childQueuedUserMessages;
+        $scratch->llmRetryWorkingMessage = $live->llmRetryWorkingMessage;
 
         $callbacks = $this->makeCallbacks($onHumanInputRequested, $onToolQuestionRequested, $onToolTerminal);
 
@@ -187,6 +190,7 @@ final class SubagentLiveChildViewPoller
         if ($changed) {
             $live->childActivity = $scratch->activity;
             $live->childQueuedUserMessages = $scratch->queuedUserMessages;
+            $live->llmRetryWorkingMessage = $scratch->llmRetryWorkingMessage;
         }
 
         if (!$changed) {

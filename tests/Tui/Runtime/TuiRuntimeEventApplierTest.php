@@ -59,6 +59,38 @@ final class TuiRuntimeEventApplierTest extends TestCase
         $this->assertSame(RunActivityStateEnum::Idle, $state->activity);
     }
 
+    public function testLlmRequestRetryingSetsWorkingMessageAndStreamStartClearsIt(): void
+    {
+        $applier = $this->buildApplier();
+        $state = new TuiSessionState('run-retry', true);
+
+        $applier->apply($state, new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent(
+            type: \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum::LlmRequestRetrying->value,
+            runId: 'run-retry',
+            seq: 0,
+            payload: [
+                'attempt' => 2,
+                'max_attempts' => 5,
+                'delay_ms' => 1000,
+                'reason' => 'LLM provider request timed out.',
+            ],
+        ));
+
+        $this->assertSame(
+            'Retrying LLM 2/5 in 1.0s — LLM provider request timed out.',
+            $state->llmRetryWorkingMessage,
+        );
+
+        $applier->apply($state, new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent(
+            type: \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum::AssistantMessageStarted->value,
+            runId: 'run-retry',
+            seq: 0,
+            payload: [],
+        ));
+
+        $this->assertNull($state->llmRetryWorkingMessage);
+    }
+
     public function testRunCancelledClearsPendingQueuedUserMessages(): void
     {
         // Thesis: cancel terminalizes the turn; still-queued commands must not linger as ⏳.

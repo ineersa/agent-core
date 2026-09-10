@@ -42,6 +42,28 @@ final readonly class TuiRuntimeEventApplier
             } else {
                 $state->usage->resetTurn();
             }
+        } elseif (RuntimeEventTypeEnum::LlmRequestRetrying->value === $event->type) {
+            $attempt = \is_int($event->payload['attempt'] ?? null) ? $event->payload['attempt'] : 0;
+            $maxAttempts = \is_int($event->payload['max_attempts'] ?? null) ? $event->payload['max_attempts'] : 0;
+            $delayMs = \is_int($event->payload['delay_ms'] ?? null) ? $event->payload['delay_ms'] : 0;
+            $reason = \is_string($event->payload['reason'] ?? null) && '' !== $event->payload['reason']
+                ? $event->payload['reason']
+                : 'LLM provider request failed.';
+            $delayLabel = $delayMs >= 1000
+                ? \sprintf('%.1fs', $delayMs / 1000)
+                : \sprintf('%dms', $delayMs);
+            $state->llmRetryWorkingMessage = \sprintf(
+                'Retrying LLM %d/%d in %s — %s',
+                max(1, $attempt),
+                max(1, $maxAttempts),
+                $delayLabel,
+                mb_substr($reason, 0, 120),
+            );
+        } elseif (RuntimeEventTypeEnum::AssistantMessageStarted->value === $event->type
+            || RuntimeEventTypeEnum::AssistantTextStarted->value === $event->type
+            || RuntimeEventTypeEnum::AssistantThinkingStarted->value === $event->type
+        ) {
+            $state->llmRetryWorkingMessage = null;
         } elseif (RuntimeEventTypeEnum::AssistantMessageCompleted->value === $event->type) {
             $state->usage->accumulate($event);
         }
@@ -81,6 +103,7 @@ final readonly class TuiRuntimeEventApplier
             // Cancel/fail terminals drop any still-pending queued commands from the
             // ending turn; they will not be applied on the discarded tail.
             $state->queuedUserMessages = [];
+            $state->llmRetryWorkingMessage = null;
         }
 
         // After terminal activity, ignore stale seq=0 assistant/tool stream
