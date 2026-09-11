@@ -99,11 +99,12 @@ Short-lived processes can disappear before collection. Datadog documents
 
 ## Application metrics from logs
 
-Eight dashboard widgets (`xza-j7r-e4s`) queried APM spans and `trace.*` metrics and
-went empty when the extension was disabled. The signals behind them survive in the
-JSONL logs, so they can be republished as log-based metrics. This needs no
-application change and no new transport: Datadog derives the metrics from the log
-stream it already collects.
+The dashboard (`xza-j7r-e4s`) rebuilt its former APM widgets as direct log queries.
+Counts, group-bys, ratios, and duration percentiles come from the JSONL logs the
+Agent already collects, so the dashboard needs no log-based metric, no application
+change, and no new transport. The metric definitions below cover the cases log
+widgets cannot: retention beyond the log index, metric monitors, and aggregation
+across services. Publish them only when you need one of those.
 
 ### Field rules
 
@@ -175,6 +176,7 @@ part of the metric tag in practice for the checked queries.
 
 ### Publication
 
+These metrics are optional; the dashboard does not depend on them.
 The connected MCP catalog publishes read-only log and metric tools, plus dashboard
 writes. It does not publish log-based metric or facet management tools. Create each
 metric in Datadog under Logs > Configuration > Log-Based Metrics, or with the Logs
@@ -197,7 +199,10 @@ statement latency or queue depth.
 Retained:
 
 - All structured application logs in Datadog Logs, including warnings and errors.
-- Log-derived application metrics listed above, once published.
+- Dashboard widgets that query logs directly: tool and LLM throughput, latency,
+  failures, error rates, and retries, plus the log and process widgets.
+- The log-derived metrics listed above, if you publish them for longer retention or
+  metric monitors.
 - Process Check metrics: CPU, RSS, and process I/O for matched Hatfield processes.
 
 Intentionally lost with the extension:
@@ -206,9 +211,10 @@ Intentionally lost with the extension:
 - `dd.trace_id` / `dd.span_id` log correlation. Log ingestion continues; the
   trace-linked views and trace-based filters do not.
 - Profiling and database statement spans (`PDOStatement.execute`).
-- The eight span-based dashboard widgets: LLM latency, LLM throughput, LLM-step
-  errors, LLM-step error rate, tool throughput, tool latency, Messenger consume,
-  and database operations. Repoint them to the log-derived metrics or remove them.
+- The span-based dashboard widgets. Six were rebuilt as log queries, and the
+  Database operations and Messenger consume widgets were removed because their data
+  existed only in APM spans. See the Datadog skill's dashboard reference for the
+  current widget set.
 
 Verify extension-free operation:
 
