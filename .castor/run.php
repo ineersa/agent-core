@@ -46,19 +46,13 @@ function agent_phar_invocation(string $extraArgs = ''): string
     return sprintf('%s %s agent%s', \PHP_BINARY, escapeshellarg($sessionCopy), $tail);
 }
 
-function agent_runtime_env_command(bool $datadogEnabled): string
+function agent_runtime_env_command(): string
 {
-    $datadogEnv = datadog_env_command($datadogEnabled);
-
-    return 'env APP_ENV=prod APP_DEBUG=0 '.substr($datadogEnv, strlen('env '));
+    return 'env APP_ENV=prod APP_DEBUG=0';
 }
 
 /**
  * Launch the agent TUI in the current terminal.
- *
- * Datadog APM is auto-enabled when ddtrace is loaded and a local trace
- * endpoint is reachable.  Set HATFIELD_DATADOG=0 to force-disable or
- * HATFIELD_DATADOG=1 to force-enable when ddtrace is loaded.
  *
  * No relaunch loop — the TUI runs once and exits naturally.
  */
@@ -69,7 +63,7 @@ function run_agent(): void
 
     launch_agent_direct_terminal(
         build_agent_console_inner_command(
-            agent_runtime_env_command(datadog_auto_enabled()).' DD_PROFILING_ENABLED=0',
+            agent_runtime_env_command(),
             agent_phar_invocation(),
         ),
     );
@@ -77,8 +71,6 @@ function run_agent(): void
 
 /**
  * Launch the agent TUI in a tmux window using the local test model.
- *
- * Datadog APM is always disabled for deterministic test runs.
  */
 #[AsTask(name: 'run:agent-test', description: 'Run the agent in a tmux window using the local test model')]
 function run_agent_test(): void
@@ -89,7 +81,7 @@ function run_agent_test(): void
         sessionName: 'hatfield-agent-test',
         windowTitle: 'hatfield-agent-test',
         innerShellCommand: build_agent_console_inner_command(
-            agent_runtime_env_command(false),
+            agent_runtime_env_command(),
             agent_phar_invocation('--model=llama_cpp_test/test'),
         ),
     );
@@ -106,8 +98,7 @@ function run_agent_test(): void
  * artifact contains raw model output and tool-call arguments \u2014 treat
  * as potentially sensitive and delete/redact before sharing.
  *
- * Uses the configured provider/model (not the test model). Datadog APM
- * is auto-enabled when ddtrace is loaded.
+ * Uses the configured provider/model (not the test model).
  */
 #[AsTask(name: 'run:agent-capture', description: 'Launch the agent TUI with raw LLM stream capture in the current terminal')]
 function run_agent_capture(): void
@@ -131,7 +122,7 @@ function run_agent_capture(): void
         'export HATFIELD_LLM_RAW_STREAM_CAPTURE=1 && export HATFIELD_LLM_RAW_STREAM_CAPTURE_PATH=%s && %s',
         escapeshellarg($capturePath),
         build_agent_console_inner_command(
-            agent_runtime_env_command(datadog_auto_enabled()),
+            agent_runtime_env_command(),
             agent_phar_invocation(),
         ),
     );
