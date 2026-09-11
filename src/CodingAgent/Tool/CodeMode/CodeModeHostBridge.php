@@ -311,6 +311,24 @@ final readonly class CodeModeHostBridge
         }
     }
 
+    private function materializeBootstrap(string $workspaceDir): string
+    {
+        $source = __DIR__.'/Resources/bootstrap.php.inc';
+        $target = $workspaceDir.'/b.php';
+
+        try {
+            $contents = file_get_contents($source);
+            if (false === $contents) {
+                throw new \RuntimeException(\sprintf('Unable to read code-mode bootstrap from "%s".', $source));
+            }
+            $this->filesystem->dumpFile($target, $contents);
+        } catch (\Throwable $exception) {
+            throw new ToolCallException('Failed to materialize code-mode bootstrap for subprocess execution.', retryable: true, previous: $exception);
+        }
+
+        return $target;
+    }
+
     /**
      * @return resource
      */
@@ -344,7 +362,7 @@ final readonly class CodeModeHostBridge
             throw new ToolCallException('PHP binary is unavailable for code-mode subprocess execution.', retryable: false);
         }
 
-        $bootstrap = __DIR__.'/Resources/bootstrap.php';
+        $bootstrap = $this->materializeBootstrap($workspace['dir']);
         $process = new Process(
             [$phpBinary, $bootstrap],
             $this->projectDir,
