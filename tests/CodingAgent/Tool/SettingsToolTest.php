@@ -79,6 +79,12 @@ final class SettingsToolTest extends TestCase
             ]))
             ->getValidator();
 
+        $extractor = new PropertyInfoExtractor([], [new PhpDocExtractor(), new ReflectionExtractor()]);
+        $serializer = new Serializer([
+            new ObjectNormalizer(null, new CamelCaseToSnakeCaseNameConverter(), null, $extractor),
+            new ArrayDenormalizer(),
+        ]);
+
         $this->tool = new SettingsTool(
             new ToolRuntime(new StackToolExecutionContextAccessor()),
             $loader,
@@ -87,6 +93,7 @@ final class SettingsToolTest extends TestCase
             $valueResolver,
             $writer,
             $validator,
+            $serializer,
         );
     }
 

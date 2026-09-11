@@ -15,15 +15,8 @@ use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
 use Ineersa\CodingAgent\Config\SettingsResolutionDTO;
 use Ineersa\CodingAgent\Config\SettingsValueResolver;
 use Ineersa\CodingAgent\Tool\Arguments\SettingsArgumentsDTO;
-use Symfony\Component\PropertyInfo\Extractor\PhpDocExtractor;
-use Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor;
-use Symfony\Component\PropertyInfo\PropertyInfoExtractor;
 use Symfony\Component\Serializer\Exception\NotNormalizableValueException;
-use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
-use Symfony\Component\Serializer\Normalizer\ArrayDenormalizer;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
-use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
-use Symfony\Component\Serializer\Serializer;
 use Symfony\Component\Validator\ConstraintViolationInterface;
 use Symfony\Component\Validator\ConstraintViolationListInterface;
 use Symfony\Component\Validator\Exception\ValidationFailedException;
@@ -42,8 +35,6 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
  */
 final class SettingsTool implements HatfieldToolProviderInterface
 {
-    private readonly DenormalizerInterface $serializer;
-
     public function __construct(
         private readonly ToolRuntime $toolRuntime,
         private readonly AppConfigLoader $loader,
@@ -52,9 +43,8 @@ final class SettingsTool implements HatfieldToolProviderInterface
         private readonly SettingsValueResolver $valueResolver,
         private readonly SettingsOverrideWriter $writer,
         private readonly ValidatorInterface $validator,
-        ?DenormalizerInterface $serializer = null,
+        private readonly DenormalizerInterface $serializer,
     ) {
-        $this->serializer = $serializer ?? self::defaultSerializer();
     }
 
     /**
@@ -150,16 +140,6 @@ final class SettingsTool implements HatfieldToolProviderInterface
         }
 
         return implode("\n", array_values(array_unique($messages)));
-    }
-
-    private static function defaultSerializer(): DenormalizerInterface
-    {
-        $extractor = new PropertyInfoExtractor([], [new PhpDocExtractor(), new ReflectionExtractor()]);
-
-        return new Serializer([
-            new ObjectNormalizer(null, new CamelCaseToSnakeCaseNameConverter(), null, $extractor),
-            new ArrayDenormalizer(),
-        ]);
     }
 
     /**

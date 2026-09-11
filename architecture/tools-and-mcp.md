@@ -72,7 +72,7 @@ the server's runtime schema rather than the built-in DTO validation path.
 | `read` | `ReadFileArgumentsDTO` + `ReadFileTarget` | path/offset/limit; target policy | I/O read failures |
 | `write` | `WriteFileArgumentsDTO` | path/content | write I/O failures |
 | `edit` | `EditFileArgumentsDTO` + `EditFileTarget` | path/patch; target exists | patch apply / lock failures |
-| `view_image` | `ViewImageArgumentsDTO` + `ViewImageTarget` | path; vision/size/MIME/dimensions | operational I/O and mutable-file MIME/dimension races |
+| `view_image` | `ViewImageArgumentsDTO` (path only) | path shape | single handler inspection owns vision/size/MIME/dimensions + metadata |
 | `bash` | `BashArgumentsDTO` + `BashTimeoutMax` | command; timeout bounds | process lifecycle, cancel, exit failures |
 | `bg_status` | `BgStatusArgumentsDTO` | action; conditional pid | process lookup / stop / log failures |
 | `ask_human` | `AskHumanArgumentsDTO` | question/kind/choices exclusivity | none (interrupt payload only) |
