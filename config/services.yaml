@@ -83,6 +83,8 @@ services:
 
   Ineersa\CodingAgent\:
     resource: '%kernel.project_dir%/src/CodingAgent/**/*.php'
+    exclude:
+      - '%kernel.project_dir%/src/CodingAgent/Tool/CodeMode/Resources/'
 
   Ineersa\CodingAgent\Agent\Diagnostics\PromptCacheDiagnosticsInvocationSubscriber:
     arguments:
@@ -813,6 +815,13 @@ services:
     arguments:
       $executionServiceLocator: !service_locator
         execution: '@Ineersa\CodingAgent\Agent\Fork\ForkExecutionService'
+
+  # code_mode: definition provider is tagged; toolbox resolves only at nested invoke time.
+  Ineersa\CodingAgent\Tool\CodeMode\CodeModeHostBridge:
+    arguments:
+      $toolboxLocator: !service_locator
+        toolbox: '@Ineersa\CodingAgent\Tool\RegistryBackedToolbox'
+      $projectDir: '%kernel.project_dir%'
 
   # CodingAgent ToolSetResolver — bridges ToolRegistry to AgentCore resolver seam.
   # The inner resolver (CodingAgentToolSetResolver) is wrapped by
