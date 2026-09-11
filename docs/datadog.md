@@ -120,12 +120,15 @@ stream it already collects.
 - LLM requests emit a success/failure pair: `llm.request.completed` and
   `llm.request.failed` (with `@context.error_category`). Retries emit
   `llm.request.retrying` with `@context.attempt` and `@context.max_attempts`.
-- A turn issues exactly one `llm.call` span, so `hatfield.llm.turns` counts turns.
-  The `llm.request.*` records count provider attempts instead: a retry inside the
-  same turn adds another request record. Verified on 2026-09-10: 1,429 `llm.call`
-  finishes, 1,429 distinct `run_id` plus `turn_no` pairs, and 1,431
-  `command.application.turn_start_boundary` finishes. The boundary span therefore is
-  not the turn counter.
+- On the normal path a turn issues exactly one `llm.call` span, so
+  `hatfield.llm.turns` counts turns. `llm.request.completed` and
+  `llm.request.failed` also appear once per turn, after retries resolve;
+  `llm.request.retrying` is the record that counts retry attempts. As a
+  cross-check, `requests.completed + requests.failed` should approximately equal
+  `hatfield.llm.turns`. Verified on 2026-09-10: 1,429 `llm.call` finishes, 1,429
+  distinct `run_id` plus `turn_no` pairs, and 1,431
+  `command.application.turn_start_boundary` finishes, so the boundary span is not
+  the turn counter.
 - Span records and request events are INFO, so they need `logging.level: info`. The
   project `.hatfield/settings.yaml` sets this; the shipped default is `warning`.
   Failure metrics keep working at `warning` level.
@@ -160,7 +163,7 @@ sum:hatfield.tool.failures{service:hatfield AND $env}.as_count()
 sum:hatfield.tool.failures{service:hatfield AND $env AND context.tool_name:edit}.as_count()
   / sum:hatfield.tool.calls{service:hatfield AND $env AND context.tool_name:edit}.as_count()
 
-# LLM error rate
+# LLM error rate (per turn: each turn emits one request outcome record)
 sum:hatfield.llm.requests.failed{service:hatfield AND $env}.as_count()
   / (sum:hatfield.llm.requests.completed{service:hatfield AND $env}.as_count()
      + sum:hatfield.llm.requests.failed{service:hatfield AND $env}.as_count())
