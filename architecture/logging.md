@@ -3,8 +3,8 @@
 [Architecture map](README.md) · [Processes](processes-and-queues.md)
 
 Logs explain execution. Canonical session events reconstruct conversation state.
-Bash output, provider capture, application logs, and Datadog traces are separate
-streams with different retention and privacy rules.
+Bash output, provider capture, application logs, and Datadog-collected telemetry are
+separate streams with different retention and privacy rules.
 
 ## Application log pipeline
 
@@ -12,7 +12,7 @@ streams with different retention and privacy rules.
 flowchart TD
     Producers["Independent log producers<br/>TUI, controller, AgentCore,<br/>LLM, tools, extensions"] --> PSR[Psr LoggerInterface]
     PSR --> Monolog[Monolog logger and service handler wiring]
-    Processor["LogContextProcessor<br/>ambient run scope, PID, memory,<br/>available ddtrace correlation"]
+    Processor["LogContextProcessor<br/>ambient run scope, PID, memory"]
     Monolog --> Processor
     Processor --> Filter[Main handler level and channel selection]
     Filter --> Handler[HatfieldRotatingLogHandler]
@@ -79,7 +79,6 @@ sequenceDiagram
     Operation->>Logger: Event-style message and explicit fields
     Logger->>Processor: LogRecord
     Processor->>Processor: Add missing PID and memory fields
-    Processor->>Processor: Add available dd.trace_id and dd.span_id
     Processor->>Context: current()
     Context-->>Processor: Merged nested scope
     Processor->>Processor: Fill missing fields<br/>Explicit call-site fields win
@@ -98,13 +97,12 @@ a previous run's context active.
 | `component`, `handler`, `worker`, `message_type`, `tool_name` | The operation that enters scope or writes the record |
 | `event_type` | Explicit event fields override broader ambient values |
 | `pid`, `memory_usage`, `memory_allocated` | Processor defaults when absent |
-| `dd.trace_id`, `dd.span_id` | Current ddtrace context when available |
 | `queue` | Scope label; some call sites record a bus name, not a transport name |
 
 Do not equate `queue=agent.execution.bus` with a physical queue or infer process
 ownership from that field alone. Correlate worker, PID, run, and message identity.
 
-## Trace logs and actual spans
+## Trace logs
 
 ```mermaid
 %%{init: {"sequence": {"wrap": true, "width": 110, "actorMargin": 20, "diagramMarginX": 10, "messageMargin": 30}}}%%
@@ -112,15 +110,11 @@ sequenceDiagram
     participant Worker
     participant Tracer as RunTracer
     participant Logger
-    participant Span as Optional SpanProviderInterface
     participant Operation as LLM, tool, or persistence operation
 
     Worker->>Tracer: inSpan(name, attributes, operation)
     Tracer->>Tracer: Allocate local span ID and parent span ID
     Tracer->>Logger: agent_loop.trace.start
-    opt Span provider configured
-        Tracer->>Span: startSpan with scalar tags
-    end
     Tracer->>Operation: Invoke operation
     alt Operation succeeds
         Operation-->>Tracer: Result
@@ -130,46 +124,46 @@ sequenceDiagram
         Tracer->>Tracer: status remains error
     end
     Tracer->>Logger: agent_loop.trace.finish, duration_ms, status
-    opt Span provider returned an ID
-        Tracer->>Span: closeSpan with duration and outcome
-    end
 ```
 
-A local `span-N` in a log is not a Datadog trace ID. The optional span provider and
-ddtrace correlation fields connect different observability mechanisms. This sequence
-assumes logging succeeds; a failed log write can itself interrupt execution.
+Span IDs are log-local identifiers (`span-1`, `span-2`) used to correlate start and
+finish records, including `parent_span_id` nesting. They are not external trace IDs.
+Log-derived metrics filter on `message:agent_loop.trace.finish` and the canonical span
+name; see [Datadog setup](../docs/datadog.md). This sequence assumes logging succeeds;
+a failed log write can itself interrupt execution.
 
-## Datadog has three independent input paths
+## Extension-free Datadog inputs
 
 ```mermaid
 flowchart TB
-    Launch["castor run:agent launch helpers"] --> Gate{Datadog enabled?}
-    Flag[HATFIELD_DATADOG override] --> Gate
-    Available[ddtrace extension and reachable local endpoint] --> Gate
-    Gate -->|Yes| Env[DD_TRACE_ENABLED, CLI tracing, service/env/version, log injection]
-    Gate -->|No| Disabled[Tracing disabled for launched process]
-    Env --> PHP[Agent and consumer PHP processes]
-    PHP -->|APM spans| TraceAgent[Datadog Agent trace socket or TCP]
-    PHP -->|Application records| Files[(Rotated JSONL logs)]
+    PHP[Agent and consumer PHP processes] -->|Application records| Files[(Rotated JSONL logs)]
     Files --> Tail[Datadog Agent file collection]
     LogsConfig[logs_enabled and readable configured paths] --> Tail
     Tail --> Mask[Configured regex masking rules]
     Mask --> Explorer[Datadog Logs]
-    TraceAgent --> APM[Datadog APM]
+    Explorer --> LogMetrics[Log-based metrics]
+    LogMetrics --> Dashboards[Dashboards and monitors]
     OS[OS process table] --> Check[Datadog Process Check]
     Match[Configured command-line match patterns] --> Check
     Check --> Metrics[system.processes metrics]
-    QA[Castor QA launch environment] --> Off[Disable tracing and log injection; isolate transport DSNs]
+    Metrics --> Dashboards
+    QA[Castor QA launch environment] --> Off[Disable ddtrace tracing and log injection; isolate transport DSNs]
 ```
 
-File collection requires a separately configured Datadog Agent. Installing ddtrace
-does not ship log files. Process metrics come from the Agent's Process Check, not
-from Monolog or `RunTracer`. Castor launch-helper auto-detection is not proof that
-an arbitrary direct `hatfield` invocation has tracing enabled.
+The application never talks to Datadog. It writes JSONL logs; the Agent collects the
+files it is configured to read. File collection requires a separately configured
+Datadog Agent: installing the application does not ship log files. Process metrics
+come from the Agent's Process Check, not from Monolog or `RunTracer`. Log-based
+metrics are defined in Datadog and derived from the same collected logs.
 
-The supplied Agent configuration uses example checkout paths. Custom worktrees and
-log paths need matching collector configuration. `castor datadog:smoke-log` writes
-the project's default `.hatfield/logs` path, not every possible configured sink.
+APM spans, `trace.*` metrics, profiling, and `dd.trace_id` log fields are
+intentionally absent since the ddtrace extension was retired; see
+[Datadog setup](../docs/datadog.md).
+
+The supplied Agent configuration uses example checkout paths and collects the main
+checkout plus worktrees. Custom log paths need matching collector configuration.
+`castor datadog:smoke-log` writes the project's default `.hatfield/logs` path, not
+every possible configured sink.
 
 ## Do not confuse these artifacts
 

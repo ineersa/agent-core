@@ -19,62 +19,6 @@ require_once __DIR__.'/../vendor/autoload.php';
 require_once __DIR__.'/helpers.php';
 require_once __DIR__.'/shared.php';
 
-// ─── Datadog helpers ────────────────────────────────────────────
-
-/**
- * Whether the default launcher should enable Datadog APM for the spawned
- * agent process.
- *
- * Auto mode enables APM only when ddtrace is installed and a local Agent trace
- * endpoint is reachable. Set HATFIELD_DATADOG=0 to force-disable or
- * HATFIELD_DATADOG=1 to force-enable when ddtrace is loaded.
- */
-function datadog_auto_enabled(): bool
-{
-    $flag = getenv('HATFIELD_DATADOG');
-    if (false !== $flag) {
-        return in_array(strtolower($flag), ['1', 'true', 'yes', 'on'], true) && extension_loaded('ddtrace');
-    }
-
-    if (!extension_loaded('ddtrace')) {
-        return false;
-    }
-
-    if (false !== getenv('DD_TRACE_ENABLED') && in_array(strtolower((string) getenv('DD_TRACE_ENABLED')), ['0', 'false', 'no', 'off'], true)) {
-        return false;
-    }
-
-    return datadog_trace_endpoint_available();
-}
-
-function datadog_is_unix_socket(string $path): bool
-{
-    return file_exists($path) && 'socket' === @filetype($path);
-}
-
-function datadog_trace_endpoint_available(): bool
-{
-    $agentUrl = getenv('DD_TRACE_AGENT_URL');
-    if (is_string($agentUrl) && str_starts_with($agentUrl, 'unix://')) {
-        return datadog_is_unix_socket(substr($agentUrl, strlen('unix://')));
-    }
-
-    if (datadog_is_unix_socket('/var/run/datadog/apm.socket')) {
-        return true;
-    }
-
-    $host = false !== getenv('DD_AGENT_HOST') ? (string) getenv('DD_AGENT_HOST') : '127.0.0.1';
-    $port = (int) (false !== getenv('DD_TRACE_AGENT_PORT') ? (string) getenv('DD_TRACE_AGENT_PORT') : '8126');
-    $socket = @fsockopen((string) $host, $port, $errno, $errstr, 0.1);
-    if (is_resource($socket)) {
-        fclose($socket);
-
-        return true;
-    }
-
-    return false;
-}
-
 /**
  * Doctrine transport DSN env vars exported by a live session controller
  * (JsonlProcessAgentSessionClient) into every bash command the session runs.
@@ -112,9 +56,9 @@ function qa_unset_session_transport_dsn_env_flags(): string
 /**
  * Environment prefix for Castor QA/test PHP child processes.
  *
- * Disables optional APM/log injection so PHPUnit assertions on PSR-3 message
- * strings stay deterministic when a host loads tracing extensions. Harmless
- * when no extension is present.
+ * Disables ddtrace tracing and log injection so PHPUnit assertions on
+ * messages and log content stay deterministic when a host loads the PHP
+ * tracing extension. Harmless when no extension is present.
  *
  * Also unsets the session transport DSNs (see QA_SESSION_TRANSPORT_DSN_VARS)
  * so unit lanes always resolve the documented in-memory transports even when
@@ -122,14 +66,9 @@ function qa_unset_session_transport_dsn_env_flags(): string
  */
 function qa_observability_env_command(): string
 {
-    $base = datadog_env_command(false);
-    $home = qa_test_home_shell_prefix();
-
-    // `$base` starts with `env ` — splice the -u flags right after it so the
-    // unset happens inside the same env invocation that sets DD_TRACE_*.
-    $base = 'env '.qa_unset_session_transport_dsn_env_flags().' '.substr($base, 4);
-
-    return $home.' '.$base.' DD_LOGS_INJECTION=0 DD_TRACE_APPEND_TRACE_IDS_TO_LOGS=false';
+    return qa_test_home_shell_prefix()
+        .' env '.qa_unset_session_transport_dsn_env_flags()
+        .' DD_TRACE_ENABLED=0 DD_TRACE_CLI_ENABLED=0 DD_LOGS_INJECTION=0 DD_TRACE_APPEND_TRACE_IDS_TO_LOGS=false';
 }
 
 /**
@@ -171,42 +110,6 @@ function qa_check_run_env_command(): string
     }
 
     return 'env '.implode(' ', $pairs).' '.substr($obs, 4);
-}
-
-/**
- * Environment prefix for Datadog APM opt-in/opt-out when launching PHP.
- *
- * ddtrace reads its settings before userland PHP boots, so these values must
- * be present in the shell environment that starts `php bin/console`.
- */
-function datadog_env_command(bool $enabled): string
-{
-    $vars = [
-        'DD_TRACE_ENABLED' => $enabled ? '1' : '0',
-        'DD_TRACE_CLI_ENABLED' => $enabled ? '1' : '0',
-    ];
-
-    if ($enabled) {
-        $version = trim(shell_exec('git rev-parse --short HEAD 2>/dev/null') ?? '');
-        $vars += [
-            'DD_SERVICE' => (false !== getenv('DD_SERVICE') ? (string) getenv('DD_SERVICE') : 'hatfield'),
-            'DD_ENV' => (false !== getenv('DD_ENV') ? (string) getenv('DD_ENV') : 'dev'),
-            'DD_VERSION' => '' !== $version ? $version : 'local',
-            'DD_LOGS_INJECTION' => 'true',
-            'DD_TRACE_APPEND_TRACE_IDS_TO_LOGS' => 'true',
-        ];
-
-        if (datadog_is_unix_socket('/var/run/datadog/apm.socket')) {
-            $vars['DD_TRACE_AGENT_URL'] = 'unix:///var/run/datadog/apm.socket';
-        }
-    }
-
-    $parts = ['env'];
-    foreach ($vars as $name => $value) {
-        $parts[] = $name.'='.escapeshellarg($value);
-    }
-
-    return implode(' ', $parts);
 }
 
 // ─── Diagnostics ──────────────────────────────────────────────
@@ -320,16 +223,6 @@ function datadog_smoke_diag(): void
     echo 'Package: '.(null !== ($_v = shell_exec('dpkg -l datadog-agent 2>/dev/null | grep ^ii')) ? trim($_v) : 'not installed').\PHP_EOL;
     echo 'Datadog agent: '.(null !== ($_v = shell_exec('systemctl is-active datadog-agent 2>/dev/null')) ? trim($_v) : 'unknown').\PHP_EOL;
     echo \PHP_EOL;
-
-    echo "PHP extension:\n";
-    echo '  ddtrace: '.(extension_loaded('ddtrace') ? 'yes' : 'no').\PHP_EOL;
-    if (extension_loaded('ddtrace')) {
-        echo '  ddtrace cli enabled: '.(false !== ($_v = ini_get('datadog.trace.cli_enabled')) ? $_v : '(default)').\PHP_EOL;
-        echo '  ddtrace enabled: '.(false !== ($_v = ini_get('datadog.trace.enabled')) ? $_v : '(default)').\PHP_EOL;
-        echo '  ddtrace service: '.(false !== ($_v = ini_get('datadog.service')) ? $_v : '(unset)').\PHP_EOL;
-        echo '  ddtrace env: '.(false !== ($_v = ini_get('datadog.env')) ? $_v : '(unset)').\PHP_EOL;
-        echo '  ddtrace agent_url: '.(false !== ($_v = ini_get('datadog.trace.agent_url')) ? $_v : '(default)').\PHP_EOL;
-    }
 
     echo 'Hatfield log today: '.$todayLog.' '.(is_readable($todayLog) ? 'readable' : 'missing/not-readable').\PHP_EOL;
     echo 'Expected Agent config: '.$installedConfig.' '.(is_readable($installedConfig) ? 'present' : 'missing/not-readable').\PHP_EOL;
