@@ -14,6 +14,13 @@ use Ineersa\CodingAgent\Config\SettingsLayerEnum;
 use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
 use Ineersa\CodingAgent\Config\SettingsResolutionDTO;
 use Ineersa\CodingAgent\Config\SettingsValueResolver;
+use Ineersa\CodingAgent\Tool\Arguments\SettingsArgumentsDTO;
+use Symfony\Component\Serializer\Exception\NotNormalizableValueException;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
+use Symfony\Component\Validator\ConstraintViolationInterface;
+use Symfony\Component\Validator\ConstraintViolationListInterface;
+use Symfony\Component\Validator\Exception\ValidationFailedException;
+use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 /**
  * Singular parent-agent settings tool: one read/set/remove per call.
@@ -21,6 +28,10 @@ use Ineersa\CodingAgent\Config\SettingsValueResolver;
  * Mutations write sparse user/project overrides only; defaults are never
  * writable. Disk changes require a Hatfield restart to take effect.
  * Do not use generic file tools to read or edit settings YAML.
+ *
+ * Keeps the historical flat provider schema via raw `$arguments` mapping.
+ * Input constraints live on {@see SettingsArgumentsDTO}; this handler
+ * denormalizes and validates locally, then executes writer/resolver work.
  */
 final class SettingsTool implements HatfieldToolProviderInterface
 {
@@ -31,6 +42,8 @@ final class SettingsTool implements HatfieldToolProviderInterface
         private readonly AppConfig $activeConfig,
         private readonly SettingsValueResolver $valueResolver,
         private readonly SettingsOverrideWriter $writer,
+        private readonly ValidatorInterface $validator,
+        private readonly DenormalizerInterface $serializer,
     ) {
     }
 
@@ -42,14 +55,14 @@ final class SettingsTool implements HatfieldToolProviderInterface
     public function __invoke(array $arguments): string
     {
         return $this->toolRuntime->run(function () use ($arguments): string {
-            $operation = $this->requireOperation($arguments);
-            $path = $this->requirePath($arguments);
+            $dto = $this->argumentsFrom($arguments);
+            $path = trim($dto->path);
 
-            $result = match ($operation) {
-                'read' => $this->read($path, $arguments),
-                'set' => $this->set($path, $arguments),
-                'remove' => $this->remove($path, $arguments),
-                default => throw new ToolCallException('The "operation" argument must be one of: read, set, remove.', retryable: false),
+            $result = match ($dto->operation) {
+                'read' => $this->read($path, $dto),
+                'set' => $this->set($path, $dto),
+                'remove' => $this->remove($path, $dto),
+                default => throw new \LogicException('Unreachable: operation is Choice-constrained on SettingsArgumentsDTO and rejected before invocation.'),
             };
 
             return Toon::encode($result);
@@ -58,13 +71,13 @@ final class SettingsTool implements HatfieldToolProviderInterface
 
     public function definition(): ToolDefinitionDTO
     {
-        // Deliberately stays a raw-array tool: set() distinguishes an OMITTED
-        // `value` (array_key_exists check) from an EXPLICIT null ("use null to
-        // set null"), which a typed DTO property cannot express, and the value
-        // schema is an open JSON union. See the `value` schema property below.
         return new ToolDefinitionDTO(
             name: 'settings',
             description: 'Read, set, or remove one Hatfield setting by dotted path.',
+            handler: $this,
+            // Explicit flat provider schema + raw-array handler: preserves the
+            // historical model-visible shape that native DTO generation cannot
+            // emit exactly, while input rules still live on SettingsArgumentsDTO.
             parametersJsonSchema: [
                 'type' => 'object',
                 'properties' => [
@@ -84,14 +97,12 @@ final class SettingsTool implements HatfieldToolProviderInterface
                     ],
                     'value' => [
                         'description' => 'Native JSON value for set (explicit null allowed). Required for set.',
-                        // Open-ended JSON value; keep explicit null valid without inventing a typed union.
                         'type' => ['string', 'number', 'boolean', 'object', 'array', 'null'],
                     ],
                 ],
                 'required' => ['operation', 'path'],
                 'additionalProperties' => false,
             ],
-            handler: $this,
             executionMode: ToolExecutionMode::Sequential,
             promptLine: 'settings operation path [scope] [value] — read, set, or remove one Hatfield setting',
             promptGuidelines: [
@@ -102,10 +113,39 @@ final class SettingsTool implements HatfieldToolProviderInterface
 
     /**
      * @param array<string, mixed> $arguments
-     *
+     */
+    private function argumentsFrom(array $arguments): SettingsArgumentsDTO
+    {
+        try {
+            /** @var SettingsArgumentsDTO $dto */
+            $dto = $this->serializer->denormalize($arguments, SettingsArgumentsDTO::class);
+        } catch (NotNormalizableValueException $e) {
+            throw new ToolCallException($e->getMessage(), retryable: false, previous: $e);
+        }
+
+        $violations = $this->validator->validate($dto);
+        if (0 !== \count($violations)) {
+            throw new ToolCallException($this->formatViolations($violations), retryable: false, previous: new ValidationFailedException($dto, $violations));
+        }
+
+        return $dto;
+    }
+
+    private function formatViolations(ConstraintViolationListInterface $violations): string
+    {
+        $messages = [];
+        /** @var ConstraintViolationInterface $violation */
+        foreach ($violations as $violation) {
+            $messages[] = (string) $violation->getMessage();
+        }
+
+        return implode("\n", array_values(array_unique($messages)));
+    }
+
+    /**
      * @return array<string, mixed>
      */
-    private function read(string $path, array $arguments): array
+    private function read(string $path, SettingsArgumentsDTO $arguments): array
     {
         $scope = $this->readScope($arguments);
         $resolution = $this->loadResolution();
@@ -135,19 +175,16 @@ final class SettingsTool implements HatfieldToolProviderInterface
     }
 
     /**
-     * @param array<string, mixed> $arguments
-     *
      * @return array<string, mixed>
      */
-    private function set(string $path, array $arguments): array
+    private function set(string $path, SettingsArgumentsDTO $arguments): array
     {
-        $layer = $this->mutationLayer($arguments);
-        if (!\array_key_exists('value', $arguments)) {
-            throw new ToolCallException('The "value" argument is required for set (use explicit null to set null).', retryable: false, hint: 'Pass value as native JSON.');
-        }
+        // Validation guarantees scope is user|project and value is present
+        // (including explicit null) before this handler runs.
+        $layer = SettingsLayerEnum::from((string) $arguments->scope);
 
         try {
-            $this->writer->set($layer, $this->activeConfig->cwd, $path, $arguments['value']);
+            $this->writer->set($layer, $this->activeConfig->cwd, $path, $arguments->value);
         } catch (\InvalidArgumentException|\RuntimeException $e) {
             throw new ToolCallException($e->getMessage(), retryable: false, previous: $e);
         }
@@ -156,13 +193,11 @@ final class SettingsTool implements HatfieldToolProviderInterface
     }
 
     /**
-     * @param array<string, mixed> $arguments
-     *
      * @return array<string, mixed>
      */
-    private function remove(string $path, array $arguments): array
+    private function remove(string $path, SettingsArgumentsDTO $arguments): array
     {
-        $layer = $this->mutationLayer($arguments);
+        $layer = SettingsLayerEnum::from((string) $arguments->scope);
 
         try {
             $changed = $this->writer->remove($layer, $this->activeConfig->cwd, $path);
@@ -208,63 +243,12 @@ final class SettingsTool implements HatfieldToolProviderInterface
         return $this->loader->load($this->resources->getDefaultsPath(), $this->activeConfig->cwd);
     }
 
-    /**
-     * @param array<string, mixed> $arguments
-     */
-    private function requireOperation(array $arguments): string
+    private function readScope(SettingsArgumentsDTO $arguments): string
     {
-        $operation = $arguments['operation'] ?? null;
-        if (!\is_string($operation) || !\in_array($operation, ['read', 'set', 'remove'], true)) {
-            throw new ToolCallException('The "operation" argument must be one of: read, set, remove.', retryable: false);
-        }
-
-        return $operation;
-    }
-
-    /**
-     * @param array<string, mixed> $arguments
-     */
-    private function requirePath(array $arguments): string
-    {
-        $path = $arguments['path'] ?? null;
-        if (!\is_string($path) || '' === trim($path) || null === SettingsValueResolver::propertyPath($path)) {
-            throw new ToolCallException('The "path" argument must be a non-empty dotted settings path.', retryable: false, hint: 'Example: tui.theme');
-        }
-
-        return trim($path);
-    }
-
-    /**
-     * @param array<string, mixed> $arguments
-     */
-    private function readScope(array $arguments): string
-    {
-        if (!\array_key_exists('scope', $arguments) || null === $arguments['scope'] || '' === $arguments['scope']) {
+        if (null === $arguments->scope || '' === $arguments->scope) {
             return 'effective';
         }
 
-        $scope = $arguments['scope'];
-        if (!\is_string($scope) || !\in_array($scope, ['effective', 'user', 'project'], true)) {
-            throw new ToolCallException('The "scope" argument for read must be one of: effective, user, project.', retryable: false);
-        }
-
-        return $scope;
-    }
-
-    /**
-     * @param array<string, mixed> $arguments
-     */
-    private function mutationLayer(array $arguments): SettingsLayerEnum
-    {
-        if (!\array_key_exists('scope', $arguments) || null === $arguments['scope'] || '' === $arguments['scope']) {
-            throw new ToolCallException('set/remove require explicit scope "user" or "project".', retryable: false, hint: 'Do not omit scope and do not use effective.');
-        }
-
-        $scope = $arguments['scope'];
-        if (!\is_string($scope) || !\in_array($scope, ['user', 'project'], true)) {
-            throw new ToolCallException(\sprintf('Invalid mutation scope "%s"; must be user or project.', \is_scalar($scope) ? (string) $scope : get_debug_type($scope)), retryable: false);
-        }
-
-        return SettingsLayerEnum::from($scope);
+        return $arguments->scope;
     }
 }

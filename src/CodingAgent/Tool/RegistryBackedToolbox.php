@@ -242,7 +242,7 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
     /**
      * Build the native Symfony AI Tool metadata for one registered definition.
      *
-     * Typed DTO handlers (parametersJsonSchema === null) get their provider
+     * Typed DTO handlers (`parametersJsonSchema === null`) get their provider
      * schema from Symfony AI's JsonSchema Factory directly
      * (buildParameters(handler::class, '__invoke')) so DTO types/constraints
      * and the provider-visible schema cannot drift. The registry definition

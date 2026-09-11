@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool;
 
+use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Message\ToolResultType;
+use Ineersa\CodingAgent\Config\ImageToolConfig;
 use Ineersa\CodingAgent\Path\PathResolver;
 use Ineersa\CodingAgent\Tool\Arguments\ViewImageArgumentsDTO;
 use Ineersa\CodingAgent\Tool\ImageProcessing\ImageAttachmentProcessor;
+use Ineersa\CodingAgent\Tool\ImageProcessing\RunVisionCheckService;
 use League\MimeTypeDetection\FinfoMimeTypeDetector;
 
 /**
@@ -23,12 +26,9 @@ use League\MimeTypeDetection\FinfoMimeTypeDetector;
  * the content parts and attaches a real Symfony AI Image content object
  * as a synthetic follow-up user message for the next provider request.
  *
- * Policy validation (vision capability, existence/readability, max bytes,
- * supported MIME, dimension limits) is enforced before execution by the
- * {@see ViewImageTarget} class-level DTO constraint via
- * ValidateToolCallArgumentsListener. This handler only reads stat/header/
- * dimensions to produce its metadata output; failures here are operational
- * (races, I/O), not policy rejections.
+ * Path shape is DTO-validated. Mutable-resource policy (vision capability,
+ * existence/readability, max bytes, magic-byte MIME, dimension limits) and
+ * metadata production share one filesystem inspection in this handler.
  */
 final class ViewImageTool implements HatfieldToolProviderInterface
 {
@@ -36,11 +36,14 @@ final class ViewImageTool implements HatfieldToolProviderInterface
 
     public const string DESCRIPTION = 'View an image file by attaching it to the next provider request and return compact metadata (media type, dimensions, file size). Supports JPEG, PNG, GIF, and WebP.';
 
-    /** @var list<string> Magic-byte MIME types accepted by view_image. Shared with ViewImageTargetValidator so validation and execution cannot drift. */
+    /** @var list<string> Magic-byte MIME types accepted by view_image. */
     public const array SUPPORTED_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 
     public function __construct(
         private readonly ToolRuntime $toolRuntime,
+        private readonly ImageToolConfig $config,
+        private readonly StackToolExecutionContextAccessor $contextAccessor,
+        private readonly ?RunVisionCheckService $visionCheck = null,
         private readonly ?ImageAttachmentProcessor $processor = null,
     ) {
     }
@@ -48,36 +51,38 @@ final class ViewImageTool implements HatfieldToolProviderInterface
     /**
      * Execute the view_image tool.
      *
-     * Policy validation (vision capability, target existence/readability,
-     * max bytes, supported MIME, dimension limits) is enforced by the
-     * ViewImageTarget DTO constraint before this handler runs. The reads
-     * below produce execution metadata; false results are operational
-     * failures (file changed or disappeared since validation).
-     *
      * @return array<string, mixed> Compact image metadata result.
      *                              NEVER contains base64, data_url, or full image bytes.
      *
-     * @throws ToolCallException on operational filesystem failures
+     * @throws ToolCallException on policy or operational filesystem failures
      * @throws \RuntimeException on cancellation or timeout (runtime concerns)
      */
     public function __invoke(ViewImageArgumentsDTO $arguments): array
     {
         return $this->toolRuntime->run(function () use ($arguments): array {
             $path = $arguments->path;
-
-            // Resolve to absolute normalized path
             $resolvedPath = PathResolver::resolve($path);
 
-            // Execution metadata reads. Validation already rejected missing
-            // targets, oversized files, unsupported types, and out-of-range
-            // dimensions; reaching a failure here means the file changed or
-            // an I/O error occurred between validation and execution.
+            $context = $this->contextAccessor->current();
+            if (null !== $context && null !== $this->visionCheck) {
+                if (!$this->visionCheck->isModelVisionCapable($context->runId())) {
+                    throw new ToolCallException('The active model does not support image input. Switch to a vision-capable model to use view_image.', retryable: false);
+                }
+            }
+
+            if (!is_file($resolvedPath) || !is_readable($resolvedPath)) {
+                throw new ToolCallException(\sprintf('File "%s" does not exist or is not readable.', $resolvedPath), retryable: false, hint: 'Check the file path. Use absolute paths or paths relative to the working directory.');
+            }
+
             $fileSize = @filesize($resolvedPath);
             if (false === $fileSize) {
                 throw new ToolCallException(\sprintf('Failed to determine file size for "%s".', $resolvedPath), retryable: true, hint: 'The file may be damaged or unreadable.');
             }
 
-            // Read the first 8KB for magic-byte MIME detection
+            if ($fileSize > $this->config->maxBytes) {
+                throw new ToolCallException(\sprintf('Image file "%s" exceeds maximum allowed size of %d bytes (actual: %d bytes).', $resolvedPath, $this->config->maxBytes, $fileSize), retryable: false, hint: 'Resize the image or increase the max_bytes setting.');
+            }
+
             $fh = @fopen($resolvedPath, 'rb');
             if (false === $fh) {
                 throw new ToolCallException(\sprintf('Failed to open file "%s" for reading.', $resolvedPath), retryable: true, hint: 'Check file permissions and that the file is not locked by another process.');
@@ -90,20 +95,13 @@ final class ViewImageTool implements HatfieldToolProviderInterface
                 throw new ToolCallException(\sprintf('Failed to read header bytes from "%s".', $resolvedPath), retryable: true, hint: 'The file appears empty or unreadable; try downloading it again.');
             }
 
-            // Detect MIME type from magic bytes
             $detector = new FinfoMimeTypeDetector();
             $mediaType = $detector->detectMimeTypeFromBuffer($headerBytes);
-
-            // Race guard, not policy: ViewImageTarget already rejected
-            // unsupported types at validation time; detecting one here means
-            // the file changed between validation and execution.
             if (null === $mediaType || !\in_array($mediaType, self::SUPPORTED_TYPES, true)) {
                 $displayType = null !== $mediaType ? $mediaType : 'unknown';
-                throw new ToolCallException(\sprintf('Unsupported image type "%s" for file "%s".', $displayType, $resolvedPath), retryable: true, hint: 'Use JPEG, PNG, GIF, or WebP format. The file may have changed since validation.');
+                throw new ToolCallException(\sprintf('Unsupported image type "%s" for file "%s".', $displayType, $resolvedPath), retryable: false, hint: 'Use JPEG, PNG, GIF, or WebP format.');
             }
 
-            // Check image dimensions (execution metadata; validation already
-            // enforced the configured width/height limits)
             $imageInfo = @getimagesize($resolvedPath);
             if (false === $imageInfo) {
                 throw new ToolCallException(\sprintf('Failed to determine dimensions for image "%s".', $resolvedPath), retryable: true, hint: 'The file may be corrupted or not a valid image.');
@@ -111,17 +109,16 @@ final class ViewImageTool implements HatfieldToolProviderInterface
 
             $width = $imageInfo[0];
             $height = $imageInfo[1];
+            if ($width > $this->config->maxWidth || $height > $this->config->maxHeight) {
+                throw new ToolCallException(\sprintf('Image "%s" dimensions (%dx%d) exceed maximum allowed (%dx%d).', $resolvedPath, $width, $height, $this->config->maxWidth, $this->config->maxHeight), retryable: false, hint: 'Resize the image to fit within the maximum allowed dimensions or increase max_width/max_height settings.');
+            }
 
-            // Process image for provider-safe delivery (resize, quality reduction).
-            // The processor writes a cached artifact when processing is needed;
-            // otherwise returns the original file unchanged.
             $effectivePath = $resolvedPath;
             $effectiveMediaType = $mediaType;
             $effectiveBytes = $fileSize;
             $effectiveWidth = $width;
             $effectiveHeight = $height;
 
-            // If no processor configured, return original metadata as-is.
             $processed = null;
             if (null !== $this->processor) {
                 $processed = $this->processor->process($resolvedPath, $mediaType, $width, $height);
@@ -132,12 +129,6 @@ final class ViewImageTool implements HatfieldToolProviderInterface
                 $effectiveHeight = $processed['height'];
             }
 
-            // Build compact metadata result — no base64, no data_url, no full image bytes.
-            // AgentMessageConverter will use image_ref content parts to attach a real
-            // Symfony AI Image in a synthetic UserMessage for the provider request.
-            //
-            // The attachment_refs array declares content-part attachments so the
-            // AgentMessageNormalizer can copy them without sniffing the tool type.
             $result = [
                 'type' => 'view_image',
                 'path' => $effectivePath,
@@ -158,12 +149,10 @@ final class ViewImageTool implements HatfieldToolProviderInterface
                 ],
             ];
 
-            // Report processing details to the model so it can reason about size changes
             if (null !== $processed && $fileSize !== $effectiveBytes) {
                 $result['processed_bytes'] = $effectiveBytes;
             }
 
-            // Forward processor warnings (e.g. animated image exceeds provider limits)
             if (null !== $processed && isset($processed['exceeds_encoded_limit']) && $processed['exceeds_encoded_limit']) {
                 $result['exceeds_encoded_limit'] = true;
                 if (isset($processed['warning']) && \is_string($processed['warning'])) {
