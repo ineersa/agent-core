@@ -12,7 +12,7 @@ use Monolog\Processor\ProcessorInterface;
  * Monolog processor that injects the current {@see RunLogContext} correlation
  * fields and process memory samples into every log record's `extra` key.
  *
- * Registered via monolog.yaml using the `monolog.processor` tag so it runs
+ * Registered with the `monolog.processor` tag in services.yaml so it runs
  * for every handler. Supports nesting: context fields set at outer scopes
  * (e.g. run_id in RunOrchestrator) are preserved when inner scopes add
  * more fields (e.g. handler in RunMessageProcessor).

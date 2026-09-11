@@ -23,7 +23,7 @@ final class LogContextProcessorTest extends TestCase
     {
     }
 
-    public function testEmptyContextInjectsProcessMemoryAndOnlyOptionalDdTraceIds(): void
+    public function testEmptyContextInjectsProcessMemoryOnly(): void
     {
         $record = new LogRecord(
             datetime: new \DateTimeImmutable(),

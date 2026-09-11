@@ -109,8 +109,9 @@ stream it already collects.
 
 - Span metrics filter `message:agent_loop.trace.finish` and the canonical span name
   (`tool.call`, `llm.call`). Without the finish filter, each `agent_loop.trace.start`
-  record doubles the count. Without the span-name filter, the nested worker spans
-  (`turn.execution.llm_worker`, `turn.execution.tool_worker`) double it again.
+  record doubles the count. Without the span-name filter, worker and orchestrator
+  finish records (`turn.execution.*`, `turn.orchestrator.*`) more than double it
+  again.
 - Tool failures are warning records, not span statuses. `tool.call` spans finish
   `status:ok` even when a tool fails, because the worker converts the exception into a
   model-visible tool result. Symfony AI Toolbox emits
@@ -119,6 +120,12 @@ stream it already collects.
 - LLM requests emit a success/failure pair: `llm.request.completed` and
   `llm.request.failed` (with `@context.error_category`). Retries emit
   `llm.request.retrying` with `@context.attempt` and `@context.max_attempts`.
+- A turn issues exactly one `llm.call` span, so `hatfield.llm.turns` counts turns.
+  The `llm.request.*` records count provider attempts instead: a retry inside the
+  same turn adds another request record. Verified on 2026-09-10: 1,429 `llm.call`
+  finishes, 1,429 distinct `run_id` plus `turn_no` pairs, and 1,431
+  `command.application.turn_start_boundary` finishes. The boundary span therefore is
+  not the turn counter.
 - Span records and request events are INFO, so they need `logging.level: info`. The
   project `.hatfield/settings.yaml` sets this; the shipped default is `warning`.
   Failure metrics keep working at `warning` level.
@@ -134,8 +141,13 @@ stream it already collects.
 | `hatfield.llm.requests.completed` | `service:hatfield env:dev @context.event_type:llm.request.completed` | `@context.model` (optional) | count |
 | `hatfield.llm.requests.failed` | `service:hatfield env:dev @context.event_type:llm.request.failed` | `@context.error_category` | count |
 | `hatfield.llm.requests.retrying` | `service:hatfield env:dev @context.event_type:llm.request.retrying` | `@context.attempt` | count |
-| `hatfield.llm.duration` | `service:hatfield env:dev message:agent_loop.trace.finish @context.span_name:llm.call` | `@context.model` (optional) | distribution of `@context.duration_ms` |
+| `hatfield.llm.turns` | `service:hatfield env:dev message:agent_loop.trace.finish @context.span_name:llm.call` | none | count |
+| `hatfield.llm.duration` | `service:hatfield env:dev @context.event_type:llm.request.completed` | `@context.model` (optional) | distribution of `@context.duration_ms` |
 | `hatfield.tool.duration` | `service:hatfield env:dev message:agent_loop.trace.finish @context.span_name:tool.call` | `@context.tool_name` | distribution of `@context.duration_ms` |
+
+`llm.request.completed` carries both `duration_ms` and `model`. `llm.call` span
+records also carry `@context.duration_ms` but no model attribute; use them for step
+latency when a model breakdown is not needed.
 
 Rates come from widget formulas over these metrics:
 
@@ -200,7 +212,7 @@ Verify extension-free operation:
 ```bash
 php -m | grep ddtrace    # expect no output
 castor datadog:smoke     # expect: log path readable, collector config present
-php bin/console diagnostic
+castor diag:diagnostic
 ```
 
 ## Provider failure diagnostics
