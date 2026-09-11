@@ -14,10 +14,13 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use Psr\Container\ContainerInterface;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Symfony\AI\Agent\Toolbox\Exception\ToolExecutionExceptionInterface;
 use Symfony\AI\Agent\Toolbox\Exception\ToolNotFoundException;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Platform\Result\ToolCall;
+use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Process\Exception\ProcessStartFailedException;
 use Symfony\Component\Process\Exception\RuntimeException as ProcessRuntimeException;
 use Symfony\Component\Process\Process;
@@ -34,6 +37,7 @@ final readonly class CodeModeHostBridge
 {
     private const int DEFAULT_GRACE_SECONDS = 5;
     private const int POLL_INTERVAL_MICROS = 20_000;
+    private const int MAX_UNIX_SOCKET_PATH_BYTES = 100;
     private const string TOOLBOX_LOCATOR_KEY = 'toolbox';
 
     public function __construct(
@@ -41,6 +45,8 @@ final readonly class CodeModeHostBridge
         private ToolRuntime $toolRuntime,
         private ContainerInterface $toolboxLocator,
         private string $projectDir,
+        private Filesystem $filesystem = new Filesystem(),
+        private LoggerInterface $logger = new NullLogger(),
     ) {
     }
 
@@ -59,7 +65,7 @@ final readonly class CodeModeHostBridge
             try {
                 $this->writeScript($workspace['script'], $script);
                 $server = $this->createSocketServer($workspace['socket']);
-                $process = $this->startProcess($workspace, $cancelToken, $timeoutSeconds);
+                $process = $this->startProcess($workspace, $cancelToken);
                 $connection = $this->acceptConnection($server, $process, $cancelToken, $timeoutSeconds, $workspace['startedAtNs']);
 
                 return $this->serve($connection, $process, $parentContext, $cancelToken, $timeoutSeconds, $workspace['startedAtNs']);
@@ -83,22 +89,34 @@ final readonly class CodeModeHostBridge
         ?int $timeoutSeconds,
         int $startedAtNs,
     ): mixed {
-        while (true) {
-            $this->assertStillRunning($process, $cancelToken, $timeoutSeconds, $startedAtNs);
+        $waiter = function () use ($connection, $process, $cancelToken, $timeoutSeconds, $startedAtNs): void {
+            $this->waitWhileBlocked($connection, $process, $cancelToken, $timeoutSeconds, $startedAtNs);
+        };
 
-            $ready = $this->waitForReadable($connection, $process, $cancelToken, $timeoutSeconds, $startedAtNs);
-            if (!$ready) {
+        while (true) {
+            $this->assertNotCancelledOrTimedOut($cancelToken, $timeoutSeconds, $startedAtNs);
+
+            if (!$this->waitForReadable($connection, $cancelToken, $timeoutSeconds, $startedAtNs)) {
+                if (!$process->isRunning()) {
+                    // No buffered bytes left after the child exited.
+                    throw $this->earlyExitException($process);
+                }
+
                 continue;
             }
 
-            $frame = CodeModeIpc::read($connection);
+            $frame = CodeModeIpc::read($connection, $waiter);
             if (null === $frame) {
+                if (!$process->isRunning()) {
+                    throw $this->earlyExitException($process);
+                }
+
                 throw new ToolCallException('Code-mode script closed the host connection before returning a value.', retryable: false);
             }
 
             $type = $frame['type'] ?? null;
             if ('tool' === $type) {
-                $this->handleToolRequest($connection, $frame, $parentContext, $cancelToken);
+                $this->handleToolRequest($connection, $frame, $parentContext, $cancelToken, $waiter);
                 continue;
             }
 
@@ -116,14 +134,16 @@ final readonly class CodeModeHostBridge
     }
 
     /**
-     * @param resource             $connection
-     * @param array<string, mixed> $frame
+     * @param resource                $connection
+     * @param array<string, mixed>    $frame
+     * @param (callable(): void)|null $waiter
      */
     private function handleToolRequest(
         mixed $connection,
         array $frame,
         ?ToolContext $parentContext,
         CancellationTokenInterface $cancelToken,
+        ?callable $waiter,
     ): void {
         $id = $frame['id'] ?? null;
         $name = $frame['name'] ?? null;
@@ -137,7 +157,7 @@ final readonly class CodeModeHostBridge
                 'id' => $id,
                 'ok' => false,
                 'error' => 'Tool name must be a non-empty string.',
-            ]);
+            ], $waiter);
 
             return;
         }
@@ -146,7 +166,7 @@ final readonly class CodeModeHostBridge
                 'id' => $id,
                 'ok' => false,
                 'error' => 'Tool arguments must be a JSON object.',
-            ]);
+            ], $waiter);
 
             return;
         }
@@ -162,13 +182,13 @@ final readonly class CodeModeHostBridge
                 'id' => $id,
                 'ok' => true,
                 'result' => $this->normalizeResult($result),
-            ]);
+            ], $waiter);
         } catch (\Throwable $exception) {
             CodeModeIpc::write($connection, [
                 'id' => $id,
                 'ok' => false,
                 'error' => $this->formatException($exception),
-            ]);
+            ], $waiter);
         }
     }
 
@@ -229,12 +249,6 @@ final readonly class CodeModeHostBridge
             throw new ToolCallException('Tool results containing resources cannot be returned to code_mode scripts.', retryable: false);
         }
 
-        if (\is_object($result)) {
-            // Force a JSON round-trip so unsupported objects fail here rather than
-            // corrupting the IPC connection with a partial encode later.
-            json_encode($result, \JSON_THROW_ON_ERROR);
-        }
-
         return $result;
     }
 
@@ -258,20 +272,31 @@ final readonly class CodeModeHostBridge
      */
     private function createWorkspace(): array
     {
-        $root = $this->projectDir.'/var/tmp';
-        if (!is_dir($root) && !@mkdir($root, 0o700, true) && !is_dir($root)) {
-            throw new ToolCallException(\sprintf('Failed to create code-mode temp root "%s".', $root), retryable: true);
+        $tempRoot = sys_get_temp_dir();
+        $marker = tempnam($tempRoot, 'hcm');
+        if (false === $marker) {
+            throw new ToolCallException('Failed to allocate a temporary code-mode workspace.', retryable: true);
         }
 
-        $dir = $root.'/code-mode-'.bin2hex(random_bytes(8));
-        if (!@mkdir($dir, 0o700) && !is_dir($dir)) {
-            throw new ToolCallException(\sprintf('Failed to create code-mode workspace "%s".', $dir), retryable: true);
+        // tempnam creates a file; replace it with a short-lived directory for script + socket.
+        $this->filesystem->remove($marker);
+        $dir = $marker;
+        try {
+            $this->filesystem->mkdir($dir, 0o700);
+        } catch (\Throwable $exception) {
+            throw new ToolCallException(\sprintf('Failed to create code-mode workspace "%s".', $dir), retryable: true, previous: $exception);
+        }
+
+        $socket = $dir.'/s.sock';
+        if (\strlen($socket) > self::MAX_UNIX_SOCKET_PATH_BYTES) {
+            $this->filesystem->remove($dir);
+            throw new ToolCallException(\sprintf('Code-mode socket path exceeds %d bytes: %s', self::MAX_UNIX_SOCKET_PATH_BYTES, $socket), retryable: false);
         }
 
         return [
             'dir' => $dir,
-            'script' => $dir.'/script.php',
-            'socket' => $dir.'/bridge.sock',
+            'script' => $dir.'/s.php',
+            'socket' => $socket,
             'startedAtNs' => hrtime(true),
         ];
     }
@@ -279,8 +304,10 @@ final readonly class CodeModeHostBridge
     private function writeScript(string $path, string $script): void
     {
         $body = "<?php\ndeclare(strict_types=1);\nreturn (static function () {\n".$script."\n})();\n";
-        if (false === @file_put_contents($path, $body)) {
-            throw new ToolCallException(\sprintf('Failed to write code-mode script "%s".', $path), retryable: true);
+        try {
+            $this->filesystem->dumpFile($path, $body);
+        } catch (\Throwable $exception) {
+            throw new ToolCallException(\sprintf('Failed to write code-mode script "%s".', $path), retryable: true, previous: $exception);
         }
     }
 
@@ -289,8 +316,8 @@ final readonly class CodeModeHostBridge
      */
     private function createSocketServer(string $socketPath): mixed
     {
-        if (file_exists($socketPath)) {
-            @unlink($socketPath);
+        if ($this->filesystem->exists($socketPath)) {
+            $this->filesystem->remove($socketPath);
         }
 
         $server = @stream_socket_server('unix://'.$socketPath, $errno, $errstr);
@@ -306,11 +333,8 @@ final readonly class CodeModeHostBridge
     /**
      * @param array{dir: string, script: string, socket: string, startedAtNs: int} $workspace
      */
-    private function startProcess(
-        array $workspace,
-        CancellationTokenInterface $cancelToken,
-        ?int $timeoutSeconds,
-    ): Process {
+    private function startProcess(array $workspace, CancellationTokenInterface $cancelToken): Process
+    {
         if ($cancelToken->isCancellationRequested()) {
             throw new ToolCallException('Code-mode execution cancelled before start.', retryable: false);
         }
@@ -331,6 +355,8 @@ final readonly class CodeModeHostBridge
         );
         $process->setTimeout(null);
         $process->setIdleTimeout(null);
+        // Host only needs exit status; keep child stdout/stderr from buffering unboundedly.
+        $process->disableOutput();
 
         try {
             $process->start();
@@ -354,11 +380,14 @@ final readonly class CodeModeHostBridge
         int $startedAtNs,
     ): mixed {
         while (true) {
-            $this->assertStillRunning($process, $cancelToken, $timeoutSeconds, $startedAtNs);
+            $this->assertNotCancelledOrTimedOut($cancelToken, $timeoutSeconds, $startedAtNs);
+            if (!$process->isRunning()) {
+                throw $this->earlyExitException($process);
+            }
 
             $connection = @stream_socket_accept($server, 0.0);
             if (false !== $connection) {
-                stream_set_blocking($connection, true);
+                stream_set_blocking($connection, false);
 
                 return $connection;
             }
@@ -372,12 +401,11 @@ final readonly class CodeModeHostBridge
      */
     private function waitForReadable(
         mixed $connection,
-        Process $process,
         CancellationTokenInterface $cancelToken,
         ?int $timeoutSeconds,
         int $startedAtNs,
     ): bool {
-        $this->assertStillRunning($process, $cancelToken, $timeoutSeconds, $startedAtNs);
+        $this->assertNotCancelledOrTimedOut($cancelToken, $timeoutSeconds, $startedAtNs);
 
         $read = [$connection];
         $write = null;
@@ -390,8 +418,33 @@ final readonly class CodeModeHostBridge
         return $selected > 0;
     }
 
-    private function assertStillRunning(
+    /**
+     * @param resource $connection
+     */
+    private function waitWhileBlocked(
+        mixed $connection,
         Process $process,
+        CancellationTokenInterface $cancelToken,
+        ?int $timeoutSeconds,
+        int $startedAtNs,
+    ): void {
+        $this->assertNotCancelledOrTimedOut($cancelToken, $timeoutSeconds, $startedAtNs);
+
+        $read = [$connection];
+        $write = [$connection];
+        $except = null;
+        $selected = @stream_select($read, $write, $except, 0, self::POLL_INTERVAL_MICROS);
+        if (false === $selected) {
+            throw new ToolCallException('Failed while waiting for code-mode IPC progress.', retryable: true);
+        }
+
+        if (0 === $selected && !$process->isRunning()) {
+            // Progress wait during an in-flight frame; peer death mid-frame is fatal.
+            throw $this->earlyExitException($process);
+        }
+    }
+
+    private function assertNotCancelledOrTimedOut(
         CancellationTokenInterface $cancelToken,
         ?int $timeoutSeconds,
         int $startedAtNs,
@@ -406,19 +459,17 @@ final readonly class CodeModeHostBridge
                 throw new ToolCallException(\sprintf('Code-mode execution timed out after %d seconds.', $timeoutSeconds), retryable: false);
             }
         }
+    }
 
-        if (!$process->isRunning()) {
-            $stderr = trim($this->safeErrorOutput($process));
-            $message = \sprintf(
+    private function earlyExitException(Process $process): ToolCallException
+    {
+        return new ToolCallException(
+            \sprintf(
                 'Code-mode PHP subprocess exited early (exit code %s).',
                 null === $process->getExitCode() ? 'unknown' : (string) $process->getExitCode(),
-            );
-            if ('' !== $stderr) {
-                $message .= ' '.$stderr;
-            }
-
-            throw new ToolCallException($message, retryable: false);
-        }
+            ),
+            retryable: false,
+        );
     }
 
     private function stopProcess(?Process $process): void
@@ -431,15 +482,23 @@ final readonly class CodeModeHostBridge
             if ($process->isRunning()) {
                 $process->stop(self::DEFAULT_GRACE_SECONDS);
             }
-        } catch (ProcessRuntimeException) {
-            // Best-effort teardown of the owned child.
+        } catch (ProcessRuntimeException $exception) {
+            $this->logger->warning('code_mode.process_stop_failed', [
+                'component' => 'tool.code_mode',
+                'event_type' => 'code_mode.process_stop_failed',
+                'error_type' => $exception::class,
+                'message' => $exception->getMessage(),
+            ]);
         }
     }
 
     private function closeResource(mixed $resource): void
     {
-        if (\is_resource($resource)) {
-            @fclose($resource);
+        if (\is_resource($resource) && !@fclose($resource)) {
+            $this->logger->warning('code_mode.resource_close_failed', [
+                'component' => 'tool.code_mode',
+                'event_type' => 'code_mode.resource_close_failed',
+            ]);
         }
     }
 
@@ -448,17 +507,15 @@ final readonly class CodeModeHostBridge
      */
     private function cleanupWorkspace(array $workspace): void
     {
-        @unlink($workspace['script']);
-        @unlink($workspace['socket']);
-        @rmdir($workspace['dir']);
-    }
-
-    private function safeErrorOutput(Process $process): string
-    {
         try {
-            return $process->getErrorOutput();
-        } catch (\Symfony\Component\Process\Exception\LogicException) {
-            return '';
+            $this->filesystem->remove($workspace['dir']);
+        } catch (\Throwable $exception) {
+            $this->logger->warning('code_mode.workspace_cleanup_failed', [
+                'component' => 'tool.code_mode',
+                'event_type' => 'code_mode.workspace_cleanup_failed',
+                'error_type' => $exception::class,
+                'message' => $exception->getMessage(),
+            ]);
         }
     }
 
