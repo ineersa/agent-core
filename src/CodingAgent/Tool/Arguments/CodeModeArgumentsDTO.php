@@ -13,7 +13,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 final class CodeModeArgumentsDTO
 {
     public function __construct(
-        #[Schema(description: 'PHP script source executed as a function body. Call tool(name, arguments) to invoke existing tools. Use return for the final value.')]
+        #[Schema(description: 'PHP script source executed as a function body. Call tool(name, arguments) for registered tools including MCP names. Use toon_encode/toon_decode when needed. Use return for the final value.')]
         #[Assert\NotBlank(normalizer: 'trim', message: 'The "script" argument is required and must be a non-empty string.')]
         public readonly string $script = '',
     ) {

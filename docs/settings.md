@@ -149,6 +149,18 @@ a successful late result into a timeout failure.
 | `tools.background_process.stop_grace_seconds` | `5` |
 | `tools.background_process.log_tail_chars` | `5000` |
 
+### code_mode
+
+| Key | Meaning | Default |
+|---|---|---|
+| `tools.code_mode.enabled` | Make the `code_mode` tool visible and callable | `false` |
+
+`code_mode` runs arbitrary PHP in an owned subprocess. Keep it disabled until you
+want that capability. Direct PHP filesystem and process calls inside the script
+bypass toolbox hooks and approvals. Any launcher sandbox, such as `hatfield-safe`
+with bubblewrap, is inherited rather than created by the tool. See
+[tools.md](tools.md).
+
 See [background-processes.md](background-processes.md).
 
 ## Environment variables

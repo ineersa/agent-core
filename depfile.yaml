@@ -767,6 +767,8 @@ parameters:
       # CodingAgent Bash consults immutable child-run metadata owned by AppAgent.
       - AppAgent
       - AppConfig
+      # code_mode reuses packaging CLI/cwd resolution for owned PHP subprocesses.
+      - AppRuntimeInternals
       - AppMarkdown
       - SymfonyFinder
       - SymfonyYaml

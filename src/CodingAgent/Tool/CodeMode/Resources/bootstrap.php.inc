@@ -131,6 +131,45 @@ if (!\function_exists('tool')) {
     }
 }
 
+if (!function_exists('hatfield_code_mode_register_toon_autoload')) {
+    function hatfield_code_mode_register_toon_autoload(string $root): void
+    {
+        $root = rtrim($root, '/');
+        spl_autoload_register(static function (string $class) use ($root): void {
+            $prefix = 'HelgeSverre\\Toon\\';
+            if (!str_starts_with($class, $prefix)) {
+                return;
+            }
+
+            $relative = str_replace('\\', '/', substr($class, strlen($prefix)));
+            $path = $root.'/'.$relative.'.php.inc';
+            if (is_file($path)) {
+                require_once $path;
+            }
+        });
+    }
+}
+
+if (!function_exists('toon_encode')) {
+    /**
+     * Encode a PHP value to TOON text.
+     */
+    function toon_encode(mixed $value): string
+    {
+        return \HelgeSverre\Toon\Toon::encode($value);
+    }
+}
+
+if (!function_exists('toon_decode')) {
+    /**
+     * Decode TOON text to a PHP value.
+     */
+    function toon_decode(string $toon): mixed
+    {
+        return \HelgeSverre\Toon\Toon::decode($toon);
+    }
+}
+
 $scriptFilename = $_SERVER['SCRIPT_FILENAME'] ?? null;
 $self = realpath(__FILE__);
 $main = \is_string($scriptFilename) && '' !== $scriptFilename ? realpath($scriptFilename) : false;
@@ -153,6 +192,13 @@ if (!\is_string($scriptPath) || '' === $scriptPath) {
     fwrite(\STDERR, "HATFIELD_CODE_MODE_SCRIPT is required.\n");
     exit(2);
 }
+
+$toonRoot = getenv('HATFIELD_CODE_MODE_TOON_ROOT');
+if (!\is_string($toonRoot) || '' === $toonRoot || !is_dir($toonRoot)) {
+    fwrite(\STDERR, "HATFIELD_CODE_MODE_TOON_ROOT is required.\n");
+    exit(2);
+}
+hatfield_code_mode_register_toon_autoload($toonRoot);
 
 $connection = @stream_socket_client('unix://'.$socketPath, $errno, $errstr, 5.0);
 if (false === $connection) {

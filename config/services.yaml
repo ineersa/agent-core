@@ -342,6 +342,12 @@ services:
     arguments:
       - '@Ineersa\CodingAgent\Config\AppConfig'
 
+  # CodeModeConfig is derived from AppConfig and autowireable.
+  Ineersa\CodingAgent\Config\CodeModeConfig:
+    factory: ['Ineersa\CodingAgent\Config\CodeModeConfig', 'fromAppConfig']
+    arguments:
+      - '@Ineersa\CodingAgent\Config\AppConfig'
+
   # BashTool — TOOLS-09 registry-backed bash execution with foreground supervision.
   # TOOLS-09B overrides the prompt adapter to RuntimeBashBackgroundPromptAdapter,
   # which routes background confirmations through the TUI question system.

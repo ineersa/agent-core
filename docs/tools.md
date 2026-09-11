@@ -20,6 +20,7 @@ servers. Tool availability does not bypass approval policy.
 | `bash` | Run a shell command in the workspace | Local permissions apply. Timeout and cancellation do not undo completed effects. |
 | `bg_status` | List, inspect logs, or stop accepted background processes | Session-scoped. Does not expose private foreground supervision. |
 | `ask_human` | Ask for text, confirmation, or a choice | Waits for a human response. Cancellation is not approval. |
+| `code_mode` | Run a PHP script that calls other tools through `tool(name, arguments)` | Disabled by default (`tools.code_mode.enabled`). Raw PHP bypasses toolbox hooks. Requires a PHP CLI interpreter. |
 | `settings` | Read effective settings, set overrides, or remove overrides | Mutations specify user or project scope and pass approval checks. |
 | `hatfield_docs` | List and read packaged Hatfield documentation | Does not automatically discover extension-package READMEs. |
 | `subagent` | Launch a named child agent, singly or in parallel | Uses discovered agent definitions and child tool policy. |
@@ -43,6 +44,22 @@ can require your decision or block a call.
 Oversized text results are capped. The response can include a saved-file path and
 instructions for reading the omitted content. Those files are temporary; a path
 preserved in session history can outlive the actual saved output.
+
+## code_mode
+
+`code_mode` is off by default. Enable it with `tools.code_mode.enabled: true` in
+user or project settings, then restart Hatfield.
+
+The script can call registered tools, including MCP tools, through
+`tool(name, arguments)` using each tool's runtime name. Values returned by
+`tool()` stay as JSON-compatible PHP values. Strings stay strings. Use
+`toon_encode()` and `toon_decode()` when you need TOON conversion. Nested tool
+failures throw `RuntimeException`.
+
+Raw PHP filesystem and process functions also work inside the script. Those
+calls bypass toolbox hooks and approvals. If you launch Hatfield under
+`hatfield-safe` or another bubblewrap wrapper, the script inherits that sandbox.
+`code_mode` does not create a separate sandbox.
 
 ## Background work
 
