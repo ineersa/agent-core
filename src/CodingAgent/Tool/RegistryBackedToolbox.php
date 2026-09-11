@@ -242,27 +242,27 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
     /**
      * Build the native Symfony AI Tool metadata for one registered definition.
      *
-     * Typed DTO handlers (parametersJsonSchema === null) get their provider
-     * schema from Symfony AI's JsonSchema Factory directly
-     * (buildParameters(handler::class, '__invoke')) so DTO types/constraints
-     * and the provider-visible schema cannot drift. The registry definition
-     * remains canonical for name/description. The provider-visible schema is
-     * the single DTO parameter's object schema hoisted to the Tool root (flat
-     * arguments, no parameter envelope); the argument resolver wraps flat
-     * payloads back under the parameter name before native resolution.
+     * Typed DTO handlers declare exactly one class-typed `__invoke` parameter.
+     * Their provider schema is either generated from the DTO
+     * (`parametersJsonSchema === null`) or supplied explicitly on the
+     * definition (flat object schema). Explicit schemas still use the typed
+     * resolver wrap; they are not flagged `raw_arguments`.
      *
-     * Raw-array handlers (runtime-provided schema) keep their schema and are
-     * flagged so the argument resolver passes the flat provider map through.
+     * Raw-array handlers (MCP, public extension adapters) declare a builtin
+     * `$arguments` parameter, carry a runtime schema, and are flagged
+     * `raw_arguments` so the resolver passes the flat map through.
      */
     private function buildMetadata(ToolDefinitionDTO $definition): Tool
     {
         if (null !== $definition->parametersJsonSchema) {
+            $raw = !$this->isTypedDtoHandler($definition->handler);
+
             return new Tool(
                 reference: new ExecutionReference($definition->handler::class, '__invoke'),
                 name: $definition->name,
                 description: $definition->description,
                 parameters: $this->normalizeRawParametersSchema($definition->parametersJsonSchema),
-                metadata: ['raw_arguments' => true],
+                metadata: $raw ? ['raw_arguments' => true] : [],
             );
         }
 
@@ -274,6 +274,19 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
             description: $definition->description,
             parameters: $this->flattenDtoParameters($parameters, $definition->name),
         );
+    }
+
+    /**
+     * True when `__invoke` takes exactly one class-typed parameter (DTO tool).
+     * Builtin/array parameters are raw-argument handlers.
+     */
+    private function isTypedDtoHandler(object $handler): bool
+    {
+        $method = new \ReflectionMethod($handler, '__invoke');
+        $parameters = $method->getParameters();
+        $parameterType = 1 === \count($parameters) ? $parameters[0]->getType() : null;
+
+        return $parameterType instanceof \ReflectionNamedType && !$parameterType->isBuiltin();
     }
 
     /**

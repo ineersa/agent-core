@@ -148,6 +148,37 @@ final class RegistryBackedToolboxTest extends TestCase
         $this->assertSame('{"type":"object","properties":{}}', json_encode($parameters, \JSON_THROW_ON_ERROR));
     }
 
+    public function testExplicitSchemaOnTypedHandlerIsNotRawArguments(): void
+    {
+        $handler = new class {
+            public function __invoke(ViewImageArgumentsDTO $arguments): string
+            {
+                return 'ok:'.$arguments->path;
+            }
+        };
+        $schema = [
+            'type' => 'object',
+            'properties' => [
+                'path' => ['type' => 'string', 'description' => 'Explicit path'],
+            ],
+            'required' => ['path'],
+            'additionalProperties' => false,
+        ];
+        $registry = new ToolRegistry();
+        $registry->registerTool(
+            name: 'view_image',
+            description: 'View an image',
+            parametersJsonSchema: $schema,
+            handler: $handler,
+            promptLine: 'view_image: View',
+        );
+
+        $toolbox = $this->createToolbox($registry);
+        $tool = $toolbox->getTools()[0];
+        $this->assertSame($schema, $tool->getParameters());
+        $this->assertFalse($tool->getMetadataValue('raw_arguments', false));
+    }
+
     public function testGetToolsForDtoToolUsesNativeGeneratedSchema(): void
     {
         $handler = new class {

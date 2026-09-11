@@ -65,6 +65,30 @@ flowchart TB
 Typed built-ins use DTO field schemas and validation. Dynamic MCP arguments follow
 the server's runtime schema rather than the built-in DTO validation path.
 
+## Built-in argument ownership (inventory)
+
+| Tool | Argument owner | Input constraints | Kept in handler |
+|---|---|---|---|
+| `read` | `ReadFileArgumentsDTO` + `ReadFileTarget` | path/offset/limit; target policy | I/O read failures |
+| `write` | `WriteFileArgumentsDTO` | path/content | write I/O failures |
+| `edit` | `EditFileArgumentsDTO` + `EditFileTarget` | path/patch; target exists | patch apply / lock failures |
+| `view_image` | `ViewImageArgumentsDTO` + `ViewImageTarget` | path; vision/size/MIME/dimensions | operational I/O and mutable-file MIME/dimension races |
+| `bash` | `BashArgumentsDTO` + `BashTimeoutMax` | command; timeout bounds | process lifecycle, cancel, exit failures |
+| `bg_status` | `BgStatusArgumentsDTO` | action; conditional pid | process lookup / stop / log failures |
+| `ask_human` | `AskHumanArgumentsDTO` | question/kind/choices exclusivity | none (interrupt payload only) |
+| `settings` | `SettingsArgumentsDTO` + `SettingsPath`; explicit flat `parametersJsonSchema` on definition | operation/path; conditional scope/value; omitted `value` via uninitialized property | writer/resolver failures |
+| `hatfield_docs` | `HatfieldDocsArgumentsDTO` | operation; conditional id | catalog/unknown-id / doc load failures |
+| `subagent` / `agent_resume` / `agent_retrieve` / `fork` | respective Arguments DTOs (+ task schema providers where needed) | typed launch/resume/retrieve fields | active parent run context / locator wiring |
+| MCP / extension raw tools | runtime `parametersJsonSchema` + `raw_arguments` | server/extension schema | handler or remote server |
+
+Justified non-DTO path: only tools whose schema is defined at runtime (MCP and
+public extension adapters). Settings is a typed DTO handler with an explicit
+flat provider schema: `RegistryBackedToolbox` detects the class-typed
+`__invoke` parameter and keeps typed resolution (no `raw_arguments`) while
+serving the historical schema verbatim. `value` presence uses an uninitialized
+property (Serializer), not a legal-JSON sentinel. Input errors use Symfony
+validation instead of `ToolCallException` with a separate hint.
+
 ## Execute a batch, then continue the model
 
 ```mermaid
