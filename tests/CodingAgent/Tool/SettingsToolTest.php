@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Tool;
 
 use HelgeSverre\Toon\Toon;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
+use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppConfigLoader;
@@ -21,6 +22,7 @@ use Ineersa\CodingAgent\Tests\Tool\Support\ToolValidationHarness;
 use Ineersa\CodingAgent\Tool\Arguments\SettingsArgumentsDTO;
 use Ineersa\CodingAgent\Tool\SettingsTool;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
+use Ineersa\CodingAgent\Tool\Validation\Settings\SettingsPathValidator;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Result\ToolCall;
@@ -33,12 +35,14 @@ use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter
 use Symfony\Component\Serializer\Normalizer\ArrayDenormalizer;
 use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
 use Symfony\Component\Serializer\Serializer;
+use Symfony\Component\Validator\ConstraintValidatorFactory;
+use Symfony\Component\Validator\ValidatorBuilder;
 use Symfony\Component\Yaml\Yaml;
 
 /**
- * Thesis: settings is a typed DTO tool with an explicit flat provider schema,
- * Serializer presence for omitted-vs-null value, and Symfony validation for
- * input faults.
+ * Thesis: settings keeps a raw flat provider schema, denormalizes into
+ * SettingsArgumentsDTO locally, preserves omitted-vs-null value presence, and
+ * surfaces Symfony validation messages for input faults.
  */
 final class SettingsToolTest extends TestCase
 {
@@ -68,6 +72,12 @@ final class SettingsToolTest extends TestCase
             ->getPropertyAccessor();
         $valueResolver = new SettingsValueResolver($accessor);
         $writer = new SettingsOverrideWriter($pathResolver, $accessor, new Filesystem());
+        $validator = (new ValidatorBuilder())
+            ->enableAttributeMapping()
+            ->setConstraintValidatorFactory(new ConstraintValidatorFactory([
+                SettingsPathValidator::class => new SettingsPathValidator(),
+            ]))
+            ->getValidator();
 
         $this->tool = new SettingsTool(
             new ToolRuntime(new StackToolExecutionContextAccessor()),
@@ -76,6 +86,7 @@ final class SettingsToolTest extends TestCase
             $active,
             $valueResolver,
             $writer,
+            $validator,
         );
     }
 
@@ -84,7 +95,7 @@ final class SettingsToolTest extends TestCase
         TestDirectoryIsolation::removeDirectory(\dirname($this->homeDir));
     }
 
-    public function testDefinitionEmitsExactHistoricalFlatSchemaWithoutRawFlag(): void
+    public function testDefinitionEmitsExactHistoricalFlatSchemaOnRawArgumentsPath(): void
     {
         $def = $this->tool->definition();
         $this->assertSame('settings', $def->name);
@@ -124,8 +135,8 @@ final class SettingsToolTest extends TestCase
         $reflection = new \ReflectionMethod($this->tool, '__invoke');
         $param = $reflection->getParameters()[0]->getType();
         $this->assertInstanceOf(\ReflectionNamedType::class, $param);
-        $this->assertFalse($param->isBuiltin());
-        $this->assertSame(SettingsArgumentsDTO::class, $param->getName());
+        $this->assertTrue($param->isBuiltin());
+        $this->assertSame('array', $param->getName());
     }
 
     public function testRegistryInvocationAcceptsObjectNullAndOmissionSemantics(): void
@@ -152,13 +163,17 @@ final class SettingsToolTest extends TestCase
         $this->assertIsArray($decodedNull);
         $this->assertNull($decodedNull['value']);
 
-        $omitted = $toolbox->execute(new ToolCall('c3', 'settings', [
-            'operation' => 'set',
-            'path' => 'tui.theme',
-            'scope' => 'project',
-        ]));
-        $this->assertStringContainsString('The "value" argument is required for set', (string) $omitted->getResult());
-        $unchanged = $this->invoke($this->dto(['operation' => 'read', 'path' => 'tui.theme']));
+        try {
+            ($this->tool)([
+                'operation' => 'set',
+                'path' => 'tui.theme',
+                'scope' => 'project',
+            ]);
+            $this->fail('Expected ToolCallException for omitted value');
+        } catch (ToolCallException $e) {
+            $this->assertStringContainsString('The "value" argument is required for set', $e->getMessage());
+        }
+        $unchanged = $this->invoke(['operation' => 'read', 'path' => 'tui.theme']);
         $this->assertSame(['nested' => true], $unchanged['value']);
 
         $nulString = $this->dto([
@@ -175,15 +190,15 @@ final class SettingsToolTest extends TestCase
     {
         $this->writeProject(['tui' => ['theme' => 'nord']]);
 
-        $effective = $this->invoke($this->dto(['operation' => 'read', 'path' => 'tui.theme']));
+        $effective = $this->invoke(['operation' => 'read', 'path' => 'tui.theme']);
         $this->assertTrue($effective['exists']);
         $this->assertSame('nord', $effective['value']);
         $this->assertSame('project', $effective['source']);
 
-        $user = $this->invoke($this->dto(['operation' => 'read', 'path' => 'tui.theme', 'scope' => 'user']));
+        $user = $this->invoke(['operation' => 'read', 'path' => 'tui.theme', 'scope' => 'user']);
         $this->assertFalse($user['exists']);
 
-        $project = $this->invoke($this->dto(['operation' => 'read', 'path' => 'tui.theme', 'scope' => 'project']));
+        $project = $this->invoke(['operation' => 'read', 'path' => 'tui.theme', 'scope' => 'project']);
         $this->assertTrue($project['exists']);
         $this->assertSame('nord', $project['value']);
         $this->assertSame('project', $project['source']);
@@ -192,20 +207,20 @@ final class SettingsToolTest extends TestCase
     public function testRemoveResumesInheritanceAndMissingIsNoOp(): void
     {
         $this->writeProject(['tui' => ['theme' => 'nord']]);
-        $removed = $this->invoke($this->dto([
+        $removed = $this->invoke([
             'operation' => 'remove',
             'path' => 'tui.theme',
             'scope' => 'project',
-        ]));
+        ]);
         $this->assertTrue($removed['changed']);
         $this->assertTrue($removed['restart_required']);
         $this->assertSame('defaults', $removed['source']);
 
-        $missing = $this->invoke($this->dto([
+        $missing = $this->invoke([
             'operation' => 'remove',
             'path' => 'tui.theme',
             'scope' => 'project',
-        ]));
+        ]);
         $this->assertFalse($missing['changed']);
         $this->assertArrayNotHasKey('restart_required', $missing);
     }
@@ -228,11 +243,15 @@ final class SettingsToolTest extends TestCase
     #[DataProvider('invalidCallCases')]
     public function testValidationRejectsOperationSpecificInvalidFields(array $arguments, string $messageFragment): void
     {
-        $result = ToolValidationHarness::toolbox($this->tool)->execute(new ToolCall('call-settings', 'settings', $arguments));
-        $message = (string) $result->getResult();
-        $this->assertStringContainsString($messageFragment, $message);
-        if ('missing mutation scope' === $this->dataName() || 'effective mutation scope' === $this->dataName()) {
-            $this->assertStringNotContainsString('scope" argument for read', $message);
+        try {
+            ($this->tool)($arguments);
+            $this->fail('Expected ToolCallException');
+        } catch (ToolCallException $e) {
+            $this->assertFalse($e->retryable());
+            $this->assertStringContainsString($messageFragment, $e->getMessage());
+            if ('missing mutation scope' === $this->dataName() || 'effective mutation scope' === $this->dataName()) {
+                $this->assertStringNotContainsString('scope" argument for read', $e->getMessage());
+            }
         }
     }
 
@@ -253,7 +272,12 @@ final class SettingsToolTest extends TestCase
         return $dto;
     }
 
-    private function invoke(SettingsArgumentsDTO $arguments): array
+    /**
+     * @param array<string, mixed> $arguments
+     *
+     * @return array<string, mixed>
+     */
+    private function invoke(array $arguments): array
     {
         $decoded = Toon::decode(($this->tool)($arguments));
         $this->assertIsArray($decoded);

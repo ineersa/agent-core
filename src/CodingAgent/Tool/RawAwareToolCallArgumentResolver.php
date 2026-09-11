@@ -11,7 +11,7 @@ use Symfony\AI\Platform\Tool\Tool;
 /**
  * Native argument-resolver decorator for Hatfield tool shapes.
  *
- * Raw-array handlers (MCP tools and public extension adapters) receive
+ * Raw-array handlers (MCP tools, public extension adapters, settings) receive
  * the provider argument map verbatim under their single `$arguments` parameter
  * — Symfony AI's resolver requires tool-call arguments keyed by parameter name,
  * and dynamic runtime schemas cannot be reflected into DTOs.

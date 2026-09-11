@@ -15,6 +15,19 @@ use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
 use Ineersa\CodingAgent\Config\SettingsResolutionDTO;
 use Ineersa\CodingAgent\Config\SettingsValueResolver;
 use Ineersa\CodingAgent\Tool\Arguments\SettingsArgumentsDTO;
+use Symfony\Component\PropertyInfo\Extractor\PhpDocExtractor;
+use Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor;
+use Symfony\Component\PropertyInfo\PropertyInfoExtractor;
+use Symfony\Component\Serializer\Exception\NotNormalizableValueException;
+use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
+use Symfony\Component\Serializer\Normalizer\ArrayDenormalizer;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
+use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
+use Symfony\Component\Serializer\Serializer;
+use Symfony\Component\Validator\ConstraintViolationInterface;
+use Symfony\Component\Validator\ConstraintViolationListInterface;
+use Symfony\Component\Validator\Exception\ValidationFailedException;
+use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 /**
  * Singular parent-agent settings tool: one read/set/remove per call.
@@ -23,12 +36,14 @@ use Ineersa\CodingAgent\Tool\Arguments\SettingsArgumentsDTO;
  * writable. Disk changes require a Hatfield restart to take effect.
  * Do not use generic file tools to read or edit settings YAML.
  *
- * Input shape and operation-dependent rules live on
- * {@see SettingsArgumentsDTO}. This handler only executes the resolved
- * operation and maps writer/resolver failures.
+ * Keeps the historical flat provider schema via raw `$arguments` mapping.
+ * Input constraints live on {@see SettingsArgumentsDTO}; this handler
+ * denormalizes and validates locally, then executes writer/resolver work.
  */
 final class SettingsTool implements HatfieldToolProviderInterface
 {
+    private readonly DenormalizerInterface $serializer;
+
     public function __construct(
         private readonly ToolRuntime $toolRuntime,
         private readonly AppConfigLoader $loader,
@@ -36,21 +51,27 @@ final class SettingsTool implements HatfieldToolProviderInterface
         private readonly AppConfig $activeConfig,
         private readonly SettingsValueResolver $valueResolver,
         private readonly SettingsOverrideWriter $writer,
+        private readonly ValidatorInterface $validator,
+        ?DenormalizerInterface $serializer = null,
     ) {
+        $this->serializer = $serializer ?? self::defaultSerializer();
     }
 
     /**
+     * @param array<string, mixed> $arguments
+     *
      * @return string TOON-encoded operation result
      */
-    public function __invoke(SettingsArgumentsDTO $arguments): string
+    public function __invoke(array $arguments): string
     {
         return $this->toolRuntime->run(function () use ($arguments): string {
-            $path = trim($arguments->path);
+            $dto = $this->argumentsFrom($arguments);
+            $path = trim($dto->path);
 
-            $result = match ($arguments->operation) {
-                'read' => $this->read($path, $arguments),
-                'set' => $this->set($path, $arguments),
-                'remove' => $this->remove($path, $arguments),
+            $result = match ($dto->operation) {
+                'read' => $this->read($path, $dto),
+                'set' => $this->set($path, $dto),
+                'remove' => $this->remove($path, $dto),
                 default => throw new \LogicException('Unreachable: operation is Choice-constrained on SettingsArgumentsDTO and rejected before invocation.'),
             };
 
@@ -64,9 +85,9 @@ final class SettingsTool implements HatfieldToolProviderInterface
             name: 'settings',
             description: 'Read, set, or remove one Hatfield setting by dotted path.',
             handler: $this,
-            // Explicit flat provider schema with a typed DTO handler: RegistryBackedToolbox
-            // keeps typed resolution (no raw_arguments) while preserving the historical
-            // model-visible shape that native JsonSchema generation cannot emit exactly.
+            // Explicit flat provider schema + raw-array handler: preserves the
+            // historical model-visible shape that native DTO generation cannot
+            // emit exactly, while input rules still live on SettingsArgumentsDTO.
             parametersJsonSchema: [
                 'type' => 'object',
                 'properties' => [
@@ -98,6 +119,47 @@ final class SettingsTool implements HatfieldToolProviderInterface
                 'MUST use the `settings` tool for every Hatfield runtime-setting read, set, or removal. NEVER inspect or modify `~/.hatfield/settings.yaml` or `.hatfield/settings.yaml` using `read`, `edit`, `write`, or `bash` commands such as `cat`, `grep`, or `sed`.',
             ],
         );
+    }
+
+    /**
+     * @param array<string, mixed> $arguments
+     */
+    private function argumentsFrom(array $arguments): SettingsArgumentsDTO
+    {
+        try {
+            /** @var SettingsArgumentsDTO $dto */
+            $dto = $this->serializer->denormalize($arguments, SettingsArgumentsDTO::class);
+        } catch (NotNormalizableValueException $e) {
+            throw new ToolCallException($e->getMessage(), retryable: false, previous: $e);
+        }
+
+        $violations = $this->validator->validate($dto);
+        if (0 !== \count($violations)) {
+            throw new ToolCallException($this->formatViolations($violations), retryable: false, previous: new ValidationFailedException($dto, $violations));
+        }
+
+        return $dto;
+    }
+
+    private function formatViolations(ConstraintViolationListInterface $violations): string
+    {
+        $messages = [];
+        /** @var ConstraintViolationInterface $violation */
+        foreach ($violations as $violation) {
+            $messages[] = (string) $violation->getMessage();
+        }
+
+        return implode("\n", array_values(array_unique($messages)));
+    }
+
+    private static function defaultSerializer(): DenormalizerInterface
+    {
+        $extractor = new PropertyInfoExtractor([], [new PhpDocExtractor(), new ReflectionExtractor()]);
+
+        return new Serializer([
+            new ObjectNormalizer(null, new CamelCaseToSnakeCaseNameConverter(), null, $extractor),
+            new ArrayDenormalizer(),
+        ]);
     }
 
     /**

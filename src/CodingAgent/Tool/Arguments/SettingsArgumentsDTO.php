@@ -12,8 +12,9 @@ use Symfony\Component\Validator\Context\ExecutionContextInterface;
  * Validated arguments for the settings tool.
  *
  * Provider-visible schema is the explicit flat object on
- * {@see \Ineersa\CodingAgent\Tool\SettingsTool::definition()} (typed handler +
- * explicit schema). This DTO owns input constraints only.
+ * {@see \Ineersa\CodingAgent\Tool\SettingsTool::definition()}. The settings
+ * handler denormalizes the flat raw map into this DTO and validates it locally.
+ * This DTO owns input constraints only.
  *
  * `value` is an uninitialized public property: Symfony Serializer leaves it
  * untouched when the key is omitted and assigns (including null) when present.

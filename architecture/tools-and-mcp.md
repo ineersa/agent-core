@@ -76,18 +76,18 @@ the server's runtime schema rather than the built-in DTO validation path.
 | `bash` | `BashArgumentsDTO` + `BashTimeoutMax` | command; timeout bounds | process lifecycle, cancel, exit failures |
 | `bg_status` | `BgStatusArgumentsDTO` | action; conditional pid | process lookup / stop / log failures |
 | `ask_human` | `AskHumanArgumentsDTO` | question/kind/choices exclusivity | none (interrupt payload only) |
-| `settings` | `SettingsArgumentsDTO` + `SettingsPath`; explicit flat `parametersJsonSchema` on definition | operation/path; conditional scope/value; omitted `value` via uninitialized property | writer/resolver failures |
+| `settings` | raw `$arguments` + local denormalize/validate into `SettingsArgumentsDTO` + `SettingsPath`; explicit flat `parametersJsonSchema` | operation/path; conditional scope/value; omitted `value` via uninitialized property | writer/resolver failures |
 | `hatfield_docs` | `HatfieldDocsArgumentsDTO` | operation; conditional id | catalog/unknown-id / doc load failures |
 | `subagent` / `agent_resume` / `agent_retrieve` / `fork` | respective Arguments DTOs (+ task schema providers where needed) | typed launch/resume/retrieve fields | active parent run context / locator wiring |
 | MCP / extension raw tools | runtime `parametersJsonSchema` + `raw_arguments` | server/extension schema | handler or remote server |
 
 Justified non-DTO path: only tools whose schema is defined at runtime (MCP and
-public extension adapters). Settings is a typed DTO handler with an explicit
-flat provider schema: `RegistryBackedToolbox` detects the class-typed
-`__invoke` parameter and keeps typed resolution (no `raw_arguments`) while
-serving the historical schema verbatim. `value` presence uses an uninitialized
-property (Serializer), not a legal-JSON sentinel. Input errors use Symfony
-validation instead of `ToolCallException` with a separate hint.
+public extension adapters), plus Settings: it keeps the historical flat
+provider schema on the raw-array path and validates through a local
+Serializer/Validator denormalization into `SettingsArgumentsDTO`. `value`
+presence uses an uninitialized property (Serializer), not a legal-JSON
+sentinel. Input errors use Symfony validation messages instead of
+`ToolCallException` with a separate hint.
 
 ## Execute a batch, then continue the model
 
