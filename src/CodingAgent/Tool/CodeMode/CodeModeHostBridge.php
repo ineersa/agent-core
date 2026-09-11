@@ -12,6 +12,7 @@ use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
+use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
@@ -44,7 +45,7 @@ final readonly class CodeModeHostBridge
         private StackToolExecutionContextAccessor $contextAccessor,
         private ToolRuntime $toolRuntime,
         private ContainerInterface $toolboxLocator,
-        private string $projectDir,
+        private RuntimeProcessConfig $runtimeProcessConfig,
         private Filesystem $filesystem = new Filesystem(),
         private LoggerInterface $logger = new NullLogger(),
     ) {
@@ -357,15 +358,10 @@ final readonly class CodeModeHostBridge
             throw new ToolCallException('Code-mode execution cancelled before start.', retryable: false);
         }
 
-        $phpBinary = \defined('PHP_BINARY') ? (string) \constant('PHP_BINARY') : '';
-        if ('' === $phpBinary) {
-            throw new ToolCallException('PHP binary is unavailable for code-mode subprocess execution.', retryable: false);
-        }
-
         $bootstrap = $this->materializeBootstrap($workspace['dir']);
         $process = new Process(
-            [$phpBinary, $bootstrap],
-            $this->projectDir,
+            [$this->phpCliBinary(), $bootstrap],
+            $this->runtimeProcessConfig->runtimeCwd(),
             [
                 'HATFIELD_CODE_MODE_SOCKET' => $workspace['socket'],
                 'HATFIELD_CODE_MODE_SCRIPT' => $workspace['script'],
@@ -549,5 +545,30 @@ final readonly class CodeModeHostBridge
         }
 
         return $toolbox;
+    }
+
+    /**
+     * Resolve a PHP CLI interpreter that can execute a materialized bootstrap file.
+     *
+     * Reuses {@see RuntimeProcessConfig::executableCommand()} packaging rules:
+     * multi-arg commands provide the interpreter as argv[0]; fused native
+     * single-arg executables do not expose a separate PHP CLI and are unsupported
+     * for code_mode script subprocesses.
+     */
+    private function phpCliBinary(): string
+    {
+        $command = $this->runtimeProcessConfig->executableCommand();
+        if (\count($command) >= 2) {
+            $binary = $command[0];
+            if ('' !== $binary) {
+                return $binary;
+            }
+        }
+
+        if (1 === \count($command)) {
+            throw new ToolCallException('code_mode requires a PHP CLI interpreter to run script subprocesses. Fused native/static executables are unsupported for this tool.', retryable: false);
+        }
+
+        throw new ToolCallException('PHP CLI binary is unavailable for code-mode subprocess execution.', retryable: false);
     }
 }

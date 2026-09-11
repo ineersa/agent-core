@@ -821,7 +821,6 @@ services:
     arguments:
       $toolboxLocator: !service_locator
         toolbox: '@Ineersa\CodingAgent\Tool\RegistryBackedToolbox'
-      $projectDir: '%kernel.project_dir%'
 
   # CodingAgent ToolSetResolver — bridges ToolRegistry to AgentCore resolver seam.
   # The inner resolver (CodingAgentToolSetResolver) is wrapped by
