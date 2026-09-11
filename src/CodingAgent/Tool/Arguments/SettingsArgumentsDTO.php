@@ -22,6 +22,14 @@ use Symfony\Component\Validator\Context\ExecutionContextInterface;
  */
 final class SettingsArgumentsDTO
 {
+    /**
+     * Open JSON value for set. Remains uninitialized when omitted; explicit
+     * null is a provided value. Objects arrive as associative arrays.
+     *
+     * @var string|int|float|bool|array<mixed>|null
+     */
+    public string|int|float|bool|array|null $value;
+
     public function __construct(
         #[Assert\Choice(choices: ['read', 'set', 'remove'], message: 'The "operation" argument must be one of: read, set, remove.')]
         public readonly string $operation = '',
@@ -43,14 +51,6 @@ final class SettingsArgumentsDTO
         public readonly ?string $scope = null,
     ) {
     }
-
-    /**
-     * Open JSON value for set. Remains uninitialized when omitted; explicit
-     * null is a provided value. Objects arrive as associative arrays.
-     *
-     * @var string|int|float|bool|array<mixed>|null
-     */
-    public string|int|float|bool|array|null $value;
 
     public function hasValue(): bool
     {
