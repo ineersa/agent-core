@@ -338,22 +338,19 @@ final readonly class CodeModeHostBridge
     }
 
     /**
-     * Copy the bundled TOON library into the child workspace.
+     * Materialize the installed HelgeSverre TOON package for the child process.
      *
-     * Sources are stored as `.php.inc` so Symfony class discovery never loads
-     * them. The child loads those files through a dedicated SPL autoloader.
+     * Resolves the package root from the host-loaded class file so PHAR and
+     * source trees both work without shipping a forked copy under Resources/.
      */
     private function materializeToonLibrary(string $workspaceDir): string
     {
-        $sourceRoot = __DIR__.'/Resources/toon';
         $targetRoot = $workspaceDir.'/toon';
 
         try {
-            if (!$this->filesystem->exists($sourceRoot)) {
-                throw new \RuntimeException(\sprintf('Bundled TOON sources are missing at "%s".', $sourceRoot));
-            }
-
+            $sourceRoot = $this->installedToonSourceRoot();
             $this->filesystem->mkdir($targetRoot);
+
             $iterator = new \RecursiveIteratorIterator(
                 new \RecursiveDirectoryIterator($sourceRoot, \FilesystemIterator::SKIP_DOTS),
             );
@@ -364,11 +361,32 @@ final readonly class CodeModeHostBridge
                 $relative = substr($file->getPathname(), \strlen($sourceRoot) + 1);
                 $this->filesystem->copy($file->getPathname(), $targetRoot.'/'.$relative, true);
             }
+
+            // Preserve upstream MIT license beside the materialized sources.
+            $license = \dirname($sourceRoot).'/LICENSE';
+            if (is_file($license)) {
+                $this->filesystem->copy($license, $targetRoot.'/LICENSE', true);
+            }
         } catch (\Throwable $exception) {
             throw new ToolCallException('Failed to materialize code-mode TOON library for subprocess execution.', retryable: true, previous: $exception);
         }
 
         return $targetRoot;
+    }
+
+    private function installedToonSourceRoot(): string
+    {
+        $toonFile = (new \ReflectionClass(\HelgeSverre\Toon\Toon::class))->getFileName();
+        if (!\is_string($toonFile) || '' === $toonFile) {
+            throw new \RuntimeException('Unable to resolve HelgeSverre\\Toon\\Toon source path on the host.');
+        }
+
+        $sourceRoot = \dirname($toonFile);
+        if (!is_dir($sourceRoot)) {
+            throw new \RuntimeException(\sprintf('Installed TOON source root is missing at "%s".', $sourceRoot));
+        }
+
+        return $sourceRoot;
     }
 
     /**

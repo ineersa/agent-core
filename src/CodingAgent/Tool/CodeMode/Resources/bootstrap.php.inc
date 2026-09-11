@@ -142,7 +142,7 @@ if (!function_exists('hatfield_code_mode_register_toon_autoload')) {
             }
 
             $relative = str_replace('\\', '/', substr($class, strlen($prefix)));
-            $path = $root.'/'.$relative.'.php.inc';
+            $path = $root.'/'.$relative.'.php';
             if (is_file($path)) {
                 require_once $path;
             }
