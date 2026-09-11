@@ -20,11 +20,6 @@ use Monolog\Processor\ProcessorInterface;
  * Ambient context fields are only injected when they are not already
  * present in either `extra` or `context`, allowing call sites to
  * explicitly override any ambient value for a specific log record.
- *
- * When ddtrace is available, also injects dd.trace_id and dd.span_id
- * from the current trace context for automatic log-trace correlation
- * in Datadog. This runs before the ambient context merge so that a
- * ddtrace context entry cannot be blocked by a stale ambient key.
  */
 final class LogContextProcessor implements ProcessorInterface
 {
@@ -42,18 +37,6 @@ final class LogContextProcessor implements ProcessorInterface
         ] as $key => $value) {
             if (!\array_key_exists($key, $extra) && !\array_key_exists($key, $record->context)) {
                 $extra[$key] = $value;
-            }
-        }
-
-        // Inject Datadog trace correlation IDs FIRST so ambient context
-        // (which may contain unrelated keys) never blocks real trace IDs.
-        if (!\array_key_exists('dd.trace_id', $extra) && !\array_key_exists('dd.trace_id', $record->context) && \function_exists('DDTrace\\current_context')) {
-            $ddContext = \DDTrace\current_context();
-            if (null !== ($ddContext['trace_id'] ?? null)) {
-                $extra['dd.trace_id'] = $ddContext['trace_id'];
-            }
-            if (null !== ($ddContext['span_id'] ?? null)) {
-                $extra['dd.span_id'] = $ddContext['span_id'];
             }
         }
 

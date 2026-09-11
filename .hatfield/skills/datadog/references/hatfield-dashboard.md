@@ -1,5 +1,13 @@
 # Hatfield dashboard
 
+Status (2026-09-05): the ddtrace PHP extension was retired. Eight widgets that query
+spans or `trace.*` metrics return no data: LLM latency, LLM throughput, LLM-step
+errors, LLM-step error rate, tool throughput, tool latency, Messenger consume, and
+database operations. The log and process widgets still populate. Repointing the empty
+widgets to log-based metrics is pending; see
+[`docs/datadog.md`](../../../../docs/datadog.md). The definitions below are the
+current stored dashboard.
+
 ## Dashboard identity
 
 | Item | Value |

@@ -34,7 +34,6 @@ final class LogContextProcessorTest extends TestCase
 
         $result = ($this->processor)($record);
 
-        // When ddtrace is loaded (as in this env), trace IDs are injected.
         // Ambient context fields (run_id, component) should NOT appear.
         $this->assertArrayNotHasKey('run_id', $result->extra);
         $this->assertArrayNotHasKey('component', $result->extra);
@@ -44,9 +43,8 @@ final class LogContextProcessorTest extends TestCase
         $this->assertIsInt($result->extra['memory_allocated']);
         $this->assertGreaterThanOrEqual($result->extra['memory_usage'], $result->extra['memory_allocated']);
 
-        // dd.trace_id and dd.span_id may or may not be present depending on
-        // whether ddtrace is loaded. Verify nothing else leaked in.
-        $allowedKeys = ['pid', 'memory_usage', 'memory_allocated', 'dd.trace_id', 'dd.span_id'];
+        // Verify nothing beyond the process samples leaked in.
+        $allowedKeys = ['pid', 'memory_usage', 'memory_allocated'];
         foreach ($result->extra as $key => $value) {
             $this->assertContains($key, $allowedKeys, "Unexpected extra key: \"{$key}\"");
         }

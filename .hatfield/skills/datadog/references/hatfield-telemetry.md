@@ -2,6 +2,12 @@
 
 Use these known identifiers and queries instead of rediscovering the Hatfield service. Re-run discovery only when a query stops returning data or the user asks for broader coverage.
 
+Status (2026-09-05): the ddtrace PHP extension was retired, so Hatfield emits no APM
+spans, no `trace.*` metrics, and no `dd.trace_id` log correlation. The span sections
+below describe the pre-retirement state and no longer return current data. Logs and
+Process Check metrics continue. Replacement log-based metric definitions live in
+[`docs/datadog.md`](../../../../docs/datadog.md).
+
 ## Known identifiers
 
 | Item | Value |
