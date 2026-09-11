@@ -464,15 +464,26 @@ final readonly class CodeModeHostBridge
         while (true) {
             $this->assertNotCancelledOrTimedOut($cancelToken, $timeoutSeconds, $startedAtNs);
             $this->drainProcessOutput($process, $stderr);
-            if (!$process->isRunning()) {
-                throw $this->earlyExitException($process, $stderr);
-            }
-
             $connection = @stream_socket_accept($server, 0.0);
             if (false !== $connection) {
                 stream_set_blocking($connection, false);
 
                 return $connection;
+            }
+
+            // Accept before treating child exit as failure. A fast script can
+            // connect, write its return frame, and exit while the connection is
+            // still queued on the listening socket.
+            if (!$process->isRunning()) {
+                $this->drainProcessOutput($process, $stderr);
+                $connection = @stream_socket_accept($server, 0.0);
+                if (false !== $connection) {
+                    stream_set_blocking($connection, false);
+
+                    return $connection;
+                }
+
+                throw $this->earlyExitException($process, $stderr);
             }
 
             usleep(self::POLL_INTERVAL_MICROS);
