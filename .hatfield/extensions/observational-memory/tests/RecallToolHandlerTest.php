@@ -576,6 +576,106 @@ final class RecallToolHandlerTest extends IsolatedKernelTestCase
         $this->assertSame(0, $reader->reads, 'cancelled recall must not hydrate session events');
     }
 
+    #[Test]
+    public function contextualAdapterRecallsPriorSessionWhenSessionIdProvided(): void
+    {
+        $dbPath = $this->tmpDir.'/om-cross.sqlite';
+        $connection = $this->omDatabaseFactory()->connectAndMigrate($dbPath);
+        $obs = new ObservationRepository($connection);
+
+        $priorId = str_repeat('e', 64);
+        $obs->commitChunkPartCoverage(
+            coverageKey: 'cov-prior',
+            runId: 'run-prior',
+            boundaryKey: 'b1',
+            sourceStartSeq: 1,
+            sourceEndSeq: 3,
+            chunkKey: 'chunk-prior',
+            partIndex: 1,
+            partCount: 1,
+            sourceDigest: 'd1',
+            partDigest: 'p1',
+            rendererVersion: '1',
+            observerSchemaVersion: '1',
+            observerModel: 'llama_cpp_test/test',
+            observations: [[
+                'observation_id' => $priorId,
+                'content' => 'prior session memory',
+                'content_hash' => hash('sha256', 'prior session memory'),
+                'relevance' => 'high',
+                'timestamp' => '2026-09-11 02:23',
+                'token_count' => 3,
+                'source_refs_json' => json_encode([['run_id' => 'run-prior', 'seq' => 3]], \JSON_THROW_ON_ERROR),
+            ]],
+            coveredAt: '2026-09-11T02:23:00+00:00',
+        );
+
+        $reader = new class implements SessionEventReaderInterface {
+            public function readRange(string $runId, int $startSeq, int $endSeq): iterable
+            {
+                for ($seq = $startSeq; $seq <= $endSeq; ++$seq) {
+                    yield new SessionEventDTO(
+                        runId: $runId,
+                        seq: $seq,
+                        turnNo: 1,
+                        type: 'message',
+                        payload: ['text' => 'prior-'.$seq],
+                        createdAt: '2026-09-11T02:23:00+00:00',
+                    );
+                }
+            }
+        };
+
+        $handler = new RecallToolHandler(new OmQueryService(
+            $this->api($this->tmpDir, $reader),
+            OmSettings::fromArray([
+                'storage' => ['database' => $dbPath],
+                'model' => 'llama_cpp_test/test',
+                'observer' => [],
+                'reflector' => [],
+            ]),
+        ));
+        $accessor = new StackToolExecutionContextAccessor();
+        $adapter = new ExtensionToolHandlerAdapter($handler, $accessor);
+
+        $withoutSession = $accessor->with(
+            new ToolContext(
+                runId: 'run-current',
+                turnNo: 1,
+                toolCallId: 'tc-cross-1',
+                toolName: 'recall',
+                cancellationToken: new NullCancellationToken(),
+                timeoutSeconds: null,
+            ),
+            static fn (): mixed => $adapter(['id' => substr($priorId, 0, 12)]),
+        );
+        $withoutSession = Toon::decode($withoutSession);
+        $this->assertIsArray($withoutSession);
+        $this->assertFalse($withoutSession['ok']);
+        $this->assertSame('not_found', $withoutSession['error']);
+
+        $withSession = $accessor->with(
+            new ToolContext(
+                runId: 'run-current',
+                turnNo: 1,
+                toolCallId: 'tc-cross-2',
+                toolName: 'recall',
+                cancellationToken: new NullCancellationToken(),
+                timeoutSeconds: null,
+            ),
+            static fn (): mixed => $adapter([
+                'id' => substr($priorId, 0, 12),
+                'session_id' => 'run-prior',
+            ]),
+        );
+        $withSession = Toon::decode($withSession);
+        $this->assertIsArray($withSession);
+        $this->assertTrue($withSession['ok']);
+        $this->assertSame('run-prior', $withSession['session_id']);
+        $this->assertSame($priorId, $withSession['id']);
+        $this->assertSame('prior-3', $withSession['events'][0]['payload']['text']);
+    }
+
     private function api(string $cwd, SessionEventReaderInterface $reader): ExtensionApiInterface
     {
         return new class($cwd, $reader) implements ExtensionApiInterface {

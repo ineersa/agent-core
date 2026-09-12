@@ -140,17 +140,34 @@ composer update ineersa/hatfield-ext-observational-memory
 - **Delivery gap:** events and OM SQLite can diverge after worker loss; later turn
   boundaries advance Observer coverage asynchronously.
 
-## Commands and recall
+## Commands, search, and recall
 
 - `/om-status` — durable OM memory/activity aggregates for the current session
   (Observer → delta Reflector → bounded Dropper pipeline; compaction is instant projection).
 - `/om-view` — active reflections and candidate observations with 12-char display ids,
   timestamp/relevance, content, and human source event sequences.
+- `om_search` — permanent ambient tool; exact substring search over retained observations and
+  reflections in the configured OM database (all sessions by default). Optional `after` /
+  `before` memory-date filters (`YYYY-MM-DD` or `YYYY-MM-DD HH:MM`) narrow observation
+  `timestamp` and reflection `created_at`. Results are bounded (default 20, max 50) and
+  include `session_id`, memory id, timestamp, and matching content. Search does not inject
+  memories into context. Not semantic search. OM may omit details or lag recent messages;
+  canonical session events remain the source of truth after recall.
 - `recall` — permanent ambient tool; recover exact source context for one known memory id
-  shown in compacted memory or `/om-view` (unique lowercase 12–64 hex prefix, or full 64-char
-  SHA-256) in the current session.
-  Use before important decisions / for exact wording, provenance, supporting sources, or
-  user evidence questions. Not semantic search or transcript browsing; do not recall every id.
+  shown in compacted memory, `/om-view`, or `om_search` (unique lowercase 12–64 hex prefix,
+  or full 64-char SHA-256). Defaults to the current session; pass `session_id` from a search
+  hit to recall a prior session. Use before important decisions / for exact wording,
+  provenance, supporting sources, or user evidence questions. Not semantic search or
+  transcript browsing; do not recall every id.
+
+### Search implementation notes
+
+Measured on a read-only copy of representative project data (~4.9k observations) and a
+disposable 50k-row corpus: leading-wildcard SQL `LIKE` with a small `LIMIT` stayed in the
+low-millisecond to ~15 ms range for identifier queries such as `2510` and
+`MapToolArguments`, with `SCAN om_observation` plans. FTS5 was faster at 50k rows but needs
+schema/index maintenance and weaker exact-substring fidelity for punctuation-heavy
+identifiers. This package keeps bounded `LIKE` search without an FTS migration.
 
 One top-level `observational_memory.model` is shared by Observer, Reflector, and Dropper.
 Thinking levels are not configured; provider defaults apply. Observer uses
