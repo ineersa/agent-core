@@ -174,13 +174,66 @@ PHP);
         $bridge = $this->bridge();
 
         try {
-            // Force an allocation larger than the 256M child memory_limit without sleeping.
-            $this->runScript($bridge, '$chunks = []; for ($i = 0; $i < 512; ++$i) { $chunks[] = str_repeat("x", 1024 * 1024); } return count($chunks);');
+            // Force an allocation larger than the configured child memory_limit without sleeping.
+            $this->runScript(
+                $bridge,
+                '$chunks = []; for ($i = 0; $i < 64; ++$i) { $chunks[] = str_repeat("x", 1024 * 1024); } return count($chunks);',
+                memoryLimitMb: 8,
+            );
             $this->fail('Expected memory exhaustion failure');
         } catch (ToolCallException $exception) {
             $message = $exception->getMessage();
             $this->assertStringContainsString('Allowed memory size', $message);
         }
+    }
+
+    public function testRequestedTimeoutIsCappedBySmallerParentBudget(): void
+    {
+        $bridge = $this->bridge();
+        $accessor = self::getContainer()->get(StackToolExecutionContextAccessor::class);
+        $this->assertInstanceOf(StackToolExecutionContextAccessor::class, $accessor);
+
+        try {
+            $accessor->with(
+                new ToolContext(
+                    runId: 'code-mode-bridge-test',
+                    turnNo: 1,
+                    toolCallId: 'code-mode-bridge-test-request-cap',
+                    toolName: 'code_mode',
+                    cancellationToken: new NullCancellationToken(),
+                    timeoutSeconds: 1,
+                    orderIndex: 0,
+                    executionMode: ToolExecutionMode::Sequential,
+                    batchToolCallCount: 1,
+                    humanInputAnswer: null,
+                    stepId: 'code-mode-bridge-test-step',
+                    parentModel: null,
+                ),
+                static function () use ($bridge): mixed {
+                    return $bridge->execute(
+                        'for ($i = 0, $end = hrtime(true) + 3_000_000_000; hrtime(true) < $end; ++$i) {} return $i;',
+                        120,
+                        256,
+                    );
+                },
+            );
+            $this->fail('Expected timeout');
+        } catch (ToolCallException $exception) {
+            $this->assertStringContainsString('timed out after 1 seconds', $exception->getMessage());
+        }
+    }
+
+    public function testRequestedMemoryLimitIsPropagatedToChildIni(): void
+    {
+        $bridge = $this->bridge();
+
+        $limit = $this->runScript(
+            $bridge,
+            'return ini_get("memory_limit");',
+            memoryLimitMb: 64,
+        );
+
+        $this->assertSame('64M', $limit);
     }
 
     public function testScriptWallBudgetHonorsParentTimeoutCeiling(): void
@@ -207,7 +260,7 @@ PHP);
                 ),
                 static function () use ($bridge): mixed {
                     // Busy-wait instead of sleep so cancellation/budget polling stays active.
-                    return $bridge->execute('for ($i = 0, $end = hrtime(true) + 3_000_000_000; hrtime(true) < $end; ++$i) {} return $i;');
+                    return $bridge->execute('for ($i = 0, $end = hrtime(true) + 3_000_000_000; hrtime(true) < $end; ++$i) {} return $i;', 60, 256);
                 },
             );
             $this->fail('Expected timeout');
@@ -290,7 +343,7 @@ PHP);
                 stepId: 'code-mode-bridge-test-step',
                 parentModel: null,
             ),
-            static fn (): mixed => $bridge->execute("\$end = hrtime(true) + 1_200_000_000; while (hrtime(true) < \$end) {} return tool('read', ['path' => 'README.md']);"),
+            static fn (): mixed => $bridge->execute("\$end = hrtime(true) + 1_200_000_000; while (hrtime(true) < \$end) {} return tool('read', ['path' => 'README.md']);", 5, 256),
         );
 
         $this->assertIsArray($result);
@@ -359,8 +412,13 @@ PHP);
         );
     }
 
-    private function runScript(CodeModeHostBridge $bridge, string $script): mixed
-    {
+    private function runScript(
+        CodeModeHostBridge $bridge,
+        string $script,
+        int $timeoutSeconds = 10,
+        int $memoryLimitMb = 256,
+        ?int $parentTimeoutSeconds = 10,
+    ): mixed {
         $accessor = self::getContainer()->get(StackToolExecutionContextAccessor::class);
         $this->assertInstanceOf(StackToolExecutionContextAccessor::class, $accessor);
 
@@ -371,7 +429,7 @@ PHP);
                 toolCallId: 'code-mode-bridge-test-1',
                 toolName: 'code_mode',
                 cancellationToken: new NullCancellationToken(),
-                timeoutSeconds: 10,
+                timeoutSeconds: $parentTimeoutSeconds,
                 orderIndex: 0,
                 executionMode: ToolExecutionMode::Sequential,
                 batchToolCallCount: 1,
@@ -379,7 +437,7 @@ PHP);
                 stepId: 'code-mode-bridge-test-step',
                 parentModel: null,
             ),
-            static fn (): mixed => $bridge->execute($script),
+            static fn (): mixed => $bridge->execute($script, $timeoutSeconds, $memoryLimitMb),
         );
     }
 

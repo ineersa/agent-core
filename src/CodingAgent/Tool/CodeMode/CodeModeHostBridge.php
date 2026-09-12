@@ -13,6 +13,7 @@ use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
+use Ineersa\CodingAgent\Tool\Arguments\CodeModeArgumentsDTO;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
@@ -40,8 +41,6 @@ final readonly class CodeModeHostBridge
     private const int POLL_INTERVAL_MICROS = 20_000;
     private const int MAX_UNIX_SOCKET_PATH_BYTES = 100;
     private const int STDERR_TAIL_CHARS = 4000;
-    private const int DEFAULT_SCRIPT_WALL_SECONDS = 60;
-    private const string MEMORY_LIMIT = '256M';
     private const string TOOLBOX_LOCATOR_KEY = 'toolbox';
 
     public function __construct(
@@ -54,12 +53,17 @@ final readonly class CodeModeHostBridge
     ) {
     }
 
-    public function execute(string $script): mixed
+    public function execute(
+        string $script,
+        int $timeoutSeconds = CodeModeArgumentsDTO::DEFAULT_TIMEOUT_SECONDS,
+        int $memoryLimitMb = CodeModeArgumentsDTO::DEFAULT_MEMORY_LIMIT_MB,
+    ): mixed
     {
-        return $this->toolRuntime->run(function () use ($script): mixed {
+        return $this->toolRuntime->run(function () use ($script, $timeoutSeconds, $memoryLimitMb): mixed {
             $parentContext = $this->contextAccessor->current();
             $cancelToken = $parentContext?->cancellationToken() ?? new NullCancellationToken();
-            $timeoutSeconds = $this->resolveScriptWallSeconds($parentContext?->timeoutSeconds());
+            $timeoutSeconds = $this->resolveScriptWallSeconds($timeoutSeconds, $parentContext?->timeoutSeconds());
+            $memoryLimit = $this->formatMemoryLimit($memoryLimitMb);
 
             $workspace = $this->createWorkspace();
             $process = null;
@@ -71,7 +75,7 @@ final readonly class CodeModeHostBridge
             try {
                 $this->writeScript($workspace['script'], $script);
                 $server = $this->createSocketServer($workspace['socket']);
-                $process = $this->startProcess($workspace, $cancelToken);
+                $process = $this->startProcess($workspace, $cancelToken, $memoryLimit);
                 $connection = $this->acceptConnection($server, $process, $stderr, $cancelToken, $timeoutSeconds, $workspace['startedAtNs']);
 
                 return $this->serve($connection, $process, $stderr, $parentContext, $cancelToken, $timeoutSeconds, $workspace['startedAtNs']);
@@ -451,7 +455,7 @@ final readonly class CodeModeHostBridge
     /**
      * @param array{dir: string, script: string, socket: string, startedAtNs: int} $workspace
      */
-    private function startProcess(array $workspace, CancellationTokenInterface $cancelToken): Process
+    private function startProcess(array $workspace, CancellationTokenInterface $cancelToken, string $memoryLimit): Process
     {
         if ($cancelToken->isCancellationRequested()) {
             throw new ToolCallException('Code-mode execution cancelled before start.', retryable: false);
@@ -468,7 +472,7 @@ final readonly class CodeModeHostBridge
                 'HATFIELD_CODE_MODE_SCRIPT' => $workspace['script'],
                 'HATFIELD_CODE_MODE_TOON_ROOT' => $toonRoot,
                 'HATFIELD_CODE_MODE_VALUE_CODEC' => $valueCodec,
-                'HATFIELD_CODE_MODE_MEMORY_LIMIT' => self::MEMORY_LIMIT,
+                'HATFIELD_CODE_MODE_MEMORY_LIMIT' => $memoryLimit,
             ],
         );
         $process->setTimeout(null);
@@ -603,17 +607,23 @@ final readonly class CodeModeHostBridge
     }
 
     /**
-     * Prefer the remaining parent tool budget when present; otherwise use the
-     * code_mode default wall limit. Nested calls later receive the remaining
+     * Prefer the remaining parent tool budget when present and smaller than the
+     * requested script wall limit. Nested calls later receive the remaining
      * script budget as cooperative ToolContext metadata.
      */
-    private function resolveScriptWallSeconds(?int $parentTimeoutSeconds): int
+    private function resolveScriptWallSeconds(int $requestedTimeoutSeconds, ?int $parentTimeoutSeconds): int
     {
+        $requestedTimeoutSeconds = max(1, $requestedTimeoutSeconds);
         if (null !== $parentTimeoutSeconds && $parentTimeoutSeconds > 0) {
-            return min($parentTimeoutSeconds, self::DEFAULT_SCRIPT_WALL_SECONDS);
+            return min($parentTimeoutSeconds, $requestedTimeoutSeconds);
         }
 
-        return self::DEFAULT_SCRIPT_WALL_SECONDS;
+        return $requestedTimeoutSeconds;
+    }
+
+    private function formatMemoryLimit(int $memoryLimitMb): string
+    {
+        return max(1, $memoryLimitMb).'M';
     }
 
     /**

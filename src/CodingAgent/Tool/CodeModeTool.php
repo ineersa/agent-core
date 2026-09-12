@@ -36,7 +36,11 @@ final class CodeModeTool implements HatfieldToolProviderInterface
      */
     public function __invoke(CodeModeArgumentsDTO $arguments): mixed
     {
-        return $this->hostBridge->execute($arguments->script);
+        return $this->hostBridge->execute(
+            $arguments->script,
+            $arguments->timeout_seconds,
+            $arguments->memory_limit_mb,
+        );
     }
 
     public function definition(): ToolDefinitionDTO
@@ -56,7 +60,7 @@ final class CodeModeTool implements HatfieldToolProviderInterface
                 'Raw PHP filesystem and process functions work and bypass toolbox hooks and approvals. Prefer tool() when you need audited tool behavior.',
                 'Do not call subagent, fork, agent_resume, or ask_human from tool(). Those paths are rejected before invocation because code_mode cannot complete deferred or interactive work.',
                 'Script returns must be JSON-compatible scalars or arrays. Closures, resources, objects, non-finite floats, invalid UTF-8, and cyclic graphs fail instead of being silently dropped or substituted.',
-                'Each script has a 60-second wall budget (or the remaining parent tool budget when smaller) and a 256 MiB PHP memory_limit. Nested calls receive the remaining budget cooperatively; a blocking nested handler can still overrun until it returns.',
+                'Optional timeout_seconds (default 60, max 300) and memory_limit_mb (default 256, max 1024) control the script wall budget and PHP memory_limit. The remaining parent tool budget wins when smaller. Nested calls receive the remaining budget cooperatively; a blocking nested handler can still overrun until it returns.',
                 'code_mode is disabled by default. Enable it with settings path tools.code_mode.enabled = true (user or project scope), then restart Hatfield.',
             ],
         );

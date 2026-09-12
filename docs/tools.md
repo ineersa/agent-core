@@ -66,11 +66,11 @@ handler runs. Those tools need deferred child ownership or interactive pause
 flow that this bridge cannot complete. Script return values and nested tool results must be JSON-compatible scalars
 or arrays. Closures, resources, objects, non-finite floats, invalid UTF-8, and
 cyclic graphs fail instead of becoming empty or substituted data. Each script
-gets a 60-second wall budget (or the remaining parent tool budget when smaller)
-and a 256 MiB PHP memory limit. Nested tool calls receive the remaining script
-budget as cooperative ToolContext metadata. The host can enforce that budget
-only while it is polling the script; a nested handler that blocks synchronously
-can still overrun until it returns.
+accepts optional `timeout_seconds` (default 60, max 300) and `memory_limit_mb`
+(default 256, max 1024). The remaining parent tool budget wins when smaller.
+Nested tool calls receive the remaining script budget as cooperative ToolContext
+metadata. The host can enforce that budget only while it is polling the script; a
+nested handler that blocks synchronously can still overrun until it returns.
 
 ## Background work
 
