@@ -54,6 +54,9 @@ final class CodeModeTool implements HatfieldToolProviderInterface
                 'Use toon_encode($value) and toon_decode($text) for explicit TOON conversion. Nested tool failures throw RuntimeException and can be caught.',
                 'The script runs in a separate PHP process with a minimal bootstrap. Do not expect the application container or autoloader.',
                 'Raw PHP filesystem and process functions work and bypass toolbox hooks and approvals. Prefer tool() when you need audited tool behavior.',
+                'Do not call subagent, fork, agent_resume, or ask_human from tool(). Those paths are rejected before invocation because code_mode cannot complete deferred or interactive work.',
+                'Script returns must be JSON-encodable. Closures, resources, non-finite floats, and cyclic object graphs fail instead of being silently dropped.',
+                'Each script has a 60-second wall budget (or the remaining parent tool budget when smaller) and a 256 MiB PHP memory_limit. Nested toolbox handlers remain cooperative only.',
                 'code_mode is disabled by default. Enable it with settings path tools.code_mode.enabled = true (user or project scope), then restart Hatfield.',
             ],
         );

@@ -158,7 +158,8 @@ a successful late result into a timeout failure.
 `code_mode` runs arbitrary PHP in an owned subprocess. Keep it disabled until you
 want that capability. Direct PHP filesystem and process calls inside the script
 bypass toolbox hooks and approvals. Any launcher sandbox, such as `hatfield-safe`
-with bubblewrap, is inherited rather than created by the tool. See
+with bubblewrap, is inherited rather than created by the tool. Scripts use a
+60-second wall budget by default and a 256 MiB PHP memory limit. See
 [tools.md](tools.md).
 
 See [background-processes.md](background-processes.md).

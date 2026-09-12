@@ -109,6 +109,19 @@ if (!\function_exists('tool')) {
             throw new InvalidArgumentException('Tool name must be a non-empty string.');
         }
 
+        $unsupported = [
+            'subagent',
+            'fork',
+            'agent_resume',
+            'ask_human',
+        ];
+        if (in_array($name, $unsupported, true)) {
+            throw new RuntimeException(sprintf(
+                'Tool "%s" is not supported inside code_mode. Deferred child launches and interactive ask_human calls must run outside the script.',
+                $name,
+            ));
+        }
+
         $id = bin2hex(random_bytes(8));
         hatfield_code_mode_write($connection, [
             'type' => 'tool',
@@ -200,6 +213,18 @@ if (!\is_string($toonRoot) || '' === $toonRoot || !is_dir($toonRoot)) {
 }
 hatfield_code_mode_register_toon_autoload($toonRoot);
 
+$memoryLimit = getenv('HATFIELD_CODE_MODE_MEMORY_LIMIT');
+if (is_string($memoryLimit) && '' !== $memoryLimit) {
+    ini_set('memory_limit', $memoryLimit);
+}
+
+$valueCodec = getenv('HATFIELD_CODE_MODE_VALUE_CODEC');
+if (!is_string($valueCodec) || '' === $valueCodec || !is_file($valueCodec)) {
+    fwrite(STDERR, "HATFIELD_CODE_MODE_VALUE_CODEC is required.\n");
+    exit(2);
+}
+require_once $valueCodec;
+
 $connection = @stream_socket_client('unix://'.$socketPath, $errno, $errstr, 5.0);
 if (false === $connection) {
     fwrite(\STDERR, \sprintf("Failed to connect to code-mode host: [%d] %s\n", $errno, $errstr));
@@ -213,6 +238,7 @@ try {
         return include $scriptPath;
     })();
 
+    \Ineersa\CodingAgent\Tool\CodeMode\CodeModeValueCodec::assertEncodable($result, 'Code-mode script return value');
     hatfield_code_mode_write($connection, [
         'type' => 'return',
         'ok' => true,

@@ -40,6 +40,8 @@ final readonly class CodeModeHostBridge
     private const int POLL_INTERVAL_MICROS = 20_000;
     private const int MAX_UNIX_SOCKET_PATH_BYTES = 100;
     private const int STDERR_TAIL_CHARS = 4000;
+    private const int DEFAULT_SCRIPT_WALL_SECONDS = 60;
+    private const string MEMORY_LIMIT = '256M';
     private const string TOOLBOX_LOCATOR_KEY = 'toolbox';
 
     public function __construct(
@@ -57,7 +59,7 @@ final readonly class CodeModeHostBridge
         return $this->toolRuntime->run(function () use ($script): mixed {
             $parentContext = $this->contextAccessor->current();
             $cancelToken = $parentContext?->cancellationToken() ?? new NullCancellationToken();
-            $timeoutSeconds = $parentContext?->timeoutSeconds();
+            $timeoutSeconds = $this->resolveScriptWallSeconds($parentContext?->timeoutSeconds());
 
             $workspace = $this->createWorkspace();
             $process = null;
@@ -120,7 +122,10 @@ final readonly class CodeModeHostBridge
                     throw $this->earlyExitException($process, $stderr);
                 }
 
-                throw new ToolCallException('Code-mode script closed the host connection before returning a value.', retryable: false);
+                // Socket EOF can race process death (for example OOM). Poll briefly
+                // so stderr can be drained into the early-exit path instead of a
+                // generic closed-connection message.
+                throw $this->connectionClosedException($process, $stderr, $cancelToken, $timeoutSeconds, $startedAtNs);
             }
 
             $type = $frame['type'] ?? null;
@@ -131,7 +136,11 @@ final readonly class CodeModeHostBridge
 
             if ('return' === $type) {
                 if (($frame['ok'] ?? false) === true) {
-                    return $frame['result'] ?? null;
+                    try {
+                        return CodeModeValueCodec::assertEncodable($frame['result'] ?? null, 'Code-mode script return value');
+                    } catch (\RuntimeException $exception) {
+                        throw new ToolCallException($exception->getMessage(), retryable: false, previous: $exception);
+                    }
                 }
 
                 $message = \is_string($frame['error'] ?? null) ? $frame['error'] : 'Code-mode script failed.';
@@ -183,6 +192,10 @@ final readonly class CodeModeHostBridge
         try {
             if ($cancelToken->isCancellationRequested()) {
                 throw new ToolCallException('Code-mode tool call cancelled before start.', retryable: false);
+            }
+
+            if (CodeModeUnsupportedTools::contains($name)) {
+                throw new ToolCallException(CodeModeUnsupportedTools::rejectionMessage($name), retryable: false);
             }
 
             $result = $this->invokeTool($name, $arguments, $parentContext, $cancelToken);
@@ -253,11 +266,11 @@ final readonly class CodeModeHostBridge
             throw new ToolCallException('Human-input suspensions are not supported inside code_mode.', retryable: false);
         }
 
-        if (\is_resource($result)) {
-            throw new ToolCallException('Tool results containing resources cannot be returned to code_mode scripts.', retryable: false);
+        try {
+            return CodeModeValueCodec::assertEncodable($result, 'Nested tool result');
+        } catch (\RuntimeException $exception) {
+            throw new ToolCallException($exception->getMessage(), retryable: false, previous: $exception);
         }
-
-        return $result;
     }
 
     private function formatException(\Throwable $exception): string
@@ -332,6 +345,24 @@ final readonly class CodeModeHostBridge
             $this->filesystem->dumpFile($target, $contents);
         } catch (\Throwable $exception) {
             throw new ToolCallException('Failed to materialize code-mode bootstrap for subprocess execution.', retryable: true, previous: $exception);
+        }
+
+        return $target;
+    }
+
+    private function materializeValueCodec(string $workspaceDir): string
+    {
+        $source = __DIR__.'/CodeModeValueCodec.php';
+        $target = $workspaceDir.'/CodeModeValueCodec.php';
+
+        try {
+            $contents = file_get_contents($source);
+            if (false === $contents) {
+                throw new \RuntimeException(\sprintf('Unable to read code-mode value codec from "%s".', $source));
+            }
+            $this->filesystem->dumpFile($target, $contents);
+        } catch (\Throwable $exception) {
+            throw new ToolCallException('Failed to materialize code-mode value codec for subprocess execution.', retryable: true, previous: $exception);
         }
 
         return $target;
@@ -419,6 +450,7 @@ final readonly class CodeModeHostBridge
 
         $bootstrap = $this->materializeBootstrap($workspace['dir']);
         $toonRoot = $this->materializeToonLibrary($workspace['dir']);
+        $valueCodec = $this->materializeValueCodec($workspace['dir']);
         $process = new Process(
             [$this->phpCliBinary(), $bootstrap],
             $this->runtimeProcessConfig->runtimeCwd(),
@@ -426,6 +458,8 @@ final readonly class CodeModeHostBridge
                 'HATFIELD_CODE_MODE_SOCKET' => $workspace['socket'],
                 'HATFIELD_CODE_MODE_SCRIPT' => $workspace['script'],
                 'HATFIELD_CODE_MODE_TOON_ROOT' => $toonRoot,
+                'HATFIELD_CODE_MODE_VALUE_CODEC' => $valueCodec,
+                'HATFIELD_CODE_MODE_MEMORY_LIMIT' => self::MEMORY_LIMIT,
             ],
         );
         $process->setTimeout(null);
@@ -557,6 +591,45 @@ final readonly class CodeModeHostBridge
                 throw new ToolCallException(\sprintf('Code-mode execution timed out after %d seconds.', $timeoutSeconds), retryable: false);
             }
         }
+    }
+
+    /**
+     * Prefer the remaining parent tool budget when present; otherwise use the
+     * code_mode default wall limit. Nested toolbox handlers still receive the
+     * parent ToolContext timeout and remain cooperative only.
+     */
+    private function resolveScriptWallSeconds(?int $parentTimeoutSeconds): int
+    {
+        if (null !== $parentTimeoutSeconds && $parentTimeoutSeconds > 0) {
+            return min($parentTimeoutSeconds, self::DEFAULT_SCRIPT_WALL_SECONDS);
+        }
+
+        return self::DEFAULT_SCRIPT_WALL_SECONDS;
+    }
+
+    /**
+     * @param \stdClass $stderr
+     */
+    private function connectionClosedException(
+        Process $process,
+        object $stderr,
+        CancellationTokenInterface $cancelToken,
+        int $timeoutSeconds,
+        int $startedAtNs,
+    ): ToolCallException {
+        $deadlineNs = hrtime(true) + 200_000_000;
+        while ($process->isRunning() && hrtime(true) < $deadlineNs) {
+            $this->assertNotCancelledOrTimedOut($cancelToken, $timeoutSeconds, $startedAtNs);
+            $this->drainProcessOutput($process, $stderr);
+            usleep(self::POLL_INTERVAL_MICROS);
+        }
+
+        $this->drainProcessOutput($process, $stderr);
+        if (!$process->isRunning()) {
+            return $this->earlyExitException($process, $stderr);
+        }
+
+        return new ToolCallException('Code-mode script closed the host connection before returning a value.', retryable: false);
     }
 
     /**

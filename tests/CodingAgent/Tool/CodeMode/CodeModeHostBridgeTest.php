@@ -9,10 +9,12 @@ use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
+use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeHostBridge;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeIpc;
+use Ineersa\CodingAgent\Tool\ToolRuntime;
 use Symfony\Component\Process\Process;
 
 /**
@@ -116,12 +118,148 @@ PHP);
         }
     }
 
+    public function testUnsupportedToolsRejectedBeforeInvocation(): void
+    {
+        $calls = [];
+        $bridge = $this->bridgeWithToolbox(static function (string $name) use (&$calls): never {
+            $calls[] = $name;
+            throw new \RuntimeException('toolbox should not execute '.$name);
+        });
+
+        foreach (['subagent', 'fork', 'agent_resume', 'ask_human'] as $toolName) {
+            try {
+                $this->runScript($bridge, "return tool('".$toolName."', ['x' => 1]);");
+                $this->fail('Expected rejection for '.$toolName);
+            } catch (ToolCallException $exception) {
+                $this->assertStringContainsString($toolName, $exception->getMessage());
+                $this->assertStringContainsString('not supported inside code_mode', $exception->getMessage());
+            }
+        }
+
+        $this->assertSame([], $calls, 'Unsupported tools must be rejected before toolbox invocation');
+    }
+
+    public function testLossyReturnValuesAreRejected(): void
+    {
+        $bridge = $this->bridge();
+
+        try {
+            $this->runScript($bridge, 'return INF;');
+            $this->fail('Expected ToolCallException for INF');
+        } catch (ToolCallException $exception) {
+            $this->assertStringContainsString('non-finite float', $exception->getMessage());
+        }
+
+        try {
+            $this->runScript($bridge, 'return function () {};');
+            $this->fail('Expected ToolCallException for Closure');
+        } catch (ToolCallException $exception) {
+            $this->assertStringContainsString('Closure', $exception->getMessage());
+        }
+    }
+
+    public function testMemoryLimitIsAppliedAndFatalSurfacesOnStderr(): void
+    {
+        $bridge = $this->bridge();
+
+        try {
+            // Force an allocation larger than the 256M child memory_limit without sleeping.
+            $this->runScript($bridge, '$chunks = []; for ($i = 0; $i < 512; ++$i) { $chunks[] = str_repeat("x", 1024 * 1024); } return count($chunks);');
+            $this->fail('Expected memory exhaustion failure');
+        } catch (ToolCallException $exception) {
+            $message = $exception->getMessage();
+            $this->assertStringContainsString('Allowed memory size', $message);
+        }
+    }
+
+    public function testScriptWallBudgetHonorsParentTimeoutCeiling(): void
+    {
+        $bridge = $this->bridge();
+        $accessor = self::getContainer()->get(StackToolExecutionContextAccessor::class);
+        $this->assertInstanceOf(StackToolExecutionContextAccessor::class, $accessor);
+
+        try {
+            $accessor->with(
+                new ToolContext(
+                    runId: 'code-mode-bridge-test',
+                    turnNo: 1,
+                    toolCallId: 'code-mode-bridge-test-timeout',
+                    toolName: 'code_mode',
+                    cancellationToken: new NullCancellationToken(),
+                    timeoutSeconds: 1,
+                    orderIndex: 0,
+                    executionMode: ToolExecutionMode::Sequential,
+                    batchToolCallCount: 1,
+                    humanInputAnswer: null,
+                    stepId: 'code-mode-bridge-test-step',
+                    parentModel: null,
+                ),
+                static function () use ($bridge): mixed {
+                    // Busy-wait instead of sleep so cancellation/budget polling stays active.
+                    return $bridge->execute('for ($i = 0, $end = hrtime(true) + 3_000_000_000; hrtime(true) < $end; ++$i) {} return $i;');
+                },
+            );
+            $this->fail('Expected timeout');
+        } catch (ToolCallException $exception) {
+            $this->assertStringContainsString('timed out after 1 seconds', $exception->getMessage());
+        }
+    }
+
     private function bridge(): CodeModeHostBridge
     {
         $bridge = self::getContainer()->get('test.code_mode_host_bridge');
         $this->assertInstanceOf(CodeModeHostBridge::class, $bridge);
 
         return $bridge;
+    }
+
+    /**
+     * @param callable(string): mixed $executor
+     */
+    private function bridgeWithToolbox(callable $executor): CodeModeHostBridge
+    {
+        $locator = new class($executor) implements \Psr\Container\ContainerInterface {
+            public function __construct(private mixed $executor)
+            {
+            }
+
+            public function get(string $id): mixed
+            {
+                if ('toolbox' !== $id) {
+                    throw new \RuntimeException('Unexpected locator id: '.$id);
+                }
+
+                return new class($this->executor) implements \Symfony\AI\Agent\Toolbox\ToolboxInterface {
+                    public function __construct(private mixed $executor)
+                    {
+                    }
+
+                    public function getTools(): array
+                    {
+                        return [];
+                    }
+
+                    public function execute(\Symfony\AI\Platform\Result\ToolCall $toolCall): \Symfony\AI\Agent\Toolbox\ToolResult
+                    {
+                        ($this->executor)($toolCall->getName());
+
+                        return new \Symfony\AI\Agent\Toolbox\ToolResult($toolCall, null);
+                    }
+                };
+            }
+
+            public function has(string $id): bool
+            {
+                return 'toolbox' === $id;
+            }
+        };
+
+        return new CodeModeHostBridge(
+            self::getContainer()->get(StackToolExecutionContextAccessor::class),
+            self::getContainer()->get(ToolRuntime::class),
+            $locator,
+            self::getContainer()->get(RuntimeProcessConfig::class),
+        );
     }
 
     private function runScript(CodeModeHostBridge $bridge, string $script): mixed

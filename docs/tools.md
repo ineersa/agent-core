@@ -61,6 +61,15 @@ calls bypass toolbox hooks and approvals. If you launch Hatfield under
 `hatfield-safe` or another bubblewrap wrapper, the script inherits that sandbox.
 `code_mode` does not create a separate sandbox.
 
+`tool()` rejects `subagent`, `fork`, `agent_resume`, and `ask_human` before the
+handler runs. Those tools need deferred child ownership or interactive pause
+flow that this bridge cannot complete. Script return values and nested tool
+results must be JSON-encodable; closures, resources, non-finite floats, and
+cyclic graphs fail instead of becoming empty data. Each script gets a 60-second
+wall budget (or the remaining parent tool budget when smaller) and a 256 MiB
+PHP memory limit. Nested toolbox handlers still rely on cooperative cancellation
+only.
+
 ## Background work
 
 There is no `bg_start` tool or model-selected background flag. A long-running `bash`
