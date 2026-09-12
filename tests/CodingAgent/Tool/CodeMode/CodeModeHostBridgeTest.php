@@ -147,7 +147,11 @@ PHP);
             $this->runScript($bridge, 'return INF;');
             $this->fail('Expected ToolCallException for INF');
         } catch (ToolCallException $exception) {
-            $this->assertStringContainsString('non-finite float', $exception->getMessage());
+            $this->assertTrue(
+                str_contains($exception->getMessage(), 'non-finite float')
+                || str_contains($exception->getMessage(), 'Inf and NaN'),
+                $exception->getMessage(),
+            );
         }
 
         try {
@@ -155,6 +159,13 @@ PHP);
             $this->fail('Expected ToolCallException for Closure');
         } catch (ToolCallException $exception) {
             $this->assertStringContainsString('Closure', $exception->getMessage());
+        }
+
+        try {
+            $this->runScript($bridge, 'return new DateTimeImmutable("2026-01-01T00:00:00Z");');
+            $this->fail('Expected ToolCallException for object');
+        } catch (ToolCallException $exception) {
+            $this->assertStringContainsString('unsupported object', $exception->getMessage());
         }
     }
 
@@ -203,6 +214,92 @@ PHP);
         } catch (ToolCallException $exception) {
             $this->assertStringContainsString('timed out after 1 seconds', $exception->getMessage());
         }
+    }
+
+    public function testNestedToolReceivesRemainingScriptBudget(): void
+    {
+        $seenTimeouts = [];
+        $accessor = self::getContainer()->get(StackToolExecutionContextAccessor::class);
+        $this->assertInstanceOf(StackToolExecutionContextAccessor::class, $accessor);
+
+        $locator = new class($accessor, $seenTimeouts) implements \Psr\Container\ContainerInterface {
+            /** @param list<int|null> $seenTimeouts */
+            public function __construct(
+                private StackToolExecutionContextAccessor $accessor,
+                private array &$seenTimeouts,
+            ) {
+            }
+
+            public function get(string $id): mixed
+            {
+                if ('toolbox' !== $id) {
+                    throw new \RuntimeException('Unexpected locator id: '.$id);
+                }
+
+                $accessor = $this->accessor;
+                $seenTimeouts = &$this->seenTimeouts;
+
+                return new class($accessor, $seenTimeouts) implements \Symfony\AI\Agent\Toolbox\ToolboxInterface {
+                    /** @param list<int|null> $seenTimeouts */
+                    public function __construct(
+                        private StackToolExecutionContextAccessor $accessor,
+                        private array &$seenTimeouts,
+                    ) {
+                    }
+
+                    public function getTools(): array
+                    {
+                        return [];
+                    }
+
+                    public function execute(\Symfony\AI\Platform\Result\ToolCall $toolCall): \Symfony\AI\Agent\Toolbox\ToolResult
+                    {
+                        $context = $this->accessor->current();
+                        $this->seenTimeouts[] = $context?->timeoutSeconds();
+
+                        return new \Symfony\AI\Agent\Toolbox\ToolResult($toolCall, ['timeout' => $context?->timeoutSeconds()]);
+                    }
+                };
+            }
+
+            public function has(string $id): bool
+            {
+                return 'toolbox' === $id;
+            }
+        };
+
+        $bridge = new CodeModeHostBridge(
+            $accessor,
+            self::getContainer()->get(ToolRuntime::class),
+            $locator,
+            self::getContainer()->get(RuntimeProcessConfig::class),
+        );
+
+        $result = $accessor->with(
+            new ToolContext(
+                runId: 'code-mode-bridge-test',
+                turnNo: 1,
+                toolCallId: 'code-mode-bridge-test-budget',
+                toolName: 'code_mode',
+                cancellationToken: new NullCancellationToken(),
+                timeoutSeconds: 5,
+                orderIndex: 0,
+                executionMode: ToolExecutionMode::Sequential,
+                batchToolCallCount: 1,
+                humanInputAnswer: null,
+                stepId: 'code-mode-bridge-test-step',
+                parentModel: null,
+            ),
+            static fn (): mixed => $bridge->execute("\$end = hrtime(true) + 1_200_000_000; while (hrtime(true) < \$end) {} return tool('read', ['path' => 'README.md']);"),
+        );
+
+        $this->assertIsArray($result);
+        $this->assertArrayHasKey('timeout', $result);
+        $this->assertIsInt($result['timeout']);
+        // Parent budget is 5s; after waiting >1s the nested call must see a reduced remaining budget.
+        $this->assertLessThan(5, $result['timeout']);
+        $this->assertGreaterThan(0, $result['timeout']);
+        $this->assertSame([$result['timeout']], $seenTimeouts);
     }
 
     private function bridge(): CodeModeHostBridge

@@ -130,7 +130,7 @@ final readonly class CodeModeHostBridge
 
             $type = $frame['type'] ?? null;
             if ('tool' === $type) {
-                $this->handleToolRequest($connection, $frame, $parentContext, $cancelToken, $waiter);
+                $this->handleToolRequest($connection, $frame, $parentContext, $cancelToken, $timeoutSeconds, $startedAtNs, $waiter);
                 continue;
             }
 
@@ -160,6 +160,8 @@ final readonly class CodeModeHostBridge
         array $frame,
         ?ToolContext $parentContext,
         CancellationTokenInterface $cancelToken,
+        int $timeoutSeconds,
+        int $startedAtNs,
         ?callable $waiter,
     ): void {
         $id = $frame['id'] ?? null;
@@ -198,7 +200,7 @@ final readonly class CodeModeHostBridge
                 throw new ToolCallException(CodeModeUnsupportedTools::rejectionMessage($name), retryable: false);
             }
 
-            $result = $this->invokeTool($name, $arguments, $parentContext, $cancelToken);
+            $result = $this->invokeTool($name, $arguments, $parentContext, $cancelToken, $timeoutSeconds, $startedAtNs);
             CodeModeIpc::write($connection, [
                 'id' => $id,
                 'ok' => true,
@@ -221,7 +223,14 @@ final readonly class CodeModeHostBridge
         array $arguments,
         ?ToolContext $parentContext,
         CancellationTokenInterface $cancelToken,
+        int $timeoutSeconds,
+        int $startedAtNs,
     ): mixed {
+        $remainingSeconds = $this->remainingScriptBudgetSeconds($timeoutSeconds, $startedAtNs);
+        if (null === $remainingSeconds) {
+            throw new ToolCallException(\sprintf('Code-mode execution timed out after %d seconds.', $timeoutSeconds), retryable: false);
+        }
+
         $toolCallId = 'code-mode-'.bin2hex(random_bytes(8));
         $nestedContext = new ToolContext(
             runId: $parentContext?->runId() ?? '',
@@ -229,7 +238,7 @@ final readonly class CodeModeHostBridge
             toolCallId: $toolCallId,
             toolName: $name,
             cancellationToken: $cancelToken,
-            timeoutSeconds: $parentContext?->timeoutSeconds(),
+            timeoutSeconds: $remainingSeconds,
             orderIndex: 0,
             executionMode: ToolExecutionMode::Sequential,
             batchToolCallCount: 1,
@@ -595,8 +604,8 @@ final readonly class CodeModeHostBridge
 
     /**
      * Prefer the remaining parent tool budget when present; otherwise use the
-     * code_mode default wall limit. Nested toolbox handlers still receive the
-     * parent ToolContext timeout and remain cooperative only.
+     * code_mode default wall limit. Nested calls later receive the remaining
+     * script budget as cooperative ToolContext metadata.
      */
     private function resolveScriptWallSeconds(?int $parentTimeoutSeconds): int
     {
@@ -605,6 +614,27 @@ final readonly class CodeModeHostBridge
         }
 
         return self::DEFAULT_SCRIPT_WALL_SECONDS;
+    }
+
+    /**
+     * Remaining whole seconds of the script wall budget for nested ToolContext.
+     *
+     * Returns null when the budget is already exhausted. Nested handlers remain
+     * cooperative: a blocking handler can still overrun until it returns.
+     */
+    private function remainingScriptBudgetSeconds(int $timeoutSeconds, int $startedAtNs): ?int
+    {
+        if ($timeoutSeconds <= 0) {
+            return null;
+        }
+
+        $elapsedSeconds = intdiv(hrtime(true) - $startedAtNs, 1_000_000_000);
+        $remaining = $timeoutSeconds - $elapsedSeconds;
+        if ($remaining <= 0) {
+            return null;
+        }
+
+        return $remaining;
     }
 
     /**

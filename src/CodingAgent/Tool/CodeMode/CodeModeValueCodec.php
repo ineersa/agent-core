@@ -14,15 +14,17 @@ namespace Ineersa\CodingAgent\Tool\CodeMode;
  */
 final class CodeModeValueCodec
 {
+    private const int MAX_DEPTH = 512;
+
     /**
      * @throws \RuntimeException when the value cannot round-trip through JSON framing
      */
     public static function assertEncodable(mixed $value, string $context): mixed
     {
-        self::assertEncodableRecursive($value, $context, []);
-
+        // json_encode detects cyclic arrays before our recursive walk can hang.
+        // Do not substitute invalid UTF-8; silent corruption violates lossless IPC.
         try {
-            json_encode($value, \JSON_THROW_ON_ERROR | \JSON_INVALID_UTF8_SUBSTITUTE);
+            json_encode($value, \JSON_THROW_ON_ERROR);
         } catch (\JsonException $exception) {
             throw new \RuntimeException(
                 \sprintf('%s cannot be encoded for code_mode IPC: %s', $context, $exception->getMessage()),
@@ -31,24 +33,38 @@ final class CodeModeValueCodec
             );
         }
 
+        self::assertCompatibleShape($value, $context, 0, []);
+
         return $value;
     }
 
     /**
-     * @param list<object> $stack
+     * @param array<int, array<mixed>|object> $stack
      */
-    private static function assertEncodableRecursive(mixed $value, string $context, array $stack): void
+    private static function assertCompatibleShape(mixed $value, string $context, int $depth, array $stack): void
     {
+        if ($depth > self::MAX_DEPTH) {
+            throw new \RuntimeException(\sprintf('%s exceeds the maximum nesting depth of %d for code_mode IPC.', $context, self::MAX_DEPTH));
+        }
+
+        if (null === $value || \is_bool($value) || \is_int($value) || \is_string($value)) {
+            return;
+        }
+
+        if (\is_float($value)) {
+            if (!is_finite($value)) {
+                throw new \RuntimeException(\sprintf('%s contains a non-finite float, which cannot be returned through code_mode.', $context));
+            }
+
+            return;
+        }
+
         if (\is_resource($value)) {
             throw new \RuntimeException(\sprintf('%s contains a resource, which cannot be returned through code_mode.', $context));
         }
 
         if ($value instanceof \Closure) {
             throw new \RuntimeException(\sprintf('%s contains a Closure, which cannot be returned through code_mode.', $context));
-        }
-
-        if (\is_float($value) && !is_finite($value)) {
-            throw new \RuntimeException(\sprintf('%s contains a non-finite float, which cannot be returned through code_mode.', $context));
         }
 
         if (\is_object($value)) {
@@ -58,40 +74,34 @@ final class CodeModeValueCodec
                 }
             }
 
-            if ($value instanceof \JsonSerializable) {
-                self::assertEncodableRecursive($value->jsonSerialize(), $context, [...$stack, $value]);
-
-                return;
-            }
-
             if ($value instanceof \UnitEnum) {
                 return;
             }
 
-            if ($value instanceof \DateTimeInterface) {
-                // DateTime encodes as a property map under json_encode; keep that shape.
-                return;
+            // Reject arbitrary objects rather than exposing public properties and
+            // silently dropping private state via get_object_vars()/json_encode.
+            // JsonSerializable is also rejected so we never invoke jsonSerialize()
+            // twice (once here and once inside json_encode).
+            throw new \RuntimeException(
+                \sprintf('%s contains an unsupported object of type %s.', $context, $value::class),
+            );
+        }
+
+        if (\is_array($value)) {
+            foreach ($stack as $seen) {
+                if ($seen === $value) {
+                    throw new \RuntimeException(\sprintf('%s contains a cyclic array graph, which cannot be returned through code_mode.', $context));
+                }
             }
 
-            try {
-                $vars = get_object_vars($value);
-            } catch (\Error $exception) {
-                throw new \RuntimeException(
-                    \sprintf('%s contains an unsupported object of type %s.', $context, $value::class),
-                    0,
-                    $exception,
-                );
+            $nextStack = [...$stack, $value];
+            foreach ($value as $item) {
+                self::assertCompatibleShape($item, $context, $depth + 1, $nextStack);
             }
-
-            self::assertEncodableRecursive($vars, $context, [...$stack, $value]);
 
             return;
         }
 
-        if (\is_array($value)) {
-            foreach ($value as $item) {
-                self::assertEncodableRecursive($item, $context, $stack);
-            }
-        }
+        throw new \RuntimeException(\sprintf('%s contains an unsupported value of type %s.', $context, get_debug_type($value)));
     }
 }
