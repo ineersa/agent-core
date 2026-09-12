@@ -114,7 +114,7 @@ final class ObservationalMemoryExtension implements HatfieldExtensionInterface, 
                     'query' => [
                         'type' => 'string',
                         'minLength' => 1,
-                        'description' => 'Exact substring to find in observation or reflection content (case-sensitive SQLite LIKE). Prefer identifiers such as PR numbers, URLs, branch names, or symbols.',
+                        'description' => 'Exact substring to find in observation or reflection content. SQLite LIKE matching is ASCII case-insensitive by default. Prefer identifiers such as PR numbers, URLs, branch names, or symbols.',
                     ],
                     'after' => [
                         'type' => 'string',

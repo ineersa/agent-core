@@ -420,6 +420,167 @@ final class OmQueryServiceTest extends IsolatedKernelTestCase
     }
 
     #[Test]
+    public function searchTruncationSortDateValidationAndCaseFoldingAreDeterministic(): void
+    {
+        $dbPath = $this->tmpDir.'/om-search-regressions.sqlite';
+        $connection = $this->omDatabaseFactory()->connectAndMigrate($dbPath);
+        $obs = new ObservationRepository($connection);
+
+        // Same-day observation later than reflection must sort after reflection once keys are normalized.
+        $obsEarly = str_repeat('1', 64);
+        $obsLate = str_repeat('2', 64);
+        $obsLower = str_repeat('3', 64);
+        $refId = str_repeat('4', 64);
+        $onlyKindIds = [
+            str_repeat('a', 64),
+            str_repeat('b', 64),
+            str_repeat('c', 64),
+        ];
+
+        $obs->commitChunkPartCoverage(
+            coverageKey: 'cov-sort',
+            runId: 'session-sort',
+            boundaryKey: 'b1',
+            sourceStartSeq: 1,
+            sourceEndSeq: 3,
+            chunkKey: 'chunk-sort',
+            partIndex: 1,
+            partCount: 1,
+            sourceDigest: 'ds',
+            partDigest: 'ps',
+            rendererVersion: '1',
+            observerSchemaVersion: '1',
+            observerModel: 'llama_cpp_test/test',
+            observations: [
+                [
+                    'observation_id' => $obsEarly,
+                    'content' => 'marker ALPHA early observation',
+                    'content_hash' => hash('sha256', 'early'),
+                    'relevance' => 'medium',
+                    'timestamp' => '2026-09-11 01:00',
+                    'token_count' => 3,
+                    'source_refs_json' => json_encode([['run_id' => 'session-sort', 'seq' => 1]], \JSON_THROW_ON_ERROR),
+                ],
+                [
+                    'observation_id' => $obsLate,
+                    'content' => 'marker ALPHA late observation',
+                    'content_hash' => hash('sha256', 'late'),
+                    'relevance' => 'medium',
+                    'timestamp' => '2026-09-11 12:00',
+                    'token_count' => 3,
+                    'source_refs_json' => json_encode([['run_id' => 'session-sort', 'seq' => 2]], \JSON_THROW_ON_ERROR),
+                ],
+                [
+                    'observation_id' => $obsLower,
+                    'content' => 'marker alphatool lowercase content',
+                    'content_hash' => hash('sha256', 'lower'),
+                    'relevance' => 'low',
+                    'timestamp' => '2026-09-11 13:00',
+                    'token_count' => 3,
+                    'source_refs_json' => json_encode([['run_id' => 'session-sort', 'seq' => 3]], \JSON_THROW_ON_ERROR),
+                ],
+            ],
+            coveredAt: '2026-09-11T13:00:00+00:00',
+        );
+
+        $connection->insert('om_reflection', [
+            'reflection_id' => $refId,
+            'run_id' => 'session-sort',
+            'compaction_request_id' => 'req-sort',
+            'observation_set_hash' => hash('sha256', 'set-sort'),
+            'content' => 'marker ALPHA reflection midday',
+            'supporting_observation_ids_json' => json_encode([$obsEarly], \JSON_THROW_ON_ERROR),
+            'compression_level' => '0',
+            'token_count' => 4,
+            'reflector_model' => 'llama_cpp_test/test',
+            'reflector_schema_version' => '1',
+            'created_at' => '2026-09-11T08:00:00+00:00',
+        ]);
+        $connection->insert('om_reflection', [
+            'reflection_id' => str_repeat('5', 64),
+            'run_id' => 'session-sort',
+            'compaction_request_id' => 'req-minute',
+            'observation_set_hash' => hash('sha256', 'set-minute'),
+            'content' => 'marker MINUTE reflection inside minute',
+            'supporting_observation_ids_json' => '[]',
+            'compression_level' => '0',
+            'token_count' => 2,
+            'reflector_model' => 'llama_cpp_test/test',
+            'reflector_schema_version' => '1',
+            'created_at' => '2026-09-11T08:15:30+00:00',
+        ]);
+
+        foreach ($onlyKindIds as $index => $id) {
+            $obs->commitChunkPartCoverage(
+                coverageKey: 'cov-only-'.$index,
+                runId: 'session-only',
+                boundaryKey: 'b'.$index,
+                sourceStartSeq: $index + 1,
+                sourceEndSeq: $index + 1,
+                chunkKey: 'chunk-only-'.$index,
+                partIndex: 1,
+                partCount: 1,
+                sourceDigest: 'd'.$index,
+                partDigest: 'p'.$index,
+                rendererVersion: '1',
+                observerSchemaVersion: '1',
+                observerModel: 'llama_cpp_test/test',
+                observations: [[
+                    'observation_id' => $id,
+                    'content' => 'marker ONLYKIND observation '.$index,
+                    'content_hash' => hash('sha256', 'only-'.$index),
+                    'relevance' => 'low',
+                    'timestamp' => \sprintf('2026-09-10 %02d:00', 10 + $index),
+                    'token_count' => 2,
+                    'source_refs_json' => json_encode([['run_id' => 'session-only', 'seq' => $index + 1]], \JSON_THROW_ON_ERROR),
+                ]],
+                coveredAt: '2026-09-10T12:00:00+00:00',
+            );
+        }
+
+        $service = new OmQueryService(
+            $this->api($this->tmpDir),
+            OmSettings::fromArray([
+                'storage' => ['database' => $dbPath],
+                'model' => 'llama_cpp_test/test',
+                'observer' => [],
+                'reflector' => [],
+            ]),
+        );
+
+        $sorted = $service->search('marker ALPHA');
+        $this->assertTrue($sorted['ok']);
+        $this->assertSame([
+            $obsLower,
+            $obsLate,
+            $refId,
+            $obsEarly,
+        ], array_column($sorted['results'], 'id'));
+
+        $singleKind = $service->search('marker ONLYKIND', limit: 2);
+        $this->assertTrue($singleKind['ok']);
+        $this->assertSame(2, $singleKind['count']);
+        $this->assertTrue($singleKind['truncated']);
+
+        $caseFold = $service->search('ALPHATOOL');
+        $this->assertTrue($caseFold['ok']);
+        $this->assertSame(1, $caseFold['count']);
+        $this->assertSame($obsLower, $caseFold['results'][0]['id']);
+
+        $minute = $service->search('marker MINUTE', after: '2026-09-11 08:15', before: '2026-09-11 08:15');
+        $this->assertTrue($minute['ok']);
+        $this->assertSame(1, $minute['count']);
+
+        $invalidDate = $service->search('marker ALPHA', after: '2026-02-30');
+        $this->assertFalse($invalidDate['ok']);
+        $this->assertSame('invalid_after', $invalidDate['error']);
+
+        $reversed = $service->search('marker ALPHA', after: '2026-09-12', before: '2026-09-11');
+        $this->assertFalse($reversed['ok']);
+        $this->assertSame('invalid_date_range', $reversed['error']);
+    }
+
+    #[Test]
     public function recallAcceptsExplicitSessionIdAndKeepsOmittedCurrentSessionBehavior(): void
     {
         $dbPath = $this->tmpDir.'/om-recall-session.sqlite';

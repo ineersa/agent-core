@@ -219,6 +219,9 @@ final class OmQueryService
         if (null !== ($dateError = $this->validateMemoryDate($before, 'before'))) {
             return $dateError;
         }
+        if (null !== ($rangeError = $this->validateMemoryDateRange($after, $before))) {
+            return $rangeError;
+        }
 
         $limit = $limit ?? self::SEARCH_DEFAULT_LIMIT;
         if ($limit < 1) {
@@ -249,12 +252,13 @@ final class OmQueryService
         $refAfter = $this->normalizeReflectionFilter($after, lowerBound: true);
         $refBefore = $this->normalizeReflectionFilter($before, lowerBound: false);
 
-        // Fetch up to $limit from each table, then merge/cap so mixed kinds stay bounded.
-        $obsRows = $observations->searchContent($query, $obsAfter, $obsBefore, $limit);
+        // Fetch limit+1 from each table so truncated can detect overflow within one kind.
+        $fetchLimit = $limit + 1;
+        $obsRows = $observations->searchContent($query, $obsAfter, $obsBefore, $fetchLimit);
         if (null !== ($interrupt = $this->interruptMap($cancellationToken, $timeoutSeconds, $deadlineNs, 'Cancelled before reflection search.'))) {
             return $interrupt;
         }
-        $refRows = $generations->searchContent($query, $refAfter, $refBefore, $limit);
+        $refRows = $generations->searchContent($query, $refAfter, $refBefore, $fetchLimit);
 
         $results = [];
         foreach ($obsRows as $row) {
@@ -266,7 +270,7 @@ final class OmQueryService
                 'timestamp' => $row['timestamp'],
                 'relevance' => $row['relevance'],
                 'content' => $this->condense($row['content']),
-                'sort_key' => $row['timestamp'],
+                'sort_key' => $this->comparableMemorySortKey($row['timestamp']),
             ];
         }
         foreach ($refRows as $row) {
@@ -277,7 +281,7 @@ final class OmQueryService
                 'display_id' => $this->displayId($row['reflection_id']),
                 'timestamp' => $row['created_at'],
                 'content' => $this->condense($row['content']),
-                'sort_key' => $row['created_at'],
+                'sort_key' => $this->comparableMemorySortKey($row['created_at']),
             ];
         }
 
@@ -710,6 +714,9 @@ final class OmQueryService
     /**
      * @return array{ok: false, error: string, message: string}|null
      */
+    /**
+     * @return array{ok: false, error: string, message: string}|null
+     */
     private function validateMemoryDate(?string $value, string $field): ?array
     {
         if (null === $value || '' === trim($value)) {
@@ -721,6 +728,52 @@ final class OmQueryService
                 'ok' => false,
                 'error' => 'invalid_'.$field,
                 'message' => $field.' must be YYYY-MM-DD or YYYY-MM-DD HH:MM.',
+            ];
+        }
+
+        if (10 === \strlen($value)) {
+            $dt = \DateTimeImmutable::createFromFormat('!Y-m-d', $value);
+            if (false === $dt || $dt->format('Y-m-d') !== $value) {
+                return [
+                    'ok' => false,
+                    'error' => 'invalid_'.$field,
+                    'message' => $field.' must be a real calendar date (YYYY-MM-DD or YYYY-MM-DD HH:MM).',
+                ];
+            }
+
+            return null;
+        }
+
+        $dt = \DateTimeImmutable::createFromFormat('!Y-m-d H:i', $value);
+        if (false === $dt || $dt->format('Y-m-d H:i') !== $value) {
+            return [
+                'ok' => false,
+                'error' => 'invalid_'.$field,
+                'message' => $field.' must be a real calendar date (YYYY-MM-DD or YYYY-MM-DD HH:MM).',
+            ];
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array{ok: false, error: string, message: string}|null
+     */
+    private function validateMemoryDateRange(?string $after, ?string $before): ?array
+    {
+        $after = null === $after || '' === trim($after) ? null : trim($after);
+        $before = null === $before || '' === trim($before) ? null : trim($before);
+        if (null === $after || null === $before) {
+            return null;
+        }
+
+        $afterKey = $this->comparableMemorySortKey($this->normalizeObservationFilter($after, lowerBound: true) ?? $after);
+        $beforeKey = $this->comparableMemorySortKey($this->normalizeObservationFilter($before, lowerBound: false) ?? $before);
+        if ($afterKey > $beforeKey) {
+            return [
+                'ok' => false,
+                'error' => 'invalid_date_range',
+                'message' => 'after must be less than or equal to before.',
             ];
         }
 
@@ -747,11 +800,34 @@ final class OmQueryService
         }
         $value = trim($value);
         if (10 === \strlen($value)) {
-            return $lowerBound ? $value.'T00:00:00+00:00' : $value.'T23:59:59+00:00';
+            return $lowerBound ? $value.'T00:00:00+00:00' : $value.'T23:59:59.999999+00:00';
         }
-        // HH:MM memory-date form → ISO-8601 for created_at comparisons.
+        // HH:MM memory-date form → inclusive minute for created_at comparisons.
         if (16 === \strlen($value) && ' ' === $value[10]) {
-            return str_replace(' ', 'T', $value).':00+00:00';
+            $iso = str_replace(' ', 'T', $value).':00+00:00';
+
+            return $lowerBound ? $iso : str_replace(' ', 'T', $value).':59.999999+00:00';
+        }
+
+        return $value;
+    }
+
+    /**
+     * Normalize observation timestamps and reflection created_at values to a shared
+     * lexicographic key: YYYY-MM-DDTHH:MM:SS (timezone/offset ignored for ranking).
+     */
+    private function comparableMemorySortKey(string $value): string
+    {
+        $value = trim($value);
+        if ('' === $value) {
+            return '';
+        }
+
+        if (1 === preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/', $value)) {
+            return str_replace(' ', 'T', $value).':00';
+        }
+        if (1 === preg_match('/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})/', $value, $matches)) {
+            return $matches[1].'T'.$matches[2];
         }
 
         return $value;

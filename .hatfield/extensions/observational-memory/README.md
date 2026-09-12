@@ -162,11 +162,21 @@ composer update ineersa/hatfield-ext-observational-memory
 
 ### Search implementation notes
 
-Measured on a read-only copy of representative project data (~4.9k observations) and a
-disposable 50k-row corpus: leading-wildcard SQL `LIKE` with a small `LIMIT` stayed in the
-low-millisecond to ~15 ms range for identifier queries such as `2510` and
-`MapToolArguments`, with `SCAN om_observation` plans. FTS5 was faster at 50k rows but needs
-schema/index maintenance and weaker exact-substring fidelity for punctuation-heavy
+`om_search` uses escaped SQL `LIKE` substring matching with a small result limit. Under
+default SQLite settings (and OM does not enable `case_sensitive_like`), ASCII letter case
+is insensitive, so `MapTool` matches `maptool`. `%` and `_` in the query are treated as
+literals via `ESCAPE`.
+
+Date filters accept real calendar values only (`YYYY-MM-DD` or `YYYY-MM-DD HH:MM`).
+`after` must not be later than `before`. Date-only bounds cover the whole day. An HH:MM
+`before` bound includes the entire minute for reflection `created_at` values.
+
+Benchmark evidence (read-only disposable copies; never modify the live OM database) is
+recorded under `.hatfield/extensions/observational-memory/docs/om-search-like-benchmark.md`, including the exact commands used
+on representative (~4.9k observations) and disposable 50k-row corpora. Leading-wildcard
+`LIKE` stayed in the low-millisecond to ~15 ms range for identifier queries such as `2510`
+and `MapToolArguments`, with `SCAN om_observation` plans. FTS5 was faster at 50k rows but
+needs schema/index maintenance and weaker exact-substring fidelity for punctuation-heavy
 identifiers. This package keeps bounded `LIKE` search without an FTS migration.
 
 One top-level `observational_memory.model` is shared by Observer, Reflector, and Dropper.
