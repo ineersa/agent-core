@@ -21,6 +21,8 @@ final readonly class ToolsConfig
         public ImageToolConfig $image = new ImageToolConfig(),
 
         public BashToolConfig $bash = new BashToolConfig(),
+
+        public CodeModeConfig $codeMode = new CodeModeConfig(),
     ) {
     }
 }

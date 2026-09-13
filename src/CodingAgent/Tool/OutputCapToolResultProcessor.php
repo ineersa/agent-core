@@ -185,6 +185,8 @@ final readonly class OutputCapToolResultProcessor implements ToolResultProcessor
         // Forward only explicitly whitelisted non-sensitive operational metadata.
         // New keys must be reviewed before addition — raw output, error bodies,
         // and environment data must never appear here.
+        // Do not forward code_mode_diagnostics: stdout/stderr may contain secrets
+        // and the capped saved text already includes any rendered diagnostics.
         foreach (['mode', 'duration_ms', 'sources'] as $key) {
             if (\array_key_exists($key, $original)) {
                 $safe[$key] = $original[$key];

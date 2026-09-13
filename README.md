@@ -136,6 +136,12 @@ instructions, and [prompt templates](docs/prompt-templates.md) for repeated task
 Built-in [SafeGuard](docs/approvals.md) checks tool calls and can allow, block, or
 request approval before execution. It is separate from optional extension packages.
 
+The optional `code_mode` tool can run PHP scripts that call other tools. It stays
+disabled until you set `tools.code_mode.enabled: true` and restart. Raw PHP inside
+those scripts bypasses toolbox hooks, and any launcher sandbox such as
+`hatfield-safe` is inherited rather than added by the tool. See the
+[tool catalog](docs/tools.md) and [settings](docs/settings.md).
+
 Optional extension packages provide task workflow, file rewind, and observational
 memory. Installing and enabling extensions is separate from launching the agent.
 See [extension settings](docs/settings-agents.md) and the
