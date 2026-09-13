@@ -52,9 +52,14 @@ user or project settings, then restart Hatfield.
 
 The script can call registered tools, including MCP tools, through
 `tool(name, arguments)` using each tool's runtime name. Values returned by
-`tool()` stay as JSON-compatible PHP values. Strings stay strings. Use
-`toon_encode()` and `toon_decode()` when you need TOON conversion. Nested tool
-failures throw `RuntimeException`.
+`tool()` stay as JSON-compatible PHP values. Strings stay strings. Extra
+`tool()` arguments fail. Use `toon_encode()` and `toon_decode()` when you need
+TOON conversion. `toon_encode()` rejects unsupported or lossy values.
+`toon_decode()` leaves valid scalar text unchanged. Nested tool failures throw
+`RuntimeException`. Missing or explicit `null` returns are visible as `null`.
+Bounded script stdout/stderr, including PHP warnings, are exposed separately
+from the return value. `die()`/`exit` without a return reports that the script
+exited without returning a value, even on exit code 0.
 
 Raw PHP filesystem and process functions also work inside the script. Those
 calls bypass toolbox hooks and approvals. If you launch Hatfield under

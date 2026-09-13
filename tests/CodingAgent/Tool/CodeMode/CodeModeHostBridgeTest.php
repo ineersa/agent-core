@@ -355,6 +355,152 @@ PHP);
         $this->assertSame([$result['timeout']], $seenTimeouts);
     }
 
+    public function testNestedCodeModeEnvelopeIsUnwrappedToRawValue(): void
+    {
+        $seen = [];
+        $bridge = $this->bridgeWithToolbox(static function (string $name) use (&$seen): void {
+            $seen[] = $name;
+        });
+
+        // Replace toolbox to return a nested code_mode envelope and assert unwrap.
+        $accessor = self::getContainer()->get(StackToolExecutionContextAccessor::class);
+        $this->assertInstanceOf(StackToolExecutionContextAccessor::class, $accessor);
+        $locator = new class($accessor) implements \Psr\Container\ContainerInterface {
+            public function __construct(private StackToolExecutionContextAccessor $accessor)
+            {
+            }
+
+            public function get(string $id): mixed
+            {
+                if ('toolbox' !== $id) {
+                    throw new \RuntimeException('Unexpected locator id: '.$id);
+                }
+
+                return new class implements \Symfony\AI\Agent\Toolbox\ToolboxInterface {
+                    public function getTools(): array
+                    {
+                        return [];
+                    }
+
+                    public function execute(\Symfony\AI\Platform\Result\ToolCall $toolCall): \Symfony\AI\Agent\Toolbox\ToolResult
+                    {
+                        return new \Symfony\AI\Agent\Toolbox\ToolResult(
+                            $toolCall,
+                            new \Ineersa\CodingAgent\Tool\CodeMode\CodeModeExecutionResult(
+                                ['nested' => true],
+                                ['stdout' => 'child-out'],
+                            ),
+                        );
+                    }
+                };
+            }
+
+            public function has(string $id): bool
+            {
+                return 'toolbox' === $id;
+            }
+        };
+
+        $bridge = new CodeModeHostBridge(
+            $accessor,
+            self::getContainer()->get(ToolRuntime::class),
+            $locator,
+            self::getContainer()->get(RuntimeProcessConfig::class),
+        );
+
+        $result = $this->runScript($bridge, "return tool('code_mode', ['script' => 'return 1;']);");
+        $this->assertSame(['nested' => true], $result);
+    }
+
+    public function testToonEncodeRejectsUnsupportedValuesAndDecodeKeepsScalarText(): void
+    {
+        $bridge = $this->bridge();
+
+        try {
+            $this->runScript($bridge, 'return toon_encode(function () {});');
+            $this->fail('Expected ToolCallException for unsupported toon_encode input');
+        } catch (ToolCallException $exception) {
+            $this->assertStringContainsString('Closure', $exception->getMessage());
+        }
+
+        $this->assertSame('plain text', $this->runScript($bridge, "return toon_decode('plain text');"));
+    }
+
+    public function testStdoutAndStderrDiagnosticsAreReturnedSeparately(): void
+    {
+        $bridge = $this->bridge();
+
+        $result = $this->runScript($bridge, 'echo "hello-out"; fwrite(STDERR, "hello-err\\n"); return 7;');
+        $this->assertInstanceOf(\Ineersa\CodingAgent\Tool\CodeMode\CodeModeExecutionResult::class, $result);
+        $this->assertSame(7, $result->result);
+        $this->assertStringContainsString('hello-out', $result->diagnostics['stdout'] ?? '');
+        $this->assertStringContainsString('hello-err', $result->diagnostics['stderr'] ?? '');
+    }
+
+    public function testNullReturnIsPreserved(): void
+    {
+        $bridge = $this->bridge();
+
+        $this->assertNull($this->runScript($bridge, 'return null;'));
+        $this->assertNull($this->runScript($bridge, '// no return'));
+    }
+
+    public function testDieWithoutReturnReportsExitWithoutReturning(): void
+    {
+        $bridge = $this->bridge();
+
+        try {
+            $this->runScript($bridge, "die('died-message');");
+            $this->fail('Expected ToolCallException for die without return');
+        } catch (ToolCallException $exception) {
+            $message = $exception->getMessage();
+            $this->assertStringContainsString('exited without returning a value', $message);
+            $this->assertStringContainsString('died-message', $message);
+            $this->assertStringContainsString('exit code 0', $message);
+        }
+    }
+
+    public function testToolRejectsExtraArguments(): void
+    {
+        $bridge = $this->bridge();
+
+        try {
+            $this->runScript($bridge, "return tool('read', ['path' => 'README.md'], 'extra');");
+            $this->fail('Expected ToolCallException for extra tool() arguments');
+        } catch (ToolCallException $exception) {
+            $this->assertStringContainsString('at most two arguments', $exception->getMessage());
+        }
+    }
+
+    public function testDiagnosticPathsUseStableScriptNameAndAdjustedLine(): void
+    {
+        $bridge = $this->bridge();
+
+        try {
+            $this->runScript($bridge, "throw new RuntimeException('boom-line');");
+            $this->fail('Expected ToolCallException for thrown exception');
+        } catch (ToolCallException $exception) {
+            $message = $exception->getMessage();
+            $this->assertStringContainsString('boom-line', $message);
+            // Path normalization applies to process diagnostics; exception messages from
+            // IPC may not include file paths. Force a warning path assertion via stderr.
+        }
+
+        try {
+            $this->runScript($bridge, '$x = $undefinedVar; return 1;');
+            // warning + return still succeeds with diagnostics
+        } catch (ToolCallException $exception) {
+            $this->fail('Undefined variable warning should not fail the script: '.$exception->getMessage());
+        }
+
+        $result = $this->runScript($bridge, '$x = $undefinedVar; return 1;');
+        $this->assertInstanceOf(\Ineersa\CodingAgent\Tool\CodeMode\CodeModeExecutionResult::class, $result);
+        $stderr = $result->diagnostics['stderr'] ?? '';
+        $this->assertStringContainsString('script.php(', $stderr);
+        $this->assertDoesNotMatchRegularExpression('#/tmp/[^\\s:]+/script\\.php#', $stderr);
+        $this->assertMatchesRegularExpression('#script\\.php\\(1\\)#', $stderr);
+    }
+
     private function bridge(): CodeModeHostBridge
     {
         $bridge = self::getContainer()->get('test.code_mode_host_bridge');

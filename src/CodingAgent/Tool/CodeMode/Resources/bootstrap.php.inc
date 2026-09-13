@@ -98,6 +98,10 @@ if (!\function_exists('tool')) {
      */
     function tool(string $name, array $arguments = []): mixed
     {
+        if (\func_num_args() > 2) {
+            throw new InvalidArgumentException('tool() accepts at most two arguments: tool(string $name, array $arguments = []).');
+        }
+
         /** @var resource|null $connection */
         global $connection;
 
@@ -169,6 +173,8 @@ if (!function_exists('toon_encode')) {
      */
     function toon_encode(mixed $value): string
     {
+        \Ineersa\CodingAgent\Tool\CodeMode\CodeModeValueCodec::assertEncodable($value, 'toon_encode() input');
+
         return \HelgeSverre\Toon\Toon::encode($value);
     }
 }
@@ -176,6 +182,9 @@ if (!function_exists('toon_encode')) {
 if (!function_exists('toon_decode')) {
     /**
      * Decode TOON text to a PHP value.
+     *
+     * Valid scalar text stays a scalar. Malformed structured TOON still follows
+     * the HelgeSverre decoder contract.
      */
     function toon_decode(string $toon): mixed
     {
@@ -225,6 +234,9 @@ if (!is_string($valueCodec) || '' === $valueCodec || !is_file($valueCodec)) {
 }
 require_once $valueCodec;
 
+ini_set('display_errors', '1');
+error_reporting(E_ALL);
+
 $connection = @stream_socket_client('unix://'.$socketPath, $errno, $errstr, 5.0);
 if (false === $connection) {
     fwrite(\STDERR, \sprintf("Failed to connect to code-mode host: [%d] %s\n", $errno, $errstr));
@@ -232,6 +244,23 @@ if (false === $connection) {
 }
 
 stream_set_blocking($connection, true);
+
+register_shutdown_function(static function () use (&$connection): void {
+    $error = error_get_last();
+    if (null === $error) {
+        return;
+    }
+
+    $fatalTypes = [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR];
+    if (!\in_array($error['type'], $fatalTypes, true)) {
+        return;
+    }
+
+    $message = (string) ($error['message'] ?? 'Fatal error');
+    if ('' !== $message) {
+        fwrite(\STDERR, $message."\n");
+    }
+});
 
 try {
     $result = (static function () use ($scriptPath): mixed {

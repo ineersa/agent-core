@@ -41,6 +41,8 @@ final readonly class CodeModeHostBridge
     private const int POLL_INTERVAL_MICROS = 20_000;
     private const int MAX_UNIX_SOCKET_PATH_BYTES = 100;
     private const int STDERR_TAIL_CHARS = 4000;
+    private const int STDOUT_TAIL_CHARS = 4000;
+    private const int SCRIPT_WRAPPER_PREFIX_LINES = 3;
     private const string TOOLBOX_LOCATOR_KEY = 'toolbox';
 
     public function __construct(
@@ -69,16 +71,17 @@ final readonly class CodeModeHostBridge
             $process = null;
             $server = null;
             $connection = null;
-            $stderr = new \stdClass();
-            $stderr->buffer = '';
+            $output = new \stdClass();
+            $output->stdout = '';
+            $output->stderr = '';
 
             try {
                 $this->writeScript($workspace['script'], $script);
                 $server = $this->createSocketServer($workspace['socket']);
                 $process = $this->startProcess($workspace, $cancelToken, $memoryLimit);
-                $connection = $this->acceptConnection($server, $process, $stderr, $cancelToken, $timeoutSeconds, $workspace['startedAtNs']);
+                $connection = $this->acceptConnection($server, $process, $output, $cancelToken, $timeoutSeconds, $workspace['startedAtNs']);
 
-                return $this->serve($connection, $process, $stderr, $parentContext, $cancelToken, $timeoutSeconds, $workspace['startedAtNs']);
+                return $this->serve($connection, $process, $output, $parentContext, $cancelToken, $timeoutSeconds, $workspace['startedAtNs']);
             } finally {
                 $this->stopProcess($process);
                 $this->closeResource($connection);
@@ -90,30 +93,30 @@ final readonly class CodeModeHostBridge
 
     /**
      * @param resource  $connection
-     * @param \stdClass $stderr
+     * @param \stdClass $output
      */
     private function serve(
         mixed $connection,
         Process $process,
-        object $stderr,
+        object $output,
         ?ToolContext $parentContext,
         CancellationTokenInterface $cancelToken,
         ?int $timeoutSeconds,
         int $startedAtNs,
     ): mixed {
-        $waiter = function () use ($connection, $process, $stderr, $cancelToken, $timeoutSeconds, $startedAtNs): void {
-            $this->waitWhileBlocked($connection, $process, $stderr, $cancelToken, $timeoutSeconds, $startedAtNs);
+        $waiter = function () use ($connection, $process, $output, $cancelToken, $timeoutSeconds, $startedAtNs): void {
+            $this->waitWhileBlocked($connection, $process, $output, $cancelToken, $timeoutSeconds, $startedAtNs);
         };
 
         while (true) {
             $this->assertNotCancelledOrTimedOut($cancelToken, $timeoutSeconds, $startedAtNs);
-            $this->drainProcessOutput($process, $stderr);
+            $this->drainProcessOutput($process, $output);
 
             if (!$this->waitForReadable($connection, $cancelToken, $timeoutSeconds, $startedAtNs)) {
-                $this->drainProcessOutput($process, $stderr);
+                $this->drainProcessOutput($process, $output);
                 if (!$process->isRunning()) {
                     // No buffered bytes left after the child exited.
-                    throw $this->earlyExitException($process, $stderr);
+                    throw $this->earlyExitException($process, $output);
                 }
 
                 continue;
@@ -121,15 +124,15 @@ final readonly class CodeModeHostBridge
 
             $frame = CodeModeIpc::read($connection, $waiter);
             if (null === $frame) {
-                $this->drainProcessOutput($process, $stderr);
+                $this->drainProcessOutput($process, $output);
                 if (!$process->isRunning()) {
-                    throw $this->earlyExitException($process, $stderr);
+                    throw $this->earlyExitException($process, $output);
                 }
 
                 // Socket EOF can race process death (for example OOM). Poll briefly
                 // so stderr can be drained into the early-exit path instead of a
                 // generic closed-connection message.
-                throw $this->connectionClosedException($process, $stderr, $cancelToken, $timeoutSeconds, $startedAtNs);
+                throw $this->connectionClosedException($process, $output, $cancelToken, $timeoutSeconds, $startedAtNs);
             }
 
             $type = $frame['type'] ?? null;
@@ -139,16 +142,19 @@ final readonly class CodeModeHostBridge
             }
 
             if ('return' === $type) {
+                $this->drainProcessOutput($process, $output);
                 if (($frame['ok'] ?? false) === true) {
                     try {
-                        return CodeModeValueCodec::assertEncodable($frame['result'] ?? null, 'Code-mode script return value');
+                        $result = CodeModeValueCodec::assertEncodable($frame['result'] ?? null, 'Code-mode script return value');
                     } catch (\RuntimeException $exception) {
-                        throw new ToolCallException($exception->getMessage(), retryable: false, previous: $exception);
+                        throw new ToolCallException($this->normalizeDiagnosticPaths($exception->getMessage()), retryable: false, previous: $exception);
                     }
+
+                    return $this->packExecutionResult($result, $output);
                 }
 
                 $message = \is_string($frame['error'] ?? null) ? $frame['error'] : 'Code-mode script failed.';
-                throw new ToolCallException($message, retryable: false);
+                throw new ToolCallException($this->normalizeDiagnosticPaths($message), retryable: false);
             }
 
             throw new ToolCallException(\sprintf('Unsupported code-mode IPC frame type: %s.', get_debug_type($type)), retryable: false);
@@ -279,6 +285,12 @@ final readonly class CodeModeHostBridge
             throw new ToolCallException('Human-input suspensions are not supported inside code_mode.', retryable: false);
         }
 
+        // Nested code_mode may return a diagnostics envelope. Preserve only the
+        // nested script value for IPC; nested stdout/stderr stay in that child.
+        if ($result instanceof CodeModeExecutionResult) {
+            $result = $result->result;
+        }
+
         try {
             return CodeModeValueCodec::assertEncodable($result, 'Nested tool result');
         } catch (\RuntimeException $exception) {
@@ -329,7 +341,7 @@ final readonly class CodeModeHostBridge
 
         return [
             'dir' => $dir,
-            'script' => $dir.'/s.php',
+            'script' => $dir.'/script.php',
             'socket' => $socket,
             'startedAtNs' => hrtime(true),
         ];
@@ -348,7 +360,7 @@ final readonly class CodeModeHostBridge
     private function materializeBootstrap(string $workspaceDir): string
     {
         $source = __DIR__.'/Resources/bootstrap.php.inc';
-        $target = $workspaceDir.'/b.php';
+        $target = $workspaceDir.'/bootstrap.php';
 
         try {
             $contents = file_get_contents($source);
@@ -496,21 +508,21 @@ final readonly class CodeModeHostBridge
      */
     /**
      * @param resource  $server
-     * @param \stdClass $stderr
+     * @param \stdClass $output
      *
      * @return resource
      */
     private function acceptConnection(
         mixed $server,
         Process $process,
-        object $stderr,
+        object $output,
         CancellationTokenInterface $cancelToken,
         ?int $timeoutSeconds,
         int $startedAtNs,
     ): mixed {
         while (true) {
             $this->assertNotCancelledOrTimedOut($cancelToken, $timeoutSeconds, $startedAtNs);
-            $this->drainProcessOutput($process, $stderr);
+            $this->drainProcessOutput($process, $output);
             $connection = @stream_socket_accept($server, 0.0);
             if (false !== $connection) {
                 stream_set_blocking($connection, false);
@@ -522,7 +534,7 @@ final readonly class CodeModeHostBridge
             // connect, write its return frame, and exit while the connection is
             // still queued on the listening socket.
             if (!$process->isRunning()) {
-                $this->drainProcessOutput($process, $stderr);
+                $this->drainProcessOutput($process, $output);
                 $connection = @stream_socket_accept($server, 0.0);
                 if (false !== $connection) {
                     stream_set_blocking($connection, false);
@@ -530,7 +542,7 @@ final readonly class CodeModeHostBridge
                     return $connection;
                 }
 
-                throw $this->earlyExitException($process, $stderr);
+                throw $this->earlyExitException($process, $output);
             }
 
             usleep(self::POLL_INTERVAL_MICROS);
@@ -561,18 +573,18 @@ final readonly class CodeModeHostBridge
 
     /**
      * @param resource  $connection
-     * @param \stdClass $stderr
+     * @param \stdClass $output
      */
     private function waitWhileBlocked(
         mixed $connection,
         Process $process,
-        object $stderr,
+        object $output,
         CancellationTokenInterface $cancelToken,
         ?int $timeoutSeconds,
         int $startedAtNs,
     ): void {
         $this->assertNotCancelledOrTimedOut($cancelToken, $timeoutSeconds, $startedAtNs);
-        $this->drainProcessOutput($process, $stderr);
+        $this->drainProcessOutput($process, $output);
 
         $read = [$connection];
         $write = [$connection];
@@ -582,10 +594,10 @@ final readonly class CodeModeHostBridge
             throw new ToolCallException('Failed while waiting for code-mode IPC progress.', retryable: true);
         }
 
-        $this->drainProcessOutput($process, $stderr);
+        $this->drainProcessOutput($process, $output);
         if (0 === $selected && !$process->isRunning()) {
             // Progress wait during an in-flight frame; peer death mid-frame is fatal.
-            throw $this->earlyExitException($process, $stderr);
+            throw $this->earlyExitException($process, $output);
         }
     }
 
@@ -648,11 +660,11 @@ final readonly class CodeModeHostBridge
     }
 
     /**
-     * @param \stdClass $stderr
+     * @param \stdClass $output
      */
     private function connectionClosedException(
         Process $process,
-        object $stderr,
+        object $output,
         CancellationTokenInterface $cancelToken,
         int $timeoutSeconds,
         int $startedAtNs,
@@ -660,66 +672,128 @@ final readonly class CodeModeHostBridge
         $deadlineNs = hrtime(true) + 200_000_000;
         while ($process->isRunning() && hrtime(true) < $deadlineNs) {
             $this->assertNotCancelledOrTimedOut($cancelToken, $timeoutSeconds, $startedAtNs);
-            $this->drainProcessOutput($process, $stderr);
+            $this->drainProcessOutput($process, $output);
             usleep(self::POLL_INTERVAL_MICROS);
         }
 
-        $this->drainProcessOutput($process, $stderr);
+        $this->drainProcessOutput($process, $output);
         if (!$process->isRunning()) {
-            return $this->earlyExitException($process, $stderr);
+            return $this->earlyExitException($process, $output);
         }
 
         return new ToolCallException('Code-mode script closed the host connection before returning a value.', retryable: false);
     }
 
     /**
-     * @param \stdClass $stderr
+     * @param \stdClass $output
      */
-    private function earlyExitException(Process $process, object $stderr): ToolCallException
+    private function earlyExitException(Process $process, object $output): ToolCallException
     {
-        $this->drainProcessOutput($process, $stderr);
+        $this->drainProcessOutput($process, $output);
 
+        $exitCode = $process->getExitCode();
         $message = \sprintf(
-            'Code-mode PHP subprocess exited early (exit code %s).',
-            null === $process->getExitCode() ? 'unknown' : (string) $process->getExitCode(),
+            'Code-mode PHP subprocess exited without returning a value (exit code %s).',
+            null === $exitCode ? 'unknown' : (string) $exitCode,
         );
 
-        $stderrTail = trim($stderr->buffer);
+        $stdoutTail = trim((string) $output->stdout);
+        $stderrTail = trim((string) $output->stderr);
+        if ('' !== $stdoutTail) {
+            $message .= "\nstdout:\n".$this->normalizeDiagnosticPaths($stdoutTail);
+        }
         if ('' !== $stderrTail) {
-            $message .= "\n".$stderrTail;
+            $message .= "\nstderr:\n".$this->normalizeDiagnosticPaths($stderrTail);
         }
 
         return new ToolCallException($message, retryable: false);
     }
 
     /**
-     * @param \stdClass $stderr
+     * @param \stdClass $output
      */
-    private function drainProcessOutput(Process $process, object $stderr): void
+    private function drainProcessOutput(Process $process, object $output): void
     {
         try {
-            // Discard stdout so a chatty script cannot retain unbounded host buffers.
-            $process->clearOutput();
-            $chunk = $process->getIncrementalErrorOutput();
-            if ('' === $chunk && !$process->isRunning()) {
+            $stdoutChunk = $process->getIncrementalOutput();
+            if ('' === $stdoutChunk && !$process->isRunning()) {
+                $full = $process->getOutput();
+                if (\strlen($full) > \strlen((string) $output->stdout)) {
+                    $stdoutChunk = substr($full, \strlen((string) $output->stdout));
+                }
+            }
+
+            $stderrChunk = $process->getIncrementalErrorOutput();
+            if ('' === $stderrChunk && !$process->isRunning()) {
                 // Final drain: Incremental can miss already-buffered stderr after exit.
                 $full = $process->getErrorOutput();
-                if (\strlen($full) > \strlen($stderr->buffer)) {
-                    $chunk = substr($full, \strlen($stderr->buffer));
+                if (\strlen($full) > \strlen((string) $output->stderr)) {
+                    $stderrChunk = substr($full, \strlen((string) $output->stderr));
                 }
             }
         } catch (\Symfony\Component\Process\Exception\LogicException) {
             return;
         }
 
-        if ('' === $chunk) {
-            return;
+        if ('' !== $stdoutChunk) {
+            $output->stdout .= $stdoutChunk;
+            if (\strlen((string) $output->stdout) > self::STDOUT_TAIL_CHARS) {
+                $output->stdout = substr((string) $output->stdout, -self::STDOUT_TAIL_CHARS);
+            }
         }
 
-        $stderr->buffer .= $chunk;
-        if (\strlen($stderr->buffer) > self::STDERR_TAIL_CHARS) {
-            $stderr->buffer = substr($stderr->buffer, -self::STDERR_TAIL_CHARS);
+        if ('' !== $stderrChunk) {
+            $output->stderr .= $stderrChunk;
+            if (\strlen((string) $output->stderr) > self::STDERR_TAIL_CHARS) {
+                $output->stderr = substr((string) $output->stderr, -self::STDERR_TAIL_CHARS);
+            }
         }
+    }
+
+    /**
+     * @param \stdClass $output
+     */
+    private function packExecutionResult(mixed $result, object $output): mixed
+    {
+        $diagnostics = [];
+        $stdout = trim((string) $output->stdout);
+        $stderr = trim((string) $output->stderr);
+        if ('' !== $stdout) {
+            $diagnostics['stdout'] = $this->normalizeDiagnosticPaths($stdout);
+        }
+        if ('' !== $stderr) {
+            $diagnostics['stderr'] = $this->normalizeDiagnosticPaths($stderr);
+        }
+
+        if ([] === $diagnostics) {
+            return $result;
+        }
+
+        return new CodeModeExecutionResult($result, $diagnostics);
+    }
+
+    private function normalizeDiagnosticPaths(string $text): string
+    {
+        $prefixLines = self::SCRIPT_WRAPPER_PREFIX_LINES;
+        $normalized = preg_replace_callback(
+            '#(?:phar://)?[^\s"\']+/(script|bootstrap)\.php(?:\((\d+)\)| on line (\d+))#',
+            static function (array $matches) use ($prefixLines): string {
+                $file = $matches[1];
+                $lineToken = $matches[2] ?? '';
+                if ('' === $lineToken) {
+                    $lineToken = $matches[3] ?? '0';
+                }
+                $line = (int) $lineToken;
+                if ('script' === $file && $line > $prefixLines) {
+                    $line -= $prefixLines;
+                }
+
+                return $file.'.php('.$line.')';
+            },
+            $text,
+        );
+
+        return \is_string($normalized) ? $normalized : $text;
     }
 
     private function stopProcess(?Process $process): void
