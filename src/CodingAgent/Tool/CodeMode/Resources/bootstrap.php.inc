@@ -239,6 +239,9 @@ require_once $valueCodec;
 ini_set('display_errors', '0');
 ini_set('display_startup_errors', '0');
 ini_set('html_errors', '0');
+ini_set('log_errors', '1');
+// Empty error_log sends logged warnings/errors to STDERR for the host drain.
+ini_set('error_log', '');
 error_reporting(E_ALL);
 
 $connection = @stream_socket_client('unix://'.$socketPath, $errno, $errstr, 5.0);

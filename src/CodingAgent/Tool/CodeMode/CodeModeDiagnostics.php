@@ -7,10 +7,10 @@ namespace Ineersa\CodingAgent\Tool\CodeMode;
 /**
  * Formats and bounds code_mode stdout/stderr for model-facing diagnostics.
  *
- * Warnings stay concise and appear once. Errors keep stacks with stable
- * script.php/bootstrap.php path labels. The combined diagnostics block is
- * truncated before OutputCap so a tiny return plus chatty output stays
- * self-contained under the default tool-result cap.
+ * Warning duplication and Xdebug stacks are prevented at process start
+ * (display_errors=0, xdebug.mode=off, log_errors=1). This helper only
+ * normalizes script/bootstrap paths and hard-bounds the rendered block so
+ * headers plus stream tails cannot quietly exceed the default OutputCap.
  *
  * @internal
  */
@@ -26,10 +26,6 @@ final class CodeModeDiagnostics
     {
         $stdout = self::normalizePaths(trim((string) $stdout), $wrapperPrefixLines);
         $stderr = self::normalizePaths(trim((string) $stderr), $wrapperPrefixLines);
-
-        [$stdout, $stderr] = self::dedupeWarnings($stdout, $stderr);
-        $stdout = self::compactWarningNoise($stdout);
-        $stderr = self::compactWarningNoise($stderr);
 
         return array_filter([
             'stdout' => $stdout,
@@ -141,117 +137,5 @@ final class CodeModeDiagnostics
         }
 
         return $normalized;
-    }
-
-    /**
-     * @return array{0: string, 1: string}
-     */
-    private static function dedupeWarnings(string $stdout, string $stderr): array
-    {
-        if ('' === $stdout || '' === $stderr) {
-            return [$stdout, $stderr];
-        }
-
-        $stdoutLines = preg_split("/\r\n|\n|\r/", $stdout) ?: [];
-        $stderrLines = preg_split("/\r\n|\n|\r/", $stderr) ?: [];
-        $stdoutFingerprints = [];
-        foreach ($stdoutLines as $line) {
-            $fingerprint = self::warningFingerprint($line);
-            if (null !== $fingerprint) {
-                $stdoutFingerprints[$fingerprint] = true;
-            }
-        }
-
-        if ([] === $stdoutFingerprints) {
-            return [$stdout, $stderr];
-        }
-
-        $kept = [];
-        $skipStack = false;
-        foreach ($stderrLines as $line) {
-            $trimmed = trim($line);
-            if ($skipStack) {
-                if ('' === $trimmed || self::isStackFrameLine($trimmed) || self::isStackHeader($trimmed)) {
-                    continue;
-                }
-                $skipStack = false;
-            }
-
-            $fingerprint = self::warningFingerprint($line);
-            if (null !== $fingerprint && isset($stdoutFingerprints[$fingerprint])) {
-                $skipStack = true;
-                continue;
-            }
-
-            $kept[] = $line;
-        }
-
-        return [$stdout, trim(implode("\n", $kept))];
-    }
-
-    private static function compactWarningNoise(string $text): string
-    {
-        if ('' === $text) {
-            return '';
-        }
-
-        $lines = preg_split("/\r\n|\n|\r/", $text) ?: [];
-        $kept = [];
-        $skipStack = false;
-        foreach ($lines as $line) {
-            $trimmed = trim($line);
-            if ($skipStack) {
-                if ('' === $trimmed || self::isStackFrameLine($trimmed) || self::isStackHeader($trimmed)) {
-                    continue;
-                }
-                $skipStack = false;
-            }
-
-            if (self::isWarningLine($trimmed)) {
-                $kept[] = self::formatConciseWarning($trimmed);
-                $skipStack = true;
-                continue;
-            }
-
-            $kept[] = $line;
-        }
-
-        return trim(implode("\n", $kept));
-    }
-
-    private static function warningFingerprint(string $line): ?string
-    {
-        $line = trim($line);
-        if (!self::isWarningLine($line)) {
-            return null;
-        }
-
-        $line = preg_replace('/^(?:PHP\s+)?Warning:\s+/i', '', $line) ?? $line;
-
-        return strtolower(preg_replace('/\s+/', ' ', $line) ?? $line);
-    }
-
-    private static function isWarningLine(string $line): bool
-    {
-        return 1 === preg_match('/^(?:PHP\s+)?Warning:/i', $line);
-    }
-
-    private static function formatConciseWarning(string $line): string
-    {
-        $line = preg_replace('/^(?:PHP\s+)?Warning:\s+/i', 'Warning: ', $line) ?? $line;
-
-        return $line;
-    }
-
-    private static function isStackHeader(string $line): bool
-    {
-        return 1 === preg_match('/^(?:PHP\s+)?(?:Stack trace|Call Stack):/i', $line);
-    }
-
-    private static function isStackFrameLine(string $line): bool
-    {
-        return 1 === preg_match('/^(?:PHP\s+)?#\d+\s/', $line)
-            || 1 === preg_match('/^(?:PHP\s+)?\d+\.\s/', $line)
-            || 1 === preg_match('/^\d+\.\d+\s+\d+\s+\d+\.\s/', $line);
     }
 }

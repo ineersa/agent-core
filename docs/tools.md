@@ -58,10 +58,11 @@ TOON conversion. `toon_encode()` rejects unsupported or lossy values.
 `toon_decode()` leaves valid scalar text unchanged. Nested tool failures throw
 `RuntimeException`. Missing or explicit `null` returns are visible as `null`.
 Bounded script stdout/stderr, including PHP warnings, are appended to the
-model-facing return text. Warnings appear once without call stacks. Errors keep
-useful stacks and use stable `script.php` / `bootstrap.php` path labels. The
-combined diagnostics block is hard-capped to a few KB with an explicit
-truncation marker before ordinary output capping.
+model-facing return text. The child process starts with `display_errors=0` and
+`xdebug.mode=off`, so warnings log once on stderr without an stdout mirror or
+Xdebug stacks. Errors keep useful stacks and use stable `script.php` /
+`bootstrap.php` path labels. The combined diagnostics block is hard-capped to a
+few KB with an explicit truncation marker before ordinary output capping.
 `die()`/`exit` without a return reports that the script exited without returning
 a value, even on exit code 0.
 

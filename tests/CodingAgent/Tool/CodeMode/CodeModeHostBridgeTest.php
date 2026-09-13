@@ -503,10 +503,12 @@ PHP);
         $this->assertDoesNotMatchRegularExpression('#/tmp/[^\\s:]+/script\\.php#', $combined);
         $this->assertMatchesRegularExpression('#script\\.php\\(1\\)#', $combined);
         $this->assertSame(1, substr_count($combined, 'Undefined variable'));
-        $this->assertStringNotContainsString('Stack', $combined);
-        // display_errors=0 keeps the warning on stderr only.
+        // Source prevention: display_errors=0 + xdebug.mode=off keeps the
+        // warning on stderr once, without an stdout mirror or Xdebug stack.
         $this->assertSame('', $stdout);
         $this->assertNotSame('', $stderr);
+        $this->assertStringNotContainsString('Stack', $stderr);
+        $this->assertStringNotContainsString('Call Stack', $stderr);
     }
 
     public function testHugeStdoutDiagnosticsAreBoundedBeforeReturn(): void
@@ -518,6 +520,12 @@ PHP);
         $stdout = $result->diagnostics['stdout'] ?? '';
         $this->assertNotSame('', $stdout);
         $this->assertLessThanOrEqual(4000, \strlen($stdout));
+
+        // Measured: stream capture already tails to 4000. The rendered model-
+        // facing block still needs the hard bound because of headers.
+        $block = \Ineersa\CodingAgent\Tool\CodeMode\CodeModeDiagnostics::renderBlock($result->diagnostics);
+        $this->assertLessThanOrEqual(4000, \strlen($block));
+        $this->assertStringContainsString('...[code_mode diagnostics truncated]', $block);
     }
 
     public function testTypeErrorUsesNormalizedScriptPath(): void

@@ -486,6 +486,8 @@ final readonly class CodeModeHostBridge
                 '-d', 'display_startup_errors=0',
                 '-d', 'html_errors=0',
                 '-d', 'xdebug.mode=off',
+                '-d', 'log_errors=1',
+                '-d', 'error_log=',
                 $bootstrap,
             ],
             $this->runtimeProcessConfig->runtimeCwd(),
