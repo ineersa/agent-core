@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Runtime\Process;
 
 use Ineersa\AgentCore\Tests\Support\TestLogger;
+use Ineersa\CodingAgent\Config\CodeModeConfig;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator;
@@ -76,7 +77,13 @@ PHP);
 
     public function testEmptyFiltersOmitArgvAndEnv(): void
     {
-        $dump = $this->startAndCapture(tools: '', toolsExcluded: '');
+        // Default tools.code_mode.enabled=false still injects code_mode into the
+        // effective denylist. Empty CLI filters alone do not mean empty argv.
+        $dump = $this->startAndCapture(
+            tools: '',
+            toolsExcluded: '',
+            codeModeEnabled: true,
+        );
 
         $this->assertContains('agent', $dump['argv']);
         $this->assertContains('--controller', $dump['argv']);
@@ -88,9 +95,23 @@ PHP);
         $this->assertNull($dump['env']['HATFIELD_TOOLS_EXCLUDED']);
     }
 
+    public function testDefaultDisabledCodeModeAppearsInExcludedArgvAndEnv(): void
+    {
+        $dump = $this->startAndCapture(tools: '', toolsExcluded: '');
+
+        $this->assertContains('--tools-excluded=code_mode', $dump['argv']);
+        $this->assertSame('code_mode', $dump['env']['HATFIELD_TOOLS_EXCLUDED']);
+        foreach ($dump['argv'] as $arg) {
+            $this->assertStringStartsNotWith('--tools=', $arg);
+        }
+        $this->assertNull($dump['env']['HATFIELD_TOOLS']);
+    }
+
     public function testConfiguredFiltersAppearInArgvAndEnvOnEverySpawn(): void
     {
-        $toolFilter = new ToolFilterRuntimeConfig();
+        // Keep code_mode enabled so this case isolates explicit CLI denylist
+        // propagation without the default-off code_mode injection.
+        $toolFilter = new ToolFilterRuntimeConfig(new CodeModeConfig(enabled: true));
         $toolFilter->tools = 'read,bash';
         $toolFilter->toolsExcluded = 'bash';
 
@@ -119,10 +140,10 @@ PHP);
     /**
      * @return array{argv: list<string>, env: array{HATFIELD_TOOLS: ?string, HATFIELD_TOOLS_EXCLUDED: ?string}}
      */
-    private function startAndCapture(string $tools, string $toolsExcluded): array
+    private function startAndCapture(string $tools, string $toolsExcluded, bool $codeModeEnabled = false): array
     {
         $dumpFile = $this->tmpDir.'/dump-'.bin2hex(random_bytes(4)).'.json';
-        $toolFilter = new ToolFilterRuntimeConfig();
+        $toolFilter = new ToolFilterRuntimeConfig(new CodeModeConfig(enabled: $codeModeEnabled));
         $toolFilter->tools = $tools;
         $toolFilter->toolsExcluded = $toolsExcluded;
 
