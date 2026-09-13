@@ -20,6 +20,9 @@ use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
  * results; only delivery=tool_result_replace replaces content, so diagnostics
  * must live in the visible content text.
  *
+ * Also rewrites successful null/bool returns to explicit `null`/`true`/`false`
+ * because ToolExecutor's generic scalar stringification turns false into "".
+ *
  * Runs before OutputCap so large returns can still be capped after diagnostics
  * are extracted from the raw envelope. The diagnostics block itself is already
  * hard-bounded so a tiny return plus chatty output stays under the default cap.
@@ -51,31 +54,31 @@ final readonly class CodeModeDiagnosticsToolResultProcessor implements ToolResul
         $rawResult = $details['raw_result'];
         if ($rawResult instanceof CodeModeExecutionResult) {
             $value = $rawResult->result;
-            $diagnostics = CodeModeDiagnostics::prepare(
-                $rawResult->diagnostics['stdout'] ?? '',
-                $rawResult->diagnostics['stderr'] ?? '',
-            );
-            $hasDiagnostics = [] !== $diagnostics;
+            // Host already prepared diagnostics; do not re-run prepare here.
+            $diagnostics = $rawResult->diagnostics;
+            $hasDiagnostics = $rawResult->hasDiagnostics();
         } else {
             $value = $rawResult;
             $diagnostics = [];
             $hasDiagnostics = false;
         }
 
-        // Only rewrite visible text for an explicit successful null return.
-        if (!$hasDiagnostics) {
-            if (null !== $value) {
-                return $result;
-            }
+        // Rewrite visible text for diagnostics and for null/bool returns.
+        // Without this, ToolExecutor leaves false as "" and true as "1".
+        if (!$hasDiagnostics && null !== $value && !\is_bool($value)) {
+            return $result;
+        }
 
-            $details['raw_result'] = null;
+        $visibleReturn = $this->normalizeVisibleResult($value);
+        if (!$hasDiagnostics) {
+            $details['raw_result'] = $value;
 
             return new ToolResult(
                 toolCallId: $result->toolCallId,
                 toolName: $result->toolName,
                 content: [[
                     'type' => 'text',
-                    'text' => 'null',
+                    'text' => $visibleReturn,
                 ]],
                 details: $details,
                 isError: false,
@@ -83,7 +86,6 @@ final readonly class CodeModeDiagnosticsToolResultProcessor implements ToolResul
         }
 
         $diagnosticBlock = CodeModeDiagnostics::renderBlock($diagnostics);
-        $visibleReturn = $this->normalizeVisibleResult($value);
         $visibleText = '' === $visibleReturn
             ? $diagnosticBlock
             : $visibleReturn."\n\n".$diagnosticBlock;
@@ -143,6 +145,10 @@ final readonly class CodeModeDiagnosticsToolResultProcessor implements ToolResul
     {
         if (null === $result) {
             return 'null';
+        }
+
+        if (\is_bool($result)) {
+            return $result ? 'true' : 'false';
         }
 
         if (\is_string($result)) {

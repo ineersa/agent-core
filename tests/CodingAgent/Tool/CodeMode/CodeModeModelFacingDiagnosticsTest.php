@@ -100,6 +100,33 @@ final class CodeModeModelFacingDiagnosticsTest extends TestCase
         $this->assertStringContainsString("stdout:\nnull-out", $visible);
     }
 
+    public function testBooleanReturnsAreVisibleWithoutAndWithDiagnostics(): void
+    {
+        $plain = $this->executor($this->toolboxReturning(false), defaultCap: 10_000)
+            ->execute($this->toolCall('call-false-plain'));
+        $this->assertSame('false', $plain->content[0]['text'] ?? null);
+
+        $withDiag = $this->executor($this->toolboxReturning(new CodeModeExecutionResult(true, [
+            'stderr' => 'warn',
+        ])), defaultCap: 10_000)->execute($this->toolCall('call-true-diag'));
+        $visible = (string) ($withDiag->content[0]['text'] ?? '');
+        $this->assertStringStartsWith("true\n\ncode_mode diagnostics\n", $visible);
+        $this->assertStringContainsString("stderr:\nwarn", $visible);
+
+        $envelope = ToolCallResultFactory::fromExecuteToolCallAndToolResult(
+            $this->executeMessage('call-true-diag'),
+            $withDiag,
+        );
+        $serializer = AttributeSerializerValidatorTestFactory::denormalizer();
+        $notifications = ModelNotificationCodec::denormalizeFromDetails(
+            $serializer,
+            $envelope->result['details'] ?? null,
+        );
+        $message = (new AgentMessageNormalizer())->toolMessage($envelope, $notifications);
+        $modelText = (string) ($message->content[0]['text'] ?? '');
+        $this->assertSame($visible, $modelText);
+    }
+
     public function testOversizedReturnWithDiagnosticsIsStillCapped(): void
     {
         $large = str_repeat('A', 300);

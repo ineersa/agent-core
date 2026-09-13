@@ -59,6 +59,50 @@ final class CodeModeDiagnosticsToolResultProcessorTest extends TestCase
         $this->assertNull($processed->details['raw_result']);
     }
 
+    public function testBooleanReturnsBecomeVisibleTrueFalseWithoutDiagnostics(): void
+    {
+        $processor = $this->processor();
+
+        $trueResult = new ToolResult(
+            toolCallId: 'call-true',
+            toolName: CodeModeTool::NAME,
+            content: [['type' => 'text', 'text' => '1']],
+            details: ['raw_result' => true],
+        );
+        $falseResult = new ToolResult(
+            toolCallId: 'call-false',
+            toolName: CodeModeTool::NAME,
+            content: [['type' => 'text', 'text' => '']],
+            details: ['raw_result' => false],
+        );
+
+        $this->assertSame('true', $processor->process($trueResult, $this->toolCall('call-true', ['script' => 'return true;']))->content[0]['text'] ?? null);
+        $this->assertSame('false', $processor->process($falseResult, $this->toolCall('call-false', ['script' => 'return false;']))->content[0]['text'] ?? null);
+    }
+
+    public function testBooleanReturnsRemainVisibleWithDiagnostics(): void
+    {
+        $processor = $this->processor();
+        $toolCall = $this->toolCall('call-bool-diag', ['script' => 'echo "out"; return false;']);
+        $result = new ToolResult(
+            toolCallId: 'call-bool-diag',
+            toolName: CodeModeTool::NAME,
+            content: [['type' => 'text', 'text' => '']],
+            details: [
+                'raw_result' => new CodeModeExecutionResult(false, [
+                    'stdout' => 'out',
+                ]),
+            ],
+        );
+
+        $processed = $processor->process($result, $toolCall);
+        $visible = (string) ($processed->content[0]['text'] ?? '');
+
+        $this->assertStringStartsWith("false\n\ncode_mode diagnostics\n", $visible);
+        $this->assertStringContainsString("stdout:\nout", $visible);
+        $this->assertFalse($processed->details['raw_result'] ?? null);
+    }
+
     public function testErrorResultWithoutRawResultIsLeftUntouched(): void
     {
         $processor = $this->processor();

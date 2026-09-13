@@ -23,9 +23,9 @@ corrections on this task branch. View them in a Markdown renderer with Mermaid s
 
 ## Discovery proposals
 
-[PHP code mode](php-code-mode-discovery.md) compares current tool execution with a
-proposed PHP bridge. It covers process ownership, nested calls, result handling,
-approvals, cancellation, and inspection. This is not implemented architecture.
+[PHP code mode](php-code-mode-discovery.md) is a superseded discovery note. The
+implemented direct `code_mode` tool is documented in
+[tools.md](../docs/tools.md).
 
 ## Process topology
 
