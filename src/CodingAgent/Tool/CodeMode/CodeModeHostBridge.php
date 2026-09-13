@@ -730,8 +730,8 @@ final readonly class CodeModeHostBridge
             $stdoutChunk = $process->getIncrementalOutput();
             if ('' === $stdoutChunk && !$process->isRunning()) {
                 $full = $process->getOutput();
-                if (\strlen($full) > \strlen((string) $output->stdout)) {
-                    $stdoutChunk = substr($full, \strlen((string) $output->stdout));
+                if (\strlen($full) > \strlen($output->stdout)) {
+                    $stdoutChunk = substr($full, \strlen($output->stdout));
                 }
             }
 
@@ -739,8 +739,8 @@ final readonly class CodeModeHostBridge
             if ('' === $stderrChunk && !$process->isRunning()) {
                 // Final drain: Incremental can miss already-buffered stderr after exit.
                 $full = $process->getErrorOutput();
-                if (\strlen($full) > \strlen((string) $output->stderr)) {
-                    $stderrChunk = substr($full, \strlen((string) $output->stderr));
+                if (\strlen($full) > \strlen($output->stderr)) {
+                    $stderrChunk = substr($full, \strlen($output->stderr));
                 }
             }
         } catch (\Symfony\Component\Process\Exception\LogicException) {
@@ -749,15 +749,15 @@ final readonly class CodeModeHostBridge
 
         if ('' !== $stdoutChunk) {
             $output->stdout .= $stdoutChunk;
-            if (\strlen((string) $output->stdout) > self::STDOUT_TAIL_CHARS) {
-                $output->stdout = substr((string) $output->stdout, -self::STDOUT_TAIL_CHARS);
+            if (\strlen($output->stdout) > self::STDOUT_TAIL_CHARS) {
+                $output->stdout = substr($output->stdout, -self::STDOUT_TAIL_CHARS);
             }
         }
 
         if ('' !== $stderrChunk) {
             $output->stderr .= $stderrChunk;
-            if (\strlen((string) $output->stderr) > self::STDERR_TAIL_CHARS) {
-                $output->stderr = substr((string) $output->stderr, -self::STDERR_TAIL_CHARS);
+            if (\strlen($output->stderr) > self::STDERR_TAIL_CHARS) {
+                $output->stderr = substr($output->stderr, -self::STDERR_TAIL_CHARS);
             }
         }
     }
