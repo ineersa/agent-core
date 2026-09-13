@@ -16,6 +16,7 @@ use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
+use Ineersa\Hatfield\ExtensionApi\Session\SessionEventDTO;
 use Ineersa\Hatfield\ExtensionApi\Session\SessionEventReaderInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallRewriteHookInterface;
@@ -268,6 +269,423 @@ final class OmQueryServiceTest extends IsolatedKernelTestCase
         $this->assertSame('invalid_id', $invalid['error']);
     }
 
+    #[Test]
+    public function searchFindsRetainedMemoriesAcrossSessionsWithBoundsAndDateFilters(): void
+    {
+        $dbPath = $this->tmpDir.'/om-search.sqlite';
+        $connection = $this->omDatabaseFactory()->connectAndMigrate($dbPath);
+        $obs = new ObservationRepository($connection);
+        $gen = new MemoryGenerationRepository($connection);
+
+        $idA = str_repeat('a', 64);
+        $idB = str_repeat('b', 64);
+        $idC = str_repeat('c', 64);
+        $refId = str_repeat('d', 64);
+
+        $obs->commitChunkPartCoverage(
+            coverageKey: 'cov-a',
+            runId: 'session-a',
+            boundaryKey: 'b1',
+            sourceStartSeq: 1,
+            sourceEndSeq: 1,
+            chunkKey: 'chunk-a',
+            partIndex: 1,
+            partCount: 1,
+            sourceDigest: 'da',
+            partDigest: 'pa',
+            rendererVersion: '1',
+            observerSchemaVersion: '1',
+            observerModel: 'llama_cpp_test/test',
+            observations: [[
+                'observation_id' => $idA,
+                'content' => 'Worked Symfony AI PR #2510 MapToolArguments upstream',
+                'content_hash' => hash('sha256', 'a'),
+                'relevance' => 'high',
+                'timestamp' => '2026-09-11 02:23',
+                'token_count' => 8,
+                'source_refs_json' => json_encode([['run_id' => 'session-a', 'seq' => 1]], \JSON_THROW_ON_ERROR),
+            ]],
+            coveredAt: '2026-09-11T02:23:00+00:00',
+        );
+        $obs->commitChunkPartCoverage(
+            coverageKey: 'cov-b',
+            runId: 'session-b',
+            boundaryKey: 'b1',
+            sourceStartSeq: 1,
+            sourceEndSeq: 1,
+            chunkKey: 'chunk-b',
+            partIndex: 1,
+            partCount: 1,
+            sourceDigest: 'db',
+            partDigest: 'pb',
+            rendererVersion: '1',
+            observerSchemaVersion: '1',
+            observerModel: 'llama_cpp_test/test',
+            observations: [[
+                'observation_id' => $idB,
+                'content' => 'Unrelated note mentioning 2510 clone for ranking',
+                'content_hash' => hash('sha256', 'b'),
+                'relevance' => 'low',
+                'timestamp' => '2026-09-01 10:00',
+                'token_count' => 5,
+                'source_refs_json' => json_encode([['run_id' => 'session-b', 'seq' => 1]], \JSON_THROW_ON_ERROR),
+            ]],
+            coveredAt: '2026-09-01T10:00:00+00:00',
+        );
+        $obs->commitChunkPartCoverage(
+            coverageKey: 'cov-c',
+            runId: 'session-c',
+            boundaryKey: 'b1',
+            sourceStartSeq: 1,
+            sourceEndSeq: 1,
+            chunkKey: 'chunk-c',
+            partIndex: 1,
+            partCount: 1,
+            sourceDigest: 'dc',
+            partDigest: 'pc',
+            rendererVersion: '1',
+            observerSchemaVersion: '1',
+            observerModel: 'llama_cpp_test/test',
+            observations: [[
+                'observation_id' => $idC,
+                'content' => 'Literal percent 100% and underscore tool_name should not wildcard-match',
+                'content_hash' => hash('sha256', 'c'),
+                'relevance' => 'medium',
+                'timestamp' => '2026-09-12 12:00',
+                'token_count' => 6,
+                'source_refs_json' => json_encode([['run_id' => 'session-c', 'seq' => 1]], \JSON_THROW_ON_ERROR),
+            ]],
+            coveredAt: '2026-09-12T12:00:00+00:00',
+        );
+
+        $connection->insert('om_reflection', [
+            'reflection_id' => $refId,
+            'run_id' => 'session-a',
+            'compaction_request_id' => 'req-search',
+            'observation_set_hash' => hash('sha256', 'set-search'),
+            'content' => 'Durable fact: MapToolArguments landed in Symfony AI PR #2510.',
+            'supporting_observation_ids_json' => json_encode([$idA], \JSON_THROW_ON_ERROR),
+            'compression_level' => '0',
+            'token_count' => 7,
+            'reflector_model' => 'llama_cpp_test/test',
+            'reflector_schema_version' => '1',
+            'created_at' => '2026-09-11T03:00:00+00:00',
+        ]);
+
+        $service = new OmQueryService(
+            $this->api($this->tmpDir),
+            OmSettings::fromArray([
+                'storage' => ['database' => $dbPath],
+                'model' => 'llama_cpp_test/test',
+                'observer' => [],
+                'reflector' => [],
+            ]),
+        );
+
+        $all = $service->search('2510');
+        $this->assertTrue($all['ok']);
+        $this->assertSame(3, $all['count']);
+        $this->assertFalse($all['truncated']);
+        $kinds = array_column($all['results'], 'kind');
+        $this->assertContains('observation', $kinds);
+        $this->assertContains('reflection', $kinds);
+        $sessions = array_column($all['results'], 'session_id');
+        $this->assertContains('session-a', $sessions);
+        $this->assertContains('session-b', $sessions);
+
+        $bounded = $service->search('2510', limit: 1);
+        $this->assertTrue($bounded['ok']);
+        $this->assertSame(1, $bounded['count']);
+        $this->assertTrue($bounded['truncated']);
+
+        $filtered = $service->search('2510', after: '2026-09-10', before: '2026-09-11');
+        $this->assertTrue($filtered['ok']);
+        $this->assertSame(2, $filtered['count']); // observation 09-11 + reflection 09-11
+        foreach ($filtered['results'] as $row) {
+            $this->assertSame('session-a', $row['session_id']);
+        }
+
+        $escaped = $service->search('100%');
+        $this->assertTrue($escaped['ok']);
+        $this->assertSame(1, $escaped['count']);
+        $this->assertSame($idC, $escaped['results'][0]['id']);
+
+        $underscore = $service->search('tool_name');
+        $this->assertTrue($underscore['ok']);
+        $this->assertSame(1, $underscore['count']);
+
+        $invalid = $service->search('2510', after: 'yesterday');
+        $this->assertFalse($invalid['ok']);
+        $this->assertSame('invalid_after', $invalid['error']);
+    }
+
+    #[Test]
+    public function searchTruncationSortDateValidationAndCaseFoldingAreDeterministic(): void
+    {
+        $dbPath = $this->tmpDir.'/om-search-regressions.sqlite';
+        $connection = $this->omDatabaseFactory()->connectAndMigrate($dbPath);
+        $obs = new ObservationRepository($connection);
+
+        // Same-day observation later than reflection must sort after reflection once keys are normalized.
+        $obsEarly = str_repeat('1', 64);
+        $obsLate = str_repeat('2', 64);
+        $obsLower = str_repeat('3', 64);
+        $refId = str_repeat('4', 64);
+        $onlyKindIds = [
+            str_repeat('a', 64),
+            str_repeat('b', 64),
+            str_repeat('c', 64),
+        ];
+
+        $obs->commitChunkPartCoverage(
+            coverageKey: 'cov-sort',
+            runId: 'session-sort',
+            boundaryKey: 'b1',
+            sourceStartSeq: 1,
+            sourceEndSeq: 3,
+            chunkKey: 'chunk-sort',
+            partIndex: 1,
+            partCount: 1,
+            sourceDigest: 'ds',
+            partDigest: 'ps',
+            rendererVersion: '1',
+            observerSchemaVersion: '1',
+            observerModel: 'llama_cpp_test/test',
+            observations: [
+                [
+                    'observation_id' => $obsEarly,
+                    'content' => 'marker ALPHA early observation',
+                    'content_hash' => hash('sha256', 'early'),
+                    'relevance' => 'medium',
+                    'timestamp' => '2026-09-11 01:00',
+                    'token_count' => 3,
+                    'source_refs_json' => json_encode([['run_id' => 'session-sort', 'seq' => 1]], \JSON_THROW_ON_ERROR),
+                ],
+                [
+                    'observation_id' => $obsLate,
+                    'content' => 'marker ALPHA late observation',
+                    'content_hash' => hash('sha256', 'late'),
+                    'relevance' => 'medium',
+                    'timestamp' => '2026-09-11 12:00',
+                    'token_count' => 3,
+                    'source_refs_json' => json_encode([['run_id' => 'session-sort', 'seq' => 2]], \JSON_THROW_ON_ERROR),
+                ],
+                [
+                    'observation_id' => $obsLower,
+                    'content' => 'marker alphatool lowercase content',
+                    'content_hash' => hash('sha256', 'lower'),
+                    'relevance' => 'low',
+                    'timestamp' => '2026-09-11 13:00',
+                    'token_count' => 3,
+                    'source_refs_json' => json_encode([['run_id' => 'session-sort', 'seq' => 3]], \JSON_THROW_ON_ERROR),
+                ],
+            ],
+            coveredAt: '2026-09-11T13:00:00+00:00',
+        );
+
+        $connection->insert('om_reflection', [
+            'reflection_id' => $refId,
+            'run_id' => 'session-sort',
+            'compaction_request_id' => 'req-sort',
+            'observation_set_hash' => hash('sha256', 'set-sort'),
+            'content' => 'marker ALPHA reflection midday',
+            'supporting_observation_ids_json' => json_encode([$obsEarly], \JSON_THROW_ON_ERROR),
+            'compression_level' => '0',
+            'token_count' => 4,
+            'reflector_model' => 'llama_cpp_test/test',
+            'reflector_schema_version' => '1',
+            'created_at' => '2026-09-11T08:00:00+00:00',
+        ]);
+        $connection->insert('om_reflection', [
+            'reflection_id' => str_repeat('5', 64),
+            'run_id' => 'session-sort',
+            'compaction_request_id' => 'req-minute',
+            'observation_set_hash' => hash('sha256', 'set-minute'),
+            'content' => 'marker MINUTE reflection inside minute',
+            'supporting_observation_ids_json' => '[]',
+            'compression_level' => '0',
+            'token_count' => 2,
+            'reflector_model' => 'llama_cpp_test/test',
+            'reflector_schema_version' => '1',
+            'created_at' => '2026-09-11T08:15:30+00:00',
+        ]);
+
+        foreach ($onlyKindIds as $index => $id) {
+            $obs->commitChunkPartCoverage(
+                coverageKey: 'cov-only-'.$index,
+                runId: 'session-only',
+                boundaryKey: 'b'.$index,
+                sourceStartSeq: $index + 1,
+                sourceEndSeq: $index + 1,
+                chunkKey: 'chunk-only-'.$index,
+                partIndex: 1,
+                partCount: 1,
+                sourceDigest: 'd'.$index,
+                partDigest: 'p'.$index,
+                rendererVersion: '1',
+                observerSchemaVersion: '1',
+                observerModel: 'llama_cpp_test/test',
+                observations: [[
+                    'observation_id' => $id,
+                    'content' => 'marker ONLYKIND observation '.$index,
+                    'content_hash' => hash('sha256', 'only-'.$index),
+                    'relevance' => 'low',
+                    'timestamp' => \sprintf('2026-09-10 %02d:00', 10 + $index),
+                    'token_count' => 2,
+                    'source_refs_json' => json_encode([['run_id' => 'session-only', 'seq' => $index + 1]], \JSON_THROW_ON_ERROR),
+                ]],
+                coveredAt: '2026-09-10T12:00:00+00:00',
+            );
+        }
+
+        $service = new OmQueryService(
+            $this->api($this->tmpDir),
+            OmSettings::fromArray([
+                'storage' => ['database' => $dbPath],
+                'model' => 'llama_cpp_test/test',
+                'observer' => [],
+                'reflector' => [],
+            ]),
+        );
+
+        $sorted = $service->search('marker ALPHA');
+        $this->assertTrue($sorted['ok']);
+        $this->assertSame([
+            $obsLower,
+            $obsLate,
+            $refId,
+            $obsEarly,
+        ], array_column($sorted['results'], 'id'));
+
+        $singleKind = $service->search('marker ONLYKIND', limit: 2);
+        $this->assertTrue($singleKind['ok']);
+        $this->assertSame(2, $singleKind['count']);
+        $this->assertTrue($singleKind['truncated']);
+
+        $caseFold = $service->search('ALPHATOOL');
+        $this->assertTrue($caseFold['ok']);
+        $this->assertSame(1, $caseFold['count']);
+        $this->assertSame($obsLower, $caseFold['results'][0]['id']);
+
+        $minute = $service->search('marker MINUTE', after: '2026-09-11 08:15', before: '2026-09-11 08:15');
+        $this->assertTrue($minute['ok']);
+        $this->assertSame(1, $minute['count']);
+
+        $invalidDate = $service->search('marker ALPHA', after: '2026-02-30');
+        $this->assertFalse($invalidDate['ok']);
+        $this->assertSame('invalid_after', $invalidDate['error']);
+
+        $reversed = $service->search('marker ALPHA', after: '2026-09-12', before: '2026-09-11');
+        $this->assertFalse($reversed['ok']);
+        $this->assertSame('invalid_date_range', $reversed['error']);
+    }
+
+    #[Test]
+    public function recallAcceptsExplicitSessionIdAndKeepsOmittedCurrentSessionBehavior(): void
+    {
+        $dbPath = $this->tmpDir.'/om-recall-session.sqlite';
+        $connection = $this->omDatabaseFactory()->connectAndMigrate($dbPath);
+        $obs = new ObservationRepository($connection);
+
+        $currentId = str_repeat('1', 64);
+        $priorId = str_repeat('2', 64);
+
+        $obs->commitChunkPartCoverage(
+            coverageKey: 'cov-current',
+            runId: 'run-current',
+            boundaryKey: 'b1',
+            sourceStartSeq: 1,
+            sourceEndSeq: 2,
+            chunkKey: 'chunk-current',
+            partIndex: 1,
+            partCount: 1,
+            sourceDigest: 'd1',
+            partDigest: 'p1',
+            rendererVersion: '1',
+            observerSchemaVersion: '1',
+            observerModel: 'llama_cpp_test/test',
+            observations: [[
+                'observation_id' => $currentId,
+                'content' => 'current memory',
+                'content_hash' => hash('sha256', 'current memory'),
+                'relevance' => 'medium',
+                'timestamp' => '2026-09-12 10:00',
+                'token_count' => 2,
+                'source_refs_json' => json_encode([['run_id' => 'run-current', 'seq' => 2]], \JSON_THROW_ON_ERROR),
+            ]],
+            coveredAt: '2026-09-12T10:00:00+00:00',
+        );
+        $obs->commitChunkPartCoverage(
+            coverageKey: 'cov-prior',
+            runId: 'run-prior',
+            boundaryKey: 'b1',
+            sourceStartSeq: 1,
+            sourceEndSeq: 5,
+            chunkKey: 'chunk-prior',
+            partIndex: 1,
+            partCount: 1,
+            sourceDigest: 'd2',
+            partDigest: 'p2',
+            rendererVersion: '1',
+            observerSchemaVersion: '1',
+            observerModel: 'llama_cpp_test/test',
+            observations: [[
+                'observation_id' => $priorId,
+                'content' => 'prior memory PR #2510',
+                'content_hash' => hash('sha256', 'prior memory PR #2510'),
+                'relevance' => 'high',
+                'timestamp' => '2026-09-11 02:23',
+                'token_count' => 4,
+                'source_refs_json' => json_encode([['run_id' => 'run-prior', 'seq' => 4]], \JSON_THROW_ON_ERROR),
+            ]],
+            coveredAt: '2026-09-11T02:23:00+00:00',
+        );
+
+        $reader = new class implements SessionEventReaderInterface {
+            public function readRange(string $runId, int $startSeq, int $endSeq): iterable
+            {
+                for ($seq = $startSeq; $seq <= $endSeq; ++$seq) {
+                    yield new SessionEventDTO(
+                        runId: $runId,
+                        seq: $seq,
+                        turnNo: 1,
+                        type: 'message',
+                        payload: ['text' => $runId.'-'.$seq],
+                        createdAt: '2026-09-11T02:23:00+00:00',
+                    );
+                }
+            }
+        };
+
+        $service = new OmQueryService(
+            $this->apiWithReader($this->tmpDir, $reader),
+            OmSettings::fromArray([
+                'storage' => ['database' => $dbPath],
+                'model' => 'llama_cpp_test/test',
+                'observer' => [],
+                'reflector' => [],
+            ]),
+        );
+
+        $missingCross = $service->recall('run-current', substr($priorId, 0, 12));
+        $this->assertFalse($missingCross['ok']);
+        $this->assertSame('not_found', $missingCross['error']);
+
+        $cross = $service->recall('run-current', substr($priorId, 0, 12), 'run-prior');
+        $this->assertTrue($cross['ok']);
+        $this->assertSame('observation', $cross['kind']);
+        $this->assertSame('run-prior', $cross['session_id']);
+        $this->assertSame($priorId, $cross['id']);
+        $this->assertSame([['run_id' => 'run-prior', 'seq' => 4]], $cross['source_refs']);
+        $this->assertCount(1, $cross['events']);
+        $this->assertSame('run-prior-4', $cross['events'][0]['payload']['text']);
+
+        $current = $service->recall('run-current', substr($currentId, 0, 12));
+        $this->assertTrue($current['ok']);
+        $this->assertSame('run-current', $current['session_id']);
+        $this->assertSame($currentId, $current['id']);
+    }
+
     private function api(string $cwd): ExtensionApiInterface
     {
         return new class($cwd) implements ExtensionApiInterface {
@@ -346,6 +764,90 @@ final class OmQueryServiceTest extends IsolatedKernelTestCase
                         return [];
                     }
                 };
+            }
+
+            public function exec(): ExecInterface
+            {
+                throw new \LogicException('unused');
+            }
+        };
+    }
+
+    private function apiWithReader(string $cwd, SessionEventReaderInterface $reader): ExtensionApiInterface
+    {
+        return new class($cwd, $reader) implements ExtensionApiInterface {
+            public function __construct(
+                private string $cwd,
+                private SessionEventReaderInterface $reader,
+            ) {
+            }
+
+            public function getCwd(): string
+            {
+                return $this->cwd;
+            }
+
+            public function getSettings(string $key): array
+            {
+                return [];
+            }
+
+            public function registerTool(ToolRegistrationDTO $tool): void
+            {
+            }
+
+            public function registerToolCallHook(ToolCallHookInterface $hook): void
+            {
+            }
+
+            public function registerToolResultHook(ToolResultHookInterface $hook): void
+            {
+            }
+
+            public function registerToolCallRewriteHook(string $toolName, ToolCallRewriteHookInterface $hook): void
+            {
+            }
+
+            public function registerPromptContributor(PromptContributorInterface $contributor): void
+            {
+            }
+
+            public function registerSkill(string $skillDirectory): void
+            {
+            }
+
+            public function registerCommand(CommandDefinitionDTO $definition, ExtensionCommandHandlerInterface $handler): void
+            {
+            }
+
+            public function registerAfterTurnCommitHook(AfterTurnCommitHookInterface $hook): void
+            {
+            }
+
+            public function registerSessionStartHook(\Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterSessionStartHookInterface $hook): void
+            {
+            }
+
+            public function registerBeforeCompactionHook(BeforeCompactionHookInterface $hook): void
+            {
+            }
+
+            public function registerExtensionAgentJobHandler(string $handlerId, ExtensionAgentJobHandlerInterface $handler): void
+            {
+            }
+
+            public function dispatchExtensionAgentJob(ExtensionAgentJobRequestDTO $request): void
+            {
+            }
+
+            public function agent(): AgentRunnerInterface
+            {
+                throw new \LogicException('unused');
+            }
+
+            public function sessionEvents(): SessionEventReaderInterface
+            {
+                return $this->reader;
             }
 
             public function exec(): ExecInterface

@@ -140,17 +140,41 @@ composer update ineersa/hatfield-ext-observational-memory
 - **Delivery gap:** events and OM SQLite can diverge after worker loss; later turn
   boundaries advance Observer coverage asynchronously.
 
-## Commands and recall
+## Commands, search, and recall
 
 - `/om-status` — durable OM memory/activity aggregates for the current session
   (Observer → delta Reflector → bounded Dropper pipeline; compaction is instant projection).
 - `/om-view` — active reflections and candidate observations with 12-char display ids,
   timestamp/relevance, content, and human source event sequences.
-- `recall` — permanent ambient tool; recover exact source context for one known memory id
-  shown in compacted memory or `/om-view` (unique lowercase 12–64 hex prefix, or full 64-char
-  SHA-256) in the current session.
-  Use before important decisions / for exact wording, provenance, supporting sources, or
-  user evidence questions. Not semantic search or transcript browsing; do not recall every id.
+- `memory_search` — permanent ambient tool; find prior work across sessions by literal
+  substring in retained observational memory (all history by default). Optional `after` /
+  `before` memory-date filters (`YYYY-MM-DD` or `YYYY-MM-DD HH:MM`). Results are bounded
+  (default 20, max 50) and include `session_id`, memory id, timestamp, and matching content.
+  Not semantic search. No hits does not prove a conversation never happened; memory can lag
+  or omit details. Use short identifiers, then `recall` for evidence.
+- `recall` — permanent ambient tool; recover supporting evidence for one known memory id from
+  compacted memory, `/om-view`, or `memory_search` (unique lowercase 12–64 hex prefix, or full
+  64-char SHA-256). Defaults to the current session; pass `session_id` from a search hit for a
+  prior session. Verify current repo or PR state before acting on historical decisions.
+
+### Search implementation notes
+
+`memory_search` uses escaped SQL `LIKE` substring matching with a small result limit. Under
+default SQLite settings (and OM does not enable `case_sensitive_like`), ASCII letter case
+is insensitive, so `MapTool` matches `maptool`. `%` and `_` in the query are treated as
+literals via `ESCAPE`.
+
+Date filters accept real calendar values only (`YYYY-MM-DD` or `YYYY-MM-DD HH:MM`).
+`after` must not be later than `before`. Date-only bounds cover the whole day. An HH:MM
+`before` bound includes the entire minute for reflection `created_at` values.
+
+Benchmark evidence (read-only disposable copies; never modify the live OM database) is
+recorded under `.hatfield/extensions/observational-memory/docs/om-search-like-benchmark.md`, including the exact commands used
+on representative (~4.9k observations) and disposable 50k-row corpora. Leading-wildcard
+`LIKE` stayed in the low-millisecond to ~15 ms range for identifier queries such as `2510`
+and `MapToolArguments`, with `SCAN om_observation` plans. FTS5 was faster at 50k rows but
+needs schema/index maintenance and weaker exact-substring fidelity for punctuation-heavy
+identifiers. This package keeps bounded `LIKE` search without an FTS migration.
 
 One top-level `observational_memory.model` is shared by Observer, Reflector, and Dropper.
 Thinking levels are not configured; provider defaults apply. Observer uses

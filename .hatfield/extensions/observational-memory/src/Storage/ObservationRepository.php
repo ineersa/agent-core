@@ -288,6 +288,63 @@ final class ObservationRepository
     }
 
     /**
+     * Exact substring search over retained observations (all sessions in this database).
+     *
+     * Uses LIKE with a backslash ESCAPE clause. Leading-wildcard patterns scan the table;
+     * callers must keep result limits small. Optional filters compare memory `timestamp`
+     * (YYYY-MM-DD HH:MM).
+     *
+     * @return list<array{
+     *   observation_id: string,
+     *   run_id: string,
+     *   content: string,
+     *   relevance: string,
+     *   timestamp: string
+     * }>
+     */
+    public function searchContent(
+        string $query,
+        ?string $afterTimestamp = null,
+        ?string $beforeTimestamp = null,
+        int $limit = 20,
+    ): array {
+        $query = trim($query);
+        if ('' === $query || $limit < 1) {
+            return [];
+        }
+
+        $sql = 'SELECT observation_id, run_id, content, relevance, timestamp '
+            .'FROM om_observation '
+            ."WHERE content LIKE ? ESCAPE '\\'";
+        $params = [$this->likeContainsPattern($query)];
+
+        if (null !== $afterTimestamp && '' !== $afterTimestamp) {
+            $sql .= ' AND timestamp >= ?';
+            $params[] = $afterTimestamp;
+        }
+        if (null !== $beforeTimestamp && '' !== $beforeTimestamp) {
+            $sql .= ' AND timestamp <= ?';
+            $params[] = $beforeTimestamp;
+        }
+
+        $sql .= ' ORDER BY timestamp DESC, observation_id ASC LIMIT '.$limit;
+
+        $rows = $this->connection->fetchAllAssociative($sql, $params);
+        $out = [];
+        foreach ($rows as $row) {
+            $out[] = [
+                'observation_id' => (string) ($row['observation_id'] ?? ''),
+                'run_id' => (string) ($row['run_id'] ?? ''),
+                'content' => (string) ($row['content'] ?? ''),
+                'relevance' => (string) ($row['relevance'] ?? OmIdentity::RELEVANCE_MEDIUM),
+                'timestamp' => (string) ($row['timestamp'] ?? '1970-01-01 00:00'),
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
      * Active candidate set for threshold tokens / observation_set_hash / Reflector input.
      *
      * Before first generation: all observations for the run.
@@ -491,6 +548,17 @@ final class ObservationRepository
             'status' => 'inserted',
             'observation_count' => \count($observations),
         ];
+    }
+
+    private function likeContainsPattern(string $query): string
+    {
+        $escaped = str_replace(
+            ['\\', '%', '_'],
+            ['\\\\', '\\%', '\\_'],
+            $query,
+        );
+
+        return '%'.$escaped.'%';
     }
 
     /**

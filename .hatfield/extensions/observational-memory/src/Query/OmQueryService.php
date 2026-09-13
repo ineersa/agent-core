@@ -16,7 +16,7 @@ use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 
 /**
- * Extension-owned read/query surface for /om-status, /om-view, and recall.
+ * Extension-owned read/query surface for /om-status, /om-view, search, and recall.
  *
  * Opens OM SQLite only. Never reads Hatfield Messenger tables.
  */
@@ -25,6 +25,12 @@ final class OmQueryService
     private const string ID_PATTERN = '/^[a-f0-9]{12,64}$/';
 
     private const int DISPLAY_ID_LEN = 12;
+
+    private const int SEARCH_DEFAULT_LIMIT = 20;
+
+    private const int SEARCH_MAX_LIMIT = 50;
+
+    private const string MEMORY_DATE_PATTERN = '/^\d{4}-\d{2}-\d{2}( \d{2}:\d{2})?$/';
 
     public function __construct(
         private readonly ExtensionApiInterface $api,
@@ -132,7 +138,7 @@ final class OmQueryService
             $lines[] = '*No reflections yet.*';
         } else {
             foreach ($reflections as $reflection) {
-                $support = $this->currentRunSupportIds(
+                $support = $this->supportIdsForRun(
                     $observations,
                     $runId,
                     $this->decodeStringList((string) ($reflection['supporting_observation_ids_json'] ?? '[]')),
@@ -161,7 +167,7 @@ final class OmQueryService
             $lines[] = '*No observations yet.*';
         } else {
             foreach ($candidates as $observation) {
-                $refs = $this->currentRunSourceRefs(
+                $refs = $this->sourceRefsForRun(
                     $runId,
                     $this->decodeSourceRefs((string) ($observation['source_refs_json'] ?? '[]')),
                 );
@@ -181,10 +187,140 @@ final class OmQueryService
     }
 
     /**
-     * Exact or unique prefix recall for one observation or reflection id in the current run.
+     * Exact substring search over retained observations and reflections in the configured OM database.
      *
-     * Accepts lowercase hex prefixes of length 12..64. Resolves at most one match
-     * across observations and reflections separately; ambiguous or missing ids fail closed.
+     * Default scope is all retained rows (not only the active compaction pool). Optional after/before
+     * filters apply to memory dates: observation `timestamp` (YYYY-MM-DD HH:MM) and reflection
+     * `created_at` (ISO-8601). Results are bounded and include source session + memory id.
+     *
+     * @return array<string, mixed>
+     */
+    public function search(
+        string $query,
+        ?string $after = null,
+        ?string $before = null,
+        ?int $limit = null,
+        ?ToolCancellationTokenInterface $cancellationToken = null,
+        ?int $timeoutSeconds = null,
+        ?int $deadlineNs = null,
+    ): array {
+        $query = trim($query);
+        if ('' === $query) {
+            return [
+                'ok' => false,
+                'error' => 'invalid_query',
+                'message' => 'query must be a non-empty string.',
+            ];
+        }
+
+        if (null !== ($dateError = $this->validateMemoryDate($after, 'after'))) {
+            return $dateError;
+        }
+        if (null !== ($dateError = $this->validateMemoryDate($before, 'before'))) {
+            return $dateError;
+        }
+        if (null !== ($rangeError = $this->validateMemoryDateRange($after, $before))) {
+            return $rangeError;
+        }
+
+        $limit = $limit ?? self::SEARCH_DEFAULT_LIMIT;
+        if ($limit < 1) {
+            return [
+                'ok' => false,
+                'error' => 'invalid_limit',
+                'message' => 'limit must be a positive integer.',
+            ];
+        }
+        if ($limit > self::SEARCH_MAX_LIMIT) {
+            $limit = self::SEARCH_MAX_LIMIT;
+        }
+
+        if (null !== ($interrupt = $this->interruptMap($cancellationToken, $timeoutSeconds, $deadlineNs, 'Cancelled before database open.'))) {
+            return $interrupt;
+        }
+
+        $connection = $this->connect();
+        $observations = new ObservationRepository($connection);
+        $generations = new MemoryGenerationRepository($connection);
+
+        if (null !== ($interrupt = $this->interruptMap($cancellationToken, $timeoutSeconds, $deadlineNs, 'Cancelled before observation search.'))) {
+            return $interrupt;
+        }
+
+        $obsAfter = $this->normalizeObservationFilter($after, lowerBound: true);
+        $obsBefore = $this->normalizeObservationFilter($before, lowerBound: false);
+        $refAfter = $this->normalizeReflectionFilter($after, lowerBound: true);
+        $refBefore = $this->normalizeReflectionFilter($before, lowerBound: false);
+
+        // Fetch limit+1 from each table so truncated can detect overflow within one kind.
+        $fetchLimit = $limit + 1;
+        $obsRows = $observations->searchContent($query, $obsAfter, $obsBefore, $fetchLimit);
+        if (null !== ($interrupt = $this->interruptMap($cancellationToken, $timeoutSeconds, $deadlineNs, 'Cancelled before reflection search.'))) {
+            return $interrupt;
+        }
+        $refRows = $generations->searchContent($query, $refAfter, $refBefore, $fetchLimit);
+
+        $results = [];
+        foreach ($obsRows as $row) {
+            $results[] = [
+                'kind' => 'observation',
+                'session_id' => $row['run_id'],
+                'id' => $row['observation_id'],
+                'display_id' => $this->displayId($row['observation_id']),
+                'timestamp' => $row['timestamp'],
+                'relevance' => $row['relevance'],
+                'content' => $this->condense($row['content']),
+                'sort_key' => $this->comparableMemorySortKey($row['timestamp']),
+            ];
+        }
+        foreach ($refRows as $row) {
+            $results[] = [
+                'kind' => 'reflection',
+                'session_id' => $row['run_id'],
+                'id' => $row['reflection_id'],
+                'display_id' => $this->displayId($row['reflection_id']),
+                'timestamp' => $row['created_at'],
+                'content' => $this->condense($row['content']),
+                'sort_key' => $this->comparableMemorySortKey($row['created_at']),
+            ];
+        }
+
+        usort($results, static function (array $a, array $b): int {
+            $byTime = strcmp((string) $b['sort_key'], (string) $a['sort_key']);
+            if (0 !== $byTime) {
+                return $byTime;
+            }
+            $byKind = strcmp((string) $a['kind'], (string) $b['kind']);
+            if (0 !== $byKind) {
+                return $byKind;
+            }
+
+            return strcmp((string) $a['id'], (string) $b['id']);
+        });
+
+        $truncated = \count($results) > $limit;
+        $results = \array_slice($results, 0, $limit);
+        foreach ($results as &$result) {
+            unset($result['sort_key']);
+        }
+        unset($result);
+
+        return [
+            'ok' => true,
+            'query' => $query,
+            'limit' => $limit,
+            'truncated' => $truncated,
+            'count' => \count($results),
+            'results' => $results,
+        ];
+    }
+
+    /**
+     * Exact or unique prefix recall for one observation or reflection id.
+     *
+     * Default scope is the current session (`$runId`). Pass `$sessionId` to recall from an
+     * explicit originating session returned by search. Accepts lowercase hex prefixes of
+     * length 12..64. Ambiguous or missing ids fail closed.
      *
      * Cooperative cancellation/deadline checkpoints run between DB stages and during
      * supporting-observation/event hydration. A single SQLite/DBAL call may still finish
@@ -195,6 +331,7 @@ final class OmQueryService
     public function recall(
         string $runId,
         string $id,
+        ?string $sessionId = null,
         ?ToolCancellationTokenInterface $cancellationToken = null,
         ?int $timeoutSeconds = null,
         ?int $deadlineNs = null,
@@ -206,6 +343,19 @@ final class OmQueryService
                 'error' => 'invalid_id',
                 'message' => 'id must be a lowercase hex string of 12 to 64 characters.',
             ];
+        }
+
+        $targetRunId = $runId;
+        if (null !== $sessionId) {
+            $sessionId = trim($sessionId);
+            if ('' === $sessionId) {
+                return [
+                    'ok' => false,
+                    'error' => 'invalid_session_id',
+                    'message' => 'session_id must be a non-empty session/run id when provided.',
+                ];
+            }
+            $targetRunId = $sessionId;
         }
 
         if (null !== ($interrupt = $this->interruptMap($cancellationToken, $timeoutSeconds, $deadlineNs, 'Cancelled before database open.'))) {
@@ -220,12 +370,12 @@ final class OmQueryService
             return $interrupt;
         }
 
-        $obsMatches = $observations->findObservationsByIdPrefix($runId, $id);
+        $obsMatches = $observations->findObservationsByIdPrefix($targetRunId, $id);
         if (\count($obsMatches) > 1) {
             return [
                 'ok' => false,
                 'error' => 'ambiguous_id',
-                'message' => 'Multiple observations match that id prefix in the current session.',
+                'message' => 'Multiple observations match that id prefix in the selected session.',
             ];
         }
         if (1 === \count($obsMatches)) {
@@ -235,12 +385,12 @@ final class OmQueryService
 
             $observation = $obsMatches[0];
             $fullId = $observation['observation_id'];
-            $refs = $this->currentRunSourceRefs(
-                $runId,
+            $refs = $this->sourceRefsForRun(
+                $targetRunId,
                 $this->decodeSourceRefs($observation['source_refs_json']),
             );
 
-            $events = $this->loadEventsForRefs($runId, $refs, $cancellationToken, $timeoutSeconds, $deadlineNs);
+            $events = $this->loadEventsForRefs($targetRunId, $refs, $cancellationToken, $timeoutSeconds, $deadlineNs);
             if (isset($events['cancelled']) || isset($events['timed_out'])) {
                 return $events;
             }
@@ -248,6 +398,7 @@ final class OmQueryService
             return [
                 'ok' => true,
                 'kind' => 'observation',
+                'session_id' => $targetRunId,
                 'id' => $fullId,
                 'content' => $observation['content'],
                 'timestamp' => $observation['timestamp'],
@@ -261,27 +412,27 @@ final class OmQueryService
             return $interrupt;
         }
 
-        $refMatches = $generations->findReflectionsByIdPrefix($runId, $id);
+        $refMatches = $generations->findReflectionsByIdPrefix($targetRunId, $id);
         if (\count($refMatches) > 1) {
             return [
                 'ok' => false,
                 'error' => 'ambiguous_id',
-                'message' => 'Multiple reflections match that id prefix in the current session.',
+                'message' => 'Multiple reflections match that id prefix in the selected session.',
             ];
         }
         if ([] === $refMatches) {
             return [
                 'ok' => false,
                 'error' => 'not_found',
-                'message' => 'No observation or reflection with that id in the current session.',
+                'message' => 'No observation or reflection with that id in the selected session.',
             ];
         }
 
         $reflection = $refMatches[0];
         $fullId = (string) $reflection['reflection_id'];
-        $supportIds = $this->currentRunSupportIds(
+        $supportIds = $this->supportIdsForRun(
             $observations,
-            $runId,
+            $targetRunId,
             $this->decodeStringList((string) $reflection['supporting_observation_ids_json']),
         );
         $refs = [];
@@ -289,12 +440,12 @@ final class OmQueryService
             if (null !== ($interrupt = $this->interruptMap($cancellationToken, $timeoutSeconds, $deadlineNs, 'Cancelled while hydrating supporting observations.'))) {
                 return $interrupt;
             }
-            $support = $observations->findObservation($runId, $supportId);
+            $support = $observations->findObservation($targetRunId, $supportId);
             if (null === $support) {
                 continue;
             }
-            foreach ($this->currentRunSourceRefs(
-                $runId,
+            foreach ($this->sourceRefsForRun(
+                $targetRunId,
                 $this->decodeSourceRefs((string) $support['source_refs_json']),
             ) as $ref) {
                 $key = $ref['run_id'].':'.$ref['seq'];
@@ -315,7 +466,7 @@ final class OmQueryService
             return $interrupt;
         }
 
-        $events = $this->loadEventsForRefs($runId, $refs, $cancellationToken, $timeoutSeconds, $deadlineNs);
+        $events = $this->loadEventsForRefs($targetRunId, $refs, $cancellationToken, $timeoutSeconds, $deadlineNs);
         if (isset($events['cancelled']) || isset($events['timed_out'])) {
             return $events;
         }
@@ -323,6 +474,7 @@ final class OmQueryService
         return [
             'ok' => true,
             'kind' => 'reflection',
+            'session_id' => $targetRunId,
             'id' => $fullId,
             'content' => (string) $reflection['content'],
             'supporting_observation_ids' => $supportIds,
@@ -356,7 +508,7 @@ final class OmQueryService
 
         // Never group refs by run_id as an array key: PHP coerces numeric-string
         // keys like "5" to int, which then TypeErrors on strict-typed readRange().
-        // Upstream already filters to the current run; re-filter and load once.
+        // Upstream filters to the selected session/run; re-filter and load once.
         /** @var list<int> $seqs */
         $seqs = [];
         /** @var array<int, true> $wanted */
@@ -370,7 +522,7 @@ final class OmQueryService
             if ($seq < 1) {
                 continue;
             }
-            // Current-session enforcement: only resolve refs whose run matches the active session.
+            // Selected-session enforcement: only resolve refs whose run matches the recall target.
             if ($run !== $currentRunId) {
                 continue;
             }
@@ -502,7 +654,7 @@ final class OmQueryService
      *
      * @return list<array{run_id: string, seq: int}>
      */
-    private function currentRunSourceRefs(string $runId, array $refs): array
+    private function sourceRefsForRun(string $runId, array $refs): array
     {
         $out = [];
         foreach ($refs as $ref) {
@@ -520,7 +672,7 @@ final class OmQueryService
      *
      * @return list<string>
      */
-    private function currentRunSupportIds(
+    private function supportIdsForRun(
         ObservationRepository $observations,
         string $runId,
         array $supportIds,
@@ -557,6 +709,128 @@ final class OmQueryService
         $label = 1 === \count($parts) ? 'event' : 'events';
 
         return \sprintf('Sources: %s %s', $label, implode(', ', $parts));
+    }
+
+    /**
+     * @return array{ok: false, error: string, message: string}|null
+     */
+    /**
+     * @return array{ok: false, error: string, message: string}|null
+     */
+    private function validateMemoryDate(?string $value, string $field): ?array
+    {
+        if (null === $value || '' === trim($value)) {
+            return null;
+        }
+        $value = trim($value);
+        if (1 !== preg_match(self::MEMORY_DATE_PATTERN, $value)) {
+            return [
+                'ok' => false,
+                'error' => 'invalid_'.$field,
+                'message' => $field.' must be YYYY-MM-DD or YYYY-MM-DD HH:MM.',
+            ];
+        }
+
+        if (10 === \strlen($value)) {
+            $dt = \DateTimeImmutable::createFromFormat('!Y-m-d', $value);
+            if (false === $dt || $dt->format('Y-m-d') !== $value) {
+                return [
+                    'ok' => false,
+                    'error' => 'invalid_'.$field,
+                    'message' => $field.' must be a real calendar date (YYYY-MM-DD or YYYY-MM-DD HH:MM).',
+                ];
+            }
+
+            return null;
+        }
+
+        $dt = \DateTimeImmutable::createFromFormat('!Y-m-d H:i', $value);
+        if (false === $dt || $dt->format('Y-m-d H:i') !== $value) {
+            return [
+                'ok' => false,
+                'error' => 'invalid_'.$field,
+                'message' => $field.' must be a real calendar date (YYYY-MM-DD or YYYY-MM-DD HH:MM).',
+            ];
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array{ok: false, error: string, message: string}|null
+     */
+    private function validateMemoryDateRange(?string $after, ?string $before): ?array
+    {
+        $after = null === $after || '' === trim($after) ? null : trim($after);
+        $before = null === $before || '' === trim($before) ? null : trim($before);
+        if (null === $after || null === $before) {
+            return null;
+        }
+
+        $afterKey = $this->comparableMemorySortKey($this->normalizeObservationFilter($after, lowerBound: true) ?? $after);
+        $beforeKey = $this->comparableMemorySortKey($this->normalizeObservationFilter($before, lowerBound: false) ?? $before);
+        if ($afterKey > $beforeKey) {
+            return [
+                'ok' => false,
+                'error' => 'invalid_date_range',
+                'message' => 'after must be less than or equal to before.',
+            ];
+        }
+
+        return null;
+    }
+
+    private function normalizeObservationFilter(?string $value, bool $lowerBound): ?string
+    {
+        if (null === $value || '' === trim($value)) {
+            return null;
+        }
+        $value = trim($value);
+        if (10 === \strlen($value)) {
+            return $lowerBound ? $value.' 00:00' : $value.' 23:59';
+        }
+
+        return $value;
+    }
+
+    private function normalizeReflectionFilter(?string $value, bool $lowerBound): ?string
+    {
+        if (null === $value || '' === trim($value)) {
+            return null;
+        }
+        $value = trim($value);
+        if (10 === \strlen($value)) {
+            return $lowerBound ? $value.'T00:00:00+00:00' : $value.'T23:59:59.999999+00:00';
+        }
+        // HH:MM memory-date form → inclusive minute for created_at comparisons.
+        if (16 === \strlen($value) && ' ' === $value[10]) {
+            $iso = str_replace(' ', 'T', $value).':00+00:00';
+
+            return $lowerBound ? $iso : str_replace(' ', 'T', $value).':59.999999+00:00';
+        }
+
+        return $value;
+    }
+
+    /**
+     * Normalize observation timestamps and reflection created_at values to a shared
+     * lexicographic key: YYYY-MM-DDTHH:MM:SS (timezone/offset ignored for ranking).
+     */
+    private function comparableMemorySortKey(string $value): string
+    {
+        $value = trim($value);
+        if ('' === $value) {
+            return '';
+        }
+
+        if (1 === preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/', $value)) {
+            return str_replace(' ', 'T', $value).':00';
+        }
+        if (1 === preg_match('/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})/', $value, $matches)) {
+            return $matches[1].'T'.$matches[2];
+        }
+
+        return $value;
     }
 
     private function displayId(string $id): string
