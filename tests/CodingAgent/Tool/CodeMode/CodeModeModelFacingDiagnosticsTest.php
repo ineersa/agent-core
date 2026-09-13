@@ -110,7 +110,7 @@ final class CodeModeModelFacingDiagnosticsTest extends TestCase
         $domainResult = $executor->execute($this->toolCall('call-cap'));
 
         $this->assertSame(CodeModeTool::NAME.' completed', $domainResult->content[0]['text'] ?? null);
-        $this->assertSame(['stdout' => 'diag'], $domainResult->details['code_mode_diagnostics'] ?? null);
+        $this->assertArrayNotHasKey('code_mode_diagnostics', \is_array($domainResult->details) ? $domainResult->details : []);
 
         $envelope = ToolCallResultFactory::fromExecuteToolCallAndToolResult(
             $this->executeMessage('call-cap'),

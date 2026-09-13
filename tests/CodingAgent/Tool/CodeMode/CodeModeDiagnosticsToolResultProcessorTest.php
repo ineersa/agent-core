@@ -154,7 +154,7 @@ final class CodeModeDiagnosticsToolResultProcessorTest extends TestCase
 
         $this->assertSame(CodeModeTool::NAME.' completed', $afterCap->content[0]['text'] ?? null);
         $this->assertArrayNotHasKey('raw_result', \is_array($afterCap->details) ? $afterCap->details : []);
-        $this->assertSame(['stdout' => 'diag'], $afterCap->details['code_mode_diagnostics'] ?? null);
+        $this->assertArrayNotHasKey('code_mode_diagnostics', \is_array($afterCap->details) ? $afterCap->details : []);
         $notifications = $afterCap->details['model_notifications'] ?? null;
         $this->assertIsArray($notifications);
         $kinds = array_map(static fn (array $n): string => (string) ($n['kind'] ?? ''), $notifications);
