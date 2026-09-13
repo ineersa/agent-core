@@ -26,11 +26,7 @@ final class CodeModeValueCodec
         try {
             json_encode($value, \JSON_THROW_ON_ERROR);
         } catch (\JsonException $exception) {
-            throw new \RuntimeException(
-                \sprintf('%s cannot be encoded for code_mode IPC: %s', $context, $exception->getMessage()),
-                0,
-                $exception,
-            );
+            throw new \RuntimeException(\sprintf('%s cannot be encoded for code_mode IPC: %s', $context, $exception->getMessage()), 0, $exception);
         }
 
         self::assertCompatibleShape($value, $context, 0, []);
@@ -82,9 +78,7 @@ final class CodeModeValueCodec
             // silently dropping private state via get_object_vars()/json_encode.
             // JsonSerializable is also rejected so we never invoke jsonSerialize()
             // twice (once here and once inside json_encode).
-            throw new \RuntimeException(
-                \sprintf('%s contains an unsupported object of type %s.', $context, $value::class),
-            );
+            throw new \RuntimeException(\sprintf('%s contains an unsupported object of type %s.', $context, $value::class));
         }
 
         if (\is_array($value)) {

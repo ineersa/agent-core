@@ -60,8 +60,7 @@ final readonly class CodeModeHostBridge
         string $script,
         int $timeoutSeconds = CodeModeArgumentsDTO::DEFAULT_TIMEOUT_SECONDS,
         int $memoryLimitMb = CodeModeArgumentsDTO::DEFAULT_MEMORY_LIMIT_MB,
-    ): mixed
-    {
+    ): mixed {
         return $this->toolRuntime->run(function () use ($script, $timeoutSeconds, $memoryLimitMb): mixed {
             $parentContext = $this->contextAccessor->current();
             $cancelToken = $parentContext?->cancellationToken() ?? new NullCancellationToken();
@@ -870,9 +869,6 @@ final readonly class CodeModeHostBridge
             return $fromPath;
         }
 
-        throw new ToolCallException(
-            'code_mode requires an installed PHP CLI on PATH (command `php`) to run script subprocesses. Fused native/static Hatfield binaries do not provide that interpreter.',
-            retryable: false,
-        );
+        throw new ToolCallException('code_mode requires an installed PHP CLI on PATH (command `php`) to run script subprocesses. Fused native/static Hatfield binaries do not provide that interpreter.', retryable: false);
     }
 }

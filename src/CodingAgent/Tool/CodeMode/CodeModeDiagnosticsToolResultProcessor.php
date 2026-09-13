@@ -162,11 +162,7 @@ final readonly class CodeModeDiagnosticsToolResultProcessor implements ToolResul
         try {
             return json_encode($result, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
         } catch (\JsonException $exception) {
-            throw new \RuntimeException(
-                'code_mode diagnostics processor cannot encode the script return value for display: '.$exception->getMessage(),
-                0,
-                $exception,
-            );
+            throw new \RuntimeException('code_mode diagnostics processor cannot encode the script return value for display: '.$exception->getMessage(), 0, $exception);
         }
     }
 }
