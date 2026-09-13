@@ -234,7 +234,11 @@ if (!is_string($valueCodec) || '' === $valueCodec || !is_file($valueCodec)) {
 }
 require_once $valueCodec;
 
-ini_set('display_errors', '1');
+// Host starts the child with display_errors=0. Keep that so warnings go to
+// stderr once without an stdout mirror. Errors still report through STDERR.
+ini_set('display_errors', '0');
+ini_set('display_startup_errors', '0');
+ini_set('html_errors', '0');
 error_reporting(E_ALL);
 
 $connection = @stream_socket_client('unix://'.$socketPath, $errno, $errstr, 5.0);

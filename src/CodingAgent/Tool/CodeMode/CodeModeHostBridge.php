@@ -477,8 +477,17 @@ final readonly class CodeModeHostBridge
         $bootstrap = $this->materializeBootstrap($workspace['dir']);
         $toonRoot = $this->materializeToonLibrary($workspace['dir']);
         $valueCodec = $this->materializeValueCodec($workspace['dir']);
+        // Keep stderr for warnings/fatals, but suppress display_errors and Xdebug
+        // stacks so each warning is not mirrored into stdout with a call stack.
         $process = new Process(
-            [$this->phpCliBinary(), $bootstrap],
+            [
+                $this->phpCliBinary(),
+                '-d', 'display_errors=0',
+                '-d', 'display_startup_errors=0',
+                '-d', 'html_errors=0',
+                '-d', 'xdebug.mode=off',
+                $bootstrap,
+            ],
             $this->runtimeProcessConfig->runtimeCwd(),
             [
                 'HATFIELD_CODE_MODE_SOCKET' => $workspace['socket'],
@@ -698,16 +707,16 @@ final readonly class CodeModeHostBridge
             null === $exitCode ? 'unknown' : (string) $exitCode,
         );
 
-        $stdoutTail = trim((string) $output->stdout);
-        $stderrTail = trim((string) $output->stderr);
-        if ('' !== $stdoutTail) {
-            $message .= "\nstdout:\n".$this->normalizeDiagnosticPaths($stdoutTail);
-        }
-        if ('' !== $stderrTail) {
-            $message .= "\nstderr:\n".$this->normalizeDiagnosticPaths($stderrTail);
-        }
+        $diagnostics = CodeModeDiagnostics::prepare(
+            (string) $output->stdout,
+            (string) $output->stderr,
+            self::SCRIPT_WRAPPER_PREFIX_LINES,
+        );
 
-        return new ToolCallException($message, retryable: false);
+        return new ToolCallException(
+            CodeModeDiagnostics::appendToMessage($message, $diagnostics),
+            retryable: false,
+        );
     }
 
     /**
@@ -756,15 +765,11 @@ final readonly class CodeModeHostBridge
      */
     private function packExecutionResult(mixed $result, object $output): mixed
     {
-        $diagnostics = [];
-        $stdout = trim((string) $output->stdout);
-        $stderr = trim((string) $output->stderr);
-        if ('' !== $stdout) {
-            $diagnostics['stdout'] = $this->normalizeDiagnosticPaths($stdout);
-        }
-        if ('' !== $stderr) {
-            $diagnostics['stderr'] = $this->normalizeDiagnosticPaths($stderr);
-        }
+        $diagnostics = CodeModeDiagnostics::prepare(
+            (string) $output->stdout,
+            (string) $output->stderr,
+            self::SCRIPT_WRAPPER_PREFIX_LINES,
+        );
 
         if ([] === $diagnostics) {
             return $result;
@@ -775,39 +780,7 @@ final readonly class CodeModeHostBridge
 
     private function normalizeDiagnosticPaths(string $text): string
     {
-        $prefixLines = self::SCRIPT_WRAPPER_PREFIX_LINES;
-
-        $replace = static function (string $file, int $line) use ($prefixLines): string {
-            if ('script' === $file && $line > $prefixLines) {
-                $line -= $prefixLines;
-            }
-
-            return $file.'.php('.$line.')';
-        };
-
-        // PHP emits several path/line shapes: path(line), "on line N in path",
-        // and "in path on line N". Keep one stable label and adjust wrapper lines.
-        $patterns = [
-            '#(?:phar://)?[^\s"\']+/(script|bootstrap)\.php\((\d+)\)#' => static function (array $m) use ($replace): string {
-                return $replace($m[1], (int) $m[2]);
-            },
-            '#(?:phar://)?[^\s"\']+/(script|bootstrap)\.php on line (\d+)#' => static function (array $m) use ($replace): string {
-                return $replace($m[1], (int) $m[2]);
-            },
-            '#on line (\d+) in (?:phar://)?[^\s"\']+/(script|bootstrap)\.php#' => static function (array $m) use ($replace): string {
-                return $replace($m[2], (int) $m[1]);
-            },
-        ];
-
-        $normalized = $text;
-        foreach ($patterns as $pattern => $callback) {
-            $next = preg_replace_callback($pattern, $callback, $normalized);
-            if (\is_string($next)) {
-                $normalized = $next;
-            }
-        }
-
-        return $normalized;
+        return CodeModeDiagnostics::normalizePaths($text, self::SCRIPT_WRAPPER_PREFIX_LINES);
     }
 
     private function stopProcess(?Process $process): void

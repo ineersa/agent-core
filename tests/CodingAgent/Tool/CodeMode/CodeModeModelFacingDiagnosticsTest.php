@@ -129,6 +129,45 @@ final class CodeModeModelFacingDiagnosticsTest extends TestCase
         $this->assertStringContainsString('capped', strtolower($modelText));
     }
 
+    public function testTinyReturnWithHugeStdoutDiagnosticsStaysSelfContainedUnderDefaultCap(): void
+    {
+        // Reproduces the QA finding where 60KB echo pushed the whole tool result
+        // into OutputCap. Diagnostics must hard-bound first so a tiny return stays
+        // inline under the default 20_000-char tool-result cap.
+        $toolbox = $this->toolboxReturning(new CodeModeExecutionResult('ok', [
+            'stdout' => str_repeat('X', 60_000),
+        ]));
+        $executor = $this->executor($toolbox, defaultCap: 20_000);
+        $domainResult = $executor->execute($this->toolCall('call-huge-diag'));
+
+        $visible = (string) ($domainResult->content[0]['text'] ?? '');
+        $this->assertStringStartsWith("ok\n\ncode_mode diagnostics\n", $visible);
+        $this->assertLessThanOrEqual(20_000, \strlen($visible));
+        $this->assertStringContainsString(trim(\Ineersa\CodingAgent\Tool\CodeMode\CodeModeDiagnostics::TRUNCATION_MARKER), $visible);
+        $this->assertNotSame(CodeModeTool::NAME.' completed', $visible);
+
+        $envelope = ToolCallResultFactory::fromExecuteToolCallAndToolResult(
+            $this->executeMessage('call-huge-diag'),
+            $domainResult,
+        );
+        $serializer = AttributeSerializerValidatorTestFactory::denormalizer();
+        $notifications = ModelNotificationCodec::denormalizeFromDetails(
+            $serializer,
+            $envelope->result['details'] ?? null,
+        );
+        $message = (new AgentMessageNormalizer())->toolMessage($envelope, $notifications);
+        $modelText = (string) ($message->content[0]['text'] ?? '');
+
+        $this->assertSame($visible, $modelText);
+        $this->assertStringNotContainsString('capped', strtolower($modelText));
+        $kinds = array_map(
+            static fn (object $n): string => $n->kind,
+            $notifications,
+        );
+        $this->assertContains('script_diagnostics', $kinds);
+        $this->assertNotContains('output_capped', $kinds);
+    }
+
     private function executor(ToolboxInterface $toolbox, int $defaultCap): ToolExecutor
     {
         $serializer = new Serializer([new ObjectNormalizer()]);

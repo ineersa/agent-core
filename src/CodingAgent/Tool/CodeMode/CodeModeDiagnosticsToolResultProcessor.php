@@ -21,12 +21,11 @@ use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
  * must live in the visible content text.
  *
  * Runs before OutputCap so large returns can still be capped after diagnostics
- * are extracted from the raw envelope.
+ * are extracted from the raw envelope. The diagnostics block itself is already
+ * hard-bounded so a tiny return plus chatty output stays under the default cap.
  */
 final readonly class CodeModeDiagnosticsToolResultProcessor implements ToolResultProcessorInterface
 {
-    private const int DIAGNOSTIC_TEXT_CHARS = 4000;
-
     public function __construct(
         private NormalizerInterface $normalizer,
     ) {
@@ -52,14 +51,15 @@ final readonly class CodeModeDiagnosticsToolResultProcessor implements ToolResul
         $rawResult = $details['raw_result'];
         if ($rawResult instanceof CodeModeExecutionResult) {
             $value = $rawResult->result;
-            $hasDiagnostics = $rawResult->hasDiagnostics();
-            $stdout = trim((string) ($rawResult->diagnostics['stdout'] ?? ''));
-            $stderr = trim((string) ($rawResult->diagnostics['stderr'] ?? ''));
+            $diagnostics = CodeModeDiagnostics::prepare(
+                $rawResult->diagnostics['stdout'] ?? '',
+                $rawResult->diagnostics['stderr'] ?? '',
+            );
+            $hasDiagnostics = [] !== $diagnostics;
         } else {
             $value = $rawResult;
+            $diagnostics = [];
             $hasDiagnostics = false;
-            $stdout = '';
-            $stderr = '';
         }
 
         // Only rewrite visible text for an explicit successful null return.
@@ -82,19 +82,14 @@ final readonly class CodeModeDiagnosticsToolResultProcessor implements ToolResul
             );
         }
 
-        $sections = [];
-        if ('' !== $stdout) {
-            $sections[] = "stdout:\n".$stdout;
-        }
-        if ('' !== $stderr) {
-            $sections[] = "stderr:\n".$stderr;
-        }
-        $diagnosticBlock = $this->truncate("code_mode diagnostics\n".implode("\n\n", $sections));
+        $diagnosticBlock = CodeModeDiagnostics::renderBlock($diagnostics);
         $visibleReturn = $this->normalizeVisibleResult($value);
         $visibleText = '' === $visibleReturn
             ? $diagnosticBlock
             : $visibleReturn."\n\n".$diagnosticBlock;
 
+        $stdout = (string) ($diagnostics['stdout'] ?? '');
+        $stderr = (string) ($diagnostics['stderr'] ?? '');
         $notificationId = hash('sha256', implode('|', [
             $toolCall->toolCallId,
             'code_mode',
@@ -115,6 +110,8 @@ final readonly class CodeModeDiagnosticsToolResultProcessor implements ToolResul
             metadata: [
                 'stdout_chars' => \strlen($stdout),
                 'stderr_chars' => \strlen($stderr),
+                'diagnostics_chars' => \strlen($diagnosticBlock),
+                'truncated' => str_contains($diagnosticBlock, CodeModeDiagnostics::TRUNCATION_MARKER),
             ],
         );
 
@@ -128,10 +125,7 @@ final readonly class CodeModeDiagnosticsToolResultProcessor implements ToolResul
         $existingNotifications[] = $notificationArray;
         $details['model_notifications'] = $existingNotifications;
         $details['raw_result'] = $value;
-        $details['code_mode_diagnostics'] = array_filter([
-            'stdout' => $stdout,
-            'stderr' => $stderr,
-        ], static fn (string $chunk): bool => '' !== $chunk);
+        $details['code_mode_diagnostics'] = $diagnostics;
 
         return new ToolResult(
             toolCallId: $result->toolCallId,
@@ -143,21 +137,6 @@ final readonly class CodeModeDiagnosticsToolResultProcessor implements ToolResul
             details: $details,
             isError: false,
         );
-    }
-
-    private function truncate(string $text): string
-    {
-        if (\strlen($text) <= self::DIAGNOSTIC_TEXT_CHARS) {
-            return $text;
-        }
-
-        // Keep a valid UTF-8 suffix; never split a multibyte character.
-        $suffix = substr($text, -self::DIAGNOSTIC_TEXT_CHARS);
-        if (!mb_check_encoding($suffix, 'UTF-8')) {
-            $suffix = mb_substr($text, -self::DIAGNOSTIC_TEXT_CHARS, null, 'UTF-8');
-        }
-
-        return $suffix;
     }
 
     private function normalizeVisibleResult(mixed $result): string

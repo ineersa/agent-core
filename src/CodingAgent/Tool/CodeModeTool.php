@@ -61,7 +61,7 @@ final class CodeModeTool implements HatfieldToolProviderInterface
                 'Do not call subagent, fork, agent_resume, or ask_human from tool(). Those paths are rejected before invocation because code_mode cannot complete deferred or interactive work.',
                 'Script returns must be JSON-compatible scalars or arrays. Closures, resources, objects, non-finite floats, invalid UTF-8, and cyclic graphs fail instead of being silently dropped or substituted.',
                 'Optional timeout_seconds (default 60, max 300) and memory_limit_mb (default 256, max 1024) control the script wall budget and PHP memory_limit. The remaining parent tool budget wins when smaller. Nested calls receive the remaining budget cooperatively; a blocking nested handler can still overrun until it returns.',
-                'Bounded script stdout/stderr (including PHP warnings) are appended to the model-facing return text. die()/exit without a return report that the script exited without returning a value, even on exit code 0.',
+                'Bounded script stdout/stderr (including PHP warnings) are appended to the model-facing return text. Warnings appear once without stacks; errors keep useful stacks with script.php/bootstrap.php labels. The diagnostics block is hard-capped to a few KB with an explicit truncation marker before ordinary output capping. die()/exit without a return report that the script exited without returning a value, even on exit code 0.',
                 'code_mode is disabled by default. Enable it with settings path tools.code_mode.enabled = true (user or project scope), then restart Hatfield.',
             ],
         );

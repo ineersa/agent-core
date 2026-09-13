@@ -496,9 +496,43 @@ PHP);
         $result = $this->runScript($bridge, '$x = $undefinedVar; return 1;');
         $this->assertInstanceOf(\Ineersa\CodingAgent\Tool\CodeMode\CodeModeExecutionResult::class, $result);
         $stderr = $result->diagnostics['stderr'] ?? '';
-        $this->assertStringContainsString('script.php(', $stderr);
-        $this->assertDoesNotMatchRegularExpression('#/tmp/[^\\s:]+/script\\.php#', $stderr);
-        $this->assertMatchesRegularExpression('#script\\.php\\(1\\)#', $stderr);
+        $stdout = $result->diagnostics['stdout'] ?? '';
+        $combined = $stdout."\n".$stderr;
+        $this->assertStringContainsString('Warning:', $combined);
+        $this->assertStringContainsString('script.php(', $combined);
+        $this->assertDoesNotMatchRegularExpression('#/tmp/[^\\s:]+/script\\.php#', $combined);
+        $this->assertMatchesRegularExpression('#script\\.php\\(1\\)#', $combined);
+        $this->assertSame(1, substr_count($combined, 'Undefined variable'));
+        $this->assertStringNotContainsString('Stack', $combined);
+        // display_errors=0 keeps the warning on stderr only.
+        $this->assertSame('', $stdout);
+        $this->assertNotSame('', $stderr);
+    }
+
+    public function testHugeStdoutDiagnosticsAreBoundedBeforeReturn(): void
+    {
+        $bridge = $this->bridge();
+        $result = $this->runScript($bridge, 'echo str_repeat("X", 60000); return "tiny";');
+        $this->assertInstanceOf(\Ineersa\CodingAgent\Tool\CodeMode\CodeModeExecutionResult::class, $result);
+        $this->assertSame('tiny', $result->result);
+        $stdout = $result->diagnostics['stdout'] ?? '';
+        $this->assertNotSame('', $stdout);
+        $this->assertLessThanOrEqual(4000, \strlen($stdout));
+    }
+
+    public function testTypeErrorUsesNormalizedScriptPath(): void
+    {
+        $bridge = $this->bridge();
+
+        try {
+            $this->runScript($bridge, 'strlen([]);');
+            $this->fail('Expected ToolCallException for TypeError');
+        } catch (ToolCallException $exception) {
+            $message = $exception->getMessage();
+            $this->assertStringContainsString('script.php(', $message);
+            $this->assertDoesNotMatchRegularExpression('#/tmp/[^\\s:]+/script\\.php#', $message);
+            $this->assertMatchesRegularExpression('#script\\.php\\(\\d+\\)#', $message);
+        }
     }
 
     public function testParseErrorReportsNormalizedScriptPathAndLine(): void
