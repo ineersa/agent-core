@@ -610,8 +610,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             'HATFIELD_APPROVAL_CHANNEL' => 'controller',
             // Dedicated tool-filter env so messenger:consume workers (fresh
             // containers) reapply the same allowlist/denylist after extension
-            // registration. ConsumerSupervisor inherits the controller process
-            // environment (getenv() merged with $_ENV).
+            // registration. ConsumerSupervisor inherits controller $_ENV.
             ...$this->toolFilterConfig->processEnv(),
         ]);
 

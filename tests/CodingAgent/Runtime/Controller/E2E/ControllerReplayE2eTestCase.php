@@ -195,11 +195,10 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
             'HATFIELD_LLM_REPLAY_FIXTURE_PATH' => implode(';', $fixturePaths),
             // Inherited by ConsumerSupervisor children; ConfigExecutableLocator wins.
             'HATFIELD_BINARY_PATH' => $messengerConsole,
-            // Isolate compiled container from concurrent Castor lanes that share
-            // the project .hatfield/cache/test root when HATFIELD_CACHE_DIR is unset.
-            'HATFIELD_CACHE_DIR' => $this->tempDir.'/.hatfield/cache',
             // Explicitly NOT setting LLAMA_CPP_SMOKE_TEST.
         ];
+
+        $env = array_merge($env, $this->controllerSubprocessEnv());
 
         // Merge subclass extras.
         foreach ($this->replayExtraEnv() as $k => $v) {

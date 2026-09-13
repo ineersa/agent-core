@@ -113,42 +113,6 @@ final class ConsumerSupervisorTest extends TestCase
         }
     }
 
-    public function testLaunchMergesGetenvOverridesMissingFromEnvSuperglobal(): void
-    {
-        $envFile = tempnam(sys_get_temp_dir(), 'hatfield-consumer-env-');
-        $this->assertNotFalse($envFile);
-
-        $previousEnvBinary = $_ENV['HATFIELD_BINARY_PATH'] ?? null;
-        $previousServerBinary = $_SERVER['HATFIELD_BINARY_PATH'] ?? null;
-        $previousGetenvBinary = getenv('HATFIELD_BINARY_PATH');
-        $previousEnvSession = $_ENV['HATFIELD_SESSION_ID'] ?? null;
-        $previousServerSession = $_SERVER['HATFIELD_SESSION_ID'] ?? null;
-        $previousGetenvSession = getenv('HATFIELD_SESSION_ID');
-
-        try {
-            unset($_ENV['HATFIELD_BINARY_PATH'], $_ENV['HATFIELD_SESSION_ID']);
-            putenv('HATFIELD_BINARY_PATH=/tmp/hatfield-consumer-wrapper.php');
-            $_SERVER['HATFIELD_BINARY_PATH'] = '/tmp/hatfield-consumer-wrapper.php';
-            putenv('HATFIELD_SESSION_ID=consumer-env-session');
-            $_SERVER['HATFIELD_SESSION_ID'] = 'consumer-env-session';
-
-            $supervisor = $this->createEnvCaptureSupervisor($envFile);
-            $supervisor->launch('env_transport', 0);
-            $process = $this->getConsumerProcess($supervisor, 'env_transport#0');
-            $process->wait();
-
-            $captured = json_decode((string) file_get_contents($envFile), true, 512, \JSON_THROW_ON_ERROR);
-            $this->assertIsArray($captured);
-            $this->assertSame('/tmp/hatfield-consumer-wrapper.php', $captured['HATFIELD_BINARY_PATH'] ?? null);
-            $this->assertSame('consumer-env-session', $captured['HATFIELD_SESSION_ID'] ?? null);
-            $this->assertSame('1', $captured['HATFIELD_CONSUMER_STDOUT_EVENTS'] ?? null);
-        } finally {
-            @unlink($envFile);
-            $this->restoreEnvVar('HATFIELD_BINARY_PATH', $previousEnvBinary, $previousServerBinary, $previousGetenvBinary);
-            $this->restoreEnvVar('HATFIELD_SESSION_ID', $previousEnvSession, $previousServerSession, $previousGetenvSession);
-        }
-    }
-
     public function testGracefulExitCodeZeroRecyclesImmediatelyWithoutAbandonment(): void
     {
         $argvFile = tempnam(sys_get_temp_dir(), 'hatfield-consumer-argv-');
@@ -266,18 +230,6 @@ final class ConsumerSupervisorTest extends TestCase
         return new ConsumerSupervisor($this->logger, $config);
     }
 
-    private function createEnvCaptureSupervisor(string $envCaptureFile): ConsumerSupervisor
-    {
-        $this->logger = new TestLogger();
-        $locator = $this->createStub(AppExecutableLocator::class);
-        $script = $this->createEnvCaptureScript($envCaptureFile);
-        $locator->method('path')->willReturn($script);
-        $locator->method('command')->willReturn(['php', $script]);
-        $config = new RuntimeProcessConfig($locator, sys_get_temp_dir());
-
-        return new ConsumerSupervisor($this->logger, $config);
-    }
-
     private function createArgvCaptureScript(string $argvCaptureFile, int $exitCode): string
     {
         $script = tempnam(sys_get_temp_dir(), 'hatfield-consumer-launcher-');
@@ -292,54 +244,6 @@ PHP;
         file_put_contents($script, \sprintf($payload, var_export($argvCaptureFile, true), $exitCode));
 
         return $script;
-    }
-
-    private function createEnvCaptureScript(string $envCaptureFile): string
-    {
-        $script = tempnam(sys_get_temp_dir(), 'hatfield-consumer-env-');
-        $this->assertNotFalse($script);
-
-        $payload = <<<'PHP'
-<?php
-$keys = [
-    'HATFIELD_BINARY_PATH',
-    'HATFIELD_SESSION_ID',
-    'HATFIELD_CONSUMER_STDOUT_EVENTS',
-];
-$captured = [];
-foreach ($keys as $key) {
-    $value = getenv($key);
-    if (false !== $value) {
-        $captured[$key] = $value;
-    }
-}
-file_put_contents(%s, json_encode($captured, JSON_THROW_ON_ERROR));
-PHP;
-
-        file_put_contents($script, \sprintf($payload, var_export($envCaptureFile, true)));
-
-        return $script;
-    }
-
-    private function restoreEnvVar(string $name, mixed $envValue, mixed $serverValue, mixed $getenvValue): void
-    {
-        if (null === $envValue) {
-            unset($_ENV[$name]);
-        } else {
-            $_ENV[$name] = $envValue;
-        }
-
-        if (null === $serverValue) {
-            unset($_SERVER[$name]);
-        } else {
-            $_SERVER[$name] = $serverValue;
-        }
-
-        if (false === $getenvValue || null === $getenvValue) {
-            putenv($name);
-        } else {
-            putenv($name.'='.$getenvValue);
-        }
     }
 
     /**
