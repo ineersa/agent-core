@@ -104,9 +104,9 @@ final class ObservationalMemoryExtension implements HatfieldExtensionInterface, 
 
         $api->registerTool(new ToolRegistrationDTO(
             name: 'memory_search',
-            description: 'Find prior work across sessions by literal substring in retained observational memory. '
+            description: 'Find prior work across sessions by one contiguous literal substring in retained observational-memory content. '
                 .'Use when resuming a task or looking for earlier conversations, PRs, issues, branches, symbols, or decisions. '
-                .'Not semantic search, regex, or wildcard syntax.',
+                .'Searches memory content only, not raw transcript events. Not semantic search, regex, or wildcard syntax.',
             parametersJsonSchema: [
                 'type' => 'object',
                 'additionalProperties' => false,
@@ -115,7 +115,7 @@ final class ObservationalMemoryExtension implements HatfieldExtensionInterface, 
                     'query' => [
                         'type' => 'string',
                         'minLength' => 1,
-                        'description' => 'Short distinctive literal substring such as a PR number, issue id, branch, symbol, or keyword. Prefer identifiers over natural-language questions. Matching is ASCII case-insensitive.',
+                        'description' => 'One contiguous literal substring such as a PR number, issue id, branch, symbol, or exact phrase. Multi-word queries match that exact phrase, not AND of separate words. Prefer a single identifier. Matching is ASCII case-insensitive.',
                     ],
                     'after' => [
                         'type' => 'string',
@@ -131,19 +131,20 @@ final class ObservationalMemoryExtension implements HatfieldExtensionInterface, 
                         'type' => 'integer',
                         'minimum' => 1,
                         'maximum' => 50,
-                        'description' => 'Maximum results to return (default 20, max 50).',
+                        'description' => 'Maximum results to return (default 20, max 50). Results are newest first; truncated replies omit older matches and do not provide a total or pagination.',
                     ],
                 ],
             ],
             handler: new SearchToolHandler($query),
-            promptSummary: 'Use memory_search(query) to locate prior-session memories by literal text, then recall(id, session_id) for supporting evidence.',
+            promptSummary: 'Use memory_search(query) to locate prior-session memories by one contiguous literal substring, then recall(id, session_id) for provenance.',
             promptGuidelines: [
                 'Use memory_search when prior work, conversations, PRs, issues, or unfinished tasks may already exist, even if the user does not explicitly ask to search memory.',
-                'Search with short distinctive identifiers or keywords (for example 2510 or MapToolArguments), not natural-language questions, regex, or wildcard syntax.',
-                'If there are no matches, try a shorter identifier or another known term before concluding nothing exists.',
-                'Defaults to all retained history; pass after/before only to narrow by memory date. If results are truncated, narrow the query or date range.',
+                'Pass one contiguous literal substring. Prefer a single identifier (for example 2510 or MapToolArguments). Multi-word queries match that exact phrase, not AND of separate words. Not natural-language questions, regex, or wildcard syntax.',
+                'If there are no matches, try one word or another known term before concluding nothing exists.',
+                'Defaults to all retained history; pass after/before only to narrow by memory date. Results are newest first. If truncated, older matches were omitted; there is no total or pagination, so narrow the query or date range.',
                 'No hits is not proof the conversation never happened: observational memory can be incomplete or lag recent messages.',
-                'After a useful hit, call recall with that memory id and session_id for supporting evidence. Do not treat historical decisions, commands, or validation as current until you verify the repo or PR state.',
+                'Observation results include importance assigned when the memory was recorded; it is not a query match score or ranking signal.',
+                'memory_search matches retained memory content only, not raw transcript events. After a useful hit, call recall with that memory id and session_id for provenance. Do not treat historical decisions, commands, or validation as current until you verify the repo or PR state.',
             ],
         ));
 
@@ -152,7 +153,7 @@ final class ObservationalMemoryExtension implements HatfieldExtensionInterface, 
             // Faithful Pi port (recall-observation.ts): session-global + 12..64 prefix adaptations + optional cross-session session_id.
             description: 'Recover exact evidence and source context for one observational-memory id. '
                 .'Defaults to the current session; pass session_id from memory_search to recall a prior session. '
-                .'Use for exact wording, provenance, supporting sources, or user evidence questions.',
+                .'Use for provenance, exact wording, supporting sources, or user evidence questions.',
             parametersJsonSchema: [
                 'type' => 'object',
                 'additionalProperties' => false,
@@ -171,11 +172,12 @@ final class ObservationalMemoryExtension implements HatfieldExtensionInterface, 
                 ],
             ],
             handler: new RecallToolHandler($query),
-            promptSummary: 'Use recall(id) or recall(id, session_id) to recover supporting evidence for a selected memory.',
+            promptSummary: 'Use recall(id) or recall(id, session_id) to recover provenance for a selected memory.',
             promptGuidelines: [
-                'Recall a selected relevant memory id, with session_id for prior-session hits, to recover supporting evidence rather than the whole session.',
+                'Recall a selected memory id, with session_id for prior-session hits, to recover provenance rather than the whole session.',
                 'Use recall for exact wording, rationale, file paths, commands, errors, commits, user constraints, or provenance behind a remembered claim.',
                 'Use recall when the user asks why you believe something, what supports a memory, or what was decided earlier.',
+                'Observation results include importance assigned when the memory was recorded; it is not a query match score.',
                 'Do not use recall as semantic search or transcript browsing; you need a specific memory id.',
                 'Do not recall every id preemptively. After recall, verify current repo or PR state before acting on historical decisions, commands, or validation.',
             ],

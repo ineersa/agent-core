@@ -152,7 +152,10 @@ final class ObservationalMemoryExtensionRegistrationTest extends TestCase
         $this->assertStringContainsString('prior work, conversations, PRs, issues', $searchGuidelines);
         $this->assertStringContainsString('all retained history', $searchGuidelines);
         $this->assertStringContainsString('No hits is not proof', $searchGuidelines);
-        $this->assertStringContainsString('recall with that memory id and session_id', $searchGuidelines);
+        $this->assertStringContainsString('one contiguous literal substring', $searchGuidelines);
+        $this->assertStringContainsString('not a query match score', $searchGuidelines);
+        $this->assertStringContainsString('not raw transcript events', $searchGuidelines);
+        $this->assertStringContainsString('recall with that memory id and session_id for provenance', $searchGuidelines);
 
         $recall = $tools[1];
         $this->assertSame('recall', $recall->name);
@@ -170,15 +173,17 @@ final class ObservationalMemoryExtensionRegistrationTest extends TestCase
         $this->assertStringContainsString('memory_search', $idDescription);
 
         $this->assertSame(
-            'Use recall(id) or recall(id, session_id) to recover supporting evidence for a selected memory.',
+            'Use recall(id) or recall(id, session_id) to recover provenance for a selected memory.',
             $recall->promptSummary,
         );
 
         $guidelines = implode("\n", $recall->promptGuidelines);
-        $this->assertCount(5, $recall->promptGuidelines);
-        $this->assertStringContainsString('selected relevant memory id', $guidelines);
+        $this->assertCount(6, $recall->promptGuidelines);
+        $this->assertStringContainsString('selected memory id', $guidelines);
+        $this->assertStringContainsString('recover provenance rather than the whole session', $guidelines);
         $this->assertStringContainsString('exact wording, rationale, file paths, commands, errors, commits, user constraints, or provenance', $guidelines);
         $this->assertStringContainsString('user asks why you believe something', $guidelines);
+        $this->assertStringContainsString('not a query match score', $guidelines);
         $this->assertStringContainsString('semantic search or transcript browsing', $guidelines);
         $this->assertStringContainsString('verify current repo or PR state', $guidelines);
         $this->assertStringNotContainsString('12-character memory id', $guidelines);

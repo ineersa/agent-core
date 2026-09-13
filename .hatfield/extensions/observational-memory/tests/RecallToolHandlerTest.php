@@ -260,6 +260,8 @@ final class RecallToolHandlerTest extends IsolatedKernelTestCase
         $this->assertIsArray($cross);
         $this->assertFalse($cross['ok']);
         $this->assertSame('not_found', $cross['error']);
+        $this->assertStringContainsString('session run-current', (string) $cross['message']);
+        $this->assertStringContainsString('If this id came from memory_search, pass its session_id.', (string) $cross['message']);
 
         // Reflection support ids that only exist in another run must not leak events.
         $refOtherSupport = str_repeat('4', 64);
@@ -653,6 +655,8 @@ final class RecallToolHandlerTest extends IsolatedKernelTestCase
         $this->assertIsArray($withoutSession);
         $this->assertFalse($withoutSession['ok']);
         $this->assertSame('not_found', $withoutSession['error']);
+        $this->assertStringContainsString('session run-current', (string) $withoutSession['message']);
+        $this->assertStringContainsString('If this id came from memory_search, pass its session_id.', (string) $withoutSession['message']);
 
         $withSession = $accessor->with(
             new ToolContext(

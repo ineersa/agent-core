@@ -263,6 +263,8 @@ final class OmQueryServiceTest extends IsolatedKernelTestCase
         $missing = $service->recall('run-prefix', str_repeat('f', 12));
         $this->assertFalse($missing['ok']);
         $this->assertSame('not_found', $missing['error']);
+        $this->assertStringContainsString('session run-prefix', (string) $missing['message']);
+        $this->assertStringContainsString('If this id came from memory_search, pass its session_id.', (string) $missing['message']);
 
         $invalid = $service->recall('run-prefix', 'short');
         $this->assertFalse($invalid['ok']);
@@ -392,6 +394,13 @@ final class OmQueryServiceTest extends IsolatedKernelTestCase
         $sessions = array_column($all['results'], 'session_id');
         $this->assertContains('session-a', $sessions);
         $this->assertContains('session-b', $sessions);
+        $observationRows = array_values(array_filter(
+            $all['results'],
+            static fn (array $row): bool => 'observation' === $row['kind'],
+        ));
+        $this->assertNotEmpty($observationRows);
+        $this->assertArrayHasKey('importance', $observationRows[0]);
+        $this->assertArrayNotHasKey('relevance', $observationRows[0]);
 
         $bounded = $service->search('2510', limit: 1);
         $this->assertTrue($bounded['ok']);
@@ -670,12 +679,16 @@ final class OmQueryServiceTest extends IsolatedKernelTestCase
         $missingCross = $service->recall('run-current', substr($priorId, 0, 12));
         $this->assertFalse($missingCross['ok']);
         $this->assertSame('not_found', $missingCross['error']);
+        $this->assertStringContainsString('session run-current', (string) $missingCross['message']);
+        $this->assertStringContainsString('If this id came from memory_search, pass its session_id.', (string) $missingCross['message']);
 
         $cross = $service->recall('run-current', substr($priorId, 0, 12), 'run-prior');
         $this->assertTrue($cross['ok']);
         $this->assertSame('observation', $cross['kind']);
         $this->assertSame('run-prior', $cross['session_id']);
         $this->assertSame($priorId, $cross['id']);
+        $this->assertSame('high', $cross['importance']);
+        $this->assertArrayNotHasKey('relevance', $cross);
         $this->assertSame([['run_id' => 'run-prior', 'seq' => 4]], $cross['source_refs']);
         $this->assertCount(1, $cross['events']);
         $this->assertSame('run-prior-4', $cross['events'][0]['payload']['text']);

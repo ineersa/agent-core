@@ -146,16 +146,22 @@ composer update ineersa/hatfield-ext-observational-memory
   (Observer → delta Reflector → bounded Dropper pipeline; compaction is instant projection).
 - `/om-view` — active reflections and candidate observations with 12-char display ids,
   timestamp/relevance, content, and human source event sequences.
-- `memory_search` — permanent ambient tool; find prior work across sessions by literal
-  substring in retained observational memory (all history by default). Optional `after` /
-  `before` memory-date filters (`YYYY-MM-DD` or `YYYY-MM-DD HH:MM`). Results are bounded
-  (default 20, max 50) and include `session_id`, memory id, timestamp, and matching content.
-  Not semantic search. No hits does not prove a conversation never happened; memory can lag
-  or omit details. Use short identifiers, then `recall` for evidence.
-- `recall` — permanent ambient tool; recover supporting evidence for one known memory id from
+- `memory_search` — permanent ambient tool; find prior work across sessions by one contiguous
+  literal substring in retained observational-memory content (all history by default). Optional
+  `after` / `before` memory-date filters (`YYYY-MM-DD` or `YYYY-MM-DD HH:MM`). Multi-word queries
+  match that exact phrase, not AND of separate words. Results are newest first and bounded
+  (default 20, max 50); truncated replies omit older matches and do not provide a total or
+  pagination. Observation hits include `importance` assigned at recording time, not a query
+  match score. Searches memory content only, not raw transcript events. Not semantic search.
+  No hits does not prove a conversation never happened; memory can lag or omit details. Prefer
+  a single identifier, then `recall` for provenance.
+- `recall` — permanent ambient tool; recover provenance for one known memory id from
   compacted memory, `/om-view`, or `memory_search` (unique lowercase 12–64 hex prefix, or full
   64-char SHA-256). Defaults to the current session; pass `session_id` from a search hit for a
-  prior session. Verify current repo or PR state before acting on historical decisions.
+  prior session. Observation results include `importance` assigned at recording time, not a
+  query match score. If an id is missing in the selected session, the error names that session
+  and reminds you to pass `session_id` from `memory_search`. Verify current repo or PR state
+  before acting on historical decisions.
 
 ### Search implementation notes
 

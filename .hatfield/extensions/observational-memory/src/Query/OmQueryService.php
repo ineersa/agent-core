@@ -268,7 +268,7 @@ final class OmQueryService
                 'id' => $row['observation_id'],
                 'display_id' => $this->displayId($row['observation_id']),
                 'timestamp' => $row['timestamp'],
-                'relevance' => $row['relevance'],
+                'importance' => $row['relevance'],
                 'content' => $this->condense($row['content']),
                 'sort_key' => $this->comparableMemorySortKey($row['timestamp']),
             ];
@@ -402,7 +402,7 @@ final class OmQueryService
                 'id' => $fullId,
                 'content' => $observation['content'],
                 'timestamp' => $observation['timestamp'],
-                'relevance' => $observation['relevance'],
+                'importance' => $observation['relevance'],
                 'source_refs' => $refs,
                 'events' => $events,
             ];
@@ -424,7 +424,10 @@ final class OmQueryService
             return [
                 'ok' => false,
                 'error' => 'not_found',
-                'message' => 'No observation or reflection with that id in the selected session.',
+                'message' => \sprintf(
+                    'No observation or reflection with that id in session %s. If this id came from memory_search, pass its session_id.',
+                    $targetRunId,
+                ),
             ];
         }
 
@@ -711,9 +714,6 @@ final class OmQueryService
         return \sprintf('Sources: %s %s', $label, implode(', ', $parts));
     }
 
-    /**
-     * @return array{ok: false, error: string, message: string}|null
-     */
     /**
      * @return array{ok: false, error: string, message: string}|null
      */
