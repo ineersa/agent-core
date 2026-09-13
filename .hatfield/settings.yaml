@@ -3,6 +3,8 @@ tui:
 tools:
     bash:
         background_prompt_threshold_seconds: 15
+    code_mode:
+        enabled: true
 logging:
     level: info
     max_files: 2
