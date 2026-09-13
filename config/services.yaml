@@ -83,6 +83,8 @@ services:
 
   Ineersa\CodingAgent\:
     resource: '%kernel.project_dir%/src/CodingAgent/**/*.php'
+    exclude:
+      - '%kernel.project_dir%/src/CodingAgent/Tool/CodeMode/Resources/'
 
   Ineersa\CodingAgent\Agent\Diagnostics\PromptCacheDiagnosticsInvocationSubscriber:
     arguments:
@@ -337,6 +339,12 @@ services:
   # BashToolConfig is derived from AppConfig and autowireable.
   Ineersa\CodingAgent\Config\BashToolConfig:
     factory: ['Ineersa\CodingAgent\Config\BashToolConfig', 'fromAppConfig']
+    arguments:
+      - '@Ineersa\CodingAgent\Config\AppConfig'
+
+  # CodeModeConfig is derived from AppConfig and autowireable.
+  Ineersa\CodingAgent\Config\CodeModeConfig:
+    factory: ['Ineersa\CodingAgent\Config\CodeModeConfig', 'fromAppConfig']
     arguments:
       - '@Ineersa\CodingAgent\Config\AppConfig'
 
@@ -827,6 +835,12 @@ services:
       $executionServiceLocator: !service_locator
         execution: '@Ineersa\CodingAgent\Agent\Fork\ForkExecutionService'
 
+  # code_mode: definition provider is tagged; toolbox resolves only at nested invoke time.
+  Ineersa\CodingAgent\Tool\CodeMode\CodeModeHostBridge:
+    arguments:
+      $toolboxLocator: !service_locator
+        toolbox: '@Ineersa\CodingAgent\Tool\RegistryBackedToolbox'
+
   # CodingAgent ToolSetResolver — bridges ToolRegistry to AgentCore resolver seam.
   # The inner resolver (CodingAgentToolSetResolver) is wrapped by
   # McpCatalogRegisteringToolSetResolver so MCP dynamic tools from the
@@ -985,6 +999,14 @@ services:
   # The toolbox wires to RegistryBackedToolbox; toolSetResolver to CodingAgentToolSetResolver.
   # Execution mode per tool is set at registration time by the tool author/provider
   # in ToolDefinitionDTO, not from settings overrides.
+  Ineersa\CodingAgent\Tool\CodeMode\CodeModeDiagnosticsToolResultProcessor:
+    tags:
+      - { name: agent_core.tool_result_processor, priority: 100 }
+
+  Ineersa\CodingAgent\Tool\OutputCapToolResultProcessor:
+    tags:
+      - { name: agent_core.tool_result_processor, priority: 0 }
+
   Ineersa\AgentCore\Application\Handler\ToolExecutor:
     factory: ['Ineersa\AgentCore\Application\Handler\ToolExecutor', 'fromSettings']
     arguments:

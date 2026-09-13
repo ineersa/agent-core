@@ -83,3 +83,8 @@ services:
   test.run_operational_projection_repository:
     alias: Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository
     public: true
+
+  # TEST-ONLY public alias for code_mode host bridge race/regression tests.
+  test.code_mode_host_bridge:
+    alias: Ineersa\CodingAgent\Tool\CodeMode\CodeModeHostBridge
+    public: true

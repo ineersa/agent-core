@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool;
 
+use Ineersa\CodingAgent\Config\CodeModeConfig;
 use Ineersa\CodingAgent\Utility\CommaSeparatedListParser;
 use Ineersa\CodingAgent\Utility\EnvironmentVariableReader;
 
@@ -12,6 +13,9 @@ use Ineersa\CodingAgent\Utility\EnvironmentVariableReader;
  *
  * Populated by AgentCommand from CLI options, forwarded to controller argv + env,
  * and reapplied after extension loading in controller/worker processes.
+ *
+ * When tools.code_mode.enabled is false, code_mode is added to the effective
+ * denylist so the model never sees it until an explicit settings opt-in.
  *
  * @internal
  */
@@ -27,6 +31,11 @@ final class ToolFilterRuntimeConfig
      * Canonical comma-separated denylist. Empty means the denylist option was omitted.
      */
     public string $toolsExcluded = '';
+
+    public function __construct(
+        private readonly CodeModeConfig $codeModeConfig = new CodeModeConfig(),
+    ) {
+    }
 
     /**
      * Store CLI filter strings and apply them to the local registry.
@@ -66,8 +75,10 @@ final class ToolFilterRuntimeConfig
 
     public function applyToRegistry(?ToolRegistryInterface $toolRegistry): void
     {
+        $excluded = $this->effectiveExcludedToolNames();
+
         if (null === $toolRegistry) {
-            if ('' !== $this->tools || '' !== $this->toolsExcluded) {
+            if ('' !== $this->tools || [] !== $excluded) {
                 throw new \RuntimeException('--tools and --tools-excluded require ToolRegistry to be wired.');
             }
 
@@ -78,8 +89,8 @@ final class ToolFilterRuntimeConfig
             $toolRegistry->setAllowedToolNames(self::parseToolNameList($this->tools));
         }
 
-        if ('' !== $this->toolsExcluded) {
-            $toolRegistry->setExcludedToolNames(self::parseToolNameList($this->toolsExcluded));
+        if ([] !== $excluded) {
+            $toolRegistry->setExcludedToolNames($excluded);
         }
     }
 
@@ -94,8 +105,10 @@ final class ToolFilterRuntimeConfig
         if ('' !== $this->tools) {
             $args[] = '--tools='.$this->tools;
         }
-        if ('' !== $this->toolsExcluded) {
-            $args[] = '--tools-excluded='.$this->toolsExcluded;
+
+        $excluded = $this->effectiveExcludedToolNames();
+        if ([] !== $excluded) {
+            $args[] = '--tools-excluded='.implode(',', $excluded);
         }
 
         return $args;
@@ -112,8 +125,10 @@ final class ToolFilterRuntimeConfig
         if ('' !== $this->tools) {
             $env['HATFIELD_TOOLS'] = $this->tools;
         }
-        if ('' !== $this->toolsExcluded) {
-            $env['HATFIELD_TOOLS_EXCLUDED'] = $this->toolsExcluded;
+
+        $excluded = $this->effectiveExcludedToolNames();
+        if ([] !== $excluded) {
+            $env['HATFIELD_TOOLS_EXCLUDED'] = implode(',', $excluded);
         }
 
         return $env;
@@ -130,5 +145,18 @@ final class ToolFilterRuntimeConfig
     public static function parseToolNameList(string $raw): array
     {
         return array_values(array_unique(CommaSeparatedListParser::parse($raw)));
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function effectiveExcludedToolNames(): array
+    {
+        $excluded = self::parseToolNameList($this->toolsExcluded);
+        if (!$this->codeModeConfig->enabled) {
+            $excluded[] = CodeModeTool::NAME;
+        }
+
+        return array_values(array_unique($excluded));
     }
 }
