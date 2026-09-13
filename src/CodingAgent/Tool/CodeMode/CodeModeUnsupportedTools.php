@@ -20,22 +20,16 @@ use Ineersa\CodingAgent\Tool\AskHumanTool;
  */
 final class CodeModeUnsupportedTools
 {
-    /**
-     * @return list<string>
-     */
-    public static function names(): array
-    {
-        return [
-            SubagentToolHandler::NAME,
-            ForkToolHandler::NAME,
-            AgentResumeToolHandler::NAME,
-            AskHumanTool::NAME,
-        ];
-    }
+    private const array NAMES = [
+        SubagentToolHandler::NAME,
+        ForkToolHandler::NAME,
+        AgentResumeToolHandler::NAME,
+        AskHumanTool::NAME,
+    ];
 
     public static function contains(string $name): bool
     {
-        return \in_array($name, self::names(), true);
+        return \in_array($name, self::NAMES, true);
     }
 
     public static function rejectionMessage(string $name): string

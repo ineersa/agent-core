@@ -147,14 +147,14 @@ final readonly class CodeModeHostBridge
                     try {
                         $result = CodeModeValueCodec::assertEncodable($frame['result'] ?? null, 'Code-mode script return value');
                     } catch (\RuntimeException $exception) {
-                        throw new ToolCallException($this->normalizeDiagnosticPaths($exception->getMessage()), retryable: false, previous: $exception);
+                        throw new ToolCallException(CodeModeDiagnostics::normalizePaths($exception->getMessage(), self::SCRIPT_WRAPPER_PREFIX_LINES), retryable: false, previous: $exception);
                     }
 
                     return $this->packExecutionResult($result, $output);
                 }
 
                 $message = \is_string($frame['error'] ?? null) ? $frame['error'] : 'Code-mode script failed.';
-                throw new ToolCallException($this->normalizeDiagnosticPaths($message), retryable: false);
+                throw new ToolCallException(CodeModeDiagnostics::normalizePaths($message, self::SCRIPT_WRAPPER_PREFIX_LINES), retryable: false);
             }
 
             throw new ToolCallException(\sprintf('Unsupported code-mode IPC frame type: %s.', get_debug_type($type)), retryable: false);
@@ -777,11 +777,6 @@ final readonly class CodeModeHostBridge
         }
 
         return new CodeModeExecutionResult($result, $diagnostics);
-    }
-
-    private function normalizeDiagnosticPaths(string $text): string
-    {
-        return CodeModeDiagnostics::normalizePaths($text, self::SCRIPT_WRAPPER_PREFIX_LINES);
     }
 
     private function stopProcess(?Process $process): void
