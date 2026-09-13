@@ -113,6 +113,60 @@ final class MemoryGenerationRepository
         return $out;
     }
 
+    /**
+     * Exact substring search over retained reflections (all sessions in this database).
+     *
+     * Optional filters compare reflection `created_at` (ISO-8601). Leading-wildcard LIKE
+     * scans the table; keep limits small.
+     *
+     * @return list<array{
+     *   reflection_id: string,
+     *   run_id: string,
+     *   content: string,
+     *   created_at: string
+     * }>
+     */
+    public function searchContent(
+        string $query,
+        ?string $afterCreatedAt = null,
+        ?string $beforeCreatedAt = null,
+        int $limit = 20,
+    ): array {
+        $query = trim($query);
+        if ('' === $query || $limit < 1) {
+            return [];
+        }
+
+        $sql = 'SELECT reflection_id, run_id, content, created_at '
+            .'FROM om_reflection '
+            ."WHERE content LIKE ? ESCAPE '\\'";
+        $params = [$this->likeContainsPattern($query)];
+
+        if (null !== $afterCreatedAt && '' !== $afterCreatedAt) {
+            $sql .= ' AND created_at >= ?';
+            $params[] = $afterCreatedAt;
+        }
+        if (null !== $beforeCreatedAt && '' !== $beforeCreatedAt) {
+            $sql .= ' AND created_at <= ?';
+            $params[] = $beforeCreatedAt;
+        }
+
+        $sql .= ' ORDER BY created_at DESC, reflection_id ASC LIMIT '.$limit;
+
+        $rows = $this->connection->fetchAllAssociative($sql, $params);
+        $out = [];
+        foreach ($rows as $row) {
+            $out[] = [
+                'reflection_id' => (string) ($row['reflection_id'] ?? ''),
+                'run_id' => (string) ($row['run_id'] ?? ''),
+                'content' => (string) ($row['content'] ?? ''),
+                'created_at' => (string) ($row['created_at'] ?? ''),
+            ];
+        }
+
+        return $out;
+    }
+
     public function countReflectionsForRun(string $runId): int
     {
         $count = $this->connection->fetchOne(
@@ -513,5 +567,16 @@ final class MemoryGenerationRepository
              WHERE generation_id = ? AND status = ?',
             [self::STATUS_SUCCEEDED, $now, $generationId, self::STATUS_RUNNING],
         );
+    }
+
+    private function likeContainsPattern(string $query): string
+    {
+        $escaped = str_replace(
+            ['\\', '%', '_'],
+            ['\\\\', '\\%', '\\_'],
+            $query,
+        );
+
+        return '%'.$escaped.'%';
     }
 }
