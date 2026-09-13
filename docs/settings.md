@@ -161,7 +161,8 @@ bypass toolbox hooks and approvals. Any launcher sandbox, such as `hatfield-safe
 with bubblewrap, is inherited rather than created by the tool. Scripts use a
 60-second wall budget by default (`timeout_seconds`, max 300) and a 256 MiB PHP
 memory limit (`memory_limit_mb`, max 1024). Nested handlers remain cooperative
-while blocked. See [tools.md](tools.md).
+while blocked. Even with a fused/static Hatfield binary, an installed PHP CLI
+must be available as `php` on `PATH`. See [tools.md](tools.md).
 
 See [background-processes.md](background-processes.md).
 

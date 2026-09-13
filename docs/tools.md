@@ -20,7 +20,7 @@ servers. Tool availability does not bypass approval policy.
 | `bash` | Run a shell command in the workspace | Local permissions apply. Timeout and cancellation do not undo completed effects. |
 | `bg_status` | List, inspect logs, or stop accepted background processes | Session-scoped. Does not expose private foreground supervision. |
 | `ask_human` | Ask for text, confirmation, or a choice | Waits for a human response. Cancellation is not approval. |
-| `code_mode` | Run a PHP script that calls other tools through `tool(name, arguments)` | Disabled by default (`tools.code_mode.enabled`). Raw PHP bypasses toolbox hooks. Requires a PHP CLI interpreter. |
+| `code_mode` | Run a PHP script that calls other tools through `tool(name, arguments)` | Disabled by default (`tools.code_mode.enabled`). Raw PHP bypasses toolbox hooks. Requires an installed PHP CLI on PATH (`php`). |
 | `settings` | Read effective settings, set overrides, or remove overrides | Mutations specify user or project scope and pass approval checks. |
 | `hatfield_docs` | List and read packaged Hatfield documentation | Does not automatically discover extension-package READMEs. |
 | `subagent` | Launch a named child agent, singly or in parallel | Uses discovered agent definitions and child tool policy. |
@@ -57,14 +57,17 @@ The script can call registered tools, including MCP tools, through
 TOON conversion. `toon_encode()` rejects unsupported or lossy values.
 `toon_decode()` leaves valid scalar text unchanged. Nested tool failures throw
 `RuntimeException`. Missing or explicit `null` returns are visible as `null`.
-Bounded script stdout/stderr, including PHP warnings, are exposed separately
-from the return value. `die()`/`exit` without a return reports that the script
-exited without returning a value, even on exit code 0.
+Bounded script stdout/stderr, including PHP warnings, are appended to the
+model-facing return text and remain subject to ordinary output capping.
+`die()`/`exit` without a return reports that the script exited without returning
+a value, even on exit code 0.
 
 Raw PHP filesystem and process functions also work inside the script. Those
 calls bypass toolbox hooks and approvals. If you launch Hatfield under
 `hatfield-safe` or another bubblewrap wrapper, the script inherits that sandbox.
-`code_mode` does not create a separate sandbox.
+`code_mode` does not create a separate sandbox. Even when Hatfield is a
+standalone binary, `code_mode` still needs an installed PHP CLI available as
+`php` on `PATH`.
 
 `tool()` rejects `subagent`, `fork`, `agent_resume`, and `ask_human` before the
 handler runs. Those tools need deferred child ownership or interactive pause

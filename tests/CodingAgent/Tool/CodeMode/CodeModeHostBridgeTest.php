@@ -501,6 +501,62 @@ PHP);
         $this->assertMatchesRegularExpression('#script\\.php\\(1\\)#', $stderr);
     }
 
+    public function testParseErrorReportsNormalizedScriptPathAndLine(): void
+    {
+        $bridge = $this->bridge();
+
+        try {
+            $this->runScript($bridge, 'echo (');
+            $this->fail('Expected ToolCallException for parse error');
+        } catch (ToolCallException $exception) {
+            $message = $exception->getMessage();
+            $this->assertStringContainsString('script.php(', $message);
+            $this->assertDoesNotMatchRegularExpression('#/tmp/[^\\s:]+/script\\.php#', $message);
+            $this->assertMatchesRegularExpression('#script\\.php\\(\\d+\\)#', $message);
+        }
+    }
+
+    public function testFusedNativePackagingResolvesPhpFromPath(): void
+    {
+        $finder = new \Symfony\Component\Process\ExecutableFinder();
+        $phpFromPath = $finder->find('php');
+        $this->assertIsString($phpFromPath);
+        $this->assertNotSame('', $phpFromPath);
+
+        $locator = new class implements \Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator {
+            public function path(): string
+            {
+                return '/tmp/hatfield.linux-amd64';
+            }
+
+            /** @return list<string> */
+            public function command(): array
+            {
+                return ['/tmp/hatfield.linux-amd64'];
+            }
+        };
+
+        $bridge = new CodeModeHostBridge(
+            self::getContainer()->get(StackToolExecutionContextAccessor::class),
+            self::getContainer()->get(ToolRuntime::class),
+            new class implements \Psr\Container\ContainerInterface {
+                public function get(string $id): mixed
+                {
+                    throw new \RuntimeException('toolbox should not be needed');
+                }
+
+                public function has(string $id): bool
+                {
+                    return false;
+                }
+            },
+            new RuntimeProcessConfig($locator, $this->tmpDir),
+        );
+
+        $result = $this->runScript($bridge, 'return "path-php-ok";');
+        $this->assertSame('path-php-ok', $result);
+    }
+
     private function bridge(): CodeModeHostBridge
     {
         $bridge = self::getContainer()->get('test.code_mode_host_bridge');

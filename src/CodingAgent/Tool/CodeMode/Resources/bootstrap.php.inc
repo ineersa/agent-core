@@ -276,10 +276,16 @@ try {
     exit(0);
 } catch (Throwable $exception) {
     try {
+        $message = $exception->getMessage();
+        $file = $exception->getFile();
+        $line = $exception->getLine();
+        if (\is_string($file) && '' !== $file && $line > 0) {
+            $message .= \sprintf(' in %s on line %d', $file, $line);
+        }
         hatfield_code_mode_write($connection, [
             'type' => 'return',
             'ok' => false,
-            'error' => $exception->getMessage(),
+            'error' => $message,
         ]);
     } catch (Throwable) {
         fwrite(\STDERR, $exception->getMessage()."\n");

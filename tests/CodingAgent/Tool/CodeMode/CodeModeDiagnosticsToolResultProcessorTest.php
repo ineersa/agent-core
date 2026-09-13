@@ -113,7 +113,10 @@ final class CodeModeDiagnosticsToolResultProcessorTest extends TestCase
 
         $processed = $processor->process($result, $toolCall);
 
-        $this->assertSame('9', $processed->content[0]['text'] ?? null);
+        $visible = (string) ($processed->content[0]['text'] ?? '');
+        $this->assertStringStartsWith("9\n\ncode_mode diagnostics\n", $visible);
+        $this->assertStringContainsString("stdout:\nout", $visible);
+        $this->assertStringContainsString("stderr:\nwarn", $visible);
         $this->assertSame(9, $processed->details['raw_result'] ?? null);
         $this->assertSame(['stdout' => 'out', 'stderr' => 'warn'], $processed->details['code_mode_diagnostics'] ?? null);
         $notifications = $processed->details['model_notifications'] ?? null;
@@ -151,6 +154,7 @@ final class CodeModeDiagnosticsToolResultProcessorTest extends TestCase
 
         $this->assertSame(CodeModeTool::NAME.' completed', $afterCap->content[0]['text'] ?? null);
         $this->assertArrayNotHasKey('raw_result', \is_array($afterCap->details) ? $afterCap->details : []);
+        $this->assertSame(['stdout' => 'diag'], $afterCap->details['code_mode_diagnostics'] ?? null);
         $notifications = $afterCap->details['model_notifications'] ?? null;
         $this->assertIsArray($notifications);
         $kinds = array_map(static fn (array $n): string => (string) ($n['kind'] ?? ''), $notifications);

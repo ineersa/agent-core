@@ -13,10 +13,12 @@ use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
 /**
- * Promote bounded code_mode stdout/stderr into a model notification.
+ * Promote bounded code_mode stdout/stderr into the model-facing tool text.
  *
- * Keeps the script return value as the visible tool result while exposing
- * diagnostics separately through the existing model_notifications path.
+ * Keeps the script return value first, then appends a bounded diagnostics
+ * block. delivery=context notifications alone are not model-facing for tool
+ * results; only delivery=tool_result_replace replaces content, so diagnostics
+ * must live in the visible content text.
  *
  * Runs before OutputCap so large returns can still be capped after diagnostics
  * are extracted from the raw envelope.
@@ -87,13 +89,17 @@ final readonly class CodeModeDiagnosticsToolResultProcessor implements ToolResul
         if ('' !== $stderr) {
             $sections[] = "stderr:\n".$stderr;
         }
-        $text = $this->truncate("code_mode diagnostics\n".implode("\n\n", $sections));
+        $diagnosticBlock = $this->truncate("code_mode diagnostics\n".implode("\n\n", $sections));
+        $visibleReturn = $this->normalizeVisibleResult($value);
+        $visibleText = '' === $visibleReturn
+            ? $diagnosticBlock
+            : $visibleReturn."\n\n".$diagnosticBlock;
 
         $notificationId = hash('sha256', implode('|', [
             $toolCall->toolCallId,
             'code_mode',
             'diagnostics',
-            $text,
+            $diagnosticBlock,
         ]));
 
         $notification = new ModelNotificationDTO(
@@ -102,7 +108,7 @@ final readonly class CodeModeDiagnosticsToolResultProcessor implements ToolResul
             kind: 'script_diagnostics',
             severity: 'info',
             delivery: 'context',
-            text: $text,
+            text: $diagnosticBlock,
             toolCallId: $toolCall->toolCallId,
             toolName: $toolCall->toolName,
             orderIndex: $toolCall->orderIndex,
@@ -122,17 +128,17 @@ final readonly class CodeModeDiagnosticsToolResultProcessor implements ToolResul
         $existingNotifications[] = $notificationArray;
         $details['model_notifications'] = $existingNotifications;
         $details['raw_result'] = $value;
-        $details['code_mode_diagnostics'] = [
+        $details['code_mode_diagnostics'] = array_filter([
             'stdout' => $stdout,
             'stderr' => $stderr,
-        ];
+        ], static fn (string $chunk): bool => '' !== $chunk);
 
         return new ToolResult(
             toolCallId: $result->toolCallId,
             toolName: $result->toolName,
             content: [[
                 'type' => 'text',
-                'text' => $this->normalizeVisibleResult($value),
+                'text' => $visibleText,
             ]],
             details: $details,
             isError: false,

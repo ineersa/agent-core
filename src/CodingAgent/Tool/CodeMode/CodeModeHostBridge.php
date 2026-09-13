@@ -25,6 +25,7 @@ use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Process\Exception\ProcessStartFailedException;
 use Symfony\Component\Process\Exception\RuntimeException as ProcessRuntimeException;
+use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
 
 /**
@@ -775,25 +776,38 @@ final readonly class CodeModeHostBridge
     private function normalizeDiagnosticPaths(string $text): string
     {
         $prefixLines = self::SCRIPT_WRAPPER_PREFIX_LINES;
-        $normalized = preg_replace_callback(
-            '#(?:phar://)?[^\s"\']+/(script|bootstrap)\.php(?:\((\d+)\)| on line (\d+))#',
-            static function (array $matches) use ($prefixLines): string {
-                $file = $matches[1];
-                $lineToken = $matches[2] ?? '';
-                if ('' === $lineToken) {
-                    $lineToken = $matches[3] ?? '0';
-                }
-                $line = (int) $lineToken;
-                if ('script' === $file && $line > $prefixLines) {
-                    $line -= $prefixLines;
-                }
 
-                return $file.'.php('.$line.')';
+        $replace = static function (string $file, int $line) use ($prefixLines): string {
+            if ('script' === $file && $line > $prefixLines) {
+                $line -= $prefixLines;
+            }
+
+            return $file.'.php('.$line.')';
+        };
+
+        // PHP emits several path/line shapes: path(line), "on line N in path",
+        // and "in path on line N". Keep one stable label and adjust wrapper lines.
+        $patterns = [
+            '#(?:phar://)?[^\s"\']+/(script|bootstrap)\.php\((\d+)\)#' => static function (array $m) use ($replace): string {
+                return $replace($m[1], (int) $m[2]);
             },
-            $text,
-        );
+            '#(?:phar://)?[^\s"\']+/(script|bootstrap)\.php on line (\d+)#' => static function (array $m) use ($replace): string {
+                return $replace($m[1], (int) $m[2]);
+            },
+            '#on line (\d+) in (?:phar://)?[^\s"\']+/(script|bootstrap)\.php#' => static function (array $m) use ($replace): string {
+                return $replace($m[2], (int) $m[1]);
+            },
+        ];
 
-        return \is_string($normalized) ? $normalized : $text;
+        $normalized = $text;
+        foreach ($patterns as $pattern => $callback) {
+            $next = preg_replace_callback($pattern, $callback, $normalized);
+            if (\is_string($next)) {
+                $normalized = $next;
+            }
+        }
+
+        return $normalized;
     }
 
     private function stopProcess(?Process $process): void
@@ -860,10 +874,10 @@ final readonly class CodeModeHostBridge
     /**
      * Resolve a PHP CLI interpreter that can execute a materialized bootstrap file.
      *
-     * Reuses {@see RuntimeProcessConfig::executableCommand()} packaging rules:
-     * multi-arg commands provide the interpreter as argv[0]; fused native
-     * single-arg executables do not expose a separate PHP CLI and are unsupported
-     * for code_mode script subprocesses.
+     * Checkout/PHAR packaging reuses argv[0] from
+     * {@see RuntimeProcessConfig::executableCommand()}. Fused native/static
+     * builds resolve `php` from PATH instead of requiring a hardcoded absolute
+     * path. The fused binary itself is not a general PHP CLI.
      */
     private function phpCliBinary(): string
     {
@@ -875,10 +889,15 @@ final readonly class CodeModeHostBridge
             }
         }
 
-        if (1 === \count($command)) {
-            throw new ToolCallException('code_mode requires a PHP CLI interpreter to run script subprocesses. Fused native/static executables are unsupported for this tool.', retryable: false);
+        $finder = new ExecutableFinder();
+        $fromPath = $finder->find('php');
+        if (\is_string($fromPath) && '' !== $fromPath) {
+            return $fromPath;
         }
 
-        throw new ToolCallException('PHP CLI binary is unavailable for code-mode subprocess execution.', retryable: false);
+        throw new ToolCallException(
+            'code_mode requires an installed PHP CLI on PATH (command `php`) to run script subprocesses. Fused native/static Hatfield binaries do not provide that interpreter.',
+            retryable: false,
+        );
     }
 }
