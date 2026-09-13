@@ -64,7 +64,7 @@ MCP inheritance and explicit selectors are described in [MCP](mcp.md).
 ## Extension and MCP tools
 
 Enabled extensions can register additional tools. For example, task-workflow adds
-task-board operations, while observational-memory provides `om_search` and `recall`. These are
+task-board operations, while observational-memory provides `memory_search` and `recall`. These are
 extension tools, not universally available built-ins. Observer and reflector jobs
 also have private tools that are not the main session's catalog.
 

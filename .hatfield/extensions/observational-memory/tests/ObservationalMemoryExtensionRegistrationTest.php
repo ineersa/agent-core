@@ -24,7 +24,7 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Thesis: OM registers exact public command names om-status/om-view and permanent om_search/recall tools
+ * Thesis: OM registers exact public command names om-status/om-view and permanent memory_search/recall tools
  * whose model-facing metadata retains the faithful Pi decision/provenance/no-search guidance
  * plus the Hatfield 12..64 hex id schema (so future shortening fails this test).
  */
@@ -139,18 +139,20 @@ final class ObservationalMemoryExtensionRegistrationTest extends TestCase
         $this->assertSame(['om-status', 'om-view'], $names);
         $this->assertCount(2, $tools);
         $toolNames = array_map(static fn (ToolRegistrationDTO $t): string => $t->name, $tools);
-        $this->assertSame(['om_search', 'recall'], $toolNames);
+        $this->assertSame(['memory_search', 'recall'], $toolNames);
 
         $search = $tools[0];
         $this->assertSame('query', ($search->parametersJsonSchema['required'] ?? [])[0] ?? null);
         $this->assertArrayHasKey('after', $search->parametersJsonSchema['properties'] ?? []);
         $this->assertArrayHasKey('before', $search->parametersJsonSchema['properties'] ?? []);
         $this->assertSame(50, $search->parametersJsonSchema['properties']['limit']['maximum'] ?? null);
-        $this->assertStringContainsString('Exact text search', $search->description);
+        $this->assertStringContainsString('Find prior work', $search->description);
         $this->assertStringContainsString('Not semantic search', $search->description);
         $searchGuidelines = implode("\n", $search->promptGuidelines);
+        $this->assertStringContainsString('prior work, conversations, PRs, issues', $searchGuidelines);
         $this->assertStringContainsString('all retained history', $searchGuidelines);
-        $this->assertStringContainsString('session_id', $searchGuidelines);
+        $this->assertStringContainsString('No hits is not proof', $searchGuidelines);
+        $this->assertStringContainsString('recall with that memory id and session_id', $searchGuidelines);
 
         $recall = $tools[1];
         $this->assertSame('recall', $recall->name);
@@ -164,23 +166,21 @@ final class ObservationalMemoryExtensionRegistrationTest extends TestCase
 
         $idDescription = (string) ($recall->parametersJsonSchema['properties']['id']['description'] ?? '');
         $this->assertStringContainsString('12–64', $idDescription);
-        $this->assertStringContainsString('does not search by topic', $idDescription);
-        $this->assertStringContainsString('om_search', $idDescription);
+        $this->assertStringContainsString('Not a topic search', $idDescription);
+        $this->assertStringContainsString('memory_search', $idDescription);
 
         $this->assertSame(
-            'Use recall(id) or recall(id, session_id) to recover exact source context behind OM memories when precision matters.',
+            'Use recall(id) or recall(id, session_id) to recover supporting evidence for a selected memory.',
             $recall->promptSummary,
         );
 
         $guidelines = implode("\n", $recall->promptGuidelines);
-        $this->assertCount(6, $recall->promptGuidelines);
+        $this->assertCount(5, $recall->promptGuidelines);
+        $this->assertStringContainsString('selected relevant memory id', $guidelines);
         $this->assertStringContainsString('exact wording, rationale, file paths, commands, errors, commits, user constraints, or provenance', $guidelines);
-        $this->assertStringContainsString('supporting observations or raw sources', $guidelines);
         $this->assertStringContainsString('user asks why you believe something', $guidelines);
-        $this->assertStringContainsString('pass that result session_id explicitly', $guidelines);
         $this->assertStringContainsString('semantic search or transcript browsing', $guidelines);
-        $this->assertStringContainsString('unique lowercase 12–64 hex memory id', $guidelines);
-        $this->assertStringContainsString('Do not recall every id preemptively', $guidelines);
+        $this->assertStringContainsString('verify current repo or PR state', $guidelines);
         $this->assertStringNotContainsString('12-character memory id', $guidelines);
     }
 }

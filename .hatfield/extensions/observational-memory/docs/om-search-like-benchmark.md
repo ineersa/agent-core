@@ -2,7 +2,7 @@
 
 Date: 2026-09-12
 
-Purpose: choose bounded SQL `LIKE` versus FTS5 for `om_search` without modifying the live OM database.
+Purpose: choose bounded SQL `LIKE` versus FTS5 for `memory_search` without modifying the live OM database.
 
 ## Setup
 

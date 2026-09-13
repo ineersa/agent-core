@@ -10,7 +10,7 @@ use Ineersa\Hatfield\ExtensionApi\Tool\ToolInvocationContextDTO;
 use Ineersa\HatfieldExt\ObservationalMemory\Query\OmQueryService;
 
 /**
- * Permanent ambient search tool: exact substring lookup across retained OM memories.
+ * Permanent ambient memory_search tool: literal substring lookup across retained OM memories.
  *
  * Returns TOON-encoded structured results. Cooperative cancel/timeout maps stay as
  * plain arrays so ToolExecutor can preserve cancelled/timed_out control flags.

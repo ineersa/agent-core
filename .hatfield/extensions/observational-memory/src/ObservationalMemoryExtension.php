@@ -103,9 +103,10 @@ final class ObservationalMemoryExtension implements HatfieldExtensionInterface, 
         );
 
         $api->registerTool(new ToolRegistrationDTO(
-            name: 'om_search',
-            description: 'Exact text search over retained observational-memory observations and reflections across sessions in the configured OM database. '
-                .'Use to locate prior-session work by PR numbers, URLs, branches, symbols, or remembered phrases. Not semantic search.',
+            name: 'memory_search',
+            description: 'Find prior work across sessions by literal substring in retained observational memory. '
+                .'Use when resuming a task or looking for earlier conversations, PRs, issues, branches, symbols, or decisions. '
+                .'Not semantic search, regex, or wildcard syntax.',
             parametersJsonSchema: [
                 'type' => 'object',
                 'additionalProperties' => false,
@@ -114,43 +115,44 @@ final class ObservationalMemoryExtension implements HatfieldExtensionInterface, 
                     'query' => [
                         'type' => 'string',
                         'minLength' => 1,
-                        'description' => 'Exact substring to find in observation or reflection content. SQLite LIKE matching is ASCII case-insensitive by default. Prefer identifiers such as PR numbers, URLs, branch names, or symbols.',
+                        'description' => 'Short distinctive literal substring such as a PR number, issue id, branch, symbol, or keyword. Prefer identifiers over natural-language questions. Matching is ASCII case-insensitive.',
                     ],
                     'after' => [
                         'type' => 'string',
                         'pattern' => '^\\d{4}-\\d{2}-\\d{2}( \\d{2}:\\d{2})?$',
-                        'description' => 'Optional inclusive lower bound on memory date. Use YYYY-MM-DD or YYYY-MM-DD HH:MM. Filters observation timestamp and reflection created_at.',
+                        'description' => 'Optional inclusive lower bound on memory date (YYYY-MM-DD or YYYY-MM-DD HH:MM). Omit to search all retained history.',
                     ],
                     'before' => [
                         'type' => 'string',
                         'pattern' => '^\\d{4}-\\d{2}-\\d{2}( \\d{2}:\\d{2})?$',
-                        'description' => 'Optional inclusive upper bound on memory date. Use YYYY-MM-DD or YYYY-MM-DD HH:MM. Filters observation timestamp and reflection created_at.',
+                        'description' => 'Optional inclusive upper bound on memory date (YYYY-MM-DD or YYYY-MM-DD HH:MM). Omit to search all retained history.',
                     ],
                     'limit' => [
                         'type' => 'integer',
                         'minimum' => 1,
                         'maximum' => 50,
-                        'description' => 'Maximum number of results to return (default 20, max 50).',
+                        'description' => 'Maximum results to return (default 20, max 50).',
                     ],
                 ],
             ],
             handler: new SearchToolHandler($query),
-            promptSummary: 'Use om_search(query) to find retained OM memories across sessions by exact text, then recall(id, session_id) for source context.',
+            promptSummary: 'Use memory_search(query) to locate prior-session memories by literal text, then recall(id, session_id) for supporting evidence.',
             promptGuidelines: [
-                'Use om_search for PR numbers, issue ids, URLs, branch names, symbols, or exact phrases remembered from earlier sessions.',
-                'Search defaults to all retained history in the configured OM database; pass after/before only to narrow by memory date.',
-                'Results are bounded and include session_id, memory id, timestamp, and matching content. They are not injected into context automatically.',
-                'OM may omit details or lag recent messages; canonical session events remain the source of truth after recall.',
-                'Do not use om_search as semantic/topic search. Prefer exact identifiers when available.',
+                'Use memory_search when prior work, conversations, PRs, issues, or unfinished tasks may already exist, even if the user does not explicitly ask to search memory.',
+                'Search with short distinctive identifiers or keywords (for example 2510 or MapToolArguments), not natural-language questions, regex, or wildcard syntax.',
+                'If there are no matches, try a shorter identifier or another known term before concluding nothing exists.',
+                'Defaults to all retained history; pass after/before only to narrow by memory date. If results are truncated, narrow the query or date range.',
+                'No hits is not proof the conversation never happened: observational memory can be incomplete or lag recent messages.',
+                'After a useful hit, call recall with that memory id and session_id for supporting evidence. Do not treat historical decisions, commands, or validation as current until you verify the repo or PR state.',
             ],
         ));
 
         $api->registerTool(new ToolRegistrationDTO(
             name: 'recall',
             // Faithful Pi port (recall-observation.ts): session-global + 12..64 prefix adaptations + optional cross-session session_id.
-            description: 'Recover exact evidence and source context behind an observational-memory observation or reflection id. '
-                .'Defaults to the current session; pass session_id from om_search to recall a prior session. '
-                .'Use when compressed memory is important and original source context is needed before acting.',
+            description: 'Recover exact evidence and source context for one observational-memory id. '
+                .'Defaults to the current session; pass session_id from memory_search to recall a prior session. '
+                .'Use for exact wording, provenance, supporting sources, or user evidence questions.',
             parametersJsonSchema: [
                 'type' => 'object',
                 'additionalProperties' => false,
@@ -159,24 +161,23 @@ final class ObservationalMemoryExtension implements HatfieldExtensionInterface, 
                     'id' => [
                         'type' => 'string',
                         'pattern' => '^[a-f0-9]{12,64}$',
-                        'description' => 'Full lowercase hex observation or reflection id, or a unique 12–64 character prefix, shown in compacted memory, /om-view, om_search, or a previous recall result. Must be a specific id; this tool does not search by topic.',
+                        'description' => 'Full lowercase hex observation or reflection id, or a unique 12–64 character prefix from compacted memory, /om-view, memory_search, or a previous recall result. Not a topic search.',
                     ],
                     'session_id' => [
                         'type' => 'string',
                         'minLength' => 1,
-                        'description' => 'Optional originating session/run id from om_search. Omit to keep current-session recall behavior.',
+                        'description' => 'Optional originating session id from memory_search. Omit to keep current-session recall.',
                     ],
                 ],
             ],
             handler: new RecallToolHandler($query),
-            promptSummary: 'Use recall(id) or recall(id, session_id) to recover exact source context behind OM memories when precision matters.',
+            promptSummary: 'Use recall(id) or recall(id, session_id) to recover supporting evidence for a selected memory.',
             promptGuidelines: [
-                'Use recall when you need exact wording, rationale, file paths, commands, errors, commits, user constraints, or provenance behind a remembered claim.',
-                'Use recall when a broad reflection is relevant but you need its supporting observations or raw sources to continue safely.',
+                'Recall a selected relevant memory id, with session_id for prior-session hits, to recover supporting evidence rather than the whole session.',
+                'Use recall for exact wording, rationale, file paths, commands, errors, commits, user constraints, or provenance behind a remembered claim.',
                 'Use recall when the user asks why you believe something, what supports a memory, or what was decided earlier.',
-                'When recalling a search hit from another session, pass that result session_id explicitly. Omitting session_id keeps current-session behavior.',
-                'Do not use recall as semantic search or transcript browsing; you must already have a specific full id or unique lowercase 12–64 hex memory id.',
-                'Do not recall every id preemptively. Recall only when exact source context will materially improve the next action.',
+                'Do not use recall as semantic search or transcript browsing; you need a specific memory id.',
+                'Do not recall every id preemptively. After recall, verify current repo or PR state before acting on historical decisions, commands, or validation.',
             ],
         ));
 
