@@ -113,7 +113,16 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
         $appCommand = $this->runtimeConfig->executableCommand();
 
         try {
-            $env = $_ENV;
+            // Match JsonlProcessAgentSessionClient: seed from getenv() and keep
+            // $_ENV-only keys. Controllers started via explicit proc_open env
+            // (variables_order=GPCS) often have HATFIELD_BINARY_PATH /
+            // HATFIELD_SESSION_ID in getenv()/$_SERVER but not $_ENV. Using
+            // $_ENV alone is the wrong contract for consumer inheritance.
+            $processEnv = getenv();
+            $env = array_merge(
+                $_ENV,
+                \is_array($processEnv) ? $processEnv : [],
+            );
             $env['HATFIELD_CONSUMER_STDOUT_EVENTS'] = '1';
 
             $process = new Process(

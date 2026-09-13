@@ -223,6 +223,7 @@ abstract class ControllerE2eTestCase extends TestCase
             'LLAMA_CPP_SMOKE_TEST' => '1',
         ];
         $env = array_merge($env, $this->controllerSubprocessEnv());
+        $env['HATFIELD_CACHE_DIR'] = $this->tempDir.'/.hatfield/cache';
 
         $pipes = [];
         // Isolate the controller (and its inherited session) via setsid -w so
@@ -543,6 +544,7 @@ abstract class ControllerE2eTestCase extends TestCase
     protected function collectDiagnostics(array $events): string
     {
         $this->drainStderr();
+        $this->refreshTrackedControllerPids();
 
         $chunks = [
             'Temp dir: '.$this->tempDir,
@@ -570,7 +572,7 @@ abstract class ControllerE2eTestCase extends TestCase
                 $rows = $db->query('SELECT count(*), queue_name FROM messenger_messages GROUP BY queue_name');
                 if (false !== $rows) {
                     foreach ($rows as $row) {
-                        $chunks[] = '  '.($row[0] ?? 0).' messages in '.escapeshellarg($row[1] ?? '?');
+                        $chunks[] = '  '.($row[0] ?? 0).' undelivered messages in queue '.($row[1] ?? '?');
                     }
                 }
             } catch (\Throwable $e) {
