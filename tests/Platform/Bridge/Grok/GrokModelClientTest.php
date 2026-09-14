@@ -224,13 +224,66 @@ final class GrokModelClientTest extends TestCase
             static fn (): ?string => null,
         );
 
-        $result = $client->request(
-            new ResponsesModel('grok-build'),
-            ['input' => [['role' => 'user', 'content' => 'Hello']]],
+        try {
+            $client->request(new ResponsesModel('grok-build'), ['input' => []]);
+            $this->fail('Expected an authentication failure.');
+        } catch (\Symfony\AI\Platform\Exception\AuthenticationException) {
+            $this->assertSame(1, $requestCount);
+        }
+    }
+
+    public function testFailedRefreshPreservesAuthenticationFailureForStringError(): void
+    {
+        $logger = new \Ineersa\AgentCore\Tests\Support\TestLogger();
+        $failure = new \RuntimeException('Refresh failed', previous: new \RuntimeException('Underlying failure'));
+        $httpClient = new MockHttpClient([
+            new MockResponse('{"error":"unauthorized"}', ['http_code' => 401]),
+        ]);
+        $client = new GrokModelClient(
+            $httpClient,
+            'https://cli-chat-proxy.grok.com',
+            'stale',
+            logger: $logger,
+            accessTokenRefresher: static fn (): never => throw $failure,
         );
 
-        $this->assertSame(401, $result->getObject()->getStatusCode());
-        $this->assertSame(1, $requestCount);
+        try {
+            $client->request(new ResponsesModel('grok-build'), ['input' => []]);
+            $this->fail('Expected an authentication failure.');
+        } catch (\Symfony\AI\Platform\Exception\AuthenticationException $e) {
+            $this->assertSame('Grok authentication failed. Re-authenticate with Grok.', $e->getMessage());
+            $this->assertSame(1, $httpClient->getRequestsCount());
+            $this->assertCount(1, $logger->records);
+            $this->assertSame('grok.token.refresh_failed', $logger->records[0]['message']);
+            $this->assertSame($failure, $logger->records[0]['context']['exception']);
+        }
+    }
+
+    public function testRejectedRefreshedTokenDoesNotRetryAgain(): void
+    {
+        $httpClient = new MockHttpClient([
+            new MockResponse('{"error":"unauthorized"}', ['http_code' => 401]),
+            new MockResponse('{"error":"unauthorized"}', ['http_code' => 401]),
+        ]);
+        $refreshCalls = 0;
+        $client = new GrokModelClient(
+            $httpClient,
+            'https://cli-chat-proxy.grok.com',
+            'stale',
+            accessTokenRefresher: static function () use (&$refreshCalls): string {
+                ++$refreshCalls;
+
+                return 'fresh';
+            },
+        );
+
+        try {
+            $client->request(new ResponsesModel('grok-build'), ['input' => []]);
+            $this->fail('Expected an authentication failure.');
+        } catch (\Symfony\AI\Platform\Exception\AuthenticationException) {
+            $this->assertSame(1, $refreshCalls);
+            $this->assertSame(2, $httpClient->getRequestsCount());
+        }
     }
 
     public function testRequestStreamPathConsumesSseViaRawSseStream(): void
