@@ -60,6 +60,46 @@ class ModelResolverTest extends TestCase
         $this->assertNotNull($result);
     }
 
+    public function testUnavailableDefaultFallsBackToFirstAvailableAndWarns(): void
+    {
+        $aiData = $this->standardAiData();
+        // Parseable but listed by no provider: tier 3 skips it, tier 4 wins.
+        $aiData['default_model'] = 'deepseek/nonexistent-model';
+        $logger = new \Ineersa\AgentCore\Tests\Support\TestLogger();
+        $resolver = $this->createResolver($aiData, $logger);
+
+        $result = $resolver->resolveInitialModel(null, '');
+
+        $this->assertNotNull($result);
+        $this->assertSame('deepseek/deepseek-v4-pro', $result->toString());
+
+        $warning = null;
+        foreach ($logger->records as $record) {
+            if ('model.default_unavailable_fallback' === $record['message']) {
+                $warning = $record;
+                break;
+            }
+        }
+        $this->assertNotNull($warning, 'Unavailable default must log a fallback warning');
+        $this->assertSame('warning', $warning['level']);
+        $this->assertSame('deepseek/nonexistent-model', $warning['context']['default_model']);
+        $this->assertSame('deepseek/deepseek-v4-pro', $warning['context']['resolved_model']);
+    }
+
+    public function testAvailableDefaultDoesNotWarn(): void
+    {
+        $logger = new \Ineersa\AgentCore\Tests\Support\TestLogger();
+        $resolver = $this->createResolver($this->standardAiData(), $logger);
+
+        $resolver->resolveInitialModel(null, '');
+
+        $warnings = array_filter(
+            $logger->records,
+            static fn (array $record): bool => 'model.default_unavailable_fallback' === $record['message'],
+        );
+        $this->assertSame([], $warnings, 'No fallback warning when the configured default is available');
+    }
+
     public function testReturnsNullWhenNoModelsConfigured(): void
     {
         $resolver = $this->createResolver([]);
@@ -511,7 +551,7 @@ class ModelResolverTest extends TestCase
     //  Helpers
     // ──────────────────────────────────────────────
 
-    private function createResolver(array $aiData): ModelResolver
+    private function createResolver(array $aiData, ?\Ineersa\AgentCore\Tests\Support\TestLogger $logger = null): ModelResolver
     {
         $appConfig = $this->makeAppConfig($aiData);
 
@@ -520,7 +560,7 @@ class ModelResolverTest extends TestCase
         // Create a real one with minimal real dependencies.
         $sessionMetaStore = $this->createSessionMetaStore();
 
-        return new ModelResolver($appConfig, $sessionMetaStore);
+        return new ModelResolver($appConfig, $sessionMetaStore, $logger ?? new \Ineersa\AgentCore\Tests\Support\TestLogger());
     }
 
     private function createSessionMetaStore(): HatfieldSessionStore

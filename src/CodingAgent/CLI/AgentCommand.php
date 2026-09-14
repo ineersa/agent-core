@@ -121,6 +121,14 @@ final class AgentCommand
             throw new \RuntimeException('AgentCommand requires OutputInterface');
         }
 
+        // Model/reasoning options ride the initial StartRunRequest, which only
+        // the new-session paths consume. On --resume the session row owns the
+        // selection and switch targets never carry a request, so these options
+        // would be silently dropped — reject before any startup work instead.
+        if ('' !== $resume && ('' !== $model || '' !== $reasoning)) {
+            throw new \InvalidArgumentException('The --model/--reasoning options cannot be combined with --resume; switch models with /model (or Ctrl+P) after the session opens.');
+        }
+
         try {
             // Override CWD before any service access when --cwd is provided.
             // This ensures app.cwd reflects the requested directory, not the
@@ -201,14 +209,33 @@ final class AgentCommand
             }
         }
 
+        // A model/reasoning-only request (no --prompt) has an empty prompt and
+        // is treated by InteractiveMode as a lazy draft carrier, mirroring
+        // "/new --model": no session row is created until the first submit.
         return $this->interactiveMode->run(
             client: $client,
-            request: '' !== $prompt ? new StartRunRequest(
-                prompt: $prompt,
-                model: '' !== $model ? $model : null,
-                reasoning: '' !== $reasoning ? $reasoning : null,
-            ) : null,
+            request: self::buildInitialRequest($prompt, $model, $reasoning),
             sessionId: $sessionId,
+        );
+    }
+
+    /**
+     * Build the initial StartRunRequest from CLI options.
+     *
+     * Returns a request whenever any pre-configured field is set. A
+     * model/reasoning-only request (empty prompt) is a draft carrier consumed
+     * on first submit; a prompt-bearing request starts the session eagerly.
+     */
+    private static function buildInitialRequest(string $prompt, string $model, string $reasoning): ?StartRunRequest
+    {
+        if ('' === $prompt && '' === $model && '' === $reasoning) {
+            return null;
+        }
+
+        return new StartRunRequest(
+            prompt: $prompt,
+            model: '' !== $model ? $model : null,
+            reasoning: '' !== $reasoning ? $reasoning : null,
         );
     }
 

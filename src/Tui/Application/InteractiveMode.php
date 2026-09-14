@@ -142,7 +142,11 @@ final readonly class InteractiveMode
         // therefore iterates once per session, not infinitely.
         $targetSessionId = $sessionId;
         $targetRequest = $request;
-        $isDraft = ('' === $sessionId && null === $request);
+        // An initial request with an empty prompt is a lazy draft carrier
+        // (e.g. "agent --model X" without --prompt, mirroring "/new --model"):
+        // its model/reasoning ride the request, the session row is created on
+        // first submit. Only a request with a prompt starts a session eagerly.
+        $isDraft = ('' === $sessionId && (null === $request || '' === $request->prompt));
 
         // Set true once per session switch and intentionally never reset
         // to false — every later switch iteration also needs a fresh
