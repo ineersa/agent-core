@@ -121,13 +121,7 @@ final class AgentCommand
             throw new \RuntimeException('AgentCommand requires OutputInterface');
         }
 
-        // Model/reasoning options ride the initial StartRunRequest, which only
-        // the new-session paths consume. On --resume the session row owns the
-        // selection and switch targets never carry a request, so these options
-        // would be silently dropped — reject before any startup work instead.
-        if ('' !== $resume && ('' !== $model || '' !== $reasoning)) {
-            throw new \InvalidArgumentException('The --model/--reasoning options cannot be combined with --resume; switch models with /model (or Ctrl+P) after the session opens.');
-        }
+        self::assertUsableModelOptions($prompt, $resume, $model, $reasoning);
 
         try {
             // Override CWD before any service access when --cwd is provided.
@@ -237,6 +231,22 @@ final class AgentCommand
             model: '' !== $model ? $model : null,
             reasoning: '' !== $reasoning ? $reasoning : null,
         );
+    }
+
+    /**
+     * Reject model/reasoning options that no startup path can consume.
+     *
+     * With --prompt the options ride the initial StartRunRequest into the
+     * resumed session's first run. Without --prompt on --resume there is no
+     * request to ride and switch targets never carry one: the session row
+     * owns the selection, so the options would be silently dropped — reject
+     * them before any startup work instead.
+     */
+    private static function assertUsableModelOptions(string $prompt, string $resume, string $model, string $reasoning): void
+    {
+        if ('' !== $resume && '' === $prompt && ('' !== $model || '' !== $reasoning)) {
+            throw new \InvalidArgumentException('The --model/--reasoning options cannot be combined with --resume without --prompt; switch models with /model (or Ctrl+P) after the session opens.');
+        }
     }
 
     private function runController(): int

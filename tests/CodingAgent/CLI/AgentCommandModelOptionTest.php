@@ -27,7 +27,7 @@ final class AgentCommandModelOptionTest extends TestCase
         $command = $this->commandWithoutConstructor();
 
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('cannot be combined with --resume');
+        $this->expectExceptionMessage('cannot be combined with --resume without --prompt');
 
         $command(output: new NullOutput(), resume: '48', model: 'llama_cpp/test');
     }
@@ -38,9 +38,19 @@ final class AgentCommandModelOptionTest extends TestCase
         $command = $this->commandWithoutConstructor();
 
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('cannot be combined with --resume');
+        $this->expectExceptionMessage('cannot be combined with --resume without --prompt');
 
         $command(output: new NullOutput(), resume: '48', reasoning: 'high');
+    }
+
+    #[Test]
+    public function resumeWithPromptAndModelStaysUsable(): void
+    {
+        // With --prompt the options ride the StartRunRequest into the resumed
+        // session's first run; only the no-prompt combination was the silent
+        // drop, so it must stay allowed.
+        $this->assertNoValidationThrow('hello', '48', 'llama_cpp/test', '');
+        $this->assertNoValidationThrow('hello', '48', '', 'high');
     }
 
     #[Test]
@@ -88,5 +98,18 @@ final class AgentCommandModelOptionTest extends TestCase
         $method = new \ReflectionMethod(AgentCommand::class, 'buildInitialRequest');
 
         return $method->invoke(null, $prompt, $model, $reasoning);
+    }
+
+    private function assertNoValidationThrow(string $prompt, string $resume, string $model, string $reasoning): void
+    {
+        $method = new \ReflectionMethod(AgentCommand::class, 'assertUsableModelOptions');
+
+        try {
+            $method->invoke(null, $prompt, $resume, $model, $reasoning);
+        } catch (\InvalidArgumentException $e) {
+            $this->fail(\sprintf('Options must stay usable, got: %s', $e->getMessage()));
+        }
+
+        $this->addToAssertionCount(1);
     }
 }
