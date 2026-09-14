@@ -19,13 +19,14 @@ namespace Ineersa\Hatfield\ExtensionApi\Agent;
 final readonly class AgentCallRequestDTO
 {
     /**
-     * @param string             $model         exact configured `provider/model` reference
-     * @param string             $sessionId     session/run correlation id (often session_id === run_id)
-     * @param string             $instructions  system instructions for this invocation
-     * @param string             $input         user/input content for this invocation
-     * @param list<AgentToolDTO> $tools         isolated tools available only for this call
-     * @param string|null        $correlationId optional extra correlation token for diagnostics
-     * @param int|null           $maxToolCalls  optional AgentProcessor tool-loop ceiling (>= 1); null = framework default
+     * @param string             $model              exact configured `provider/model` reference
+     * @param string             $sessionId          session/run correlation id (often session_id === run_id)
+     * @param string             $instructions       system instructions for this invocation
+     * @param string             $input              user/input content for this invocation
+     * @param list<AgentToolDTO> $tools              isolated tools available only for this call
+     * @param string|null        $correlationId      optional extra correlation token for diagnostics
+     * @param int|null           $maxToolCalls       optional AgentProcessor tool-loop ceiling (>= 1); null = framework default
+     * @param int|null           $maxDurationSeconds optional Symfony HttpClient max_duration for this call only (>= 1); null = shared client default
      */
     public function __construct(
         public string $model,
@@ -35,6 +36,7 @@ final readonly class AgentCallRequestDTO
         public array $tools = [],
         public ?string $correlationId = null,
         public ?int $maxToolCalls = null,
+        public ?int $maxDurationSeconds = null,
     ) {
         if ('' === trim($this->model)) {
             throw new \InvalidArgumentException('Agent model must be a non-empty exact provider/model reference.');
@@ -54,6 +56,10 @@ final readonly class AgentCallRequestDTO
 
         if (null !== $this->maxToolCalls && $this->maxToolCalls < 1) {
             throw new \InvalidArgumentException('Agent maxToolCalls must be null or a positive integer.');
+        }
+
+        if (null !== $this->maxDurationSeconds && $this->maxDurationSeconds < 1) {
+            throw new \InvalidArgumentException('Agent maxDurationSeconds must be null or a positive integer.');
         }
 
         foreach ($this->tools as $tool) {

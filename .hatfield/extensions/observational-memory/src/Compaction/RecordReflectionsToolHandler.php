@@ -37,6 +37,7 @@ final class RecordReflectionsToolHandler implements ExtensionToolHandlerInterfac
         private readonly string $reflectorSchemaVersion,
         private readonly array $existingReflectionIds,
         private readonly array $allowedObservationIds,
+        private readonly ?RequestLocalObservationIdMap $observationIdMap = null,
     ) {
     }
 
@@ -202,7 +203,13 @@ final class RecordReflectionsToolHandler implements ExtensionToolHandlerInterfac
                 throw new \InvalidArgumentException(\sprintf('%s must contain non-empty strings only.', $label));
             }
             $id = trim($id);
-            if (!isset($this->allowedObservationIds[$id])) {
+            if (null !== $this->observationIdMap) {
+                $canonical = $this->observationIdMap->canonicalId($id);
+                if (null === $canonical) {
+                    throw new \InvalidArgumentException(\sprintf('%s cites unknown observation_id %s.', $label, $id));
+                }
+                $id = $canonical;
+            } elseif (!isset($this->allowedObservationIds[$id])) {
                 throw new \InvalidArgumentException(\sprintf('%s cites unknown observation_id %s.', $label, $id));
             }
             $normalized[] = $id;

@@ -23,6 +23,7 @@ final class AgentCallRequestDTOTest extends TestCase
         );
 
         $this->assertSame(3, $dto->maxToolCalls);
+        $this->assertNull($dto->maxDurationSeconds);
         $this->assertNull((new AgentCallRequestDTO(
             model: 'llama_cpp_test/test',
             sessionId: 'run-1',
@@ -40,6 +41,31 @@ final class AgentCallRequestDTOTest extends TestCase
             instructions: 'sys',
             input: 'user',
             maxToolCalls: 0,
+        );
+    }
+
+    public function testAcceptsOptionalMaxDurationSeconds(): void
+    {
+        $dto = new AgentCallRequestDTO(
+            model: 'llama_cpp_test/test',
+            sessionId: 'run-1',
+            instructions: 'sys',
+            input: 'user',
+            maxDurationSeconds: 300,
+        );
+
+        $this->assertSame(300, $dto->maxDurationSeconds);
+    }
+
+    public function testRejectsNonPositiveMaxDurationSeconds(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        new AgentCallRequestDTO(
+            model: 'llama_cpp_test/test',
+            sessionId: 'run-1',
+            instructions: 'sys',
+            input: 'user',
+            maxDurationSeconds: 0,
         );
     }
 

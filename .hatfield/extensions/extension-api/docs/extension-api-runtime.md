@@ -60,6 +60,7 @@ Treat access as recovery/read-only analytics, not a substitute for missing publi
 ## Agent runner and async jobs
 
 - `agent()` → `AgentRunnerInterface` for isolated agent calls with explicit provider/model and tool lists as required by the DTO contracts.
+- Optional `AgentCallRequestDTO::maxDurationSeconds` sets Symfony HttpClient `max_duration` for that call only. Omit it to keep the shared LLM client default.
 - `registerExtensionAgentJobHandler($id, $handler)` + `dispatchExtensionAgentJob($request)` for asynchronous extension jobs with JSON-safe payloads.
 
 Failures are bounded to the job/call; do not assume shared mutable memory across host processes.

@@ -33,6 +33,12 @@ final readonly class OmSettings
     /** Closest Hatfield mapping of Pi agentMaxTurns=16. */
     public const int DEFAULT_AGENT_MAX_TOOL_CALLS = 16;
 
+    /**
+     * Per-HTTP-request max_duration for Reflector and Dropper agent calls only.
+     * Does not change the shared LLM HttpClient default used by the main loop.
+     */
+    public const int AGENT_HTTP_MAX_DURATION_SECONDS = 300;
+
     public function __construct(
         public string $databasePath,
         public ?string $model,

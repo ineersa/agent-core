@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Model\ModelResolverInterface;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelResolutionOptions;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\Http\RequestScopedHttpClient;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\PreparedInvocationPlatform;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderRequestPreparer;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
@@ -22,7 +23,6 @@ use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolverInterface;
 use Symfony\AI\Platform\Message\Message;
 use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\AI\Platform\PlatformInterface;
-use Symfony\AI\Platform\Result\ResultInterface;
 use Symfony\AI\Platform\Result\StreamResult;
 
 /**
@@ -127,11 +127,37 @@ final readonly class ConfiguredModelAgentRunner implements AgentRunnerInterface
             'model' => $request->model,
             'tool_count' => \count($request->tools),
             'step_id' => $stepId,
+            'max_duration_seconds' => $request->maxDurationSeconds,
         ]);
 
         try {
-            $result = $agent->call($messages, $options);
-            $this->drainResult($result);
+            $run = static function () use ($agent, $messages, $options): void {
+                $result = $agent->call($messages, $options);
+                // Fully consume stream results so SSE/WebSocket transports complete
+                // and AgentProcessor stream tool-call listeners execute.
+                if ($result instanceof StreamResult) {
+                    foreach ($result->getContent() as $_) {
+                    }
+
+                    return;
+                }
+
+                $result->getContent();
+            };
+
+            if (null !== $request->maxDurationSeconds) {
+                RequestScopedHttpClient::runWithOptions(
+                    [
+                        'max_duration' => $request->maxDurationSeconds,
+                        // Keep idle/read timeout aligned with the longer total budget so
+                        // a healthy long stream is not cut by the shared client timeout.
+                        'timeout' => $request->maxDurationSeconds,
+                    ],
+                    $run,
+                );
+            } else {
+                $run();
+            }
         } catch (\Throwable $e) {
             $this->logger->error('extension.agent.run.failed', [
                 'component' => 'extension_agent_runner',
@@ -164,20 +190,5 @@ final readonly class ConfiguredModelAgentRunner implements AgentRunnerInterface
         $correlation = $request->correlationId ?? '';
 
         return 'ext-agent:'.$request->sessionId.':'.('' !== $correlation ? $correlation : bin2hex(random_bytes(8)));
-    }
-
-    private function drainResult(ResultInterface $result): void
-    {
-        if ($result instanceof StreamResult) {
-            // Fully consume the generator so SSE/WebSocket transports complete
-            // and AgentProcessor stream tool-call listeners execute.
-            foreach ($result->getContent() as $_) {
-            }
-
-            return;
-        }
-
-        // Non-stream results still need content materialization for converters.
-        $result->getContent();
     }
 }

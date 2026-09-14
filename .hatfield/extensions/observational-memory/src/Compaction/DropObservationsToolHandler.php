@@ -26,6 +26,7 @@ final class DropObservationsToolHandler implements ExtensionToolHandlerInterface
     public function __construct(
         private readonly array $allowedObservationIds,
         private readonly int $maxDropsAllowed,
+        private readonly ?RequestLocalObservationIdMap $observationIdMap = null,
     ) {
     }
 
@@ -55,7 +56,14 @@ final class DropObservationsToolHandler implements ExtensionToolHandlerInterface
                 continue;
             }
             $id = trim($id);
-            if (!isset($this->allowedObservationIds[$id])) {
+            if (null !== $this->observationIdMap) {
+                $canonical = $this->observationIdMap->canonicalId($id);
+                if (null === $canonical) {
+                    ++$missing;
+                    continue;
+                }
+                $id = $canonical;
+            } elseif (!isset($this->allowedObservationIds[$id])) {
                 ++$missing;
                 continue;
             }

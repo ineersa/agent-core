@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Infrastructure\SymfonyAi;
 
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\Http\RequestScopedHttpClient;
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\Http\LlmHttpClientOptions;
@@ -88,7 +89,11 @@ class SymfonyAiProviderFactory
             maxDuration: $http?->maxDuration,
         );
 
-        return ($this->httpClient ?? HttpClient::create())->withOptions($options->httpClientOptions());
+        $base = ($this->httpClient ?? HttpClient::create())->withOptions($options->httpClientOptions());
+
+        // Always wrap so AgentCallRequestDTO::maxDurationSeconds can override transport
+        // max_duration without changing the shared client default or JSON body options.
+        return new RequestScopedHttpClient($base);
     }
 
     /**
