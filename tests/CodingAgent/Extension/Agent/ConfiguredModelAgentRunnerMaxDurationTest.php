@@ -59,8 +59,7 @@ final class ConfiguredModelAgentRunnerMaxDurationTest extends TestCase
 
         $this->assertCount(1, $seen);
         $this->assertSame(300.0, (float) $seen[0]['max_duration']);
-        $this->assertNotSame(300, $seen[0]['timeout'] ?? null);
-        $this->assertNotSame(300.0, $seen[0]['timeout'] ?? null);
+        $this->assertSame(30.0, (float) $seen[0]['timeout']);
         $body = $this->decodeBody($seen[0]);
         $this->assertArrayNotHasKey('max_duration', $body);
         $this->assertArrayNotHasKey('timeout', $body);
@@ -82,6 +81,7 @@ final class ConfiguredModelAgentRunnerMaxDurationTest extends TestCase
         });
         $runner = $this->createRunner($transport);
 
+        $failure = null;
         try {
             $runner->run(new AgentCallRequestDTO(
                 model: 'mock/test',
@@ -90,10 +90,11 @@ final class ConfiguredModelAgentRunnerMaxDurationTest extends TestCase
                 input: 'user',
                 maxDurationSeconds: 300,
             ));
-            $this->fail('expected provider failure');
-        } catch (\Throwable) {
+        } catch (\Throwable $exception) {
             // Scope must leave even when the agent call fails.
+            $failure = $exception;
         }
+        $this->assertInstanceOf(\Symfony\AI\Platform\Exception\ServerException::class, $failure);
 
         $runner->run(new AgentCallRequestDTO(
             model: 'mock/test',
