@@ -14,8 +14,8 @@ use Symfony\Component\Console\Output\NullOutput;
  * @covers \Ineersa\CodingAgent\CLI\AgentCommand
  *
  * Covers the --model/--reasoning option contract for TUI startup:
- *  - combined with --resume they are rejected (the session row owns the
- *    selection on resume; forwarding would silently drop them), and
+ *  - combined with --resume without --prompt they are rejected (there is no
+ *    request to ride and the session row owns the selection), and
  *  - without --prompt they build a draft-carrier request instead of being
  *    silently discarded.
  */
