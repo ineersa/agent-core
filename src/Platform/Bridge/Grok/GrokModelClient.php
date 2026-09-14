@@ -116,6 +116,14 @@ class GrokModelClient extends ModelClient
             }
         }
 
+        // Grok can return a string-valued error, which the OpenResponses
+        // converter assumes is an object. Preserve the authentication category
+        // without parsing or exposing the provider's error body.
+        if (401 === $response->getStatusCode()) {
+            $response->cancel();
+            throw new \Symfony\AI\Platform\Exception\AuthenticationException('Grok authentication failed. Re-authenticate with Grok.');
+        }
+
         return new RawHttpResult($response, $this->createStreamParser());
     }
 
@@ -203,7 +211,7 @@ class GrokModelClient extends ModelClient
                 'event_type' => 'grok.token.refresh_failed',
                 'component' => 'grok_model_client',
                 'attempt' => 1,
-                'exception_class' => $e::class,
+                'exception' => $e,
             ]);
 
             return null;
