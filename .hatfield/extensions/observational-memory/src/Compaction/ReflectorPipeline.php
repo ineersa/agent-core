@@ -82,18 +82,12 @@ final class ReflectorPipeline
             }
         }
 
-        $allowedObservationIds = [];
-        foreach ($activeObservations as $observation) {
-            $allowedObservationIds[$observation['observation_id']] = true;
-        }
-
         $observationIdMap = RequestLocalObservationIdMap::forObservations($activeObservations);
         $input = $this->buildUserInput($activeReflections, $activeObservations, $supportCounts, $observationIdMap);
         $toolHandler = new RecordReflectionsToolHandler(
             runId: $runId,
             reflectorSchemaVersion: $settings->reflectorSchemaVersion,
             existingReflectionIds: $existingIds,
-            allowedObservationIds: $allowedObservationIds,
             observationIdMap: $observationIdMap,
         );
 
@@ -210,7 +204,10 @@ final class ReflectorPipeline
                     1 === $count => 'partial',
                     default => 'none',
                 };
-                $displayId = $observationIdMap->localId($observation['observation_id']) ?? $observation['observation_id'];
+                $displayId = $observationIdMap->localId($observation['observation_id']);
+                if (null === $displayId) {
+                    throw new \RuntimeException('Missing request-local observation id for '.$observation['observation_id']);
+                }
                 $lines[] = \sprintf(
                     '[%s] %s [%s] [coverage: %s] %s',
                     $displayId,

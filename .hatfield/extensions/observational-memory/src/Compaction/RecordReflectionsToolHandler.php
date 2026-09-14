@@ -30,14 +30,12 @@ final class RecordReflectionsToolHandler implements ExtensionToolHandlerInterfac
 
     /**
      * @param array<string, true> $existingReflectionIds
-     * @param array<string, true> $allowedObservationIds
      */
     public function __construct(
         private readonly string $runId,
         private readonly string $reflectorSchemaVersion,
         private readonly array $existingReflectionIds,
-        private readonly array $allowedObservationIds,
-        private readonly ?RequestLocalObservationIdMap $observationIdMap = null,
+        private readonly RequestLocalObservationIdMap $observationIdMap,
     ) {
     }
 
@@ -202,17 +200,12 @@ final class RecordReflectionsToolHandler implements ExtensionToolHandlerInterfac
             if (!\is_string($id) || '' === trim($id)) {
                 throw new \InvalidArgumentException(\sprintf('%s must contain non-empty strings only.', $label));
             }
-            $id = trim($id);
-            if (null !== $this->observationIdMap) {
-                $canonical = $this->observationIdMap->canonicalId($id);
-                if (null === $canonical) {
-                    throw new \InvalidArgumentException(\sprintf('%s cites unknown observation_id %s.', $label, $id));
-                }
-                $id = $canonical;
-            } elseif (!isset($this->allowedObservationIds[$id])) {
-                throw new \InvalidArgumentException(\sprintf('%s cites unknown observation_id %s.', $label, $id));
+            $localId = trim($id);
+            $canonical = $this->observationIdMap->canonicalId($localId);
+            if (null === $canonical) {
+                throw new \InvalidArgumentException(\sprintf('%s cites unknown observation_id %s.', $label, $localId));
             }
-            $normalized[] = $id;
+            $normalized[] = $canonical;
         }
 
         $normalized = array_values(array_unique($normalized));

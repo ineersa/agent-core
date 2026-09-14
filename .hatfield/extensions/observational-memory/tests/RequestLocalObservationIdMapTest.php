@@ -27,7 +27,6 @@ final class RequestLocalObservationIdMapTest extends TestCase
         $this->assertSame('2', $map->localId('obs-b'));
         $this->assertSame('obs-a', $map->canonicalId('1'));
         $this->assertSame('obs-b', $map->canonicalId('2'));
-        $this->assertSame('obs-a', $map->canonicalId('obs-a'));
         $this->assertNull($map->canonicalId('999'));
     }
 
@@ -41,7 +40,6 @@ final class RequestLocalObservationIdMapTest extends TestCase
             runId: 'run-1',
             reflectorSchemaVersion: 'v1',
             existingReflectionIds: [],
-            allowedObservationIds: ['obs-a' => true, 'obs-b' => true],
             observationIdMap: $map,
         );
 
@@ -68,9 +66,8 @@ final class RequestLocalObservationIdMapTest extends TestCase
             ['observation_id' => 'obs-b', 'timestamp' => '2026-01-02 00:00'],
         ]);
         $handler = new DropObservationsToolHandler(
-            allowedObservationIds: ['obs-a' => true, 'obs-b' => true],
-            maxDropsAllowed: 2,
             observationIdMap: $map,
+            maxDropsAllowed: 2,
         );
 
         $result = $handler(['ids' => ['2', 'missing', '1']]);

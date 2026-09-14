@@ -149,9 +149,6 @@ final readonly class ConfiguredModelAgentRunner implements AgentRunnerInterface
                 RequestScopedHttpClient::runWithOptions(
                     [
                         'max_duration' => $request->maxDurationSeconds,
-                        // Keep idle/read timeout aligned with the longer total budget so
-                        // a healthy long stream is not cut by the shared client timeout.
-                        'timeout' => $request->maxDurationSeconds,
                     ],
                     $run,
                 );

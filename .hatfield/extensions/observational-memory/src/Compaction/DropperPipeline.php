@@ -71,13 +71,8 @@ final class DropperPipeline
             return [];
         }
 
-        $allowed = [];
-        foreach ($activeObservations as $observation) {
-            $allowed[$observation['observation_id']] = true;
-        }
-
         $observationIdMap = RequestLocalObservationIdMap::forObservations($activeObservations);
-        $toolHandler = new DropObservationsToolHandler($allowed, $maxDropsAllowed, $observationIdMap);
+        $toolHandler = new DropObservationsToolHandler($observationIdMap, $maxDropsAllowed);
         $input = $this->buildUserInput(
             $reflectionsForCoverage,
             $activeObservations,
@@ -304,7 +299,10 @@ final class DropperPipeline
                     1 === $count => 'partial',
                     default => 'none',
                 };
-                $displayId = $observationIdMap->localId($observation['observation_id']) ?? $observation['observation_id'];
+                $displayId = $observationIdMap->localId($observation['observation_id']);
+                if (null === $displayId) {
+                    throw new \RuntimeException('Missing request-local observation id for '.$observation['observation_id']);
+                }
                 $lines[] = \sprintf(
                     '[%s] %s [%s] [coverage: %s] %s',
                     $displayId,

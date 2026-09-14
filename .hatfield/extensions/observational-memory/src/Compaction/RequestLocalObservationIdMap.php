@@ -39,7 +39,9 @@ final class RequestLocalObservationIdMap
             return strcmp((string) $a['observation_id'], (string) $b['observation_id']);
         });
 
+        /** @var array<string, string> $localToCanonical */
         $localToCanonical = [];
+        /** @var array<string, string> $canonicalToLocal */
         $canonicalToLocal = [];
         $n = 0;
         foreach ($ordered as $observation) {
@@ -61,41 +63,8 @@ final class RequestLocalObservationIdMap
         return $this->canonicalToLocal[$canonicalObservationId] ?? null;
     }
 
-    public function canonicalId(string $localOrCanonicalId): ?string
+    public function canonicalId(string $localId): ?string
     {
-        if (isset($this->localToCanonical[$localOrCanonicalId])) {
-            return $this->localToCanonical[$localOrCanonicalId];
-        }
-        if (isset($this->canonicalToLocal[$localOrCanonicalId])) {
-            return $localOrCanonicalId;
-        }
-
-        return null;
-    }
-
-    /**
-     * @return array<string, true>
-     */
-    public function allowedLocalIds(): array
-    {
-        $allowed = [];
-        foreach (array_keys($this->localToCanonical) as $local) {
-            $allowed[$local] = true;
-        }
-
-        return $allowed;
-    }
-
-    /**
-     * @return array<string, true>
-     */
-    public function allowedCanonicalIds(): array
-    {
-        $allowed = [];
-        foreach (array_keys($this->canonicalToLocal) as $canonical) {
-            $allowed[$canonical] = true;
-        }
-
-        return $allowed;
+        return $this->localToCanonical[$localId] ?? null;
     }
 }
