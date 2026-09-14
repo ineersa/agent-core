@@ -241,7 +241,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
             );
         }
 
-        $assistantMessagePayload = $this->messageNormalizer->assistantMessagePayload($assistantMessage, $message->model);
+        $assistantMessagePayload = $this->messageNormalizer->assistantMessagePayload($assistantMessage);
 
         $activeSet = $this->resolveActiveSet($message->toolsRef, $state->turnNo, $runId);
 

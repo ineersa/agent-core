@@ -93,6 +93,18 @@ final class AgentMessageConverter
     }
 
     /**
+     * Convert request-time history for a target qualified model.
+     *
+     * @param list<AgentMessage> $agentMessages
+     *
+     * @return list<AgentMessage>
+     */
+    public function convertHistoryForTarget(array $agentMessages, string $targetModel): array
+    {
+        return ConversationHistoryConversion::forTarget($agentMessages, $targetModel);
+    }
+
+    /**
      * Convert an AgentMessage into one or more Symfony MessageInterface instances.
      *
      * Most messages produce exactly one Symfony message. Tool messages that
@@ -282,76 +294,6 @@ final class AgentMessageConverter
         }
 
         return new AssistantMessage(...$contentParts);
-    }
-
-    /**
-     * Convert visible thinking into ordinary assistant text when the target
-     * model cannot reuse the source signature.
-     *
-     * Same-model continuation keeps thinking/signature structured. Cross-model
-     * conversion drops opaque signatures and appends non-empty thinking text.
-     *
-     * @param list<AgentMessage> $agentMessages
-     *
-     * @return list<AgentMessage>
-     */
-    public function convertHistoryForTarget(array $agentMessages, string $targetModel): array
-    {
-        if ('' === $targetModel) {
-            return $agentMessages;
-        }
-
-        $converted = [];
-        foreach ($agentMessages as $message) {
-            if ('assistant' !== $message->role) {
-                $converted[] = $message;
-                continue;
-            }
-
-            $sourceModel = \is_string($message->metadata['source_model'] ?? null)
-                ? $message->metadata['source_model']
-                : null;
-            $sameModel = \is_string($sourceModel) && $sourceModel === $targetModel;
-            if ($sameModel || !\is_array($message->details)) {
-                $converted[] = $message;
-                continue;
-            }
-
-            $thinking = \is_string($message->details['thinking'] ?? null) ? $message->details['thinking'] : null;
-            $thinkingSignature = \is_string($message->details['thinking_signature'] ?? null)
-                ? $message->details['thinking_signature']
-                : null;
-
-            if (null === $thinking && null === $thinkingSignature) {
-                $converted[] = $message;
-                continue;
-            }
-
-            $content = $message->content;
-            if (\is_string($thinking) && '' !== $thinking) {
-                $content[] = [
-                    'type' => 'text',
-                    'text' => $thinking,
-                ];
-            }
-
-            $details = $message->details;
-            unset($details['thinking'], $details['thinking_signature']);
-
-            $converted[] = new AgentMessage(
-                role: $message->role,
-                content: $content,
-                timestamp: $message->timestamp,
-                name: $message->name,
-                toolCallId: $message->toolCallId,
-                toolName: $message->toolName,
-                details: [] !== $details ? $details : null,
-                isError: $message->isError,
-                metadata: $message->metadata,
-            );
-        }
-
-        return $converted;
     }
 
     private function userText(AgentMessage $message, string $textContent): string

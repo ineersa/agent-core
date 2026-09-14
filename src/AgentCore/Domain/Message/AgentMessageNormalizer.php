@@ -23,12 +23,12 @@ final readonly class AgentMessageNormalizer
         }
 
         $metadata = [];
+        if (null !== $sourceModel && '' !== $sourceModel) {
+            $metadata['source_model'] = $sourceModel;
+        }
         $toolCalls = $this->normalizeToolCalls($assistantMessage->getToolCalls());
         if ([] !== $toolCalls) {
             $metadata['tool_calls'] = $toolCalls;
-        }
-        if (null !== $sourceModel && '' !== $sourceModel) {
-            $metadata['source_model'] = $sourceModel;
         }
 
         $details = $this->extractThinkingDetails($assistantMessage);
@@ -44,7 +44,7 @@ final readonly class AgentMessageNormalizer
     /**
      * @return array<string, mixed>
      */
-    public function assistantMessagePayload(AssistantMessage $assistantMessage, ?string $sourceModel = null): array
+    public function assistantMessagePayload(AssistantMessage $assistantMessage): array
     {
         $text = $assistantMessage->asText();
 
@@ -67,10 +67,6 @@ final readonly class AgentMessageNormalizer
 
         if ([] !== $details) {
             $payload['details'] = $details;
-        }
-
-        if (null !== $sourceModel && '' !== $sourceModel) {
-            $payload['metadata'] = ['source_model' => $sourceModel];
         }
 
         return $payload;

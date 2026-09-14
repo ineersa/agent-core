@@ -267,11 +267,12 @@ final class CodexContractTest extends TestCase
     public function testForeignToolCallPlusTextAndThinkingNormalizeWithoutItemId(): void
     {
         $assistant = new AssistantMessage(
-            new Text('Calling the tool.'),
-            new Thinking('Plan the call.', '{"type":"reasoning","id":"rs_foreign"}'),
+            new Text("Calling the tool.\n\nPlan the call."),
             new ToolCall('call_845adac454c64712b769d15b', 'bash', ['command' => 'pwd']),
         );
-        $assistant->getMetadata()->set(['source_model' => 'zai/glm-5.3-flash']);
+        $assistant->getMetadata()->set([
+            'preserve_native_item_ids' => false,
+        ]);
 
         $payload = CodexContract::create()->createRequestPayload(
             new CodexModel('gpt-6-astra'),
@@ -302,16 +303,69 @@ final class CodexContractTest extends TestCase
         $assistant = new AssistantMessage(
             new ToolCall('call_native|fc_native', 'bash', ['command' => 'pwd']),
         );
-        $assistant->getMetadata()->set(['source_model' => 'openai-codex/gpt-6-astra']);
+        $assistant->getMetadata()->set([
+            'preserve_native_item_ids' => true,
+        ]);
 
         $payload = CodexContract::create()->createRequestPayload(
-            new CodexModel('openai-codex/gpt-6-astra'),
+            new CodexModel('gpt-6-astra'),
             new MessageBag($assistant),
             [],
         );
 
         $this->assertSame('fc_native', $payload['input'][0]['id']);
         $this->assertSame('call_native', $payload['input'][0]['call_id']);
+    }
+
+    public function testNativeCompositeIdsPairFunctionCallWithToolResult(): void
+    {
+        $assistant = new AssistantMessage(
+            new ToolCall('call_native|fc_native', 'bash', ['command' => 'pwd']),
+        );
+        $assistant->getMetadata()->set([
+            'preserve_native_item_ids' => true,
+        ]);
+
+        $payload = CodexContract::create()->createRequestPayload(
+            new CodexModel('gpt-6-astra'),
+            new MessageBag(
+                $assistant,
+                Message::ofToolCall(
+                    new ToolCall('call_native|fc_native', 'bash', ['command' => 'pwd']),
+                    'ok',
+                ),
+            ),
+            [],
+        );
+
+        $this->assertSame('function_call', $payload['input'][0]['type']);
+        $this->assertSame('fc_native', $payload['input'][0]['id']);
+        $this->assertSame('call_native', $payload['input'][0]['call_id']);
+        $this->assertSame('function_call_output', $payload['input'][1]['type']);
+        $this->assertSame('call_native', $payload['input'][1]['call_id']);
+    }
+
+    public function testChangedModelOmitsNativeItemIds(): void
+    {
+        $assistant = new AssistantMessage(
+            new Text('plan'),
+            new ToolCall('call_native|fc_native', 'bash', ['command' => 'pwd']),
+        );
+        $assistant->getMetadata()->set([
+            'preserve_native_item_ids' => false,
+        ]);
+
+        $payload = CodexContract::create()->createRequestPayload(
+            new CodexModel('gpt-6-astra'),
+            new MessageBag($assistant),
+            [],
+        );
+
+        $this->assertSame('message', $payload['input'][0]['type']);
+        $this->assertSame('plan', $payload['input'][0]['content'][0]['text']);
+        $this->assertSame('function_call', $payload['input'][1]['type']);
+        $this->assertSame('call_native', $payload['input'][1]['call_id']);
+        $this->assertArrayNotHasKey('id', $payload['input'][1]);
     }
 
     // -- Tool result (function_call_output) regression guard (#182) --

@@ -821,8 +821,9 @@ final readonly class RunStateReducer
      * Canonical llm_step_completed assistant payloads store tool_calls at the
      * top level (see AgentMessageNormalizer::assistantMessagePayload()).
      * AgentMessage::fromPayload() only reads metadata.*, so text-bearing
-     * assistant messages must copy top-level tool_calls and source_model into
-     * metadata on replay.
+     * assistant messages must copy top-level tool_calls into metadata on replay.
+     * Request-time conversion also needs the step model as source identity;
+     * that comes from llm_step_completed.model, not a duplicated assistant field.
      *
      * @param array<string, mixed> $payload
      */
@@ -865,13 +866,9 @@ final readonly class RunStateReducer
             $metadata['tool_calls'] = $rawToolCalls;
         }
 
-        $payloadMetadata = \is_array($payload['metadata'] ?? null) ? $payload['metadata'] : [];
-        $sourceModel = $payloadMetadata['source_model'] ?? null;
-        if (!\is_string($sourceModel) || '' === $sourceModel) {
-            // Older events stored only the step-level model; reuse it so
-            // request-time conversion can still detect same-model replay.
-            $sourceModel = \is_string($payload['model'] ?? null) ? $payload['model'] : null;
-        }
+        // Derive request-local source identity from the step model. Do not
+        // require a duplicated source_model field inside assistant_message.
+        $sourceModel = \is_string($payload['model'] ?? null) ? $payload['model'] : null;
         if (\is_string($sourceModel) && '' !== $sourceModel) {
             $metadata['source_model'] = $sourceModel;
         }

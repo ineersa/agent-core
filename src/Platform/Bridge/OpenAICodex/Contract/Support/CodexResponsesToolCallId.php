@@ -21,7 +21,8 @@ final class CodexResponsesToolCallId
         if (!str_contains($storedId, '|')) {
             return [
                 'call_id' => $storedId,
-                'item_id' => null,
+                // Existing Codex events stored only the native item id.
+                'item_id' => self::isNativeItemId($storedId) ? $storedId : null,
             ];
         }
 
@@ -31,15 +32,6 @@ final class CodexResponsesToolCallId
             'call_id' => '' !== $callId ? $callId : $storedId,
             'item_id' => '' !== $itemId ? $itemId : null,
         ];
-    }
-
-    public static function join(string $callId, ?string $itemId): string
-    {
-        if (null === $itemId || '' === $itemId) {
-            return $callId;
-        }
-
-        return $callId.'|'.$itemId;
     }
 
     public static function isNativeItemId(?string $itemId): bool
