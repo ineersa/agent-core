@@ -11,7 +11,7 @@ use Symfony\AI\Platform\Result\ToolCall;
 
 final readonly class AgentMessageNormalizer
 {
-    public function assistantMessage(AssistantMessage $assistantMessage): AgentMessage
+    public function assistantMessage(AssistantMessage $assistantMessage, ?string $sourceModel = null): AgentMessage
     {
         $content = [];
         $text = $assistantMessage->asText();
@@ -27,6 +27,9 @@ final readonly class AgentMessageNormalizer
         if ([] !== $toolCalls) {
             $metadata['tool_calls'] = $toolCalls;
         }
+        if (null !== $sourceModel && '' !== $sourceModel) {
+            $metadata['source_model'] = $sourceModel;
+        }
 
         $details = $this->extractThinkingDetails($assistantMessage);
 
@@ -41,7 +44,7 @@ final readonly class AgentMessageNormalizer
     /**
      * @return array<string, mixed>
      */
-    public function assistantMessagePayload(AssistantMessage $assistantMessage): array
+    public function assistantMessagePayload(AssistantMessage $assistantMessage, ?string $sourceModel = null): array
     {
         $text = $assistantMessage->asText();
 
@@ -64,6 +67,10 @@ final readonly class AgentMessageNormalizer
 
         if ([] !== $details) {
             $payload['details'] = $details;
+        }
+
+        if (null !== $sourceModel && '' !== $sourceModel) {
+            $payload['metadata'] = ['source_model' => $sourceModel];
         }
 
         return $payload;

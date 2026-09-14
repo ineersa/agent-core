@@ -287,7 +287,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             $resolvedMessageBag = $hook->convertToLlm($messages, $cancelToken, $modelName);
         }
 
-        return $resolvedMessageBag ?? $this->messageConverter->toMessageBag($messages);
+        return $resolvedMessageBag ?? $this->messageConverter->toMessageBagForTarget($messages, $modelName);
     }
 
     /**

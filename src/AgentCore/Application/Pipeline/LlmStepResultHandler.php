@@ -226,7 +226,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
         $toolSchemas = $this->resolveToolSchemas();
 
         $messages = $state->messages;
-        $messages[] = $this->messageNormalizer->assistantMessage($assistantMessage);
+        $messages[] = $this->messageNormalizer->assistantMessage($assistantMessage, $message->model);
 
         $pendingToolCalls = [];
         $currentToolCalls = [];
@@ -241,7 +241,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
             );
         }
 
-        $assistantMessagePayload = $this->messageNormalizer->assistantMessagePayload($assistantMessage);
+        $assistantMessagePayload = $this->messageNormalizer->assistantMessagePayload($assistantMessage, $message->model);
 
         $activeSet = $this->resolveActiveSet($message->toolsRef, $state->turnNo, $runId);
 
