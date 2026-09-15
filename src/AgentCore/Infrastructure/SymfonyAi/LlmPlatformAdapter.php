@@ -293,7 +293,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
     /**
      * True when any non-system AgentMessage is present.
      *
-     * @param list<\Ineersa\AgentCore\Domain\Message\AgentMessage> $messages
+     * @param list<AgentMessage> $messages
      */
     private function hasConversationMessages(array $messages): bool
     {

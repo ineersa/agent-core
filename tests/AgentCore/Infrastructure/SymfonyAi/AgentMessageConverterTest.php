@@ -165,5 +165,4 @@ final class AgentMessageConverterTest extends TestCase
             'Thinking-only assistant must be filtered; system, user, and text assistant pass through.',
         );
     }
-
 }
