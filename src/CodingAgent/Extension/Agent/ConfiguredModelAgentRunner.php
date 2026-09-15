@@ -94,11 +94,15 @@ final readonly class ConfiguredModelAgentRunner implements AgentRunnerInterface
             stepId: $stepId,
         );
         $cancelToken = new NullCancellationToken();
+        $resolutionValues = [];
+        if (null !== $request->thinkingLevel) {
+            $resolutionValues['thinking_level'] = $request->thinkingLevel;
+        }
         $resolvedModel = $this->modelResolver->resolve(
             $request->model,
             $messages,
             $invocationInput,
-            new ModelResolutionOptions(),
+            new ModelResolutionOptions($resolutionValues),
         );
         $platform = new PreparedInvocationPlatform(
             $this->platform,
@@ -128,6 +132,7 @@ final readonly class ConfiguredModelAgentRunner implements AgentRunnerInterface
             'tool_count' => \count($request->tools),
             'step_id' => $stepId,
             'max_duration_seconds' => $request->maxDurationSeconds,
+            'thinking_level' => $request->thinkingLevel,
         ]);
 
         try {

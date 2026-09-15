@@ -10,7 +10,7 @@ use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
  * Nested observational_memory settings.
  *
  * One shared top-level model for Observer, Reflector, and Dropper.
- * No thinking levels; provider defaults apply.
+ * Dropper requests thinkingLevel=off per call; Reflector/Observer keep provider defaults.
  */
 final readonly class OmSettings
 {

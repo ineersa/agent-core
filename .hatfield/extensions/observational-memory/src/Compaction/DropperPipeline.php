@@ -114,6 +114,7 @@ final class DropperPipeline
             correlationId: $jobId ?? $correlationId,
             maxToolCalls: OmSettings::DEFAULT_AGENT_MAX_TOOL_CALLS,
             maxDurationSeconds: OmSettings::AGENT_HTTP_MAX_DURATION_SECONDS,
+            thinkingLevel: 'off',
         ));
 
         $selected = self::selectDropCandidates(

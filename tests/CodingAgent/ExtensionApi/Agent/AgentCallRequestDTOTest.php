@@ -69,6 +69,37 @@ final class AgentCallRequestDTOTest extends TestCase
         );
     }
 
+    public function testAcceptsOptionalThinkingLevel(): void
+    {
+        $dto = new AgentCallRequestDTO(
+            model: 'llama_cpp_test/test',
+            sessionId: 'run-1',
+            instructions: 'sys',
+            input: 'user',
+            thinkingLevel: 'off',
+        );
+
+        $this->assertSame('off', $dto->thinkingLevel);
+        $this->assertNull((new AgentCallRequestDTO(
+            model: 'llama_cpp_test/test',
+            sessionId: 'run-1',
+            instructions: 'sys',
+            input: 'user',
+        ))->thinkingLevel);
+    }
+
+    public function testRejectsUnknownThinkingLevel(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        new AgentCallRequestDTO(
+            model: 'llama_cpp_test/test',
+            sessionId: 'run-1',
+            instructions: 'sys',
+            input: 'user',
+            thinkingLevel: 'disabled',
+        );
+    }
+
     public function testRejectsAliasModel(): void
     {
         $this->expectException(\InvalidArgumentException::class);

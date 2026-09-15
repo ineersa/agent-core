@@ -542,6 +542,48 @@ class ReasoningOptionsResolverTest extends TestCase
         $this->assertSame([], $resolver->resolve($this->modelRef('llama_cpp', 'flash'), 'xhigh'));
     }
 
+    public function testLlamaCppReasoningModelDisablesThinkingViaChatTemplateKwargs(): void
+    {
+        $provider = $this->provider('llama_cpp', $this->model([
+            'id' => 'flash',
+            'reasoning' => true,
+            'thinkingLevelMap' => [],
+        ]));
+
+        $resolver = $this->resolverForProviders(['llama_cpp' => $provider]);
+
+        $this->assertSame(
+            ['chat_template_kwargs' => ['enable_thinking' => false]],
+            $resolver->resolve($this->modelRef('llama_cpp', 'flash'), 'off'),
+        );
+        $this->assertSame(
+            ['chat_template_kwargs' => ['enable_thinking' => false]],
+            $resolver->resolve($this->modelRef('llama_cpp', 'flash'), 'OFF'),
+        );
+        // Active levels still need a thinking_level_map; empty map stays empty.
+        $this->assertSame([], $resolver->resolve($this->modelRef('llama_cpp', 'flash'), 'medium'));
+    }
+
+    public function testExplicitLlamaCppThinkingFormatDisablesThinking(): void
+    {
+        $provider = $this->provider(
+            'llama_cpp',
+            $this->model([
+                'id' => 'flash',
+                'reasoning' => true,
+                'thinkingLevelMap' => [],
+            ]),
+            new AiCompatibility(thinkingFormat: 'llama_cpp'),
+        );
+
+        $resolver = $this->resolverForProviders(['llama_cpp' => $provider]);
+
+        $this->assertSame(
+            ['chat_template_kwargs' => ['enable_thinking' => false]],
+            $resolver->resolve($this->modelRef('llama_cpp', 'flash'), 'off'),
+        );
+    }
+
     // ── Case insensitivity ────────────────────────────────────────────────
 
     public function testLevelIsCaseInsensitive(): void

@@ -54,6 +54,18 @@ final readonly class ReasoningOptionsResolver
                 return ['thinking' => ['type' => 'disabled']];
             }
 
+            if ('llama_cpp' === $this->thinkingFormat($ref, $model)) {
+                // llama.cpp / OpenAI-compat servers with chat templates honor
+                // enable_thinking=false to skip the reasoning phase, not merely hide it.
+                return ['chat_template_kwargs' => ['enable_thinking' => false]];
+            }
+
+            // Local llama.cpp providers often omit thinking_format in settings while still
+            // honoring chat_template_kwargs.enable_thinking. Match by provider id only.
+            if ($this->isLlamaCppProviderId($ref) && null === $this->thinkingFormat($ref, $model)) {
+                return ['chat_template_kwargs' => ['enable_thinking' => false]];
+            }
+
             return [];
         }
 
@@ -155,5 +167,15 @@ final readonly class ReasoningOptionsResolver
         }
 
         return $providerCompat->supportsReasoningEffort;
+    }
+
+    private function isLlamaCppProviderId(AiModelReference $ref): bool
+    {
+        $provider = $this->catalog->getProvider($ref->providerId);
+        if (null === $provider) {
+            return false;
+        }
+
+        return str_starts_with($provider->id, 'llama_cpp');
     }
 }
