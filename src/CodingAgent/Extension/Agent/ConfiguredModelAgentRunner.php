@@ -121,6 +121,11 @@ final readonly class ConfiguredModelAgentRunner implements AgentRunnerInterface
         );
 
         $options = ['stream' => true];
+        if ('off' === $request->thinkingLevel) {
+            // Explicit per-call off only (Dropper). Do not infer from session/default
+            // reasoning=off, and do not invent provider engines from ids.
+            $options = array_replace($options, $this->explicitThinkingOffProviderOptions($request->model));
+        }
 
         $this->logger->info('extension.agent.run.started', [
             'component' => 'extension_agent_runner',
@@ -192,5 +197,38 @@ final readonly class ConfiguredModelAgentRunner implements AgentRunnerInterface
         $correlation = $request->correlationId ?? '';
 
         return 'ext-agent:'.$request->sessionId.':'.('' !== $correlation ? $correlation : bin2hex(random_bytes(8)));
+    }
+
+    /**
+     * Provider options for an explicit AgentCallRequestDTO thinkingLevel=off.
+     *
+     * z.ai disable already flows through SessionAwareModelResolver + ReasoningOptionsFeatureShaper.
+     * llama.cpp requires an explicit catalog thinking_format=llama_cpp; without it this returns [].
+     *
+     * @return array<string, mixed>
+     */
+    private function explicitThinkingOffProviderOptions(string $exactModel): array
+    {
+        if (null === $this->modelCatalog) {
+            return [];
+        }
+
+        $ref = AiModelReference::parse($exactModel);
+
+        $model = $this->modelCatalog->getModel($ref);
+        if (null === $model || !$model->reasoning) {
+            return [];
+        }
+
+        $thinkingFormat = $model->compatibility?->thinkingFormat;
+        if (null === $thinkingFormat) {
+            $thinkingFormat = $this->modelCatalog->getProvider($ref->providerId)?->compatibility?->thinkingFormat;
+        }
+        if ('llama_cpp' === $thinkingFormat) {
+            // Disables the reasoning phase for chat-template models; not merely hidden.
+            return ['chat_template_kwargs' => ['enable_thinking' => false]];
+        }
+
+        return [];
     }
 }

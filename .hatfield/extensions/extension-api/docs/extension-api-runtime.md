@@ -61,7 +61,7 @@ Treat access as recovery/read-only analytics, not a substitute for missing publi
 
 - `agent()` → `AgentRunnerInterface` for isolated agent calls with explicit provider/model and tool lists as required by the DTO contracts.
 - Optional `AgentCallRequestDTO::maxDurationSeconds` sets Symfony HttpClient `max_duration` for that call only. Omit it to keep the shared LLM client default.
-- Optional `AgentCallRequestDTO::thinkingLevel` overrides Hatfield thinking for that call only (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`). Omit it to keep session/default reasoning. Provider mapping follows the model catalog (`thinking_format`); unsupported providers may receive no disable flag.
+- Optional `AgentCallRequestDTO::thinkingLevel` overrides Hatfield thinking for that call only (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`). Omit it to keep session/default reasoning. An explicit `off` may add provider disable options only when the model catalog declares a supported `thinking_format` (for example `llama_cpp` → `chat_template_kwargs.enable_thinking=false`). Session/default `off` without this field does not add that flag.
 - `registerExtensionAgentJobHandler($id, $handler)` + `dispatchExtensionAgentJob($request)` for asynchronous extension jobs with JSON-safe payloads.
 
 Failures are bounded to the job/call; do not assume shared mutable memory across host processes.

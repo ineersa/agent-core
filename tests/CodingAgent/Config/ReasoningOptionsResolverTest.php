@@ -542,30 +542,10 @@ class ReasoningOptionsResolverTest extends TestCase
         $this->assertSame([], $resolver->resolve($this->modelRef('llama_cpp', 'flash'), 'xhigh'));
     }
 
-    public function testLlamaCppReasoningModelDisablesThinkingViaChatTemplateKwargs(): void
+    public function testLlamaCppThinkingFormatOffStillReturnsEmptyFromSharedResolver(): void
     {
-        $provider = $this->provider('llama_cpp', $this->model([
-            'id' => 'flash',
-            'reasoning' => true,
-            'thinkingLevelMap' => [],
-        ]));
-
-        $resolver = $this->resolverForProviders(['llama_cpp' => $provider]);
-
-        $this->assertSame(
-            ['chat_template_kwargs' => ['enable_thinking' => false]],
-            $resolver->resolve($this->modelRef('llama_cpp', 'flash'), 'off'),
-        );
-        $this->assertSame(
-            ['chat_template_kwargs' => ['enable_thinking' => false]],
-            $resolver->resolve($this->modelRef('llama_cpp', 'flash'), 'OFF'),
-        );
-        // Active levels still need a thinking_level_map; empty map stays empty.
-        $this->assertSame([], $resolver->resolve($this->modelRef('llama_cpp', 'flash'), 'medium'));
-    }
-
-    public function testExplicitLlamaCppThinkingFormatDisablesThinking(): void
-    {
+        // Shared ReasoningOptionsResolver must not invent llama.cpp disable options for
+        // session/default off. Explicit Dropper off is handled by ConfiguredModelAgentRunner.
         $provider = $this->provider(
             'llama_cpp',
             $this->model([
@@ -578,10 +558,7 @@ class ReasoningOptionsResolverTest extends TestCase
 
         $resolver = $this->resolverForProviders(['llama_cpp' => $provider]);
 
-        $this->assertSame(
-            ['chat_template_kwargs' => ['enable_thinking' => false]],
-            $resolver->resolve($this->modelRef('llama_cpp', 'flash'), 'off'),
-        );
+        $this->assertSame([], $resolver->resolve($this->modelRef('llama_cpp', 'flash'), 'off'));
     }
 
     // ── Case insensitivity ────────────────────────────────────────────────
