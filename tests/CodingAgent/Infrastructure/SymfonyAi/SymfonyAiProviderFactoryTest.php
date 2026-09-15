@@ -300,22 +300,18 @@ final class SymfonyAiProviderFactoryTest extends TestCase
 
     public function testInjectedTransportDoesNotStackRetriesWhenAiHttpMaxRetriesConfigured(): void
     {
-        $transport = new MockHttpClient([
-            new MockResponse('rejected', ['http_code' => 400]),
-            new MockResponse('ok'),
-        ]);
+        $requests = 0;
+        $transport = new MockHttpClient(static function () use (&$requests): MockResponse {
+            ++$requests;
+
+            return new MockResponse('rejected', ['http_code' => 400]);
+        });
         $builder = $this->createMock(SymfonyAiProviderBuilderInterface::class);
         $builder->method('supports')->willReturn(true);
         $builder->expects($this->once())->method('build')->willReturnCallback(
             function (AiProviderConfig $provider, HttpClientInterface $client): ProviderInterface {
                 $response = $client->request('POST', 'https://example.test/responses');
                 $this->assertSame(400, $response->getStatusCode());
-                // Factory applies timeout options only; it does not wrap RetryableHttpClient,
-                // so a single 400 is not retried even when ai.http.max_retries is set.
-                // withOptions() returns a fresh MockHttpClient sharing the response queue;
-                // assert against that client, not the pre-options injectee.
-                $this->assertInstanceOf(MockHttpClient::class, $client);
-                $this->assertSame(1, $client->getRequestsCount());
 
                 return new Provider($provider->id, [], [], new ProjectedSymfonyModelCatalog(hatfieldModels: [], modelClass: CompletionsModel::class, providerId: $provider->id));
             },
@@ -332,6 +328,8 @@ final class SymfonyAiProviderFactoryTest extends TestCase
         );
 
         $factory->createProviders();
+        // Count transport calls through any decorators: configured retries must not be stacked.
+        $this->assertSame(1, $requests);
     }
 
     /**

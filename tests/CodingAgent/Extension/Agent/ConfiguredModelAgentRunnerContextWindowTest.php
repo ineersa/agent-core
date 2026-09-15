@@ -8,12 +8,18 @@ use Ineersa\AgentCore\Contract\Model\ModelResolverInterface;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderRequestPreparer;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
+use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\LoggingConfig;
+use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Extension\Agent\ConfiguredModelAgentRunner;
+use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ConfiguredSymfonyAiPlatformFactory;
+use Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderFactory;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolverInterface;
 use Symfony\AI\Platform\PlatformInterface;
+use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 /**
  * Thesis: public agent()->contextWindow() returns catalog context_window only —
@@ -28,6 +34,7 @@ final class ConfiguredModelAgentRunnerContextWindowTest extends TestCase
         $platform = $this->createStub(PlatformInterface::class);
         $runner = new ConfiguredModelAgentRunner(
             $platform,
+            $this->platformFactory(),
             null,
             new NullLogger(),
             $this->createStub(ToolCallArgumentResolverInterface::class),
@@ -64,6 +71,7 @@ final class ConfiguredModelAgentRunnerContextWindowTest extends TestCase
         $platform = $this->createStub(PlatformInterface::class);
         $runner = new ConfiguredModelAgentRunner(
             $platform,
+            $this->platformFactory(),
             $catalog,
             new NullLogger(),
             $this->createStub(ToolCallArgumentResolverInterface::class),
@@ -76,5 +84,19 @@ final class ConfiguredModelAgentRunnerContextWindowTest extends TestCase
         $this->assertNull($runner->contextWindow('llama_cpp/missing'));
         $this->assertNull($runner->contextWindow('not-a-valid-ref'));
         $this->assertNull($runner->contextWindow('unknown/provider-model'));
+    }
+
+    private function platformFactory(): ConfiguredSymfonyAiPlatformFactory
+    {
+        $appConfig = new AppConfig(
+            tui: new TuiConfig(theme: 'cyberpunk'),
+            logging: new LoggingConfig(),
+        );
+        $dispatcher = $this->createStub(EventDispatcherInterface::class);
+
+        return new ConfiguredSymfonyAiPlatformFactory(
+            new SymfonyAiProviderFactory($appConfig, $dispatcher),
+            $dispatcher,
+        );
     }
 }

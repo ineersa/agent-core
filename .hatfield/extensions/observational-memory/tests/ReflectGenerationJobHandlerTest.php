@@ -296,7 +296,13 @@ final class ReflectGenerationJobHandlerTest extends IsolatedKernelTestCase
             $seen[] = [
                 'model' => $request->model,
                 'maxToolCalls' => $request->maxToolCalls,
+                'maxDurationSeconds' => $request->maxDurationSeconds,
+                'thinkingLevel' => $request->thinkingLevel,
                 'tool' => $request->tools[0]->name ?? null,
+                'uses_local_observation_id' => str_contains($request->input, '[1] ')
+                    && str_contains($request->input, '[2] ')
+                    && !str_contains($request->input, '['.$obsId.']')
+                    && !str_contains($request->input, '[obs-prior]'),
             ];
             $tool = $request->tools[0] ?? null;
             if (null === $tool) {
@@ -306,7 +312,7 @@ final class ReflectGenerationJobHandlerTest extends IsolatedKernelTestCase
                 ($tool->handler)([
                     'reflections' => [[
                         'content' => 'User requires feature-flag rollouts for risky releases',
-                        'supporting_observation_ids' => [$obsId],
+                        'supporting_observation_ids' => ['2'],
                     ]],
                 ]);
 
@@ -333,6 +339,9 @@ final class ReflectGenerationJobHandlerTest extends IsolatedKernelTestCase
         $this->assertSame(1, $agentCalls, 'only Reflector model call when pool under max');
         $this->assertSame('llama_cpp_test/test', $seen[0]['model']);
         $this->assertSame(16, $seen[0]['maxToolCalls']);
+        $this->assertSame(300, $seen[0]['maxDurationSeconds']);
+        $this->assertNull($seen[0]['thinkingLevel']);
+        $this->assertTrue($seen[0]['uses_local_observation_id']);
         $this->assertSame('record_reflections', $seen[0]['tool']);
 
         $active = (string) $connection->fetchOne(
@@ -383,7 +392,7 @@ final class ReflectGenerationJobHandlerTest extends IsolatedKernelTestCase
 
         $agentCalls = 0;
         $stages = [];
-        $api = $this->api($settings, static function (AgentCallRequestDTO $request) use (&$agentCalls, &$stages, $obsA, $obsB, $connection): void {
+        $api = $this->api($settings, static function (AgentCallRequestDTO $request) use (&$agentCalls, &$stages, $connection): void {
             ++$agentCalls;
             $activity = (new \Ineersa\HatfieldExt\ObservationalMemory\Storage\ActivityRepository($connection))->findFresh('run-d');
             $stages[] = [
@@ -398,6 +407,15 @@ final class ReflectGenerationJobHandlerTest extends IsolatedKernelTestCase
             if (16 !== $request->maxToolCalls) {
                 throw new \RuntimeException('expected maxToolCalls=16');
             }
+            if (300 !== $request->maxDurationSeconds) {
+                throw new \RuntimeException('expected maxDurationSeconds=300');
+            }
+            if ('record_reflections' === ($request->tools[0]->name ?? null) && null !== $request->thinkingLevel) {
+                throw new \RuntimeException('reflector must keep default thinkingLevel');
+            }
+            if ('drop_observations' === ($request->tools[0]->name ?? null) && 'off' !== $request->thinkingLevel) {
+                throw new \RuntimeException('dropper must request thinkingLevel=off');
+            }
             $tool = $request->tools[0] ?? null;
             if (null === $tool) {
                 throw new \RuntimeException('expected tool');
@@ -406,15 +424,15 @@ final class ReflectGenerationJobHandlerTest extends IsolatedKernelTestCase
                 ($tool->handler)([
                     'reflections' => [[
                         'content' => 'User deploys with feature flags',
-                        'supporting_observation_ids' => [$obsA],
+                        'supporting_observation_ids' => ['1'],
                     ]],
                 ]);
 
                 return;
             }
             if ('drop_observations' === $tool->name) {
-                // Propose both; server ranking+cap decides.
-                ($tool->handler)(['ids' => [$obsB, $obsA]]);
+                // Propose both via request-local ids; server ranking+cap decides.
+                ($tool->handler)(['ids' => ['2', '1']]);
 
                 return;
             }

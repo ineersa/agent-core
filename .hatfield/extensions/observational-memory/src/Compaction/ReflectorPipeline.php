@@ -82,17 +82,13 @@ final class ReflectorPipeline
             }
         }
 
-        $allowedObservationIds = [];
-        foreach ($activeObservations as $observation) {
-            $allowedObservationIds[$observation['observation_id']] = true;
-        }
-
-        $input = $this->buildUserInput($activeReflections, $activeObservations, $supportCounts);
+        $observationIdMap = RequestLocalObservationIdMap::forObservations($activeObservations);
+        $input = $this->buildUserInput($activeReflections, $activeObservations, $supportCounts, $observationIdMap);
         $toolHandler = new RecordReflectionsToolHandler(
             runId: $runId,
             reflectorSchemaVersion: $settings->reflectorSchemaVersion,
             existingReflectionIds: $existingIds,
-            allowedObservationIds: $allowedObservationIds,
+            observationIdMap: $observationIdMap,
         );
 
         $api->agent()->run(new AgentCallRequestDTO(
@@ -138,6 +134,7 @@ final class ReflectorPipeline
             ],
             correlationId: $jobId ?? $correlationId,
             maxToolCalls: OmSettings::DEFAULT_AGENT_MAX_TOOL_CALLS,
+            maxDurationSeconds: OmSettings::AGENT_HTTP_MAX_DURATION_SECONDS,
         ));
 
         $newReflections = $toolHandler->newReflections();
@@ -167,6 +164,7 @@ final class ReflectorPipeline
         array $activeReflections,
         array $activeObservations,
         array $supportCounts,
+        RequestLocalObservationIdMap $observationIdMap,
     ): string {
         usort($activeReflections, static function (array $a, array $b): int {
             $byPos = ($a['position'] ?? 0) <=> ($b['position'] ?? 0);
@@ -206,9 +204,13 @@ final class ReflectorPipeline
                     1 === $count => 'partial',
                     default => 'none',
                 };
+                $displayId = $observationIdMap->localId($observation['observation_id']);
+                if (null === $displayId) {
+                    throw new \RuntimeException('Missing request-local observation id for '.$observation['observation_id']);
+                }
                 $lines[] = \sprintf(
                     '[%s] %s [%s] [coverage: %s] %s',
-                    $observation['observation_id'],
+                    $displayId,
                     $observation['timestamp'],
                     $observation['relevance'],
                     $tier,

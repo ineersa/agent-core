@@ -73,19 +73,43 @@ class SymfonyAiProviderFactory
     }
 
     /**
+     * Create one enabled provider with matching idle and total HTTP budgets.
+     *
+     * Shared provider defaults remain unchanged.
+     */
+    public function createProvider(
+        string $providerId,
+        int $budgetSeconds,
+    ): ProviderInterface {
+        $catalog = $this->appConfig->catalog;
+        if (null === $catalog) {
+            throw new \RuntimeException('No AI providers are enabled. Check your .hatfield/settings.yaml ai section.');
+        }
+
+        $provider = $catalog->getProvider($providerId);
+        if (null === $provider || !$provider->enabled) {
+            throw new \RuntimeException(\sprintf('AI provider "%s" is not enabled or missing from settings.', $providerId));
+        }
+
+        return $this->buildProvider($provider, $budgetSeconds);
+    }
+
+    /**
      * Return a configured HttpClient for outgoing LLM requests.
      *
      * Applies timeout/max-duration options to the injected or default transport.
+     * Optional per-call overrides replace both budgets when supplied.
      * Application {@see \Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryExecutor}
      * owns retries from `ai.http.max_retries`; this method does not wrap
      * {@see \Symfony\Component\HttpClient\RetryableHttpClient}.
      */
-    private function getHttpClient(): HttpClientInterface
-    {
+    private function getHttpClient(
+        ?int $budgetSeconds = null,
+    ): HttpClientInterface {
         $http = $this->appConfig->ai?->http;
         $options = new LlmHttpClientOptions(
-            timeout: $http?->timeout,
-            maxDuration: $http?->maxDuration,
+            timeout: $budgetSeconds ?? $http?->timeout,
+            maxDuration: $budgetSeconds ?? $http?->maxDuration,
         );
 
         return ($this->httpClient ?? HttpClient::create())->withOptions($options->httpClientOptions());
@@ -94,9 +118,11 @@ class SymfonyAiProviderFactory
     /**
      * Build a single provider from Hatfield config.
      */
-    private function buildProvider(AiProviderConfig $provider): ProviderInterface
-    {
-        $httpClient = $this->getHttpClient();
+    private function buildProvider(
+        AiProviderConfig $provider,
+        ?int $budgetSeconds = null,
+    ): ProviderInterface {
+        $httpClient = $this->getHttpClient($budgetSeconds);
 
         foreach ($this->builders as $builder) {
             if ($builder->supports($provider)) {
