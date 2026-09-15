@@ -9,19 +9,20 @@ Hatfield stores one canonical conversation history in `events.jsonl`. When a
 session continues on a different model or provider, request construction converts
 that history into the target transport shape. Canonical events are not rewritten.
 
-Conversion runs through the injectable `ConversationHistoryConversion` service at
-the provider boundary after the current session model is resolved. Each LLM worker
-keeps at most one worker-local projection (exact source context + target model).
-Exact reuse works for freshly deserialized equal messages. Pure appends convert
-only the new suffix onto a cloned bag and keep tool-call ID maps. If a previous
-turn ended mid tool-result batch, only that trailing batch is rebuilt so synthetic
-image ordering stays correct. Model changes, compaction, history edits, and
-non-prefix contexts rebuild. Returned `MessageBag` instances are clones so later
-request shaping gets a bag structural copy. Message objects are treated as
-immutable after creation. Cached `Image::fromFile` closures reread bytes at
-serialization; the projection rebuilds when an `image_ref` path becomes
-unreadable or readable again so placeholders and restored attachments stay correct.
-Canonical events stay immutable and no shared database cache is used.
+Conversion runs through `AgentMessageConverter::toMessageBagForTarget()` at the
+provider boundary after the current session model is resolved.
+`ConversationHistoryConversion` remains a small request-time policy helper for
+IDs, thinking, and native-item metadata. Each LLM worker keeps one active
+`MessageBag` and the target model it was built for. Exact same-target contexts
+reuse that bag. Appends convert only new messages and keep tool-call ID maps. If
+a previous turn ended mid tool-result batch, only that trailing batch is rebuilt
+so synthetic image ordering stays correct. Model changes, compaction, history
+edits, and non-prefix contexts rebuild. Generic `toMessageBag()` callers always
+receive a fresh bag and do not touch the active bag. Current request shapers
+rebuild messages rather than mutating the supplied bag. `Image::fromFile`
+closures reread bytes at serialization; the active bag rebuilds when an
+`image_ref` path becomes unreadable or readable again. Canonical events stay
+immutable and no shared database cache is used.
 
 Source identity for conversion comes from `llm_step_completed.model` during
 replay. Hatfield does not store a second `source_model` field on assistant

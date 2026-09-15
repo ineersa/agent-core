@@ -14,21 +14,20 @@ use Symfony\AI\Platform\Bridge\OpenAICodex\CodexModel;
 use Symfony\AI\Platform\Bridge\OpenAICodex\Contract\CodexContract;
 use Symfony\AI\Platform\Message\AssistantMessage;
 use Symfony\AI\Platform\Message\Content\Image;
-use Symfony\AI\Platform\Message\Content\Text;
 use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\AI\Platform\Message\ToolCallMessage;
 use Symfony\AI\Platform\Message\UserMessage;
 use Symfony\Component\DependencyInjection\ServicesResetterInterface;
 use Symfony\Contracts\Service\ResetInterface;
 
-final class ConversationHistoryConversionTest extends IsolatedKernelTestCase
+final class AgentMessageConverterHistoryReuseTest extends IsolatedKernelTestCase
 {
-    private ConversationHistoryConversion $conversion;
+    private AgentMessageConverter $converter;
 
     protected function setUp(): void
     {
         parent::setUp();
-        $this->conversion = new ConversationHistoryConversion(new AgentMessageConverter());
+        $this->converter = new AgentMessageConverter();
     }
 
     public function testSameModelPreservesThinkingSignature(): void
@@ -45,7 +44,7 @@ final class ConversationHistoryConversionTest extends IsolatedKernelTestCase
             ),
         ];
 
-        $bag = $this->conversion->toMessageBagForTarget($messages, 'openai-codex/gpt-6-astra');
+        $bag = $this->converter->toMessageBagForTarget($messages, 'openai-codex/gpt-6-astra');
         $assistant = $bag->getMessages()[0];
         $this->assertInstanceOf(AssistantMessage::class, $assistant);
         $this->assertTrue($assistant->getMetadata()->get(ConversationHistoryConversion::METADATA_PRESERVE_NATIVE_ITEM_IDS));
@@ -75,7 +74,7 @@ final class ConversationHistoryConversionTest extends IsolatedKernelTestCase
 
         $payload = CodexContract::create()->createRequestPayload(
             new CodexModel('openai-codex/gpt-6-astra'),
-            $this->conversion->toMessageBagForTarget([$original], 'openai-codex/gpt-6-astra'),
+            $this->converter->toMessageBagForTarget([$original], 'openai-codex/gpt-6-astra'),
             [],
         );
 
@@ -85,7 +84,7 @@ final class ConversationHistoryConversionTest extends IsolatedKernelTestCase
         $this->assertSame('call_845adac454c64712b769d15b', $payload['input'][1]['call_id']);
         $this->assertArrayNotHasKey('id', $payload['input'][1]);
         $this->assertFalse(
-            $this->conversion->toMessageBagForTarget([$original], 'openai-codex/gpt-6-astra')
+            $this->converter->toMessageBagForTarget([$original], 'openai-codex/gpt-6-astra')
                 ->getMessages()[0]
                 ->getMetadata()
                 ->get(ConversationHistoryConversion::METADATA_PRESERVE_NATIVE_ITEM_IDS),
@@ -112,7 +111,7 @@ final class ConversationHistoryConversionTest extends IsolatedKernelTestCase
             'metadata' => $original->metadata,
         ];
 
-        $this->conversion->toMessageBagForTarget([$original], 'openai-codex/gpt-6-astra');
+        $this->converter->toMessageBagForTarget([$original], 'openai-codex/gpt-6-astra');
 
         $this->assertSame($snapshot['details'], $original->details);
         $this->assertSame($snapshot['content'], $original->content);
@@ -146,7 +145,7 @@ final class ConversationHistoryConversionTest extends IsolatedKernelTestCase
             ),
         ];
 
-        $bag = $this->conversion->toMessageBagForTarget($messages, 'zai/glm-5.3-flash');
+        $bag = $this->converter->toMessageBagForTarget($messages, 'zai/glm-5.3-flash');
         $assistant = $bag->getMessages()[0];
         $this->assertInstanceOf(AssistantMessage::class, $assistant);
         $this->assertFalse($assistant->hasThinking());
@@ -174,7 +173,7 @@ final class ConversationHistoryConversionTest extends IsolatedKernelTestCase
 
         $same = CodexContract::create()->createRequestPayload(
             new CodexModel('model-a'),
-            $this->conversion->toMessageBagForTarget($messages, 'custom-codex/model-a'),
+            $this->converter->toMessageBagForTarget($messages, 'custom-codex/model-a'),
             [],
         );
         $this->assertSame('reasoning', $same['input'][0]['type']);
@@ -184,7 +183,7 @@ final class ConversationHistoryConversionTest extends IsolatedKernelTestCase
         foreach (['custom-codex/model-b', 'other-codex/model-a'] as $target) {
             $changed = CodexContract::create()->createRequestPayload(
                 new CodexModel('model-a'),
-                $this->conversion->toMessageBagForTarget($messages, $target),
+                $this->converter->toMessageBagForTarget($messages, $target),
                 [],
             );
             $this->assertSame('message', $changed['input'][0]['type']);
@@ -202,7 +201,7 @@ final class ConversationHistoryConversionTest extends IsolatedKernelTestCase
         foreach ($ids as $id) {
             $messages[] = new AgentMessage(role: 'tool', content: [['type' => 'text', 'text' => 'ok']], toolCallId: $id, toolName: 'bash');
         }
-        $bag = $this->conversion->toMessageBagForTarget($messages, 'openai/b');
+        $bag = $this->converter->toMessageBagForTarget($messages, 'openai/b');
         $requestIds = [];
         foreach ($bag->getMessages()[0]->getToolCalls() as $index => $call) {
             $requestIds[] = $call->getId();
@@ -237,15 +236,15 @@ final class ConversationHistoryConversionTest extends IsolatedKernelTestCase
             ),
         ];
 
-        $first = $this->conversion->toMessageBagForTarget($original, 'openai-codex/gpt-6-astra');
+        $first = $this->converter->toMessageBagForTarget($original, 'openai-codex/gpt-6-astra');
         $fresh = array_map(
             static fn (AgentMessage $message): AgentMessage => AgentMessage::fromPayload($message->toArray()) ?? throw new \RuntimeException('payload round-trip failed'),
             $original,
         );
         $this->assertNotSame($original[0], $fresh[0]);
-        $second = $this->conversion->toMessageBagForTarget($fresh, 'openai-codex/gpt-6-astra');
+        $second = $this->converter->toMessageBagForTarget($fresh, 'openai-codex/gpt-6-astra');
 
-        $this->assertNotSame($first, $second);
+        $this->assertSame($first, $second);
         $this->assertSame(
             CodexContract::create()->createRequestPayload(new CodexModel('gpt-6-astra'), $first, []),
             CodexContract::create()->createRequestPayload(new CodexModel('gpt-6-astra'), $second, []),
@@ -267,7 +266,7 @@ final class ConversationHistoryConversionTest extends IsolatedKernelTestCase
             ],
         );
         $prefix = [$assistant];
-        $first = $this->conversion->toMessageBagForTarget($prefix, 'zai/glm-5.3-flash');
+        $first = $this->converter->toMessageBagForTarget($prefix, 'zai/glm-5.3-flash');
         $remapped = $first->getMessages()[0]->getToolCalls()[0]->getId();
 
         $withResult = [
@@ -283,7 +282,7 @@ final class ConversationHistoryConversionTest extends IsolatedKernelTestCase
                 content: [['type' => 'text', 'text' => 'continue']],
             ),
         ];
-        $second = $this->conversion->toMessageBagForTarget($withResult, 'zai/glm-5.3-flash');
+        $second = $this->converter->toMessageBagForTarget($withResult, 'zai/glm-5.3-flash');
 
         $this->assertSame($remapped, $second->getMessages()[0]->getToolCalls()[0]->getId());
         $this->assertSame($remapped, $second->getMessages()[1]->getToolCall()->getId());
@@ -300,14 +299,14 @@ final class ConversationHistoryConversionTest extends IsolatedKernelTestCase
                 metadata: ['source_model' => 'openai/gpt-test'],
             ),
         ];
-        $first = $this->conversion->toMessageBagForTarget($prefix, 'openai/gpt-test');
+        $first = $this->converter->toMessageBagForTarget($prefix, 'openai/gpt-test');
         $prefixAssistant = $first->getMessages()[1];
 
         $appended = [
             ...$prefix,
             new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'next']]),
         ];
-        $second = $this->conversion->toMessageBagForTarget($appended, 'openai/gpt-test');
+        $second = $this->converter->toMessageBagForTarget($appended, 'openai/gpt-test');
 
         $this->assertSame($prefixAssistant, $second->getMessages()[1]);
         $this->assertSame('next', $second->getMessages()[2]->asText());
@@ -357,7 +356,7 @@ final class ConversationHistoryConversionTest extends IsolatedKernelTestCase
                 ),
             ];
 
-            $first = $this->conversion->toMessageBagForTarget($openBatch, 'vision/model');
+            $first = $this->converter->toMessageBagForTarget($openBatch, 'vision/model');
             $stableAssistant = $first->getMessages()[1];
             $this->assertInstanceOf(ToolCallMessage::class, $first->getMessages()[3]);
             $this->assertTrue($first->getMessages()[4]->hasImageContent());
@@ -375,7 +374,7 @@ final class ConversationHistoryConversionTest extends IsolatedKernelTestCase
                 ),
                 new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'done']]),
             ];
-            $second = $this->conversion->toMessageBagForTarget($completed, 'vision/model');
+            $second = $this->converter->toMessageBagForTarget($completed, 'vision/model');
 
             $this->assertSame($stableAssistant, $second->getMessages()[1]);
             $this->assertNotSame($first->getMessages()[3], $second->getMessages()[3]);
@@ -401,10 +400,10 @@ final class ConversationHistoryConversionTest extends IsolatedKernelTestCase
             ),
         ];
 
-        $sameModel = $this->conversion->toMessageBagForTarget($messages, 'openai-codex/gpt-6-astra');
+        $sameModel = $this->converter->toMessageBagForTarget($messages, 'openai-codex/gpt-6-astra');
         $this->assertTrue($sameModel->getMessages()[1]->hasThinking());
 
-        $crossModel = $this->conversion->toMessageBagForTarget($messages, 'zai/glm-5.3-flash');
+        $crossModel = $this->converter->toMessageBagForTarget($messages, 'zai/glm-5.3-flash');
         $this->assertFalse($crossModel->getMessages()[1]->hasThinking());
         $this->assertSame("answer\nsecret", $crossModel->getMessages()[1]->asText());
 
@@ -412,23 +411,25 @@ final class ConversationHistoryConversionTest extends IsolatedKernelTestCase
             new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'prompt changed']]),
             $messages[1],
         ];
-        $rebuilt = $this->conversion->toMessageBagForTarget($edited, 'zai/glm-5.3-flash');
+        $rebuilt = $this->converter->toMessageBagForTarget($edited, 'zai/glm-5.3-flash');
         $this->assertSame('prompt changed', $rebuilt->getMessages()[0]->asText());
         $this->assertSame("answer\nsecret", $rebuilt->getMessages()[1]->asText());
     }
 
-    public function testReturnedMessageBagCloneProtectsCachedProjection(): void
+    public function testSameTargetExactContextReturnsSameActiveBagIdentity(): void
     {
         $messages = [
             new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'one']]),
         ];
-        $first = $this->conversion->toMessageBagForTarget($messages, 'openai/gpt-test');
-        $first->add(new UserMessage(new Text('mutated')));
+        $first = $this->converter->toMessageBagForTarget($messages, 'openai/gpt-test');
+        $second = $this->converter->toMessageBagForTarget($messages, 'openai/gpt-test');
+        $this->assertSame($first, $second);
 
-        $second = $this->conversion->toMessageBagForTarget($messages, 'openai/gpt-test');
-        $this->assertCount(1, $second->getMessages());
-        $this->assertSame('one', $second->getMessages()[0]->asText());
-        $this->assertCount(2, $first->getMessages());
+        $generic = $this->converter->toMessageBag($messages);
+        $this->assertNotSame($first, $generic);
+        $third = $this->converter->toMessageBagForTarget($messages, 'openai/gpt-test');
+        $this->assertSame($first, $third);
+        $this->assertCount(1, $third->getMessages());
     }
 
     public function testAppendPreservesSyntheticImageOrderingAcrossToolBatch(): void
@@ -455,7 +456,7 @@ final class ConversationHistoryConversionTest extends IsolatedKernelTestCase
                     ],
                 ),
             ];
-            $this->conversion->toMessageBagForTarget($prefix, 'vision/model');
+            $this->converter->toMessageBagForTarget($prefix, 'vision/model');
 
             $withTools = [
                 $prefix[0],
@@ -480,7 +481,7 @@ final class ConversationHistoryConversionTest extends IsolatedKernelTestCase
                 new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'done']]),
             ];
 
-            $bag = $this->conversion->toMessageBagForTarget($withTools, 'vision/model');
+            $bag = $this->converter->toMessageBagForTarget($withTools, 'vision/model');
             $messages = $bag->getMessages();
             $this->assertInstanceOf(AssistantMessage::class, $messages[0]);
             $this->assertInstanceOf(ToolCallMessage::class, $messages[1]);
@@ -539,11 +540,11 @@ final class ConversationHistoryConversionTest extends IsolatedKernelTestCase
                 ),
             ];
 
-            $readable = $this->conversion->toMessageBagForTarget($messages, 'vision/model');
+            $readable = $this->converter->toMessageBagForTarget($messages, 'vision/model');
             $this->assertTrue($readable->getMessages()[2]->hasImageContent());
 
             unlink($imagePath);
-            $missing = $this->conversion->toMessageBagForTarget($messages, 'vision/model');
+            $missing = $this->converter->toMessageBagForTarget($messages, 'vision/model');
             $this->assertFalse($missing->getMessages()[2]->hasImageContent());
             $this->assertStringContainsString('Tool result image for view_image', (string) $missing->getMessages()[2]->asText());
 
@@ -551,7 +552,7 @@ final class ConversationHistoryConversionTest extends IsolatedKernelTestCase
                 $imagePath,
                 base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', true),
             );
-            $restored = $this->conversion->toMessageBagForTarget($messages, 'vision/model');
+            $restored = $this->converter->toMessageBagForTarget($messages, 'vision/model');
             $this->assertTrue($restored->getMessages()[2]->hasImageContent());
         } finally {
             TestDirectoryIsolation::removeDirectory($tmp);
@@ -599,7 +600,7 @@ final class ConversationHistoryConversionTest extends IsolatedKernelTestCase
                     toolName: 'view_image',
                 ),
             ];
-            $first = $this->conversion->toMessageBagForTarget($openBatch, 'vision/model');
+            $first = $this->converter->toMessageBagForTarget($openBatch, 'vision/model');
             $stableUser = $first->getMessages()[0];
             $stableAssistant = $first->getMessages()[1];
 
@@ -615,7 +616,7 @@ final class ConversationHistoryConversionTest extends IsolatedKernelTestCase
                     toolName: 'view_image',
                 ),
             ];
-            $second = $this->conversion->toMessageBagForTarget($completed, 'vision/model');
+            $second = $this->converter->toMessageBagForTarget($completed, 'vision/model');
             $this->assertSame($stableUser, $second->getMessages()[0]);
             $this->assertSame($stableAssistant, $second->getMessages()[1]);
         } finally {
@@ -625,25 +626,25 @@ final class ConversationHistoryConversionTest extends IsolatedKernelTestCase
 
     public function testContainerServiceSurvivesServicesResetter(): void
     {
-        $conversion = static::getContainer()->get(ConversationHistoryConversion::class);
-        $this->assertInstanceOf(ConversationHistoryConversion::class, $conversion);
-        $this->assertNotInstanceOf(ResetInterface::class, $conversion);
+        $converter = static::getContainer()->get(AgentMessageConverter::class);
+        $this->assertInstanceOf(AgentMessageConverter::class, $converter);
+        $this->assertNotInstanceOf(ResetInterface::class, $converter);
 
         $messages = [
             new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'persist across reset']]),
         ];
-        $before = $conversion->toMessageBagForTarget($messages, 'openai/gpt-test');
+        $before = $converter->toMessageBagForTarget($messages, 'openai/gpt-test');
 
         $resetter = static::getContainer()->get('services_resetter');
         $this->assertInstanceOf(ServicesResetterInterface::class, $resetter);
         $resetter->reset();
 
-        $after = $conversion->toMessageBagForTarget($messages, 'openai/gpt-test');
-        $this->assertNotSame($before, $after);
+        $after = $converter->toMessageBagForTarget($messages, 'openai/gpt-test');
+        $this->assertSame($before, $after);
         $this->assertSame($before->getMessages()[0]->asText(), $after->getMessages()[0]->asText());
         $this->assertSame(
-            static::getContainer()->get(ConversationHistoryConversion::class),
-            $conversion,
+            static::getContainer()->get(AgentMessageConverter::class),
+            $converter,
         );
     }
 
@@ -670,13 +671,13 @@ final class ConversationHistoryConversionTest extends IsolatedKernelTestCase
             );
         }
 
-        $bag = $this->conversion->toMessageBagForTarget($messages, 'zai/glm-5.3-flash');
+        $bag = $this->converter->toMessageBagForTarget($messages, 'zai/glm-5.3-flash');
         $this->assertInstanceOf(MessageBag::class, $bag);
         $this->assertSame(800, \count($bag->getMessages()));
 
         $appended = $messages;
         $appended[] = new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'next']]);
-        $again = $this->conversion->toMessageBagForTarget($appended, 'zai/glm-5.3-flash');
+        $again = $this->converter->toMessageBagForTarget($appended, 'zai/glm-5.3-flash');
         $this->assertSame('next', $again->getMessages()[\count($again->getMessages()) - 1]->asText());
     }
 }

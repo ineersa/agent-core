@@ -16,7 +16,6 @@ use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
-use Ineersa\AgentCore\Infrastructure\SymfonyAi\ConversationHistoryConversion;
 use Ineersa\CodingAgent\Config\ImageToolConfig;
 use Ineersa\CodingAgent\Config\ToolSettings;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
@@ -808,7 +807,7 @@ final class ViewImageToolTest extends TestCase
         $checker->method('supportsImages')->willReturn(false);
 
         $converter = new AgentMessageConverter();
-        $hook = new \Ineersa\CodingAgent\Tool\ImageProcessing\ImageGatingConvertHook($checker, new ConversationHistoryConversion($converter));
+        $hook = new \Ineersa\CodingAgent\Tool\ImageProcessing\ImageGatingConvertHook($checker, $converter);
 
         $imagePath = $this->tmpDir.'/gating_nonvision.png';
         $this->createPng1x1($imagePath);
@@ -852,7 +851,7 @@ final class ViewImageToolTest extends TestCase
         $checker->method('supportsImages')->willReturn(true);
 
         $converter = new AgentMessageConverter();
-        $hook = new \Ineersa\CodingAgent\Tool\ImageProcessing\ImageGatingConvertHook($checker, new ConversationHistoryConversion($converter));
+        $hook = new \Ineersa\CodingAgent\Tool\ImageProcessing\ImageGatingConvertHook($checker, $converter);
 
         $imagePath = $this->tmpDir.'/gating_vision.png';
         $this->createPng1x1($imagePath);
@@ -892,7 +891,7 @@ final class ViewImageToolTest extends TestCase
         $checker->method('supportsImages')->willReturn(true);
 
         $converter = new AgentMessageConverter();
-        $hook = new \Ineersa\CodingAgent\Tool\ImageProcessing\ImageGatingConvertHook($checker, new ConversationHistoryConversion($converter));
+        $hook = new \Ineersa\CodingAgent\Tool\ImageProcessing\ImageGatingConvertHook($checker, $converter);
 
         $imagePath = $this->tmpDir.'/gating_empty_model.png';
         $this->createPng1x1($imagePath);
@@ -933,7 +932,7 @@ final class ViewImageToolTest extends TestCase
         $checker->method('supportsImages')->willReturn(false);
 
         $converter = new AgentMessageConverter();
-        $hook = new \Ineersa\CodingAgent\Tool\ImageProcessing\ImageGatingConvertHook($checker, new ConversationHistoryConversion($converter));
+        $hook = new \Ineersa\CodingAgent\Tool\ImageProcessing\ImageGatingConvertHook($checker, $converter);
 
         $agentMessage = new AgentMessage(
             role: 'tool',
