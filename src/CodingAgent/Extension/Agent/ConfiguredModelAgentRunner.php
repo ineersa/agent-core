@@ -8,11 +8,11 @@ use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Model\ModelResolverInterface;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelResolutionOptions;
-use Ineersa\AgentCore\Infrastructure\SymfonyAi\Http\RequestScopedHttpClient;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\PreparedInvocationPlatform;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderRequestPreparer;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
+use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ConfiguredSymfonyAiPlatformFactory;
 use Ineersa\Hatfield\ExtensionApi\Agent\AgentCallRequestDTO;
 use Ineersa\Hatfield\ExtensionApi\Agent\AgentRunnerInterface;
 use Psr\Log\LoggerInterface;
@@ -31,11 +31,17 @@ use Symfony\AI\Platform\Result\StreamResult;
  * Reuses the configured Symfony AI Platform, standard Agent + AgentProcessor
  * tool loop, and Hatfield routing metadata. Publicly blocking; streams
  * internally so Codex WebSocket and HTTP streaming providers complete.
+ *
+ * When {@see AgentCallRequestDTO::$maxDurationSeconds} is set, this runner
+ * builds a selected-provider Platform once for the call (including tool-loop
+ * turns) with matching idle timeout and max_duration budgets. Default calls
+ * keep the shared Platform.
  */
 final readonly class ConfiguredModelAgentRunner implements AgentRunnerInterface
 {
     public function __construct(
         private PlatformInterface $platform,
+        private ConfiguredSymfonyAiPlatformFactory $platformFactory,
         private ?HatfieldModelCatalog $modelCatalog,
         private LoggerInterface $logger,
         private ToolCallArgumentResolverInterface $argumentResolver,
@@ -104,8 +110,18 @@ final readonly class ConfiguredModelAgentRunner implements AgentRunnerInterface
             $invocationInput,
             new ModelResolutionOptions($resolutionValues),
         );
-        $platform = new PreparedInvocationPlatform(
-            $this->platform,
+
+        $platform = $this->platform;
+        if (null !== $request->maxDurationSeconds) {
+            $providerId = AiModelReference::parse($request->model)->providerId;
+            $platform = $this->platformFactory->createPlatformForProvider(
+                $providerId,
+                $request->maxDurationSeconds,
+            );
+        }
+
+        $preparedPlatform = new PreparedInvocationPlatform(
+            $platform,
             $this->providerRequestPreparer,
             $resolvedModel,
             $invocationInput,
@@ -113,7 +129,7 @@ final readonly class ConfiguredModelAgentRunner implements AgentRunnerInterface
         );
 
         $agent = new Agent(
-            platform: $platform,
+            platform: $preparedPlatform,
             model: $resolvedModel->model,
             inputProcessors: $inputProcessors,
             outputProcessors: $outputProcessors,
@@ -141,29 +157,14 @@ final readonly class ConfiguredModelAgentRunner implements AgentRunnerInterface
         ]);
 
         try {
-            $run = static function () use ($agent, $messages, $options): void {
-                $result = $agent->call($messages, $options);
-                // Fully consume stream results so SSE/WebSocket transports complete
-                // and AgentProcessor stream tool-call listeners execute.
-                if ($result instanceof StreamResult) {
-                    foreach ($result->getContent() as $_) {
-                    }
-
-                    return;
+            $result = $agent->call($messages, $options);
+            // Fully consume stream results so SSE/WebSocket transports complete
+            // and AgentProcessor stream tool-call listeners execute.
+            if ($result instanceof StreamResult) {
+                foreach ($result->getContent() as $_) {
                 }
-
-                $result->getContent();
-            };
-
-            if (null !== $request->maxDurationSeconds) {
-                RequestScopedHttpClient::runWithOptions(
-                    [
-                        'max_duration' => $request->maxDurationSeconds,
-                    ],
-                    $run,
-                );
             } else {
-                $run();
+                $result->getContent();
             }
         } catch (\Throwable $e) {
             $this->logger->error('extension.agent.run.failed', [

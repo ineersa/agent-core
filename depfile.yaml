@@ -736,6 +736,8 @@ parameters:
       - AppTool
       - AppSkills
       - AgentCore
+      # Budgeted extension-agent runs construct a selected-provider Platform once.
+      - AppInfrastructureSymfonyAi
       - SymfonyAiPlatform
       - SymfonyAiAgent
       - SymfonyEventDispatcher

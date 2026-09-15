@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Extension\Agent;
 
 use Ineersa\AgentCore\Contract\Model\ModelResolverInterface;
-use Ineersa\AgentCore\Infrastructure\SymfonyAi\Http\RequestScopedHttpClient;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderCompatibilityRequestShaper;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderRequestPreparer;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\ReasoningOptionsFeatureShaper;
@@ -25,6 +24,7 @@ use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Extension\Agent\ConfiguredModelAgentRunner;
+use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ConfiguredSymfonyAiPlatformFactory;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderFactory;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
@@ -32,9 +32,7 @@ use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\Hatfield\ExtensionApi\Agent\AgentCallRequestDTO;
 use Psr\Log\NullLogger;
 use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolverInterface;
-use Symfony\AI\Platform\Bridge\Generic\Completions\ModelClient as GenericCompletionsModelClient;
 use Symfony\AI\Platform\Platform;
-use Symfony\AI\Platform\Provider;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\HttpClient\MockHttpClient;
@@ -91,7 +89,7 @@ final class ConfiguredModelAgentRunnerThinkingLevelTest extends IsolatedKernelTe
 
         $this->assertCount(1, $seen);
         $this->assertSame(300.0, (float) $seen[0]['max_duration']);
-        $this->assertSame(30.0, (float) $seen[0]['timeout']);
+        $this->assertSame(300.0, (float) $seen[0]['timeout']);
         $body = $this->decodeBody($seen[0]);
         $this->assertSame(['enable_thinking' => false], $body['chat_template_kwargs'] ?? null);
         $this->assertArrayNotHasKey('max_duration', $body);
@@ -120,6 +118,7 @@ final class ConfiguredModelAgentRunnerThinkingLevelTest extends IsolatedKernelTe
         $this->assertArrayNotHasKey('chat_template_kwargs', $body);
         $this->assertArrayNotHasKey('thinking', $body);
         $this->assertSame(300.0, (float) $seen[0]['max_duration']);
+        $this->assertSame(300.0, (float) $seen[0]['timeout']);
     }
 
     public function testExplicitOffWithoutCatalogThinkingFormatDoesNotInventDisableFlag(): void
@@ -144,6 +143,7 @@ final class ConfiguredModelAgentRunnerThinkingLevelTest extends IsolatedKernelTe
         $body = $this->decodeBody($seen[0]);
         $this->assertArrayNotHasKey('chat_template_kwargs', $body);
         $this->assertSame(300.0, (float) $seen[0]['max_duration']);
+        $this->assertSame(300.0, (float) $seen[0]['timeout']);
     }
 
     /**
@@ -196,23 +196,21 @@ final class ConfiguredModelAgentRunnerThinkingLevelTest extends IsolatedKernelTe
             cwd: $this->tempDir.'/project',
         );
 
-        $factory = new SymfonyAiProviderFactory(
+        $dispatcher = $this->createStub(EventDispatcherInterface::class);
+        $providerFactory = new SymfonyAiProviderFactory(
             $appConfig,
-            $this->createStub(EventDispatcherInterface::class),
+            $dispatcher,
             [],
             new NullLogger(),
             $transport,
         );
-        $providers = $factory->createProviders();
+        $providers = $providerFactory->createProviders();
         $this->assertArrayHasKey('llama_cpp', $providers);
-        $http = $this->extractHttpClient($providers['llama_cpp']);
-        $this->assertTrue(
-            $http instanceof RequestScopedHttpClient || $this->containsRequestScopedClient($http),
-            'provider transport must wrap RequestScopedHttpClient',
-        );
+        $platformFactory = new ConfiguredSymfonyAiPlatformFactory($providerFactory, $dispatcher);
 
         return new ConfiguredModelAgentRunner(
             new Platform(array_values($providers)),
+            $platformFactory,
             new HatfieldModelCatalog($ai),
             new NullLogger(),
             $this->createStub(ToolCallArgumentResolverInterface::class),
@@ -286,44 +284,6 @@ final class ConfiguredModelAgentRunnerThinkingLevelTest extends IsolatedKernelTe
         }
 
         $this->fail('expected JSON request body');
-    }
-
-    private function extractHttpClient(object $provider): HttpClientInterface
-    {
-        $this->assertInstanceOf(Provider::class, $provider);
-        $ref = new \ReflectionClass($provider);
-        $prop = $ref->getProperty('modelClients');
-        $clients = $prop->getValue($provider);
-        $this->assertIsArray($clients);
-        $this->assertNotEmpty($clients);
-        $modelClient = $clients[0];
-        $this->assertInstanceOf(GenericCompletionsModelClient::class, $modelClient);
-        $clientProp = new \ReflectionProperty(GenericCompletionsModelClient::class, 'httpClient');
-        $http = $clientProp->getValue($modelClient);
-        $this->assertInstanceOf(HttpClientInterface::class, $http);
-
-        return $http;
-    }
-
-    private function containsRequestScopedClient(HttpClientInterface $http): bool
-    {
-        $current = $http;
-        for ($i = 0; $i < 5; ++$i) {
-            if ($current instanceof RequestScopedHttpClient) {
-                return true;
-            }
-            $ref = new \ReflectionObject($current);
-            if (!$ref->hasProperty('client')) {
-                return false;
-            }
-            $inner = $ref->getProperty('client')->getValue($current);
-            if (!$inner instanceof HttpClientInterface) {
-                return false;
-            }
-            $current = $inner;
-        }
-
-        return false;
     }
 
     private static function streamPayload(string $content): string

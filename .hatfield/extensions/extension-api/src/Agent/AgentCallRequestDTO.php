@@ -26,7 +26,7 @@ final readonly class AgentCallRequestDTO
      * @param list<AgentToolDTO> $tools              isolated tools available only for this call
      * @param string|null        $correlationId      optional extra correlation token for diagnostics
      * @param int|null           $maxToolCalls       optional AgentProcessor tool-loop ceiling (>= 1); null = framework default
-     * @param int|null           $maxDurationSeconds optional Symfony HttpClient max_duration for this call only (>= 1); null = shared client default
+     * @param int|null           $maxDurationSeconds optional Symfony HttpClient idle timeout and max_duration for this call only (>= 1); null = shared client defaults
      * @param string|null        $thinkingLevel      optional Hatfield thinking level override for this call only (off|minimal|low|medium|high|xhigh|max); null = session/default reasoning
      */
     public function __construct(
