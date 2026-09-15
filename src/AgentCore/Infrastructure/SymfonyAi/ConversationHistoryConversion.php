@@ -100,8 +100,11 @@ final class ConversationHistoryConversion
         $incompleteStart = $this->trailingIncompleteToolBatchStart($converted);
         $stableBagCount = null;
         if (null !== $incompleteStart) {
-            $stablePrefix = \array_slice($converted, 0, $incompleteStart);
-            $stableBagCount = \count($this->messageConverter->convertAgentMessages($stablePrefix));
+            // Derive the stable bag boundary from the already-built bag and only
+            // the open trailing tool batch. Never reconvert the stable prefix.
+            $openBatch = \array_slice($converted, $incompleteStart);
+            $stableBagCount = \count($bag->getMessages())
+                - \count($this->messageConverter->convertAgentMessages($openBatch));
         }
 
         $this->cache = [
@@ -158,9 +161,11 @@ final class ConversationHistoryConversion
         $incompleteStart = $this->trailingIncompleteToolBatchStart($converted);
         $stableBagCount = null;
         if (null !== $incompleteStart) {
-            // Count only the stable prefix once when caching an open tool batch.
-            $stablePrefix = \array_slice($converted, 0, $incompleteStart);
-            $stableBagCount = \count($this->messageConverter->convertAgentMessages($stablePrefix));
+            // Derive the stable bag boundary from the already-built bag and only
+            // the open trailing tool batch. Never reconvert the stable prefix.
+            $openBatch = \array_slice($converted, $incompleteStart);
+            $stableBagCount = \count($bag->getMessages())
+                - \count($this->messageConverter->convertAgentMessages($openBatch));
         }
 
         $this->cache = [
@@ -189,6 +194,12 @@ final class ConversationHistoryConversion
     }
 
     /**
+     * When the cached AgentMessage list ends inside a consecutive tool-result
+     * batch, return the start index of that trailing incomplete batch so append
+     * can rebuild only that region. Synthetic image UserMessages are deferred
+     * until the tool batch closes, so an open trailing batch cannot keep its
+     * Symfony messages as-is when later tool results arrive.
+     *
      * @param list<AgentMessage> $convertedMessages
      */
     private function trailingIncompleteToolBatchStart(array $convertedMessages): ?int
@@ -313,11 +324,18 @@ final class ConversationHistoryConversion
         return $message;
     }
 
+    /**
+     * Exact qualified identity only. Do not strip provider prefixes.
+     */
     private function isExactQualifiedMatch(?string $sourceModel, string $targetModel): bool
     {
         return \is_string($sourceModel) && '' !== $sourceModel && $sourceModel === $targetModel;
     }
 
+    /**
+     * Source identity comes from request-local metadata populated on replay
+     * from llm_step_completed.model (not a duplicated stored assistant field).
+     */
     private function sourceModelFromMessage(AgentMessage $message): ?string
     {
         $sourceModel = $message->metadata['source_model'] ?? null;
@@ -433,6 +451,7 @@ final class ConversationHistoryConversion
             return $message;
         }
 
+        // Tool results inherit remapping from earlier assistant tool calls.
         if (!isset($idMap[$toolCallId])) {
             return $message;
         }
@@ -468,6 +487,7 @@ final class ConversationHistoryConversion
             return $idMap[$originalId];
         }
 
+        // Generic chat completions: bounded, collision-safe IDs.
         $candidate = $this->sanitizeCompletionsToolCallId($originalId);
         $suffix = 0;
         while (isset($usedIds[$candidate])) {

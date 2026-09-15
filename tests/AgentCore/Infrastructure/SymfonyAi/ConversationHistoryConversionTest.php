@@ -558,7 +558,7 @@ final class ConversationHistoryConversionTest extends IsolatedKernelTestCase
         }
     }
 
-    public function testAppendDoesNotReconvertStablePrefixWhenCompletingToolBatch(): void
+    public function testCompletingOpenToolBatchReusesStableSymfonyMessageInstances(): void
     {
         $tmp = TestDirectoryIsolation::createProjectTempDir('history-conversion-boundary');
         $imagePath = $tmp.'/pixel.png';
