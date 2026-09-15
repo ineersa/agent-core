@@ -61,10 +61,6 @@ final class AgentMessageConverter
     /** @var list<array<string, bool>> */
     private array $imageReadability = [];
 
-    private ?int $incompleteToolBatchStart = null;
-
-    private ?int $incompleteToolBatchStableBagCount = null;
-
     public function __construct(
         private readonly ConversationHistoryConversion $historyConversion = new ConversationHistoryConversion(),
     ) {
@@ -91,11 +87,17 @@ final class AgentMessageConverter
     /**
      * Build or reuse the active MessageBag for a resolved target model.
      *
-     * Same target + unchanged exact source prefix reuses the bag. Appends
-     * convert only the suffix (and at most an open trailing tool batch).
-     * Target changes, compaction, history edits, and image readability
-     * changes rebuild. Returns the active bag itself; request shapers create
-     * replacements rather than mutating it in place.
+     * Guard order:
+     * 1. empty target → fresh bag, no active-bag update
+     * 2. no active bag / different target / changed prefix / changed image readability → rebuild
+     * 3. exact same context → return active bag
+     * 4. otherwise append only the new suffix
+     *
+     * When the previous active source ended mid consecutive tool-result batch,
+     * append rebuilds only that trailing open batch plus the suffix so deferred
+     * synthetic image UserMessages keep correct ordering. Closed turns skip that
+     * path entirely. Returns the active bag itself; current request shapers
+     * rebuild messages rather than mutating the supplied bag.
      *
      * @param list<AgentMessage> $agentMessages
      */
@@ -105,22 +107,21 @@ final class AgentMessageConverter
             return $this->toMessageBag($agentMessages);
         }
 
-        if (null !== $this->activeBag
-            && $this->activeTargetModel === $targetModel
-            && $this->isExactPrefix($this->activeSourceMessages, $agentMessages)
-            && $this->imageReadabilityMatchesPrefix($agentMessages)
+        if (null === $this->activeBag
+            || $this->activeTargetModel !== $targetModel
+            || !$this->isExactPrefix($this->activeSourceMessages, $agentMessages)
+            || !$this->imageReadabilityMatchesPrefix($agentMessages)
         ) {
-            $cachedCount = \count($this->activeSourceMessages);
-            if ($cachedCount === \count($agentMessages)) {
-                return $this->activeBag;
-            }
-
-            $this->appendActiveProjection($agentMessages, $targetModel);
+            $this->rebuildActiveBag($agentMessages, $targetModel);
 
             return $this->activeBag;
         }
 
-        $this->rebuildActiveProjection($agentMessages, $targetModel);
+        if (\count($this->activeSourceMessages) === \count($agentMessages)) {
+            return $this->activeBag;
+        }
+
+        $this->appendToActiveBag($agentMessages, $targetModel);
 
         return $this->activeBag;
     }
@@ -170,24 +171,13 @@ final class AgentMessageConverter
     /**
      * @param list<AgentMessage> $agentMessages
      */
-    private function rebuildActiveProjection(array $agentMessages, string $targetModel): void
+    private function rebuildActiveBag(array $agentMessages, string $targetModel): void
     {
         $idMap = [];
         $usedIds = [];
         $converted = $this->historyConversion->convertMessages($agentMessages, $targetModel, $idMap, $usedIds);
-        $bag = new MessageBag(...$this->convertAgentMessages($converted));
 
-        $incompleteStart = $this->trailingIncompleteToolBatchStart($converted);
-        $stableBagCount = null;
-        if (null !== $incompleteStart) {
-            // Derive the stable bag boundary from the already-built bag and only
-            // the open trailing tool batch. Never reconvert the stable prefix.
-            $openBatch = \array_slice($converted, $incompleteStart);
-            $stableBagCount = \count($bag->getMessages())
-                - \count($this->convertAgentMessages($openBatch));
-        }
-
-        $this->activeBag = $bag;
+        $this->activeBag = new MessageBag(...$this->convertAgentMessages($converted));
         $this->activeTargetModel = $targetModel;
         $this->activeSourceMessages = $agentMessages;
         $this->idMap = $idMap;
@@ -196,68 +186,78 @@ final class AgentMessageConverter
             $this->imageReadabilityForMessage(...),
             $agentMessages,
         );
-        $this->incompleteToolBatchStart = $incompleteStart;
-        $this->incompleteToolBatchStableBagCount = $stableBagCount;
     }
 
     /**
      * @param list<AgentMessage> $agentMessages
      */
-    private function appendActiveProjection(array $agentMessages, string $targetModel): void
+    private function appendToActiveBag(array $agentMessages, string $targetModel): void
     {
         \assert(null !== $this->activeBag);
 
-        $cachedCount = \count($this->activeSourceMessages);
-        $suffixSource = \array_slice($agentMessages, $cachedCount);
-        $suffixConverted = $this->historyConversion->convertMessages(
-            $suffixSource,
-            $targetModel,
-            $this->idMap,
-            $this->usedIds,
-        );
+        $previousCount = \count($this->activeSourceMessages);
+        $previousSource = $this->activeSourceMessages;
+        $previousBag = $this->activeBag;
+        $previousTargetModel = $this->activeTargetModel;
+        $previousIdMap = $this->idMap;
+        $previousUsedIds = $this->usedIds;
+        $previousImageReadability = $this->imageReadability;
 
-        $bag = $this->activeBag;
-        $rebuildFrom = $this->incompleteToolBatchStart;
-        if (null !== $rebuildFrom) {
-            $stableCount = $this->incompleteToolBatchStableBagCount ?? 0;
-            $bag = new MessageBag(...\array_slice($bag->getMessages(), 0, $stableCount));
-            $openPrefix = \array_slice($this->activeSourceMessages, $rebuildFrom);
-            $openPrefixConverted = $this->historyConversion->convertMessages(
-                $openPrefix,
-                $targetModel,
-                $this->idMap,
-                $this->usedIds,
-            );
-            $this->appendConvertedMessages($bag, array_merge($openPrefixConverted, $suffixConverted));
+        // Work on maps/bag copies until append finishes so a failure cannot
+        // leave a half-updated active bag that would duplicate messages on retry.
+        $idMap = $previousIdMap;
+        $usedIds = $previousUsedIds;
+
+        try {
+            $suffixSource = \array_slice($agentMessages, $previousCount);
+            $openBatchStart = $this->trailingOpenToolBatchStart($previousSource);
+
+            if (null === $openBatchStart) {
+                $suffixConverted = $this->historyConversion->convertMessages(
+                    $suffixSource,
+                    $targetModel,
+                    $idMap,
+                    $usedIds,
+                );
+                $bag = new MessageBag(...$previousBag->getMessages());
+                $this->appendConvertedMessages($bag, $suffixConverted);
+            } else {
+                // Continue an open trailing tool batch: drop already-emitted
+                // Symfony messages for that batch, then convert the open batch
+                // plus the new suffix once. Count bag messages produced by the
+                // open-batch tool outputs alone; do not scan the stable prefix.
+                $openBatchToolOutputs = \array_slice($previousSource, $openBatchStart);
+                $stableBagCount = \count($previousBag->getMessages())
+                    - \count($this->convertAgentMessages($openBatchToolOutputs));
+                $rebuildConverted = $this->historyConversion->convertMessages(
+                    array_merge($openBatchToolOutputs, $suffixSource),
+                    $targetModel,
+                    $idMap,
+                    $usedIds,
+                );
+                $bag = new MessageBag(...\array_slice($previousBag->getMessages(), 0, $stableBagCount));
+                $this->appendConvertedMessages($bag, $rebuildConverted);
+            }
+
             $this->activeBag = $bag;
-        } else {
-            $this->appendConvertedMessages($bag, $suffixConverted);
-        }
-
-        $boundarySource = array_merge($this->activeSourceMessages, $suffixSource);
-        $incompleteStart = $this->trailingIncompleteToolBatchStart($boundarySource);
-        $stableBagCount = null;
-        if (null !== $incompleteStart) {
-            // Derive the stable bag boundary from the already-built bag and only
-            // the open trailing tool batch. Never reconvert the stable prefix.
-            $openBatch = $this->historyConversion->convertMessages(
-                \array_slice($boundarySource, $incompleteStart),
-                $targetModel,
-                $this->idMap,
-                $this->usedIds,
+            $this->activeTargetModel = $targetModel;
+            $this->activeSourceMessages = $agentMessages;
+            $this->idMap = $idMap;
+            $this->usedIds = $usedIds;
+            $this->imageReadability = array_map(
+                $this->imageReadabilityForMessage(...),
+                $agentMessages,
             );
-            $stableBagCount = \count($this->activeBag->getMessages())
-                - \count($this->convertAgentMessages($openBatch));
-        }
+        } catch (\Throwable $exception) {
+            $this->activeBag = $previousBag;
+            $this->activeTargetModel = $previousTargetModel;
+            $this->activeSourceMessages = $previousSource;
+            $this->idMap = $previousIdMap;
+            $this->usedIds = $previousUsedIds;
+            $this->imageReadability = $previousImageReadability;
 
-        $this->activeTargetModel = $targetModel;
-        $this->activeSourceMessages = $agentMessages;
-        $this->imageReadability = array_map(
-            $this->imageReadabilityForMessage(...),
-            $agentMessages,
-        );
-        $this->incompleteToolBatchStart = $incompleteStart;
-        $this->incompleteToolBatchStableBagCount = $stableBagCount;
+            throw $exception;
+        }
     }
 
     /**
@@ -271,23 +271,22 @@ final class AgentMessageConverter
     }
 
     /**
-     * When the active AgentMessage list ends inside a consecutive tool-result
-     * batch, return the start index of that trailing incomplete batch so append
-     * can rebuild only that region. Synthetic image UserMessages are deferred
-     * until the tool batch closes, so an open trailing batch cannot keep its
-     * Symfony messages as-is when later tool results arrive.
+     * When the active source ends inside a consecutive tool-result batch,
+     * return that batch's start index. Synthetic image UserMessages are
+     * deferred until the tool batch closes, so later tool results must rebuild
+     * only this trailing region.
      *
-     * @param list<AgentMessage> $convertedMessages
+     * @param list<AgentMessage> $messages
      */
-    private function trailingIncompleteToolBatchStart(array $convertedMessages): ?int
+    private function trailingOpenToolBatchStart(array $messages): ?int
     {
-        $count = \count($convertedMessages);
-        if (0 === $count || 'tool' !== $convertedMessages[$count - 1]->role) {
+        $count = \count($messages);
+        if (0 === $count || 'tool' !== $messages[$count - 1]->role) {
             return null;
         }
 
         $start = $count - 1;
-        while ($start > 0 && 'tool' === $convertedMessages[$start - 1]->role) {
+        while ($start > 0 && 'tool' === $messages[$start - 1]->role) {
             --$start;
         }
 

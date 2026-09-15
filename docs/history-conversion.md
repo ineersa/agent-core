@@ -14,9 +14,9 @@ provider boundary after the current session model is resolved.
 `ConversationHistoryConversion` remains a small request-time policy helper for
 IDs, thinking, and native-item metadata. Each LLM worker keeps one active
 `MessageBag` and the target model it was built for. Exact same-target contexts
-reuse that bag. Appends convert only new messages and keep tool-call ID maps. If
-a previous turn ended mid tool-result batch, only that trailing batch is rebuilt
-so synthetic image ordering stays correct. Model changes, compaction, history
+reuse that bag. Appends convert only new messages and keep tool-call ID maps.
+Open trailing tool-result batches are rebuilt only when an append continues
+them, so closed turns skip that bookkeeping. Model changes, compaction, history
 edits, and non-prefix contexts rebuild. Generic `toMessageBag()` callers always
 receive a fresh bag and do not touch the active bag. Current request shapers
 rebuild messages rather than mutating the supplied bag. `Image::fromFile`
