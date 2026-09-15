@@ -9,12 +9,12 @@ use Symfony\AI\Platform\Platform;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 /**
- * Creates the single multi-provider Symfony AI Platform from Hatfield settings.
+ * Creates the Symfony AI Platform from Hatfield settings.
  *
- * This factory wires together all enabled Hatfield providers into one
- * Platform instance, including the Symfony event dispatcher so that
- * {@see ModelRoutingEvent}, {@see InvocationEvent}, and {@see ResultEvent}
- * fire correctly.
+ * Default construction wires every enabled provider into one Platform.
+ * Extension-agent calls with an explicit HTTP budget can request a
+ * single-provider Platform that applies those budgets via
+ * {@see SymfonyAiProviderFactory::createProvider()}.
  *
  * The returned Platform is used as the concrete implementation behind
  * {@see Symfony\AI\Platform\PlatformInterface} in the DI container.
@@ -42,6 +42,32 @@ final class ConfiguredSymfonyAiPlatformFactory
 
         return new Platform(
             providers: array_values($providers),
+            modelRouter: new CatalogBasedModelRouter(),
+            eventDispatcher: $this->eventDispatcher,
+        );
+    }
+
+    /**
+     * Create a single-provider Platform with explicit HTTP timeout budgets.
+     *
+     * Both idle timeout and total max_duration are set to $budgetSeconds for
+     * every HTTP request made through this Platform.
+     *
+     * @throws \RuntimeException when the provider is missing or disabled
+     */
+    public function createPlatformForProvider(string $providerId, int $budgetSeconds): Platform
+    {
+        if ($budgetSeconds < 1) {
+            throw new \InvalidArgumentException('Platform HTTP budget must be a positive integer.');
+        }
+
+        $provider = $this->providerFactory->createProvider(
+            $providerId,
+            $budgetSeconds,
+        );
+
+        return new Platform(
+            providers: [$provider],
             modelRouter: new CatalogBasedModelRouter(),
             eventDispatcher: $this->eventDispatcher,
         );

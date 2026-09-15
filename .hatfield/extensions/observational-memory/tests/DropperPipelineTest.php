@@ -6,6 +6,7 @@ namespace Ineersa\HatfieldExt\ObservationalMemory\Tests;
 
 use Ineersa\HatfieldExt\ObservationalMemory\Compaction\DropObservationsToolHandler;
 use Ineersa\HatfieldExt\ObservationalMemory\Compaction\DropperPipeline;
+use Ineersa\HatfieldExt\ObservationalMemory\Compaction\RequestLocalObservationIdMap;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -68,18 +69,22 @@ final class DropperPipelineTest extends TestCase
     public function testToolAccumulatesWithoutDeletingAndUnknownIdsIgnored(): void
     {
         $handler = new DropObservationsToolHandler(
-            allowedObservationIds: ['a' => true, 'b' => true, 'c' => true],
+            observationIdMap: RequestLocalObservationIdMap::forObservations([
+                ['observation_id' => 'a', 'timestamp' => '2020-01-01 00:00'],
+                ['observation_id' => 'b', 'timestamp' => '2021-01-01 00:00'],
+                ['observation_id' => 'c', 'timestamp' => '2022-01-01 00:00'],
+            ]),
             maxDropsAllowed: 2,
         );
 
-        $r1 = $handler(['ids' => ['a', 'missing', 'a', 'b'], 'reason' => 'optional']);
+        $r1 = $handler(['ids' => ['1', 'missing', '1', '2'], 'reason' => 'optional']);
         $this->assertSame('accepted', $r1['status']);
         $this->assertSame(2, $r1['added']);
         $this->assertSame(1, $r1['missing']);
         $this->assertSame(1, $r1['duplicate_in_request']);
         $this->assertSame(['a', 'b'], $handler->proposedIds());
 
-        $r2 = $handler(['ids' => ['b', 'c']]);
+        $r2 = $handler(['ids' => ['2', '3']]);
         $this->assertSame(1, $r2['added']);
         $this->assertSame(1, $r2['duplicate_in_run']);
         $this->assertSame(['a', 'b', 'c'], $handler->proposedIds());

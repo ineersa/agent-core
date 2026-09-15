@@ -71,18 +71,15 @@ final class DropperPipeline
             return [];
         }
 
-        $allowed = [];
-        foreach ($activeObservations as $observation) {
-            $allowed[$observation['observation_id']] = true;
-        }
-
-        $toolHandler = new DropObservationsToolHandler($allowed, $maxDropsAllowed);
+        $observationIdMap = RequestLocalObservationIdMap::forObservations($activeObservations);
+        $toolHandler = new DropObservationsToolHandler($observationIdMap, $maxDropsAllowed);
         $input = $this->buildUserInput(
             $reflectionsForCoverage,
             $activeObservations,
             $observationTokens,
             $targetTokens,
             $maxDropsAllowed,
+            $observationIdMap,
         );
 
         $api->agent()->run(new AgentCallRequestDTO(
@@ -116,6 +113,8 @@ final class DropperPipeline
             ],
             correlationId: $jobId ?? $correlationId,
             maxToolCalls: OmSettings::DEFAULT_AGENT_MAX_TOOL_CALLS,
+            maxDurationSeconds: OmSettings::AGENT_HTTP_MAX_DURATION_SECONDS,
+            thinkingLevel: 'off',
         ));
 
         $selected = self::selectDropCandidates(
@@ -261,6 +260,7 @@ final class DropperPipeline
         int $observationTokens,
         int $targetTokens,
         int $maxDropsAllowed,
+        RequestLocalObservationIdMap $observationIdMap,
     ): string {
         $supportCounts = [];
         foreach ($reflections as $reflection) {
@@ -300,9 +300,13 @@ final class DropperPipeline
                     1 === $count => 'partial',
                     default => 'none',
                 };
+                $displayId = $observationIdMap->localId($observation['observation_id']);
+                if (null === $displayId) {
+                    throw new \RuntimeException('Missing request-local observation id for '.$observation['observation_id']);
+                }
                 $lines[] = \sprintf(
                     '[%s] %s [%s] [coverage: %s] %s',
-                    $observation['observation_id'],
+                    $displayId,
                     $observation['timestamp'],
                     $observation['relevance'],
                     $tier,
