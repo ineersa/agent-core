@@ -96,8 +96,9 @@ final class AgentMessageConverter
      * When the previous active source ended mid consecutive tool-result batch,
      * append rebuilds only that trailing open batch plus the suffix so deferred
      * synthetic image UserMessages keep correct ordering. Closed turns skip that
-     * path entirely. Returns the active bag itself; current request shapers
-     * rebuild messages rather than mutating the supplied bag.
+     * path entirely. Ordinary appends keep bag identity via MessageBag::add(). Open trailing
+     * tool-image batches may rebuild the deferred tail. Current request
+     * shapers rebuild messages rather than mutating the supplied bag.
      *
      * @param list<AgentMessage> $agentMessages
      */
@@ -196,78 +197,63 @@ final class AgentMessageConverter
         \assert(null !== $this->activeBag);
 
         $previousCount = \count($this->activeSourceMessages);
-        $previousSource = $this->activeSourceMessages;
-        $previousBag = $this->activeBag;
-        $previousTargetModel = $this->activeTargetModel;
-        $previousIdMap = $this->idMap;
-        $previousUsedIds = $this->usedIds;
-        $previousImageReadability = $this->imageReadability;
+        $suffixSource = \array_slice($agentMessages, $previousCount);
+        $openBatchStart = $this->trailingOpenToolBatchStart($this->activeSourceMessages);
 
-        // Work on maps/bag copies until append finishes so a failure cannot
-        // leave a half-updated active bag that would duplicate messages on retry.
-        $idMap = $previousIdMap;
-        $usedIds = $previousUsedIds;
+        // Fallible work first: convert + prepare Symfony messages, then mutate
+        // active state only with bag->add / assignment of already-built values.
+        $idMap = $this->idMap;
+        $usedIds = $this->usedIds;
+        $imageReadability = array_map(
+            $this->imageReadabilityForMessage(...),
+            $agentMessages,
+        );
 
-        try {
-            $suffixSource = \array_slice($agentMessages, $previousCount);
-            $openBatchStart = $this->trailingOpenToolBatchStart($previousSource);
+        if (null === $openBatchStart) {
+            $suffixConverted = $this->historyConversion->convertMessages(
+                $suffixSource,
+                $targetModel,
+                $idMap,
+                $usedIds,
+            );
+            $newMessages = $this->convertAgentMessages($suffixConverted);
 
-            if (null === $openBatchStart) {
-                $suffixConverted = $this->historyConversion->convertMessages(
-                    $suffixSource,
-                    $targetModel,
-                    $idMap,
-                    $usedIds,
-                );
-                $bag = new MessageBag(...$previousBag->getMessages());
-                $this->appendConvertedMessages($bag, $suffixConverted);
-            } else {
-                // Continue an open trailing tool batch: drop already-emitted
-                // Symfony messages for that batch, then convert the open batch
-                // plus the new suffix once. Count bag messages produced by the
-                // open-batch tool outputs alone; do not scan the stable prefix.
-                $openBatchToolOutputs = \array_slice($previousSource, $openBatchStart);
-                $stableBagCount = \count($previousBag->getMessages())
-                    - \count($this->convertAgentMessages($openBatchToolOutputs));
-                $rebuildConverted = $this->historyConversion->convertMessages(
-                    array_merge($openBatchToolOutputs, $suffixSource),
-                    $targetModel,
-                    $idMap,
-                    $usedIds,
-                );
-                $bag = new MessageBag(...\array_slice($previousBag->getMessages(), 0, $stableBagCount));
-                $this->appendConvertedMessages($bag, $rebuildConverted);
+            foreach ($newMessages as $message) {
+                $this->activeBag->add($message);
             }
 
-            $this->activeBag = $bag;
-            $this->activeTargetModel = $targetModel;
-            $this->activeSourceMessages = $agentMessages;
             $this->idMap = $idMap;
             $this->usedIds = $usedIds;
-            $this->imageReadability = array_map(
-                $this->imageReadabilityForMessage(...),
-                $agentMessages,
-            );
-        } catch (\Throwable $exception) {
-            $this->activeBag = $previousBag;
-            $this->activeTargetModel = $previousTargetModel;
-            $this->activeSourceMessages = $previousSource;
-            $this->idMap = $previousIdMap;
-            $this->usedIds = $previousUsedIds;
-            $this->imageReadability = $previousImageReadability;
+            $this->activeSourceMessages = $agentMessages;
+            $this->imageReadability = $imageReadability;
+            $this->activeTargetModel = $targetModel;
 
-            throw $exception;
+            return;
         }
-    }
 
-    /**
-     * @param list<AgentMessage> $convertedMessages
-     */
-    private function appendConvertedMessages(MessageBag $bag, array $convertedMessages): void
-    {
-        foreach ($this->convertAgentMessages($convertedMessages) as $message) {
+        // Continuing an open trailing tool-image batch requires rebuilding the
+        // deferred synthetic image region. Keep the stable prefix instances.
+        $openBatchToolOutputs = \array_slice($this->activeSourceMessages, $openBatchStart);
+        $stableBagCount = \count($this->activeBag->getMessages())
+            - \count($this->convertAgentMessages($openBatchToolOutputs));
+        $rebuildConverted = $this->historyConversion->convertMessages(
+            array_merge($openBatchToolOutputs, $suffixSource),
+            $targetModel,
+            $idMap,
+            $usedIds,
+        );
+        $rebuiltTail = $this->convertAgentMessages($rebuildConverted);
+        $bag = new MessageBag(...\array_slice($this->activeBag->getMessages(), 0, $stableBagCount));
+        foreach ($rebuiltTail as $message) {
             $bag->add($message);
         }
+
+        $this->activeBag = $bag;
+        $this->idMap = $idMap;
+        $this->usedIds = $usedIds;
+        $this->activeSourceMessages = $agentMessages;
+        $this->imageReadability = $imageReadability;
+        $this->activeTargetModel = $targetModel;
     }
 
     /**
