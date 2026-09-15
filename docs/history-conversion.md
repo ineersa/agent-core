@@ -17,8 +17,10 @@ only the new suffix onto a cloned bag and keep tool-call ID maps. If a previous
 turn ended mid tool-result batch, only that trailing batch is rebuilt so synthetic
 image ordering stays correct. Model changes, compaction, history edits, and
 non-prefix contexts rebuild. Returned `MessageBag` instances are clones so later
-request shaping cannot mutate the retained projection. Cached `Image::fromFile`
-closures reread bytes at serialization; rebuild when `image_ref` content changes.
+request shaping gets a bag structural copy. Message objects are treated as
+immutable after creation. Cached `Image::fromFile` closures reread bytes at
+serialization; the projection rebuilds when an `image_ref` path becomes
+unreadable or readable again so placeholders and restored attachments stay correct.
 Canonical events stay immutable and no shared database cache is used.
 
 Source identity for conversion comes from `llm_step_completed.model` during

@@ -96,7 +96,7 @@ final readonly class ConfiguredModelAgentRunner implements AgentRunnerInterface
         $cancelToken = new NullCancellationToken();
         $resolvedModel = $this->modelResolver->resolve(
             $request->model,
-            $messages,
+            [] !== $messages->withoutSystemMessage()->getMessages(),
             $invocationInput,
             new ModelResolutionOptions(),
         );

@@ -108,11 +108,11 @@ final class PlatformIntegrationTest extends TestCase
         $modelResolver = new class implements ModelResolverInterface {
             public function resolve(
                 string $defaultModel,
-                \Symfony\AI\Platform\Message\MessageBag $messages,
+                bool $hasConversationMessages,
                 ModelInvocationInput $input,
                 ModelResolutionOptions $options,
             ): ResolvedModel {
-                unset($messages, $input, $options);
+                unset($hasConversationMessages, $input, $options);
 
                 return new ResolvedModel(model: $defaultModel.'-resolved', providerOptions: ['max_tokens' => 64]);
             }
@@ -298,11 +298,11 @@ final class PlatformIntegrationTest extends TestCase
         $modelResolver = new class implements ModelResolverInterface {
             public function resolve(
                 string $defaultModel,
-                \Symfony\AI\Platform\Message\MessageBag $messages,
+                bool $hasConversationMessages,
                 ModelInvocationInput $input,
                 ModelResolutionOptions $options,
             ): ResolvedModel {
-                unset($defaultModel, $messages, $input, $options);
+                unset($defaultModel, $hasConversationMessages, $input, $options);
 
                 return new ResolvedModel(model: 'test/priced-model');
             }

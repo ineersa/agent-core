@@ -14,15 +14,18 @@ use Symfony\AI\Platform\Message\MessageBag;
  * for the outgoing provider request only.
  *
  * Worker-local projection cache: one retained context per process. Exact source
- * context + target model reuse the previous MessageBag (cloned for mutation
- * safety). Pure appends convert only the suffix and append Symfony messages onto
- * a cloned bag. If the cached bag ended mid tool-result batch, only that trailing
+ * context + target model reuse a shallow clone of the previous MessageBag
+ * (bag structural copy). Message objects are treated as immutable after
+ * creation; callers must not mutate returned message contents in place.
+ * Pure appends convert only the suffix and append Symfony messages onto a
+ * cloned bag. If the cached bag ended mid tool-result batch, only that trailing
  * incomplete batch is rebuilt so synthetic image ordering stays correct.
  * Model changes, compaction, history edits, and non-prefix contexts invalidate.
  *
- * Cached Image::fromFile closures reread bytes at serialization time. Missing
- * files after cache creation still fail later; rebuild when image_ref content
- * changes. No shared database cache is used.
+ * Cached Image::fromFile closures reread bytes at serialization. When an
+ * image_ref path becomes unreadable or readable again, the projection rebuilds
+ * so placeholder degradation and restored attachments stay correct. No shared
+ * database cache is used.
  *
  * Intentionally does not implement ResetInterface so Messenger service resets
  * leave the disposable projection intact across ExecuteLlmStep messages.
@@ -38,7 +41,10 @@ final class ConversationHistoryConversion
      *     converted_messages: list<AgentMessage>,
      *     message_bag: MessageBag,
      *     id_map: array<string, string>,
-     *     used_ids: array<string, true>
+     *     used_ids: array<string, true>,
+     *     incomplete_tool_batch_start: ?int,
+     *     incomplete_tool_batch_stable_bag_count: ?int,
+     *     image_readability: list<array<string, bool>>
      * }|null
      */
     private ?array $cache = null;
@@ -62,6 +68,7 @@ final class ConversationHistoryConversion
         if (null !== $this->cache
             && $this->cache['target_model'] === $targetModel
             && $this->isExactPrefix($this->cache['source_messages'], $agentMessages)
+            && $this->imageReadabilityMatchesPrefix($agentMessages)
         ) {
             $cachedCount = \count($this->cache['source_messages']);
             if ($cachedCount === \count($agentMessages)) {
@@ -82,12 +89,21 @@ final class ConversationHistoryConversion
         $idMap = [];
         $usedIds = [];
         $converted = [];
+        $imageReadability = [];
 
         foreach ($agentMessages as $message) {
             $converted[] = $this->convertMessage($message, $targetModel, $idMap, $usedIds);
+            $imageReadability[] = $this->imageReadabilityForMessage($message);
         }
 
         $bag = $this->messageConverter->toMessageBag($converted);
+        $incompleteStart = $this->trailingIncompleteToolBatchStart($converted);
+        $stableBagCount = null;
+        if (null !== $incompleteStart) {
+            $stablePrefix = \array_slice($converted, 0, $incompleteStart);
+            $stableBagCount = \count($this->messageConverter->convertAgentMessages($stablePrefix));
+        }
+
         $this->cache = [
             'target_model' => $targetModel,
             'source_messages' => $agentMessages,
@@ -95,6 +111,9 @@ final class ConversationHistoryConversion
             'message_bag' => $bag,
             'id_map' => $idMap,
             'used_ids' => $usedIds,
+            'incomplete_tool_batch_start' => $incompleteStart,
+            'incomplete_tool_batch_stable_bag_count' => $stableBagCount,
+            'image_readability' => $imageReadability,
         ];
 
         return clone $bag;
@@ -111,6 +130,7 @@ final class ConversationHistoryConversion
         $idMap = $this->cache['id_map'];
         $usedIds = $this->cache['used_ids'];
         $converted = $this->cache['converted_messages'];
+        $imageReadability = $this->cache['image_readability'];
         $suffixSource = \array_slice($agentMessages, $cachedCount);
         $suffixConverted = [];
 
@@ -118,13 +138,13 @@ final class ConversationHistoryConversion
             $convertedMessage = $this->convertMessage($message, $targetModel, $idMap, $usedIds);
             $converted[] = $convertedMessage;
             $suffixConverted[] = $convertedMessage;
+            $imageReadability[] = $this->imageReadabilityForMessage($message);
         }
 
         $bag = clone $this->cache['message_bag'];
-        $rebuildFrom = $this->trailingIncompleteToolBatchStart($this->cache['converted_messages']);
+        $rebuildFrom = $this->cache['incomplete_tool_batch_start'];
         if (null !== $rebuildFrom) {
-            $stablePrefix = \array_slice($this->cache['converted_messages'], 0, $rebuildFrom);
-            $stableCount = \count($this->messageConverter->convertAgentMessages($stablePrefix));
+            $stableCount = $this->cache['incomplete_tool_batch_stable_bag_count'] ?? 0;
             $bag = new MessageBag(...\array_slice($bag->getMessages(), 0, $stableCount));
             $rebuildConverted = array_merge(
                 \array_slice($this->cache['converted_messages'], $rebuildFrom),
@@ -135,6 +155,14 @@ final class ConversationHistoryConversion
             $this->appendConvertedMessages($bag, $suffixConverted);
         }
 
+        $incompleteStart = $this->trailingIncompleteToolBatchStart($converted);
+        $stableBagCount = null;
+        if (null !== $incompleteStart) {
+            // Count only the stable prefix once when caching an open tool batch.
+            $stablePrefix = \array_slice($converted, 0, $incompleteStart);
+            $stableBagCount = \count($this->messageConverter->convertAgentMessages($stablePrefix));
+        }
+
         $this->cache = [
             'target_model' => $targetModel,
             'source_messages' => $agentMessages,
@@ -142,6 +170,9 @@ final class ConversationHistoryConversion
             'message_bag' => $bag,
             'id_map' => $idMap,
             'used_ids' => $usedIds,
+            'incomplete_tool_batch_start' => $incompleteStart,
+            'incomplete_tool_batch_stable_bag_count' => $stableBagCount,
+            'image_readability' => $imageReadability,
         ];
 
         return clone $bag;
@@ -158,10 +189,6 @@ final class ConversationHistoryConversion
     }
 
     /**
-     * When the cached AgentMessage list ends inside a consecutive tool-result
-     * batch, return the start index of that incomplete batch so append can
-     * rebuild only that trailing region.
-     *
      * @param list<AgentMessage> $convertedMessages
      */
     private function trailingIncompleteToolBatchStart(array $convertedMessages): ?int
@@ -197,6 +224,46 @@ final class ConversationHistoryConversion
         }
 
         return true;
+    }
+
+    /**
+     * @param list<AgentMessage> $agentMessages
+     */
+    private function imageReadabilityMatchesPrefix(array $agentMessages): bool
+    {
+        \assert(null !== $this->cache);
+
+        $cached = $this->cache['image_readability'];
+        $prefixCount = \count($cached);
+        for ($i = 0; $i < $prefixCount; ++$i) {
+            if ($cached[$i] !== $this->imageReadabilityForMessage($agentMessages[$i])) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * @return array<string, bool>
+     */
+    private function imageReadabilityForMessage(AgentMessage $message): array
+    {
+        $readability = [];
+        foreach ($message->content as $part) {
+            if (!\is_array($part) || 'image_ref' !== ($part['type'] ?? null)) {
+                continue;
+            }
+
+            $path = $part['path'] ?? null;
+            if (!\is_string($path) || '' === $path) {
+                continue;
+            }
+
+            $readability[$path] = is_file($path) && is_readable($path);
+        }
+
+        return $readability;
     }
 
     private function messagesEqual(AgentMessage $left, AgentMessage $right): bool
@@ -246,18 +313,11 @@ final class ConversationHistoryConversion
         return $message;
     }
 
-    /**
-     * Exact qualified identity only. Do not strip provider prefixes.
-     */
     private function isExactQualifiedMatch(?string $sourceModel, string $targetModel): bool
     {
         return \is_string($sourceModel) && '' !== $sourceModel && $sourceModel === $targetModel;
     }
 
-    /**
-     * Source identity comes from request-local metadata populated on replay
-     * from llm_step_completed.model (not a duplicated stored assistant field).
-     */
     private function sourceModelFromMessage(AgentMessage $message): ?string
     {
         $sourceModel = $message->metadata['source_model'] ?? null;
@@ -373,7 +433,6 @@ final class ConversationHistoryConversion
             return $message;
         }
 
-        // Tool results inherit remapping from earlier assistant tool calls.
         if (!isset($idMap[$toolCallId])) {
             return $message;
         }
@@ -409,7 +468,6 @@ final class ConversationHistoryConversion
             return $idMap[$originalId];
         }
 
-        // Generic chat completions: bounded, collision-safe IDs.
         $candidate = $this->sanitizeCompletionsToolCallId($originalId);
         $suffix = 0;
         while (isset($usedIds[$candidate])) {

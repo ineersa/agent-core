@@ -7,6 +7,7 @@ namespace Ineersa\AgentCore\Tests\Infrastructure\SymfonyAi;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\ConversationHistoryConversion;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\Group;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexModel;
@@ -315,8 +316,8 @@ final class ConversationHistoryConversionTest extends IsolatedKernelTestCase
 
     public function testAppendRebuildsOnlyTrailingIncompleteToolBatch(): void
     {
-        $tmp = sys_get_temp_dir().'/hatfield-history-conversion-'.bin2hex(random_bytes(4));
-        mkdir($tmp);
+        $tmp = TestDirectoryIsolation::createProjectTempDir('history-conversion');
+
         $imagePath = $tmp.'/pixel.png';
         file_put_contents(
             $imagePath,
@@ -384,8 +385,7 @@ final class ConversationHistoryConversionTest extends IsolatedKernelTestCase
             $this->assertTrue($second->getMessages()[6]->hasImageContent());
             $this->assertSame('done', $second->getMessages()[7]->asText());
         } finally {
-            @unlink($imagePath);
-            @rmdir($tmp);
+            TestDirectoryIsolation::removeDirectory($tmp);
         }
     }
 
@@ -433,8 +433,8 @@ final class ConversationHistoryConversionTest extends IsolatedKernelTestCase
 
     public function testAppendPreservesSyntheticImageOrderingAcrossToolBatch(): void
     {
-        $tmp = sys_get_temp_dir().'/hatfield-history-conversion-'.bin2hex(random_bytes(4));
-        mkdir($tmp);
+        $tmp = TestDirectoryIsolation::createProjectTempDir('history-conversion');
+
         $imagePath = $tmp.'/pixel.png';
         file_put_contents(
             $imagePath,
@@ -505,8 +505,121 @@ final class ConversationHistoryConversionTest extends IsolatedKernelTestCase
             $this->assertInstanceOf(UserMessage::class, $messages[5]);
             $this->assertSame('done', $messages[5]->asText());
         } finally {
-            @unlink($imagePath);
-            @rmdir($tmp);
+            TestDirectoryIsolation::removeDirectory($tmp);
+        }
+    }
+
+    public function testDeletedImageRefRebuildsToPlaceholderAndRestoredImageRefRebuildsAttachment(): void
+    {
+        $tmp = TestDirectoryIsolation::createProjectTempDir('history-conversion-image');
+        $imagePath = $tmp.'/pixel.png';
+        file_put_contents(
+            $imagePath,
+            base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', true),
+        );
+
+        try {
+            $messages = [
+                new AgentMessage(
+                    role: 'assistant',
+                    content: [],
+                    metadata: [
+                        'source_model' => 'vision/model',
+                        'tool_calls' => [['id' => 'call_img', 'name' => 'view_image', 'arguments' => []]],
+                    ],
+                ),
+                new AgentMessage(
+                    role: 'tool',
+                    content: [
+                        ['type' => 'text', 'text' => 'img'],
+                        ['type' => 'image_ref', 'path' => $imagePath, 'media_type' => 'image/png', 'bytes' => 68, 'width' => 1, 'height' => 1],
+                    ],
+                    toolCallId: 'call_img',
+                    toolName: 'view_image',
+                ),
+            ];
+
+            $readable = $this->conversion->toMessageBagForTarget($messages, 'vision/model');
+            $this->assertTrue($readable->getMessages()[2]->hasImageContent());
+
+            unlink($imagePath);
+            $missing = $this->conversion->toMessageBagForTarget($messages, 'vision/model');
+            $this->assertFalse($missing->getMessages()[2]->hasImageContent());
+            $this->assertStringContainsString('Tool result image for view_image', (string) $missing->getMessages()[2]->asText());
+
+            file_put_contents(
+                $imagePath,
+                base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', true),
+            );
+            $restored = $this->conversion->toMessageBagForTarget($messages, 'vision/model');
+            $this->assertTrue($restored->getMessages()[2]->hasImageContent());
+        } finally {
+            TestDirectoryIsolation::removeDirectory($tmp);
+        }
+    }
+
+    public function testAppendDoesNotReconvertStablePrefixWhenCompletingToolBatch(): void
+    {
+        $tmp = TestDirectoryIsolation::createProjectTempDir('history-conversion-boundary');
+        $imagePath = $tmp.'/pixel.png';
+        file_put_contents(
+            $imagePath,
+            base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', true),
+        );
+
+        try {
+            $stable = [
+                new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'start']]),
+                new AgentMessage(
+                    role: 'assistant',
+                    content: [['type' => 'text', 'text' => 'stable']],
+                    metadata: ['source_model' => 'vision/model'],
+                ),
+            ];
+            $openBatch = [
+                ...$stable,
+                new AgentMessage(
+                    role: 'assistant',
+                    content: [],
+                    metadata: [
+                        'source_model' => 'vision/model',
+                        'tool_calls' => [
+                            ['id' => 'call_a', 'name' => 'view_image', 'arguments' => []],
+                            ['id' => 'call_b', 'name' => 'view_image', 'arguments' => []],
+                        ],
+                    ],
+                ),
+                new AgentMessage(
+                    role: 'tool',
+                    content: [
+                        ['type' => 'text', 'text' => 'a'],
+                        ['type' => 'image_ref', 'path' => $imagePath, 'media_type' => 'image/png', 'bytes' => 68, 'width' => 1, 'height' => 1],
+                    ],
+                    toolCallId: 'call_a',
+                    toolName: 'view_image',
+                ),
+            ];
+            $first = $this->conversion->toMessageBagForTarget($openBatch, 'vision/model');
+            $stableUser = $first->getMessages()[0];
+            $stableAssistant = $first->getMessages()[1];
+
+            $completed = [
+                ...$openBatch,
+                new AgentMessage(
+                    role: 'tool',
+                    content: [
+                        ['type' => 'text', 'text' => 'b'],
+                        ['type' => 'image_ref', 'path' => $imagePath, 'media_type' => 'image/png', 'bytes' => 68, 'width' => 1, 'height' => 1],
+                    ],
+                    toolCallId: 'call_b',
+                    toolName: 'view_image',
+                ),
+            ];
+            $second = $this->conversion->toMessageBagForTarget($completed, 'vision/model');
+            $this->assertSame($stableUser, $second->getMessages()[0]);
+            $this->assertSame($stableAssistant, $second->getMessages()[1]);
+        } finally {
+            TestDirectoryIsolation::removeDirectory($tmp);
         }
     }
 

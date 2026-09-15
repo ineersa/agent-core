@@ -33,7 +33,6 @@ use Symfony\AI\Platform\Message\AssistantMessage;
 use Symfony\AI\Platform\Message\Content\ContentInterface;
 use Symfony\AI\Platform\Message\Content\Text;
 use Symfony\AI\Platform\Message\Content\Thinking;
-use Symfony\AI\Platform\Message\Message;
 use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\AI\Platform\PlatformInterface as SymfonyPlatformInterface;
 use Symfony\AI\Platform\Result\DeferredResult;
@@ -128,11 +127,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         $resolvedModel = null !== $this->modelResolver
             ? $this->modelResolver->resolve(
                 defaultModel: $request->model,
-                // SessionAwareModelResolver only needs emptiness of non-system
-                // messages for Astra reasoning-baseline claim. Avoid reconstructing
-                // the full conversation bag here; resolution still uses session
-                // metadata and catalog for the actual model.
-                messages: $this->resolutionProbeBag($messages),
+                hasConversationMessages: $this->hasConversationMessages($messages),
                 input: $request->input,
                 options: new ModelResolutionOptions($request->options->extraOptions),
             )
@@ -296,20 +291,19 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
     }
 
     /**
-     * Cheap MessageBag for model resolution: one non-system probe when the
-     * AgentMessage list has any non-system role. Content is not used.
+     * True when any non-system AgentMessage is present.
      *
      * @param list<\Ineersa\AgentCore\Domain\Message\AgentMessage> $messages
      */
-    private function resolutionProbeBag(array $messages): MessageBag
+    private function hasConversationMessages(array $messages): bool
     {
         foreach ($messages as $message) {
             if ('system' !== $message->role) {
-                return new MessageBag(Message::ofUser('resolution-probe'));
+                return true;
             }
         }
 
-        return new MessageBag();
+        return false;
     }
 
     /**
