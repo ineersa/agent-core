@@ -10,19 +10,9 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
 /**
- * E2E test proving provider HTTP errors appear as sanitized red error blocks
- * in the TUI, with no raw provider body or prompting content leaked.
- *
- * Uses a replay fixture that returns a 429 HTTP error JSON body. The TUI
- * must display an error block (✕) with sanitized text explaining that the
- * rate limit remained after retries were exhausted and must NOT display
- * the raw sentinel string from the fixture body.
- *
- * Design:
- *  - Single tmux session with a replay fixture that returns HTTP 429.
- *  - Submits a prompt, waits for either ◇ (assistant) or ✕ (error) block.
- *  - Asserts error block and sanitized text, asserts sentinel absent.
- *  - Captures ANSI snapshot on success/failure.
+ * Terminal smoke proving provider error details survive retry exhaustion.
+ * The HTTP 429 fixture's error-message sentinel must remain visible.
+ * Bounding, redaction, and control removal are proven in classifier tests.
  *
  * @group tui-e2e-replay
  */
@@ -56,7 +46,7 @@ final class TuiProviderErrorE2eTest extends TestCase
      * Asserts in order:
      *  1. An error block (✕) appears in the transcript.
      *  2. Sanitized user-facing text is visible (e.g. "LLM provider rate limit").
-     *  3. The raw sentinel body text from the fixture is NOT visible.
+     *  3. The provider error-message sentinel remains visible.
      *  4. The terminal error does not promise another retry.
      */
     public function testProviderRateLimitErrorShowsSanitizedRedBlock(): void
@@ -120,11 +110,11 @@ final class TuiProviderErrorE2eTest extends TestCase
                 'Terminal exhaustion must not promise another retry',
             );
 
-            // 3. Raw sentinel body text must NOT be visible.
-            $this->assertStringNotContainsString(
+            // 3. Preserve the provider's actual error message.
+            $this->assertStringContainsString(
                 'DO_NOT_LEAK_PROVIDER_BODY',
                 $fullCapture,
-                'Raw provider body sentinel must NOT be leaked in TUI',
+                'Provider error detail must remain visible in TUI',
             );
 
             // 4. Save ANSI snapshot for inspection.

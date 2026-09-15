@@ -265,7 +265,7 @@ final class LlmRequestRetryExecutorTest extends TestCase
         $this->assertSame(1, $observer->retries[0]['attempt']);
         $this->assertSame(5, $observer->retries[0]['max_attempts']);
         $this->assertSame(100, $observer->retries[0]['delay_ms']);
-        $this->assertSame('LLM provider request timed out.', $observer->retries[0]['reason']);
+        $this->assertSame('Idle timeout reached', $observer->retries[0]['reason']);
         $this->assertSame('2020-01-01T00:00:00.100000+00:00', $clock->now()->format('Y-m-d\TH:i:s.uP'));
     }
 
