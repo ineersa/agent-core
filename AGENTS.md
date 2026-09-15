@@ -68,7 +68,7 @@ Do this before proposing a test strategy, adding tests, running Castor tests, or
 
 ## JetBrains IDE tools
 
-When JetBrains IDE integration is available in the active coding agent/runtime, prefer those tools for semantic navigation, references/call hierarchy, diagnostics, and semantic rename/move. Target the exact checkout using that runtime's project-scoping and open-project capability. Fall back to filesystem/`rg`/`find` for docs, generated artifacts, bulk ops, or when IDE tools are unavailable/insufficient. Exact tool names and capabilities come from the active coding agent's system instructions (Pi and Hatfield expose different names).
+Use `code_search` for conceptual discovery and `rg`/`find` for literal text and file searches. Prefer available JetBrains IDE tools for symbol resolution, references, call hierarchy, diagnostics, and semantic refactoring. Target the exact checkout using the active runtime's project-scoping and open-project capability. Use filesystem tools when IDE tools are unavailable or insufficient. Exact tool names and capabilities come from the active coding agent's system instructions.
 
 ## Specification fidelity and minimality
 
@@ -130,7 +130,7 @@ Module-specific Runtime, TUI, and Extension API rules live in their nearest loca
 
 ## Task workflow
 
-External task board (not the code repo): `/home/ineersa/projects/agent-core-tasks` under `TODO/`, `IN-PROGRESS/`, `CODE-REVIEW/`, `DONE/`, `ARCHIVE/`, `CANCELLED/` (`.pi/settings.json` → `taskWorkflow.taskRoot`).
+External task board (not the code repo): `/home/ineersa/projects/agent-core-tasks` under `TODO/`, `IN-PROGRESS/`, `CODE-REVIEW/`, `DONE/`, `ARCHIVE/`, `CANCELLED/`.
 
 By default, `task_list` lists TODO, IN-PROGRESS, CODE-REVIEW, and DONE. Use `status=CANCELLED` to list cancelled tasks. Use `include_archive=true` or `status=ARCHIVE` to list archived tasks.
 
