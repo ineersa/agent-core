@@ -7,6 +7,7 @@ namespace Ineersa\AgentCore\Tests\Infrastructure\SymfonyAi;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ConversationHistoryConversion;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
 use Ineersa\Platform\Bridge\Generic\DurableResultConverter;
@@ -68,6 +69,7 @@ final class DurableFinishReasonPlatformIntegrationTest extends TestCase
         return new LlmPlatformAdapter(
             statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
             messageConverter: new AgentMessageConverter(),
+            historyConversion: new ConversationHistoryConversion(new AgentMessageConverter()),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(
                 new class implements ToolboxInterface {
                     public function execute(ToolCall $toolCall): ToolResult

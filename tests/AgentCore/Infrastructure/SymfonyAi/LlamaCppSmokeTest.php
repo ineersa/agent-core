@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ConversationHistoryConversion;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
 use Ineersa\CodingAgent\Agent\Execution\SessionAwareModelResolver;
@@ -190,6 +191,7 @@ final class LlamaCppSmokeTest extends KernelTestCase
         $adapter = new LlmPlatformAdapter(
             statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
             messageConverter: new AgentMessageConverter(),
+            historyConversion: new ConversationHistoryConversion(new AgentMessageConverter()),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
             platform: $platform,
             transformContextHooks: [],

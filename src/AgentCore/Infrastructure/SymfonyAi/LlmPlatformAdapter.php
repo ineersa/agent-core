@@ -61,6 +61,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
     public function __construct(
         private RunOperationalStatusReaderInterface $statusReader,
         private AgentMessageConverter $messageConverter,
+        private ConversationHistoryConversion $historyConversion,
         private DynamicToolDescriptionProcessor $toolDescriptionProcessor,
         private SymfonyPlatformInterface $platform,
         private iterable $transformContextHooks,
@@ -287,7 +288,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             $resolvedMessageBag = $hook->convertToLlm($messages, $cancelToken, $modelName);
         }
 
-        return $resolvedMessageBag ?? $this->messageConverter->toMessageBagForTarget($messages, $modelName);
+        return $resolvedMessageBag ?? $this->historyConversion->toMessageBagForTarget($messages, $modelName);
     }
 
     /**

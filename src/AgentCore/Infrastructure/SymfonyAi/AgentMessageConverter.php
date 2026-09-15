@@ -83,28 +83,6 @@ final class AgentMessageConverter
     }
 
     /**
-     * Convert request-time history for a target model, then build a MessageBag.
-     *
-     * @param list<AgentMessage> $agentMessages
-     */
-    public function toMessageBagForTarget(array $agentMessages, string $targetModel): MessageBag
-    {
-        return $this->toMessageBag($this->convertHistoryForTarget($agentMessages, $targetModel));
-    }
-
-    /**
-     * Convert request-time history for a target qualified model.
-     *
-     * @param list<AgentMessage> $agentMessages
-     *
-     * @return list<AgentMessage>
-     */
-    public function convertHistoryForTarget(array $agentMessages, string $targetModel): array
-    {
-        return ConversationHistoryConversion::forTarget($agentMessages, $targetModel);
-    }
-
-    /**
      * Convert an AgentMessage into one or more Symfony MessageInterface instances.
      *
      * Most messages produce exactly one Symfony message. Tool messages that

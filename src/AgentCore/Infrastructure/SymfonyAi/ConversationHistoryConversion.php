@@ -5,52 +5,196 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Infrastructure\SymfonyAi;
 
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Symfony\AI\Platform\Message\MessageBag;
 
 /**
  * Request-time conversation history conversion for a target qualified model.
  *
- * Canonical stored events are never rewritten. This helper returns replacement
- * AgentMessage instances for the outgoing request only.
+ * Canonical stored events are never rewritten. This service returns a MessageBag
+ * for the outgoing provider request only.
+ *
+ * Worker-local projection cache: one retained context per process. Exact source
+ * context + target model reuse the previous MessageBag (cloned for mutation
+ * safety). Pure appends convert only the suffix and rebuild the bag from the
+ * full converted AgentMessage list so synthetic image ordering stays correct.
+ * Model changes, compaction, history edits, and non-prefix contexts invalidate.
+ *
+ * Intentionally does not implement ResetInterface so Messenger service resets
+ * leave the disposable projection intact across ExecuteLlmStep messages.
  */
 final class ConversationHistoryConversion
 {
     public const string METADATA_PRESERVE_NATIVE_ITEM_IDS = 'preserve_native_item_ids';
 
     /**
-     * @param list<AgentMessage> $agentMessages
-     *
-     * @return list<AgentMessage>
+     * @var array{
+     *     target_model: string,
+     *     source_messages: list<AgentMessage>,
+     *     converted_messages: list<AgentMessage>,
+     *     message_bag: MessageBag,
+     *     id_map: array<string, string>,
+     *     used_ids: array<string, true>
+     * }|null
      */
-    public static function forTarget(array $agentMessages, string $targetModel): array
+    private ?array $cache = null;
+
+    public function __construct(
+        private readonly AgentMessageConverter $messageConverter,
+    ) {
+    }
+
+    /**
+     * Convert request-time history for a target model, then build a MessageBag.
+     *
+     * @param list<AgentMessage> $agentMessages
+     */
+    public function toMessageBagForTarget(array $agentMessages, string $targetModel): MessageBag
     {
         if ('' === $targetModel) {
-            return $agentMessages;
+            return $this->messageConverter->toMessageBag($agentMessages);
         }
 
+        if (null !== $this->cache
+            && $this->cache['target_model'] === $targetModel
+            && $this->isExactPrefix($this->cache['source_messages'], $agentMessages)
+        ) {
+            $cachedCount = \count($this->cache['source_messages']);
+            if ($cachedCount === \count($agentMessages)) {
+                return clone $this->cache['message_bag'];
+            }
+
+            return $this->appendProjection($agentMessages, $targetModel);
+        }
+
+        return $this->rebuildProjection($agentMessages, $targetModel);
+    }
+
+    /**
+     * @param list<AgentMessage> $agentMessages
+     */
+    private function rebuildProjection(array $agentMessages, string $targetModel): MessageBag
+    {
         $idMap = [];
+        $usedIds = [];
         $converted = [];
 
         foreach ($agentMessages as $message) {
-            if ('assistant' === $message->role) {
-                $converted[] = self::convertAssistant($message, $targetModel, $idMap);
-                continue;
-            }
-
-            if ('tool' === $message->role) {
-                $converted[] = self::convertTool($message, $idMap);
-                continue;
-            }
-
-            $converted[] = $message;
+            $converted[] = $this->convertMessage($message, $targetModel, $idMap, $usedIds);
         }
 
-        return $converted;
+        $bag = $this->messageConverter->toMessageBag($converted);
+        $this->cache = [
+            'target_model' => $targetModel,
+            'source_messages' => $agentMessages,
+            'converted_messages' => $converted,
+            'message_bag' => $bag,
+            'id_map' => $idMap,
+            'used_ids' => $usedIds,
+        ];
+
+        return clone $bag;
+    }
+
+    /**
+     * @param list<AgentMessage> $agentMessages
+     */
+    private function appendProjection(array $agentMessages, string $targetModel): MessageBag
+    {
+        \assert(null !== $this->cache);
+
+        $cachedCount = \count($this->cache['source_messages']);
+        $idMap = $this->cache['id_map'];
+        $usedIds = $this->cache['used_ids'];
+        $converted = $this->cache['converted_messages'];
+
+        foreach (\array_slice($agentMessages, $cachedCount) as $message) {
+            $converted[] = $this->convertMessage($message, $targetModel, $idMap, $usedIds);
+        }
+
+        $bag = $this->messageConverter->toMessageBag($converted);
+        $this->cache = [
+            'target_model' => $targetModel,
+            'source_messages' => $agentMessages,
+            'converted_messages' => $converted,
+            'message_bag' => $bag,
+            'id_map' => $idMap,
+            'used_ids' => $usedIds,
+        ];
+
+        return clone $bag;
+    }
+
+    /**
+     * @param list<AgentMessage> $prefix
+     * @param list<AgentMessage> $messages
+     */
+    private function isExactPrefix(array $prefix, array $messages): bool
+    {
+        $prefixCount = \count($prefix);
+        if ($prefixCount > \count($messages)) {
+            return false;
+        }
+
+        for ($i = 0; $i < $prefixCount; ++$i) {
+            if (!$this->messagesEqual($prefix[$i], $messages[$i])) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function messagesEqual(AgentMessage $left, AgentMessage $right): bool
+    {
+        return $left->role === $right->role
+            && $left->content === $right->content
+            && $left->name === $right->name
+            && $left->toolCallId === $right->toolCallId
+            && $left->toolName === $right->toolName
+            && $left->details === $right->details
+            && $left->isError === $right->isError
+            && $left->metadata === $right->metadata
+            && $this->timestampsEqual($left->timestamp, $right->timestamp);
+    }
+
+    private function timestampsEqual(?\DateTimeImmutable $left, ?\DateTimeImmutable $right): bool
+    {
+        if ($left === $right) {
+            return true;
+        }
+
+        if (null === $left || null === $right) {
+            return false;
+        }
+
+        return $left == $right;
+    }
+
+    /**
+     * @param array<string, string> $idMap
+     * @param array<string, true>   $usedIds
+     */
+    private function convertMessage(
+        AgentMessage $message,
+        string $targetModel,
+        array &$idMap,
+        array &$usedIds,
+    ): AgentMessage {
+        if ('assistant' === $message->role) {
+            return $this->convertAssistant($message, $targetModel, $idMap, $usedIds);
+        }
+
+        if ('tool' === $message->role) {
+            return $this->convertTool($message, $idMap);
+        }
+
+        return $message;
     }
 
     /**
      * Exact qualified identity only. Do not strip provider prefixes.
      */
-    private static function isExactQualifiedMatch(?string $sourceModel, string $targetModel): bool
+    private function isExactQualifiedMatch(?string $sourceModel, string $targetModel): bool
     {
         return \is_string($sourceModel) && '' !== $sourceModel && $sourceModel === $targetModel;
     }
@@ -59,7 +203,7 @@ final class ConversationHistoryConversion
      * Source identity comes from request-local metadata populated on replay
      * from llm_step_completed.model (not a duplicated stored assistant field).
      */
-    private static function sourceModelFromMessage(AgentMessage $message): ?string
+    private function sourceModelFromMessage(AgentMessage $message): ?string
     {
         $sourceModel = $message->metadata['source_model'] ?? null;
 
@@ -68,18 +212,56 @@ final class ConversationHistoryConversion
 
     /**
      * @param array<string, string> $idMap
+     * @param array<string, true>   $usedIds
      */
-    private static function convertAssistant(AgentMessage $message, string $targetModel, array &$idMap): AgentMessage
-    {
-        $sourceModel = self::sourceModelFromMessage($message);
-        $sameModel = self::isExactQualifiedMatch($sourceModel, $targetModel);
+    private function convertAssistant(
+        AgentMessage $message,
+        string $targetModel,
+        array &$idMap,
+        array &$usedIds,
+    ): AgentMessage {
+        $sourceModel = $this->sourceModelFromMessage($message);
+        $sameModel = $this->isExactQualifiedMatch($sourceModel, $targetModel);
         $metadata = $message->metadata;
-        $metadata[self::METADATA_PRESERVE_NATIVE_ITEM_IDS] = $sameModel;
+        $rawToolCalls = \is_array($metadata['tool_calls'] ?? null) ? $metadata['tool_calls'] : null;
 
+        if ($sameModel) {
+            if (\is_array($rawToolCalls)) {
+                foreach ($rawToolCalls as $rawToolCall) {
+                    if (!\is_array($rawToolCall) || !\is_string($rawToolCall['id'] ?? null)) {
+                        continue;
+                    }
+
+                    $originalId = $rawToolCall['id'];
+                    $idMap[$originalId] = $originalId;
+                    $usedIds[$originalId] = true;
+                }
+            }
+
+            if (true === ($metadata[self::METADATA_PRESERVE_NATIVE_ITEM_IDS] ?? null)) {
+                return $message;
+            }
+
+            $metadata[self::METADATA_PRESERVE_NATIVE_ITEM_IDS] = true;
+
+            return new AgentMessage(
+                role: $message->role,
+                content: $message->content,
+                timestamp: $message->timestamp,
+                name: $message->name,
+                toolCallId: $message->toolCallId,
+                toolName: $message->toolName,
+                details: $message->details,
+                isError: $message->isError,
+                metadata: $metadata,
+            );
+        }
+
+        $metadata[self::METADATA_PRESERVE_NATIVE_ITEM_IDS] = false;
         $details = \is_array($message->details) ? $message->details : null;
         $content = $message->content;
 
-        if (!$sameModel && \is_array($details)) {
+        if (\is_array($details)) {
             $thinking = \is_string($details['thinking'] ?? null) ? $details['thinking'] : null;
             $thinkingSignature = \is_string($details['thinking_signature'] ?? null)
                 ? $details['thinking_signature']
@@ -98,7 +280,6 @@ final class ConversationHistoryConversion
             }
         }
 
-        $rawToolCalls = \is_array($metadata['tool_calls'] ?? null) ? $metadata['tool_calls'] : null;
         if (\is_array($rawToolCalls)) {
             $normalizedToolCalls = [];
             foreach ($rawToolCalls as $rawToolCall) {
@@ -107,7 +288,7 @@ final class ConversationHistoryConversion
                 }
 
                 $originalId = $rawToolCall['id'];
-                $requestId = self::normalizeToolCallId($originalId, $sameModel, $idMap);
+                $requestId = $this->normalizeToolCallId($originalId, $idMap, $usedIds);
                 $rawToolCall['id'] = $requestId;
                 $normalizedToolCalls[] = $rawToolCall;
             }
@@ -130,7 +311,7 @@ final class ConversationHistoryConversion
     /**
      * @param array<string, string> $idMap
      */
-    private static function convertTool(AgentMessage $message, array &$idMap): AgentMessage
+    private function convertTool(AgentMessage $message, array &$idMap): AgentMessage
     {
         $toolCallId = $message->toolCallId;
         if (!\is_string($toolCallId) || '' === $toolCallId) {
@@ -162,32 +343,30 @@ final class ConversationHistoryConversion
 
     /**
      * @param array<string, string> $idMap
+     * @param array<string, true>   $usedIds
      */
-    private static function normalizeToolCallId(
+    private function normalizeToolCallId(
         string $originalId,
-        bool $sameModel,
         array &$idMap,
+        array &$usedIds,
     ): string {
         if (isset($idMap[$originalId])) {
             return $idMap[$originalId];
         }
 
-        if ($sameModel) {
-            return $idMap[$originalId] = $originalId;
-        }
-
         // Generic chat completions: bounded, collision-safe IDs.
-        $candidate = self::sanitizeCompletionsToolCallId($originalId);
+        $candidate = $this->sanitizeCompletionsToolCallId($originalId);
         $suffix = 0;
-        while (\in_array($candidate, $idMap, true)) {
+        while (isset($usedIds[$candidate])) {
             $candidate = 'call_'.substr(hash('sha256', $originalId.'|'.++$suffix), 0, 35);
         }
+        $usedIds[$candidate] = true;
         $idMap[$originalId] = $candidate;
 
         return $candidate;
     }
 
-    private static function sanitizeCompletionsToolCallId(string $id): string
+    private function sanitizeCompletionsToolCallId(string $id): string
     {
         if (str_contains($id, '|')) {
             [$callId, $itemId] = explode('|', $id, 2);

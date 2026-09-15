@@ -7,7 +7,7 @@ namespace Ineersa\CodingAgent\Tool\ImageProcessing;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Hook\ConvertToLlmHookInterface;
 use Ineersa\AgentCore\Contract\Model\ImageCapabilityCheckerInterface;
-use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ConversationHistoryConversion;
 use Symfony\AI\Platform\Message\MessageBag;
 
 /**
@@ -31,7 +31,7 @@ final readonly class ImageGatingConvertHook implements ConvertToLlmHookInterface
 {
     public function __construct(
         private ImageCapabilityCheckerInterface $imageCapabilityChecker,
-        private AgentMessageConverter $messageConverter,
+        private ConversationHistoryConversion $historyConversion,
     ) {
     }
 
@@ -43,7 +43,7 @@ final readonly class ImageGatingConvertHook implements ConvertToLlmHookInterface
             $messages = $this->stripImageRefParts($messages);
         }
 
-        return $this->messageConverter->toMessageBagForTarget($messages, $modelName);
+        return $this->historyConversion->toMessageBagForTarget($messages, $modelName);
     }
 
     /**

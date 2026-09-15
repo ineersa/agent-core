@@ -20,6 +20,7 @@ use Ineersa\AgentCore\Domain\Model\ProviderRequest;
 use Ineersa\AgentCore\Domain\Model\ResolvedModel;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ConversationHistoryConversion;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderRequestPreparer;
@@ -152,6 +153,7 @@ final class PlatformIntegrationTest extends TestCase
         $adapter = new LlmPlatformAdapter(
             statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
             messageConverter: new AgentMessageConverter(),
+            historyConversion: new ConversationHistoryConversion(new AgentMessageConverter()),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor($toolbox),
             platform: $platform,
             transformContextHooks: [$transformHook],
@@ -321,6 +323,7 @@ final class PlatformIntegrationTest extends TestCase
         $adapter = new LlmPlatformAdapter(
             statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
             messageConverter: new AgentMessageConverter(),
+            historyConversion: new ConversationHistoryConversion(new AgentMessageConverter()),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
             platform: $platform,
             transformContextHooks: [],
@@ -392,7 +395,7 @@ final class PlatformIntegrationTest extends TestCase
 
             $imageGatingHook = new \Ineersa\CodingAgent\Tool\ImageProcessing\ImageGatingConvertHook(
                 $checker,
-                new AgentMessageConverter(),
+                new ConversationHistoryConversion(new AgentMessageConverter()),
             );
 
             $modelClient = new FakeSymfonyModelClient(new FakeTokenUsage(
@@ -409,6 +412,7 @@ final class PlatformIntegrationTest extends TestCase
             $adapter = new LlmPlatformAdapter(
                 statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
                 messageConverter: new AgentMessageConverter(),
+            historyConversion: new ConversationHistoryConversion(new AgentMessageConverter()),
                 toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
                 platform: $platform,
                 transformContextHooks: [],
@@ -456,6 +460,7 @@ final class PlatformIntegrationTest extends TestCase
         $adapter = new LlmPlatformAdapter(
             statusReader: $statusReader,
             messageConverter: new AgentMessageConverter(),
+            historyConversion: new ConversationHistoryConversion(new AgentMessageConverter()),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
             platform: $platform,
             transformContextHooks: [],
@@ -494,6 +499,7 @@ final class PlatformIntegrationTest extends TestCase
         $adapter = new LlmPlatformAdapter(
             statusReader: $statusReader,
             messageConverter: new AgentMessageConverter(),
+            historyConversion: new ConversationHistoryConversion(new AgentMessageConverter()),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
             platform: $platform,
             transformContextHooks: [],
@@ -917,6 +923,7 @@ final class PlatformIntegrationTest extends TestCase
         $adapter = new LlmPlatformAdapter(
             statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
             messageConverter: new AgentMessageConverter(),
+            historyConversion: new ConversationHistoryConversion(new AgentMessageConverter()),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
             platform: $platform,
             transformContextHooks: [],
@@ -977,6 +984,7 @@ final class PlatformIntegrationTest extends TestCase
         $adapter = new LlmPlatformAdapter(
             statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
             messageConverter: new AgentMessageConverter(),
+            historyConversion: new ConversationHistoryConversion(new AgentMessageConverter()),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
             platform: $platform,
             transformContextHooks: [],
@@ -1021,6 +1029,7 @@ final class PlatformIntegrationTest extends TestCase
         return new LlmPlatformAdapter(
             statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
             messageConverter: new AgentMessageConverter(),
+            historyConversion: new ConversationHistoryConversion(new AgentMessageConverter()),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(
                 new class implements ToolboxInterface {
                     public function execute(ToolCall $toolCall): ToolResult
@@ -1068,6 +1077,7 @@ final class PlatformIntegrationTest extends TestCase
         return new LlmPlatformAdapter(
             statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
             messageConverter: new AgentMessageConverter(),
+            historyConversion: new ConversationHistoryConversion(new AgentMessageConverter()),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(
                 new class implements ToolboxInterface {
                     public function execute(ToolCall $toolCall): ToolResult

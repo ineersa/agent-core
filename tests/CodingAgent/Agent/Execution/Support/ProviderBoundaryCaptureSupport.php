@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ConversationHistoryConversion;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
 use Psr\Log\NullLogger;
@@ -57,6 +58,7 @@ final class ProviderBoundaryCaptureSupport
         $adapter = new LlmPlatformAdapter(
             statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
             messageConverter: new AgentMessageConverter(),
+            historyConversion: new ConversationHistoryConversion(new AgentMessageConverter()),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor($toolbox, $toolSetResolver),
             platform: $platform,
             transformContextHooks: [],
