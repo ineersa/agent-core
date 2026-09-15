@@ -127,12 +127,11 @@ final class ConfiguredModelAgentRunnerMaxDurationTest extends TestCase
 
             public function createProvider(
                 string $providerId,
-                ?int $timeoutSeconds = null,
-                ?int $maxDurationSeconds = null,
+                int $budgetSeconds,
             ): \Symfony\AI\Platform\ProviderInterface {
                 ++$this->builds;
 
-                return $this->inner->createProvider($providerId, $timeoutSeconds, $maxDurationSeconds);
+                return $this->inner->createProvider($providerId, $budgetSeconds);
             }
         };
         $platformFactory = new ConfiguredSymfonyAiPlatformFactory($counting, $fixture['dispatcher']);

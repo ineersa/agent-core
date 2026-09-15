@@ -73,15 +73,13 @@ class SymfonyAiProviderFactory
     }
 
     /**
-     * Create one enabled provider, optionally overriding HTTP timeout budgets.
+     * Create one enabled provider with matching idle and total HTTP budgets.
      *
-     * When either timeout override is supplied, both idle timeout and total
-     * max_duration are set to the requested seconds for that provider only.
+     * Shared provider defaults remain unchanged.
      */
     public function createProvider(
         string $providerId,
-        ?int $timeoutSeconds = null,
-        ?int $maxDurationSeconds = null,
+        int $budgetSeconds,
     ): ProviderInterface {
         $catalog = $this->appConfig->catalog;
         if (null === $catalog) {
@@ -93,7 +91,7 @@ class SymfonyAiProviderFactory
             throw new \RuntimeException(\sprintf('AI provider "%s" is not enabled or missing from settings.', $providerId));
         }
 
-        return $this->buildProvider($provider, $timeoutSeconds, $maxDurationSeconds);
+        return $this->buildProvider($provider, $budgetSeconds);
     }
 
     /**
@@ -106,13 +104,12 @@ class SymfonyAiProviderFactory
      * {@see \Symfony\Component\HttpClient\RetryableHttpClient}.
      */
     private function getHttpClient(
-        ?int $timeoutSeconds = null,
-        ?int $maxDurationSeconds = null,
+        ?int $budgetSeconds = null,
     ): HttpClientInterface {
         $http = $this->appConfig->ai?->http;
         $options = new LlmHttpClientOptions(
-            timeout: $timeoutSeconds ?? $http?->timeout,
-            maxDuration: $maxDurationSeconds ?? $http?->maxDuration,
+            timeout: $budgetSeconds ?? $http?->timeout,
+            maxDuration: $budgetSeconds ?? $http?->maxDuration,
         );
 
         return ($this->httpClient ?? HttpClient::create())->withOptions($options->httpClientOptions());
@@ -123,10 +120,9 @@ class SymfonyAiProviderFactory
      */
     private function buildProvider(
         AiProviderConfig $provider,
-        ?int $timeoutSeconds = null,
-        ?int $maxDurationSeconds = null,
+        ?int $budgetSeconds = null,
     ): ProviderInterface {
-        $httpClient = $this->getHttpClient($timeoutSeconds, $maxDurationSeconds);
+        $httpClient = $this->getHttpClient($budgetSeconds);
 
         foreach ($this->builders as $builder) {
             if ($builder->supports($provider)) {

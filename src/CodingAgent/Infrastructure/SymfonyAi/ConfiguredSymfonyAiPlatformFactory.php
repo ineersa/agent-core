@@ -64,7 +64,6 @@ final class ConfiguredSymfonyAiPlatformFactory
         $provider = $this->providerFactory->createProvider(
             $providerId,
             $budgetSeconds,
-            $budgetSeconds,
         );
 
         return new Platform(

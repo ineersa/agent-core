@@ -237,8 +237,18 @@ parameters:
 
     - name: AppInfrastructureSymfonyAi
       collectors:
-        - type: directory
-          value: src/CodingAgent/Infrastructure/SymfonyAi/.*
+        - type: bool
+          must:
+            - type: directory
+              value: src/CodingAgent/Infrastructure/SymfonyAi/.*
+          must_not:
+            - type: classNameRegex
+              value: '#^Ineersa\\CodingAgent\\Infrastructure\\SymfonyAi\\ConfiguredSymfonyAiPlatformFactory$#'
+
+    - name: AppConfiguredSymfonyAiPlatformFactory
+      collectors:
+        - type: classNameRegex
+          value: '#^Ineersa\\CodingAgent\\Infrastructure\\SymfonyAi\\ConfiguredSymfonyAiPlatformFactory$#'
 
     - name: AppProviderQuota
       collectors:
@@ -669,6 +679,11 @@ parameters:
       - SymfonyAiPlatform
       - AppAuth
 
+    AppConfiguredSymfonyAiPlatformFactory:
+      - AppInfrastructureSymfonyAi
+      - SymfonyAiPlatform
+      - SymfonyEventDispatcher
+
     # /usage provider probes: auth + catalog + HttpClient + sanitized Runtime/Contract DTOs.
     AppProviderQuota:
       - AppAuth
@@ -737,7 +752,7 @@ parameters:
       - AppSkills
       - AgentCore
       # Budgeted extension-agent runs construct a selected-provider Platform once.
-      - AppInfrastructureSymfonyAi
+      - AppConfiguredSymfonyAiPlatformFactory
       - SymfonyAiPlatform
       - SymfonyAiAgent
       - SymfonyEventDispatcher
