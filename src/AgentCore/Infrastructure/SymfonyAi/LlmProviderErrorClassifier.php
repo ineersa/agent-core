@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Infrastructure\SymfonyAi;
 
 use Amp\CancelledException;
+use Ineersa\AgentCore\Contract\Tool\DiagnosticMessageSanitizer;
 use Symfony\AI\Platform\Exception\AuthenticationException;
 use Symfony\AI\Platform\Exception\BadRequestException;
 use Symfony\AI\Platform\Exception\ContentFilterException;
@@ -59,6 +60,16 @@ final class LlmProviderErrorClassifier
             ?? $this->classifyTransientStreamException($errorType)
             ?? $this->classifyTransientMessage($message)
             ?? [self::CATEGORY_PROVIDER, true, 'LLM provider request failed.'];
+
+        // Keep the actionable cause, but never forward terminal controls or
+        // common credentials from an exception message to the transcript.
+        $detail = trim(preg_replace('/[\x00-\x1F\x7F-\x9F]/u', ' ', $message) ?? '');
+        if ('' !== $detail) {
+            $userMessage = DiagnosticMessageSanitizer::sanitize($detail);
+        }
+        if (null !== $statusCode) {
+            $userMessage = \sprintf('HTTP %d: %s', $statusCode, $userMessage);
+        }
 
         $result = array_replace($error, [
             'retryable' => $retryable,
