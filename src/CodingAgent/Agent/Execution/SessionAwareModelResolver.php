@@ -17,7 +17,6 @@ use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\CodingAgent\Config\ReasoningOptionsResolver;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexRequestBodyFactory;
-use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\Component\Uid\Uuid;
 use Symfony\Component\Uid\UuidV7;
 
@@ -44,7 +43,7 @@ final class SessionAwareModelResolver implements ModelResolverInterface
 
     public function resolve(
         string $defaultModel,
-        MessageBag $messages,
+        bool $hasConversationMessages,
         ModelInvocationInput $input,
         ModelResolutionOptions $options,
     ): ResolvedModel {
@@ -102,7 +101,7 @@ final class SessionAwareModelResolver implements ModelResolverInterface
                 && 'codex' === $this->catalog->getProvider($modelRef->providerId)?->type
                 && 'gpt-6-astra' === $modelRef->modelName
                 && true === $this->catalog->getModel($modelRef)?->compatibility?->supportsReasoningConfigurationUpdates
-                && [] !== $messages->withoutSystemMessage()->getMessages()
+                && $hasConversationMessages
                 && \is_string($reasoningOptions['reasoning']['effort'] ?? null)) {
                 $effort = $reasoningOptions['reasoning']['effort'];
                 $baseline = $this->sessionMetadataStore->claimReasoningBaseline($sessionId, $modelRef->toString(), $effort);

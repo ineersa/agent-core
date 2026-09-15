@@ -353,6 +353,9 @@ final readonly class RunStateReducer
         $stepId = \is_string($payload['step_id'] ?? null) ? $payload['step_id'] : $state->activeStepId;
 
         if (null !== $assistantPayload) {
+            if (!isset($assistantPayload['model']) && \is_string($payload['model'] ?? null)) {
+                $assistantPayload['model'] = $payload['model'];
+            }
             // Replay the assistant payload via a dedicated helper that
             // handles tool-call-only messages (content: null) which
             // AgentMessage::fromPayload() would reject.
@@ -773,7 +776,7 @@ final readonly class RunStateReducer
 
         // fromPayload succeeded — standard path for text-bearing messages.
         if (null !== $msg) {
-            return $this->withReplayedAssistantToolCalls($msg, $payload);
+            return $this->withReplayedAssistantMetadata($msg, $payload);
         }
 
         // Only handle assistant-role payloads where content is null/missing.
@@ -786,11 +789,8 @@ final readonly class RunStateReducer
             return null;
         }
 
-        $metadata = [];
-        $rawToolCalls = \is_array($payload['tool_calls'] ?? null) ? $payload['tool_calls'] : [];
-        if ([] !== $rawToolCalls) {
-            $metadata['tool_calls'] = $rawToolCalls;
-        }
+        $metadata = $this->replayedAssistantMetadata($payload);
+        $rawToolCalls = \is_array($metadata['tool_calls'] ?? null) ? $metadata['tool_calls'] : [];
 
         $details = \is_array($payload['details'] ?? null) && [] !== $payload['details']
             ? $payload['details']
@@ -820,20 +820,24 @@ final readonly class RunStateReducer
     /**
      * Canonical llm_step_completed assistant payloads store tool_calls at the
      * top level (see AgentMessageNormalizer::assistantMessagePayload()).
-     * AgentMessage::fromPayload() only reads metadata.tool_calls, so text-bearing
+     * AgentMessage::fromPayload() only reads metadata.*, so text-bearing
      * assistant messages must copy top-level tool_calls into metadata on replay.
+     * Request-time conversion also needs the step model as source identity;
+     * that comes from llm_step_completed.model, not a duplicated assistant field.
      *
      * @param array<string, mixed> $payload
      */
-    private function withReplayedAssistantToolCalls(AgentMessage $message, array $payload): AgentMessage
+    private function withReplayedAssistantMetadata(AgentMessage $message, array $payload): AgentMessage
     {
-        $rawToolCalls = \is_array($payload['tool_calls'] ?? null) ? $payload['tool_calls'] : [];
-        if ([] === $rawToolCalls) {
+        $replayed = $this->replayedAssistantMetadata($payload);
+        if ([] === $replayed) {
             return $message;
         }
 
         $metadata = $message->metadata;
-        $metadata['tool_calls'] = $rawToolCalls;
+        foreach ($replayed as $key => $value) {
+            $metadata[$key] = $value;
+        }
 
         return new AgentMessage(
             role: $message->role,
@@ -846,5 +850,29 @@ final readonly class RunStateReducer
             isError: $message->isError,
             metadata: $metadata,
         );
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     *
+     * @return array<string, mixed>
+     */
+    private function replayedAssistantMetadata(array $payload): array
+    {
+        $metadata = [];
+
+        $rawToolCalls = \is_array($payload['tool_calls'] ?? null) ? $payload['tool_calls'] : [];
+        if ([] !== $rawToolCalls) {
+            $metadata['tool_calls'] = $rawToolCalls;
+        }
+
+        // Derive request-local source identity from the step model. Do not
+        // require a duplicated source_model field inside assistant_message.
+        $sourceModel = \is_string($payload['model'] ?? null) ? $payload['model'] : null;
+        if (\is_string($sourceModel) && '' !== $sourceModel) {
+            $metadata['source_model'] = $sourceModel;
+        }
+
+        return $metadata;
     }
 }

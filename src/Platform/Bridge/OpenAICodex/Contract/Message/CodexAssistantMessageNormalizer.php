@@ -10,16 +10,18 @@ use Symfony\AI\Platform\Message\AssistantMessage;
 use Symfony\AI\Platform\Message\Content\Text;
 use Symfony\AI\Platform\Message\Content\Thinking;
 use Symfony\AI\Platform\Model;
+use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\Component\Serializer\Normalizer\NormalizerAwareInterface;
 use Symfony\Component\Serializer\Normalizer\NormalizerAwareTrait;
 
 /**
  * Normalizes AssistantMessages into the Codex Responses API format.
  *
- * Without tool calls: returns {role, type: 'message', content: [{type: 'output_text', text}]}.
- * With tool calls: returns a list of {call_id, name, arguments, type: 'function_call'}.
+ * Emits reasoning items from thinking signatures, typed message content for
+ * visible text, and function_call items for tool calls. These may all appear
+ * in one assistant turn and are flattened by CodexMessageBagNormalizer.
  *
- * Uses typed output_text format matching Pi's /codex/responses shape.
+ * Request conversion removes incompatible thinking before normalization.
  */
 final class CodexAssistantMessageNormalizer extends ModelContractNormalizer implements NormalizerAwareInterface
 {
@@ -27,19 +29,15 @@ final class CodexAssistantMessageNormalizer extends ModelContractNormalizer impl
 
     /**
      * @return array<string, mixed>|list<array<string, mixed>>
-     *                                                         Single associative array for a message item when only text is present.
-     *                                                         List of arrays when both reasoning and message items are needed.
-     *                                                         Empty list when there is nothing to emit (thinking-only with no signature,
-     *                                                         or a completely empty assistant message).
      */
     public function normalize(mixed $data, ?string $format = null, array $context = []): array
     {
-        if ($data->hasToolCalls()) {
-            return $this->normalizer->normalize($data->getToolCalls(), $format, $context);
-        }
-
         $text = '';
         $thinkingSignature = null;
+        $preserveNativeItemIds = true === $data->getMetadata()->get(
+            'preserve_native_item_ids',
+            true,
+        );
 
         foreach ($data->getContent() as $part) {
             if ($part instanceof Text) {
@@ -56,18 +54,10 @@ final class CodexAssistantMessageNormalizer extends ModelContractNormalizer impl
 
         $output = [];
 
-        // If there is a thinking signature, emit a separate reasoning input item
-        // carrying the full reasoning item JSON (encrypted_content). This is the
-        // pi-mono pattern: reasoning is a separate top-level input item, not
-        // bundled into the message content.
         if (null !== $thinkingSignature) {
             $output[] = json_decode($thinkingSignature, true, flags: \JSON_THROW_ON_ERROR);
         }
 
-        // Emit a message item only if there is actual text content.
-        // When there is no text and no thinking signature, return empty array
-        // so the CodexMessageBagNormalizer skips this turn entirely (matching
-        // pi-mono: `if (output.length === 0) continue;`).
         if ('' !== $text) {
             $output[] = [
                 'role' => $data->getRole()->value,
@@ -78,14 +68,26 @@ final class CodexAssistantMessageNormalizer extends ModelContractNormalizer impl
             ];
         }
 
-        // Return empty array when there is nothing to emit (no text, no signature).
-        // The CodexMessageBagNormalizer checks for empty arrays and skips them.
+        if ($data->hasToolCalls()) {
+            /** @var list<ToolCall> $toolCalls */
+            $toolCalls = $data->getToolCalls();
+            $normalizedToolCalls = $this->normalizer->normalize($toolCalls, $format, $context);
+            if (\is_array($normalizedToolCalls) && array_is_list($normalizedToolCalls)) {
+                foreach ($normalizedToolCalls as $toolCall) {
+                    if (\is_array($toolCall)) {
+                        if (!$preserveNativeItemIds) {
+                            unset($toolCall['id']);
+                        }
+                        $output[] = $toolCall;
+                    }
+                }
+            }
+        }
+
         if ([] === $output) {
             return [];
         }
 
-        // Single item: return as-is so the normalizer can append it directly.
-        // Multiple items: return as a list so CodexMessageBagNormalizer flattens them.
         return 1 === \count($output) ? $output[0] : $output;
     }
 
