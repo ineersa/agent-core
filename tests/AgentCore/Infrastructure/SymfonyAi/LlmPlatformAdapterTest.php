@@ -216,7 +216,6 @@ final class LlmPlatformAdapterTest extends TestCase
         $logger = new TestLogger();
         $adapter = new LlmPlatformAdapter(
             statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
-            messageConverter: new AgentMessageConverter(),
             historyConversion: new ConversationHistoryConversion(new AgentMessageConverter()),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
             platform: $this->createStub(SymfonyPlatformInterface::class),
@@ -333,7 +332,6 @@ final class LlmPlatformAdapterTest extends TestCase
     {
         return new LlmPlatformAdapter(
             statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
-            messageConverter: new AgentMessageConverter(),
             historyConversion: new ConversationHistoryConversion(new AgentMessageConverter()),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
             platform: $platform,

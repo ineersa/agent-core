@@ -220,7 +220,6 @@ final class TraceReplayTest extends PerMethodIsolatedKernelTestCase
 
         return new LlmPlatformAdapter(
             statusReader: new NullRunOperationalStatusReader(),
-            messageConverter: new AgentMessageConverter(),
             historyConversion: new ConversationHistoryConversion(new AgentMessageConverter()),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
             platform: $platform,

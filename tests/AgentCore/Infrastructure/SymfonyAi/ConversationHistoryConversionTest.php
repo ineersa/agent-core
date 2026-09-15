@@ -289,6 +289,106 @@ final class ConversationHistoryConversionTest extends IsolatedKernelTestCase
         $this->assertSame('continue', $second->getMessages()[2]->asText());
     }
 
+    public function testAppendReusesUnchangedPrefixSymfonyMessageInstances(): void
+    {
+        $prefix = [
+            new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'hello']]),
+            new AgentMessage(
+                role: 'assistant',
+                content: [['type' => 'text', 'text' => 'hi']],
+                metadata: ['source_model' => 'openai/gpt-test'],
+            ),
+        ];
+        $first = $this->conversion->toMessageBagForTarget($prefix, 'openai/gpt-test');
+        $prefixAssistant = $first->getMessages()[1];
+
+        $appended = [
+            ...$prefix,
+            new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'next']]),
+        ];
+        $second = $this->conversion->toMessageBagForTarget($appended, 'openai/gpt-test');
+
+        $this->assertSame($prefixAssistant, $second->getMessages()[1]);
+        $this->assertSame('next', $second->getMessages()[2]->asText());
+        $this->assertCount(3, $second->getMessages());
+    }
+
+    public function testAppendRebuildsOnlyTrailingIncompleteToolBatch(): void
+    {
+        $tmp = sys_get_temp_dir().'/hatfield-history-conversion-'.bin2hex(random_bytes(4));
+        mkdir($tmp);
+        $imagePath = $tmp.'/pixel.png';
+        file_put_contents(
+            $imagePath,
+            base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', true),
+        );
+
+        try {
+            $stable = [
+                new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'start']]),
+                new AgentMessage(
+                    role: 'assistant',
+                    content: [['type' => 'text', 'text' => 'stable']],
+                    metadata: ['source_model' => 'vision/model'],
+                ),
+            ];
+            $openBatch = [
+                ...$stable,
+                new AgentMessage(
+                    role: 'assistant',
+                    content: [],
+                    metadata: [
+                        'source_model' => 'vision/model',
+                        'tool_calls' => [
+                            ['id' => 'call_a', 'name' => 'view_image', 'arguments' => []],
+                            ['id' => 'call_b', 'name' => 'view_image', 'arguments' => []],
+                        ],
+                    ],
+                ),
+                new AgentMessage(
+                    role: 'tool',
+                    content: [
+                        ['type' => 'text', 'text' => 'a'],
+                        ['type' => 'image_ref', 'path' => $imagePath, 'media_type' => 'image/png', 'bytes' => 68, 'width' => 1, 'height' => 1],
+                    ],
+                    toolCallId: 'call_a',
+                    toolName: 'view_image',
+                ),
+            ];
+
+            $first = $this->conversion->toMessageBagForTarget($openBatch, 'vision/model');
+            $stableAssistant = $first->getMessages()[1];
+            $this->assertInstanceOf(ToolCallMessage::class, $first->getMessages()[3]);
+            $this->assertTrue($first->getMessages()[4]->hasImageContent());
+
+            $completed = [
+                ...$openBatch,
+                new AgentMessage(
+                    role: 'tool',
+                    content: [
+                        ['type' => 'text', 'text' => 'b'],
+                        ['type' => 'image_ref', 'path' => $imagePath, 'media_type' => 'image/png', 'bytes' => 68, 'width' => 1, 'height' => 1],
+                    ],
+                    toolCallId: 'call_b',
+                    toolName: 'view_image',
+                ),
+                new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'done']]),
+            ];
+            $second = $this->conversion->toMessageBagForTarget($completed, 'vision/model');
+
+            $this->assertSame($stableAssistant, $second->getMessages()[1]);
+            $this->assertNotSame($first->getMessages()[3], $second->getMessages()[3]);
+            $this->assertInstanceOf(ToolCallMessage::class, $second->getMessages()[3]);
+            $this->assertInstanceOf(ToolCallMessage::class, $second->getMessages()[4]);
+            $this->assertTrue($second->getMessages()[5]->hasImageContent());
+            $this->assertTrue($second->getMessages()[6]->hasImageContent());
+            $this->assertSame('done', $second->getMessages()[7]->asText());
+        } finally {
+            @unlink($imagePath);
+            @rmdir($tmp);
+        }
+    }
+
     public function testModelChangeAndEditedPrefixInvalidateProjection(): void
     {
         $messages = [

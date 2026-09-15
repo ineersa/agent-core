@@ -33,6 +33,7 @@ use Symfony\AI\Platform\Message\AssistantMessage;
 use Symfony\AI\Platform\Message\Content\ContentInterface;
 use Symfony\AI\Platform\Message\Content\Text;
 use Symfony\AI\Platform\Message\Content\Thinking;
+use Symfony\AI\Platform\Message\Message;
 use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\AI\Platform\PlatformInterface as SymfonyPlatformInterface;
 use Symfony\AI\Platform\Result\DeferredResult;
@@ -60,7 +61,6 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
      */
     public function __construct(
         private RunOperationalStatusReaderInterface $statusReader,
-        private AgentMessageConverter $messageConverter,
         private ConversationHistoryConversion $historyConversion,
         private DynamicToolDescriptionProcessor $toolDescriptionProcessor,
         private SymfonyPlatformInterface $platform,
@@ -128,7 +128,11 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         $resolvedModel = null !== $this->modelResolver
             ? $this->modelResolver->resolve(
                 defaultModel: $request->model,
-                messages: $this->messageConverter->toMessageBag($messages),
+                // SessionAwareModelResolver only needs emptiness of non-system
+                // messages for Astra reasoning-baseline claim. Avoid reconstructing
+                // the full conversation bag here; resolution still uses session
+                // metadata and catalog for the actual model.
+                messages: $this->resolutionProbeBag($messages),
                 input: $request->input,
                 options: new ModelResolutionOptions($request->options->extraOptions),
             )
@@ -289,6 +293,23 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         }
 
         return $resolvedMessageBag ?? $this->historyConversion->toMessageBagForTarget($messages, $modelName);
+    }
+
+    /**
+     * Cheap MessageBag for model resolution: one non-system probe when the
+     * AgentMessage list has any non-system role. Content is not used.
+     *
+     * @param list<\Ineersa\AgentCore\Domain\Message\AgentMessage> $messages
+     */
+    private function resolutionProbeBag(array $messages): MessageBag
+    {
+        foreach ($messages as $message) {
+            if ('system' !== $message->role) {
+                return new MessageBag(Message::ofUser('resolution-probe'));
+            }
+        }
+
+        return new MessageBag();
     }
 
     /**

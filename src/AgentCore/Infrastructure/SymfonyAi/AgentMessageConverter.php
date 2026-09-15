@@ -50,6 +50,19 @@ final class AgentMessageConverter
      */
     public function toMessageBag(array $agentMessages): MessageBag
     {
+        return new MessageBag(...$this->convertAgentMessages($agentMessages));
+    }
+
+    /**
+     * Convert AgentMessages into Symfony messages while preserving tool-batch
+     * synthetic image ordering.
+     *
+     * @param list<AgentMessage> $agentMessages
+     *
+     * @return list<MessageInterface>
+     */
+    public function convertAgentMessages(array $agentMessages): array
+    {
         $messages = [];
         $pendingSyntheticToolMessages = [];
 
@@ -79,7 +92,7 @@ final class AgentMessageConverter
             array_push($messages, ...$pendingSyntheticToolMessages);
         }
 
-        return new MessageBag(...$messages);
+        return $messages;
     }
 
     /**

@@ -13,10 +13,13 @@ Conversion runs through the injectable `ConversationHistoryConversion` service a
 the provider boundary after the current session model is resolved. Each LLM worker
 keeps at most one worker-local projection (exact source context + target model).
 Exact reuse works for freshly deserialized equal messages. Pure appends convert
-only the new suffix and keep tool-call ID maps. Model changes, compaction, history
-edits, and non-prefix contexts rebuild. Returned `MessageBag` instances are clones
-so later request shaping cannot mutate the retained projection. Canonical events
-stay immutable and no shared database cache is used.
+only the new suffix onto a cloned bag and keep tool-call ID maps. If a previous
+turn ended mid tool-result batch, only that trailing batch is rebuilt so synthetic
+image ordering stays correct. Model changes, compaction, history edits, and
+non-prefix contexts rebuild. Returned `MessageBag` instances are clones so later
+request shaping cannot mutate the retained projection. Cached `Image::fromFile`
+closures reread bytes at serialization; rebuild when `image_ref` content changes.
+Canonical events stay immutable and no shared database cache is used.
 
 Source identity for conversion comes from `llm_step_completed.model` during
 replay. Hatfield does not store a second `source_model` field on assistant

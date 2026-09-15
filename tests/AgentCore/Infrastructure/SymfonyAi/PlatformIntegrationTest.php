@@ -152,7 +152,6 @@ final class PlatformIntegrationTest extends TestCase
 
         $adapter = new LlmPlatformAdapter(
             statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
-            messageConverter: new AgentMessageConverter(),
             historyConversion: new ConversationHistoryConversion(new AgentMessageConverter()),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor($toolbox),
             platform: $platform,
@@ -322,7 +321,6 @@ final class PlatformIntegrationTest extends TestCase
 
         $adapter = new LlmPlatformAdapter(
             statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
-            messageConverter: new AgentMessageConverter(),
             historyConversion: new ConversationHistoryConversion(new AgentMessageConverter()),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
             platform: $platform,
@@ -411,8 +409,7 @@ final class PlatformIntegrationTest extends TestCase
 
             $adapter = new LlmPlatformAdapter(
                 statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
-                messageConverter: new AgentMessageConverter(),
-            historyConversion: new ConversationHistoryConversion(new AgentMessageConverter()),
+                historyConversion: new ConversationHistoryConversion(new AgentMessageConverter()),
                 toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
                 platform: $platform,
                 transformContextHooks: [],
@@ -459,7 +456,6 @@ final class PlatformIntegrationTest extends TestCase
         $statusReader = new MutableRunOperationalStatusReader('run-cancel', cancelAfterReads: 2);
         $adapter = new LlmPlatformAdapter(
             statusReader: $statusReader,
-            messageConverter: new AgentMessageConverter(),
             historyConversion: new ConversationHistoryConversion(new AgentMessageConverter()),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
             platform: $platform,
@@ -498,7 +494,6 @@ final class PlatformIntegrationTest extends TestCase
         $statusReader = new MutableRunOperationalStatusReader('run-cancel-end', cancelAfterReads: 2);
         $adapter = new LlmPlatformAdapter(
             statusReader: $statusReader,
-            messageConverter: new AgentMessageConverter(),
             historyConversion: new ConversationHistoryConversion(new AgentMessageConverter()),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
             platform: $platform,
@@ -922,7 +917,6 @@ final class PlatformIntegrationTest extends TestCase
 
         $adapter = new LlmPlatformAdapter(
             statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
-            messageConverter: new AgentMessageConverter(),
             historyConversion: new ConversationHistoryConversion(new AgentMessageConverter()),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
             platform: $platform,
@@ -983,7 +977,6 @@ final class PlatformIntegrationTest extends TestCase
 
         $adapter = new LlmPlatformAdapter(
             statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
-            messageConverter: new AgentMessageConverter(),
             historyConversion: new ConversationHistoryConversion(new AgentMessageConverter()),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
             platform: $platform,
@@ -1028,7 +1021,6 @@ final class PlatformIntegrationTest extends TestCase
 
         return new LlmPlatformAdapter(
             statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
-            messageConverter: new AgentMessageConverter(),
             historyConversion: new ConversationHistoryConversion(new AgentMessageConverter()),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(
                 new class implements ToolboxInterface {
@@ -1076,7 +1068,6 @@ final class PlatformIntegrationTest extends TestCase
 
         return new LlmPlatformAdapter(
             statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
-            messageConverter: new AgentMessageConverter(),
             historyConversion: new ConversationHistoryConversion(new AgentMessageConverter()),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(
                 new class implements ToolboxInterface {

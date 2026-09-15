@@ -57,7 +57,6 @@ final class ProviderBoundaryCaptureSupport
 
         $adapter = new LlmPlatformAdapter(
             statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
-            messageConverter: new AgentMessageConverter(),
             historyConversion: new ConversationHistoryConversion(new AgentMessageConverter()),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor($toolbox, $toolSetResolver),
             platform: $platform,

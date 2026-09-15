@@ -15,9 +15,14 @@ use Symfony\AI\Platform\Message\MessageBag;
  *
  * Worker-local projection cache: one retained context per process. Exact source
  * context + target model reuse the previous MessageBag (cloned for mutation
- * safety). Pure appends convert only the suffix and rebuild the bag from the
- * full converted AgentMessage list so synthetic image ordering stays correct.
+ * safety). Pure appends convert only the suffix and append Symfony messages onto
+ * a cloned bag. If the cached bag ended mid tool-result batch, only that trailing
+ * incomplete batch is rebuilt so synthetic image ordering stays correct.
  * Model changes, compaction, history edits, and non-prefix contexts invalidate.
+ *
+ * Cached Image::fromFile closures reread bytes at serialization time. Missing
+ * files after cache creation still fail later; rebuild when image_ref content
+ * changes. No shared database cache is used.
  *
  * Intentionally does not implement ResetInterface so Messenger service resets
  * leave the disposable projection intact across ExecuteLlmStep messages.
@@ -106,12 +111,30 @@ final class ConversationHistoryConversion
         $idMap = $this->cache['id_map'];
         $usedIds = $this->cache['used_ids'];
         $converted = $this->cache['converted_messages'];
+        $suffixSource = \array_slice($agentMessages, $cachedCount);
+        $suffixConverted = [];
 
-        foreach (\array_slice($agentMessages, $cachedCount) as $message) {
-            $converted[] = $this->convertMessage($message, $targetModel, $idMap, $usedIds);
+        foreach ($suffixSource as $message) {
+            $convertedMessage = $this->convertMessage($message, $targetModel, $idMap, $usedIds);
+            $converted[] = $convertedMessage;
+            $suffixConverted[] = $convertedMessage;
         }
 
-        $bag = $this->messageConverter->toMessageBag($converted);
+        $bag = clone $this->cache['message_bag'];
+        $rebuildFrom = $this->trailingIncompleteToolBatchStart($this->cache['converted_messages']);
+        if (null !== $rebuildFrom) {
+            $stablePrefix = \array_slice($this->cache['converted_messages'], 0, $rebuildFrom);
+            $stableCount = \count($this->messageConverter->convertAgentMessages($stablePrefix));
+            $bag = new MessageBag(...\array_slice($bag->getMessages(), 0, $stableCount));
+            $rebuildConverted = array_merge(
+                \array_slice($this->cache['converted_messages'], $rebuildFrom),
+                $suffixConverted,
+            );
+            $this->appendConvertedMessages($bag, $rebuildConverted);
+        } else {
+            $this->appendConvertedMessages($bag, $suffixConverted);
+        }
+
         $this->cache = [
             'target_model' => $targetModel,
             'source_messages' => $agentMessages,
@@ -122,6 +145,38 @@ final class ConversationHistoryConversion
         ];
 
         return clone $bag;
+    }
+
+    /**
+     * @param list<AgentMessage> $convertedMessages
+     */
+    private function appendConvertedMessages(MessageBag $bag, array $convertedMessages): void
+    {
+        foreach ($this->messageConverter->convertAgentMessages($convertedMessages) as $message) {
+            $bag->add($message);
+        }
+    }
+
+    /**
+     * When the cached AgentMessage list ends inside a consecutive tool-result
+     * batch, return the start index of that incomplete batch so append can
+     * rebuild only that trailing region.
+     *
+     * @param list<AgentMessage> $convertedMessages
+     */
+    private function trailingIncompleteToolBatchStart(array $convertedMessages): ?int
+    {
+        $count = \count($convertedMessages);
+        if (0 === $count || 'tool' !== $convertedMessages[$count - 1]->role) {
+            return null;
+        }
+
+        $start = $count - 1;
+        while ($start > 0 && 'tool' === $convertedMessages[$start - 1]->role) {
+            --$start;
+        }
+
+        return $start;
     }
 
     /**
@@ -167,7 +222,7 @@ final class ConversationHistoryConversion
             return false;
         }
 
-        return $left == $right;
+        return $left->format(\DATE_ATOM) === $right->format(\DATE_ATOM);
     }
 
     /**
