@@ -7,16 +7,18 @@ namespace Ineersa\AgentCore\Contract\Model;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelResolutionOptions;
 use Ineersa\AgentCore\Domain\Model\ResolvedModel;
-use Symfony\AI\Platform\Message\MessageBag;
 
 interface ModelResolverInterface
 {
     /**
-     * Resolves the target model using default settings, messages, context, and options.
+     * Resolves the target model using default settings, context, and options.
+     *
+     * $hasConversationMessages is true when the outgoing AgentMessage list has
+     * any non-system role. Resolvers must not require a full MessageBag.
      */
     public function resolve(
         string $defaultModel,
-        MessageBag $messages,
+        bool $hasConversationMessages,
         ModelInvocationInput $input,
         ModelResolutionOptions $options,
     ): ResolvedModel;
