@@ -65,6 +65,15 @@ final class AgentCommandModelOptionTest extends TestCase
     }
 
     #[Test]
+    public function resumeWithPromptAndModelStaysUsable(): void
+    {
+        // With --prompt the options ride the StartRunRequest into the resumed
+        // session's first run; only the prompt-less combination is rejected.
+        $this->assertNoValidationThrow('hello', 'llama_cpp/test', '');
+        $this->assertNoValidationThrow('hello', '', 'high');
+    }
+
+    #[Test]
     public function noPromptBuildsNoRequest(): void
     {
         $this->assertNull($this->buildInitialRequest('', '', ''));
@@ -85,5 +94,18 @@ final class AgentCommandModelOptionTest extends TestCase
         $method = new \ReflectionMethod(AgentCommand::class, 'buildInitialRequest');
 
         return $method->invoke(null, $prompt, $model, $reasoning);
+    }
+
+    private function assertNoValidationThrow(string $prompt, string $model, string $reasoning): void
+    {
+        $method = new \ReflectionMethod(AgentCommand::class, 'assertUsableModelOptions');
+
+        try {
+            $method->invoke(null, $prompt, $model, $reasoning);
+        } catch (\InvalidArgumentException $e) {
+            $this->fail(\sprintf('Options must stay usable, got: %s', $e->getMessage()));
+        }
+
+        $this->addToAssertionCount(1);
     }
 }

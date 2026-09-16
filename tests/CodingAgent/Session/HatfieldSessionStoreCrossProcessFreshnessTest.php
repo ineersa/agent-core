@@ -41,7 +41,7 @@ final class HatfieldSessionStoreCrossProcessFreshnessTest extends TestCase
         $this->tempDir = TestDirectoryIsolation::createProjectTempDir('session-cross-process');
         $this->dbPath = $this->tempDir.'/state.sqlite';
 
-        $config = ORMSetup::createAttributeMetadataConfiguration([__DIR__.'/../../../../src'], true);
+        $config = ORMSetup::createAttributeMetadataConfiguration([__DIR__.'/../../../src'], true);
         $config->enableNativeLazyObjects(true);
         $params = ['driver' => 'pdo_sqlite', 'path' => $this->dbPath];
 
