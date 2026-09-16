@@ -235,7 +235,7 @@ final class ConfiguredModelAgentRunnerThinkingLevelTest extends IsolatedKernelTe
         $homeWriter = new SettingsOverrideWriter($pathResolver, PropertyAccess::createPropertyAccessor(), new Filesystem());
         $selectionService = new ModelSelectionService(
             $appConfig,
-            new ModelResolver($appConfig, $sessionStore),
+            new ModelResolver($appConfig, $sessionStore, new \Psr\Log\NullLogger()),
             $homeWriter,
             $sessionStore,
         );

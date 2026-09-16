@@ -205,15 +205,7 @@ final class SubmitListenerReasoningNoticeClearTest extends TestCase
                 new \Ineersa\Tui\Transcript\TranscriptBlockFactory(),
                 new \Ineersa\AgentCore\Tests\Support\TestLogger(),
             ),
-            footerStateInitializer: new \Ineersa\Tui\Listener\FooterStateInitializer(
-                $context->sessionStore,
-                new \Ineersa\CodingAgent\Config\AppConfig(
-                    tui: new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'),
-                    logging: new \Ineersa\CodingAgent\Config\LoggingConfig(),
-                    sessions: new \Ineersa\CodingAgent\Config\SessionsConfig(),
-                    cwd: '/tmp',
-                ),
-            ),
+            footerStateInitializer: self::buildFooterStateInitializer($context->sessionStore, '/tmp'),
         );
         $listener->register($context);
     }
@@ -234,5 +226,32 @@ final class SubmitListenerReasoningNoticeClearTest extends TestCase
         $entries = $ref->getValue($screen);
 
         return $entries;
+    }
+
+    private static function buildFooterStateInitializer(
+        \Ineersa\CodingAgent\Session\HatfieldSessionStore $sessionStore,
+        string $cwd,
+    ): \Ineersa\Tui\Listener\FooterStateInitializer {
+        $appConfig = new \Ineersa\CodingAgent\Config\AppConfig(
+            tui: new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'),
+            logging: new \Ineersa\CodingAgent\Config\LoggingConfig(),
+            sessions: new \Ineersa\CodingAgent\Config\SessionsConfig(),
+            cwd: $cwd,
+        );
+
+        return new \Ineersa\Tui\Listener\FooterStateInitializer(
+            $sessionStore,
+            $appConfig,
+            new \Ineersa\CodingAgent\Config\ModelSelectionService(
+                $appConfig,
+                new \Ineersa\CodingAgent\Config\ModelResolver($appConfig, $sessionStore, new \Psr\Log\NullLogger()),
+                new \Ineersa\CodingAgent\Config\SettingsOverrideWriter(
+                    new \Ineersa\CodingAgent\Config\SettingsPathResolver('/tmp'),
+                    \Symfony\Component\PropertyAccess\PropertyAccess::createPropertyAccessor(),
+                    new \Symfony\Component\Filesystem\Filesystem(),
+                ),
+                $sessionStore,
+            ),
+        );
     }
 }

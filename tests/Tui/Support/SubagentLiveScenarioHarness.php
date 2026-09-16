@@ -193,15 +193,7 @@ final class SubagentLiveScenarioHarness
                 new TranscriptBlockFactory(),
                 new \Ineersa\AgentCore\Tests\Support\TestLogger(),
             ),
-            footerStateInitializer: new \Ineersa\Tui\Listener\FooterStateInitializer(
-                $sessionStore,
-                new AppConfig(
-                    tui: new TuiConfig(theme: 'default'),
-                    logging: new LoggingConfig(),
-                    sessions: new SessionsConfig(),
-                    cwd: getcwd() ?: '/tmp',
-                ),
-            ),
+            footerStateInitializer: self::buildFooterStateInitializer($sessionStore, getcwd() ?: '/tmp'),
         );
         $submitListener->register($context);
 
@@ -394,6 +386,33 @@ final class SubagentLiveScenarioHarness
                 'delta' => '',
                 'subagent_progress' => $progress,
             ],
+        );
+    }
+
+    private static function buildFooterStateInitializer(
+        HatfieldSessionStore $sessionStore,
+        string $cwd,
+    ): \Ineersa\Tui\Listener\FooterStateInitializer {
+        $appConfig = new AppConfig(
+            tui: new TuiConfig(theme: 'default'),
+            logging: new LoggingConfig(),
+            sessions: new SessionsConfig(),
+            cwd: $cwd,
+        );
+
+        return new \Ineersa\Tui\Listener\FooterStateInitializer(
+            $sessionStore,
+            $appConfig,
+            new \Ineersa\CodingAgent\Config\ModelSelectionService(
+                $appConfig,
+                new \Ineersa\CodingAgent\Config\ModelResolver($appConfig, $sessionStore, new NullLogger()),
+                new \Ineersa\CodingAgent\Config\SettingsOverrideWriter(
+                    new \Ineersa\CodingAgent\Config\SettingsPathResolver('/tmp'),
+                    \Symfony\Component\PropertyAccess\PropertyAccess::createPropertyAccessor(),
+                    new \Symfony\Component\Filesystem\Filesystem(),
+                ),
+                $sessionStore,
+            ),
         );
     }
 }

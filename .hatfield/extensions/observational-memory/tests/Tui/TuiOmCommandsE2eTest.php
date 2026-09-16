@@ -221,7 +221,7 @@ final class TuiOmCommandsE2eTest extends IsolatedKernelTestCase
         // IsolatedKernelTestCase sets HATFIELD_CWD in the parent process; the tmux
         // agent must use the fixture project dir so sessions/OM DB land together.
         return \sprintf(
-            'APP_ENV=test HATFIELD_CWD=%s %sHOME=%s %s %s %s agent --tools-excluded=bash 2>&1',
+            'APP_ENV=test HATFIELD_CWD=%s %sHOME=%s %s %s %s agent --model=llama_cpp_test/test --tools-excluded=bash 2>&1',
             escapeshellarg($this->testProjectDir),
             TuiE2eDatabaseEnv::shellPrefixWithLowLatencyMessenger($paths['app'], $paths['transport'], $this->testProjectDir),
             escapeshellarg($this->testProjectDir.'/home'),

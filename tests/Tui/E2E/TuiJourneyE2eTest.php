@@ -343,7 +343,8 @@ final class TuiJourneyE2eTest extends TestCase
         // later submitted, ControllerReplayHttpClientFactory serves the
         // fixture response.
         return \sprintf(
-            'APP_ENV=test %sHOME=%s %s %s %s agent 2>&1',
+            'APP_ENV=test %sHOME=%s %s %s %s agent '
+                .'--model=llama_cpp_test/test 2>&1',
             TuiE2eDatabaseEnv::shellPrefixWithLowLatencyMessenger($dbPath, $transportDbPath, $this->testProjectDir),
             escapeshellarg($this->testProjectDir.'/home'),
             $fixtureEnv,

@@ -10,16 +10,17 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Relaunch argv reconstruction for /reload: one-shot --prompt and
- * model/reasoning options are dropped (the resumed session's row owns
- * model selection), stale --resume is replaced by the current session id,
- * and the persistent launch policy is preserved untouched.
+ * Relaunch argv reconstruction for /reload: one-shot --prompt is dropped,
+ * model/reasoning are dropped when resuming (AgentCommand rejects that
+ * prompt-less resume combination), stale --resume is replaced by the
+ * current session id, and the persistent launch policy is otherwise
+ * preserved untouched.
  */
 #[CoversClass(ReloadArgvBuilder::class)]
 final class ReloadArgvBuilderTest extends TestCase
 {
     #[Test]
-    public function testKeepsScriptNameAndPersistentPolicy(): void
+    public function testKeepsScriptNameAndPersistentPolicyOnResume(): void
     {
         $argv = ['/usr/bin/php', 'bin/console', 'agent', '--model=deepseek/deepseek-v4-pro', '--reasoning=high', '--transport=process', '--tools-excluded=bash', '--cwd=/work'];
 
@@ -38,11 +39,8 @@ final class ReloadArgvBuilderTest extends TestCase
     }
 
     #[Test]
-    public function testDropsModelAndReasoningInAllForms(): void
+    public function testDropsModelAndReasoningWhenResumingInAllForms(): void
     {
-        // The relaunch has no --prompt, so model/reasoning cannot ride a
-        // request; preserving them would trip AgentCommand's startup
-        // rejection and crash the reload.
         $this->assertSame(
             ['php', 'bin/console', 'agent', '--resume=7'],
             ReloadArgvBuilder::build(['php', 'bin/console', 'agent', '--model=deepseek/deepseek-v4-pro', '--reasoning=high'], '7'),
@@ -50,6 +48,15 @@ final class ReloadArgvBuilderTest extends TestCase
         $this->assertSame(
             ['php', 'bin/console', 'agent', '--resume=7'],
             ReloadArgvBuilder::build(['php', 'bin/console', 'agent', '--model', 'deepseek/deepseek-v4-pro', '--reasoning', 'high'], '7'),
+        );
+    }
+
+    #[Test]
+    public function testKeepsModelAndReasoningForFreshDraftRelaunch(): void
+    {
+        $this->assertSame(
+            ['php', 'bin/console', 'agent', '--model=deepseek/deepseek-v4-pro', '--reasoning=high'],
+            ReloadArgvBuilder::build(['php', 'bin/console', 'agent', '--model=deepseek/deepseek-v4-pro', '--reasoning=high', '--prompt=hi'], ''),
         );
     }
 

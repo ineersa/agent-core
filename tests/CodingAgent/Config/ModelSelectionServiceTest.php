@@ -398,6 +398,20 @@ class ModelSelectionServiceTest extends IsolatedKernelTestCase
         $this->assertNull($result);
     }
 
+    public function testChangeModelWithoutSessionStillWritesSettings(): void
+    {
+        $service = $this->buildService($this->standardAiData());
+
+        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), '');
+
+        // Draft sessions have no row; settings still receive the selection.
+        $homeContent = file_get_contents($this->homeSettingsPath());
+        $this->assertNotFalse($homeContent);
+        $parsed = \Symfony\Component\Yaml\Yaml::parse((string) $homeContent);
+        $this->assertIsArray($parsed);
+        $this->assertSame('llama_cpp/flash', $parsed['ai']['default_model'] ?? null);
+    }
+
     // ──────────────────────────────────────────────
     //  Persistence across restart (EDITOR / AI-14)
     // ──────────────────────────────────────────────

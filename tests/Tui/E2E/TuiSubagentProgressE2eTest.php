@@ -165,7 +165,7 @@ final class TuiSubagentProgressE2eTest extends TestCase
 
         // Draft boot only — no LLM fixture/env; resume loads seeded canonical events.
         return \sprintf(
-            'APP_ENV=test %sHOME=%s %s %s agent --tools-excluded=bash 2>&1',
+            'APP_ENV=test %sHOME=%s %s %s agent --model=llama_cpp_test/test --tools-excluded=bash 2>&1',
             TuiE2eDatabaseEnv::shellPrefixWithLowLatencyMessenger(
                 $paths['appEnv'],
                 $paths['transportEnv'],

@@ -13,33 +13,50 @@ use Symfony\Component\Console\Output\NullOutput;
 /**
  * @covers \Ineersa\CodingAgent\CLI\AgentCommand
  *
- * Covers the --model/--reasoning option contract for TUI startup: without
- * --prompt they are rejected up front (the session row owns model selection
- * and no prompt-less request exists to carry them); with --prompt they ride
- * the initial StartRunRequest.
+ * Covers the --model/--reasoning option contract for TUI startup:
+ *  - --resume without --prompt rejects them (session row owns selection),
+ *  - --resume with --prompt keeps them usable on the initial request,
+ *  - prompt-less launches without --resume do not reject at boot,
+ *  - with --prompt they ride the initial StartRunRequest.
  */
 final class AgentCommandModelOptionTest extends TestCase
 {
     #[Test]
-    public function modelWithoutPromptIsRejected(): void
+    public function resumeWithoutPromptAndModelIsRejected(): void
     {
         $command = $this->commandWithoutConstructor();
 
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('require --prompt');
+        $this->expectExceptionMessage('cannot be combined with --resume without --prompt');
 
-        $command(output: new NullOutput(), model: 'llama_cpp/test');
+        $command(output: new NullOutput(), resume: '48', model: 'llama_cpp/test');
     }
 
     #[Test]
-    public function reasoningWithoutPromptIsRejected(): void
+    public function resumeWithoutPromptAndReasoningIsRejected(): void
     {
         $command = $this->commandWithoutConstructor();
 
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('require --prompt');
+        $this->expectExceptionMessage('cannot be combined with --resume without --prompt');
 
         $command(output: new NullOutput(), resume: '48', reasoning: 'high');
+    }
+
+    #[Test]
+    public function resumeWithPromptAndModelStaysUsable(): void
+    {
+        $this->assertNoValidationThrow('hello', '48', 'llama_cpp/test', '');
+        $this->assertNoValidationThrow('hello', '48', '', 'high');
+    }
+
+    #[Test]
+    public function promptlessModelWithoutResumeStaysUsable(): void
+    {
+        // Not a silent resume drop: no request is built, and TUI/session
+        // controls own selection after boot.
+        $this->assertNoValidationThrow('', '', 'llama_cpp/test', '');
+        $this->assertNoValidationThrow('', '', '', 'high');
     }
 
     #[Test]
@@ -65,17 +82,9 @@ final class AgentCommandModelOptionTest extends TestCase
     }
 
     #[Test]
-    public function promptWithModelOrReasoningStaysUsable(): void
-    {
-        // The guard is resume-agnostic: any prompt-present combination is
-        // consumable by the initial StartRunRequest and must never throw.
-        $this->assertNoValidationThrow('hello', 'llama_cpp/test', '');
-        $this->assertNoValidationThrow('hello', '', 'high');
-    }
-
-    #[Test]
     public function noPromptBuildsNoRequest(): void
     {
+        $this->assertNull($this->buildInitialRequest('', 'llama_cpp/test', 'high'));
         $this->assertNull($this->buildInitialRequest('', '', ''));
     }
 
@@ -96,12 +105,12 @@ final class AgentCommandModelOptionTest extends TestCase
         return $method->invoke(null, $prompt, $model, $reasoning);
     }
 
-    private function assertNoValidationThrow(string $prompt, string $model, string $reasoning): void
+    private function assertNoValidationThrow(string $prompt, string $resume, string $model, string $reasoning): void
     {
         $method = new \ReflectionMethod(AgentCommand::class, 'assertUsableModelOptions');
 
         try {
-            $method->invoke(null, $prompt, $model, $reasoning);
+            $method->invoke(null, $prompt, $resume, $model, $reasoning);
         } catch (\InvalidArgumentException $e) {
             $this->fail(\sprintf('Options must stay usable, got: %s', $e->getMessage()));
         }

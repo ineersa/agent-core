@@ -121,7 +121,7 @@ final class AgentCommand
             throw new \RuntimeException('AgentCommand requires OutputInterface');
         }
 
-        self::assertUsableModelOptions($prompt, $model, $reasoning);
+        self::assertUsableModelOptions($prompt, $resume, $model, $reasoning);
 
         try {
             // Override CWD before any service access when --cwd is provided.
@@ -232,15 +232,20 @@ final class AgentCommand
     /**
      * Reject model/reasoning options that no startup path can consume.
      *
-     * The options only ride the initial StartRunRequest, which requires
-     * --prompt (a prompt-less request is not a valid run start). Without
-     * --prompt the session row owns the selection and the options would be
-     * silently dropped — reject them before any startup work instead.
+     * With --prompt the options ride the initial StartRunRequest into a new
+     * or resumed session's first run. Without --prompt on --resume there is
+     * no request to ride and switch targets never carry one: the session row
+     * owns the selection, so the options would be silently dropped — reject
+     * them before any startup work instead.
+     *
+     * Prompt-less launches without --resume leave model/reasoning unused at
+     * boot (session row / in-TUI controls own selection). That combination is
+     * allowed; it is not a silent resume drop.
      */
-    private static function assertUsableModelOptions(string $prompt, string $model, string $reasoning): void
+    private static function assertUsableModelOptions(string $prompt, string $resume, string $model, string $reasoning): void
     {
-        if ('' === $prompt && ('' !== $model || '' !== $reasoning)) {
-            throw new \InvalidArgumentException('The --model/--reasoning options require --prompt; without --prompt the session row owns model selection (switch with /model or Ctrl+P after the session opens).');
+        if ('' !== $resume && '' === $prompt && ('' !== $model || '' !== $reasoning)) {
+            throw new \InvalidArgumentException('The --model/--reasoning options cannot be combined with --resume without --prompt; switch models with /model (or Ctrl+P) after the session opens.');
         }
     }
 

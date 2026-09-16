@@ -125,6 +125,45 @@ final class ModelControlListenerTest extends TestCase
     }
 
     #[Test]
+    public function ctrlPOnDraftUpdatesPendingRequestModel(): void
+    {
+        $aiData = $this->standardAiData();
+        $aiData['favorite_models'] = ['deepseek/deepseek-v4-pro', 'llama_cpp/flash'];
+        $appConfig = $this->makeAppConfig($aiData);
+        $modelService = $this->buildService($aiData);
+
+        $harness = new VirtualTuiHarness(sessionId: '1');
+        $state = new TuiSessionState('');
+        $state->footerModel = 'deepseek-v4-pro';
+        $state->request = null;
+
+        $catalog = new SlashCommandCatalog();
+        $context = $this->buildTuiContext()
+            ->withTui($harness->tui())
+            ->withState($state)
+            ->withScreen($harness->screen())
+            ->withSessionServices($this->createSessionServices(
+                tui: $harness->tui(),
+                state: $state,
+                screen: $harness->screen(),
+                catalog: $catalog,
+            ))
+            ->build();
+
+        $listener = new ModelControlListener($modelService, $appConfig, new NullLogger());
+        $listener->registerCatalog($catalog);
+        $listener->register($context);
+
+        $harness->startInputLoop();
+        $harness->sendInput("\x10");
+
+        $this->assertSame('flash', $state->footerModel);
+        $this->assertNotNull($state->request);
+        $this->assertSame('llama_cpp/flash', $state->request->model);
+        $harness->stopInputLoop();
+    }
+
+    #[Test]
     #[DataProvider('provideShiftTabSequences')]
     public function shiftTabCyclesReasoning(string $sequence): void
     {

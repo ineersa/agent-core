@@ -46,4 +46,22 @@ final readonly class StartRunRequest
             reasoning: $this->reasoning,
         );
     }
+
+    /**
+     * Return a copy of this request with the reasoning field replaced.
+     *
+     * Used by draft-session model controls so reasoning selected before the
+     * first submit rides the pending request into StartRunRequest merge.
+     */
+    public function withReasoning(?string $reasoning): self
+    {
+        return new self(
+            prompt: $this->prompt,
+            runId: $this->runId,
+            cwd: $this->cwd,
+            options: $this->options,
+            model: $this->model,
+            reasoning: $reasoning,
+        );
+    }
 }

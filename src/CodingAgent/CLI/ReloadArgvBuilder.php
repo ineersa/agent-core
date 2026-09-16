@@ -11,9 +11,9 @@ namespace Ineersa\CodingAgent\CLI;
  * reload only adjusts what must change for the fresh boot:
  *  - one-shot input (--prompt) is dropped so the prompt does not
  *    execute twice,
- *  - --model/--reasoning are dropped: without --prompt no request can
- *    carry them and the resumed session's row owns model selection
- *    (AgentCommand rejects that combination on startup),
+ *  - --model/--reasoning are dropped when the relaunch will resume: without
+ *    --prompt AgentCommand rejects those options on --resume, and the
+ *    session row already owns model selection,
  *  - a stale --resume is replaced with the current session id,
  *  - everything else (transport, tools, skills, cwd) is preserved
  *    deliberately.
@@ -53,18 +53,19 @@ final class ReloadArgvBuilder
                 continue;
             }
 
-            // Drop model/reasoning: the relaunch resumes the session, whose
-            // row owns model selection. Prompt-less model options are
-            // rejected at startup, so preserving them would crash the
-            // relaunch.
-            if (\in_array($arg, ['--model', '--reasoning'], true)) {
-                if ($i + 1 < $count && !str_starts_with($originalArgv[$i + 1], '-')) {
-                    ++$i;
+            // Drop model/reasoning when relaunching into a resumed session:
+            // AgentCommand rejects --resume without --prompt combined with
+            // those options. Fresh draft relaunches keep them.
+            if ('' !== $resumeSessionId) {
+                if (\in_array($arg, ['--model', '--reasoning'], true)) {
+                    if ($i + 1 < $count && !str_starts_with($originalArgv[$i + 1], '-')) {
+                        ++$i;
+                    }
+                    continue;
                 }
-                continue;
-            }
-            if (str_starts_with($arg, '--model=') || str_starts_with($arg, '--reasoning=')) {
-                continue;
+                if (str_starts_with($arg, '--model=') || str_starts_with($arg, '--reasoning=')) {
+                    continue;
+                }
             }
 
             // Drop any pre-existing --resume so the current session id wins.
