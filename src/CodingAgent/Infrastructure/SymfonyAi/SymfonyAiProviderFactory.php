@@ -7,15 +7,16 @@ namespace Ineersa\CodingAgent\Infrastructure\SymfonyAi;
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\Http\LlmHttpClientOptions;
+use Ineersa\CodingAgent\Infrastructure\SymfonyAi\Http\LlmCancelAwareHttpClient;
+use Ineersa\CodingAgent\Infrastructure\SymfonyAi\Http\LlmEventSourceHttpClient;
+use Ineersa\CodingAgent\Infrastructure\SymfonyAi\Http\LlmCompletionsModelClient;
 use Ineersa\Platform\Bridge\Generic\DurableResultConverter;
 use Psr\Log\LoggerInterface;
-use Symfony\AI\Platform\Bridge\Generic\Completions\ModelClient as GenericCompletionsModelClient;
 use Symfony\AI\Platform\Bridge\Generic\CompletionsModel;
 use Symfony\AI\Platform\Bridge\Generic\Embeddings\ModelClient as GenericEmbeddingsModelClient;
 use Symfony\AI\Platform\Bridge\Generic\Embeddings\ResultConverter as GenericEmbeddingsResultConverter;
 use Symfony\AI\Platform\Provider;
 use Symfony\AI\Platform\ProviderInterface;
-use Symfony\Component\HttpClient\EventSourceHttpClient;
 use Symfony\Component\HttpClient\HttpClient;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
@@ -112,7 +113,11 @@ class SymfonyAiProviderFactory
             maxDuration: $budgetSeconds ?? $http?->maxDuration,
         );
 
-        return ($this->httpClient ?? HttpClient::create())->withOptions($options->httpClientOptions());
+        $client = ($this->httpClient ?? HttpClient::create())->withOptions($options->httpClientOptions());
+
+        // Progress-hook cancel must sit under SSE framing so Curl/Native
+        // on_progress can abort the transfer during silent reads.
+        return new LlmCancelAwareHttpClient($client);
     }
 
     /**
@@ -153,14 +158,18 @@ class SymfonyAiProviderFactory
             providerId: $provider->id,
         );
 
-        $httpClient = $httpClient instanceof EventSourceHttpClient ? $httpClient : new EventSourceHttpClient($httpClient);
+        // LLM streams must not reconnect on cancel/idle transport failures.
+        // Vendor EventSourceHttpClient swallows those for reconnectionTime.
+        $httpClient = $httpClient instanceof LlmEventSourceHttpClient
+            ? $httpClient
+            : new LlmEventSourceHttpClient($httpClient);
 
         $modelClients = [];
         $resultConverters = [];
 
         if ($provider->supportsCompletions) {
             $completionsPath = $provider->completionsPath ?? '/v1/chat/completions';
-            $modelClients[] = new GenericCompletionsModelClient(
+            $modelClients[] = new LlmCompletionsModelClient(
                 $httpClient,
                 $provider->baseUrl,
                 $this->resolveApiKey($provider->apiKey),

@@ -11,6 +11,7 @@ use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmStreamCancelledException;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -22,6 +23,8 @@ use Symfony\AI\Platform\Result\RawHttpResult;
 use Symfony\AI\Platform\Result\Stream\Delta\DeltaInterface;
 use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
 use Symfony\Contracts\HttpClient\ResponseInterface;
+use Symfony\Component\HttpClient\Exception\TransportException;
+use Symfony\Component\HttpClient\Exception\TimeoutException;
 
 /**
  * @covers \Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter
@@ -96,6 +99,87 @@ final class LlmPlatformAdapterTest extends TestCase
         $this->assertTrue($result->error['retry_exhausted'] ?? false);
         $this->assertSame(503, $result->error['http_status_code'] ?? null);
         $this->assertSame(LlmProviderErrorClassifier::CATEGORY_SERVER, $result->error['error_category'] ?? null);
+    }
+
+    public function testProgressHookCancelDuringStreamReturnsAborted(): void
+    {
+        $platform = $this->createStub(SymfonyPlatformInterface::class);
+        $platform->method('invoke')->willReturnCallback(static function (): DeferredResult {
+            return self::deferredStream(static function (): \Generator {
+                yield new TextDelta('partial');
+                throw new TransportException(
+                    'LLM stream cancelled.',
+                    previous: new LlmStreamCancelledException('LLM stream cancelled.'),
+                );
+            });
+        });
+
+        $result = $this->createAdapter($platform, maxRetries: 0)->invoke(new ModelInvocationRequest(
+            model: 'gpt-test',
+            input: new ModelInvocationInput(
+                runId: 'run-progress-cancel',
+                messages: [],
+            ),
+        ));
+
+        $this->assertSame('aborted', $result->stopReason);
+        $this->assertNull($result->error);
+        $this->assertSame('partial', $result->assistantMessage?->asText());
+    }
+
+    public function testIdleTimeoutDuringStreamIsRetryableTimeout(): void
+    {
+        $platform = $this->createStub(SymfonyPlatformInterface::class);
+        $platform->method('invoke')->willReturnCallback(static function (): DeferredResult {
+            return self::deferredStream(static function (): \Generator {
+                throw new TimeoutException('Idle timeout reached for "https://example.test/v1/chat/completions".');
+            });
+        });
+
+        $result = $this->createAdapter($platform, maxRetries: 0)->invoke(new ModelInvocationRequest(
+            model: 'gpt-test',
+            input: new ModelInvocationInput(
+                runId: 'run-idle-timeout',
+                messages: [],
+            ),
+        ));
+
+        $this->assertSame('error', $result->stopReason);
+        $this->assertIsArray($result->error);
+        $this->assertFalse($result->error['retryable'] ?? true, 'maxRetries=0 must exhaust immediately');
+        $this->assertTrue($result->error['retry_exhausted'] ?? false);
+        $this->assertSame(LlmProviderErrorClassifier::CATEGORY_TIMEOUT, $result->error['error_category'] ?? null);
+        $this->assertSame(TimeoutException::class, $result->error['type'] ?? null);
+    }
+
+    public function testIdleTimeoutRetriesThroughApplicationBudget(): void
+    {
+        $attempts = 0;
+        $platform = $this->createStub(SymfonyPlatformInterface::class);
+        $platform->method('invoke')->willReturnCallback(function () use (&$attempts): DeferredResult {
+            ++$attempts;
+            if (1 === $attempts) {
+                return self::deferredStream(static function (): \Generator {
+                    throw new TimeoutException('Idle timeout reached for "https://example.test/v1/chat/completions".');
+                });
+            }
+
+            return self::deferredStream(static function (): \Generator {
+                yield new TextDelta('recovered');
+            });
+        });
+
+        $result = $this->createAdapter($platform, maxRetries: 1)->invoke(new ModelInvocationRequest(
+            model: 'gpt-test',
+            input: new ModelInvocationInput(
+                runId: 'run-idle-retry',
+                messages: [],
+            ),
+        ));
+
+        $this->assertSame(2, $attempts);
+        $this->assertNull($result->error);
+        $this->assertSame('recovered', $result->assistantMessage?->asText());
     }
 
     public function testLocalProgrammingFailureAtProviderBoundaryRemainsNonRetryable(): void
@@ -345,6 +429,59 @@ final class LlmPlatformAdapterTest extends TestCase
                 baseDelayMs: 0,
             ),
             clock: new \Symfony\Component\Clock\MockClock(),
+        );
+    }
+
+    /**
+     * @param \Closure(): \Generator $stream
+     */
+    private static function deferredStream(\Closure $stream): DeferredResult
+    {
+        $raw = new class implements \Symfony\AI\Platform\Result\RawResultInterface {
+            public function getData(): array
+            {
+                return [];
+            }
+
+            public function getDataStream(): iterable
+            {
+                return [];
+            }
+
+            public function getObject(): object
+            {
+                return new \stdClass();
+            }
+        };
+
+        return new DeferredResult(
+            new class($stream) implements \Symfony\AI\Platform\ResultConverterInterface {
+                /**
+                 * @param \Closure(): \Generator $stream
+                 */
+                public function __construct(private readonly \Closure $stream)
+                {
+                }
+
+                public function supports(\Symfony\AI\Platform\Model $model): bool
+                {
+                    return true;
+                }
+
+                public function convert(\Symfony\AI\Platform\Result\RawResultInterface $result, array $options = []): \Symfony\AI\Platform\Result\ResultInterface
+                {
+                    unset($result, $options);
+
+                    return new \Symfony\AI\Platform\Result\StreamResult(($this->stream)());
+                }
+
+                public function getTokenUsageExtractor(): ?\Symfony\AI\Platform\TokenUsage\TokenUsageExtractorInterface
+                {
+                    return null;
+                }
+            },
+            $raw,
+            ['stream' => true],
         );
     }
 }
