@@ -1579,7 +1579,7 @@ final class CompactRunHandlerTest extends TestCase
         $sessionMetaRc = new \ReflectionClass(HatfieldSessionStore::class);
         $sessionMetaStore = $sessionMetaRc->newInstanceWithoutConstructor();
 
-        $modelResolver = new ModelResolver($appConfig, $sessionMetaStore);
+        $modelResolver = new ModelResolver($appConfig, $sessionMetaStore, new NullLogger());
 
         // Persistence deps are never accessed by getCurrentModel().
         $settingsWriter = (new \ReflectionClass(SettingsOverrideWriter::class))->newInstanceWithoutConstructor();

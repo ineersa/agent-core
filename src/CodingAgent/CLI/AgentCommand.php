@@ -121,6 +121,8 @@ final class AgentCommand
             throw new \RuntimeException('AgentCommand requires OutputInterface');
         }
 
+        self::assertUsableModelOptions($prompt, $model, $reasoning);
+
         try {
             // Override CWD before any service access when --cwd is provided.
             // This ensures app.cwd reflects the requested directory, not the
@@ -203,13 +205,43 @@ final class AgentCommand
 
         return $this->interactiveMode->run(
             client: $client,
-            request: '' !== $prompt ? new StartRunRequest(
-                prompt: $prompt,
-                model: '' !== $model ? $model : null,
-                reasoning: '' !== $reasoning ? $reasoning : null,
-            ) : null,
+            request: self::buildInitialRequest($prompt, $model, $reasoning),
             sessionId: $sessionId,
         );
+    }
+
+    /**
+     * Build the initial StartRunRequest from CLI options.
+     *
+     * Model/reasoning ride the initial request, so a request exists only
+     * when --prompt starts a session eagerly.
+     */
+    private static function buildInitialRequest(string $prompt, string $model, string $reasoning): ?StartRunRequest
+    {
+        if ('' === $prompt) {
+            return null;
+        }
+
+        return new StartRunRequest(
+            prompt: $prompt,
+            model: '' !== $model ? $model : null,
+            reasoning: '' !== $reasoning ? $reasoning : null,
+        );
+    }
+
+    /**
+     * Reject model/reasoning options that no startup path can consume.
+     *
+     * The options only ride the initial StartRunRequest, which requires
+     * --prompt (a prompt-less request is not a valid run start). Without
+     * --prompt the session row owns the selection and the options would be
+     * silently dropped — reject them before any startup work instead.
+     */
+    private static function assertUsableModelOptions(string $prompt, string $model, string $reasoning): void
+    {
+        if ('' === $prompt && ('' !== $model || '' !== $reasoning)) {
+            throw new \InvalidArgumentException('The --model/--reasoning options require --prompt; without --prompt the session row owns model selection (switch with /model or Ctrl+P after the session opens).');
+        }
     }
 
     private function runController(): int

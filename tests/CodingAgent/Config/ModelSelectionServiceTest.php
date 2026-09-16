@@ -600,7 +600,7 @@ class ModelSelectionServiceTest extends IsolatedKernelTestCase
         $appConfig = $this->makeAppConfig($aiData);
         $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
         $homeWriter = new SettingsOverrideWriter($pathResolver, PropertyAccess::createPropertyAccessor(), new Filesystem());
-        $resolver = new ModelResolver($appConfig, $this->sessionMetaStore);
+        $resolver = new ModelResolver($appConfig, $this->sessionMetaStore, new \Psr\Log\NullLogger());
 
         return new ModelSelectionService($appConfig, $resolver, $homeWriter, $this->sessionMetaStore);
     }
@@ -677,7 +677,7 @@ class ModelSelectionServiceTest extends IsolatedKernelTestCase
         $appConfig = $this->makeAppConfig($aiData);
         $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
         $homeWriter = new SettingsOverrideWriter($pathResolver, PropertyAccess::createPropertyAccessor(), new Filesystem());
-        $resolver = new ModelResolver($appConfig, $this->sessionMetaStore);
+        $resolver = new ModelResolver($appConfig, $this->sessionMetaStore, new \Psr\Log\NullLogger());
 
         return [
             new ModelSelectionService($appConfig, $resolver, $homeWriter, $this->sessionMetaStore),

@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Config;
 
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Psr\Log\LoggerInterface;
 
 /**
  * Read-only model and reasoning resolution with four-tier priority.
@@ -32,6 +33,7 @@ final class ModelResolver
     public function __construct(
         private readonly AppConfig $appConfig,
         private readonly HatfieldSessionStore $sessionMetaStore,
+        private readonly LoggerInterface $logger,
     ) {
     }
 
@@ -83,7 +85,23 @@ final class ModelResolver
         }
 
         // 4. First available
-        return $catalog->firstAvailableModel();
+        $fallback = $catalog->firstAvailableModel();
+        if (null !== $defaultRef && null !== $fallback) {
+            // A configured default that cannot be served is a silent model
+            // switch the user never asked for. Make the divergence visible
+            // so misconfiguration (stale catalog entry, disabled provider,
+            // unresolved secret) surfaces in logs instead of quietly
+            // routing turns to an unexpected model.
+            $this->logger->warning('model.default_unavailable_fallback', [
+                'event_type' => 'model.default_unavailable_fallback',
+                'component' => 'model_resolver',
+                'default_model' => $defaultRef->toString(),
+                'resolved_model' => $fallback->toString(),
+                'session_id' => $sessionId,
+            ]);
+        }
+
+        return $fallback;
     }
 
     // ──────────────────────────────────────────────

@@ -176,7 +176,7 @@ final class ModelControlListenerTest extends TestCase
         $pathResolver = new SettingsPathResolver($this->projectDir, $this->homeDir);
         $homeWriter = new SettingsOverrideWriter($pathResolver, PropertyAccess::createPropertyAccessor(), new Filesystem());
 
-        return new ModelSelectionService($appConfig, new ModelResolver($appConfig, $this->sessionStore), $homeWriter, $this->sessionStore);
+        return new ModelSelectionService($appConfig, new ModelResolver($appConfig, $this->sessionStore, new NullLogger()), $homeWriter, $this->sessionStore);
     }
 
     /**

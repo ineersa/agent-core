@@ -461,7 +461,26 @@ final class HatfieldSessionStore
             return null;
         }
 
-        return $this->entityManager->find(HatfieldSession::class, $id);
+        $entity = $this->entityManager->find(HatfieldSession::class, $id);
+        if (null === $entity) {
+            return null;
+        }
+
+        // Cross-process freshness: the TUI and the runtime worker are
+        // separate processes with separate EntityManagers over the same
+        // SQLite database. em->find() serves the identity-map entity once
+        // it is cached, so without an explicit refresh a TUI that created
+        // the row never sees the model the worker persisted, and the
+        // worker never sees a mid-run model change committed by the TUI.
+        // Session metadata is the per-turn model-resolution source of
+        // truth (see ModelResolver tier 2), so every lookup must re-read
+        // committed state instead of a stale in-process snapshot.
+        // Caveat: if another process deletes the row between find() and
+        // refresh(), the hydration finds no row and the managed entity is
+        // returned as-is — the same ghost-read em->find() alone would give.
+        $this->entityManager->refresh($entity);
+
+        return $entity;
     }
 
     /**

@@ -205,6 +205,15 @@ final class SubmitListenerReasoningNoticeClearTest extends TestCase
                 new \Ineersa\Tui\Transcript\TranscriptBlockFactory(),
                 new \Ineersa\AgentCore\Tests\Support\TestLogger(),
             ),
+            footerStateInitializer: new \Ineersa\Tui\Listener\FooterStateInitializer(
+                $context->sessionStore,
+                new \Ineersa\CodingAgent\Config\AppConfig(
+                    tui: new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'),
+                    logging: new \Ineersa\CodingAgent\Config\LoggingConfig(),
+                    sessions: new \Ineersa\CodingAgent\Config\SessionsConfig(),
+                    cwd: '/tmp',
+                ),
+            ),
         );
         $listener->register($context);
     }

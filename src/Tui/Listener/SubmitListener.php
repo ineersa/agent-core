@@ -51,6 +51,7 @@ final class SubmitListener implements TuiListenerRegistrar
         private readonly SubagentLiveInputPolicy $subagentLiveInputPolicy,
         private readonly LoggerInterface $logger,
         private readonly PastedImageSubmissionService $pastedImageSubmissionService,
+        private readonly FooterStateInitializer $footerStateInitializer,
     ) {
     }
 
@@ -70,13 +71,14 @@ final class SubmitListener implements TuiListenerRegistrar
 
         $logger = $this->logger;
         $subagentLiveInputPolicy = $this->subagentLiveInputPolicy;
+        $footerStateInitializer = $this->footerStateInitializer;
         $lifecycle = $context->lifecycle;
         $history = $services->promptHistory;
         $pastedImageSubmissionService = $this->pastedImageSubmissionService;
 
         $context->tui->addListener(static function (SubmitEvent $event) use (
             $client, $sessionStore, $state, $screen, $tui, $router, $blockFactory,
-            $questionCoordinator, $questionController, $subagentLiveInputPolicy, $logger, $lifecycle, $history, $pastedImageSubmissionService,
+            $questionCoordinator, $questionController, $subagentLiveInputPolicy, $logger, $lifecycle, $history, $pastedImageSubmissionService, $footerStateInitializer,
         ) {
             $text = $screen->extract();
             if ('' === $text) {
@@ -160,7 +162,7 @@ final class SubmitListener implements TuiListenerRegistrar
                     $history->append($text);
                     self::dispatchToRuntime(
                         $commandResult->payload, $state, $screen,
-                        $sessionStore, $blockFactory, $client, $logger, $tui, $lifecycle, $pastedImageSubmissionService,
+                        $sessionStore, $blockFactory, $client, $logger, $tui, $lifecycle, $pastedImageSubmissionService, $footerStateInitializer,
                     );
 
                     return;
@@ -177,7 +179,7 @@ final class SubmitListener implements TuiListenerRegistrar
             // user blocks (avoiding duplicate block IDs), and events.jsonl is
             // the single source of truth for transcript replay on resume.
             $history->append($text);
-            self::dispatchToRuntime($text, $state, $screen, $sessionStore, $blockFactory, $client, $logger, $tui, $lifecycle, $pastedImageSubmissionService);
+            self::dispatchToRuntime($text, $state, $screen, $sessionStore, $blockFactory, $client, $logger, $tui, $lifecycle, $pastedImageSubmissionService, $footerStateInitializer);
         });
     }
 
@@ -265,6 +267,7 @@ final class SubmitListener implements TuiListenerRegistrar
         Tui $tui,
         TuiSessionLifecycleDispatcher $lifecycle,
         PastedImageSubmissionService $pastedImageSubmissionService,
+        FooterStateInitializer $footerStateInitializer,
     ): void {
         try {
             // Capture first-run intent before pasted-image promotion may create a session id
@@ -350,6 +353,7 @@ final class SubmitListener implements TuiListenerRegistrar
                     ],
                 );
                 $state->lastSeq = 0;
+                self::reseedFooterFromSession($state, $screen, $footerStateInitializer);
             } elseif (null !== $state->handle && $state->isShellRun && $state->activity->isTerminal()) {
                 // The previous run was a standalone shell command (first-input
                 // !) that completed without ever calling runner->start().
@@ -374,6 +378,7 @@ final class SubmitListener implements TuiListenerRegistrar
                     ],
                 );
                 $state->lastSeq = 0;
+                self::reseedFooterFromSession($state, $screen, $footerStateInitializer);
             } elseif (null !== $state->handle) {
                 // Route subsequent chat messages as follow_up or steer
                 // based on authoritative run activity state:
@@ -439,6 +444,29 @@ final class SubmitListener implements TuiListenerRegistrar
         // synchronous work above; the poller will transition it
         // to idle when runtime events arrive.
         $screen->setTranscriptBlocks($state->transcript);
+    }
+
+    /**
+     * Re-seed the model-derived footer values from session metadata after a
+     * start() that materialised or advanced the session.
+     *
+     * start() (in-process or via the controller) resolves the effective
+     * model/reasoning and persists them to the hatfield_session row before
+     * returning. The footer was seeded earlier from draft-time fallbacks
+     * (request model / AppConfig default), which can differ from what the
+     * runtime actually uses. Session metadata must win here so the footer,
+     * context window, and reasoning indicator match the turns being run.
+     */
+    private static function reseedFooterFromSession(
+        TuiSessionState $state,
+        ChatScreen $screen,
+        FooterStateInitializer $footerStateInitializer,
+    ): void {
+        $footerStateInitializer->initialize($state);
+        if ('' !== $state->footerReasoning) {
+            $screen->applyEditorBorderColor($state->footerReasoning);
+        }
+        $screen->refreshFooter();
     }
 
     /**

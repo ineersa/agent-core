@@ -11,9 +11,12 @@ namespace Ineersa\CodingAgent\CLI;
  * reload only adjusts what must change for the fresh boot:
  *  - one-shot input (--prompt) is dropped so the prompt does not
  *    execute twice,
+ *  - --model/--reasoning are dropped: without --prompt no request can
+ *    carry them and the resumed session's row owns model selection
+ *    (AgentCommand rejects that combination on startup),
  *  - a stale --resume is replaced with the current session id,
- *  - everything else (model, reasoning, transport, tools, skills, cwd)
- *    is preserved deliberately.
+ *  - everything else (transport, tools, skills, cwd) is preserved
+ *    deliberately.
  *
  * AgentCommand's --prompt Option has no shortcut; -p never reaches here.
  */
@@ -47,6 +50,20 @@ final class ReloadArgvBuilder
                 continue;
             }
             if (str_starts_with($arg, '--prompt=')) {
+                continue;
+            }
+
+            // Drop model/reasoning: the relaunch resumes the session, whose
+            // row owns model selection. Prompt-less model options are
+            // rejected at startup, so preserving them would crash the
+            // relaunch.
+            if (\in_array($arg, ['--model', '--reasoning'], true)) {
+                if ($i + 1 < $count && !str_starts_with($originalArgv[$i + 1], '-')) {
+                    ++$i;
+                }
+                continue;
+            }
+            if (str_starts_with($arg, '--model=') || str_starts_with($arg, '--reasoning=')) {
                 continue;
             }
 

@@ -323,6 +323,75 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
         $this->assertNotNull($this->state->handle);
     }
 
+    #[Test]
+    #[AllowMockObjectsWithoutExpectations]
+    public function draftPromotionReseedsFooterFromSessionRow(): void
+    {
+        // The footer is seeded at draft time from request/default fallbacks.
+        // When the draft is promoted, start() persists the effective model to
+        // the session row; the footer must re-resolve from that row so it
+        // matches the model the runtime actually uses for the turns.
+        $this->state->sessionId = '';
+        $this->state->handle = null;
+        $this->state->activity = RunActivityStateEnum::Idle;
+        $this->state->footerModel = 'stale-default';
+        $this->state->footerReasoning = 'high';
+        $this->state->contextWindow = 999999;
+
+        $nextId = 1;
+        $entityById = [];
+        $persisted = null;
+        $em = $this->createMock(EntityManagerInterface::class);
+        $em->method('persist')->willReturnCallback(static function ($entity) use (&$persisted): void {
+            $persisted = $entity;
+        });
+        $em->method('flush')->willReturnCallback(
+            static function () use (&$persisted, &$nextId, &$entityById): void {
+                if ($persisted instanceof HatfieldSession) {
+                    $persisted->id = $nextId++;
+                    $entityById[(string) $persisted->id] = $persisted;
+                    $persisted = null;
+                }
+            },
+        );
+        $em->method('find')->willReturnCallback(
+            static fn (string $class, mixed $id): ?HatfieldSession => $entityById[(string) $id] ?? null,
+        );
+
+        $sessionStore = new HatfieldSessionStore(
+            appConfig: new \Ineersa\CodingAgent\Config\AppConfig(
+                tui: new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'),
+                logging: new \Ineersa\CodingAgent\Config\LoggingConfig(),
+                sessions: new \Ineersa\CodingAgent\Config\SessionsConfig(),
+                cwd: $this->tempCwd,
+            ),
+            entityManager: $em,
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
+        );
+
+        $this->client->expects($this->once())
+            ->method('start')
+            ->willReturnCallback(
+                static function (StartRunRequest $req) use (&$entityById): RunHandle {
+                    // Mirror what the runtime's start() does before returning:
+                    // resolve and persist the effective model to the row.
+                    $entity = $entityById[$req->runId] ?? null;
+                    \assert(null !== $entity);
+                    $entity->model = 'llama_cpp_test/test';
+                    $entity->reasoning = 'off';
+
+                    return new RunHandle('draft-run-1');
+                },
+            );
+
+        $this->dispatchSubmit('/review draft', $sessionStore);
+
+        $this->assertNotSame('', $this->state->sessionId, 'Draft sessionId should be promoted');
+        $this->assertSame('test', $this->state->footerModel, 'Footer model must come from the session row');
+        $this->assertSame(32768, $this->state->contextWindow, 'Context window must come from the session-row model catalog');
+        $this->assertSame('off', $this->state->footerReasoning, 'Reasoning must come from the session row');
+    }
+
     // ── Shell restart path for DispatchRuntime ─────────────────
 
     #[Test]
@@ -665,6 +734,10 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
                 new \Ineersa\Tui\Transcript\TranscriptBlockFactory(),
                 new \Ineersa\AgentCore\Tests\Support\TestLogger(),
             ),
+            footerStateInitializer: new \Ineersa\Tui\Listener\FooterStateInitializer(
+                $context->sessionStore,
+                self::footerAppConfig($this->tempCwd),
+            ),
         );
         $listener->register($context);
 
@@ -680,6 +753,48 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
         ($listeners[0])(new SubmitEvent($promptEditor->getWidget(), $text));
 
         return $screen;
+    }
+
+    /**
+     * AppConfig with a minimal AI catalog for footer model lookups in tests.
+     */
+    private static function footerAppConfig(string $cwd): \Ineersa\CodingAgent\Config\AppConfig
+    {
+        $raw = [
+            'tui' => ['theme' => 'default'],
+            'ai' => [
+                'default_model' => 'llama_cpp_test/test',
+                'default_reasoning' => 'off',
+                'providers' => [
+                    'llama_cpp_test' => [
+                        'type' => 'generic',
+                        'enabled' => true,
+                        'base_url' => 'http://127.0.0.1:9052/v1',
+                        'models' => [
+                            'test' => [
+                                'name' => 'test',
+                                'context_window' => 32768,
+                                'max_tokens' => 32768,
+                                'input' => ['text'],
+                                'tool_calling' => true,
+                                'reasoning' => false,
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ];
+        $ai = \Ineersa\CodingAgent\Config\Ai\AiConfig::optionalFromArray($raw);
+
+        return new \Ineersa\CodingAgent\Config\AppConfig(
+            tui: new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'),
+            logging: new \Ineersa\CodingAgent\Config\LoggingConfig(),
+            sessions: new \Ineersa\CodingAgent\Config\SessionsConfig(),
+            ai: $ai,
+            raw: $raw,
+            catalog: null !== $ai ? new \Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog($ai) : null,
+            cwd: $cwd,
+        );
     }
 
     /** @return list<string> */

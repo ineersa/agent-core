@@ -261,6 +261,15 @@ final class SubmitListenerSubagentLiveInputTest extends TestCase
                 new TranscriptBlockFactory(),
                 new \Ineersa\AgentCore\Tests\Support\TestLogger(),
             ),
+            footerStateInitializer: new \Ineersa\Tui\Listener\FooterStateInitializer(
+                $context->sessionStore,
+                new \Ineersa\CodingAgent\Config\AppConfig(
+                    tui: new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'),
+                    logging: new \Ineersa\CodingAgent\Config\LoggingConfig(),
+                    sessions: new \Ineersa\CodingAgent\Config\SessionsConfig(),
+                    cwd: getcwd() ?: '/tmp',
+                ),
+            ),
         );
         $listener->register($context);
 

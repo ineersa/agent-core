@@ -193,6 +193,15 @@ final class SubagentLiveScenarioHarness
                 new TranscriptBlockFactory(),
                 new \Ineersa\AgentCore\Tests\Support\TestLogger(),
             ),
+            footerStateInitializer: new \Ineersa\Tui\Listener\FooterStateInitializer(
+                $sessionStore,
+                new AppConfig(
+                    tui: new TuiConfig(theme: 'default'),
+                    logging: new LoggingConfig(),
+                    sessions: new SessionsConfig(),
+                    cwd: getcwd() ?: '/tmp',
+                ),
+            ),
         );
         $submitListener->register($context);
 
