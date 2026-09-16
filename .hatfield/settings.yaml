@@ -51,6 +51,7 @@ ai:
             supports_embeddings: false
             supports_thinking_levels: false
             models: { flash: { name: flash, context_window: 160000, max_tokens: 65536, input: [text, image], tool_calling: true, reasoning: true, cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 } } }
+            compatibility: { thinking_format: llama_cpp }
         llama_cpp_test:
             type: generic
             enabled: true
