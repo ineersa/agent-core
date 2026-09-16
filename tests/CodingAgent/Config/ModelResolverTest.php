@@ -12,7 +12,9 @@ use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -119,6 +121,29 @@ class ModelResolverTest extends TestCase
         $this->assertSame('deepseek', $result->providerId);
         $this->assertSame('deepseek-v4-pro', $result->modelName);
     }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testUnavailableSessionModelFallsToDefaultLikeRuntime(): void
+    {
+        // Session metadata may still hold a model that is no longer available.
+        // Resolution must fall through the same availability tiers as runtime,
+        // not display the unavailable stored value.
+        $session = new HatfieldSession();
+        $session->id = 42;
+        $session->model = 'deepseek/nonexistent-model';
+        $session->reasoning = 'medium';
+
+        $resolver = $this->createResolver(
+            $this->standardAiData(),
+            sessionMetaStore: $this->createSessionMetaStoreWithFind($session),
+        );
+
+        $result = $resolver->resolveInitialModel(null, '42');
+
+        $this->assertNotNull($result);
+        $this->assertSame('deepseek/deepseek-v4-pro', $result->toString());
+    }
+
 
     // ──────────────────────────────────────────────
     //  Reasoning resolution
@@ -551,16 +576,18 @@ class ModelResolverTest extends TestCase
     //  Helpers
     // ──────────────────────────────────────────────
 
-    private function createResolver(array $aiData, ?\Ineersa\AgentCore\Tests\Support\TestLogger $logger = null): ModelResolver
-    {
+    private function createResolver(
+        array $aiData,
+        ?\Ineersa\AgentCore\Tests\Support\TestLogger $logger = null,
+        ?HatfieldSessionStore $sessionMetaStore = null,
+    ): ModelResolver {
         $appConfig = $this->makeAppConfig($aiData);
 
-        // HatfieldSessionStore is not used when sessionId is empty,
-        // but the resolver requires it in its constructor.
-        // Create a real one with minimal real dependencies.
-        $sessionMetaStore = $this->createSessionMetaStore();
-
-        return new ModelResolver($appConfig, $sessionMetaStore, $logger ?? new \Ineersa\AgentCore\Tests\Support\TestLogger());
+        return new ModelResolver(
+            $appConfig,
+            $sessionMetaStore ?? $this->createSessionMetaStore(),
+            $logger ?? new \Ineersa\AgentCore\Tests\Support\TestLogger(),
+        );
     }
 
     private function createSessionMetaStore(): HatfieldSessionStore
@@ -568,6 +595,25 @@ class ModelResolverTest extends TestCase
         // HatfieldSessionStore is final — cannot be mocked.
         return (new \ReflectionClass(HatfieldSessionStore::class))
             ->newInstanceWithoutConstructor();
+    }
+
+    private function createSessionMetaStoreWithFind(HatfieldSession $session): HatfieldSessionStore
+    {
+        $em = $this->createMock(\Doctrine\ORM\EntityManagerInterface::class);
+        $em->method('find')->willReturnCallback(
+            static function (string $class, mixed $id) use ($session): ?HatfieldSession {
+                return (string) $session->id === (string) $id ? $session : null;
+            },
+        );
+        $em->method('refresh')->willReturnCallback(static function (object $entity): void {
+            // Entity fields are already set for this unit fixture.
+        });
+
+        return new HatfieldSessionStore(
+            appConfig: $this->makeAppConfig($this->standardAiData()),
+            entityManager: $em,
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
+        );
     }
 
     private function makeAppConfig(array $aiData): AppConfig

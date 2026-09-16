@@ -37,6 +37,7 @@ use Ineersa\Tui\Theme\ThemePalette;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\Tui\Event\SubmitEvent;
@@ -49,7 +50,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
     private TuiSessionState $state;
     /** @var AgentSessionClient&\PHPUnit\Framework\MockObject\MockObject */
     private AgentSessionClient $client;
-    private LoggerInterface $logger;
+    private TestLogger $logger;
     private SlashCommandCatalog $catalog;
     private SubmissionRouter $router;
     private QuestionCoordinator $questionCoordinator;
@@ -61,7 +62,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
 
         $this->state = new TuiSessionState('test-session');
         $this->client = $this->createMock(AgentSessionClient::class);
-        $this->logger = new NullLogger();
+        $this->logger = new TestLogger();
         $this->questionCoordinator = new QuestionCoordinator();
 
         // Build a catalog with a template command returning DispatchRuntime
@@ -390,6 +391,86 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
         $this->assertSame('test', $this->state->footerModel, 'Footer model must come from the session row');
         $this->assertSame(32768, $this->state->contextWindow, 'Context window must come from the session-row model catalog');
         $this->assertSame('off', $this->state->footerReasoning, 'Reasoning must come from the session row');
+    }
+
+    #[Test]
+    #[AllowMockObjectsWithoutExpectations]
+    public function footerReseedFailureAfterStartDoesNotMarkDispatchFailed(): void
+    {
+        // start() already succeeded; a presentation-only footer reread must
+        // degrade locally instead of flipping activity to Failed.
+        $this->state->sessionId = '';
+        $this->state->handle = null;
+        $this->state->activity = RunActivityStateEnum::Idle;
+        $this->state->footerModel = 'stale-default';
+
+        $nextId = 1;
+        $entityById = [];
+        $persisted = null;
+        $failFindAfterStart = false;
+        $findsAfterStart = 0;
+        $em = $this->createMock(EntityManagerInterface::class);
+        $em->method('persist')->willReturnCallback(static function ($entity) use (&$persisted): void {
+            $persisted = $entity;
+        });
+        $em->method('flush')->willReturnCallback(
+            static function () use (&$persisted, &$nextId, &$entityById): void {
+                if ($persisted instanceof HatfieldSession) {
+                    $persisted->id = $nextId++;
+                    $entityById[(string) $persisted->id] = $persisted;
+                    $persisted = null;
+                }
+            },
+        );
+        $em->method('find')->willReturnCallback(
+            static function (string $class, mixed $id) use (&$entityById, &$failFindAfterStart, &$findsAfterStart): ?HatfieldSession {
+                if ($failFindAfterStart) {
+                    ++$findsAfterStart;
+                    // First post-start find is updateMetadata; second is footer reseed.
+                    if ($findsAfterStart > 1) {
+                        throw new \RuntimeException('footer reseed read failed');
+                    }
+                }
+
+                return $entityById[(string) $id] ?? null;
+            },
+        );
+        $em->method('refresh')->willReturnCallback(static function (object $entity): void {
+        });
+
+        $sessionStore = new HatfieldSessionStore(
+            appConfig: new \Ineersa\CodingAgent\Config\AppConfig(
+                tui: new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'),
+                logging: new \Ineersa\CodingAgent\Config\LoggingConfig(),
+                sessions: new \Ineersa\CodingAgent\Config\SessionsConfig(),
+                cwd: $this->tempCwd,
+            ),
+            entityManager: $em,
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
+        );
+
+        $this->client->expects($this->once())
+            ->method('start')
+            ->willReturnCallback(static function () use (&$failFindAfterStart): RunHandle {
+                $failFindAfterStart = true;
+
+                return new RunHandle('draft-run-1');
+            });
+
+        $this->dispatchSubmit('/review draft', $sessionStore);
+
+        $this->assertNotSame('', $this->state->sessionId);
+        $this->assertSame(RunActivityStateEnum::Starting, $this->state->activity);
+        $this->assertNotNull($this->state->handle);
+        $this->assertSame('stale-default', $this->state->footerModel);
+
+        $warnings = array_values(array_filter(
+            $this->logger->records,
+            static fn (array $record): bool => 'SubmitListener: footer reseed after start failed (non-fatal)' === $record['message'],
+        ));
+        $this->assertCount(1, $warnings);
+        $this->assertSame('warning', $warnings[0]['level']);
+        $this->assertSame('submit_footer_reseed_failed', $warnings[0]['context']['event_type'] ?? null);
     }
 
     #[Test]

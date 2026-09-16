@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Listener;
 
-use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\Tui\Command\CommandMetadata;
@@ -88,7 +87,7 @@ final class ModelControlListener implements TuiListenerRegistrar, SlashCommandCa
             }
             $event->stopPropagation();
 
-            $nextRef = self::nextFavoriteModel($modelService, $state->sessionId);
+            $nextRef = $modelService->nextFavoriteModel($state->sessionId);
             if (null === $nextRef) {
                 return;
             }
@@ -117,7 +116,7 @@ final class ModelControlListener implements TuiListenerRegistrar, SlashCommandCa
             // Only cycle when the current model supports thinking levels.
             // When the model does not support thinking, do nothing — no
             // status entry, no footer colour change, no misleading feedback.
-            $nextLevel = self::nextReasoningLevel($modelService, $state->sessionId);
+            $nextLevel = $modelService->nextReasoningLevel($state->sessionId);
             if (null === $nextLevel) {
                 return;
             }
@@ -137,45 +136,5 @@ final class ModelControlListener implements TuiListenerRegistrar, SlashCommandCa
             // Apply editor border colour matching the new reasoning level.
             $screen->applyEditorBorderColor($nextLevel);
         }, priority: InputPriority::MODEL_CONTROL);
-    }
-
-    private static function nextFavoriteModel(
-        ModelSelectionService $modelService,
-        string $sessionId,
-    ): ?AiModelReference {
-        $favorites = $modelService->getFavoriteModels();
-        if ([] === $favorites) {
-            return null;
-        }
-
-        $current = $modelService->getCurrentModel($sessionId);
-        $currentStr = null !== $current ? $current->toString() : null;
-        $pos = null !== $currentStr ? array_search($currentStr, $favorites, true) : false;
-
-        if (false === $pos) {
-            $nextStr = $favorites[0];
-        } else {
-            $nextStr = $favorites[($pos + 1) % \count($favorites)];
-        }
-
-        return AiModelReference::tryParse($nextStr);
-    }
-
-    private static function nextReasoningLevel(
-        ModelSelectionService $modelService,
-        string $sessionId,
-    ): ?string {
-        if (!$modelService->supportsThinkingLevelsForSession($sessionId)) {
-            return null;
-        }
-
-        $current = $modelService->getCurrentReasoning($sessionId);
-        $levels = $modelService->getSupportedReasoningLevels($sessionId);
-        $pos = array_search($current, $levels, true);
-        if (false === $pos) {
-            return $levels[0];
-        }
-
-        return $levels[($pos + 1) % \count($levels)];
     }
 }

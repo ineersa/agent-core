@@ -353,7 +353,7 @@ final class SubmitListener implements TuiListenerRegistrar
                     ],
                 );
                 $state->lastSeq = 0;
-                self::reseedFooterFromSession($state, $screen, $footerStateInitializer);
+                self::reseedFooterFromSession($state, $screen, $footerStateInitializer, $logger);
             } elseif (null !== $state->handle && $state->isShellRun && $state->activity->isTerminal()) {
                 // The previous run was a standalone shell command (first-input
                 // !) that completed without ever calling runner->start().
@@ -378,7 +378,7 @@ final class SubmitListener implements TuiListenerRegistrar
                     ],
                 );
                 $state->lastSeq = 0;
-                self::reseedFooterFromSession($state, $screen, $footerStateInitializer);
+                self::reseedFooterFromSession($state, $screen, $footerStateInitializer, $logger);
             } elseif (null !== $state->handle) {
                 // Route subsequent chat messages as follow_up or steer
                 // based on authoritative run activity state:
@@ -461,12 +461,24 @@ final class SubmitListener implements TuiListenerRegistrar
         TuiSessionState $state,
         ChatScreen $screen,
         FooterStateInitializer $footerStateInitializer,
+        LoggerInterface $logger,
     ): void {
-        $footerStateInitializer->initialize($state);
-        if ('' !== $state->footerReasoning) {
-            $screen->applyEditorBorderColor($state->footerReasoning);
+        try {
+            $footerStateInitializer->initialize($state);
+            if ('' !== $state->footerReasoning) {
+                $screen->applyEditorBorderColor($state->footerReasoning);
+            }
+            $screen->refreshFooter();
+        } catch (\Throwable $e) {
+            // Intentional local degradation: the run already started. A footer
+            // presentation reread must not mark the live dispatch Failed.
+            $logger->warning('SubmitListener: footer reseed after start failed (non-fatal)', [
+                'component' => 'SubmitListener',
+                'event_type' => 'submit_footer_reseed_failed',
+                'session_id' => $state->sessionId,
+                'exception' => $e,
+            ]);
         }
-        $screen->refreshFooter();
     }
 
     /**
