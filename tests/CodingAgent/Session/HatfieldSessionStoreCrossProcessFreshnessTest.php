@@ -26,6 +26,12 @@ use PHPUnit\Framework\TestCase;
  *
  * These tests reproduce that two-EntityManager reality and pin the refresh
  * behavior that makes hatfield_session the per-turn source of truth.
+ *
+ * Deliberate deviation from the IsolatedKernelTestCase rule (tests/AGENTS.md):
+ * the kernel container exposes a single EntityManager and DAMA wraps it in
+ * per-method transactions — reproducing two-process identity-map staleness
+ * requires two independent EMs hand-built over one committed SQLite file.
+ * Do not copy this pattern for ordinary DB tests.
  */
 final class HatfieldSessionStoreCrossProcessFreshnessTest extends TestCase
 {

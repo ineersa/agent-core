@@ -65,10 +65,10 @@ final class AgentCommandModelOptionTest extends TestCase
     }
 
     #[Test]
-    public function resumeWithPromptAndModelStaysUsable(): void
+    public function promptWithModelOrReasoningStaysUsable(): void
     {
-        // With --prompt the options ride the StartRunRequest into the resumed
-        // session's first run; only the prompt-less combination is rejected.
+        // The guard is resume-agnostic: any prompt-present combination is
+        // consumable by the initial StartRunRequest and must never throw.
         $this->assertNoValidationThrow('hello', 'llama_cpp/test', '');
         $this->assertNoValidationThrow('hello', '', 'high');
     }
