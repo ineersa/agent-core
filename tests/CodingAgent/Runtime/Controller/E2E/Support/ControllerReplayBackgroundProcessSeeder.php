@@ -93,7 +93,7 @@ final class ControllerReplayBackgroundProcessSeeder
             /** @var ProcessStore $store */
             $store = $container->get(ProcessStore::class);
 
-            return null !== $store->fetchById($id);
+            return $store->existsByRecordId($id);
         });
     }
 

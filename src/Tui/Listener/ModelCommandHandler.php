@@ -110,7 +110,7 @@ final class ModelCommandHandler implements SlashCommandHandler
         }
 
         try {
-            $this->modelService->changeModel($ref, $this->state->sessionId);
+            PendingModelSelection::updateModel($this->modelService, $ref, $this->state);
         } catch (\RuntimeException $e) {
             $this->logger->warning('Failed to change model', [
                 'exception' => $e,

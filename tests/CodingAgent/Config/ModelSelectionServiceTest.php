@@ -344,58 +344,83 @@ class ModelSelectionServiceTest extends IsolatedKernelTestCase
     //  Cycling
     // ──────────────────────────────────────────────
 
-    public function testCycleFavoriteModelReturnsNextAndWraps(): void
+    public function testNextFavoriteModelReturnsNextAndWrapsAfterPersist(): void
     {
         $aiData = $this->standardAiData();
         $aiData['favorite_models'] = ['deepseek/deepseek-v4-pro', 'llama_cpp/flash'];
         $service = $this->buildService($aiData);
 
         // Current is default (deepseek/deepseek-v4-pro, first favorite) → next is second
-        $next = $service->cycleFavoriteModel($this->sessionId);
+        $next = $service->nextFavoriteModel($this->sessionId);
         $this->assertNotNull($next);
         $this->assertSame('llama_cpp', $next->providerId);
         $this->assertSame('flash', $next->modelName);
 
+        // Pure compute does not persist; callers persist via changeModel.
+        $service->changeModel($next, $this->sessionId);
+
         // Current is now second favorite → wrap to first
-        $next = $service->cycleFavoriteModel($this->sessionId);
+        $next = $service->nextFavoriteModel($this->sessionId);
         $this->assertNotNull($next);
         $this->assertSame('deepseek', $next->providerId);
         $this->assertSame('deepseek-v4-pro', $next->modelName);
     }
 
-    public function testCycleFavoriteModelReturnsNullWhenNoFavorites(): void
+    public function testNextFavoriteModelReturnsNullWhenNoFavorites(): void
     {
         $service = $this->buildService($this->standardAiData());
 
-        $this->assertNull($service->cycleFavoriteModel($this->sessionId));
+        $this->assertNull($service->nextFavoriteModel($this->sessionId));
     }
 
     // ──────────────────────────────────────────────
     //  Reasoning-for-model cycling
     // ──────────────────────────────────────────────
 
-    public function testCycleReasoningForCurrentModelSuccess(): void
+    public function testNextReasoningLevelReturnsNextWithoutPersisting(): void
     {
         $service = $this->buildService($this->standardAiData());
 
-        $result = $service->cycleReasoningForCurrentModel($this->sessionId);
+        $before = $this->findSessionEntity($this->sessionId);
+        $this->assertNotNull($before);
+        $reasoningBefore = $before->reasoning;
 
+        $result = $service->nextReasoningLevel($this->sessionId);
         $this->assertNotNull($result);
         $this->assertSame('high', $result);
 
-        $session = $this->findSessionEntity($this->sessionId);
-        $this->assertNotNull($session);
-        $this->assertSame('high', $session->reasoning);
+        $after = $this->findSessionEntity($this->sessionId);
+        $this->assertNotNull($after);
+        $this->assertSame($reasoningBefore, $after->reasoning);
+
+        $service->changeReasoning($result, $this->sessionId);
+        $persisted = $this->findSessionEntity($this->sessionId);
+        $this->assertNotNull($persisted);
+        $this->assertSame('high', $persisted->reasoning);
     }
 
-    public function testCycleReasoningForCurrentModelReturnsNullWhenUnsupported(): void
+    public function testNextReasoningLevelReturnsNullWhenUnsupported(): void
     {
         $service = $this->buildService($this->standardAiData());
         $service->changeModel(new AiModelReference('llama_cpp', 'flash'), $this->sessionId);
 
-        $result = $service->cycleReasoningForCurrentModel($this->sessionId);
+        $result = $service->nextReasoningLevel($this->sessionId);
 
         $this->assertNull($result);
+    }
+
+    public function testChangeModelWithoutSessionStillWritesSettings(): void
+    {
+        $service = $this->buildService($this->standardAiData());
+
+        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), '');
+
+        // Draft sessions have no row; settings still receive the selection.
+        $homeContent = file_get_contents($this->homeSettingsPath());
+        $this->assertNotFalse($homeContent);
+        $parsed = \Symfony\Component\Yaml\Yaml::parse((string) $homeContent);
+        $this->assertIsArray($parsed);
+        $this->assertSame('llama_cpp/flash', $parsed['ai']['default_model'] ?? null);
     }
 
     // ──────────────────────────────────────────────
@@ -456,16 +481,17 @@ class ModelSelectionServiceTest extends IsolatedKernelTestCase
         $this->assertSame('deepseek/deepseek-v4-pro', $appConfig->ai->defaultModel);
     }
 
-    public function testCycleFavoriteModelSyncsAppConfigModel(): void
+    public function testNextFavoriteModelPersistedViaChangeModelSyncsAppConfig(): void
     {
         $aiData = $this->standardAiData();
         $aiData['favorite_models'] = ['deepseek/deepseek-v4-pro', 'llama_cpp/flash'];
         [$service, $appConfig] = $this->buildServiceWithConfig($aiData);
 
         // Cycle from 'deepseek/deepseek-v4-pro' (default) to 'llama_cpp/flash'
-        $next = $service->cycleFavoriteModel($this->sessionId);
+        $next = $service->nextFavoriteModel($this->sessionId);
         $this->assertNotNull($next);
         $this->assertSame('llama_cpp/flash', $next->toString());
+        $service->changeModel($next, $this->sessionId);
 
         // AppConfig in-memory must reflect the cycle immediately
         $this->assertNotNull($appConfig->ai);
@@ -488,8 +514,10 @@ class ModelSelectionServiceTest extends IsolatedKernelTestCase
         $this->assertNotNull($before);
         $this->assertSame('deepseek/deepseek-v4-pro', $before->toString());
 
-        // Cycle via Ctrl+P equivalent
-        $service->cycleFavoriteModel($this->sessionId);
+        // Cycle via Ctrl+P equivalent: compute next, then persist.
+        $next = $service->nextFavoriteModel($this->sessionId);
+        $this->assertNotNull($next);
+        $service->changeModel($next, $this->sessionId);
 
         // After: default model resolves to the cycled-to model
         $after = $service->resolveInitialModel(null, '');
@@ -600,7 +628,7 @@ class ModelSelectionServiceTest extends IsolatedKernelTestCase
         $appConfig = $this->makeAppConfig($aiData);
         $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
         $homeWriter = new SettingsOverrideWriter($pathResolver, PropertyAccess::createPropertyAccessor(), new Filesystem());
-        $resolver = new ModelResolver($appConfig, $this->sessionMetaStore);
+        $resolver = new ModelResolver($appConfig, $this->sessionMetaStore, new \Psr\Log\NullLogger());
 
         return new ModelSelectionService($appConfig, $resolver, $homeWriter, $this->sessionMetaStore);
     }
@@ -677,7 +705,7 @@ class ModelSelectionServiceTest extends IsolatedKernelTestCase
         $appConfig = $this->makeAppConfig($aiData);
         $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
         $homeWriter = new SettingsOverrideWriter($pathResolver, PropertyAccess::createPropertyAccessor(), new Filesystem());
-        $resolver = new ModelResolver($appConfig, $this->sessionMetaStore);
+        $resolver = new ModelResolver($appConfig, $this->sessionMetaStore, new \Psr\Log\NullLogger());
 
         return [
             new ModelSelectionService($appConfig, $resolver, $homeWriter, $this->sessionMetaStore),

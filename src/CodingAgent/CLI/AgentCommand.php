@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\CLI;
 
+use Ineersa\CodingAgent\Config\Ai\AiModelReference;
+use Ineersa\CodingAgent\Config\ModelResolver;
+use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\CodingAgent\Migrations\StartupDatabaseMigrator;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
@@ -54,6 +57,7 @@ final class AgentCommand
         private JsonlProcessAgentSessionClient $processClient,
         private InteractiveMode $interactiveMode,
         private HatfieldSessionStore $sessionStore,
+        private ModelSelectionService $modelSelectionService,
         private SkillsConfig $skillsConfig,
         private PromptTemplatesRuntimeConfig $promptTemplatesConfig,
         private ToolFilterRuntimeConfig $toolFilterConfig,
@@ -199,17 +203,65 @@ final class AgentCommand
             if (!$this->sessionStore->exists($sessionId)) {
                 throw new \RuntimeException(\sprintf('Session not found: "%s". Use --prompt to start a new session.', $sessionId));
             }
+
+            // Explicit resume overrides update the session selection before any
+            // request is built or InteractiveMode starts. Omitted options keep
+            // the existing session values.
+            $this->applyResumeSelectionOverrides($sessionId, $model, $reasoning);
         }
 
         return $this->interactiveMode->run(
             client: $client,
-            request: '' !== $prompt ? new StartRunRequest(
-                prompt: $prompt,
-                model: '' !== $model ? $model : null,
-                reasoning: '' !== $reasoning ? $reasoning : null,
-            ) : null,
+            request: self::buildInitialRequest($prompt, $model, $reasoning),
             sessionId: $sessionId,
         );
+    }
+
+    /**
+     * Build the initial StartRunRequest from CLI options.
+     *
+     * Model/reasoning ride the initial request, so a request exists only
+     * when --prompt starts a session eagerly.
+     */
+    private static function buildInitialRequest(string $prompt, string $model, string $reasoning): ?StartRunRequest
+    {
+        if ('' === $prompt) {
+            return null;
+        }
+
+        return new StartRunRequest(
+            prompt: $prompt,
+            model: '' !== $model ? $model : null,
+            reasoning: '' !== $reasoning ? $reasoning : null,
+        );
+    }
+
+    /**
+     * Persist explicit --model/--reasoning onto a resumed session before boot.
+     *
+     * Prompt-less resume has no StartRunRequest carrier. The session row is the
+     * selection owner, so overrides must write through ModelSelectionService
+     * before InteractiveMode / footer resolution run.
+     */
+    private function applyResumeSelectionOverrides(string $sessionId, string $model, string $reasoning): void
+    {
+        // Validate explicit reasoning before any write so a later reasoning
+        // failure cannot leave a partially applied model override.
+        if ('' !== $reasoning && !\in_array($reasoning, ModelResolver::LEVELS, true)) {
+            throw new \InvalidArgumentException(\sprintf('Invalid reasoning level "%s". Valid levels: %s.', $reasoning, implode(', ', ModelResolver::LEVELS)));
+        }
+
+        if ('' !== $model) {
+            $ref = AiModelReference::tryParse($model);
+            if (null === $ref) {
+                throw new \InvalidArgumentException(\sprintf('Invalid --model value "%s".', $model));
+            }
+            $this->modelSelectionService->changeModel($ref, $sessionId);
+        }
+
+        if ('' !== $reasoning) {
+            $this->modelSelectionService->changeReasoning($reasoning, $sessionId);
+        }
     }
 
     private function runController(): int

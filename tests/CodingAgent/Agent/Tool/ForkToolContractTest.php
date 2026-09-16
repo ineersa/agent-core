@@ -118,6 +118,7 @@ final class ForkToolContractTest extends TestCase
                 logging: new \Ineersa\CodingAgent\Config\LoggingConfig(),
             ),
             $sessionStore,
+            new \Psr\Log\NullLogger(),
         );
 
         $resolver = new ForkRuntimeConfigResolver(

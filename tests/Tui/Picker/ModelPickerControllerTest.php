@@ -251,7 +251,7 @@ class ModelPickerControllerTest extends TestCase
         );
         $sessionMetaStore = $hatfieldSessionStore;
 
-        return new ModelSelectionService($appConfig, new ModelResolver($appConfig, $sessionMetaStore), $homeWriter, $sessionMetaStore);
+        return new ModelSelectionService($appConfig, new ModelResolver($appConfig, $sessionMetaStore, new NullLogger()), $homeWriter, $sessionMetaStore);
     }
 
     private function standardAiData(): array

@@ -70,7 +70,7 @@ class ModelCommandHandlerTest extends TestCase
         $this->sessionMetaStore = $hatfieldSessionStore;
 
         $appConfig = $this->makeAppConfig($this->standardAiData());
-        $this->modelService = new ModelSelectionService($appConfig, new ModelResolver($appConfig, $this->sessionMetaStore), $homeWriter, $this->sessionMetaStore);
+        $this->modelService = new ModelSelectionService($appConfig, new ModelResolver($appConfig, $this->sessionMetaStore, new NullLogger()), $homeWriter, $this->sessionMetaStore);
 
         $this->state = new TuiSessionState('test-session');
     }
@@ -174,7 +174,7 @@ class ModelCommandHandlerTest extends TestCase
         $appConfig = $this->makeAppConfig($aiData);
         $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
         $homeWriter = new SettingsOverrideWriter($pathResolver, PropertyAccess::createPropertyAccessor(), new Filesystem());
-        $this->modelService = new ModelSelectionService($appConfig, new ModelResolver($appConfig, $this->sessionMetaStore), $homeWriter, $this->sessionMetaStore);
+        $this->modelService = new ModelSelectionService($appConfig, new ModelResolver($appConfig, $this->sessionMetaStore, new NullLogger()), $homeWriter, $this->sessionMetaStore);
         $pickerController = new ModelPickerController($this->pickerTui(), $this->pickerScreen(), $this->state, $this->modelService, $appConfig, new NullLogger());
         $favPickerController = new FavoritePickerController($this->pickerTui(), $this->pickerScreen(), $this->modelService, new NullLogger());
         $handler = new ModelCommandHandler($this->modelService, $appConfig, $this->state, $pickerController, $favPickerController, new NullLogger(), isFavourites: true);
