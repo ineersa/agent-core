@@ -897,7 +897,6 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
                 new TestLogger(),
             ),
             footerStateInitializer: new \Ineersa\Tui\Listener\FooterStateInitializer(
-                $context->sessionStore,
                 self::footerAppConfig($this->tempCwd),
                 self::footerModelSelectionService($context->sessionStore, self::footerAppConfig($this->tempCwd)),
             ),

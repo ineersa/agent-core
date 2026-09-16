@@ -7,7 +7,6 @@ namespace Ineersa\Tui\Listener;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
-use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Utility\GitBranchDetector;
 
@@ -22,7 +21,6 @@ use Ineersa\Tui\Utility\GitBranchDetector;
 final readonly class FooterStateInitializer
 {
     public function __construct(
-        private HatfieldSessionStore $sessionStore,
         private AppConfig $appConfig,
         private ModelSelectionService $modelSelectionService,
     ) {

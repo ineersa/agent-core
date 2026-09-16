@@ -101,7 +101,6 @@ final class FooterStateListenerTest extends TestCase
         );
 
         return new FooterStateInitializer(
-            $context->sessionStore,
             $appConfig,
             new \Ineersa\CodingAgent\Config\ModelSelectionService(
                 $appConfig,

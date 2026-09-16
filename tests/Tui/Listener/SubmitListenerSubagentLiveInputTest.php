@@ -284,7 +284,6 @@ final class SubmitListenerSubagentLiveInputTest extends TestCase
         );
 
         return new \Ineersa\Tui\Listener\FooterStateInitializer(
-            $sessionStore,
             $appConfig,
             new \Ineersa\CodingAgent\Config\ModelSelectionService(
                 $appConfig,

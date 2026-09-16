@@ -401,7 +401,6 @@ final class SubagentLiveScenarioHarness
         );
 
         return new \Ineersa\Tui\Listener\FooterStateInitializer(
-            $sessionStore,
             $appConfig,
             new \Ineersa\CodingAgent\Config\ModelSelectionService(
                 $appConfig,
