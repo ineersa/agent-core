@@ -175,6 +175,7 @@ Load the task-workflow skill when deciding implementation ownership or preparing
 - `docs/ai-catalog.md`: AI provider catalog, `providers:update`, and settings overlay
 - `docs/compaction.md`: compaction, `/compact`, events, and hooks
 - `docs/session-storage.md`: sessions, replay, locking, resume, and fork
+- `docs/history-conversion.md`: request-time history conversion across providers/models
 - `docs/tui-architecture.md`: layout, widgets, slots, and themes
 - `docs/tui-testing.md`: tmux testing, snapshots, and keybindings
 - `docs/distribution.md`: release artifacts, installer, and publishing

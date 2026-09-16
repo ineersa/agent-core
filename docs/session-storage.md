@@ -64,6 +64,9 @@ Sessions may be renamed via `/rename`. Display names are metadata only — they 
 - Transient streamed text is separate from durable events. Resume rebuilds from
   committed history, not from an unfinished stream.
 
+Provider or model switches convert that canonical history at request time. See
+[history-conversion.md](history-conversion.md).
+
 ## Child artifacts
 
 Foreground subagent runs store parent-scoped artifacts under the parent session (handoff text, metadata, bounded event/history summaries). Retrieve with `agent_retrieve` (see [agents.md](agents.md)).

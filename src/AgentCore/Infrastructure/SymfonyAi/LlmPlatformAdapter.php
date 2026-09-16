@@ -127,7 +127,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         $resolvedModel = null !== $this->modelResolver
             ? $this->modelResolver->resolve(
                 defaultModel: $request->model,
-                messages: $this->messageConverter->toMessageBag($messages),
+                hasConversationMessages: $this->hasConversationMessages($messages),
                 input: $request->input,
                 options: new ModelResolutionOptions($request->options->extraOptions),
             )
@@ -287,7 +287,23 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             $resolvedMessageBag = $hook->convertToLlm($messages, $cancelToken, $modelName);
         }
 
-        return $resolvedMessageBag ?? $this->messageConverter->toMessageBag($messages);
+        return $resolvedMessageBag ?? $this->messageConverter->toMessageBagForTarget($messages, $modelName);
+    }
+
+    /**
+     * True when any non-system AgentMessage is present.
+     *
+     * @param list<AgentMessage> $messages
+     */
+    private function hasConversationMessages(array $messages): bool
+    {
+        foreach ($messages as $message) {
+            if ('system' !== $message->role) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
