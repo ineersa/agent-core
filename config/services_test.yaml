@@ -25,6 +25,24 @@ services:
       $logger: '@Psr\Log\LoggerInterface'
     # No calls: registerShutdownHandler is intentionally omitted.
 
+  # Keep the default disabled diagnostics path deterministic in APP_ENV=test.
+  # Host relaunches may export HATFIELD_WRITE_PROMPT_CACHE_DIAGNOSTICS=1 for
+  # evidence capture; that must not flip the container subscriber used by the
+  # explicit disabled regression. Enabled-path tests construct the subscriber
+  # with writeDiagnostics=true directly.
+  Ineersa\CodingAgent\Agent\Diagnostics\PromptCacheDiagnosticsInvocationSubscriber:
+    arguments:
+      $store: '@Ineersa\CodingAgent\Agent\Diagnostics\PromptCacheDiagnosticsStore'
+      $modelCatalog: '@Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog'
+      $logger: '@Psr\Log\LoggerInterface'
+      $writeDiagnostics: false
+
+  # TEST-ONLY public alias so the disabled-path regression can fetch the real
+  # wired subscriber without making the production service public.
+  test.prompt_cache_diagnostics_invocation_subscriber:
+    alias: Ineersa\CodingAgent\Agent\Diagnostics\PromptCacheDiagnosticsInvocationSubscriber
+    public: true
+
   # In-memory ExtensionApiInterface test double for extension loading tests.
   # Does NOT override the production ExtensionApiInterface alias
   # (which stays on ExtensionToolRegistryBridge so SafeGuard and

@@ -402,6 +402,7 @@ final class StartRunPersistsSessionModelTest extends IsolatedKernelTestCase
         return new ModelResolver(
             $appConfig,
             $this->sessionMetaStore(),
+            new \Psr\Log\NullLogger(),
         );
     }
 
@@ -442,6 +443,7 @@ final class StartRunPersistsSessionModelTest extends IsolatedKernelTestCase
         return new ModelResolver(
             $this->makeAppConfigFromAiData($cwd, $aiData),
             $this->sessionMetaStore(),
+            new \Psr\Log\NullLogger(),
         );
     }
 

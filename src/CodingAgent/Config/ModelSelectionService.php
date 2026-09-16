@@ -268,9 +268,11 @@ final class ModelSelectionService
     }
 
     /**
-     * Cycle to the next favorite model and persist it.
+     * Compute the next favorite model without persisting.
+     *
+     * Callers persist via {@see changeModel()} / PendingModelSelection.
      */
-    public function cycleFavoriteModel(string $sessionId): ?AiModelReference
+    public function nextFavoriteModel(string $sessionId): ?AiModelReference
     {
         $favorites = $this->getFavoriteModels();
         if ([] === $favorites) {
@@ -289,20 +291,15 @@ final class ModelSelectionService
             $nextStr = $favorites[$nextIdx];
         }
 
-        $nextRef = AiModelReference::tryParse($nextStr);
-        if (null === $nextRef) {
-            return null;
-        }
-
-        $this->changeModel($nextRef, $sessionId);
-
-        return $nextRef;
+        return AiModelReference::tryParse($nextStr);
     }
 
     /**
-     * Cycle reasoning for the current model.
+     * Compute the next reasoning level for the current model without persisting.
+     *
+     * Callers persist via {@see changeReasoning()} / PendingModelSelection.
      */
-    public function cycleReasoningForCurrentModel(string $sessionId): ?string
+    public function nextReasoningLevel(string $sessionId): ?string
     {
         if (!$this->supportsThinkingLevelsForSession($sessionId)) {
             return null;
@@ -313,15 +310,10 @@ final class ModelSelectionService
 
         $pos = array_search($current, $levels, true);
         if (false === $pos) {
-            $nextLevel = $levels[0];
-        } else {
-            $nextIdx = ($pos + 1) % \count($levels);
-            $nextLevel = $levels[$nextIdx];
+            return $levels[0];
         }
 
-        $this->changeReasoning($nextLevel, $sessionId);
-
-        return $nextLevel;
+        return $levels[($pos + 1) % \count($levels)];
     }
 
     /**

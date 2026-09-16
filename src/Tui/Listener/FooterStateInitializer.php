@@ -7,58 +7,58 @@ namespace Ineersa\Tui\Listener;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
-use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Utility\GitBranchDetector;
 
 /**
  * Initialises TuiSessionState fields needed by the footer.
  *
- * Seeds model/reasoning from session metadata, request, or AppConfig
+ * Seeds model/reasoning/context window through ModelSelectionService
+ * resolution tiers (same as runtime), including unavailable-default
  * fallback. Detects cwd (short: last 2 path segments) and git branch.
- * Looks up context window from the Hatfield catalog. Sets session
- * start time on first call.
+ * Sets session start time on first call.
  */
 final readonly class FooterStateInitializer
 {
     public function __construct(
-        private HatfieldSessionStore $sessionStore,
         private AppConfig $appConfig,
+        private ModelSelectionService $modelSelectionService,
     ) {
     }
 
     public function initialize(TuiSessionState $state): void
     {
-        // Seed model/reasoning from session metadata
-        $fullModel = '';
-        $reasoning = '';
-        $session = $this->sessionStore->findSession($state->sessionId);
-        if (null !== $session) {
-            $fullModel = $session->model ?? '';
-            $reasoning = $session->reasoning ?? '';
-        }
+        // Resolve through the same tiers as runtime startup, including the
+        // unavailable-default fallback. Draft sessions still honour an explicit
+        // pending StartRunRequest model/reasoning when no row exists yet.
+        $explicitModel = null !== $state->request ? $state->request->model : null;
+        $explicitReasoning = null !== $state->request ? $state->request->reasoning : null;
 
-        // Fallback: StartRunRequest (first run before session persisted)
-        if ('' === $fullModel && null !== $state->request) {
-            $fullModel = $state->request->model ?? '';
-            $reasoning = $state->request->reasoning ?? '';
-        }
+        $resolvedModel = $this->modelSelectionService->resolveInitialModel(
+            $explicitModel,
+            $state->sessionId,
+        );
+        $fullModel = null !== $resolvedModel ? $resolvedModel->toString() : '';
 
-        // Fallback: AppConfig default model
-        if ('' === $fullModel && null !== $this->appConfig->ai) {
-            $defaultModel = $this->appConfig->ai->defaultModel;
-            if (null !== $defaultModel && '' !== $defaultModel) {
-                $fullModel = $defaultModel;
+        if (null !== $resolvedModel) {
+            $rawReasoning = $this->modelSelectionService->resolveInitialReasoning(
+                $explicitReasoning,
+                $state->sessionId,
+            );
+            $state->footerModel = self::shortModelName($fullModel);
+            $state->footerReasoning = $this->modelSelectionService->clampReasoningLevel(
+                $rawReasoning,
+                $resolvedModel,
+            );
+            if (!$this->appConfig->catalog?->supportsThinkingLevels($resolvedModel)) {
+                $state->footerReasoning = 'off';
             }
-
-            if ('' === $reasoning && null !== $this->appConfig->ai->defaultReasoning && '' !== $this->appConfig->ai->defaultReasoning) {
-                $reasoning = $this->appConfig->ai->defaultReasoning;
-            }
+            $state->contextWindow = self::resolveContextWindowForRef($this->appConfig, $resolvedModel);
+        } else {
+            $state->footerModel = '';
+            $state->footerReasoning = '';
+            $state->contextWindow = 0;
         }
-
-        $state->footerModel = self::shortModelName($fullModel);
-        $state->footerReasoning = self::clampReasoningForModel($this->appConfig, $fullModel, $reasoning);
-        $state->contextWindow = self::resolveContextWindow($this->appConfig, $fullModel);
 
         if (0.0 === $state->sessionStartTime) {
             $state->sessionStartTime = microtime(true);
@@ -132,54 +132,5 @@ final readonly class FooterStateInitializer
         $definition = $catalog->getModel($ref);
 
         return null !== $definition ? ($definition->contextWindow ?? 0) : 0;
-    }
-
-    /**
-     * Clamp the reasoning level for the resolved model.
-     *
-     * When the active model does not support thinking levels (e.g. llama_cpp
-     * without reasoning:true or a provider with supports_thinking_levels: false),
-     * the footer diamond/model colour must be reset to 'off' regardless of what
-     * session metadata / defaults / request carry.  Otherwise a stale high/xhigh
-     * level from a previous thinking-capable session leaks into a non-thinking
-     * session and confuses the user with an incorrect colour indicator.
-     */
-    private static function clampReasoningForModel(
-        AppConfig $appConfig,
-        string $fullModel,
-        string $reasoning,
-    ): string {
-        if ('' === $fullModel || '' === $reasoning) {
-            return $reasoning;
-        }
-
-        $catalog = $appConfig->catalog;
-        if (null === $catalog) {
-            return $reasoning;
-        }
-
-        $ref = AiModelReference::tryParse($fullModel);
-        if (null === $ref) {
-            return $reasoning;
-        }
-
-        // Non-thinking model: force reasoning to 'off' so the footer
-        // colour indicator stays neutral.
-        if (!$catalog->supportsThinkingLevels($ref)) {
-            return 'off';
-        }
-
-        return $reasoning;
-    }
-
-    private static function resolveContextWindow(AppConfig $appConfig, string $fullModel): int
-    {
-        if ('' === $fullModel) {
-            return 0;
-        }
-
-        $ref = AiModelReference::tryParse($fullModel);
-
-        return null !== $ref ? self::resolveContextWindowForRef($appConfig, $ref) : 0;
     }
 }

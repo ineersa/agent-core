@@ -78,7 +78,7 @@ final class SessionCacheInspectCommandTest extends IsolatedKernelTestCase
         $childDirectory = new AgentChildRunDirectory($hatfieldSessionStore, $registry, new TestLogger());
         $diagStore = static::getContainer()->get(PromptCacheDiagnosticsStore::class);
         $dispatcher = new EventDispatcher();
-        $dispatcher->addSubscriber(static::getContainer()->get(PromptCacheDiagnosticsInvocationSubscriber::class));
+        $dispatcher->addSubscriber(static::getContainer()->get('test.prompt_cache_diagnostics_invocation_subscriber'));
 
         $this->dispatchPreparedRequest($dispatcher, $sessionId, 1, 'parent-step', 'openai-codex/gpt-5.6', 'openai-codex', 'system', 'secret', 'read', null);
         $childRunId = '0194eeee-aaaa-7bbb-8ccc-dddddddddddd';

@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Entity;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\OptimisticLockException;
+use Doctrine\ORM\Query;
 use Doctrine\Persistence\ManagerRegistry;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
@@ -34,7 +35,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
 
     public function findByParentRunAndToolCall(string $parentRunId, string $parentToolCallId): ?DeferredSubagentBatchProjectionDTO
     {
-        $row = $this->findOneBy([
+        $row = $this->findFreshOneBy([
             'parentRunId' => $parentRunId,
             'parentToolCallId' => $parentToolCallId,
         ]);
@@ -44,7 +45,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
 
     public function findEntityByLifecycleId(string $lifecycleId): ?DeferredSubagentBatch
     {
-        $row = $this->findOneBy(['lifecycleId' => $lifecycleId]);
+        $row = $this->findFreshOneBy(['lifecycleId' => $lifecycleId]);
 
         return $row instanceof DeferredSubagentBatch ? $row : null;
     }
@@ -138,7 +139,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
         int $deliveredProgressRevision,
         int $expectedProjectionVersion,
     ): void {
-        $row = $this->findOneBy(['lifecycleId' => $batchLifecycleId]);
+        $row = $this->findFreshOneBy(['lifecycleId' => $batchLifecycleId]);
         if (!$row instanceof DeferredSubagentBatch) {
             throw new \RuntimeException(\sprintf('Deferred subagent batch missing for lifecycle "%s".', $batchLifecycleId));
         }
@@ -156,7 +157,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
         \DateTimeImmutable $enqueuedAt,
         int $expectedProjectionVersion,
     ): void {
-        $row = $this->findOneBy(['lifecycleId' => $batchLifecycleId]);
+        $row = $this->findFreshOneBy(['lifecycleId' => $batchLifecycleId]);
         if (!$row instanceof DeferredSubagentBatch) {
             throw new \RuntimeException(\sprintf('Deferred subagent batch missing for lifecycle "%s".', $batchLifecycleId));
         }
@@ -171,7 +172,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
 
     public function findByLifecycleId(string $lifecycleId): ?DeferredSubagentBatchProjectionDTO
     {
-        $row = $this->findOneBy(['lifecycleId' => $lifecycleId]);
+        $row = $this->findFreshOneBy(['lifecycleId' => $lifecycleId]);
 
         return $row instanceof DeferredSubagentBatch ? $this->toDto($row) : null;
     }
@@ -191,7 +192,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
         array $childIntents,
         ?string $parentModel = null,
     ): DeferredSubagentBatchProjectionDTO {
-        $existing = $this->findOneBy([
+        $existing = $this->findFreshOneBy([
             'parentRunId' => $parentRunId,
             'parentToolCallId' => $parentToolCallId,
         ]);
@@ -232,7 +233,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
             if ($conn->isTransactionActive()) {
                 $conn->rollBack();
             }
-            $row = $this->findOneBy([
+            $row = $this->findFreshOneBy([
                 'parentRunId' => $parentRunId,
                 'parentToolCallId' => $parentToolCallId,
             ]);
@@ -254,6 +255,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
 
         $this->getEntityManager()->clear();
 
+        // Identity map was cleared after the SQL reservation; plain find is fine.
         $row = $this->findOneBy([
             'parentRunId' => $parentRunId,
             'parentToolCallId' => $parentToolCallId,
@@ -479,7 +481,12 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
                 DeferredSubagentBatchLaunchStatusEnum::Launched->value,
             ]);
 
-        return array_map($this->toDto(...), $qb->getQuery()->getResult());
+        return array_map(
+            $this->toDto(...),
+            $qb->getQuery()
+                ->setHint(Query::HINT_REFRESH, true)
+                ->getResult(),
+        );
     }
 
     /**
@@ -491,7 +498,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
         \DateTimeImmutable $requestedAt,
         int $expectedProjectionVersion,
     ): void {
-        $row = $this->findOneBy(['lifecycleId' => $batchLifecycleId]);
+        $row = $this->findFreshOneBy(['lifecycleId' => $batchLifecycleId]);
         if (!$row instanceof DeferredSubagentBatch) {
             throw new \RuntimeException(\sprintf('Deferred subagent batch missing for lifecycle "%s".', $batchLifecycleId));
         }
@@ -521,7 +528,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
         \DateTimeImmutable $enqueuedAt,
         int $expectedProjectionVersion,
     ): void {
-        $row = $this->findOneBy(['lifecycleId' => $batchLifecycleId]);
+        $row = $this->findFreshOneBy(['lifecycleId' => $batchLifecycleId]);
         if (!$row instanceof DeferredSubagentBatch) {
             throw new \RuntimeException(\sprintf('Deferred subagent batch missing for lifecycle "%s".', $batchLifecycleId));
         }
@@ -585,6 +592,29 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
                 throw new ToolCallException('Deferred subagent batch child was reserved with a different launch model or reasoning.', retryable: false);
             }
         }
+    }
+
+    /**
+     * Load one batch with committed mutable fields (status/markers/version).
+     *
+     * @param array<string, mixed> $criteria
+     */
+    private function findFreshOneBy(array $criteria): ?DeferredSubagentBatch
+    {
+        $qb = $this->createQueryBuilder('b');
+        $i = 0;
+        foreach ($criteria as $field => $value) {
+            $param = 'p'.$i;
+            $qb->andWhere(\sprintf('b.%s = :%s', $field, $param))
+                ->setParameter($param, $value);
+            ++$i;
+        }
+
+        $row = $qb->getQuery()
+            ->setHint(Query::HINT_REFRESH, true)
+            ->getOneOrNullResult();
+
+        return $row instanceof DeferredSubagentBatch ? $row : null;
     }
 
     private function toDto(DeferredSubagentBatch $row): DeferredSubagentBatchProjectionDTO
