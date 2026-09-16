@@ -6,11 +6,13 @@ namespace Ineersa\CodingAgent\Tests\CLI;
 
 use Ineersa\CodingAgent\CLI\AgentCommand;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
+use Ineersa\CodingAgent\Migrations\StartupDatabaseMigrator;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\Tui\Application\InteractiveMode;
+use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Theme\ThemeRegistry;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
@@ -35,6 +37,9 @@ final class AgentCommandModelOptionTest extends IsolatedKernelTestCase
     private ?string $previousHome = null;
     private HatfieldSessionStore $sessionStore;
     private string $sessionId = '';
+
+    /** @var array{async: bool, sigterm: callable|int|string|null, sigint: callable|int|string|null, themes: array<string, ThemePalette>, migratorRan: ?bool}|null */
+    private ?array $armedCleanup = null;
 
     protected function setUp(): void
     {
@@ -68,6 +73,8 @@ final class AgentCommandModelOptionTest extends IsolatedKernelTestCase
 
     protected function tearDown(): void
     {
+        $this->restoreArmedSharedState();
+
         if (null !== $this->previousHome) {
             $_SERVER['HOME'] = $this->previousHome;
             $_ENV['HOME'] = $this->previousHome;
@@ -130,6 +137,8 @@ final class AgentCommandModelOptionTest extends IsolatedKernelTestCase
         } catch (\RuntimeException $e) {
             $this->assertStringContainsString('Theme "', $e->getMessage());
             $this->assertStringContainsString('is not registered', $e->getMessage());
+        } finally {
+            $this->restoreArmedSharedState();
         }
 
         $session = $this->sessionStore->findSession($this->sessionId);
@@ -156,6 +165,8 @@ final class AgentCommandModelOptionTest extends IsolatedKernelTestCase
         } catch (\RuntimeException $e) {
             $this->assertStringContainsString('Theme "', $e->getMessage());
             $this->assertStringContainsString('is not registered', $e->getMessage());
+        } finally {
+            $this->restoreArmedSharedState();
         }
 
         $session = $this->sessionStore->findSession($this->sessionId);
@@ -180,6 +191,8 @@ final class AgentCommandModelOptionTest extends IsolatedKernelTestCase
             $this->fail('Invalid --reasoning must fail before InteractiveMode starts');
         } catch (\InvalidArgumentException $e) {
             $this->assertStringContainsString('Invalid reasoning level "super-genius"', $e->getMessage());
+        } finally {
+            $this->restoreArmedSharedState();
         }
 
         $session = $this->sessionStore->findSession($this->sessionId);
@@ -242,17 +255,25 @@ YAML);
     /**
      * Force InteractiveMode::run to throw at theme resolution, after AgentCommand
      * has already applied resume overrides and before the TUI session loop starts.
+     *
+     * Snapshots shared signal / theme / migrator state so later cases and other
+     * suites do not inherit InteractiveMode's process-wide handlers.
      */
     private function armInteractiveModeAbortBeforeSessionLoop(): void
     {
+        $this->restoreArmedSharedState();
+
         $agentCommand = $this->resolveContainerAgentCommand();
-        // IsolatedKernelTestCase already migrated the test DB. Mark the shared
-        // StartupDatabaseMigrator as ran so AgentCommand skips WAL re-entry
-        // under DAMA before the resume override path under test.
         $migratorProperty = new \ReflectionProperty(AgentCommand::class, 'startupDatabaseMigrator');
+        /** @var StartupDatabaseMigrator|null $migrator */
         $migrator = $migratorProperty->getValue($agentCommand);
+        $migratorRan = null;
         if (null !== $migrator) {
             $ranProperty = new \ReflectionProperty($migrator, 'ran');
+            $migratorRan = (bool) $ranProperty->getValue($migrator);
+            // IsolatedKernelTestCase already migrated the test DB. Mark the shared
+            // StartupDatabaseMigrator as ran so AgentCommand skips WAL re-entry
+            // under DAMA before the resume override path under test.
             $ranProperty->setValue($migrator, true);
         }
 
@@ -265,12 +286,70 @@ YAML);
         $themeRegistry = $themeRegistryProperty->getValue($interactiveMode);
 
         $themesProperty = new \ReflectionProperty(ThemeRegistry::class, 'themes');
+        /** @var array<string, ThemePalette> $themes */
+        $themes = $themesProperty->getValue($themeRegistry);
+
+        $async = false;
+        $sigterm = null;
+        $sigint = null;
+        if (\function_exists('pcntl_async_signals') && \function_exists('pcntl_signal') && \function_exists('pcntl_signal_get_handler')) {
+            // Snapshot before InteractiveMode::run installs exit(0) handlers.
+            $async = (bool) pcntl_async_signals();
+            $sigterm = pcntl_signal_get_handler(\SIGTERM);
+            $sigint = pcntl_signal_get_handler(\SIGINT);
+        }
+
+        $this->armedCleanup = [
+            'async' => $async,
+            'sigterm' => $sigterm,
+            'sigint' => $sigint,
+            'themes' => $themes,
+            'migratorRan' => $migratorRan,
+        ];
+
         // Empty the registry so InteractiveMode aborts at getOrThrow after
-        // AgentCommand has already applied resume overrides. Restore in tearDown
-        // is unnecessary because IsolatedKernelTestCase clears EM and each case
-        // re-resolves the same shared registry; re-arming per case keeps proof
-        // local without entering the TUI loop.
+        // AgentCommand has already applied resume overrides.
         $themesProperty->setValue($themeRegistry, []);
+    }
+
+    private function restoreArmedSharedState(): void
+    {
+        if (null === $this->armedCleanup) {
+            return;
+        }
+
+        $cleanup = $this->armedCleanup;
+        $this->armedCleanup = null;
+
+        $agentCommand = $this->resolveContainerAgentCommand();
+
+        $migratorProperty = new \ReflectionProperty(AgentCommand::class, 'startupDatabaseMigrator');
+        /** @var StartupDatabaseMigrator|null $migrator */
+        $migrator = $migratorProperty->getValue($agentCommand);
+        if (null !== $migrator && null !== $cleanup['migratorRan']) {
+            $ranProperty = new \ReflectionProperty($migrator, 'ran');
+            $ranProperty->setValue($migrator, $cleanup['migratorRan']);
+        }
+
+        $interactiveProperty = new \ReflectionProperty(AgentCommand::class, 'interactiveMode');
+        /** @var InteractiveMode $interactiveMode */
+        $interactiveMode = $interactiveProperty->getValue($agentCommand);
+        $themeRegistryProperty = new \ReflectionProperty(InteractiveMode::class, 'themeRegistry');
+        /** @var ThemeRegistry $themeRegistry */
+        $themeRegistry = $themeRegistryProperty->getValue($interactiveMode);
+        $themesProperty = new \ReflectionProperty(ThemeRegistry::class, 'themes');
+        $themesProperty->setValue($themeRegistry, $cleanup['themes']);
+
+        if (\function_exists('pcntl_async_signals') && \function_exists('pcntl_signal')) {
+            // Restore the prior async flag exactly; never force false.
+            pcntl_async_signals($cleanup['async']);
+            if (null !== $cleanup['sigterm']) {
+                pcntl_signal(\SIGTERM, $cleanup['sigterm']);
+            }
+            if (null !== $cleanup['sigint']) {
+                pcntl_signal(\SIGINT, $cleanup['sigint']);
+            }
+        }
     }
 
     private function resolveContainerAgentCommand(): AgentCommand
