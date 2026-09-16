@@ -4,77 +4,62 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\CLI;
 
-use Ineersa\CodingAgent\Config\Ai\AiConfig;
-use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
-use Ineersa\CodingAgent\Config\AppConfig;
-use Ineersa\CodingAgent\Config\LoggingConfig;
-use Ineersa\CodingAgent\Config\ModelResolver;
-use Ineersa\CodingAgent\Config\ModelSelectionService;
-use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
-use Ineersa\CodingAgent\Config\SettingsPathResolver;
-use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\CLI\AgentCommand;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\Tui\Application\InteractiveMode;
+use Ineersa\Tui\Theme\ThemeRegistry;
 use PHPUnit\Framework\Attributes\Test;
-use Psr\Log\NullLogger;
-use Symfony\Component\Filesystem\Filesystem;
-use Symfony\Component\PropertyAccess\PropertyAccess;
+use Symfony\Bundle\FrameworkBundle\Console\Application;
+use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Command\InvokableCommand;
+use Symfony\Component\Console\Input\ArrayInput;
+use Symfony\Component\Console\Output\NullOutput;
 
 /**
  * @covers \Ineersa\CodingAgent\CLI\AgentCommand
  *
- * Covers the --model/--reasoning option contract for TUI startup:
+ * Public startup contract for --resume/--model/--reasoning:
  *  - prompt-bearing launches still ride StartRunRequest,
  *  - prompt-less --resume with explicit options updates session selection
- *    before any request,
- *  - omitted resume options preserve the existing session selection.
+ *    through the real container AgentCommand before InteractiveMode::run,
+ *  - omitted resume options preserve the existing session selection,
+ *  - invalid --reasoning fails before any model write.
  */
 final class AgentCommandModelOptionTest extends IsolatedKernelTestCase
 {
-    private string $tempDir = '';
     private string $homeDir = '';
+    private ?string $previousHome = null;
     private HatfieldSessionStore $sessionStore;
-    private ModelSelectionService $modelSelectionService;
     private string $sessionId = '';
 
     protected function setUp(): void
     {
         parent::setUp();
 
-        $this->tempDir = TestDirectoryIsolation::createProjectTempDir('hatfield-agent-model-option', 0o750);
-        $this->homeDir = $this->tempDir.'/home';
-        mkdir($this->homeDir.'/.hatfield', 0777, true);
-        mkdir($this->tempDir.'/project/.hatfield/sessions', 0777, true);
-        file_put_contents($this->homeDir.'/.hatfield/settings.yaml', "tui:\n    theme: default\n");
+        $this->homeDir = TestDirectoryIsolation::createProjectTempDir('hatfield-agent-model-home', 0o750);
+        TestDirectoryIsolation::createHatfieldTree($this->homeDir, withSessions: false);
+        TestDirectoryIsolation::createHatfieldTree($this->isolatedCwd(), withSessions: true);
 
-        $entityManager = static::getContainer()->get('doctrine.orm.default_entity_manager');
-        $appConfig = $this->buildAppConfig($this->tempDir.'/project');
-        $this->sessionStore = new HatfieldSessionStore(
-            appConfig: $appConfig,
-            entityManager: $entityManager,
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
-        );
-        $pathResolver = new SettingsPathResolver($this->tempDir.'/project', $this->homeDir);
-        $homeWriter = new SettingsOverrideWriter(
-            $pathResolver,
-            PropertyAccess::createPropertyAccessor(),
-            new Filesystem(),
-        );
-        $this->modelSelectionService = new ModelSelectionService(
-            $appConfig,
-            new ModelResolver($appConfig, $this->sessionStore, new NullLogger()),
-            $homeWriter,
-            $this->sessionStore,
-        );
+        $previousHome = $_SERVER['HOME'] ?? getenv('HOME') ?: null;
+        $this->previousHome = \is_string($previousHome) ? $previousHome : null;
+        $_SERVER['HOME'] = $this->homeDir;
+        $_ENV['HOME'] = $this->homeDir;
+        putenv('HOME='.$this->homeDir);
 
+        /** @var HatfieldSessionStore $sessionStore */
+        $sessionStore = self::getContainer()->get(HatfieldSessionStore::class);
+        $this->sessionStore = $sessionStore;
+
+        $entityManager = self::getContainer()->get('doctrine.orm.default_entity_manager');
         $entity = new HatfieldSession();
-        $entity->cwd = $this->tempDir.'/project';
-        $entity->model = 'llama_cpp/flash';
-        $entity->modelProvider = 'llama_cpp';
-        $entity->modelName = 'flash';
+        $entity->cwd = $this->isolatedCwd();
+        $entity->model = 'llama_cpp_test/test';
+        $entity->modelProvider = 'llama_cpp_test';
+        $entity->modelName = 'test';
         $entity->reasoning = 'medium';
         $entityManager->persist($entity);
         $entityManager->flush();
@@ -83,9 +68,19 @@ final class AgentCommandModelOptionTest extends IsolatedKernelTestCase
 
     protected function tearDown(): void
     {
-        if ('' !== $this->tempDir) {
-            TestDirectoryIsolation::removeDirectory($this->tempDir);
+        if (null !== $this->previousHome) {
+            $_SERVER['HOME'] = $this->previousHome;
+            $_ENV['HOME'] = $this->previousHome;
+            putenv('HOME='.$this->previousHome);
+        } else {
+            unset($_SERVER['HOME'], $_ENV['HOME']);
+            putenv('HOME');
         }
+
+        if ('' !== $this->homeDir) {
+            TestDirectoryIsolation::removeDirectory($this->homeDir);
+        }
+
         parent::tearDown();
     }
 
@@ -119,113 +114,187 @@ final class AgentCommandModelOptionTest extends IsolatedKernelTestCase
     }
 
     #[Test]
-    public function resumeWithoutPromptAppliesExplicitModelAndReasoningBeforeRequest(): void
+    public function publicStartupResumeAppliesExplicitOverridesBeforeInteractiveMode(): void
     {
-        $this->applyResumeSelectionOverrides($this->sessionId, 'llama_cpp_test/test', 'high');
+        $this->armInteractiveModeAbortBeforeSessionLoop();
+
+        try {
+            $this->invokePublicAgentCommand([
+                'command' => 'agent',
+                '--resume' => $this->sessionId,
+                '--model' => 'llama_cpp_test/alt',
+                '--reasoning' => 'high',
+                '--transport' => 'in-process',
+            ]);
+            $this->fail('Armed InteractiveMode abort must surface after resume overrides apply');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('Theme "', $e->getMessage());
+            $this->assertStringContainsString('is not registered', $e->getMessage());
+        }
 
         $session = $this->sessionStore->findSession($this->sessionId);
         $this->assertNotNull($session);
-        $this->assertSame('llama_cpp_test/test', $session->model);
+        $this->assertSame('llama_cpp_test/alt', $session->model);
         $this->assertSame('llama_cpp_test', $session->modelProvider);
-        $this->assertSame('test', $session->modelName);
+        $this->assertSame('alt', $session->modelName);
         $this->assertSame('high', $session->reasoning);
-        $this->assertNull($this->buildInitialRequest('', 'llama_cpp_test/test', 'high'));
+        $this->assertNull($this->buildInitialRequest('', 'llama_cpp_test/alt', 'high'));
     }
 
     #[Test]
-    public function resumeWithoutPromptPreservesSessionWhenOptionsOmitted(): void
+    public function publicStartupResumePreservesSessionWhenOptionsOmitted(): void
     {
-        $this->applyResumeSelectionOverrides($this->sessionId, '', '');
+        $this->armInteractiveModeAbortBeforeSessionLoop();
 
-        $session = $this->sessionStore->findSession($this->sessionId);
-        $this->assertNotNull($session);
-        $this->assertSame('llama_cpp/flash', $session->model);
-        $this->assertSame('medium', $session->reasoning);
-        $this->assertNull($this->buildInitialRequest('', '', ''));
-    }
-
-    #[Test]
-    public function resumeWithOnlyModelLeavesExistingReasoning(): void
-    {
-        $this->applyResumeSelectionOverrides($this->sessionId, 'llama_cpp_test/test', '');
+        try {
+            $this->invokePublicAgentCommand([
+                'command' => 'agent',
+                '--resume' => $this->sessionId,
+                '--transport' => 'in-process',
+            ]);
+            $this->fail('Armed InteractiveMode abort must surface after public resume startup');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('Theme "', $e->getMessage());
+            $this->assertStringContainsString('is not registered', $e->getMessage());
+        }
 
         $session = $this->sessionStore->findSession($this->sessionId);
         $this->assertNotNull($session);
         $this->assertSame('llama_cpp_test/test', $session->model);
         $this->assertSame('medium', $session->reasoning);
+    }
+
+    #[Test]
+    public function publicStartupResumeWithInvalidReasoningDoesNotChangeModel(): void
+    {
+        $this->armInteractiveModeAbortBeforeSessionLoop();
+
+        try {
+            $this->invokePublicAgentCommand([
+                'command' => 'agent',
+                '--resume' => $this->sessionId,
+                '--model' => 'llama_cpp_test/test',
+                '--reasoning' => 'super-genius',
+                '--transport' => 'in-process',
+            ]);
+            $this->fail('Invalid --reasoning must fail before InteractiveMode starts');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertStringContainsString('Invalid reasoning level "super-genius"', $e->getMessage());
+        }
+
+        $session = $this->sessionStore->findSession($this->sessionId);
+        $this->assertNotNull($session);
+        $this->assertSame('llama_cpp_test/test', $session->model);
+        $this->assertSame('medium', $session->reasoning);
+    }
+
+    protected static function configureIsolatedProjectBeforeKernelBoot(string $classCwd): void
+    {
+        // Seed a second available model before AppConfig boots so public resume
+        // can prove a real --model override without depending on host ~/.hatfield.
+        file_put_contents($classCwd.'/.hatfield/settings.yaml', <<<'YAML'
+ai:
+    default_model: llama_cpp_test/test
+    default_reasoning: medium
+    providers:
+        llama_cpp_test:
+            type: generic
+            enabled: true
+            base_url: 'http://127.0.0.1:9052/v1'
+            api: openai-completions
+            api_key: dummy
+            completions_path: /chat/completions
+            supports_completions: true
+            models:
+                test:
+                    id: test
+                    name: test
+                    context_window: 8192
+                    max_tokens: 1024
+                    input: [text]
+                    tool_calling: true
+                    reasoning: true
+                    reasoning_levels: [off, low, medium, high]
+                alt:
+                    id: alt
+                    name: alt
+                    context_window: 8192
+                    max_tokens: 1024
+                    input: [text]
+                    tool_calling: true
+                    reasoning: true
+                    reasoning_levels: [off, low, medium, high]
+YAML);
+    }
+
+    /**
+     * @param array<string, scalar> $input
+     */
+    private function invokePublicAgentCommand(array $input): int
+    {
+        $application = new Application(self::$kernel);
+        $application->setAutoExit(false);
+        $application->setCatchExceptions(false);
+
+        return $application->run(new ArrayInput($input), new NullOutput());
+    }
+
+    /**
+     * Force InteractiveMode::run to throw at theme resolution, after AgentCommand
+     * has already applied resume overrides and before the TUI session loop starts.
+     */
+    private function armInteractiveModeAbortBeforeSessionLoop(): void
+    {
+        $agentCommand = $this->resolveContainerAgentCommand();
+        // IsolatedKernelTestCase already migrated the test DB. Mark the shared
+        // StartupDatabaseMigrator as ran so AgentCommand skips WAL re-entry
+        // under DAMA before the resume override path under test.
+        $migratorProperty = new \ReflectionProperty(AgentCommand::class, 'startupDatabaseMigrator');
+        $migrator = $migratorProperty->getValue($agentCommand);
+        if (null !== $migrator) {
+            $ranProperty = new \ReflectionProperty($migrator, 'ran');
+            $ranProperty->setValue($migrator, true);
+        }
+
+        $interactiveProperty = new \ReflectionProperty(AgentCommand::class, 'interactiveMode');
+        /** @var InteractiveMode $interactiveMode */
+        $interactiveMode = $interactiveProperty->getValue($agentCommand);
+
+        $themeRegistryProperty = new \ReflectionProperty(InteractiveMode::class, 'themeRegistry');
+        /** @var ThemeRegistry $themeRegistry */
+        $themeRegistry = $themeRegistryProperty->getValue($interactiveMode);
+
+        $themesProperty = new \ReflectionProperty(ThemeRegistry::class, 'themes');
+        // Empty the registry so InteractiveMode aborts at getOrThrow after
+        // AgentCommand has already applied resume overrides. Restore in tearDown
+        // is unnecessary because IsolatedKernelTestCase clears EM and each case
+        // re-resolves the same shared registry; re-arming per case keeps proof
+        // local without entering the TUI loop.
+        $themesProperty->setValue($themeRegistry, []);
+    }
+
+    private function resolveContainerAgentCommand(): AgentCommand
+    {
+        $application = new Application(self::$kernel);
+        $command = $application->find('agent')->getCommand();
+
+        $codeProperty = new \ReflectionProperty(Command::class, 'code');
+        /** @var InvokableCommand $invokable */
+        $invokable = $codeProperty->getValue($command);
+
+        $invokableCodeProperty = new \ReflectionProperty(InvokableCommand::class, 'code');
+        /** @var \Closure $closure */
+        $closure = $invokableCodeProperty->getValue($invokable);
+        $agentCommand = (new \ReflectionFunction($closure))->getClosureThis();
+        $this->assertInstanceOf(AgentCommand::class, $agentCommand);
+
+        return $agentCommand;
     }
 
     private function buildInitialRequest(string $prompt, string $model, string $reasoning): ?StartRunRequest
     {
-        $method = new \ReflectionMethod(\Ineersa\CodingAgent\CLI\AgentCommand::class, 'buildInitialRequest');
+        $method = new \ReflectionMethod(AgentCommand::class, 'buildInitialRequest');
 
         return $method->invoke(null, $prompt, $model, $reasoning);
-    }
-
-    private function applyResumeSelectionOverrides(string $sessionId, string $model, string $reasoning): void
-    {
-        $method = new \ReflectionMethod(\Ineersa\CodingAgent\CLI\AgentCommand::class, 'applyResumeSelectionOverrides');
-        $command = (new \ReflectionClass(\Ineersa\CodingAgent\CLI\AgentCommand::class))
-            ->newInstanceWithoutConstructor();
-
-        $selectionProperty = new \ReflectionProperty(\Ineersa\CodingAgent\CLI\AgentCommand::class, 'modelSelectionService');
-        $selectionProperty->setValue($command, $this->modelSelectionService);
-
-        $method->invoke($command, $sessionId, $model, $reasoning);
-    }
-
-    private function buildAppConfig(string $cwd): AppConfig
-    {
-        $raw = [
-            'tui' => ['theme' => 'default'],
-            'ai' => [
-                'default_model' => 'llama_cpp/flash',
-                'default_reasoning' => 'medium',
-                'providers' => [
-                    'llama_cpp' => [
-                        'type' => 'generic',
-                        'enabled' => true,
-                        'base_url' => 'http://127.0.0.1:8052/v1',
-                        'models' => [
-                            'flash' => [
-                                'name' => 'flash',
-                                'context_window' => 32768,
-                                'max_tokens' => 8192,
-                                'input' => ['text'],
-                                'tool_calling' => true,
-                                'reasoning' => true,
-                                'reasoning_levels' => ['off', 'low', 'medium', 'high'],
-                            ],
-                        ],
-                    ],
-                    'llama_cpp_test' => [
-                        'type' => 'generic',
-                        'enabled' => true,
-                        'base_url' => 'http://127.0.0.1:9052/v1',
-                        'models' => [
-                            'test' => [
-                                'name' => 'test',
-                                'context_window' => 32768,
-                                'max_tokens' => 32768,
-                                'input' => ['text'],
-                                'tool_calling' => true,
-                                'reasoning' => true,
-                                'reasoning_levels' => ['off', 'low', 'medium', 'high'],
-                            ],
-                        ],
-                    ],
-                ],
-            ],
-        ];
-        $ai = AiConfig::optionalFromArray($raw);
-
-        return new AppConfig(
-            tui: new TuiConfig(theme: 'default'),
-            logging: new LoggingConfig(),
-            ai: $ai,
-            raw: $raw,
-            catalog: null !== $ai ? new HatfieldModelCatalog($ai) : null,
-            cwd: $cwd,
-        );
     }
 }

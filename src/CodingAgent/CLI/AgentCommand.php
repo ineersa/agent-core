@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\CLI;
 
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
+use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\CodingAgent\Migrations\StartupDatabaseMigrator;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
@@ -244,6 +245,12 @@ final class AgentCommand
      */
     private function applyResumeSelectionOverrides(string $sessionId, string $model, string $reasoning): void
     {
+        // Validate explicit reasoning before any write so a later reasoning
+        // failure cannot leave a partially applied model override.
+        if ('' !== $reasoning && !\in_array($reasoning, ModelResolver::LEVELS, true)) {
+            throw new \InvalidArgumentException(\sprintf('Invalid reasoning level "%s". Valid levels: %s.', $reasoning, implode(', ', ModelResolver::LEVELS)));
+        }
+
         if ('' !== $model) {
             $ref = AiModelReference::tryParse($model);
             if (null === $ref) {
