@@ -121,7 +121,7 @@ final class AgentCommand
             throw new \RuntimeException('AgentCommand requires OutputInterface');
         }
 
-        self::assertUsableModelOptions($prompt, $resume, $model, $reasoning);
+        self::assertUsableModelOptions($prompt, $model, $reasoning);
 
         try {
             // Override CWD before any service access when --cwd is provided.
@@ -203,9 +203,6 @@ final class AgentCommand
             }
         }
 
-        // A model/reasoning-only request (no --prompt) has an empty prompt and
-        // is treated by InteractiveMode as a lazy draft carrier, mirroring
-        // "/new --model": no session row is created until the first submit.
         return $this->interactiveMode->run(
             client: $client,
             request: self::buildInitialRequest($prompt, $model, $reasoning),
@@ -216,13 +213,12 @@ final class AgentCommand
     /**
      * Build the initial StartRunRequest from CLI options.
      *
-     * Returns a request whenever any pre-configured field is set. A
-     * model/reasoning-only request (empty prompt) is a draft carrier consumed
-     * on first submit; a prompt-bearing request starts the session eagerly.
+     * Model/reasoning ride the initial request, so a request exists only
+     * when --prompt starts a session eagerly.
      */
     private static function buildInitialRequest(string $prompt, string $model, string $reasoning): ?StartRunRequest
     {
-        if ('' === $prompt && '' === $model && '' === $reasoning) {
+        if ('' === $prompt) {
             return null;
         }
 
@@ -236,16 +232,15 @@ final class AgentCommand
     /**
      * Reject model/reasoning options that no startup path can consume.
      *
-     * With --prompt the options ride the initial StartRunRequest into the
-     * resumed session's first run. Without --prompt on --resume there is no
-     * request to ride and switch targets never carry one: the session row
-     * owns the selection, so the options would be silently dropped — reject
-     * them before any startup work instead.
+     * The options only ride the initial StartRunRequest, which requires
+     * --prompt (a prompt-less request is not a valid run start). Without
+     * --prompt the session row owns the selection and the options would be
+     * silently dropped — reject them before any startup work instead.
      */
-    private static function assertUsableModelOptions(string $prompt, string $resume, string $model, string $reasoning): void
+    private static function assertUsableModelOptions(string $prompt, string $model, string $reasoning): void
     {
-        if ('' !== $resume && '' === $prompt && ('' !== $model || '' !== $reasoning)) {
-            throw new \InvalidArgumentException('The --model/--reasoning options cannot be combined with --resume without --prompt; switch models with /model (or Ctrl+P) after the session opens.');
+        if ('' === $prompt && ('' !== $model || '' !== $reasoning)) {
+            throw new \InvalidArgumentException('The --model/--reasoning options require --prompt; without --prompt the session row owns model selection (switch with /model or Ctrl+P after the session opens).');
         }
     }
 

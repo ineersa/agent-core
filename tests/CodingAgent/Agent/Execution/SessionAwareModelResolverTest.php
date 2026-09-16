@@ -509,7 +509,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
         $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
         $homeWriter = new SettingsOverrideWriter($pathResolver, PropertyAccess::createPropertyAccessor(), new Filesystem());
         $appConfig = $this->makeAppConfig($aiData);
-        $selectionService = new ModelSelectionService($appConfig, new ModelResolver($appConfig, $sessionMetaStore), $homeWriter, $sessionMetaStore);
+        $selectionService = new ModelSelectionService($appConfig, new ModelResolver($appConfig, $sessionMetaStore, new \Psr\Log\NullLogger()), $homeWriter, $sessionMetaStore);
 
         $catalog = $appConfig->catalog ?? new HatfieldModelCatalog(new AiConfig(defaultModel: '', defaultReasoning: 'medium', providers: []));
 

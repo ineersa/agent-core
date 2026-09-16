@@ -237,7 +237,7 @@ final class TraceReplayTest extends PerMethodIsolatedKernelTestCase
     {
         $config = $this->makeAppConfig($aiData);
         $writer = new SettingsOverrideWriter(new SettingsPathResolver($this->isolatedCwd(), $this->homeDir), PropertyAccess::createPropertyAccessor(), new Filesystem());
-        $selection = new ModelSelectionService($config, new ModelResolver($config, $this->sessionMetaStore), $writer, $this->sessionMetaStore);
+        $selection = new ModelSelectionService($config, new ModelResolver($config, $this->sessionMetaStore, new NullLogger()), $writer, $this->sessionMetaStore);
         $catalog = $config->catalog ?? new HatfieldModelCatalog(new AiConfig(defaultModel: '', defaultReasoning: 'medium', providers: []));
 
         return new SessionAwareModelResolver($selection, $catalog, $this->sessionMetaStore);
@@ -249,7 +249,7 @@ final class TraceReplayTest extends PerMethodIsolatedKernelTestCase
         $config = $this->makeAppConfig($aiData);
         $writer = new SettingsOverrideWriter(new SettingsPathResolver($this->isolatedCwd(), $this->homeDir), PropertyAccess::createPropertyAccessor(), new Filesystem());
 
-        return new ModelSelectionService($config, new ModelResolver($config, $this->sessionMetaStore), $writer, $this->sessionMetaStore);
+        return new ModelSelectionService($config, new ModelResolver($config, $this->sessionMetaStore, new NullLogger()), $writer, $this->sessionMetaStore);
     }
 
     /** @param array<string, mixed> $aiData */

@@ -7,7 +7,6 @@ namespace Ineersa\CodingAgent\Config;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Psr\Log\LoggerInterface;
-use Psr\Log\NullLogger;
 
 /**
  * Read-only model and reasoning resolution with four-tier priority.
@@ -34,7 +33,7 @@ final class ModelResolver
     public function __construct(
         private readonly AppConfig $appConfig,
         private readonly HatfieldSessionStore $sessionMetaStore,
-        private readonly LoggerInterface $logger = new NullLogger(),
+        private readonly LoggerInterface $logger,
     ) {
     }
 
