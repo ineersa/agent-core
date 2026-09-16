@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Entity;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
+use Doctrine\ORM\Query;
 use Doctrine\Persistence\ManagerRegistry;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
@@ -35,7 +36,7 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
 
     public function findByChildRunId(string $childRunId): ?DeferredSubagentChildProjectionDTO
     {
-        $row = $this->findOneBy(['childRunId' => $childRunId]);
+        $row = $this->findFreshOneBy(['childRunId' => $childRunId]);
 
         return $row instanceof DeferredSubagentChild ? $this->toDto($row) : null;
     }
@@ -50,6 +51,7 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
             ->setParameter('batchLifecycleId', $batchLifecycleId)
             ->orderBy('c.batchIndex', 'ASC')
             ->getQuery()
+            ->setHint(Query::HINT_REFRESH, true)
             ->getResult();
 
         $out = [];
@@ -91,12 +93,12 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
                     'updated_at' => $now,
                 ]);
             } catch (UniqueConstraintViolationException) {
-                $existing = $this->findOneBy([
+                $existing = $this->findFreshOneBy([
                     'batchLifecycleId' => $batchLifecycleId,
                     'batchIndex' => $intent['batchIndex'],
                 ]);
                 if (!$existing instanceof DeferredSubagentChild) {
-                    $byChildRun = $this->findEntityByChildRunId($intent['childRunId']);
+                    $byChildRun = $this->findFreshEntityByChildRunId($intent['childRunId']);
                     if ($byChildRun instanceof DeferredSubagentChild) {
                         // Resume rebinds an existing terminal child onto a new batch.
                         $this->rebindExistingChildToResumeBatch(
@@ -144,9 +146,7 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
 
     public function findEntityByChildRunId(string $childRunId): ?DeferredSubagentChild
     {
-        $row = $this->findOneBy(['childRunId' => $childRunId]);
-
-        return $row instanceof DeferredSubagentChild ? $row : null;
+        return $this->findFreshEntityByChildRunId($childRunId);
     }
 
     /**
@@ -169,7 +169,8 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
     ): void {
         $now = Clock::get()->now();
         $conn ??= $this->getEntityManager()->getConnection();
-        $existing ??= $this->findEntityByChildRunId($childRunId);
+        // Cursor/projection must come from committed state before resume rebind.
+        $existing ??= $this->findFreshEntityByChildRunId($childRunId);
         $cursor = null === $existing ? 0 : $existing->childEventCursor;
         $previous = null !== $existing ? $this->decodeChildLifecycleProjection($existing->childLifecycleProjection) : null;
         $projection = new DeferredChildRunLifecycleProjectionDTO(
@@ -206,6 +207,9 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
                 'child_run_id' => $childRunId,
             ]);
 
+            // DBAL update leaves the managed entity stale; drop only this child.
+            $this->getEntityManager()->detach($existing);
+
             return;
         }
 
@@ -232,7 +236,7 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
 
     public function findEntityByBatchLifecycleAndIndex(string $batchLifecycleId, int $batchIndex): ?DeferredSubagentChild
     {
-        $row = $this->findOneBy([
+        $row = $this->findFreshOneBy([
             'batchLifecycleId' => $batchLifecycleId,
             'batchIndex' => $batchIndex,
         ]);
@@ -266,6 +270,36 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
         }
 
         return $projection;
+    }
+
+    private function findFreshEntityByChildRunId(string $childRunId): ?DeferredSubagentChild
+    {
+        $row = $this->findFreshOneBy(['childRunId' => $childRunId]);
+
+        return $row instanceof DeferredSubagentChild ? $row : null;
+    }
+
+    /**
+     * Load one child with committed mutable fields (status/cursor/projection).
+     *
+     * @param array<string, mixed> $criteria
+     */
+    private function findFreshOneBy(array $criteria): ?DeferredSubagentChild
+    {
+        $qb = $this->createQueryBuilder('c');
+        $i = 0;
+        foreach ($criteria as $field => $value) {
+            $param = 'p'.$i;
+            $qb->andWhere(\sprintf('c.%s = :%s', $field, $param))
+                ->setParameter($param, $value);
+            ++$i;
+        }
+
+        $row = $qb->getQuery()
+            ->setHint(Query::HINT_REFRESH, true)
+            ->getOneOrNullResult();
+
+        return $row instanceof DeferredSubagentChild ? $row : null;
     }
 
     private function toDto(DeferredSubagentChild $row): DeferredSubagentChildProjectionDTO

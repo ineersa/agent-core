@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Entity;
 
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
+use Doctrine\ORM\Query;
 use Doctrine\Persistence\ManagerRegistry;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
@@ -79,7 +80,7 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
 
     public function findPendingByRunAndToolCall(string $runId, string $toolCallId): ?DeferredToolCompletionCorrelation
     {
-        $entity = $this->findOneBy([
+        $entity = $this->findFreshOneBy([
             'runId' => $runId,
             'toolCallId' => $toolCallId,
         ]);
@@ -104,7 +105,7 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
 
     public function status(string $deferredId): ?string
     {
-        $entity = $this->findOneBy(['deferredId' => $deferredId]);
+        $entity = $this->findFreshOneBy(['deferredId' => $deferredId]);
 
         return $entity instanceof DeferredToolCompletion ? $entity->status : null;
     }
@@ -132,7 +133,9 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
             return;
         }
 
-        $entity = $this->findOneBy(['deferredId' => $deferredId]);
+        // Fallback only runs when the conditional SQL update matched zero rows.
+        // Refresh before deciding so a cached pending status cannot force a second write.
+        $entity = $this->findFreshOneBy(['deferredId' => $deferredId]);
         if (!$entity instanceof DeferredToolCompletion) {
             return;
         }
@@ -168,6 +171,32 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
         }
 
         throw $exception;
+    }
+
+    /**
+     * Load one row with committed field values for mutable status decisions.
+     *
+     * Registration lookups keep plain findOneBy(): those fields are immutable
+     * after insert. Status-bearing reads must overwrite identity-map copies.
+     *
+     * @param array<string, mixed> $criteria
+     */
+    private function findFreshOneBy(array $criteria): ?DeferredToolCompletion
+    {
+        $qb = $this->createQueryBuilder('d');
+        $i = 0;
+        foreach ($criteria as $field => $value) {
+            $param = 'p'.$i;
+            $qb->andWhere(\sprintf('d.%s = :%s', $field, $param))
+                ->setParameter($param, $value);
+            ++$i;
+        }
+
+        $entity = $qb->getQuery()
+            ->setHint(Query::HINT_REFRESH, true)
+            ->getOneOrNullResult();
+
+        return $entity instanceof DeferredToolCompletion ? $entity : null;
     }
 
     private function toCorrelation(DeferredToolCompletion $entity): DeferredToolCompletionCorrelation
