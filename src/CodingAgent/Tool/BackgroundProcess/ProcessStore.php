@@ -158,15 +158,6 @@ final class ProcessStore
     }
 
     /**
-     * Fetch a single entity by auto-increment ID.
-     */
-    public function fetchById(int $id): ?BackgroundProcess
-    {
-        /* @var ?BackgroundProcess */
-        return $this->repository->findFreshById($id);
-    }
-
-    /**
      * Fetch all unfinished entities, optionally scoped by session.
      *
      * @return BackgroundProcess[]

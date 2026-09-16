@@ -144,7 +144,6 @@ class ModelResolverTest extends TestCase
         $this->assertSame('deepseek/deepseek-v4-pro', $result->toString());
     }
 
-
     // ──────────────────────────────────────────────
     //  Reasoning resolution
     // ──────────────────────────────────────────────

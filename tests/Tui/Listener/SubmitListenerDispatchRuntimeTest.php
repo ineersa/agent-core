@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Listener;
 
 use Doctrine\ORM\EntityManagerInterface;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
@@ -37,8 +38,6 @@ use Ineersa\Tui\Theme\ThemePalette;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
-use Ineersa\AgentCore\Tests\Support\TestLogger;
-use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\Tui\Event\SubmitEvent;
 use Symfony\Component\Tui\Tui;
@@ -886,7 +885,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
             subagentLiveInputPolicy: new SubagentLiveInputPolicy(),
             logger: $this->logger,
             pastedImageSubmissionService: new \Ineersa\Tui\ImagePaste\PastedImageSubmissionService(
-                new \Ineersa\Tui\ImagePaste\PastedImageValidationService(new \Ineersa\CodingAgent\Config\ImageToolConfig(), new \Ineersa\AgentCore\Tests\Support\TestLogger()),
+                new \Ineersa\Tui\ImagePaste\PastedImageValidationService(new \Ineersa\CodingAgent\Config\ImageToolConfig(), new TestLogger()),
                 $context->sessionStore,
                 new \Ineersa\CodingAgent\Config\AppConfig(
                     tui: new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'),
@@ -895,7 +894,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
                     cwd: $this->tempCwd,
                 ),
                 new \Ineersa\Tui\Transcript\TranscriptBlockFactory(),
-                new \Ineersa\AgentCore\Tests\Support\TestLogger(),
+                new TestLogger(),
             ),
             footerStateInitializer: new \Ineersa\Tui\Listener\FooterStateInitializer(
                 $context->sessionStore,
@@ -923,12 +922,12 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
      * AppConfig with a minimal AI catalog for footer model lookups in tests.
      */
     private static function footerModelSelectionService(
-        \Ineersa\CodingAgent\Session\HatfieldSessionStore $sessionStore,
+        HatfieldSessionStore $sessionStore,
         \Ineersa\CodingAgent\Config\AppConfig $appConfig,
     ): \Ineersa\CodingAgent\Config\ModelSelectionService {
         return new \Ineersa\CodingAgent\Config\ModelSelectionService(
             $appConfig,
-            new \Ineersa\CodingAgent\Config\ModelResolver($appConfig, $sessionStore, new \Psr\Log\NullLogger()),
+            new \Ineersa\CodingAgent\Config\ModelResolver($appConfig, $sessionStore, new NullLogger()),
             new \Ineersa\CodingAgent\Config\SettingsOverrideWriter(
                 new \Ineersa\CodingAgent\Config\SettingsPathResolver('/tmp'),
                 \Symfony\Component\PropertyAccess\PropertyAccess::createPropertyAccessor(),

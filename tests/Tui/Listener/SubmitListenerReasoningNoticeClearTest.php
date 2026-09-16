@@ -244,7 +244,7 @@ final class SubmitListenerReasoningNoticeClearTest extends TestCase
             $appConfig,
             new \Ineersa\CodingAgent\Config\ModelSelectionService(
                 $appConfig,
-                new \Ineersa\CodingAgent\Config\ModelResolver($appConfig, $sessionStore, new \Psr\Log\NullLogger()),
+                new \Ineersa\CodingAgent\Config\ModelResolver($appConfig, $sessionStore, new NullLogger()),
                 new \Ineersa\CodingAgent\Config\SettingsOverrideWriter(
                     new \Ineersa\CodingAgent\Config\SettingsPathResolver('/tmp'),
                     \Symfony\Component\PropertyAccess\PropertyAccess::createPropertyAccessor(),

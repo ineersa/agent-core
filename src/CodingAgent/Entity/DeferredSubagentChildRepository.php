@@ -144,11 +144,6 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
         }
     }
 
-    public function findEntityByChildRunId(string $childRunId): ?DeferredSubagentChild
-    {
-        return $this->findFreshEntityByChildRunId($childRunId);
-    }
-
     /**
      * Rebind an existing child run onto a new resume deferred batch, or insert if absent.
      *

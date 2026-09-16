@@ -25,7 +25,6 @@ use Ineersa\Hatfield\ExtensionApi\Agent\AgentCallRequestDTO;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver;
-use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\AI\Platform\Platform;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
@@ -295,7 +294,7 @@ final class ConfiguredModelAgentRunnerMaxDurationTest extends TestCase
         return new class implements ModelResolverInterface {
             public function resolve(
                 string $defaultModel,
-                MessageBag $messages,
+                bool $hasConversationMessages,
                 ModelInvocationInput $input,
                 ModelResolutionOptions $options,
             ): ResolvedModel {
