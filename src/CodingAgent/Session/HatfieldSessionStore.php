@@ -205,7 +205,12 @@ final class HatfieldSessionStore
      */
     public function exists(string $sessionId): bool
     {
-        return null !== $this->fetchEntityOrNull($sessionId);
+        $id = $this->parsePositiveSessionId($sessionId);
+        if (null === $id) {
+            return false;
+        }
+
+        return $this->getRepository()->existsById($id);
     }
 
     /**
@@ -248,7 +253,12 @@ final class HatfieldSessionStore
      */
     public function deleteSession(string $sessionId): void
     {
-        $entity = $this->fetchEntityOrNull($sessionId);
+        $id = $this->parsePositiveSessionId($sessionId);
+        if (null === $id || !$this->getRepository()->existsById($id)) {
+            throw new \RuntimeException(\sprintf('Session "%s" not found.', $sessionId));
+        }
+
+        $entity = $this->entityManager->find(HatfieldSession::class, $id);
         if (null === $entity) {
             throw new \RuntimeException(\sprintf('Session "%s" not found.', $sessionId));
         }
@@ -450,14 +460,8 @@ final class HatfieldSessionStore
      */
     private function fetchEntityOrNull(string $sessionId): ?HatfieldSession
     {
-        // ctype_digit rejects UUID prefixes like "3d451..." that PHP would
-        // otherwise coerce with (int) into an unrelated session primary key.
-        if ('' === $sessionId || !ctype_digit($sessionId)) {
-            return null;
-        }
-
-        $id = (int) $sessionId;
-        if ($id <= 0) {
+        $id = $this->parsePositiveSessionId($sessionId);
+        if (null === $id) {
             return null;
         }
 
@@ -466,21 +470,32 @@ final class HatfieldSessionStore
             return null;
         }
 
-        // Cross-process freshness: the TUI and the runtime worker are
-        // separate processes with separate EntityManagers over the same
-        // SQLite database. em->find() serves the identity-map entity once
-        // it is cached, so without an explicit refresh a TUI that created
-        // the row never sees the model the worker persisted, and the
-        // worker never sees a mid-run model change committed by the TUI.
-        // Session metadata is the per-turn model-resolution source of
-        // truth (see ModelResolver tier 2), so every lookup must re-read
-        // committed state instead of a stale in-process snapshot.
-        // Caveat: if another process deletes the row between find() and
-        // refresh(), the hydration finds no row and the managed entity is
-        // returned as-is — the same ghost-read em->find() alone would give.
+        // Mutable session metadata (model/reasoning/name/baseline) can change
+        // in another process while this EM still holds the identity-map copy.
+        // Refresh before returning or mutating so Doctrine dirty-checks against
+        // the committed row. Existence/delete use COUNT instead of this helper.
+        // If another process deletes the row between find() and refresh(),
+        // Doctrine returns the managed entity unchanged.
         $this->entityManager->refresh($entity);
 
         return $entity;
+    }
+
+    /**
+     * Parse a public session id into a positive hatfield_session primary key.
+     *
+     * ctype_digit rejects UUID prefixes like "3d451..." that PHP would
+     * otherwise coerce with (int) into an unrelated session primary key.
+     */
+    private function parsePositiveSessionId(string $sessionId): ?int
+    {
+        if ('' === $sessionId || !ctype_digit($sessionId)) {
+            return null;
+        }
+
+        $id = (int) $sessionId;
+
+        return $id > 0 ? $id : null;
     }
 
     /**

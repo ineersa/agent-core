@@ -108,7 +108,7 @@ final class ProcessStore
      */
     public function fetchByRecordId(int $id): ?BackgroundProcess
     {
-        return $this->repository->find($id);
+        return $this->repository->findFreshById($id);
     }
 
     /**
@@ -163,7 +163,7 @@ final class ProcessStore
     public function fetchById(int $id): ?BackgroundProcess
     {
         /* @var ?BackgroundProcess */
-        return $this->repository->find($id);
+        return $this->repository->findFreshById($id);
     }
 
     /**
@@ -194,7 +194,17 @@ final class ProcessStore
      */
     public function deleteById(int $id): bool
     {
-        $entity = $this->fetchById($id);
+        if (!$this->existsByRecordId($id)) {
+            $this->logger->warning('background_process.delete_not_found', [
+                'component' => 'tool.background_process',
+                'event_type' => 'background_process.delete_not_found',
+                'record_id' => $id,
+            ]);
+
+            return false;
+        }
+
+        $entity = $this->repository->find($id);
 
         if (null === $entity) {
             $this->logger->warning('background_process.delete_not_found', [

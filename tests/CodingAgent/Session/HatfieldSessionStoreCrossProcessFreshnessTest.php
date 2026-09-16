@@ -4,117 +4,181 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Session;
 
-use Doctrine\DBAL\DriverManager;
-use Doctrine\ORM\EntityManager;
-use Doctrine\ORM\ORMSetup;
-use Doctrine\ORM\Tools\SchemaTool;
+use Doctrine\DBAL\Connection;
+use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\Test;
-use PHPUnit\Framework\TestCase;
 
 /**
- * Cross-process freshness of session metadata reads.
+ * Cross-process freshness of session metadata reads and writes.
  *
- * The TUI and the runtime worker are separate processes, each with its own
- * EntityManager over the same SQLite database. Doctrine's identity map makes
- * em->find() return a stale in-process snapshot once the entity is cached,
- * which historically (a) hid the worker-persisted model from the TUI's
- * tier-2 model resolution and Ctrl+P baseline, and (b) hid TUI-committed
- * mid-run model changes from the worker's per-turn resolution.
- *
- * These tests reproduce that two-EntityManager reality and pin the refresh
- * behavior that makes hatfield_session the per-turn source of truth.
- *
- * Deliberate deviation from the IsolatedKernelTestCase rule (tests/AGENTS.md):
- * the kernel container exposes a single EntityManager and DAMA wraps it in
- * per-method transactions — reproducing two-process identity-map staleness
- * requires two independent EMs hand-built over one committed SQLite file.
- * Do not copy this pattern for ordinary DB tests.
+ * The TUI and runtime worker share one SQLite database through separate
+ * processes. Within one long-lived EntityManager, Doctrine's identity map can
+ * hide committed changes from another process. These cases keep the container
+ * EntityManager and simulate the foreign writer with DBAL UPDATE statements
+ * so the identity map stays intact.
  */
-final class HatfieldSessionStoreCrossProcessFreshnessTest extends TestCase
+final class HatfieldSessionStoreCrossProcessFreshnessTest extends IsolatedKernelTestCase
 {
-    private string $tempDir;
-    private string $dbPath;
-    private EntityManager $tuiEm;
-    private EntityManager $workerEm;
-    private HatfieldSessionStore $tuiStore;
-    private HatfieldSessionStore $workerStore;
+    private HatfieldSessionStore $store;
+    private EntityManagerInterface $entityManager;
+    private Connection $connection;
 
     protected function setUp(): void
     {
-        $this->tempDir = TestDirectoryIsolation::createProjectTempDir('session-cross-process');
-        $this->dbPath = $this->tempDir.'/state.sqlite';
+        parent::setUp();
 
-        $config = ORMSetup::createAttributeMetadataConfiguration([__DIR__.'/../../../src'], true);
-        $config->enableNativeLazyObjects(true);
-        $params = ['driver' => 'pdo_sqlite', 'path' => $this->dbPath];
+        /** @var HatfieldSessionStore $store */
+        $store = self::getContainer()->get(HatfieldSessionStore::class);
+        $this->store = $store;
 
-        $this->tuiEm = new EntityManager(DriverManager::getConnection($params, $config), $config);
-        (new SchemaTool($this->tuiEm))->createSchema([$this->tuiEm->getClassMetadata(HatfieldSession::class)]);
-        $this->workerEm = new EntityManager(DriverManager::getConnection($params, $config), $config);
-
-        $this->tuiStore = $this->makeStore($this->tuiEm);
-        $this->workerStore = $this->makeStore($this->workerEm);
-    }
-
-    protected function tearDown(): void
-    {
-        $this->workerEm->getConnection()->close();
-        $this->tuiEm->getConnection()->close();
-        TestDirectoryIsolation::removeDirectory($this->tempDir);
+        /** @var EntityManagerInterface $entityManager */
+        $entityManager = self::getContainer()->get('doctrine.orm.default_entity_manager');
+        $this->entityManager = $entityManager;
+        $this->connection = $entityManager->getConnection();
     }
 
     #[Test]
-    public function tuiSeesModelPersistedByWorkerProcess(): void
+    public function findSessionSeesModelCommittedByExternalWriter(): void
     {
-        // Draft promotion in the TUI process creates the row (model NULL).
-        $sessionId = $this->tuiStore->createSession('/task-start example');
-        // The runtime worker (separate EM/process) persists the effective model at start().
-        $this->workerStore->updateMetadata($sessionId, [
-            'model' => 'runpod/Qwen3.8-27B',
-            'model_provider' => 'runpod',
-            'model_name' => 'Qwen3.8-27B',
-        ]);
+        $sessionId = $this->store->createSession('/task-start example');
+        $this->assertNotNull($this->store->findSession($sessionId));
 
-        // The TUI's next tier-2 read must see the worker's committed model,
-        // not its own identity-map snapshot with model = NULL.
-        $session = $this->tuiStore->findSession($sessionId);
+        $this->writeSessionModelOutsideOrm((int) $sessionId, 'runpod/Qwen3.8-27B', 'runpod', 'Qwen3.8-27B');
+
+        $session = $this->store->findSession($sessionId);
 
         $this->assertNotNull($session);
         $this->assertSame('runpod/Qwen3.8-27B', $session->model);
+        $this->assertSame('runpod', $session->modelProvider);
+        $this->assertSame('Qwen3.8-27B', $session->modelName);
     }
 
     #[Test]
-    public function workerSeesMidRunModelChangeCommittedByTuiProcess(): void
+    public function listSessionsSeesModelCommittedByExternalWriter(): void
     {
-        $sessionId = $this->tuiStore->createSession('/task-start example');
-        $this->workerStore->updateMetadata($sessionId, ['model' => 'runpod/Qwen3.8-27B']);
-        // Prime the worker's identity map, as a long-lived worker would.
-        $this->assertNotNull($this->workerStore->findSession($sessionId));
+        $sessionId = $this->store->createSession('/task-start example');
+        $this->assertNotNull($this->store->findSession($sessionId));
 
-        // Ctrl+P in the TUI commits a model change mid-run.
-        $this->tuiStore->updateMetadata($sessionId, ['model' => 'openai-codex/gpt-6-astra']);
+        $this->writeSessionModelOutsideOrm((int) $sessionId, 'openai-codex/gpt-6-astra', 'openai-codex', 'gpt-6-astra');
 
-        // The worker's next per-turn resolution read must see the change.
-        $session = $this->workerStore->findSession($sessionId);
+        $sessions = $this->store->listSessions();
+        $match = null;
+        foreach ($sessions as $session) {
+            if ($session['sessionId'] === $sessionId) {
+                $match = $session;
+                break;
+            }
+        }
 
-        $this->assertNotNull($session);
-        $this->assertSame('openai-codex/gpt-6-astra', $session->model);
+        $this->assertNotNull($match);
+        $this->assertSame('openai-codex/gpt-6-astra', $match['model']);
+        $this->assertSame('openai-codex', $match['model_provider']);
+        $this->assertSame('gpt-6-astra', $match['model_name']);
     }
 
-    private function makeStore(EntityManager $em): HatfieldSessionStore
+    #[Test]
+    public function updateMetadataWritesWhenCachedModelMatchesRequestedValueButDatabaseDiffers(): void
     {
-        return new HatfieldSessionStore(
-            appConfig: new \Ineersa\CodingAgent\Config\AppConfig(
-                tui: new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'),
-                logging: new \Ineersa\CodingAgent\Config\LoggingConfig(),
-                sessions: new \Ineersa\CodingAgent\Config\SessionsConfig(),
-                cwd: $this->tempDir,
-            ),
-            entityManager: $em,
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
+        $sessionId = $this->store->createSession('/task-start example');
+        $this->store->updateMetadata($sessionId, [
+            'model' => 'provider/model-a',
+            'model_provider' => 'provider',
+            'model_name' => 'model-a',
+        ]);
+
+        $cached = $this->store->findSession($sessionId);
+        $this->assertNotNull($cached);
+        $this->assertSame('provider/model-a', $cached->model);
+
+        $this->writeSessionModelOutsideOrm((int) $sessionId, 'provider/model-b', 'provider', 'model-b');
+
+        // User re-selects the still-cached value A while the database holds B.
+        $this->store->updateMetadata($sessionId, [
+            'model' => 'provider/model-a',
+            'model_provider' => 'provider',
+            'model_name' => 'model-a',
+        ]);
+
+        $row = $this->connection->fetchAssociative(
+            'SELECT model, model_provider, model_name FROM hatfield_session WHERE id = :id',
+            ['id' => (int) $sessionId],
         );
+        $this->assertIsArray($row);
+        $this->assertSame('provider/model-a', $row['model']);
+        $this->assertSame('provider', $row['model_provider']);
+        $this->assertSame('model-a', $row['model_name']);
+
+        $session = $this->store->findSession($sessionId);
+        $this->assertNotNull($session);
+        $this->assertSame('provider/model-a', $session->model);
+    }
+
+    #[Test]
+    public function claimReasoningBaselineSeesExternallyChangedBaseline(): void
+    {
+        $sessionId = $this->store->createSession('/task-start example');
+        $this->assertNull($this->store->claimReasoningBaseline($sessionId, 'provider/model-a', 'high'));
+
+        $this->connection->executeStatement(
+            'UPDATE hatfield_session SET reasoning_baseline = :baseline WHERE id = :id',
+            [
+                'baseline' => json_encode(['model' => 'provider/model-a', 'effort' => 'low'], \JSON_THROW_ON_ERROR),
+                'id' => (int) $sessionId,
+            ],
+        );
+
+        $this->assertSame(
+            'low',
+            $this->store->claimReasoningBaseline($sessionId, 'provider/model-a', 'high'),
+        );
+    }
+
+    #[Test]
+    public function existsReportsDeletionVisibleOnlyInDatabase(): void
+    {
+        $sessionId = $this->store->createSession('/task-start example');
+        $entity = $this->entityManager->find(HatfieldSession::class, (int) $sessionId);
+        $this->assertNotNull($entity);
+        $this->assertTrue($this->store->exists($sessionId));
+
+        $this->connection->executeStatement(
+            'DELETE FROM hatfield_session WHERE id = :id',
+            ['id' => (int) $sessionId],
+        );
+
+        $this->assertFalse($this->store->exists($sessionId));
+        $this->assertTrue($this->entityManager->contains($entity));
+    }
+
+    /**
+     * Simulate another process committing session model fields without touching
+     * this EntityManager's identity map.
+     */
+    private function writeSessionModelOutsideOrm(
+        int $sessionId,
+        string $model,
+        string $modelProvider,
+        string $modelName,
+    ): void {
+        $updated = $this->connection->executeStatement(
+            'UPDATE hatfield_session
+             SET model = :model,
+                 model_provider = :model_provider,
+                 model_name = :model_name,
+                 updated_at = :updated_at
+             WHERE id = :id',
+            [
+                'model' => $model,
+                'model_provider' => $modelProvider,
+                'model_name' => $modelName,
+                'updated_at' => (new \DateTimeImmutable())->format('Y-m-d H:i:s'),
+                'id' => $sessionId,
+            ],
+        );
+
+        $this->assertSame(1, $updated);
     }
 }
