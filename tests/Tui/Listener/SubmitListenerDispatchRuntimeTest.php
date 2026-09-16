@@ -325,155 +325,6 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
 
     #[Test]
     #[AllowMockObjectsWithoutExpectations]
-    public function draftPromotionReseedsFooterFromSessionRow(): void
-    {
-        // The footer is seeded at draft time from request/default fallbacks.
-        // When the draft is promoted, start() persists the effective model to
-        // the session row; the footer must re-resolve from that row so it
-        // matches the model the runtime actually uses for the turns.
-        $this->state->sessionId = '';
-        $this->state->handle = null;
-        $this->state->activity = RunActivityStateEnum::Idle;
-        $this->state->footerModel = 'stale-default';
-        $this->state->footerReasoning = 'high';
-        $this->state->contextWindow = 999999;
-
-        $nextId = 1;
-        $entityById = [];
-        $persisted = null;
-        $em = $this->createMock(EntityManagerInterface::class);
-        $em->method('persist')->willReturnCallback(static function ($entity) use (&$persisted): void {
-            $persisted = $entity;
-        });
-        $em->method('flush')->willReturnCallback(
-            static function () use (&$persisted, &$nextId, &$entityById): void {
-                if ($persisted instanceof HatfieldSession) {
-                    $persisted->id = $nextId++;
-                    $entityById[(string) $persisted->id] = $persisted;
-                    $persisted = null;
-                }
-            },
-        );
-        $em->method('find')->willReturnCallback(
-            static fn (string $class, mixed $id): ?HatfieldSession => $entityById[(string) $id] ?? null,
-        );
-
-        $sessionStore = new HatfieldSessionStore(
-            appConfig: new \Ineersa\CodingAgent\Config\AppConfig(
-                tui: new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'),
-                logging: new \Ineersa\CodingAgent\Config\LoggingConfig(),
-                sessions: new \Ineersa\CodingAgent\Config\SessionsConfig(),
-                cwd: $this->tempCwd,
-            ),
-            entityManager: $em,
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
-        );
-
-        $this->client->expects($this->once())
-            ->method('start')
-            ->willReturnCallback(
-                static function (StartRunRequest $req) use (&$entityById): RunHandle {
-                    // Mirror what the runtime's start() does before returning:
-                    // resolve and persist the effective model to the row.
-                    $entity = $entityById[$req->runId] ?? null;
-                    \assert(null !== $entity);
-                    $entity->model = 'llama_cpp_test/test';
-                    $entity->reasoning = 'off';
-
-                    return new RunHandle('draft-run-1');
-                },
-            );
-
-        $this->dispatchSubmit('/review draft', $sessionStore);
-
-        $this->assertNotSame('', $this->state->sessionId, 'Draft sessionId should be promoted');
-        $this->assertSame('test', $this->state->footerModel, 'Footer model must come from the session row');
-        $this->assertSame(32768, $this->state->contextWindow, 'Context window must come from the session-row model catalog');
-        $this->assertSame('off', $this->state->footerReasoning, 'Reasoning must come from the session row');
-    }
-
-    #[Test]
-    #[AllowMockObjectsWithoutExpectations]
-    public function footerReseedFailureAfterStartDoesNotMarkDispatchFailed(): void
-    {
-        // start() already succeeded; a presentation-only footer reread must
-        // degrade locally instead of flipping activity to Failed.
-        $this->state->sessionId = '';
-        $this->state->handle = null;
-        $this->state->activity = RunActivityStateEnum::Idle;
-        $this->state->footerModel = 'stale-default';
-
-        $nextId = 1;
-        $entityById = [];
-        $persisted = null;
-        $failFindAfterStart = false;
-        $findsAfterStart = 0;
-        $em = $this->createMock(EntityManagerInterface::class);
-        $em->method('persist')->willReturnCallback(static function ($entity) use (&$persisted): void {
-            $persisted = $entity;
-        });
-        $em->method('flush')->willReturnCallback(
-            static function () use (&$persisted, &$nextId, &$entityById): void {
-                if ($persisted instanceof HatfieldSession) {
-                    $persisted->id = $nextId++;
-                    $entityById[(string) $persisted->id] = $persisted;
-                    $persisted = null;
-                }
-            },
-        );
-        $em->method('find')->willReturnCallback(
-            static function (string $class, mixed $id) use (&$entityById, &$failFindAfterStart, &$findsAfterStart): ?HatfieldSession {
-                if ($failFindAfterStart) {
-                    ++$findsAfterStart;
-                    // First post-start find is updateMetadata; second is footer reseed.
-                    if ($findsAfterStart > 1) {
-                        throw new \RuntimeException('footer reseed read failed');
-                    }
-                }
-
-                return $entityById[(string) $id] ?? null;
-            },
-        );
-        $em->method('refresh')->willReturnCallback(static function (object $entity): void {
-        });
-
-        $sessionStore = new HatfieldSessionStore(
-            appConfig: new \Ineersa\CodingAgent\Config\AppConfig(
-                tui: new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'),
-                logging: new \Ineersa\CodingAgent\Config\LoggingConfig(),
-                sessions: new \Ineersa\CodingAgent\Config\SessionsConfig(),
-                cwd: $this->tempCwd,
-            ),
-            entityManager: $em,
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
-        );
-
-        $this->client->expects($this->once())
-            ->method('start')
-            ->willReturnCallback(static function () use (&$failFindAfterStart): RunHandle {
-                $failFindAfterStart = true;
-
-                return new RunHandle('draft-run-1');
-            });
-
-        $this->dispatchSubmit('/review draft', $sessionStore);
-
-        $this->assertNotSame('', $this->state->sessionId);
-        $this->assertSame(RunActivityStateEnum::Starting, $this->state->activity);
-        $this->assertNotNull($this->state->handle);
-        $this->assertSame('stale-default', $this->state->footerModel);
-
-        $warnings = array_values(array_filter(
-            $this->logger->records,
-            static fn (array $record): bool => 'SubmitListener: footer reseed after start failed (non-fatal)' === $record['message'],
-        ));
-        $this->assertCount(1, $warnings);
-        $this->assertSame('warning', $warnings[0]['level']);
-        $this->assertSame('submit_footer_reseed_failed', $warnings[0]['context']['event_type'] ?? null);
-    }
-
-    #[Test]
-    #[AllowMockObjectsWithoutExpectations]
     public function draftModelSelectionSurvivesFirstSubmitIntoStartRequest(): void
     {
         // Picker/slash/Ctrl+P must update the pending draft request through
@@ -551,7 +402,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
 
         $this->assertSame('llama_cpp_test/test', $startedModel, 'First submit must start the draft-selected model');
         $this->assertNotSame('', $this->state->sessionId);
-        $this->assertSame('test', $this->state->footerModel);
+        $this->assertSame('llama_cpp_test/test', $this->state->request?->model);
     }
 
     // ── Shell restart path for DispatchRuntime ─────────────────
@@ -896,10 +747,6 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
                 new \Ineersa\Tui\Transcript\TranscriptBlockFactory(),
                 new TestLogger(),
             ),
-            footerStateInitializer: new \Ineersa\Tui\Listener\FooterStateInitializer(
-                self::footerAppConfig($this->tempCwd),
-                self::footerModelSelectionService($context->sessionStore, self::footerAppConfig($this->tempCwd)),
-            ),
         );
         $listener->register($context);
 
@@ -918,24 +765,8 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
     }
 
     /**
-     * AppConfig with a minimal AI catalog for footer model lookups in tests.
+     * AppConfig with a minimal AI catalog for draft model-selection tests.
      */
-    private static function footerModelSelectionService(
-        HatfieldSessionStore $sessionStore,
-        \Ineersa\CodingAgent\Config\AppConfig $appConfig,
-    ): \Ineersa\CodingAgent\Config\ModelSelectionService {
-        return new \Ineersa\CodingAgent\Config\ModelSelectionService(
-            $appConfig,
-            new \Ineersa\CodingAgent\Config\ModelResolver($appConfig, $sessionStore, new NullLogger()),
-            new \Ineersa\CodingAgent\Config\SettingsOverrideWriter(
-                new \Ineersa\CodingAgent\Config\SettingsPathResolver('/tmp'),
-                \Symfony\Component\PropertyAccess\PropertyAccess::createPropertyAccessor(),
-                new \Symfony\Component\Filesystem\Filesystem(),
-            ),
-            $sessionStore,
-        );
-    }
-
     private static function footerAppConfig(string $cwd): \Ineersa\CodingAgent\Config\AppConfig
     {
         $raw = [

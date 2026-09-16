@@ -11,10 +11,10 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * Relaunch argv reconstruction for /reload: one-shot --prompt is dropped,
- * model/reasoning are dropped when resuming (AgentCommand rejects that
- * prompt-less resume combination), stale --resume is replaced by the
- * current session id, and the persistent launch policy is otherwise
- * preserved untouched.
+ * model/reasoning are dropped when resuming so the current session selection
+ * is not overwritten by stale launch argv after picker/Ctrl+P changes, stale
+ * --resume is replaced by the current session id, and the persistent launch
+ * policy is otherwise preserved untouched.
  */
 #[CoversClass(ReloadArgvBuilder::class)]
 final class ReloadArgvBuilderTest extends TestCase

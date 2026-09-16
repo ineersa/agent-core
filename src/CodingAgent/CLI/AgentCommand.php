@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\CLI;
 
+use Ineersa\CodingAgent\Config\Ai\AiModelReference;
+use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\CodingAgent\Migrations\StartupDatabaseMigrator;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
@@ -54,6 +56,7 @@ final class AgentCommand
         private JsonlProcessAgentSessionClient $processClient,
         private InteractiveMode $interactiveMode,
         private HatfieldSessionStore $sessionStore,
+        private ModelSelectionService $modelSelectionService,
         private SkillsConfig $skillsConfig,
         private PromptTemplatesRuntimeConfig $promptTemplatesConfig,
         private ToolFilterRuntimeConfig $toolFilterConfig,
@@ -120,8 +123,6 @@ final class AgentCommand
         if (null === $output) {
             throw new \RuntimeException('AgentCommand requires OutputInterface');
         }
-
-        self::assertUsableModelOptions($prompt, $resume, $model, $reasoning);
 
         try {
             // Override CWD before any service access when --cwd is provided.
@@ -201,6 +202,11 @@ final class AgentCommand
             if (!$this->sessionStore->exists($sessionId)) {
                 throw new \RuntimeException(\sprintf('Session not found: "%s". Use --prompt to start a new session.', $sessionId));
             }
+
+            // Explicit resume overrides update the session selection before any
+            // request is built or InteractiveMode starts. Omitted options keep
+            // the existing session values.
+            $this->applyResumeSelectionOverrides($sessionId, $model, $reasoning);
         }
 
         return $this->interactiveMode->run(
@@ -230,22 +236,24 @@ final class AgentCommand
     }
 
     /**
-     * Reject model/reasoning options that no startup path can consume.
+     * Persist explicit --model/--reasoning onto a resumed session before boot.
      *
-     * With --prompt the options ride the initial StartRunRequest into a new
-     * or resumed session's first run. Without --prompt on --resume there is
-     * no request to ride and switch targets never carry one: the session row
-     * owns the selection, so the options would be silently dropped — reject
-     * them before any startup work instead.
-     *
-     * Prompt-less launches without --resume leave model/reasoning unused at
-     * boot (session row / in-TUI controls own selection). That combination is
-     * allowed; it is not a silent resume drop.
+     * Prompt-less resume has no StartRunRequest carrier. The session row is the
+     * selection owner, so overrides must write through ModelSelectionService
+     * before InteractiveMode / footer resolution run.
      */
-    private static function assertUsableModelOptions(string $prompt, string $resume, string $model, string $reasoning): void
+    private function applyResumeSelectionOverrides(string $sessionId, string $model, string $reasoning): void
     {
-        if ('' !== $resume && '' === $prompt && ('' !== $model || '' !== $reasoning)) {
-            throw new \InvalidArgumentException('The --model/--reasoning options cannot be combined with --resume without --prompt; switch models with /model (or Ctrl+P) after the session opens.');
+        if ('' !== $model) {
+            $ref = AiModelReference::tryParse($model);
+            if (null === $ref) {
+                throw new \InvalidArgumentException(\sprintf('Invalid --model value "%s".', $model));
+            }
+            $this->modelSelectionService->changeModel($ref, $sessionId);
+        }
+
+        if ('' !== $reasoning) {
+            $this->modelSelectionService->changeReasoning($reasoning, $sessionId);
         }
     }
 
