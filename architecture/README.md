@@ -6,6 +6,7 @@ return through one synchronous call stack.
 
 These repository-only diagrams describe the source at `9f744008c`, with documentation
 corrections on this task branch. View them in a Markdown renderer with Mermaid support.
+Later audits, including the ORM freshness map, state their own source revision.
 
 ## Diagram map
 
@@ -14,6 +15,7 @@ corrections on this task branch. View them in a Markdown renderer with Mermaid s
 | How does a prompt become an answer? | [Request lifecycle](request-lifecycle.md): end-to-end sequence, input routing, tool loop, live projection |
 | What starts and stops each process? | [Processes and queues](processes-and-queues.md): startup, ownership, routing, scheduler, shutdown |
 | Who owns state and how does recovery work? | [State and recovery](state-and-recovery.md): commit order, storage, replay, repair, compaction, cancellation |
+| Where can database reads become stale? | [ORM freshness map](orm-freshness-map.md): process lifetimes, query hydration, writes, reset boundaries, and policy candidates |
 | How do tool calls, approvals, and MCP work? | [Tools and MCP](tools-and-mcp.md): registration, execution, human continuations, connection lifecycle |
 | How do extensions and child agents run? | [Extensions and agents](extensions-and-agents.md): loading, child supervision, jobs, background commands |
 | How does bash become background work? | [Backgrounding](backgrounding.md): user decision, process ownership, completion notification, stop, cleanup |

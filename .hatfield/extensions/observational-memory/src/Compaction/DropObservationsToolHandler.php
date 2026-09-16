@@ -20,11 +20,8 @@ final class DropObservationsToolHandler implements ExtensionToolHandlerInterface
     /** @var array<string, true> */
     private array $proposedSet = [];
 
-    /**
-     * @param array<string, true> $allowedObservationIds
-     */
     public function __construct(
-        private readonly array $allowedObservationIds,
+        private readonly RequestLocalObservationIdMap $observationIdMap,
         private readonly int $maxDropsAllowed,
     ) {
     }
@@ -54,22 +51,23 @@ final class DropObservationsToolHandler implements ExtensionToolHandlerInterface
                 ++$missing;
                 continue;
             }
-            $id = trim($id);
-            if (!isset($this->allowedObservationIds[$id])) {
+            $localId = trim($id);
+            $canonical = $this->observationIdMap->canonicalId($localId);
+            if (null === $canonical) {
                 ++$missing;
                 continue;
             }
-            if (isset($seenInRequest[$id])) {
+            if (isset($seenInRequest[$canonical])) {
                 ++$duplicateInRequest;
                 continue;
             }
-            $seenInRequest[$id] = true;
-            if (isset($this->proposedSet[$id])) {
+            $seenInRequest[$canonical] = true;
+            if (isset($this->proposedSet[$canonical])) {
                 ++$duplicateInRun;
                 continue;
             }
-            $this->proposedSet[$id] = true;
-            $this->proposedIds[] = $id;
+            $this->proposedSet[$canonical] = true;
+            $this->proposedIds[] = $canonical;
             ++$added;
         }
 

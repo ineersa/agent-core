@@ -85,6 +85,28 @@ final class ResultConverterTest extends TestCase
         $this->assertSame(['arg1' => 'value1'], $toolCalls[0]->getArguments());
     }
 
+    public function testConvertToolCallResultJoinsDistinctCallAndItemIds(): void
+    {
+        $converter = new ResultConverter();
+        $httpResponse = $this->createMock(ResponseInterface::class);
+        $httpResponse->method('getStatusCode')->willReturn(200);
+        $httpResponse->method('toArray')->willReturn([
+            'output' => [
+                [
+                    'type' => 'function_call',
+                    'id' => 'fc_item',
+                    'call_id' => 'call_item',
+                    'name' => 'test_function',
+                    'arguments' => '{"arg1": "value1"}',
+                ],
+            ],
+        ]);
+
+        $result = $converter->convert(new RawHttpResult($httpResponse));
+        $toolCalls = $result->getContent();
+        $this->assertSame('call_item|fc_item', $toolCalls[0]->getId());
+    }
+
     public function testConvertMultipleMessagesIntoMultiPartResult(): void
     {
         $converter = new ResultConverter();

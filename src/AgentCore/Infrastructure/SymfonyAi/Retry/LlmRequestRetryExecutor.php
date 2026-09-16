@@ -169,14 +169,7 @@ final class LlmRequestRetryExecutor
             $error['retry_exhausted'] = true;
             // Application budget owns retries; do not let Messenger multiply them.
             $error['retryable'] = false;
-            $category = \is_string($error['error_category'] ?? null) ? $error['error_category'] : 'provider';
-            $error['user_message'] = match ($category) {
-                LlmProviderErrorClassifier::CATEGORY_TIMEOUT => 'LLM provider request timed out after retries were exhausted.',
-                LlmProviderErrorClassifier::CATEGORY_NETWORK => 'LLM provider transport failed after retries were exhausted.',
-                LlmProviderErrorClassifier::CATEGORY_RATE_LIMIT => 'LLM provider rate limit remained active after retries were exhausted.',
-                LlmProviderErrorClassifier::CATEGORY_SERVER => 'LLM provider server error remained after retries were exhausted.',
-                default => 'LLM provider request failed after retries were exhausted.',
-            };
+            $error['user_message'] = 'LLM request failed after retries were exhausted. '.$this->reason($error);
             if (!isset($error['message']) || !\is_string($error['message']) || '' === $error['message']) {
                 $error['message'] = $error['user_message'];
             }
