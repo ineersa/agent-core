@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Infrastructure\SymfonyAi;
 
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Infrastructure\SymfonyAi\Http\LlmCancelAwareHttpClient;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\Http\LlmHttpClientOptions;
 use Ineersa\Platform\Bridge\Generic\DurableResultConverter;
 use Psr\Log\LoggerInterface;
@@ -112,7 +113,11 @@ class SymfonyAiProviderFactory
             maxDuration: $budgetSeconds ?? $http?->maxDuration,
         );
 
-        return ($this->httpClient ?? HttpClient::create())->withOptions($options->httpClientOptions());
+        $client = ($this->httpClient ?? HttpClient::create())->withOptions($options->httpClientOptions());
+
+        // Cancel progress checks must sit under vendor EventSource framing so
+        // stream() can surface cancel before reconnect swallowing.
+        return new LlmCancelAwareHttpClient($client);
     }
 
     /**
