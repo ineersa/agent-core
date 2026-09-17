@@ -80,16 +80,16 @@ final class BackgroundProcessControllerSessionLifecycleListenerTest extends Isol
         $this->dispatcher->dispatch(new ControllerSessionStartingEvent('parent-run'));
         $this->dispatcher->dispatch(new ControllerSessionStartingEvent('parent-run'));
 
-        $this->assertNull($this->store->fetchById($parent['id']));
-        $this->assertNull($this->store->fetchById($child['id']));
+        $this->assertFalse($this->store->existsByRecordId($parent['id']));
+        $this->assertFalse($this->store->existsByRecordId($child['id']));
         $this->assertFileDoesNotExist($parent['log']);
         $this->assertFileDoesNotExist($child['status']);
         // OS liveness after stop is covered by ProcessLifecycleTest and
         // BackgroundProcessManagerTest; this case owns session-scoped row/sidecar cleanup.
 
-        $this->assertNotNull($this->store->fetchById($foreign['id']));
+        $this->assertTrue($this->store->existsByRecordId($foreign['id']));
         $this->assertFileExists($foreign['log']);
-        $this->assertNotNull($this->store->fetchById($unsafe['id']));
+        $this->assertTrue($this->store->existsByRecordId($unsafe['id']));
         $this->assertFileExists($unsafe['log']);
     }
 
@@ -101,7 +101,7 @@ final class BackgroundProcessControllerSessionLifecycleListenerTest extends Isol
         $this->dispatcher->dispatch(new ControllerSessionShutdownEvent('shutdown-run'));
         $this->dispatcher->dispatch(new ControllerSessionShutdownEvent('shutdown-run'));
 
-        $this->assertNull($this->store->fetchById($accepted['id']));
+        $this->assertFalse($this->store->existsByRecordId($accepted['id']));
         $this->assertFileDoesNotExist($accepted['log']);
         $this->assertFileDoesNotExist($accepted['status']);
         $this->assertFileDoesNotExist($accepted['pid_file']);

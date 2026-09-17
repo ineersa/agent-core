@@ -4,12 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Listener;
 
-use Doctrine\ORM\EntityManagerInterface;
-use Ineersa\CodingAgent\Config\AppConfig;
-use Ineersa\CodingAgent\Config\LoggingConfig;
-use Ineersa\CodingAgent\Config\TuiConfig;
-use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\Tui\Command\NoOp;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\TranscriptMessage;
@@ -22,37 +18,43 @@ use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
-use PHPUnit\Framework\TestCase;
 
+/**
+ * Uses IsolatedKernelTestCase because HatfieldSessionStore::exists() now uses
+ * concrete HatfieldSessionRepository::existsById(), and that repository is final.
+ */
 #[CoversClass(ResumeSessionCommandHandler::class)]
-final class ResumeSessionCommandHandlerTest extends TestCase
+final class ResumeSessionCommandHandlerTest extends IsolatedKernelTestCase
 {
+    private HatfieldSessionStore $sessionStore;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        /** @var HatfieldSessionStore $sessionStore */
+        $sessionStore = self::getContainer()->get(HatfieldSessionStore::class);
+        $this->sessionStore = $sessionStore;
+    }
+
     #[Test]
     public function testHandleWithValidSessionIdCallsSwitchAndReturnsNoOp(): void
     {
+        $sessionId = $this->sessionStore->createSession('Test Session');
         $switch = $this->createSwitchSpy();
-        $em = $this->createEntityManagerWithSession(42, 'Test Session');
-        $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em, new \Symfony\Component\EventDispatcher\EventDispatcher());
-        $pickerController = new SessionPickerController($this->pickerTui(), $this->pickerScreen(), $sessionStore, $switch);
+        $handler = $this->createHandler($switch);
 
-        $handler = new ResumeSessionCommandHandler($switch, $sessionStore, $pickerController);
-
-        $result = $handler->handle(new SlashCommand('resume', '42', '/resume 42'));
+        $result = $handler->handle(new SlashCommand('resume', $sessionId, '/resume '.$sessionId));
 
         $this->assertInstanceOf(NoOp::class, $result);
-        $this->assertSame('42', $switch->resumedSessionId, 'Expected requestResume() with session ID');
+        $this->assertSame($sessionId, $switch->resumedSessionId, 'Expected requestResume() with session ID');
     }
 
     #[Test]
     public function testHandleWithInvalidSessionIdReturnsError(): void
     {
         $switch = $this->createSwitchSpy();
-        // EntityManager as stub — find() returns null for any ID
-        $em = $this->createStub(EntityManagerInterface::class);
-        $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em, new \Symfony\Component\EventDispatcher\EventDispatcher());
-        $pickerController = new SessionPickerController($this->pickerTui(), $this->pickerScreen(), $sessionStore, $switch);
-
-        $handler = new ResumeSessionCommandHandler($switch, $sessionStore, $pickerController);
+        $handler = $this->createHandler($switch);
 
         $result = $handler->handle(new SlashCommand('resume', '999', '/resume 999'));
 
@@ -66,11 +68,7 @@ final class ResumeSessionCommandHandlerTest extends TestCase
     public function testHandleWithMalformedSessionIdReturnsError(): void
     {
         $switch = $this->createSwitchSpy();
-        $em = $this->createStub(EntityManagerInterface::class);
-        $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em, new \Symfony\Component\EventDispatcher\EventDispatcher());
-        $pickerController = new SessionPickerController($this->pickerTui(), $this->pickerScreen(), $sessionStore, $switch);
-
-        $handler = new ResumeSessionCommandHandler($switch, $sessionStore, $pickerController);
+        $handler = $this->createHandler($switch);
 
         $result = $handler->handle(new SlashCommand('resume', '42 extra', '/resume 42 extra'));
 
@@ -84,11 +82,7 @@ final class ResumeSessionCommandHandlerTest extends TestCase
     public function testHandleWithSessionIdZeroReturnsError(): void
     {
         $switch = $this->createSwitchSpy();
-        $em = $this->createStub(EntityManagerInterface::class);
-        $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em, new \Symfony\Component\EventDispatcher\EventDispatcher());
-        $pickerController = new SessionPickerController($this->pickerTui(), $this->pickerScreen(), $sessionStore, $switch);
-
-        $handler = new ResumeSessionCommandHandler($switch, $sessionStore, $pickerController);
+        $handler = $this->createHandler($switch);
 
         $result = $handler->handle(new SlashCommand('resume', '0', '/resume 0'));
 
@@ -98,31 +92,20 @@ final class ResumeSessionCommandHandlerTest extends TestCase
         $this->assertNull($switch->resumedSessionId, 'Switch should NOT be called for session 0');
     }
 
-    private function createAppConfig(): AppConfig
+    private function createHandler(TuiSessionSwitchServiceInterface $switch): ResumeSessionCommandHandler
     {
-        return new AppConfig(
-            tui: new TuiConfig(theme: 'default'),
-            logging: new LoggingConfig(),
-            cwd: '/tmp/test-resume',
+        $pickerController = new SessionPickerController(
+            new \Symfony\Component\Tui\Tui(),
+            new ChatScreen(
+                new DefaultTheme(new ThemePalette('test')),
+                'test-session',
+                new PromptEditor(),
+            ),
+            $this->sessionStore,
+            $switch,
         );
-    }
 
-    private function createEntityManagerWithSession(int $id, string $name): EntityManagerInterface
-    {
-        $entity = new HatfieldSession();
-        $entity->id = $id;
-        $entity->name = $name;
-        $entity->cwd = '/tmp/test';
-        $entity->createdAt = new \DateTimeImmutable();
-        $entity->updatedAt = new \DateTimeImmutable();
-
-        $em = $this->createMock(EntityManagerInterface::class);
-        $em->expects($this->atLeastOnce())
-            ->method('find')
-            ->with(HatfieldSession::class, $id)
-            ->willReturn($entity);
-
-        return $em;
+        return new ResumeSessionCommandHandler($switch, $this->sessionStore, $pickerController);
     }
 
     private function createSwitchSpy(): object
@@ -149,19 +132,5 @@ final class ResumeSessionCommandHandlerTest extends TestCase
             {
             }
         };
-    }
-
-    private function pickerTui(): \Symfony\Component\Tui\Tui
-    {
-        return new \Symfony\Component\Tui\Tui();
-    }
-
-    private function pickerScreen(): ChatScreen
-    {
-        return new ChatScreen(
-            new DefaultTheme(new ThemePalette('test')),
-            'test-session',
-            new PromptEditor(),
-        );
     }
 }

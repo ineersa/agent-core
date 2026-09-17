@@ -263,7 +263,7 @@ final class SnapshotCompactionExtensionHookTest extends TestCase
         );
         $sessionMetaRc = new \ReflectionClass(HatfieldSessionStore::class);
         $sessionMetaStore = $sessionMetaRc->newInstanceWithoutConstructor();
-        $modelResolver = new ModelResolver($appConfig, $sessionMetaStore);
+        $modelResolver = new ModelResolver($appConfig, $sessionMetaStore, new NullLogger());
         $settingsWriter = (new \ReflectionClass(SettingsOverrideWriter::class))->newInstanceWithoutConstructor();
 
         return new ModelSelectionService($appConfig, $modelResolver, $settingsWriter, $sessionMetaStore);

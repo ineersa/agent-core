@@ -3,6 +3,8 @@ tui:
 tools:
     bash:
         background_prompt_threshold_seconds: 15
+    code_mode:
+        enabled: true
 logging:
     level: info
     max_files: 2
@@ -40,7 +42,7 @@ ai:
         llama_cpp:
             type: generic
             enabled: true
-            base_url: 'http://192.168.2.38:8052/v1'
+            base_url: 'http://10.0.0.89:8052/v1'
             api: openai-completions
             api_key: dummy
             completions_path: /chat/completions
@@ -49,10 +51,11 @@ ai:
             supports_embeddings: false
             supports_thinking_levels: false
             models: { flash: { name: flash, context_window: 160000, max_tokens: 65536, input: [text, image], tool_calling: true, reasoning: true, cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 } } }
+            compatibility: { thinking_format: llama_cpp }
         llama_cpp_test:
             type: generic
             enabled: true
-            base_url: 'http://192.168.2.38:9052/v1'
+            base_url: 'http://10.0.0.89:9052/v1'
             api: openai-completions
             api_key: dummy
             completions_path: /chat/completions

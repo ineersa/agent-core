@@ -43,7 +43,7 @@ final readonly class ImageGatingConvertHook implements ConvertToLlmHookInterface
             $messages = $this->stripImageRefParts($messages);
         }
 
-        return $this->messageConverter->toMessageBag($messages);
+        return $this->messageConverter->toMessageBagForTarget($messages, $modelName);
     }
 
     /**

@@ -24,11 +24,11 @@ Thoroughness (infer from task, default medium):
 - Thorough: Trace all dependencies, check tests/types
 
 Strategy:
-1. Use IDE tools for navigation and relationships when they are available for the current working directory: `jetbrains-index_ide_find_file`, `jetbrains-index_ide_find_symbol`, `jetbrains-index_ide_search_text`, `jetbrains-index_ide_file_structure`, `jetbrains-index_ide_find_references`, `jetbrains-index_ide_type_hierarchy`, `jetbrains-index_ide_call_hierarchy`, `jetbrains-index_ide_find_implementations`, `jetbrains-index_ide_find_super_methods`.
-2. Fallback for other directories or unavailable indexes: if IDE tools are absent, error, or say the target is outside the current working directory, use `grep`/`find`/`ls` plus targeted `read`.
-3. Use `grep`/`find` for regex, non-code files, generated files, or when IDE tools do not fit the query.
-4. Read targeted sections (not entire files) after tool evidence identifies the right files.
-5. Identify types, interfaces, key functions, and dependencies between files.
+1. Use `code_search` for conceptual discovery and `rg`/`find` for literal text and file searches.
+2. Use available IDE tools for definitions, references, and call hierarchy. Target the exact checkout using the active runtime's project-scoping and open-project capability.
+3. If IDE tools are unavailable or insufficient, use filesystem searches and targeted `read` calls.
+4. Read targeted sections after tool evidence identifies the right files.
+5. Identify types, interfaces, key functions, and dependencies between files. Keep reconnaissance read-only. Do not use refactoring tools.
 
 Your output format:
 

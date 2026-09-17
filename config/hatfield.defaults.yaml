@@ -221,6 +221,13 @@ tools:
         # for returning as final/partial command output.
         log_tail_chars: 20000
 
+# code_mode runs arbitrary PHP in an owned subprocess. Keep it off until
+# you explicitly opt in. Direct PHP filesystem/process calls bypass toolbox
+# hooks and approvals; any launcher sandbox (for example hatfield-safe /
+# bubblewrap) is inherited rather than created by this tool.
+    code_mode:
+        enabled: false
+
 # ---------------------------------------------------------------------------
 # Extensions
 # ---------------------------------------------------------------------------
@@ -279,7 +286,6 @@ extensions:
                 write: write
                 edit: edit
                 read: read
-                settings: settings
 
             # Command substrings that bypass destructive/dangerous checks.
             allow_command_patterns: []
@@ -380,7 +386,6 @@ agents:
     # Tool names always excluded from child/subagent runs (inherit-all and explicit lists).
     # Empty list disables the denylist. Parent agent tools are unaffected.
     subagent_excluded_tools:
-        - settings
         - hatfield_docs
 
     # Child-run extension selection for subagents.

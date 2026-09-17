@@ -48,7 +48,7 @@ final class AgentsConfigTest extends TestCase
         $this->assertCount(0, $config->paths);
         $this->assertSame(4, $config->maxAgents);
         $this->assertSame(86400, $config->subagentToolTimeoutSeconds);
-        $this->assertSame(['settings', 'hatfield_docs'], $config->subagentExcludedTools);
+        $this->assertSame(['hatfield_docs'], $config->subagentExcludedTools);
     }
 
     public function testFromRawWithMaxAgents(): void
@@ -232,8 +232,8 @@ final class AgentsConfigTest extends TestCase
 
     public function testFromRawAcceptsCustomAndEmptySubagentExcludedTools(): void
     {
-        $custom = AgentsConfig::fromRaw(['subagent_excluded_tools' => ['settings']]);
-        $this->assertSame(['settings'], $custom->subagentExcludedTools);
+        $custom = AgentsConfig::fromRaw(['subagent_excluded_tools' => ['bash']]);
+        $this->assertSame(['bash'], $custom->subagentExcludedTools);
 
         $empty = AgentsConfig::fromRaw(['subagent_excluded_tools' => []]);
         $this->assertSame([], $empty->subagentExcludedTools);

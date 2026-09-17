@@ -83,11 +83,11 @@ final class BackgroundProcessProvisionalCleanupTaskTest extends IsolatedKernelTe
 
         ($this->task)();
 
-        $this->assertNull($this->store->fetchById($old['id']));
+        $this->assertFalse($this->store->existsByRecordId($old['id']));
         $this->assertFileDoesNotExist($old['log']);
         $this->assertFileDoesNotExist($old['status']);
         $this->assertFileDoesNotExist($old['pid']);
-        $this->assertNotNull($this->store->fetchById($accepted['id']));
+        $this->assertTrue($this->store->existsByRecordId($accepted['id']));
         $this->assertFileExists($accepted['log']);
         $this->assertFileExists($neighbor);
     }
@@ -109,7 +109,7 @@ final class BackgroundProcessProvisionalCleanupTaskTest extends IsolatedKernelTe
         try {
             ($this->task)();
 
-            $this->assertNull($this->store->fetchById($old));
+            $this->assertFalse($this->store->existsByRecordId($old));
             $this->assertFileDoesNotExist($paths['log']);
             $this->assertFileDoesNotExist($paths['status']);
             $this->assertFileDoesNotExist($paths['pid']);
@@ -131,7 +131,7 @@ final class BackgroundProcessProvisionalCleanupTaskTest extends IsolatedKernelTe
 
         ($this->task)();
 
-        $this->assertNull($this->store->fetchById($old));
+        $this->assertFalse($this->store->existsByRecordId($old));
         $this->assertFileExists($outside);
     }
 
@@ -143,9 +143,9 @@ final class BackgroundProcessProvisionalCleanupTaskTest extends IsolatedKernelTe
 
         ($this->task)();
 
-        $this->assertNotNull($this->store->fetchById($running['id']));
+        $this->assertTrue($this->store->existsByRecordId($running['id']));
         $this->assertFileExists($running['log']);
-        $this->assertNotNull($this->store->fetchById($recent['id']));
+        $this->assertTrue($this->store->existsByRecordId($recent['id']));
         $this->assertFileExists($recent['log']);
     }
 
@@ -159,7 +159,7 @@ final class BackgroundProcessProvisionalCleanupTaskTest extends IsolatedKernelTe
         ($this->task)();
         ($this->task)();
 
-        $this->assertNull($this->store->fetchById($partial['id']));
+        $this->assertFalse($this->store->existsByRecordId($partial['id']));
         $this->assertFileDoesNotExist($partial['status']);
     }
 

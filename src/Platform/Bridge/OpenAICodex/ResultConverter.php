@@ -417,7 +417,27 @@ final class ResultConverter implements ResultConverterInterface
     {
         $arguments = json_decode($toolCall['arguments'], true, flags: \JSON_THROW_ON_ERROR);
 
-        return new ToolCall($toolCall['id'], $toolCall['name'], $arguments);
+        // Prefer call_id for result association. Preserve a native Responses
+        // item id as "{call_id}|{item_id}" so same-model replay can emit it.
+        $callId = $toolCall['call_id'] ?? null;
+        $itemId = $toolCall['id'] ?? null;
+        if (!\is_string($callId) || '' === $callId) {
+            $callId = \is_string($itemId) && '' !== $itemId ? $itemId : null;
+        }
+        if (null === $callId) {
+            throw new \RuntimeException('Function call is missing both "call_id" and "id".');
+        }
+
+        $storedId = $callId;
+        if (\is_string($itemId)
+            && '' !== $itemId
+            && $itemId !== $callId
+            && str_starts_with($itemId, 'fc_')
+        ) {
+            $storedId = $callId.'|'.$itemId;
+        }
+
+        return new ToolCall($storedId, $toolCall['name'], $arguments);
     }
 
     /**

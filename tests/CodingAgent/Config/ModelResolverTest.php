@@ -12,7 +12,9 @@ use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -60,6 +62,46 @@ class ModelResolverTest extends TestCase
         $this->assertNotNull($result);
     }
 
+    public function testUnavailableDefaultFallsBackToFirstAvailableAndWarns(): void
+    {
+        $aiData = $this->standardAiData();
+        // Parseable but listed by no provider: tier 3 skips it, tier 4 wins.
+        $aiData['default_model'] = 'deepseek/nonexistent-model';
+        $logger = new \Ineersa\AgentCore\Tests\Support\TestLogger();
+        $resolver = $this->createResolver($aiData, $logger);
+
+        $result = $resolver->resolveInitialModel(null, '');
+
+        $this->assertNotNull($result);
+        $this->assertSame('deepseek/deepseek-v4-pro', $result->toString());
+
+        $warning = null;
+        foreach ($logger->records as $record) {
+            if ('model.default_unavailable_fallback' === $record['message']) {
+                $warning = $record;
+                break;
+            }
+        }
+        $this->assertNotNull($warning, 'Unavailable default must log a fallback warning');
+        $this->assertSame('warning', $warning['level']);
+        $this->assertSame('deepseek/nonexistent-model', $warning['context']['default_model']);
+        $this->assertSame('deepseek/deepseek-v4-pro', $warning['context']['resolved_model']);
+    }
+
+    public function testAvailableDefaultDoesNotWarn(): void
+    {
+        $logger = new \Ineersa\AgentCore\Tests\Support\TestLogger();
+        $resolver = $this->createResolver($this->standardAiData(), $logger);
+
+        $resolver->resolveInitialModel(null, '');
+
+        $warnings = array_filter(
+            $logger->records,
+            static fn (array $record): bool => 'model.default_unavailable_fallback' === $record['message'],
+        );
+        $this->assertSame([], $warnings, 'No fallback warning when the configured default is available');
+    }
+
     public function testReturnsNullWhenNoModelsConfigured(): void
     {
         $resolver = $this->createResolver([]);
@@ -78,6 +120,28 @@ class ModelResolverTest extends TestCase
         $this->assertNotNull($result);
         $this->assertSame('deepseek', $result->providerId);
         $this->assertSame('deepseek-v4-pro', $result->modelName);
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testUnavailableSessionModelFallsToDefaultLikeRuntime(): void
+    {
+        // Session metadata may still hold a model that is no longer available.
+        // Resolution must fall through the same availability tiers as runtime,
+        // not display the unavailable stored value.
+        $session = new HatfieldSession();
+        $session->id = 42;
+        $session->model = 'deepseek/nonexistent-model';
+        $session->reasoning = 'medium';
+
+        $resolver = $this->createResolver(
+            $this->standardAiData(),
+            sessionMetaStore: $this->createSessionMetaStoreWithFind($session),
+        );
+
+        $result = $resolver->resolveInitialModel(null, '42');
+
+        $this->assertNotNull($result);
+        $this->assertSame('deepseek/deepseek-v4-pro', $result->toString());
     }
 
     // ──────────────────────────────────────────────
@@ -511,16 +575,18 @@ class ModelResolverTest extends TestCase
     //  Helpers
     // ──────────────────────────────────────────────
 
-    private function createResolver(array $aiData): ModelResolver
-    {
+    private function createResolver(
+        array $aiData,
+        ?\Ineersa\AgentCore\Tests\Support\TestLogger $logger = null,
+        ?HatfieldSessionStore $sessionMetaStore = null,
+    ): ModelResolver {
         $appConfig = $this->makeAppConfig($aiData);
 
-        // HatfieldSessionStore is not used when sessionId is empty,
-        // but the resolver requires it in its constructor.
-        // Create a real one with minimal real dependencies.
-        $sessionMetaStore = $this->createSessionMetaStore();
-
-        return new ModelResolver($appConfig, $sessionMetaStore);
+        return new ModelResolver(
+            $appConfig,
+            $sessionMetaStore ?? $this->createSessionMetaStore(),
+            $logger ?? new \Ineersa\AgentCore\Tests\Support\TestLogger(),
+        );
     }
 
     private function createSessionMetaStore(): HatfieldSessionStore
@@ -528,6 +594,25 @@ class ModelResolverTest extends TestCase
         // HatfieldSessionStore is final — cannot be mocked.
         return (new \ReflectionClass(HatfieldSessionStore::class))
             ->newInstanceWithoutConstructor();
+    }
+
+    private function createSessionMetaStoreWithFind(HatfieldSession $session): HatfieldSessionStore
+    {
+        $em = $this->createMock(\Doctrine\ORM\EntityManagerInterface::class);
+        $em->method('find')->willReturnCallback(
+            static function (string $class, mixed $id) use ($session): ?HatfieldSession {
+                return (string) $session->id === (string) $id ? $session : null;
+            },
+        );
+        $em->method('refresh')->willReturnCallback(static function (object $entity): void {
+            // Entity fields are already set for this unit fixture.
+        });
+
+        return new HatfieldSessionStore(
+            appConfig: $this->makeAppConfig($this->standardAiData()),
+            entityManager: $em,
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
+        );
     }
 
     private function makeAppConfig(array $aiData): AppConfig
@@ -590,7 +675,7 @@ class ModelResolverTest extends TestCase
                 'llama_cpp' => [
                     'type' => 'generic',
                     'enabled' => true,
-                    'base_url' => 'http://192.168.2.38:8052/v1',
+                    'base_url' => 'http://10.0.0.89:8052/v1',
                     'models' => [
                         'flash' => [
                             'id' => 'flash',

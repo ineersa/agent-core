@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Entity;
 
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
+use Doctrine\ORM\Query;
 use Doctrine\Persistence\ManagerRegistry;
 
 /**
@@ -52,6 +53,7 @@ final class BackgroundProcessRepository extends ServiceEntityRepository
             ->orderBy('bp.id', 'DESC')
             ->setMaxResults(1)
             ->getQuery()
+            ->setHint(Query::HINT_REFRESH, true)
             ->getOneOrNullResult();
     }
 
@@ -87,7 +89,9 @@ final class BackgroundProcessRepository extends ServiceEntityRepository
                 ->setParameter('sessionId', $sessionId);
         }
 
-        return $qb->getQuery()->getResult();
+        return $qb->getQuery()
+            ->setHint(Query::HINT_REFRESH, true)
+            ->getResult();
     }
 
     /**
@@ -116,6 +120,7 @@ final class BackgroundProcessRepository extends ServiceEntityRepository
 
         return $qb->orderBy('bp.id', 'ASC')
             ->getQuery()
+            ->setHint(Query::HINT_REFRESH, true)
             ->getResult();
     }
 
@@ -132,6 +137,7 @@ final class BackgroundProcessRepository extends ServiceEntityRepository
             ->setParameter('sessionId', $sessionId)
             ->orderBy('bp.id', 'DESC')
             ->getQuery()
+            ->setHint(Query::HINT_REFRESH, true)
             ->getResult();
     }
 
@@ -149,6 +155,7 @@ final class BackgroundProcessRepository extends ServiceEntityRepository
             ->orderBy('bp.id', 'DESC')
             ->setMaxResults(1)
             ->getQuery()
+            ->setHint(Query::HINT_REFRESH, true)
             ->getOneOrNullResult();
     }
 
@@ -167,6 +174,23 @@ final class BackgroundProcessRepository extends ServiceEntityRepository
             ->setParameter('cutoff', $cutoff)
             ->orderBy('bp.id', 'ASC')
             ->getQuery()
+            ->setHint(Query::HINT_REFRESH, true)
             ->getResult();
+    }
+
+    /**
+     * Load one process by primary key with committed field values.
+     *
+     * Prefer this over EntityManager::find() for mutable status reads so
+     * identity-map copies are overwritten from SQL without a second query.
+     */
+    public function findFreshById(int $id): ?BackgroundProcess
+    {
+        return $this->createQueryBuilder('bp')
+            ->where('bp.id = :id')
+            ->setParameter('id', $id)
+            ->getQuery()
+            ->setHint(Query::HINT_REFRESH, true)
+            ->getOneOrNullResult();
     }
 }

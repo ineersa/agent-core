@@ -93,13 +93,24 @@ final class FooterStateListenerTest extends TestCase
 
     private function footerInitializer(object $context): FooterStateInitializer
     {
+        $appConfig = new AppConfig(
+            tui: new TuiConfig(theme: 'default'),
+            logging: new LoggingConfig(),
+            sessions: new SessionsConfig(),
+            cwd: '/tmp',
+        );
+
         return new FooterStateInitializer(
-            $context->sessionStore,
-            new AppConfig(
-                tui: new TuiConfig(theme: 'default'),
-                logging: new LoggingConfig(),
-                sessions: new SessionsConfig(),
-                cwd: '/tmp',
+            $appConfig,
+            new \Ineersa\CodingAgent\Config\ModelSelectionService(
+                $appConfig,
+                new \Ineersa\CodingAgent\Config\ModelResolver($appConfig, $context->sessionStore, new \Psr\Log\NullLogger()),
+                new \Ineersa\CodingAgent\Config\SettingsOverrideWriter(
+                    new \Ineersa\CodingAgent\Config\SettingsPathResolver('/tmp'),
+                    \Symfony\Component\PropertyAccess\PropertyAccess::createPropertyAccessor(),
+                    new \Symfony\Component\Filesystem\Filesystem(),
+                ),
+                $context->sessionStore,
             ),
         );
     }

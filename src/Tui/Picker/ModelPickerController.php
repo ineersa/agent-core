@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\Tui\Listener\FooterStateInitializer;
+use Ineersa\Tui\Listener\PendingModelSelection;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\ThemeColorEnum;
@@ -244,7 +245,7 @@ final class ModelPickerController
     public function applySelectEffect(AiModelReference $ref): void
     {
         try {
-            $this->modelService->changeModel($ref, $this->state->sessionId);
+            PendingModelSelection::updateModel($this->modelService, $ref, $this->state);
         } catch (\RuntimeException $e) {
             $this->logger->warning('Failed to change model from picker', [
                 'exception' => $e,

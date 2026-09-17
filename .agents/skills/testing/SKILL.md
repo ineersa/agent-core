@@ -59,7 +59,7 @@ Back-to-back `test:llm-real` invocations skip the expensive curl when `var/tmp/l
 If you see:
 ```
 llama.cpp generation readiness check FAILED
-  Endpoint: http://192.168.2.38:9052/v1/chat/completions
+  Endpoint: http://10.0.0.89:9052/v1/chat/completions
   Model: test
   HTTP status: 0 (curl exit: 28)
 ```

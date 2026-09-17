@@ -12,6 +12,7 @@ use Ineersa\AgentCore\Infrastructure\SymfonyAi\PreparedInvocationPlatform;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderRequestPreparer;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
+use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ConfiguredSymfonyAiPlatformFactory;
 use Ineersa\Hatfield\ExtensionApi\Agent\AgentCallRequestDTO;
 use Ineersa\Hatfield\ExtensionApi\Agent\AgentRunnerInterface;
 use Psr\Log\LoggerInterface;
@@ -22,7 +23,6 @@ use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolverInterface;
 use Symfony\AI\Platform\Message\Message;
 use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\AI\Platform\PlatformInterface;
-use Symfony\AI\Platform\Result\ResultInterface;
 use Symfony\AI\Platform\Result\StreamResult;
 
 /**
@@ -31,11 +31,17 @@ use Symfony\AI\Platform\Result\StreamResult;
  * Reuses the configured Symfony AI Platform, standard Agent + AgentProcessor
  * tool loop, and Hatfield routing metadata. Publicly blocking; streams
  * internally so Codex WebSocket and HTTP streaming providers complete.
+ *
+ * When {@see AgentCallRequestDTO::$maxDurationSeconds} is set, this runner
+ * builds a selected-provider Platform once for the call (including tool-loop
+ * turns) with matching idle timeout and max_duration budgets. Default calls
+ * keep the shared Platform.
  */
 final readonly class ConfiguredModelAgentRunner implements AgentRunnerInterface
 {
     public function __construct(
         private PlatformInterface $platform,
+        private ConfiguredSymfonyAiPlatformFactory $platformFactory,
         private ?HatfieldModelCatalog $modelCatalog,
         private LoggerInterface $logger,
         private ToolCallArgumentResolverInterface $argumentResolver,
@@ -94,14 +100,28 @@ final readonly class ConfiguredModelAgentRunner implements AgentRunnerInterface
             stepId: $stepId,
         );
         $cancelToken = new NullCancellationToken();
+        $resolutionValues = [];
+        if (null !== $request->thinkingLevel) {
+            $resolutionValues['thinking_level'] = $request->thinkingLevel;
+        }
         $resolvedModel = $this->modelResolver->resolve(
             $request->model,
-            $messages,
+            [] !== $messages->withoutSystemMessage()->getMessages(),
             $invocationInput,
-            new ModelResolutionOptions(),
+            new ModelResolutionOptions($resolutionValues),
         );
-        $platform = new PreparedInvocationPlatform(
-            $this->platform,
+
+        $platform = $this->platform;
+        if (null !== $request->maxDurationSeconds) {
+            $providerId = AiModelReference::parse($request->model)->providerId;
+            $platform = $this->platformFactory->createPlatformForProvider(
+                $providerId,
+                $request->maxDurationSeconds,
+            );
+        }
+
+        $preparedPlatform = new PreparedInvocationPlatform(
+            $platform,
             $this->providerRequestPreparer,
             $resolvedModel,
             $invocationInput,
@@ -109,7 +129,7 @@ final readonly class ConfiguredModelAgentRunner implements AgentRunnerInterface
         );
 
         $agent = new Agent(
-            platform: $platform,
+            platform: $preparedPlatform,
             model: $resolvedModel->model,
             inputProcessors: $inputProcessors,
             outputProcessors: $outputProcessors,
@@ -117,6 +137,11 @@ final readonly class ConfiguredModelAgentRunner implements AgentRunnerInterface
         );
 
         $options = ['stream' => true];
+        if ('off' === $request->thinkingLevel) {
+            // Explicit per-call off only (Dropper). Do not infer from session/default
+            // reasoning=off, and do not invent provider engines from ids.
+            $options = array_replace($options, $this->explicitThinkingOffProviderOptions($request->model));
+        }
 
         $this->logger->info('extension.agent.run.started', [
             'component' => 'extension_agent_runner',
@@ -127,11 +152,20 @@ final readonly class ConfiguredModelAgentRunner implements AgentRunnerInterface
             'model' => $request->model,
             'tool_count' => \count($request->tools),
             'step_id' => $stepId,
+            'max_duration_seconds' => $request->maxDurationSeconds,
+            'thinking_level' => $request->thinkingLevel,
         ]);
 
         try {
             $result = $agent->call($messages, $options);
-            $this->drainResult($result);
+            // Fully consume stream results so SSE/WebSocket transports complete
+            // and AgentProcessor stream tool-call listeners execute.
+            if ($result instanceof StreamResult) {
+                foreach ($result->getContent() as $_) {
+                }
+            } else {
+                $result->getContent();
+            }
         } catch (\Throwable $e) {
             $this->logger->error('extension.agent.run.failed', [
                 'component' => 'extension_agent_runner',
@@ -166,18 +200,36 @@ final readonly class ConfiguredModelAgentRunner implements AgentRunnerInterface
         return 'ext-agent:'.$request->sessionId.':'.('' !== $correlation ? $correlation : bin2hex(random_bytes(8)));
     }
 
-    private function drainResult(ResultInterface $result): void
+    /**
+     * Provider options for an explicit AgentCallRequestDTO thinkingLevel=off.
+     *
+     * z.ai disable already flows through SessionAwareModelResolver + ReasoningOptionsFeatureShaper.
+     * llama.cpp requires an explicit catalog thinking_format=llama_cpp; without it this returns [].
+     *
+     * @return array<string, mixed>
+     */
+    private function explicitThinkingOffProviderOptions(string $exactModel): array
     {
-        if ($result instanceof StreamResult) {
-            // Fully consume the generator so SSE/WebSocket transports complete
-            // and AgentProcessor stream tool-call listeners execute.
-            foreach ($result->getContent() as $_) {
-            }
-
-            return;
+        if (null === $this->modelCatalog) {
+            return [];
         }
 
-        // Non-stream results still need content materialization for converters.
-        $result->getContent();
+        $ref = AiModelReference::parse($exactModel);
+
+        $model = $this->modelCatalog->getModel($ref);
+        if (null === $model || !$model->reasoning) {
+            return [];
+        }
+
+        $thinkingFormat = $model->compatibility?->thinkingFormat;
+        if (null === $thinkingFormat) {
+            $thinkingFormat = $this->modelCatalog->getProvider($ref->providerId)?->compatibility?->thinkingFormat;
+        }
+        if ('llama_cpp' === $thinkingFormat) {
+            // Disables the reasoning phase for chat-template models; not merely hidden.
+            return ['chat_template_kwargs' => ['enable_thinking' => false]];
+        }
+
+        return [];
     }
 }

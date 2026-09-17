@@ -569,8 +569,8 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         $childRepo->insertReservedChildren($newBatchLifecycleId, [$intent]);
         $em->clear();
 
-        $rebound = $childRepo->findEntityByChildRunId($childRunId);
-        $this->assertInstanceOf(DeferredSubagentChild::class, $rebound);
+        $rebound = $childRepo->findByChildRunId($childRunId);
+        $this->assertNotNull($rebound);
         $this->assertSame($newBatchLifecycleId, $rebound->batchLifecycleId);
         $this->assertSame(1, $rebound->batchIndex);
         $this->assertSame($newArtifactId, $rebound->artifactId);
@@ -582,7 +582,7 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         $this->assertNull($rebound->terminalCompletedAt);
         $this->assertNull($rebound->terminalStatus);
 
-        $projection = $childRepo->decodeChildLifecycleProjection($rebound->childLifecycleProjection);
+        $projection = $rebound->childLifecycleProjection;
         $this->assertNotNull($projection);
         $this->assertSame(RunStatus::Running, $projection->childStatus);
         $this->assertSame(5, $projection->lastCommittedSeq);
@@ -594,8 +594,8 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         // Second reserve against the same new batch/index converges without another unique conflict.
         $childRepo->insertReservedChildren($newBatchLifecycleId, [$intent]);
         $em->clear();
-        $again = $childRepo->findEntityByChildRunId($childRunId);
-        $this->assertInstanceOf(DeferredSubagentChild::class, $again);
+        $again = $childRepo->findByChildRunId($childRunId);
+        $this->assertNotNull($again);
         $this->assertSame($newBatchLifecycleId, $again->batchLifecycleId);
         $this->assertSame(DeferredSubagentChildLaunchStatusEnum::Reserved, $again->launchStatus);
         $this->assertSame(5, $again->childEventCursor);

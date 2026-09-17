@@ -107,11 +107,11 @@ final class PlatformIntegrationTest extends TestCase
         $modelResolver = new class implements ModelResolverInterface {
             public function resolve(
                 string $defaultModel,
-                \Symfony\AI\Platform\Message\MessageBag $messages,
+                bool $hasConversationMessages,
                 ModelInvocationInput $input,
                 ModelResolutionOptions $options,
             ): ResolvedModel {
-                unset($messages, $input, $options);
+                unset($hasConversationMessages, $input, $options);
 
                 return new ResolvedModel(model: $defaultModel.'-resolved', providerOptions: ['max_tokens' => 64]);
             }
@@ -297,11 +297,11 @@ final class PlatformIntegrationTest extends TestCase
         $modelResolver = new class implements ModelResolverInterface {
             public function resolve(
                 string $defaultModel,
-                \Symfony\AI\Platform\Message\MessageBag $messages,
+                bool $hasConversationMessages,
                 ModelInvocationInput $input,
                 ModelResolutionOptions $options,
             ): ResolvedModel {
-                unset($defaultModel, $messages, $input, $options);
+                unset($defaultModel, $hasConversationMessages, $input, $options);
 
                 return new ResolvedModel(model: 'test/priced-model');
             }
@@ -1094,6 +1094,11 @@ final class PlatformIntegrationTest extends TestCase
             modelResolver: null,
             logger: new NullLogger(),
             denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
+            requestRetryPolicy: new \Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy(
+                // Keep retries for provider-error coverage, but avoid real wall backoff.
+                baseDelayMs: 0,
+            ),
+            clock: new \Symfony\Component\Clock\MockClock(),
         );
     }
 

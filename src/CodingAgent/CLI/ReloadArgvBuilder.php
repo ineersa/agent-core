@@ -11,9 +11,13 @@ namespace Ineersa\CodingAgent\CLI;
  * reload only adjusts what must change for the fresh boot:
  *  - one-shot input (--prompt) is dropped so the prompt does not
  *    execute twice,
+ *  - --model/--reasoning are dropped when the relaunch will resume: the
+ *    session row already owns the current selection after in-TUI picker
+ *    or /model changes, and replaying the original launch overrides would
+ *    undo that choice,
  *  - a stale --resume is replaced with the current session id,
- *  - everything else (model, reasoning, transport, tools, skills, cwd)
- *    is preserved deliberately.
+ *  - everything else (transport, tools, skills, cwd) is preserved
+ *    deliberately.
  *
  * AgentCommand's --prompt Option has no shortcut; -p never reaches here.
  */
@@ -48,6 +52,21 @@ final class ReloadArgvBuilder
             }
             if (str_starts_with($arg, '--prompt=')) {
                 continue;
+            }
+
+            // Drop model/reasoning when relaunching into a resumed session so
+            // the current session selection wins over stale launch argv.
+            // Fresh draft relaunches keep them.
+            if ('' !== $resumeSessionId) {
+                if (\in_array($arg, ['--model', '--reasoning'], true)) {
+                    if ($i + 1 < $count && !str_starts_with($originalArgv[$i + 1], '-')) {
+                        ++$i;
+                    }
+                    continue;
+                }
+                if (str_starts_with($arg, '--model=') || str_starts_with($arg, '--reasoning=')) {
+                    continue;
+                }
             }
 
             // Drop any pre-existing --resume so the current session id wins.

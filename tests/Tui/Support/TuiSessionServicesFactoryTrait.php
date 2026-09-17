@@ -114,7 +114,7 @@ trait TuiSessionServicesFactoryTrait
         );
         $modelService = new ModelSelectionService(
             $appConfig,
-            new ModelResolver($appConfig, $sessionStore),
+            new ModelResolver($appConfig, $sessionStore, new NullLogger()),
             new SettingsOverrideWriter(
                 new SettingsPathResolver('/tmp'),
                 PropertyAccess::createPropertyAccessor(),

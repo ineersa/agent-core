@@ -117,7 +117,7 @@ final class AgentToolPolicyResolverTest extends TestCase
     public static function childToolListCases(): iterable
     {
         yield 'omitted inherit-all' => [null];
-        yield 'explicit list' => [['read', 'settings', 'hatfield_docs', 'bash']];
+        yield 'explicit list' => [['read', 'hatfield_docs', 'bash']];
     }
 
     /**
@@ -127,7 +127,7 @@ final class AgentToolPolicyResolverTest extends TestCase
     public function testDefaultExcludedToolsRemovedForChildren(?array $tools): void
     {
         $resolver = new AgentToolPolicyResolver(
-            $this->registry(['read', 'settings', 'hatfield_docs', 'bash', 'subagent']),
+            $this->registry(['read', 'hatfield_docs', 'bash', 'subagent']),
             $this->mcpResolver([]),
             new AgentsConfig(),
         );
@@ -135,7 +135,6 @@ final class AgentToolPolicyResolverTest extends TestCase
 
         $this->assertContains('read', $policy['tools']);
         $this->assertContains('bash', $policy['tools']);
-        $this->assertNotContains('settings', $policy['tools']);
         $this->assertNotContains('hatfield_docs', $policy['tools']);
         $this->assertNotContains('subagent', $policy['tools']);
     }
