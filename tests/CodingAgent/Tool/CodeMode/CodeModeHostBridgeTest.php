@@ -515,7 +515,7 @@ PHP);
     {
         $bridge = $this->bridge();
         // Host regression: >50k stdout must keep unique head and tail markers.
-        // Lower layers cannot prove Process pipe spooling without a real subprocess.
+        // Lower layers cannot prove Symfony Process capture without a real subprocess.
         $result = $this->runScript(
             $bridge,
             'echo "HEAD-MARKER-".str_repeat("X", 60000)."TAIL-MARKER"; return "tiny";',
