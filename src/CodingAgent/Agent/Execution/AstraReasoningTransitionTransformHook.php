@@ -6,7 +6,9 @@ namespace Ineersa\CodingAgent\Agent\Execution;
 
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Hook\TransformContextHookInterface;
+use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
@@ -19,6 +21,9 @@ use Symfony\AI\Platform\Bridge\OpenAICodex\CodexReasoningTransitionMetadata;
  * New transitions are recorded by {@see AstraReasoningTransitionRequestHook}
  * after SessionAwareModelResolver decides an update is required. Compaction and
  * resume clear the session baseline so discarded switches are not kept.
+ *
+ * Runs after {@see \Ineersa\CodingAgent\Tool\OutputCapLlmTransformHook} so keys
+ * and markers are assigned against the final LLM-facing text.
  */
 final readonly class AstraReasoningTransitionTransformHook implements TransformContextHookInterface
 {
@@ -26,6 +31,7 @@ final readonly class AstraReasoningTransitionTransformHook implements TransformC
         private ModelSelectionService $selectionService,
         private HatfieldModelCatalog $catalog,
         private HatfieldSessionStore $sessionMetadataStore,
+        private ?RunOperationalStatusReaderInterface $statusReader = null,
         private ?RunStartedMetadataReader $childMetadataReader = null,
     ) {
     }
@@ -36,7 +42,14 @@ final readonly class AstraReasoningTransitionTransformHook implements TransformC
             return $messages;
         }
 
-        $modelRef = $this->resolveModel($runId);
+        // Compaction summarization uses the same runId with explicit model /
+        // thinking overrides. Do not stamp chat transitions onto that path.
+        $status = $this->statusReader?->findOperationalStatus($runId)?->status;
+        if (RunStatus::Compacting === $status) {
+            return $this->stripAllTransitions($messages);
+        }
+
+        $modelRef = $this->resolveChatModel($runId);
         if (null === $modelRef) {
             return $this->stripAllTransitions($messages);
         }
@@ -47,53 +60,37 @@ final readonly class AstraReasoningTransitionTransformHook implements TransformC
         }
 
         $out = [];
-        foreach ($messages as $message) {
-            $key = self::messageKeyInHistory($messages, \count($out));
+        foreach ($messages as $index => $message) {
+            $key = self::messageKeyInHistory($messages, $index);
             $effort = null !== $key ? ($byKey[$key] ?? null) : null;
             $metadata = $message->metadata;
-            $current = $metadata[CodexReasoningTransitionMetadata::KEY] ?? null;
+            unset($metadata[CodexReasoningTransitionMetadata::KEY], $metadata[CodexReasoningTransitionMetadata::MESSAGE_KEY]);
+
+            if (null !== $key) {
+                $metadata[CodexReasoningTransitionMetadata::MESSAGE_KEY] = $key;
+            }
 
             if (\is_string($effort) && '' !== $effort) {
-                if ($current === $effort) {
-                    $out[] = $message;
-
-                    continue;
-                }
-
                 $metadata[CodexReasoningTransitionMetadata::KEY] = $effort;
-                $out[] = new AgentMessage(
-                    role: $message->role,
-                    content: $message->content,
-                    timestamp: $message->timestamp,
-                    name: $message->name,
-                    toolCallId: $message->toolCallId,
-                    toolName: $message->toolName,
-                    details: $message->details,
-                    isError: $message->isError,
-                    metadata: $metadata,
-                );
+            }
+
+            if ($metadata === $message->metadata) {
+                $out[] = $message;
 
                 continue;
             }
 
-            if (\array_key_exists(CodexReasoningTransitionMetadata::KEY, $metadata)) {
-                unset($metadata[CodexReasoningTransitionMetadata::KEY]);
-                $out[] = new AgentMessage(
-                    role: $message->role,
-                    content: $message->content,
-                    timestamp: $message->timestamp,
-                    name: $message->name,
-                    toolCallId: $message->toolCallId,
-                    toolName: $message->toolName,
-                    details: $message->details,
-                    isError: $message->isError,
-                    metadata: $metadata,
-                );
-
-                continue;
-            }
-
-            $out[] = $message;
+            $out[] = new AgentMessage(
+                role: $message->role,
+                content: $message->content,
+                timestamp: $message->timestamp,
+                name: $message->name,
+                toolCallId: $message->toolCallId,
+                toolName: $message->toolName,
+                details: $message->details,
+                isError: $message->isError,
+                metadata: $metadata,
+            );
         }
 
         return $out;
@@ -118,6 +115,9 @@ final readonly class AstraReasoningTransitionTransformHook implements TransformC
     /**
      * Stable key for a message among siblings that share role/tool/text.
      *
+     * Uses the same text extraction as AgentMessageConverter / OutputCap so
+     * request-hook lookups against converted MessageBag entries stay aligned.
+     *
      * @param list<AgentMessage> $messages
      */
     public static function messageKeyInHistory(array $messages, int $index): ?string
@@ -127,35 +127,65 @@ final readonly class AstraReasoningTransitionTransformHook implements TransformC
         }
 
         $message = $messages[$index];
-        if (!\in_array($message->role, ['user', 'tool'], true)) {
+        $role = self::anchorRole($message);
+        if (null === $role) {
             return null;
         }
 
-        $text = self::textContent($message);
+        $text = self::canonicalText($message);
         $occurrence = 0;
         for ($i = 0; $i < $index; ++$i) {
             $prior = $messages[$i];
-            if ($prior->role !== $message->role || ($prior->toolCallId ?? null) !== ($message->toolCallId ?? null)) {
+            if (self::anchorRole($prior) !== $role || ($prior->toolCallId ?? null) !== ($message->toolCallId ?? null)) {
                 continue;
             }
-            if (self::textContent($prior) === $text) {
+            if (self::canonicalText($prior) === $text) {
                 ++$occurrence;
             }
         }
 
-        return self::messageKeyFor($message->role, $message->toolCallId, $text, $occurrence);
+        return self::messageKeyFor($role, $message->toolCallId, $text, $occurrence);
     }
 
-    private static function textContent(AgentMessage $message): string
+    public static function canonicalText(AgentMessage $message): string
     {
-        $text = '';
+        $parts = [];
         foreach ($message->content as $part) {
-            if (\is_array($part) && \is_string($part['text'] ?? null)) {
-                $text .= $part['text'];
+            if (!\is_array($part)) {
+                continue;
+            }
+
+            $text = $part['text'] ?? null;
+            if (\is_string($text) && '' !== $text) {
+                $parts[] = $text;
             }
         }
 
-        return $text;
+        $combined = implode("\n", $parts);
+        if ('' !== $combined) {
+            return $message->isCustomRole()
+                ? \sprintf('[%s] %s', $message->role, $combined)
+                : $combined;
+        }
+
+        if ('tool' === $message->role && null !== $message->details) {
+            return self::stringify($message->details);
+        }
+
+        return '';
+    }
+
+    private static function anchorRole(AgentMessage $message): ?string
+    {
+        if ('tool' === $message->role) {
+            return 'tool';
+        }
+
+        if ('user' === $message->role || $message->isCustomRole()) {
+            return 'user';
+        }
+
+        return null;
     }
 
     /**
@@ -167,14 +197,15 @@ final readonly class AstraReasoningTransitionTransformHook implements TransformC
     {
         $out = [];
         foreach ($messages as $message) {
-            if (!\array_key_exists(CodexReasoningTransitionMetadata::KEY, $message->metadata)) {
+            if (!\array_key_exists(CodexReasoningTransitionMetadata::KEY, $message->metadata)
+                && !\array_key_exists(CodexReasoningTransitionMetadata::MESSAGE_KEY, $message->metadata)) {
                 $out[] = $message;
 
                 continue;
             }
 
             $metadata = $message->metadata;
-            unset($metadata[CodexReasoningTransitionMetadata::KEY]);
+            unset($metadata[CodexReasoningTransitionMetadata::KEY], $metadata[CodexReasoningTransitionMetadata::MESSAGE_KEY]);
             $out[] = new AgentMessage(
                 role: $message->role,
                 content: $message->content,
@@ -191,18 +222,19 @@ final readonly class AstraReasoningTransitionTransformHook implements TransformC
         return $out;
     }
 
-    private function resolveModel(string $sessionId): ?AiModelReference
+    private function resolveChatModel(string $sessionId): ?AiModelReference
     {
-        $explicitModel = null;
+        // Child agent runs keep their fixed definition model and must not
+        // participate in the parent chat baseline/transition ledger.
         if (!ctype_digit($sessionId) && null !== $this->childMetadataReader) {
             $childMetadata = $this->childMetadataReader->readRunStartedMetadata($sessionId);
             if (null !== $childMetadata && $childMetadata->isAgentChild()) {
-                $explicitModel = $childMetadata->model;
+                return null;
             }
         }
 
         $modelRef = $this->selectionService->resolveInitialModel(
-            explicitModel: $explicitModel,
+            explicitModel: null,
             sessionId: $sessionId,
         );
         if (null === $modelRef) {
@@ -216,5 +248,16 @@ final readonly class AstraReasoningTransitionTransformHook implements TransformC
         }
 
         return $modelRef;
+    }
+
+    private static function stringify(mixed $value): string
+    {
+        if (\is_string($value)) {
+            return $value;
+        }
+
+        $encoded = json_encode($value, \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
+
+        return false === $encoded ? '{}' : $encoded;
     }
 }

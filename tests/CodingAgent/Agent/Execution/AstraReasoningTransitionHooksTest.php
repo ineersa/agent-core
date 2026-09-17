@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Execution;
 
+use Ineersa\AgentCore\Contract\RunOperationalStatusDTO;
+use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ResolvedModel;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderRequestPreparer;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\ReasoningContentFeatureShaper;
@@ -19,6 +22,7 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
+use Ineersa\CodingAgent\Config\OutputCapConfig;
 use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
@@ -27,6 +31,9 @@ use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tool\OutputCap;
+use Ineersa\CodingAgent\Tool\OutputCapLlmTransformHook;
+use Psr\Log\NullLogger;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexModel;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexReasoningTransitionMetadata;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexRequestBodyFactory;
@@ -35,6 +42,8 @@ use Symfony\AI\Platform\Message\Message;
 use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\PropertyAccess\PropertyAccess;
 use Symfony\Component\Uid\Uuid;
 use Symfony\Component\Uid\UuidV7;
@@ -52,7 +61,8 @@ final class AstraReasoningTransitionHooksTest extends IsolatedKernelTestCase
         $this->entityManager = static::getContainer()->get('doctrine.orm.default_entity_manager');
         $this->tempDir = TestDirectoryIsolation::createProjectTempDir('astra-transition-hooks', 0o750);
         $this->homeDir = $this->tempDir.'/home';
-        mkdir($this->homeDir.'/.hatfield', 0777, true);
+        mkdir($this->homeDir, 0777, true);
+        TestDirectoryIsolation::createHatfieldTree($this->homeDir);
         file_put_contents($this->homeDir.'/.hatfield/settings.yaml', "tui:\n    theme: cyberpunk\n");
     }
 
@@ -86,11 +96,16 @@ final class AstraReasoningTransitionHooksTest extends IsolatedKernelTestCase
         $transformHook = $container->get(AstraReasoningTransitionTransformHook::class);
         $marked = $transformHook->transformContext($history, null, $sessionId);
         $this->assertSame('high', $marked[1]->metadata[CodexReasoningTransitionMetadata::KEY] ?? null);
+        $this->assertSame($messageKey, $marked[1]->metadata[CodexReasoningTransitionMetadata::MESSAGE_KEY] ?? null);
 
         $bag = (new AgentMessageConverter())->toMessageBagForTarget($marked, $modelRef);
         $this->assertSame(
             'high',
             $bag->withoutSystemMessage()->getMessages()[1]->getMetadata()->get(CodexReasoningTransitionMetadata::KEY),
+        );
+        $this->assertSame(
+            $messageKey,
+            $bag->withoutSystemMessage()->getMessages()[1]->getMetadata()->get(CodexReasoningTransitionMetadata::MESSAGE_KEY),
         );
 
         $resolved = new ResolvedModel(
@@ -163,7 +178,8 @@ final class AstraReasoningTransitionHooksTest extends IsolatedKernelTestCase
         $toHigh = $store->claimReasoningBaseline($sessionId, $modelRef, 'high');
         $this->assertSame('high', $toHigh['update'] ?? null);
 
-        $bag = new MessageBag(Message::ofUser('first'), Message::ofUser('second'));
+        $markedHistory = $transformHook->transformContext($history, null, $sessionId);
+        $bag = (new AgentMessageConverter())->toMessageBag($markedHistory);
         $requestHook->beforeProviderRequest(
             $modelRef,
             ['message_bag' => $bag],
@@ -189,7 +205,7 @@ final class AstraReasoningTransitionHooksTest extends IsolatedKernelTestCase
         $this->assertNull($stillHigh['update']);
 
         $thirdUser = new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'third']]);
-        $extendedHistory = [...$marked, $thirdUser];
+        $extendedHistory = [...$history, $thirdUser];
         $replayed = $transformHook->transformContext($extendedHistory, null, $sessionId);
         $extendedPayload = $this->normalize($replayed);
         $this->assertSame(
@@ -199,12 +215,12 @@ final class AstraReasoningTransitionHooksTest extends IsolatedKernelTestCase
 
         $toMedium = $store->claimReasoningBaseline($sessionId, $modelRef, 'medium');
         $this->assertSame('medium', $toMedium['update'] ?? null);
-        $bagBack = new MessageBag(
-            Message::ofUser('first'),
-            Message::ofUser('second'),
-            Message::ofUser('third'),
-            Message::ofUser('fourth'),
-        );
+        $historyBack = [
+            ...$extendedHistory,
+            new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'fourth']]),
+        ];
+        $markedBack = $transformHook->transformContext($historyBack, null, $sessionId);
+        $bagBack = (new AgentMessageConverter())->toMessageBag($markedBack);
         $requestHook->beforeProviderRequest(
             $modelRef,
             ['message_bag' => $bagBack],
@@ -215,10 +231,7 @@ final class AstraReasoningTransitionHooksTest extends IsolatedKernelTestCase
             ],
         );
 
-        $withReturn = $transformHook->transformContext([
-            ...$replayed,
-            new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'fourth']]),
-        ], null, $sessionId);
+        $withReturn = $transformHook->transformContext($historyBack, null, $sessionId);
         $returnPayload = $this->normalize($withReturn);
         $this->assertSame('configuration_update', $returnPayload['input'][1]['type']);
         $this->assertSame('high', $returnPayload['input'][1]['reasoning']['effort']);
@@ -233,17 +246,49 @@ final class AstraReasoningTransitionHooksTest extends IsolatedKernelTestCase
         }
     }
 
-    public function testDuplicateIdenticalUserMessagesGetDistinctTransitionKeys(): void
+    public function testMultipartToolDetailsAndCustomRoleShareCanonicalIdentityAcrossConversion(): void
     {
         $store = $this->createStore();
         $sessionId = $this->createSession($store, 'openai-codex/gpt-6-astra', 'medium');
         $modelRef = 'openai-codex/gpt-6-astra';
         $this->assertNull($store->claimReasoningBaseline($sessionId, $modelRef, 'medium'));
+        $this->assertSame('high', $store->claimReasoningBaseline($sessionId, $modelRef, 'high')['update'] ?? null);
 
-        $requestHook = new AstraReasoningTransitionRequestHook($store);
+        $history = [
+            new AgentMessage(role: 'user', content: [
+                ['type' => 'text', 'text' => 'line-a'],
+                ['type' => 'text', 'text' => 'line-b'],
+            ]),
+            new AgentMessage(
+                role: 'tool',
+                content: [],
+                toolCallId: 'call-1',
+                toolName: 'bash',
+                details: ['stdout' => 'tool-details', 'exit_code' => 0],
+            ),
+            new AgentMessage(role: 'developer', content: [['type' => 'text', 'text' => 'custom']]),
+        ];
+
         $transformHook = $this->createTransformHook($store);
+        $marked = $transformHook->transformContext($history, null, $sessionId);
+        $expectedKey = AstraReasoningTransitionTransformHook::messageKeyInHistory($history, 2);
+        $this->assertNotNull($expectedKey);
+        $this->assertSame($expectedKey, $marked[2]->metadata[CodexReasoningTransitionMetadata::MESSAGE_KEY] ?? null);
+        $this->assertSame(
+            '[developer] custom',
+            AstraReasoningTransitionTransformHook::canonicalText($history[2]),
+        );
+        $this->assertSame(
+            "line-a\nline-b",
+            AstraReasoningTransitionTransformHook::canonicalText($history[0]),
+        );
+        $this->assertSame(
+            json_encode(['stdout' => 'tool-details', 'exit_code' => 0], \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE),
+            AstraReasoningTransitionTransformHook::canonicalText($history[1]),
+        );
 
-        $bag = new MessageBag(Message::ofUser('same'), Message::ofUser('same'));
+        $bag = (new AgentMessageConverter())->toMessageBag($marked);
+        $requestHook = new AstraReasoningTransitionRequestHook($store);
         $requestHook->beforeProviderRequest(
             $modelRef,
             ['message_bag' => $bag],
@@ -254,14 +299,247 @@ final class AstraReasoningTransitionHooksTest extends IsolatedKernelTestCase
             ],
         );
 
+        $transitions = $store->listReasoningTransitions($sessionId, $modelRef);
+        $this->assertSame([['message_key' => $expectedKey, 'effort' => 'high']], $transitions);
+
+        $replayed = $transformHook->transformContext($history, null, $sessionId);
+        $this->assertSame('high', $replayed[2]->metadata[CodexReasoningTransitionMetadata::KEY] ?? null);
+        $payload = $this->normalize($replayed);
+        $this->assertSame('configuration_update', $payload['input'][2]['type']);
+        $this->assertSame('high', $payload['input'][2]['reasoning']['effort']);
+    }
+
+    public function testOutputCapRewriteKeepsMessageKeyIdentityForRequestHook(): void
+    {
+        $store = $this->createStore();
+        $sessionId = $this->createSession($store, 'openai-codex/gpt-6-astra', 'medium');
+        $modelRef = 'openai-codex/gpt-6-astra';
+        $this->assertNull($store->claimReasoningBaseline($sessionId, $modelRef, 'medium'));
+        $this->assertSame('high', $store->claimReasoningBaseline($sessionId, $modelRef, 'high')['update'] ?? null);
+
+        $oversized = str_repeat('x', 5000);
+        $history = [
+            new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'ask']]),
+            new AgentMessage(
+                role: 'tool',
+                content: [['type' => 'text', 'text' => $oversized]],
+                toolCallId: 'call-cap',
+                toolName: 'bash',
+                details: ['arguments' => []],
+            ),
+        ];
+
+        $capDir = $this->tempDir.'/output-cap';
+        mkdir($capDir, 0777, true);
+        $outputCap = new OutputCap(
+            new OutputCapConfig(storageDir: $capDir, defaultCap: 100),
+            new LockFactory(new FlockStore($capDir)),
+            new NullLogger(),
+        );
+        $capHook = new OutputCapLlmTransformHook(
+            $outputCap,
+            \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
+        );
+        $cappedHistory = $capHook->transformContext($history, null, $sessionId);
+        $this->assertNotSame($oversized, $cappedHistory[1]->content[0]['text'] ?? null);
+
+        $transformHook = $this->createTransformHook($store);
+        $marked = $transformHook->transformContext($cappedHistory, null, $sessionId);
+        $expectedKey = AstraReasoningTransitionTransformHook::messageKeyInHistory($cappedHistory, 1);
+        $this->assertNotNull($expectedKey);
+        $this->assertSame($expectedKey, $marked[1]->metadata[CodexReasoningTransitionMetadata::MESSAGE_KEY] ?? null);
+
+        $bag = (new AgentMessageConverter())->toMessageBag($marked);
+        $requestHook = new AstraReasoningTransitionRequestHook($store);
+        $requestHook->beforeProviderRequest(
+            $modelRef,
+            ['message_bag' => $bag],
+            [
+                CodexRequestBodyFactory::REASONING_UPDATE => 'high',
+                'hatfield_run_id' => $sessionId,
+                'hatfield_model_ref' => $modelRef,
+            ],
+        );
+
+        $this->assertSame(
+            [['message_key' => $expectedKey, 'effort' => 'high']],
+            $store->listReasoningTransitions($sessionId, $modelRef),
+        );
+
+        $retryMarked = $transformHook->transformContext($cappedHistory, null, $sessionId);
+        $this->assertSame('high', $retryMarked[1]->metadata[CodexReasoningTransitionMetadata::KEY] ?? null);
+        $retryDecision = $store->claimReasoningBaseline($sessionId, $modelRef, 'high');
+        $this->assertIsArray($retryDecision);
+        $this->assertNull($retryDecision['update']);
+    }
+
+    public function testImageOnlySyntheticUserIsSkippedWhenSelectingAnchor(): void
+    {
+        $store = $this->createStore();
+        $sessionId = $this->createSession($store, 'openai-codex/gpt-6-astra', 'medium');
+        $modelRef = 'openai-codex/gpt-6-astra';
+        $this->assertNull($store->claimReasoningBaseline($sessionId, $modelRef, 'medium'));
+        $this->assertSame('high', $store->claimReasoningBaseline($sessionId, $modelRef, 'high')['update'] ?? null);
+
+        $imagePath = $this->tempDir.'/tiny.png';
+        file_put_contents($imagePath, base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='));
+
+        $history = [
+            new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'anchor']]),
+            new AgentMessage(
+                role: 'tool',
+                content: [
+                    ['type' => 'text', 'text' => 'tool-output'],
+                    ['type' => 'image_ref', 'path' => $imagePath, 'media_type' => 'image/png', 'width' => 1, 'height' => 1, 'bytes' => 68],
+                ],
+                toolCallId: 'call-img',
+                toolName: 'view_image',
+                details: ['arguments' => []],
+            ),
+        ];
+
+        $transformHook = $this->createTransformHook($store);
+        $marked = $transformHook->transformContext($history, null, $sessionId);
+        $bag = (new AgentMessageConverter())->toMessageBag($marked);
+        $messages = $bag->withoutSystemMessage()->getMessages();
+        $this->assertGreaterThan(2, \count($messages));
+        $last = $messages[\count($messages) - 1];
+        $this->assertInstanceOf(\Symfony\AI\Platform\Message\UserMessage::class, $last);
+        $this->assertTrue($last->hasImageContent());
+
+        $expectedKey = $marked[1]->metadata[CodexReasoningTransitionMetadata::MESSAGE_KEY] ?? null;
+        $this->assertNotNull($expectedKey);
+        $this->assertSame(
+            $expectedKey,
+            $messages[1]->getMetadata()->get(CodexReasoningTransitionMetadata::MESSAGE_KEY),
+        );
+        $requestHook = new AstraReasoningTransitionRequestHook($store);
+        $requestHook->beforeProviderRequest(
+            $modelRef,
+            ['message_bag' => $bag],
+            [
+                CodexRequestBodyFactory::REASONING_UPDATE => 'high',
+                'hatfield_run_id' => $sessionId,
+                'hatfield_model_ref' => $modelRef,
+            ],
+        );
+
+        $this->assertSame(
+            [['message_key' => $expectedKey, 'effort' => 'high']],
+            $store->listReasoningTransitions($sessionId, $modelRef),
+        );
+    }
+
+    public function testCompactingStatusAndNonAstraModelStripTransitions(): void
+    {
+        $store = $this->createStore();
+        $sessionId = $this->createSession($store, 'openai-codex/gpt-6-astra', 'medium');
+        $modelRef = 'openai-codex/gpt-6-astra';
+        $this->assertNull($store->claimReasoningBaseline($sessionId, $modelRef, 'medium'));
+        $key = AstraReasoningTransitionTransformHook::messageKeyFor('user', null, 'hello', 0);
+        $this->assertNotNull($key);
+        $store->rememberReasoningTransition($sessionId, $modelRef, $key, 'high');
+
+        $history = [
+            new AgentMessage(
+                role: 'user',
+                content: [['type' => 'text', 'text' => 'hello']],
+                metadata: [
+                    CodexReasoningTransitionMetadata::KEY => 'high',
+                    CodexReasoningTransitionMetadata::MESSAGE_KEY => $key,
+                ],
+            ),
+        ];
+
+        $compactingReader = new class implements RunOperationalStatusReaderInterface {
+            public function findOperationalStatus(string $runId): ?RunOperationalStatusDTO
+            {
+                return new RunOperationalStatusDTO(RunStatus::Compacting);
+            }
+        };
+        $compactingHook = $this->createTransformHook($store, $compactingReader);
+        $stripped = $compactingHook->transformContext($history, null, $sessionId);
+        $this->assertArrayNotHasKey(CodexReasoningTransitionMetadata::KEY, $stripped[0]->metadata);
+        $this->assertArrayNotHasKey(CodexReasoningTransitionMetadata::MESSAGE_KEY, $stripped[0]->metadata);
+
+        $store->updateMetadata($sessionId, ['model' => 'openai-codex/gpt-test']);
+        $nonAstraHook = $this->createTransformHook($store);
+        $nonAstra = $nonAstraHook->transformContext($history, null, $sessionId);
+        $this->assertArrayNotHasKey(CodexReasoningTransitionMetadata::KEY, $nonAstra[0]->metadata);
+    }
+
+    public function testMissingAnchorDegradesWithoutAdvancingLastEmitted(): void
+    {
+        $store = $this->createStore();
+        $sessionId = $this->createSession($store, 'openai-codex/gpt-6-astra', 'medium');
+        $modelRef = 'openai-codex/gpt-6-astra';
+        $this->assertNull($store->claimReasoningBaseline($sessionId, $modelRef, 'medium'));
+        $this->assertSame('high', $store->claimReasoningBaseline($sessionId, $modelRef, 'high')['update'] ?? null);
+
+        $logger = new class extends \Psr\Log\AbstractLogger {
+            /** @var list<array{level: string, message: string, context: array<string, mixed>}> */
+            public array $records = [];
+
+            public function log($level, \Stringable|string $message, array $context = []): void
+            {
+                $this->records[] = [
+                    'level' => (string) $level,
+                    'message' => (string) $message,
+                    'context' => $context,
+                ];
+            }
+        };
+
+        $requestHook = new AstraReasoningTransitionRequestHook($store, $logger);
+        $bag = new MessageBag(Message::ofAssistant('assistant-only'));
+        $result = $requestHook->beforeProviderRequest(
+            $modelRef,
+            ['message_bag' => $bag],
+            [
+                CodexRequestBodyFactory::REASONING_UPDATE => 'high',
+                'hatfield_run_id' => $sessionId,
+                'hatfield_model_ref' => $modelRef,
+            ],
+        );
+
+        $this->assertNotNull($result);
+        $this->assertArrayNotHasKey(CodexRequestBodyFactory::REASONING_UPDATE, $result->options ?? []);
+        $this->assertSame([], $store->listReasoningTransitions($sessionId, $modelRef));
+        $this->assertSame('medium', $store->findSession($sessionId)?->reasoningBaseline['last_emitted'] ?? null);
+        $this->assertSame('high', $store->claimReasoningBaseline($sessionId, $modelRef, 'high')['update'] ?? null);
+        $this->assertNotSame([], $logger->records);
+        $this->assertSame('astra.reasoning_transition.anchor_missing', $logger->records[0]['context']['event_type'] ?? null);
+    }
+
+    public function testDuplicateIdenticalUserMessagesGetDistinctTransitionKeys(): void
+    {
+        $store = $this->createStore();
+        $sessionId = $this->createSession($store, 'openai-codex/gpt-6-astra', 'medium');
+        $modelRef = 'openai-codex/gpt-6-astra';
+        $this->assertNull($store->claimReasoningBaseline($sessionId, $modelRef, 'medium'));
+
+        $requestHook = new AstraReasoningTransitionRequestHook($store);
+        $transformHook = $this->createTransformHook($store);
+
         $messages = [
             new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'same']]),
             new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'same']]),
         ];
         $marked = $transformHook->transformContext($messages, null, $sessionId);
+        $bag = (new AgentMessageConverter())->toMessageBag($marked);
+        $requestHook->beforeProviderRequest(
+            $modelRef,
+            ['message_bag' => $bag],
+            [
+                CodexRequestBodyFactory::REASONING_UPDATE => 'high',
+                'hatfield_run_id' => $sessionId,
+                'hatfield_model_ref' => $modelRef,
+            ],
+        );
 
-        $this->assertArrayNotHasKey(CodexReasoningTransitionMetadata::KEY, $marked[0]->metadata);
-        $this->assertSame('high', $marked[1]->metadata[CodexReasoningTransitionMetadata::KEY] ?? null);
+        $replayed = $transformHook->transformContext($messages, null, $sessionId);
+        $this->assertArrayNotHasKey(CodexReasoningTransitionMetadata::KEY, $replayed[0]->metadata);
+        $this->assertSame('high', $replayed[1]->metadata[CodexReasoningTransitionMetadata::KEY] ?? null);
 
         $key0 = AstraReasoningTransitionTransformHook::messageKeyInHistory($messages, 0);
         $key1 = AstraReasoningTransitionTransformHook::messageKeyInHistory($messages, 1);
@@ -294,6 +572,13 @@ ai:
                         high: high
                     compatibility:
                         supports_reasoning_configuration_updates: true
+                gpt-test:
+                    id: gpt-test
+                    name: Test
+                    context_window: 128000
+                    max_tokens: 4096
+                    input: [text]
+                    tool_calling: true
 YAML);
     }
 
@@ -304,26 +589,12 @@ YAML);
      */
     private function normalize(array $messages): array
     {
-        $bagMessages = [];
-        foreach ($messages as $message) {
-            $text = '';
-            foreach ($message->content as $part) {
-                if (\is_array($part) && \is_string($part['text'] ?? null)) {
-                    $text .= $part['text'];
-                }
-            }
-            $platform = Message::ofUser($text);
-            $effort = $message->metadata[CodexReasoningTransitionMetadata::KEY] ?? null;
-            if (\is_string($effort) && '' !== $effort) {
-                $platform->getMetadata()->add(CodexReasoningTransitionMetadata::KEY, $effort);
-            }
-            $bagMessages[] = $platform;
-        }
+        $bag = (new AgentMessageConverter())->toMessageBag($messages);
 
         /** @var array{input: list<array<string, mixed>>} $payload */
         $payload = CodexContract::create()->createRequestPayload(
             new CodexModel('gpt-6-astra'),
-            new MessageBag(...$bagMessages),
+            $bag,
             [],
         );
 
@@ -343,8 +614,10 @@ YAML);
         );
     }
 
-    private function createTransformHook(HatfieldSessionStore $store): AstraReasoningTransitionTransformHook
-    {
+    private function createTransformHook(
+        HatfieldSessionStore $store,
+        ?RunOperationalStatusReaderInterface $statusReader = null,
+    ): AstraReasoningTransitionTransformHook {
         $aiData = [
             'default_model' => 'openai-codex/gpt-6-astra',
             'default_reasoning' => 'medium',
@@ -359,6 +632,10 @@ YAML);
                             'reasoning' => true,
                             'thinking_level_map' => ['low' => 'low', 'medium' => 'medium', 'high' => 'high'],
                             'compatibility' => ['supports_reasoning_configuration_updates' => true],
+                        ],
+                        'gpt-test' => [
+                            'name' => 'Test',
+                            'reasoning' => false,
                         ],
                     ],
                 ],
@@ -378,7 +655,7 @@ YAML);
         $homeWriter = new SettingsOverrideWriter($pathResolver, PropertyAccess::createPropertyAccessor(), new Filesystem());
         $selection = new ModelSelectionService(
             $appConfig,
-            new ModelResolver($appConfig, $store, new \Psr\Log\NullLogger()),
+            new ModelResolver($appConfig, $store, new NullLogger()),
             $homeWriter,
             $store,
         );
@@ -387,6 +664,7 @@ YAML);
             $selection,
             $appConfig->catalog ?? new HatfieldModelCatalog(new AiConfig(defaultModel: '', defaultReasoning: 'medium', providers: [])),
             $store,
+            $statusReader,
         );
     }
 

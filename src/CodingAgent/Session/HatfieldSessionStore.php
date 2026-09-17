@@ -256,34 +256,6 @@ final class HatfieldSessionStore
     }
 
     /**
-     * Record that the selected effort was represented on the provider wire.
-     * Compaction and resume clear the whole baseline instead.
-     */
-    public function markReasoningEffortEmitted(string $sessionId, string $model, string $effort): void
-    {
-        $entity = $this->fetchEntityOrNull($sessionId);
-        if (null === $entity) {
-            return;
-        }
-
-        $baseline = $entity->reasoningBaseline;
-        if (!\is_array($baseline)
-            || ($baseline['model'] ?? null) !== $model
-            || !\is_string($baseline['effort'] ?? null)
-            || '' === $baseline['effort']) {
-            return;
-        }
-
-        if (($baseline['last_emitted'] ?? null) === $effort) {
-            return;
-        }
-
-        $baseline['last_emitted'] = $effort;
-        $entity->reasoningBaseline = $baseline;
-        $this->entityManager->flush();
-    }
-
-    /**
      * Remember a history-bound reasoning transition for later request rebuild.
      *
      * @param non-empty-string $messageKey
