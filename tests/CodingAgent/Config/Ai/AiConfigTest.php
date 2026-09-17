@@ -198,7 +198,7 @@ class AiConfigTest extends TestCase
                 'llama_cpp' => [
                     'type' => 'generic',
                     'enabled' => true,
-                    'base_url' => 'http://192.168.2.38:8052/v1',
+                    'base_url' => 'http://10.0.0.89:8052/v1',
                     'api' => 'openai-completions',
                     'api_key' => 'dummy',
                     'completions_path' => '/chat/completions',
@@ -223,7 +223,7 @@ class AiConfigTest extends TestCase
         $config = $this->createAppConfig($data);
         $provider = $config->ai->providers['llama_cpp'] ?? null;
         $this->assertNotNull($provider);
-        $this->assertSame('http://192.168.2.38:8052/v1', $provider->baseUrl);
+        $this->assertSame('http://10.0.0.89:8052/v1', $provider->baseUrl);
         $this->assertSame('dummy', $provider->apiKey);
 
         $model = $provider->models['flash'] ?? null;
