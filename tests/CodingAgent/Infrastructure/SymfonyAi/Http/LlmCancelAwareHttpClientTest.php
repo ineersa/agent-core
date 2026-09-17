@@ -221,7 +221,7 @@ final class LlmCancelAwareHttpClientTest extends TestCase
     }
 
     /**
-     * @return array{url: string, release: \Closure(): void, accepts: \Closure(): int, stop: \Closure(): void}
+     * @return array{url: string, accepts: \Closure(): int, stop: \Closure(): void}
      */
     private function startControlledSseServer(bool $sendFirstEvent): array
     {
@@ -248,8 +248,8 @@ fflush($control);
 
 $accepts = 0;
 $clients = [];
-$pendingFirst = [];
 $stop = false;
+$commands = '';
 stream_set_blocking($control, false);
 stream_set_blocking($server, false);
 
@@ -263,22 +263,14 @@ while (!$stop) {
 
     if (\in_array($control, $read, true)) {
         $cmd = stream_get_contents($control);
-        if (\is_string($cmd) && str_contains($cmd, 'RELEASE') && $sendFirst) {
-            foreach ($pendingFirst as $i => $client) {
-                fwrite($client, "data: {\"choices\":[{\"delta\":{\"content\":\"A\"}}]}\n\n");
-                fflush($client);
-                $clients[] = $client;
-                unset($pendingFirst[$i]);
-            }
-            fwrite($control, "RELEASED\n");
-            fflush($control);
-        }
-        if ((\is_string($cmd) && str_contains($cmd, 'STOP')) || (\is_string($cmd) && '' === $cmd && feof($control))) {
+        $commands .= (string) $cmd;
+        if (str_contains($commands, "STOP\n") || feof($control)) {
             $stop = true;
         }
-        if (\is_string($cmd) && str_contains($cmd, 'ACCEPTS?')) {
+        if (str_contains($commands, "ACCEPTS?\n")) {
             fwrite($control, 'ACCEPTS:'.$accepts."\n");
             fflush($control);
+            $commands = str_replace("ACCEPTS?\n", '', $commands);
         }
     }
 
@@ -304,7 +296,7 @@ while (!$stop) {
     }
 }
 
-foreach (array_merge($clients, $pendingFirst) as $client) {
+foreach ($clients as $client) {
     fclose($client);
 }
 fclose($server);
@@ -325,6 +317,7 @@ PHP;
         $control = null;
         $url = null;
         $accepts = 0;
+        $buffer = '';
         $deadline = microtime(true) + 2.0;
 
         try {
@@ -338,8 +331,8 @@ PHP;
                     continue;
                 }
                 stream_set_blocking($control, false);
-                $line = stream_get_contents($control);
-                if (\is_string($line) && preg_match('/URL:([^\n]+)/', $line, $matches)) {
+                $buffer .= (string) stream_get_contents($control);
+                if (preg_match('/URL:([^\n]+)\n/', $buffer, $matches)) {
                     $url = 'http://'.$matches[1].'/';
                     break;
                 }
@@ -349,38 +342,28 @@ PHP;
             $this->assertNotNull($url, 'SSE stall server did not publish URL while alive.');
             $this->assertIsResource($control);
 
-            $release = static function () use (&$control): void {
-                fwrite($control, "RELEASE\n");
-                fflush($control);
-                $deadline = microtime(true) + 2.0;
-                while (microtime(true) < $deadline) {
-                    $msg = stream_get_contents($control);
-                    if (\is_string($msg) && str_contains($msg, 'RELEASED')) {
-                        return;
-                    }
-                    usleep(5_000);
-                }
-                throw new \RuntimeException('SSE stall server did not acknowledge RELEASE.');
-            };
-
-            $acceptsFn = static function () use (&$control, &$accepts): int {
+            $acceptsFn = static function () use (&$control, &$accepts, $process): int {
                 fwrite($control, "ACCEPTS?\n");
                 fflush($control);
                 $deadline = microtime(true) + 1.0;
+                $msg = '';
                 while (microtime(true) < $deadline) {
-                    $msg = stream_get_contents($control);
+                    if (!$process->isRunning()) {
+                        throw new \RuntimeException('SSE server exited: '.$process->getErrorOutput().$process->getOutput());
+                    }
+                    $msg .= (string) stream_get_contents($control);
                     if (\is_string($msg)) {
-                        if (preg_match('/ACCEPT:(\d+)/', $msg, $matches)) {
+                        if (preg_match('/ACCEPT:(\d+)\n/', $msg, $matches)) {
                             $accepts = max($accepts, (int) $matches[1]);
                         }
-                        if (preg_match('/ACCEPTS:(\d+)/', $msg, $matches)) {
+                        if (preg_match('/ACCEPTS:(\d+)\n/', $msg, $matches)) {
                             return $accepts = (int) $matches[1];
                         }
                     }
                     usleep(5_000);
                 }
 
-                return $accepts;
+                throw new \RuntimeException('SSE server did not acknowledge ACCEPTS: '.$process->getErrorOutput().$process->getOutput());
             };
 
             $stop = static function () use ($process, &$control, $controlServer): void {
@@ -398,7 +381,6 @@ PHP;
 
             return [
                 'url' => $url,
-                'release' => $release,
                 'accepts' => $acceptsFn,
                 'stop' => $stop,
             ];
