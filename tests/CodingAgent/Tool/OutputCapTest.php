@@ -292,15 +292,9 @@ final class OutputCapTest extends TestCase
             true,
             'handoff-report.md',
         ];
-        yield 'settings dotted key is never a path' => [
-            'settings',
-            ['operation' => 'read', 'path' => 'docs.example.md'],
-            false,
-            null,
-        ];
     }
 
-    public function testPrimaryAndLateHookAgreeOnDocClassificationAndSettingsDefault(): void
+    public function testPrimaryAndLateHookAgreeOnDocClassification(): void
     {
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 20000, docCap: 50000);
         $outputCap = $this->outputCap($cfg);
@@ -362,37 +356,6 @@ final class OutputCapTest extends TestCase
             details: ['arguments' => ['task' => 'scout']],
         );
         $this->assertSame($handoff, $hook->transformContext([$subMessage], null, 'test-run')[0]->content[0]['text'] ?? null);
-
-        $large = str_repeat('K', 25000);
-        $settingsCall = new ToolCall(
-            toolCallId: 'call-settings-1',
-            toolName: 'settings',
-            arguments: ['operation' => 'read', 'path' => 'docs.example.md'],
-            orderIndex: 0,
-            runId: 'test-run',
-        );
-        $settingsResult = new ToolResult(
-            toolCallId: 'call-settings-1',
-            toolName: 'settings',
-            content: [['type' => 'text', 'text' => $large]],
-            details: ['raw_result' => $large],
-            isError: false,
-        );
-        $processedSettings = $processor->process($settingsResult, $settingsCall);
-        $details = \is_array($processedSettings->details) ? $processedSettings->details : [];
-        $this->assertArrayHasKey('output_cap', $details);
-        $this->assertSame(20000, $details['output_cap']['cap']);
-
-        $settingsMessage = new AgentMessage(
-            role: 'tool',
-            content: [['type' => 'text', 'text' => $large]],
-            toolCallId: 'call-settings-1',
-            toolName: 'settings',
-            details: ['arguments' => ['operation' => 'read', 'path' => 'docs.example.md']],
-        );
-        $transformedSettings = $hook->transformContext([$settingsMessage], null, 'test-run');
-        $this->assertStringContainsString('Output capped', (string) ($transformedSettings[0]->content[0]['text'] ?? ''));
-        $this->assertStringContainsString('20000-char cap', (string) ($transformedSettings[0]->content[0]['text'] ?? ''));
     }
 
     public function testHatfieldDocsReadOverDocCapIsCappedAtFiftyK(): void

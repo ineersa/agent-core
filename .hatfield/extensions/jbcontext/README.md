@@ -52,7 +52,7 @@ extensions:
     - Ineersa\HatfieldExt\Jbcontext\JbcontextExtension
 ```
 
-No extension-specific settings key is added. Presence on `extensions.enabled` is the only switch. Prefer the `settings` tool (`operation=set`, `path=extensions.enabled`, `scope=project`) over editing the YAML file by hand.
+No extension-specific settings key is added. Add the extension to `extensions.enabled` in `.hatfield/settings.yaml` to enable it.
 
 ```bash
 composer install -d .hatfield/extensions

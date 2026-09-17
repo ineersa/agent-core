@@ -33,7 +33,6 @@ final class ForkToolPolicyResolverTest extends IsolatedKernelTestCase
         $registry->method('activeToolNames')->willReturn([
             'read',
             'bash',
-            'settings',
             'hatfield_docs',
             'custom_excluded',
             'fork',
@@ -47,7 +46,7 @@ final class ForkToolPolicyResolverTest extends IsolatedKernelTestCase
             TestMcpConfigLoaderFactory::loaderForServers([]),
         );
 
-        $agentsConfig = new AgentsConfig(subagentExcludedTools: ['settings', 'custom_excluded']);
+        $agentsConfig = new AgentsConfig(subagentExcludedTools: ['custom_excluded']);
         $resolver = new ForkToolPolicyResolver(
             new AgentToolPolicyResolver($registry, $mcpResolver, $agentsConfig),
         );
@@ -56,7 +55,6 @@ final class ForkToolPolicyResolverTest extends IsolatedKernelTestCase
 
         $this->assertContains('read', $policy['tools']);
         $this->assertContains('bash', $policy['tools']);
-        $this->assertNotContains('settings', $policy['tools']);
         $this->assertNotContains('custom_excluded', $policy['tools']);
         // hatfield_docs is not in this configured denylist → remains.
         $this->assertContains('hatfield_docs', $policy['tools']);

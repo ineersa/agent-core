@@ -83,8 +83,7 @@ final class OutputCap
     /**
      * Cap-selection precedence: a real path argument, then synthetic paths for
      * document-report tools (including code_mode success and error text), otherwise
-     * the default cap. Settings' dotted `path` key is configuration, not a
-     * filesystem path. Other tools' errors intentionally stay at the default cap
+     * the default cap. Other tools' errors intentionally stay at the default cap
      * because they are status envelopes rather than documents.
      * Synthetic paths affect cap selection only and are never persisted or exposed.
      *
@@ -92,10 +91,6 @@ final class OutputCap
      */
     public function resolveCapPath(?string $toolName, array $arguments, bool $isError = false): ?string
     {
-        if ('settings' === $toolName) {
-            return null;
-        }
-
         $path = $this->extractPathFromArguments($arguments);
         if (null !== $path) {
             return $path;

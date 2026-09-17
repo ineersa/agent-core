@@ -46,7 +46,6 @@ final readonly class SafeGuardExtension implements HatfieldExtensionInterface
             policy: $policy,
             cwd: $cwd,
             autoDenyInNoninteractive: $config->autoDenyInNoninteractive,
-            settingsToolName: $config->settingsToolName,
         ));
     }
 }
