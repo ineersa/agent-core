@@ -51,7 +51,7 @@ final readonly class CompactRunHandler implements RunMessageHandler, RunMessageH
         private ExtensionCompactionHookDispatcher $extensionHookDispatcher,
         private RunRelationshipReaderInterface $relationshipReader,
         private NormalizerInterface $normalizer,
-        private ?HatfieldSessionStore $sessionMetadataStore = null,
+        private HatfieldSessionStore $sessionMetadataStore,
         private LoggerInterface $logger = new NullLogger(),
     ) {
     }
@@ -475,7 +475,7 @@ final readonly class CompactRunHandler implements RunMessageHandler, RunMessageH
         // Same baseline reset as CompactionStepResultHandler: replacement summaries
         // rewrite history without the async worker, so discarded transition anchors
         // must not survive into the next Astra request.
-        $this->sessionMetadataStore?->resetReasoningBaseline($runId);
+        $this->sessionMetadataStore->resetReasoningBaseline($runId);
 
         // Pre-LLM guard replacement must continue the LLM turn.
         $effects = [];
