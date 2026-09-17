@@ -9,7 +9,6 @@ use Ineersa\AgentCore\Contract\Hook\TransformContextHookInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ToolResultType;
 use Ineersa\AgentCore\Domain\Notification\ModelNotificationDTO;
-use Symfony\AI\Platform\Bridge\OpenAICodex\CodexReasoningTransitionMetadata;
 use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
@@ -34,10 +33,6 @@ use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
  * consumers can detect the cap without parsing text.
  *
  * Image content parts (image_ref) are preserved unchanged.
- *
- * Existing Astra reasoning-transition metadata (MESSAGE_KEY / transition effort)
- * is preserved when this hook rewrites tool text so durable anchors survive
- * OutputCap saved-path filenames across retry transforms.
  */
 final readonly class OutputCapLlmTransformHook implements TransformContextHookInterface
 {
@@ -193,7 +188,6 @@ final readonly class OutputCapLlmTransformHook implements TransformContextHookIn
         // and details (so downstream skip detection works on re-capping).
         $metadata = $message->metadata;
         $metadata['model_notifications'] = [$notificationArray];
-        $this->preserveReasoningTransitionMetadata($message->metadata, $metadata);
 
         $details = \is_array($message->details) ? $message->details : [];
         $existing = \is_array($details['model_notifications'] ?? null)
@@ -246,19 +240,5 @@ final readonly class OutputCapLlmTransformHook implements TransformContextHookIn
         }
 
         return false;
-    }
-
-    /**
-     * @param array<string, mixed> $source
-     * @param array<string, mixed> $target
-     */
-    private function preserveReasoningTransitionMetadata(array $source, array &$target): void
-    {
-        foreach ([CodexReasoningTransitionMetadata::MESSAGE_KEY, CodexReasoningTransitionMetadata::KEY] as $key) {
-            $value = $source[$key] ?? null;
-            if (\is_string($value) && '' !== $value) {
-                $target[$key] = $value;
-            }
-        }
     }
 }
