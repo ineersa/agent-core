@@ -35,7 +35,7 @@ final class OutputCap
      *
      * @var list<string>
      */
-    private const array DOCUMENT_REPORT_TOOL_NAMES = ['fork', 'subagent', 'agent_resume', 'agent_retrieve'];
+    private const array DOCUMENT_REPORT_TOOL_NAMES = ['fork', 'subagent', 'agent_resume', 'agent_retrieve', 'code_mode'];
 
     private bool $cleanedUp = false;
 

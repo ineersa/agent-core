@@ -5,20 +5,18 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tool\CodeMode;
 
 /**
- * Formats and bounds code_mode stdout/stderr for model-facing diagnostics.
+ * Formats code_mode stdout/stderr for model-facing diagnostics.
  *
  * Warning duplication and Xdebug stacks are prevented at process start
  * (display_errors=0, xdebug.mode=off, log_errors=1). This helper only
- * normalizes script/bootstrap paths and hard-bounds the rendered block so
- * headers plus stream tails cannot quietly exceed the default OutputCap.
+ * normalizes script/bootstrap paths and renders labeled stream sections.
+ * Size limits belong to host stream tails and ordinary OutputCap, not a
+ * separate diagnostics truncation marker.
  *
  * @internal
  */
 final class CodeModeDiagnostics
 {
-    public const int MAX_BLOCK_CHARS = 4000;
-    public const string TRUNCATION_MARKER = "\n...[code_mode diagnostics truncated]";
-
     /**
      * @return array{stdout?: string, stderr?: string}
      */
@@ -52,7 +50,7 @@ final class CodeModeDiagnostics
             return '';
         }
 
-        return self::truncateBlock("code_mode diagnostics\n".implode("\n\n", $sections));
+        return "code_mode diagnostics\n".implode("\n\n", $sections);
     }
 
     /**
@@ -71,31 +69,7 @@ final class CodeModeDiagnostics
             $message .= "\nstderr:\n".$stderr;
         }
 
-        return self::truncateBlock($message);
-    }
-
-    public static function truncateBlock(string $text): string
-    {
-        if (\strlen($text) <= self::MAX_BLOCK_CHARS) {
-            return $text;
-        }
-
-        $marker = self::TRUNCATION_MARKER;
-        $budget = self::MAX_BLOCK_CHARS - \strlen($marker);
-        if ($budget < 1) {
-            return substr($marker, -self::MAX_BLOCK_CHARS);
-        }
-
-        $prefix = substr($text, 0, $budget);
-        if (!mb_check_encoding($prefix, 'UTF-8')) {
-            // substr can split a multibyte character. Drop incomplete trailing
-            // bytes until the prefix is valid UTF-8 while staying within budget.
-            while ('' !== $prefix && !mb_check_encoding($prefix, 'UTF-8')) {
-                $prefix = substr($prefix, 0, -1);
-            }
-        }
-
-        return $prefix.$marker;
+        return $message;
     }
 
     public static function normalizePaths(string $text, int $wrapperPrefixLines = 3): string

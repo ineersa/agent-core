@@ -519,13 +519,15 @@ PHP);
         $this->assertSame('tiny', $result->result);
         $stdout = $result->diagnostics['stdout'] ?? '';
         $this->assertNotSame('', $stdout);
-        $this->assertLessThanOrEqual(4000, \strlen($stdout));
+        $this->assertLessThanOrEqual(50_000, \strlen($stdout));
+        $this->assertGreaterThan(4_000, \strlen($stdout));
 
-        // Measured: stream capture already tails to 4000. The rendered model-
-        // facing block still needs the hard bound because of headers.
+        // Host keeps a process-safety stream tail. Model-facing size limits come
+        // from ordinary OutputCap after diagnostics are rendered into content.
         $block = \Ineersa\CodingAgent\Tool\CodeMode\CodeModeDiagnostics::renderBlock($result->diagnostics);
-        $this->assertLessThanOrEqual(4000, \strlen($block));
-        $this->assertStringContainsString('...[code_mode diagnostics truncated]', $block);
+        $this->assertStringStartsWith("code_mode diagnostics\nstdout:\n", $block);
+        $this->assertStringNotContainsString('diagnostics truncated', $block);
+        $this->assertSame(\strlen($stdout), \strlen($block) - \strlen("code_mode diagnostics\nstdout:\n"));
     }
 
     public function testTypeErrorUsesNormalizedScriptPath(): void

@@ -13,19 +13,19 @@ use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
 /**
- * Promote bounded code_mode stdout/stderr into the model-facing tool text.
+ * Promote code_mode stdout/stderr into the model-facing tool text.
  *
- * Keeps the script return value first, then appends a bounded diagnostics
- * block. delivery=context notifications alone are not model-facing for tool
+ * Keeps the script return value first, then appends labeled stdout/stderr
+ * sections. delivery=context notifications alone are not model-facing for tool
  * results; only delivery=tool_result_replace replaces content, so diagnostics
- * must live in the visible content text.
+ * must live in the visible content text. Ordinary OutputCap then applies the
+ * document-report cap and saved-output recovery to the combined text.
  *
  * Also rewrites successful null/bool returns to explicit `null`/`true`/`false`
  * because ToolExecutor's generic scalar stringification turns false into "".
  *
  * Runs before OutputCap so large returns can still be capped after diagnostics
- * are extracted from the raw envelope. The diagnostics block itself is already
- * hard-bounded so a tiny return plus chatty output stays under the default cap.
+ * are extracted from the raw envelope.
  */
 final readonly class CodeModeDiagnosticsToolResultProcessor implements ToolResultProcessorInterface
 {
@@ -113,7 +113,6 @@ final readonly class CodeModeDiagnosticsToolResultProcessor implements ToolResul
                 'stdout_chars' => \strlen($stdout),
                 'stderr_chars' => \strlen($stderr),
                 'diagnostics_chars' => \strlen($diagnosticBlock),
-                'truncated' => str_contains($diagnosticBlock, CodeModeDiagnostics::TRUNCATION_MARKER),
             ],
         );
 

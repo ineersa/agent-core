@@ -29,10 +29,8 @@ final class CodeModeDiagnosticsTest extends TestCase
         $this->assertStringNotContainsString('/tmp/', $normalized);
     }
 
-    public function testRenderBlockBoundsHeaderPlusStreamTails(): void
+    public function testRenderBlockKeepsLabeledStreamsWithoutSeparateTruncation(): void
     {
-        // Measured case: host already keeps only the last 4000 bytes of each
-        // stream. Headers still push the rendered block over 4000, so truncate.
         $stdout = str_repeat('A', 4000);
         $stderr = str_repeat('B', 4000);
         $block = CodeModeDiagnostics::renderBlock([
@@ -40,24 +38,12 @@ final class CodeModeDiagnosticsTest extends TestCase
             'stderr' => $stderr,
         ]);
 
-        $this->assertSame(4000 + 4000, \strlen($stdout) + \strlen($stderr));
-        $this->assertGreaterThan(CodeModeDiagnostics::MAX_BLOCK_CHARS, \strlen("code_mode diagnostics\nstdout:\n".$stdout."\n\nstderr:\n".$stderr));
-        $this->assertLessThanOrEqual(CodeModeDiagnostics::MAX_BLOCK_CHARS, \strlen($block));
-        $this->assertStringEndsWith(trim(CodeModeDiagnostics::TRUNCATION_MARKER), $block);
-        $this->assertStringContainsString("stdout:\nAAAA", $block);
+        $expected = "code_mode diagnostics\nstdout:\n".$stdout."\n\nstderr:\n".$stderr;
+        $this->assertSame($expected, $block);
+        $this->assertStringNotContainsString('diagnostics truncated', $block);
     }
 
-    public function testUtf8TruncationDoesNotSplitMultibyteCharacters(): void
-    {
-        $stdout = str_repeat('é', 5000);
-        $block = CodeModeDiagnostics::renderBlock(['stdout' => $stdout]);
-
-        $this->assertLessThanOrEqual(CodeModeDiagnostics::MAX_BLOCK_CHARS, \strlen($block));
-        $this->assertTrue(mb_check_encoding($block, 'UTF-8'));
-        $this->assertStringEndsWith(trim(CodeModeDiagnostics::TRUNCATION_MARKER), $block);
-    }
-
-    public function testAppendToMessageBoundsExitPathDiagnostics(): void
+    public function testAppendToMessageKeepsExitPathDiagnosticsWithoutSeparateTruncation(): void
     {
         $message = 'Code-mode PHP subprocess exited without returning a value (exit code 0).';
         $combined = CodeModeDiagnostics::appendToMessage($message, [
@@ -65,9 +51,10 @@ final class CodeModeDiagnosticsTest extends TestCase
             'stderr' => str_repeat('E', 4000),
         ]);
 
-        $this->assertLessThanOrEqual(CodeModeDiagnostics::MAX_BLOCK_CHARS, \strlen($combined));
         $this->assertStringContainsString('exited without returning a value', $combined);
-        $this->assertStringEndsWith(trim(CodeModeDiagnostics::TRUNCATION_MARKER), $combined);
+        $this->assertStringContainsString("stdout:\n".str_repeat('O', 4000), $combined);
+        $this->assertStringContainsString("stderr:\n".str_repeat('E', 4000), $combined);
+        $this->assertStringNotContainsString('diagnostics truncated', $combined);
     }
 
     public function testPrepareDoesNotRewriteUserStdoutMatchingWarningText(): void

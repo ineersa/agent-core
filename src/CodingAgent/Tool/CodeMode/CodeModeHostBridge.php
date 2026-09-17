@@ -41,8 +41,9 @@ final readonly class CodeModeHostBridge
     private const int DEFAULT_GRACE_SECONDS = 5;
     private const int POLL_INTERVAL_MICROS = 20_000;
     private const int MAX_UNIX_SOCKET_PATH_BYTES = 100;
-    private const int STDERR_TAIL_CHARS = 4000;
-    private const int STDOUT_TAIL_CHARS = 4000;
+    // Process-safety stream tails only. Model-facing size limits come from OutputCap.
+    private const int STDERR_TAIL_CHARS = 50_000;
+    private const int STDOUT_TAIL_CHARS = 50_000;
     private const int SCRIPT_WRAPPER_PREFIX_LINES = 3;
     private const string TOOLBOX_LOCATOR_KEY = 'toolbox';
 
