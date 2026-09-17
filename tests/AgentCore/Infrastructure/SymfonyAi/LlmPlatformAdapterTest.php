@@ -22,9 +22,9 @@ use Symfony\AI\Platform\Result\DeferredResult;
 use Symfony\AI\Platform\Result\RawHttpResult;
 use Symfony\AI\Platform\Result\Stream\Delta\DeltaInterface;
 use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
-use Symfony\Contracts\HttpClient\ResponseInterface;
-use Symfony\Component\HttpClient\Exception\TransportException;
 use Symfony\Component\HttpClient\Exception\TimeoutException;
+use Symfony\Component\HttpClient\Exception\TransportException;
+use Symfony\Contracts\HttpClient\ResponseInterface;
 
 /**
  * @covers \Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter
@@ -107,10 +107,7 @@ final class LlmPlatformAdapterTest extends TestCase
         $platform->method('invoke')->willReturnCallback(static function (): DeferredResult {
             return self::deferredStream(static function (): \Generator {
                 yield new TextDelta('partial');
-                throw new TransportException(
-                    'LLM stream cancelled.',
-                    previous: new LlmStreamCancelledException('LLM stream cancelled.'),
-                );
+                throw new TransportException('LLM stream cancelled.', previous: new LlmStreamCancelledException('LLM stream cancelled.'));
             });
         });
 
@@ -156,7 +153,7 @@ final class LlmPlatformAdapterTest extends TestCase
     {
         $attempts = 0;
         $platform = $this->createStub(SymfonyPlatformInterface::class);
-        $platform->method('invoke')->willReturnCallback(function () use (&$attempts): DeferredResult {
+        $platform->method('invoke')->willReturnCallback(static function () use (&$attempts): DeferredResult {
             ++$attempts;
             if (1 === $attempts) {
                 return self::deferredStream(static function (): \Generator {

@@ -23,7 +23,6 @@ use Ineersa\AgentCore\Domain\Notification\ModelNotificationCodec;
 use Ineersa\AgentCore\Domain\Notification\ModelNotificationDTO;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryExecutor;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy;
-use Ineersa\AgentCore\Infrastructure\RunLogContext;
 use Ineersa\Platform\Result\CancellableRawResultInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Agent\Input;
@@ -157,7 +156,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         // Provider transport can fail synchronously during invoke (e.g. Codex WS
         // send_failure before asStream()). Classify here so bounded LLM retry sees
         // a retryable PlatformInvocationResult instead of a generic worker exception.
-        RunLogContext::enter(['llm_cancel_token' => $cancelToken]);
+        LlmInvocationCancelScope::enter($cancelToken);
         try {
             $platform = new PreparedInvocationPlatform(
                 $this->platform,
@@ -213,7 +212,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
                 $availableToolsSnapshot['schema_tokens_estimate'],
             );
         } finally {
-            RunLogContext::leave();
+            LlmInvocationCancelScope::leave();
         }
     }
 
@@ -820,7 +819,10 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             }
         }
 
-        return false;
+        // Transport wrappers may drop previous exceptions; re-check the scoped token.
+        $token = LlmInvocationCancelScope::current();
+
+        return null !== $token && $token->isCancellationRequested();
     }
 
     /**

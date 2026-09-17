@@ -5,58 +5,70 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Infrastructure\SymfonyAi\Http;
 
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
-use Ineersa\AgentCore\Infrastructure\RunLogContext;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmInvocationCancelScope;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmStreamCancelledException;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\Http\LlmCancelAwareHttpClient;
-use Ineersa\CodingAgent\Infrastructure\SymfonyAi\Http\LlmEventSourceHttpClient;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Result\Stream\SseStream;
 use Symfony\Component\HttpClient\CurlHttpClient;
+use Symfony\Component\HttpClient\EventSourceHttpClient;
 use Symfony\Component\HttpClient\Exception\TimeoutException;
-use Symfony\Component\HttpClient\Exception\TransportException;
+use Symfony\Component\HttpClient\NativeHttpClient;
 use Symfony\Contracts\HttpClient\Exception\TimeoutExceptionInterface;
+use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 #[CoversClass(LlmCancelAwareHttpClient::class)]
-#[CoversClass(LlmEventSourceHttpClient::class)]
 final class LlmCancelAwareHttpClientTest extends TestCase
 {
-    public function testSilentStreamCancelAbortsViaProgressHookWithoutWaitingIdleTimeout(): void
+    /**
+     * @return iterable<string, array{0: HttpClientInterface}>
+     */
+    public static function transportProvider(): iterable
+    {
+        yield 'curl' => [new CurlHttpClient(['timeout' => 30, 'max_duration' => 60])];
+        yield 'native' => [new NativeHttpClient(['timeout' => 30, 'max_duration' => 60])];
+    }
+
+    #[DataProvider('transportProvider')]
+    public function testSilentStreamCancelAfterHeadersAbortsWithoutIdleTimeout(HttpClientInterface $transport): void
     {
         [$proc, $url] = $this->startStallingSseServer();
 
         $token = new class implements CancellationTokenInterface {
-            private int $checks = 0;
+            public bool $cancelled = false;
 
             public function isCancellationRequested(): bool
             {
-                return ++$this->checks >= 2;
+                return $this->cancelled;
             }
         };
 
-        RunLogContext::enter(['llm_cancel_token' => $token]);
+        LlmInvocationCancelScope::enter($token);
         $started = hrtime(true);
 
         try {
-            $client = new LlmEventSourceHttpClient(new LlmCancelAwareHttpClient(
-                new CurlHttpClient(['timeout' => 30, 'max_duration' => 60]),
-            ));
+            $client = new EventSourceHttpClient(new LlmCancelAwareHttpClient($transport));
             $response = $client->request('GET', $url, [
                 'headers' => ['Accept' => 'text/event-stream'],
             ]);
+            self::assertSame(200, $response->getStatusCode());
+            // Cancel only after headers so the proof is silence, not connect/header wait.
+            $token->cancelled = true;
 
             foreach ((new SseStream())->stream($response) as $unused) {
-                $this->fail('Silent cancel must not yield SSE data.');
+                self::fail('Silent cancel must not yield SSE data.');
             }
 
-            $this->fail('Expected cancel abort exception.');
-        } catch (TransportException $exception) {
+            self::fail('Expected cancel abort exception.');
+        } catch (LlmStreamCancelledException $exception) {
             $elapsed = (hrtime(true) - $started) / 1e9;
-            $this->assertInstanceOf(LlmStreamCancelledException::class, $exception->getPrevious());
-            $this->assertLessThan(5.0, $elapsed, 'Cancel during silence must abort well under idle timeout/max_duration.');
+            self::assertSame('LLM stream cancelled.', $exception->getMessage());
+            self::assertLessThan(5.0, $elapsed, 'Cancel during silence must abort well under idle timeout/max_duration.');
         } finally {
-            RunLogContext::leave();
+            LlmInvocationCancelScope::leave();
             $this->stopProcess($proc);
         }
     }
@@ -67,24 +79,24 @@ final class LlmCancelAwareHttpClientTest extends TestCase
         $started = hrtime(true);
 
         try {
-            $client = new LlmEventSourceHttpClient(
+            $client = new EventSourceHttpClient(new LlmCancelAwareHttpClient(
                 new CurlHttpClient(['timeout' => 1, 'max_duration' => 20]),
-            );
+            ));
             $response = $client->request('GET', $url, [
                 'headers' => ['Accept' => 'text/event-stream'],
             ]);
 
             foreach ((new SseStream())->stream($response) as $unused) {
-                $this->fail('Idle stall must not yield SSE data.');
+                self::fail('Idle stall must not yield SSE data.');
             }
 
-            $this->fail('Expected idle timeout.');
+            self::fail('Expected idle timeout.');
         } catch (TimeoutExceptionInterface $exception) {
             $elapsed = (hrtime(true) - $started) / 1e9;
-            $this->assertInstanceOf(TimeoutException::class, $exception);
-            $this->assertStringContainsString('Idle timeout reached', $exception->getMessage());
-            $this->assertGreaterThanOrEqual(0.9, $elapsed);
-            $this->assertLessThan(5.0, $elapsed, 'Idle timeout must fire near timeout, not max_duration.');
+            self::assertInstanceOf(TimeoutException::class, $exception);
+            self::assertStringContainsString('Idle timeout reached', $exception->getMessage());
+            self::assertGreaterThanOrEqual(0.9, $elapsed);
+            self::assertLessThan(5.0, $elapsed, 'Idle timeout must fire near timeout, not max_duration.');
         } finally {
             $this->stopProcess($proc);
         }
@@ -118,13 +130,13 @@ PHP;
             2 => ['file', '/dev/null', 'w'],
         ];
         $proc = proc_open(
-            [\PHP_BINARY, '-r', $serverCode],
+            [PHP_BINARY, '-r', $serverCode],
             $descriptors,
             $pipes,
             null,
             ['PORTFILE' => $portFile],
         );
-        $this->assertIsResource($proc);
+        self::assertIsResource($proc);
         fclose($pipes[0]);
 
         $deadline = microtime(true) + 2.0;
@@ -138,7 +150,7 @@ PHP;
             }
             usleep(5_000);
         }
-        $this->assertMatchesRegularExpression('/:(\d+)$/', $addr);
+        self::assertMatchesRegularExpression('/:(\d+)$/', $addr);
         preg_match('/:(\d+)$/', $addr, $matches);
 
         return [$proc, 'http://127.0.0.1:'.(int) $matches[1].'/'];
