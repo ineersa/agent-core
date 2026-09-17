@@ -286,11 +286,11 @@ final class OutputCapTest extends TestCase
             false,
             'handoff-report.md',
         ];
-        yield 'code_mode error is default' => [
+        yield 'code_mode error is document' => [
             'code_mode',
             ['script' => 'throw new RuntimeException("x");'],
             true,
-            null,
+            'handoff-report.md',
         ];
         yield 'settings dotted key is never a path' => [
             'settings',

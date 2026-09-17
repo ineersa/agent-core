@@ -42,7 +42,7 @@ See [async-runtime-architecture.md](async-runtime-architecture.md).
 6. Results return to `run_control`, append to the run, and feed the next model step.
 
 Output capping persists oversized text under `tools.output_cap.*` and injects inspection notices ([settings.md](settings.md), [session-storage.md](session-storage.md)). Document-like tools (`hatfield_docs`, handoff-style tools) use the larger doc cap.
-`code_mode` successful results also use that document-report selection for the combined return value and diagnostics text.
+`code_mode` success and error results also use that document-report selection for the combined return value and diagnostics text.
 
 ## Result reuse versus exclusion
 

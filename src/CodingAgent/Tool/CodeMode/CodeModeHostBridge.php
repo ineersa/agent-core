@@ -41,9 +41,6 @@ final readonly class CodeModeHostBridge
     private const int DEFAULT_GRACE_SECONDS = 5;
     private const int POLL_INTERVAL_MICROS = 20_000;
     private const int MAX_UNIX_SOCKET_PATH_BYTES = 100;
-    // Process-safety stream tails only. Model-facing size limits come from OutputCap.
-    private const int STDERR_TAIL_CHARS = 50_000;
-    private const int STDOUT_TAIL_CHARS = 50_000;
     private const int SCRIPT_WRAPPER_PREFIX_LINES = 3;
     private const string TOOLBOX_LOCATOR_KEY = 'toolbox';
 
@@ -72,14 +69,12 @@ final readonly class CodeModeHostBridge
             $process = null;
             $server = null;
             $connection = null;
-            $output = new \stdClass();
-            $output->stdout = '';
-            $output->stderr = '';
+            $output = $this->openOutputCapture($workspace);
 
             try {
                 $this->writeScript($workspace['script'], $script);
                 $server = $this->createSocketServer($workspace['socket']);
-                $process = $this->startProcess($workspace, $cancelToken, $memoryLimit);
+                $process = $this->startProcess($workspace, $output, $cancelToken, $memoryLimit);
                 $connection = $this->acceptConnection($server, $process, $output, $cancelToken, $timeoutSeconds, $workspace['startedAtNs']);
 
                 return $this->serve($connection, $process, $output, $parentContext, $cancelToken, $timeoutSeconds, $workspace['startedAtNs']);
@@ -87,6 +82,7 @@ final readonly class CodeModeHostBridge
                 $this->stopProcess($process);
                 $this->closeResource($connection);
                 $this->closeResource($server);
+                $this->closeOutputCapture($output);
                 $this->cleanupWorkspace($workspace);
             }
         });
@@ -315,7 +311,7 @@ final readonly class CodeModeHostBridge
     }
 
     /**
-     * @return array{dir: string, script: string, socket: string, startedAtNs: int}
+     * @return array{dir: string, script: string, socket: string, stdout: string, stderr: string, startedAtNs: int}
      */
     private function createWorkspace(): array
     {
@@ -344,6 +340,8 @@ final readonly class CodeModeHostBridge
             'dir' => $dir,
             'script' => $dir.'/script.php',
             'socket' => $socket,
+            'stdout' => $dir.'/stdout.log',
+            'stderr' => $dir.'/stderr.log',
             'startedAtNs' => hrtime(true),
         ];
     }
@@ -466,9 +464,10 @@ final readonly class CodeModeHostBridge
     }
 
     /**
-     * @param array{dir: string, script: string, socket: string, startedAtNs: int} $workspace
+     * @param array{dir: string, script: string, socket: string, stdout: string, stderr: string, startedAtNs: int} $workspace
+     * @param \stdClass $output
      */
-    private function startProcess(array $workspace, CancellationTokenInterface $cancelToken, string $memoryLimit): Process
+    private function startProcess(array $workspace, object $output, CancellationTokenInterface $cancelToken, string $memoryLimit): Process
     {
         if ($cancelToken->isCancellationRequested()) {
             throw new ToolCallException('Code-mode execution cancelled before start.', retryable: false);
@@ -501,11 +500,18 @@ final readonly class CodeModeHostBridge
         );
         $process->setTimeout(null);
         $process->setIdleTimeout(null);
-        // Keep stderr available for fatal tails. Drain/discard stdout while waiting
-        // so a chatty script cannot grow an unbounded host-side buffer.
+        // Disable Process in-memory buffers and spool stdout/stderr into the
+        // workspace files via the start callback. Status polls still pump pipes.
+        $process->disableOutput();
 
         try {
-            $process->start();
+            $process->start(function (string $type, string $data) use ($output): void {
+                $this->appendCapturedStream(
+                    $output,
+                    Process::OUT === $type ? 'stdout' : 'stderr',
+                    $data,
+                );
+            });
         } catch (ProcessStartFailedException|ProcessRuntimeException $exception) {
             throw new ToolCallException('Failed to start code-mode PHP subprocess: '.$exception->getMessage(), retryable: true, previous: $exception);
         }
@@ -710,8 +716,8 @@ final readonly class CodeModeHostBridge
         );
 
         $diagnostics = CodeModeDiagnostics::prepare(
-            (string) $output->stdout,
-            (string) $output->stderr,
+            $this->readCapturedStream($output, 'stdout'),
+            $this->readCapturedStream($output, 'stderr'),
             self::SCRIPT_WRAPPER_PREFIX_LINES,
         );
 
@@ -726,40 +732,9 @@ final readonly class CodeModeHostBridge
      */
     private function drainProcessOutput(Process $process, object $output): void
     {
-        try {
-            $stdoutChunk = $process->getIncrementalOutput();
-            if ('' === $stdoutChunk && !$process->isRunning()) {
-                $full = $process->getOutput();
-                if (\strlen($full) > \strlen($output->stdout)) {
-                    $stdoutChunk = substr($full, \strlen($output->stdout));
-                }
-            }
-
-            $stderrChunk = $process->getIncrementalErrorOutput();
-            if ('' === $stderrChunk && !$process->isRunning()) {
-                // Final drain: Incremental can miss already-buffered stderr after exit.
-                $full = $process->getErrorOutput();
-                if (\strlen($full) > \strlen($output->stderr)) {
-                    $stderrChunk = substr($full, \strlen($output->stderr));
-                }
-            }
-        } catch (\Symfony\Component\Process\Exception\LogicException) {
-            return;
-        }
-
-        if ('' !== $stdoutChunk) {
-            $output->stdout .= $stdoutChunk;
-            if (\strlen($output->stdout) > self::STDOUT_TAIL_CHARS) {
-                $output->stdout = substr($output->stdout, -self::STDOUT_TAIL_CHARS);
-            }
-        }
-
-        if ('' !== $stderrChunk) {
-            $output->stderr .= $stderrChunk;
-            if (\strlen($output->stderr) > self::STDERR_TAIL_CHARS) {
-                $output->stderr = substr($output->stderr, -self::STDERR_TAIL_CHARS);
-            }
-        }
+        // Output is disabled and captured by the Process start callback into
+        // workspace spool files. Polling status still pumps the pipes.
+        $process->isRunning();
     }
 
     /**
@@ -768,8 +743,8 @@ final readonly class CodeModeHostBridge
     private function packExecutionResult(mixed $result, object $output): mixed
     {
         $diagnostics = CodeModeDiagnostics::prepare(
-            (string) $output->stdout,
-            (string) $output->stderr,
+            $this->readCapturedStream($output, 'stdout'),
+            $this->readCapturedStream($output, 'stderr'),
             self::SCRIPT_WRAPPER_PREFIX_LINES,
         );
 
@@ -811,7 +786,7 @@ final readonly class CodeModeHostBridge
     }
 
     /**
-     * @param array{dir: string, script: string, socket: string, startedAtNs: int} $workspace
+     * @param array{dir: string, script: string, socket: string, stdout: string, stderr: string, startedAtNs: int} $workspace
      */
     private function cleanupWorkspace(array $workspace): void
     {
@@ -825,6 +800,88 @@ final readonly class CodeModeHostBridge
                 'message' => $exception->getMessage(),
             ]);
         }
+    }
+
+    /**
+     * @param array{dir: string, script: string, socket: string, stdout: string, stderr: string, startedAtNs: int} $workspace
+     *
+     * @return \stdClass{stdoutPath: string, stderrPath: string, stdoutHandle: resource, stderrHandle: resource}
+     */
+    private function openOutputCapture(array $workspace): object
+    {
+        $stdoutHandle = @fopen($workspace['stdout'], 'cb');
+        if (false === $stdoutHandle) {
+            throw new ToolCallException(\sprintf('Failed to open code-mode stdout spool "%s".', $workspace['stdout']), retryable: true);
+        }
+
+        $stderrHandle = @fopen($workspace['stderr'], 'cb');
+        if (false === $stderrHandle) {
+            @fclose($stdoutHandle);
+            throw new ToolCallException(\sprintf('Failed to open code-mode stderr spool "%s".', $workspace['stderr']), retryable: true);
+        }
+
+        $output = new \stdClass();
+        $output->stdoutPath = $workspace['stdout'];
+        $output->stderrPath = $workspace['stderr'];
+        $output->stdoutHandle = $stdoutHandle;
+        $output->stderrHandle = $stderrHandle;
+
+        return $output;
+    }
+
+    /**
+     * @param \stdClass $output
+     */
+    private function closeOutputCapture(object $output): void
+    {
+        foreach (['stdoutHandle', 'stderrHandle'] as $handleKey) {
+            $handle = $output->{$handleKey} ?? null;
+            if (\is_resource($handle)) {
+                $this->closeResource($handle);
+            }
+            $output->{$handleKey} = null;
+        }
+    }
+
+    /**
+     * @param \stdClass $output
+     * @param 'stdout'|'stderr' $stream
+     */
+    private function appendCapturedStream(object $output, string $stream, string $chunk): void
+    {
+        $handleKey = $stream.'Handle';
+        $handle = $output->{$handleKey} ?? null;
+        if (!\is_resource($handle)) {
+            throw new ToolCallException(\sprintf('Code-mode %s spool handle is closed.', $stream), retryable: false);
+        }
+
+        $written = @fwrite($handle, $chunk);
+        if (false === $written || $written !== \strlen($chunk)) {
+            throw new ToolCallException(\sprintf('Failed to append code-mode %s spool.', $stream), retryable: true);
+        }
+    }
+
+    /**
+     * @param \stdClass $output
+     * @param 'stdout'|'stderr' $stream
+     */
+    private function readCapturedStream(object $output, string $stream): string
+    {
+        $handleKey = $stream.'Handle';
+        $pathKey = $stream.'Path';
+        $handle = $output->{$handleKey} ?? null;
+        if (\is_resource($handle)) {
+            fflush($handle);
+        }
+
+        $path = (string) ($output->{$pathKey} ?? '');
+        if ('' === $path || !is_file($path)) {
+            return '';
+        }
+
+        $contents = @file_get_contents($path);
+
+        return false === $contents ? '' : $contents;
     }
 
     private function toolbox(): ToolboxInterface

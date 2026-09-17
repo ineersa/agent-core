@@ -70,8 +70,10 @@ model-facing return text. The child process starts with `display_errors=0` and
 Xdebug stacks. Errors keep useful stacks and use stable `script.php` /
 `bootstrap.php` path labels. The combined return value and diagnostics then use
 ordinary output capping with the document-report 50,000-character selection and
-saved-output recovery. Host process capture still keeps bounded stdout/stderr
-tails for process safety.
+saved-output recovery for both successful and failed `code_mode` results. The
+host spools child stdout/stderr into the temporary workspace while the script
+runs so capture stays complete through ordinary capping; timeout and memory
+limits still bound the subprocess.
 `die()`/`exit` without a return reports that the script exited without returning
 a value, even on exit code 0.
 
