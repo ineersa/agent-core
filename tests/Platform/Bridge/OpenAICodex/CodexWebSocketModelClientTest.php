@@ -10,7 +10,6 @@ use Amp\Websocket\Client\WebsocketConnectException;
 use Amp\Websocket\Client\WebsocketConnection;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexModel;
-use Symfony\AI\Platform\Bridge\OpenAICodex\CodexReasoningTransitionLedger;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexRequestBodyFactory;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketConnectorInterface;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketHandshakeHeadersFactory;
@@ -50,7 +49,7 @@ final class CodexWebSocketModelClientTest extends TestCase
             $connector,
             new CodexWebSocketUrlResolver(),
             new CodexWebSocketHandshakeHeadersFactory(),
-            new CodexRequestBodyFactory(new CodexReasoningTransitionLedger()),
+            new CodexRequestBodyFactory(),
             'https://chatgpt.com/backend-api',
             'access',
             'acct-1',
@@ -97,7 +96,7 @@ final class CodexWebSocketModelClientTest extends TestCase
             $connector,
             new CodexWebSocketUrlResolver(),
             new CodexWebSocketHandshakeHeadersFactory(),
-            new CodexRequestBodyFactory(new CodexReasoningTransitionLedger()),
+            new CodexRequestBodyFactory(),
             'https://chatgpt.com/backend-api',
             'access',
             'acct-1',
@@ -143,7 +142,7 @@ final class CodexWebSocketModelClientTest extends TestCase
             $connector,
             new CodexWebSocketUrlResolver(),
             new CodexWebSocketHandshakeHeadersFactory(),
-            new CodexRequestBodyFactory(new CodexReasoningTransitionLedger()),
+            new CodexRequestBodyFactory(),
             'https://chatgpt.com/backend-api',
             'stale-access',
             'acct-1',
@@ -197,7 +196,7 @@ final class CodexWebSocketModelClientTest extends TestCase
             $connector,
             new CodexWebSocketUrlResolver(),
             new CodexWebSocketHandshakeHeadersFactory(),
-            new CodexRequestBodyFactory(new CodexReasoningTransitionLedger()),
+            new CodexRequestBodyFactory(),
             'https://chatgpt.com/backend-api',
             'stale-access',
             'acct-1',
@@ -229,7 +228,7 @@ final class CodexWebSocketModelClientTest extends TestCase
             $connector,
             new CodexWebSocketUrlResolver(),
             new CodexWebSocketHandshakeHeadersFactory(),
-            new CodexRequestBodyFactory(new CodexReasoningTransitionLedger()),
+            new CodexRequestBodyFactory(),
             'https://chatgpt.com/backend-api',
             'stale-access',
             'acct-1',
@@ -261,7 +260,7 @@ final class CodexWebSocketModelClientTest extends TestCase
             $connector,
             new CodexWebSocketUrlResolver(),
             new CodexWebSocketHandshakeHeadersFactory(),
-            new CodexRequestBodyFactory(new CodexReasoningTransitionLedger()),
+            new CodexRequestBodyFactory(),
             'https://chatgpt.com/backend-api',
             'same-access',
             'acct-1',
@@ -304,7 +303,7 @@ final class CodexWebSocketModelClientTest extends TestCase
             $connector,
             new CodexWebSocketUrlResolver(),
             new CodexWebSocketHandshakeHeadersFactory(),
-            new CodexRequestBodyFactory(new CodexReasoningTransitionLedger()),
+            new CodexRequestBodyFactory(),
             'https://chatgpt.com/backend-api',
             'access',
             'acct-1',

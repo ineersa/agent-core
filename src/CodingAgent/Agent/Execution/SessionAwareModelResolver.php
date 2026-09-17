@@ -106,10 +106,8 @@ final class SessionAwareModelResolver implements ModelResolverInterface
                 $effort = $reasoningOptions['reasoning']['effort'];
                 $baseline = $this->sessionMetadataStore->claimReasoningBaseline($sessionId, $modelRef->toString(), $effort);
                 if (null !== $baseline) {
-                    $reasoningOptions['reasoning']['effort'] = $baseline['baseline'];
-                    if (null !== $baseline['update']) {
-                        $reasoningOptions[CodexRequestBodyFactory::REASONING_UPDATE] = $baseline['update'];
-                    }
+                    $reasoningOptions['reasoning']['effort'] = $baseline;
+                    $reasoningOptions[CodexRequestBodyFactory::REASONING_UPDATE] = $effort;
                 } else {
                     $reasoningOptions[CodexRequestBodyFactory::REASONING_RESET] = true;
                 }

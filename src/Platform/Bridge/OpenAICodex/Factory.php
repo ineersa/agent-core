@@ -37,10 +37,9 @@ class Factory
         ?CodexWebSocketConnectorInterface $websocketConnector = null,
         ?CodexWebSocketConnectionCache $websocketConnectionCache = null,
         CodexWebSocketCacheSettings $websocketCacheSettings = new CodexWebSocketCacheSettings(),
-        ?CodexReasoningTransitionLedger $reasoningTransitionLedger = null,
     ): ProviderInterface {
         $httpClient ??= HttpClient::create();
-        $requestBodyFactory = new CodexRequestBodyFactory($reasoningTransitionLedger);
+        $requestBodyFactory = new CodexRequestBodyFactory();
 
         $modelClient = self::createModelClient(
             $transport,

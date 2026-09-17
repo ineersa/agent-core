@@ -44,12 +44,10 @@ Base path: `sessions.path` setting (default under project `.hatfield/sessions/`)
 Table `hatfield_session` stores id, display name, timestamps, provider cache key, and related session metadata. Directory name is canonical; embedded IDs are validated on read.
 
 The nullable `reasoning_baseline` JSON column stores the provider-qualified model
-and fixed effort for Astra reasoning updates, plus `last_emitted` for the latest
-harness-authored configuration_update and optional `transitions` offsets used to
-rebuild those updates at stable historical positions on full-history/SSE requests.
-The selected `reasoning` remains independent. Resume clears the baseline, and the
-next request establishes it from the current selection. Model changes also clear
-it. Worker recreation and socket reconnection do not clear it.
+and fixed effort for Astra reasoning updates. The selected `reasoning` remains
+independent. Resume clears the baseline, and the next request establishes it from
+the current selection. Model changes also clear it. Worker recreation and socket
+reconnection do not clear it.
 
 ### Naming
 

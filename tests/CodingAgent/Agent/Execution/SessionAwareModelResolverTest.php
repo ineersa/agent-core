@@ -469,13 +469,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
 
         $first = $resolver->resolve('', true, $input, new ModelResolutionOptions());
         $this->assertSame(['reasoning' => ['effort' => 'medium', 'summary' => 'auto'], 'codex_reasoning_reset' => true], $first->reasoningOptions);
-        $store->updateMetadata($id, ['reasoning' => 'medium']);
-        $this->entityManager->clear();
-        $unchanged = $this->createResolver($data)->resolve('', true, $input, new ModelResolutionOptions());
-        $this->assertSame(['reasoning' => ['effort' => 'medium', 'summary' => 'auto']], $unchanged->reasoningOptions);
-        $this->assertArrayNotHasKey('codex_reasoning_update', $unchanged->reasoningOptions);
-
-        foreach (['high', 'low', 'medium'] as $effort) {
+        foreach (['medium', 'high', 'low'] as $effort) {
             $store->updateMetadata($id, ['reasoning' => $effort]);
             $this->entityManager->clear();
             $result = $this->createResolver($data)->resolve('', true, $input, new ModelResolutionOptions());
@@ -483,18 +477,11 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
             $this->assertSame($effort, $result->reasoningOptions['codex_reasoning_update']);
         }
 
-        $store->updateMetadata($id, ['reasoning' => 'medium']);
-        $this->entityManager->clear();
-        $repeat = $this->createResolver($data)->resolve('', true, $input, new ModelResolutionOptions());
-        $this->assertSame(['reasoning' => ['effort' => 'medium', 'summary' => 'auto']], $repeat->reasoningOptions);
-        $this->assertArrayNotHasKey('codex_reasoning_update', $repeat->reasoningOptions);
-
         $override = $resolver->resolve('openai-codex/gpt-6-astra', true, $input, new ModelResolutionOptions(['thinking_level' => 'high']));
         $this->assertSame(['reasoning' => ['effort' => 'high', 'summary' => 'auto']], $override->reasoningOptions);
         $this->assertSame('medium', $store->findSession($id)->reasoningBaseline['effort']);
 
         $store->resetReasoningBaseline($id);
-        $store->updateMetadata($id, ['reasoning' => 'low']);
         $resumed = $resolver->resolve('', true, $input, new ModelResolutionOptions());
         $this->assertSame(['reasoning' => ['effort' => 'low', 'summary' => 'auto'], 'codex_reasoning_reset' => true], $resumed->reasoningOptions);
         $store->updateMetadata($id, ['model' => 'openai-codex/gpt-test']);

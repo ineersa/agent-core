@@ -18,7 +18,6 @@ use Ineersa\AgentCore\Tests\Support\TestLogger;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexModel;
-use Symfony\AI\Platform\Bridge\OpenAICodex\CodexReasoningTransitionLedger;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexRequestBodyFactory;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexTransportEnum;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketCacheSettings;
@@ -58,7 +57,7 @@ final class CodexWebSocketCachedModelClientTest extends TestCase
             $connector,
             new CodexWebSocketUrlResolver(),
             new CodexWebSocketHandshakeHeadersFactory(),
-            new CodexRequestBodyFactory(new CodexReasoningTransitionLedger()),
+            new CodexRequestBodyFactory(),
             'https://chatgpt.com/backend-api',
             'access',
             'acct-1',
@@ -157,7 +156,7 @@ final class CodexWebSocketCachedModelClientTest extends TestCase
             $connector,
             new CodexWebSocketUrlResolver(),
             new CodexWebSocketHandshakeHeadersFactory(),
-            new CodexRequestBodyFactory(new CodexReasoningTransitionLedger()),
+            new CodexRequestBodyFactory(),
             'https://chatgpt.com/backend-api',
             'access',
             'acct-1',
@@ -280,7 +279,7 @@ final class CodexWebSocketCachedModelClientTest extends TestCase
             $connector,
             new CodexWebSocketUrlResolver(),
             new CodexWebSocketHandshakeHeadersFactory(),
-            new CodexRequestBodyFactory(new CodexReasoningTransitionLedger()),
+            new CodexRequestBodyFactory(),
             'https://chatgpt.com/backend-api',
             'access',
             'acct-1',
@@ -394,7 +393,7 @@ final class CodexWebSocketCachedModelClientTest extends TestCase
             $connector,
             new CodexWebSocketUrlResolver(),
             new CodexWebSocketHandshakeHeadersFactory(),
-            new CodexRequestBodyFactory(new CodexReasoningTransitionLedger()),
+            new CodexRequestBodyFactory(),
             'https://chatgpt.com/backend-api',
             'access',
             'acct-1',
@@ -446,7 +445,7 @@ final class CodexWebSocketCachedModelClientTest extends TestCase
             $connector,
             new CodexWebSocketUrlResolver(),
             new CodexWebSocketHandshakeHeadersFactory(),
-            new CodexRequestBodyFactory(new CodexReasoningTransitionLedger()),
+            new CodexRequestBodyFactory(),
             'https://chatgpt.com/backend-api',
             'access',
             'acct-1',
@@ -479,7 +478,7 @@ final class CodexWebSocketCachedModelClientTest extends TestCase
             $connector,
             new CodexWebSocketUrlResolver(),
             new CodexWebSocketHandshakeHeadersFactory(),
-            new CodexRequestBodyFactory(new CodexReasoningTransitionLedger()),
+            new CodexRequestBodyFactory(),
             'https://chatgpt.com/backend-api',
             'access',
             'acct-1',
@@ -527,7 +526,7 @@ final class CodexWebSocketCachedModelClientTest extends TestCase
             $connector,
             new CodexWebSocketUrlResolver(),
             new CodexWebSocketHandshakeHeadersFactory(),
-            new CodexRequestBodyFactory(new CodexReasoningTransitionLedger()),
+            new CodexRequestBodyFactory(),
             'https://chatgpt.com/backend-api',
             'stale',
             'acct-1',
@@ -569,7 +568,7 @@ final class CodexWebSocketCachedModelClientTest extends TestCase
             $connector,
             new CodexWebSocketUrlResolver(),
             new CodexWebSocketHandshakeHeadersFactory(),
-            new CodexRequestBodyFactory(new CodexReasoningTransitionLedger()),
+            new CodexRequestBodyFactory(),
             'https://chatgpt.com/backend-api',
             'access',
             'acct-1',
@@ -619,26 +618,16 @@ final class CodexWebSocketCachedModelClientTest extends TestCase
         foreach (['high', 'low'] as $index => $effort) {
             $secondPayload['input'][] = ['type' => 'message', 'role' => 'assistant', 'content' => 'ok'];
             $secondPayload['input'][] = ['role' => 'user', 'content' => 'next-'.$index];
-            if ('high' === $effort) {
-                unset($secondOptions[CodexRequestBodyFactory::REASONING_UPDATE]);
-            } else {
-                $secondOptions[CodexRequestBodyFactory::REASONING_UPDATE] = $effort;
-            }
+            $secondOptions[CodexRequestBodyFactory::REASONING_UPDATE] = $effort;
             $result = $client->request(new CodexModel('gpt-6-astra'), $secondPayload, $secondOptions);
             iterator_to_array($result->getDataStream());
             $frame = json_decode($frames[$index + 2], true, flags: \JSON_THROW_ON_ERROR);
             $this->assertSame('resp_cached_1', $frame['previous_response_id']);
             $this->assertSame('medium', $frame['reasoning']['effort']);
-            if ('high' === $effort) {
-                $this->assertSame([
-                    ['role' => 'user', 'content' => 'next-'.$index],
-                ], $frame['input']);
-            } else {
-                $this->assertSame([
-                    ['type' => 'configuration_update', 'reasoning' => ['effort' => $effort]],
-                    ['role' => 'user', 'content' => 'next-'.$index],
-                ], $frame['input']);
-            }
+            $this->assertSame([
+                ['type' => 'configuration_update', 'reasoning' => ['effort' => $effort]],
+                ['role' => 'user', 'content' => 'next-'.$index],
+            ], $frame['input']);
         }
 
         $secondPayload['input'][] = ['type' => 'message', 'role' => 'assistant', 'content' => 'ok'];

@@ -214,16 +214,10 @@ final class HatfieldSessionStore
     }
 
     /**
-     * Claim or continue the Astra reasoning epoch for a session/model pair.
-     *
-     * Returns null on the first request of a model epoch (caller must reset
-     * continuation and keep top-level effort). On later requests returns the
-     * fixed baseline effort plus an optional configuration_update effort when
-     * the selected effort differs from the last emitted transition.
-     *
-     * @return array{baseline: string, update: ?string, last_emitted: ?string}|null
+     * Claim the first request's effort. Return null for that first request,
+     * or the fixed effort for subsequent requests in the same model epoch.
      */
-    public function claimReasoningBaseline(string $sessionId, string $model, string $effort): ?array
+    public function claimReasoningBaseline(string $sessionId, string $model, string $effort): ?string
     {
         $entity = $this->fetchEntityOrNull($sessionId);
         if (null === $entity) {
@@ -231,32 +225,10 @@ final class HatfieldSessionStore
         }
 
         if ($model === ($entity->reasoningBaseline['model'] ?? null)) {
-            $baselineEffort = $entity->reasoningBaseline['effort'] ?? null;
-            if (!\is_string($baselineEffort) || '' === $baselineEffort) {
-                return null;
-            }
-
-            $lastEmitted = $entity->reasoningBaseline['last_emitted'] ?? null;
-            $effective = \is_string($lastEmitted) && '' !== $lastEmitted ? $lastEmitted : $baselineEffort;
-            $update = $effort !== $effective ? $effort : null;
-            if (null !== $update) {
-                $baseline = $entity->reasoningBaseline ?? [];
-                $baseline['model'] = $model;
-                $baseline['effort'] = $baselineEffort;
-                $baseline['last_emitted'] = $update;
-                $entity->reasoningBaseline = $baseline;
-                $this->entityManager->flush();
-                $lastEmitted = $update;
-            }
-
-            return [
-                'baseline' => $baselineEffort,
-                'update' => $update,
-                'last_emitted' => \is_string($lastEmitted) && '' !== $lastEmitted ? $lastEmitted : null,
-            ];
+            return $entity->reasoningBaseline['effort'];
         }
 
-        $entity->reasoningBaseline = ['model' => $model, 'effort' => $effort, 'last_emitted' => null];
+        $entity->reasoningBaseline = ['model' => $model, 'effort' => $effort];
         $this->entityManager->flush();
 
         return null;
