@@ -280,6 +280,18 @@ final class OutputCapTest extends TestCase
         ];
         yield 'failed fork is default' => ['fork', ['task' => 'x'], true, null];
         yield 'bash remains default' => ['bash', ['command' => 'ls'], false, null];
+        yield 'code_mode success is document' => [
+            'code_mode',
+            ['script' => 'return 1;'],
+            false,
+            'handoff-report.md',
+        ];
+        yield 'code_mode error is document' => [
+            'code_mode',
+            ['script' => 'throw new RuntimeException("x");'],
+            true,
+            'handoff-report.md',
+        ];
         yield 'settings dotted key is never a path' => [
             'settings',
             ['operation' => 'read', 'path' => 'docs.example.md'],

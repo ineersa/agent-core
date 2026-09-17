@@ -50,6 +50,12 @@ preserved in session history can outlive the actual saved output.
 `code_mode` is off by default. Enable it with `tools.code_mode.enabled: true` in
 user or project settings, then restart Hatfield.
 
+Prefer `code_mode` for multi-step tool work when intermediate results do not need
+model interpretation. Batch related reads and lookups, filter or compare inside
+the script, and return the evidence needed for the next decision. Use direct tools
+for single calls, images, human input, and child-agent operations. Do not wrap a
+single call or dump entire intermediate results merely to use `code_mode`.
+
 The script can call registered tools, including MCP tools, through
 `tool(name, arguments)` using each tool's runtime name. Values returned by
 `tool()` stay as JSON-compatible PHP values. Strings stay strings. Extra
@@ -62,8 +68,12 @@ Bounded script stdout/stderr, including PHP warnings, are appended to the
 model-facing return text. The child process starts with `display_errors=0` and
 `xdebug.mode=off`, so warnings log once on stderr without an stdout mirror or
 Xdebug stacks. Errors keep useful stacks and use stable `script.php` /
-`bootstrap.php` path labels. The combined diagnostics block is hard-capped to a
-few KB with an explicit truncation marker before ordinary output capping.
+`bootstrap.php` path labels. The combined return value and diagnostics then use
+ordinary output capping with the document-report 50,000-character selection and
+saved-output recovery for both successful and failed `code_mode` results. The
+host keeps child stdout/stderr through Symfony Process capture
+(`php://temp` buffers) so ordinary capping sees the full streams; timeout and
+memory limits still bound the subprocess.
 `die()`/`exit` without a return reports that the script exited without returning
 a value, even on exit code 0.
 

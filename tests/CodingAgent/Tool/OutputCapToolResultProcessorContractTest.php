@@ -366,6 +366,39 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
         $this->assertTrue($details['output_cap']['capped']);
     }
 
+    public function testSuccessfulCodeModeBetweenDefaultAndDocCapStaysInline(): void
+    {
+        $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 20000, docCap: 50000);
+        $outputCap = $this->outputCap($cfg);
+        $processor = new OutputCapToolResultProcessor($outputCap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
+
+        $body = str_repeat('C', 25000)."\ncode_mode diagnostics\nstdout:\nout";
+        $this->assertGreaterThan(20000, u($body)->length());
+        $this->assertLessThan(50000, u($body)->length());
+
+        $result = new ToolResult(
+            toolCallId: 'call-code-mode-1',
+            toolName: 'code_mode',
+            content: [['type' => 'text', 'text' => $body]],
+            details: ['raw_result' => $body],
+            isError: false,
+        );
+        $toolCall = new ToolCall(
+            toolCallId: 'call-code-mode-1',
+            toolName: 'code_mode',
+            arguments: ['script' => 'echo "out"; return "x";'],
+            orderIndex: 3,
+            runId: 'test-run',
+        );
+
+        $processed = $processor->process($result, $toolCall);
+
+        $this->assertSame($body, $processed->content[0]['text'] ?? null);
+        $details = \is_array($processed->details) ? $processed->details : [];
+        $this->assertArrayNotHasKey('model_notifications', $details);
+        $this->assertArrayNotHasKey('output_cap', $details);
+    }
+
     private function outputCap(OutputCapConfig $config): OutputCap
     {
         return new OutputCap($config, new LockFactory(new FlockStore($this->tmpDir)), new NullLogger());
