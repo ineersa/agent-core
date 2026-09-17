@@ -131,7 +131,11 @@ final class HatfieldSessionStoreCrossProcessFreshnessTest extends IsolatedKernel
         );
 
         $this->assertSame(
-            'low',
+            [
+                'baseline' => 'low',
+                'update' => 'high',
+                'last_emitted' => 'high',
+            ],
             $this->store->claimReasoningBaseline($sessionId, 'provider/model-a', 'high'),
         );
     }

@@ -16,6 +16,11 @@ final class CodexRequestBodyFactory
     public const string REASONING_UPDATE = 'codex_reasoning_update';
     public const string REASONING_RESET = 'codex_reasoning_reset';
 
+    public function __construct(
+        private readonly ?CodexReasoningTransitionLedger $transitionLedger = null,
+    ) {
+    }
+
     /**
      * @param array<string, mixed> $payload
      * @param array<string, mixed> $options
@@ -41,21 +46,41 @@ final class CodexRequestBodyFactory
         $jsonBody = array_merge($options, ['model' => $model->getName()], $payload);
 
         $effort = $jsonBody[self::REASONING_UPDATE] ?? null;
+        $reset = \array_key_exists(self::REASONING_RESET, $jsonBody);
         unset($jsonBody[self::REASONING_UPDATE], $jsonBody[self::REASONING_RESET]);
-        if ('gpt-6-astra' === $model->getName() && \is_string($effort)) {
+
+        $promptCacheKey = $this->resolvePromptCacheKey($jsonBody, $options);
+        if ($reset && null !== $this->transitionLedger && null !== $promptCacheKey) {
+            $this->transitionLedger->forget($promptCacheKey);
+        }
+
+        if ('gpt-6-astra' === $model->getName()) {
             $input = $jsonBody['input'] ?? [];
-            // Only harness-authored updates belong in outgoing input.
-            $input = array_values(array_filter($input, static fn (array $item): bool => 'configuration_update' !== ($item['type'] ?? null)));
-            $offset = \count($input);
-            // Keep the historical prefix unchanged. Insert before new user/tool input.
-            while ($offset > 0 && ('user' === ($input[$offset - 1]['role'] ?? null)
-                || 'function_call_output' === ($input[$offset - 1]['type'] ?? null))) {
-                --$offset;
+            if (!\is_array($input)) {
+                $input = [];
             }
-            if ($offset < \count($input)) {
-                array_splice($input, $offset, 0, [['type' => 'configuration_update', 'reasoning' => ['effort' => $effort]]]);
+            /** @var list<array<string, mixed>> $cleanInput */
+            $cleanInput = array_values(array_filter(
+                $input,
+                static fn (mixed $item): bool => \is_array($item) && 'configuration_update' !== ($item['type'] ?? null),
+            ));
+
+            $transitions = [];
+            if (null !== $this->transitionLedger && null !== $promptCacheKey) {
+                $transitions = $this->transitionLedger->transitions($promptCacheKey);
             }
-            $jsonBody['input'] = $input;
+
+            if (\is_string($effort) && '' !== $effort) {
+                $after = $this->insertionOffset($cleanInput);
+                if ($after < \count($cleanInput)) {
+                    $transitions = $this->withTransition($transitions, $after, $effort);
+                    if (null !== $this->transitionLedger && null !== $promptCacheKey) {
+                        $this->transitionLedger->remember($promptCacheKey, $after, $effort);
+                    }
+                }
+            }
+
+            $jsonBody['input'] = $this->applyTransitions($cleanInput, $transitions);
         }
 
         // Empty prompt_cache_key in the payload must not erase a resolved options value.
@@ -85,5 +110,87 @@ final class CodexRequestBodyFactory
         $jsonBody['parallel_tool_calls'] ??= true;
 
         return $jsonBody;
+    }
+
+    /**
+     * @param array<string, mixed> $jsonBody
+     * @param array<string, mixed> $options
+     */
+    private function resolvePromptCacheKey(array $jsonBody, array $options): ?string
+    {
+        foreach ([$jsonBody['prompt_cache_key'] ?? null, $options['prompt_cache_key'] ?? null] as $candidate) {
+            if (\is_string($candidate) && '' !== $candidate) {
+                return $candidate;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param list<array<string, mixed>> $input
+     */
+    private function insertionOffset(array $input): int
+    {
+        $offset = \count($input);
+        while ($offset > 0 && ('user' === ($input[$offset - 1]['role'] ?? null)
+            || 'function_call_output' === ($input[$offset - 1]['type'] ?? null))) {
+            --$offset;
+        }
+
+        return $offset;
+    }
+
+    /**
+     * @param list<array{after: int, effort: string}> $transitions
+     *
+     * @return list<array{after: int, effort: string}>
+     */
+    private function withTransition(array $transitions, int $after, string $effort): array
+    {
+        foreach ($transitions as $transition) {
+            if ($transition['after'] === $after && $transition['effort'] === $effort) {
+                return $transitions;
+            }
+        }
+
+        $transitions[] = ['after' => $after, 'effort' => $effort];
+
+        return $transitions;
+    }
+
+    /**
+     * @param list<array<string, mixed>>              $input
+     * @param list<array{after: int, effort: string}> $transitions
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function applyTransitions(array $input, array $transitions): array
+    {
+        if ([] === $transitions) {
+            return $input;
+        }
+
+        usort(
+            $transitions,
+            static fn (array $left, array $right): int => $left['after'] <=> $right['after'],
+        );
+
+        $result = [];
+        $cursor = 0;
+        foreach ($transitions as $transition) {
+            $after = max(0, min($transition['after'], \count($input)));
+            while ($cursor < $after) {
+                $result[] = $input[$cursor];
+                ++$cursor;
+            }
+            $result[] = ['type' => 'configuration_update', 'reasoning' => ['effort' => $transition['effort']]];
+        }
+        while ($cursor < \count($input)) {
+            $result[] = $input[$cursor];
+            ++$cursor;
+        }
+
+        return $result;
     }
 }

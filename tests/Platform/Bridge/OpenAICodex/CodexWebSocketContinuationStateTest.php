@@ -55,4 +55,45 @@ final class CodexWebSocketContinuationStateTest extends TestCase
 
         $this->assertNull($delta);
     }
+
+    public function testHistoricalConfigurationUpdatesRemainInPrefixAndOnlyNewSuffixIsDelta(): void
+    {
+        $baselineBody = [
+            'model' => 'gpt-6-astra',
+            'input' => [
+                ['role' => 'user', 'content' => 'u1'],
+                ['role' => 'assistant', 'content' => 'a1'],
+                ['type' => 'configuration_update', 'reasoning' => ['effort' => 'high']],
+                ['role' => 'user', 'content' => 'u2'],
+            ],
+            'stream' => true,
+        ];
+        $state = CodexWebSocketContinuationState::fromSuccessfulResponse(
+            $baselineBody,
+            'resp_astra',
+            [['type' => 'message', 'role' => 'assistant', 'content' => 'a2']],
+        );
+
+        $current = [
+            'model' => 'gpt-6-astra',
+            'input' => [
+                ['role' => 'user', 'content' => 'u1'],
+                ['role' => 'assistant', 'content' => 'a1'],
+                ['type' => 'configuration_update', 'reasoning' => ['effort' => 'high']],
+                ['role' => 'user', 'content' => 'u2'],
+                ['type' => 'message', 'role' => 'assistant', 'content' => 'a2'],
+                ['type' => 'configuration_update', 'reasoning' => ['effort' => 'low']],
+                ['role' => 'user', 'content' => 'u3'],
+            ],
+            'stream' => true,
+        ];
+
+        $delta = $state->buildDeltaRequest($current);
+        $this->assertNotNull($delta);
+        $this->assertSame('resp_astra', $delta['previous_response_id']);
+        $this->assertSame([
+            ['type' => 'configuration_update', 'reasoning' => ['effort' => 'low']],
+            ['role' => 'user', 'content' => 'u3'],
+        ], $delta['input']);
+    }
 }

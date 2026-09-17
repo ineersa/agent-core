@@ -181,6 +181,9 @@ services:
 
   Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketConnectionCache:
     shared: true
+  Symfony\AI\Platform\Bridge\OpenAICodex\CodexReasoningTransitionLedger:
+    class: Ineersa\CodingAgent\Infrastructure\SymfonyAi\Codex\SessionBackedCodexReasoningTransitionLedger
+    shared: true
   Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderFactory:
     arguments:
       $builders: !tagged_iterator hatfield.symfony_ai.provider_builder

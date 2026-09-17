@@ -12,6 +12,7 @@ use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ProjectedSymfonyModelCatalog;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderBuilderInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexModel;
+use Symfony\AI\Platform\Bridge\OpenAICodex\CodexReasoningTransitionLedger;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexTransportEnum;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketCacheSettings;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketConnectionCache;
@@ -27,6 +28,7 @@ final class CodexSymfonyAiProviderBuilder implements SymfonyAiProviderBuilderInt
         private readonly CodexAuthStorage $codexAuth,
         private readonly CodexOAuthService $codexOAuth,
         private readonly CodexWebSocketConnectionCache $codexWebSocketConnectionCache,
+        private readonly CodexReasoningTransitionLedger $reasoningTransitionLedger,
         private readonly ?LoggerInterface $logger = null,
     ) {
     }
@@ -84,6 +86,7 @@ final class CodexSymfonyAiProviderBuilder implements SymfonyAiProviderBuilderInt
             websocketConnector: null,
             websocketConnectionCache: $this->codexWebSocketConnectionCache,
             websocketCacheSettings: $cacheSettings,
+            reasoningTransitionLedger: $this->reasoningTransitionLedger,
         );
     }
 

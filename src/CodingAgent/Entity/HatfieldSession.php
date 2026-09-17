@@ -72,7 +72,14 @@ class HatfieldSession
     public ?string $reasoning = null;
 
     /** Fixed provider effort for the active model epoch; null until its first request.
-     * @var array{model: string, effort: string}|null */
+     * `effort` is the first request's top-level effort for this model epoch.
+     * `last_emitted` is the effort of the latest harness-authored configuration_update,
+     * or null when none has been emitted yet in this epoch.
+     *
+     * Optional `transitions` stores durable {after,effort} configuration_update
+     * offsets for full-history/SSE rebuild across worker recreation.
+     *
+     * @var array{model: string, effort: string, last_emitted: ?string, transitions?: list<array{after: int, effort: string}>}|null */
     #[ORM\Column(name: 'reasoning_baseline', type: 'json', nullable: true)]
     public ?array $reasoningBaseline = null;
 
