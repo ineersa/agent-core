@@ -8,7 +8,8 @@ namespace Ineersa\CodingAgent\Infrastructure\SymfonyAi\Http;
  * Timeout options for outbound LLM HTTP clients.
  *
  * Retry count and backoff live on {@see \Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy}.
- * This type only supplies Symfony HttpClient `timeout` / `max_duration`.
+ * This type only supplies Symfony HttpClient `timeout` (idle between chunks) /
+ * `max_duration` (total wall budget). Silent SSE streams fail over at `timeout`.
  */
 final class LlmHttpClientOptions
 {
