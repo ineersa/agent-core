@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Infrastructure\SymfonyAi\Http;
 
+use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmInvocationCancelScope;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmStreamCancelledException;
 use Symfony\Component\HttpClient\Chunk\ErrorChunk;
@@ -15,18 +16,27 @@ use Symfony\Contracts\HttpClient\ResponseStreamInterface;
 /**
  * Adds cancel-aware progress checks under vendor SSE framing.
  *
- * Progress throws {@see LlmStreamCancelledException}. Vendor
+ * The cancel token is captured at {@see request()} time so nested/sibling
+ * scopes cannot cancel the wrong in-flight transfer. Progress throws
+ * {@see LlmStreamCancelledException}. Vendor
  * {@see \Symfony\Component\HttpClient\EventSourceHttpClient} may swallow that as a
- * reconnectable transport error, so {@see stream()} also inspects error chunks and
- * rethrows the typed cancel before EventSource reconnect logic can hide it.
+ * reconnectable transport error, so {@see stream()} rethrows the typed cancel
+ * from the captured token / exact cancel error before reconnect can hide it.
  */
 final class LlmCancelAwareHttpClient implements HttpClientInterface
 {
+    /** @var \WeakMap<ResponseInterface, CancellationTokenInterface> */
+    private \WeakMap $responseTokens;
+
     public function __construct(
         private readonly HttpClientInterface $inner,
     ) {
+        $this->responseTokens = new \WeakMap();
     }
 
+    /**
+     * @param array<string, mixed> $options
+     */
     public function request(string $method, string $url, array $options = []): ResponseInterface
     {
         $userProgress = $options['on_progress'] ?? null;
@@ -34,33 +44,40 @@ final class LlmCancelAwareHttpClient implements HttpClientInterface
             throw new \InvalidArgumentException('HTTP option "on_progress" must be callable when provided.');
         }
 
-        $options['on_progress'] = static function (int $dlNow, int $dlSize, array $info) use ($userProgress): void {
+        $token = LlmInvocationCancelScope::current();
+        $options['on_progress'] = static function (int $dlNow, int $dlSize, array $info) use ($userProgress, $token): void {
             if (\is_callable($userProgress)) {
                 $userProgress($dlNow, $dlSize, $info);
             }
 
-            $token = LlmInvocationCancelScope::current();
             if (null !== $token && $token->isCancellationRequested()) {
-                throw new LlmStreamCancelledException('LLM stream cancelled.');
+                throw new LlmStreamCancelledException();
             }
         };
 
-        return $this->inner->request($method, $url, $options);
+        $response = $this->inner->request($method, $url, $options);
+        if (null !== $token) {
+            $this->responseTokens[$response] = $token;
+        }
+
+        return $response;
     }
 
     public function stream(ResponseInterface|iterable $responses, ?float $timeout = null): ResponseStreamInterface
     {
         $inner = $this->inner;
+        $responseTokens = $this->responseTokens;
 
-        return new ResponseStream((static function () use ($inner, $responses, $timeout): \Generator {
+        return new ResponseStream((static function () use ($inner, $responses, $timeout, $responseTokens): \Generator {
             foreach ($inner->stream($responses, $timeout) as $response => $chunk) {
+                $token = $responseTokens[$response] ?? null;
                 $error = $chunk->getError();
-                if (self::isCancelError($error) || self::isActiveCancelRequested()) {
+                if (self::isCancelError($error) || (null !== $token && $token->isCancellationRequested())) {
                     if ($chunk instanceof ErrorChunk) {
                         $chunk->didThrow(true);
                     }
                     $response->cancel();
-                    throw new LlmStreamCancelledException('LLM stream cancelled.');
+                    throw new LlmStreamCancelledException();
                 }
 
                 yield $response => $chunk;
@@ -68,6 +85,9 @@ final class LlmCancelAwareHttpClient implements HttpClientInterface
         })());
     }
 
+    /**
+     * @param array<string, mixed> $options
+     */
     public function withOptions(array $options): static
     {
         return new self($this->inner->withOptions($options));
@@ -75,13 +95,6 @@ final class LlmCancelAwareHttpClient implements HttpClientInterface
 
     private static function isCancelError(?string $error): bool
     {
-        return null !== $error && str_contains($error, 'LLM stream cancelled');
-    }
-
-    private static function isActiveCancelRequested(): bool
-    {
-        $token = LlmInvocationCancelScope::current();
-
-        return null !== $token && $token->isCancellationRequested();
+        return LlmStreamCancelledException::MESSAGE === $error;
     }
 }

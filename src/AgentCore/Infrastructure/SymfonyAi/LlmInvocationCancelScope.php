@@ -77,11 +77,11 @@ final class LlmInvocationCancelScope
 
         self::$fiberStacks ??= new \WeakMap();
         if ([] === $stack) {
-            unset(self::$fiberStacks[$fiber]);
+            self::$fiberStacks->offsetUnset($fiber);
 
             return;
         }
 
-        self::$fiberStacks[$fiber] = $stack;
+        self::$fiberStacks->offsetSet($fiber, $stack);
     }
 }

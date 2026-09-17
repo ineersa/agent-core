@@ -13,4 +13,10 @@ namespace Ineersa\AgentCore\Infrastructure\SymfonyAi;
  */
 final class LlmStreamCancelledException extends \RuntimeException
 {
+    public const string MESSAGE = 'LLM stream cancelled.';
+
+    public function __construct(string $message = self::MESSAGE, int $code = 0, ?\Throwable $previous = null)
+    {
+        parent::__construct($message, $code, $previous);
+    }
 }
