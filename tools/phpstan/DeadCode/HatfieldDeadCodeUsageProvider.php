@@ -11,6 +11,7 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\Defer
 use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedMetadataDTO;
 use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedSessionMetadataDTO;
 use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedToolsScopeDTO;
+use Ineersa\CodingAgent\Infrastructure\SymfonyAi\Http\LlmCancelAwareHttpClient;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressChildRowDTO;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressParallelSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingleSnapshotDTO;
@@ -81,10 +82,12 @@ final class HatfieldDeadCodeUsageProvider extends ReflectionBasedMemberUsageProv
 
         // Measured with this rule removed: ShipMonk reports both required
         // HttpClientInterface methods as "all usages excluded by tests excluder".
-        if (StreamPacingHttpClient::class === $className
+        // LlmCancelAwareHttpClient::stream is invoked by vendor AsyncResponse via
+        // HttpClientInterface; concrete override call sites are not attributed.
+        if (\in_array($className, [StreamPacingHttpClient::class, LlmCancelAwareHttpClient::class], true)
             && \in_array($method->getName(), ['stream', 'withOptions'], true)
             && $method->getDeclaringClass()->implementsInterface(HttpClientInterface::class)) {
-            return VirtualUsageData::withNote('Required HttpClientInterface methods reported unused after test-usage exclusion');
+            return VirtualUsageData::withNote('HttpClientInterface method called through vendor AsyncResponse / typed interface');
         }
 
         if (SynchronizedCursorScreenWriter::class === $className) {
