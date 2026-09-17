@@ -114,7 +114,9 @@ final readonly class ExecuteLlmStepWorker
             // Adapter owns thinking-only / empty-stream recovery inside the shared
             // application retry budget. Any leftover empty success here is terminal.
             $assistantMessage = $response->assistantMessage;
+            $isAborted = 'aborted' === $response->stopReason;
             if (null !== $assistantMessage
+                && !$isAborted
                 && null === $response->error
                 && !$assistantMessage->hasToolCalls()
                 && null === $assistantMessage->asText()
@@ -141,7 +143,6 @@ final readonly class ExecuteLlmStepWorker
             $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
 
             $hasStreamDeltas = [] !== $response->deltas();
-            $isAborted = 'aborted' === $response->stopReason;
             if (
                 !$isAborted
                 && null === $assistantMessage
