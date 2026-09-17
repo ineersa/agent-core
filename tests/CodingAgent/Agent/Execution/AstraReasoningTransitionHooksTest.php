@@ -413,6 +413,7 @@ final class AstraReasoningTransitionHooksTest extends IsolatedKernelTestCase
             $expectedKey,
             $messages[1]->getMetadata()->get(CodexReasoningTransitionMetadata::MESSAGE_KEY),
         );
+        $this->assertNull($last->getMetadata()->get(CodexReasoningTransitionMetadata::MESSAGE_KEY));
         $requestHook = new AstraReasoningTransitionRequestHook($store);
         $requestHook->beforeProviderRequest(
             $modelRef,
@@ -466,6 +467,70 @@ final class AstraReasoningTransitionHooksTest extends IsolatedKernelTestCase
         $nonAstraHook = $this->createTransformHook($store);
         $nonAstra = $nonAstraHook->transformContext($history, null, $sessionId);
         $this->assertArrayNotHasKey(CodexReasoningTransitionMetadata::KEY, $nonAstra[0]->metadata);
+    }
+
+    public function testMissingImagePlaceholderIsSkippedSoPrecedingToolAnchorsAndReplays(): void
+    {
+        $store = $this->createStore();
+        $sessionId = $this->createSession($store, 'openai-codex/gpt-6-astra', 'medium');
+        $modelRef = 'openai-codex/gpt-6-astra';
+        $this->assertNull($store->claimReasoningBaseline($sessionId, $modelRef, 'medium'));
+        $this->assertSame('high', $store->claimReasoningBaseline($sessionId, $modelRef, 'high')['update'] ?? null);
+
+        $missingPath = $this->tempDir.'/missing-view-image.png';
+        $history = [
+            new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'ask']]),
+            new AgentMessage(
+                role: 'tool',
+                content: [
+                    ['type' => 'text', 'text' => 'tool-output'],
+                    ['type' => 'image_ref', 'path' => $missingPath, 'media_type' => 'image/png', 'width' => 1, 'height' => 1, 'bytes' => 0],
+                ],
+                toolCallId: 'call-missing-img',
+                toolName: 'view_image',
+                details: ['arguments' => []],
+            ),
+        ];
+
+        $transformHook = $this->createTransformHook($store);
+        $marked = $transformHook->transformContext($history, null, $sessionId);
+        $expectedKey = $marked[1]->metadata[CodexReasoningTransitionMetadata::MESSAGE_KEY] ?? null;
+        $this->assertNotNull($expectedKey);
+
+        $bag = (new AgentMessageConverter())->toMessageBag($marked);
+        $messages = $bag->withoutSystemMessage()->getMessages();
+        $this->assertGreaterThan(2, \count($messages));
+        $last = $messages[\count($messages) - 1];
+        $this->assertInstanceOf(\Symfony\AI\Platform\Message\UserMessage::class, $last);
+        $this->assertFalse($last->hasImageContent());
+        $this->assertNull($last->getMetadata()->get(CodexReasoningTransitionMetadata::MESSAGE_KEY));
+        $this->assertStringContainsString('[Tool result image for view_image:', $last->asText() ?? '');
+
+        $requestHook = new AstraReasoningTransitionRequestHook($store);
+        $requestHook->beforeProviderRequest(
+            $modelRef,
+            ['message_bag' => $bag],
+            [
+                CodexRequestBodyFactory::REASONING_UPDATE => 'high',
+                'hatfield_run_id' => $sessionId,
+                'hatfield_model_ref' => $modelRef,
+            ],
+        );
+
+        $this->assertSame(
+            [['message_key' => $expectedKey, 'effort' => 'high']],
+            $store->listReasoningTransitions($sessionId, $modelRef),
+        );
+
+        $replayed = $transformHook->transformContext($history, null, $sessionId);
+        $this->assertSame('high', $replayed[1]->metadata[CodexReasoningTransitionMetadata::KEY] ?? null);
+        $payload = $this->normalize($replayed);
+        $this->assertSame('configuration_update', $payload['input'][1]['type']);
+        $this->assertSame('high', $payload['input'][1]['reasoning']['effort']);
+
+        $retry = $store->claimReasoningBaseline($sessionId, $modelRef, 'high');
+        $this->assertIsArray($retry);
+        $this->assertNull($retry['update']);
     }
 
     public function testMissingAnchorDegradesWithoutAdvancingLastEmitted(): void
