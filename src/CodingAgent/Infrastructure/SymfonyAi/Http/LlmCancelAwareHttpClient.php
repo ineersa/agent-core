@@ -28,8 +28,12 @@ final class LlmCancelAwareHttpClient implements HttpClientInterface
     /** @var \WeakMap<ResponseInterface, CancellationTokenInterface> */
     private \WeakMap $responseTokens;
 
+    /**
+     * @param array<string, mixed> $defaultOptions
+     */
     public function __construct(
         private readonly HttpClientInterface $inner,
+        private readonly array $defaultOptions = [],
     ) {
         $this->responseTokens = new \WeakMap();
     }
@@ -39,6 +43,7 @@ final class LlmCancelAwareHttpClient implements HttpClientInterface
      */
     public function request(string $method, string $url, array $options = []): ResponseInterface
     {
+        $options = array_merge($this->defaultOptions, $options);
         $userProgress = $options['on_progress'] ?? null;
         if (null !== $userProgress && !\is_callable($userProgress)) {
             throw new \InvalidArgumentException('HTTP option "on_progress" must be callable when provided.');
@@ -90,7 +95,10 @@ final class LlmCancelAwareHttpClient implements HttpClientInterface
      */
     public function withOptions(array $options): static
     {
-        return new self($this->inner->withOptions($options));
+        return new self(
+            $this->inner->withOptions($options),
+            array_merge($this->defaultOptions, $options),
+        );
     }
 
     private static function isCancelError(?string $error): bool
