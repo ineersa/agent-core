@@ -72,7 +72,10 @@ class HatfieldSession
     public ?string $reasoning = null;
 
     /** Fixed provider effort for the active model epoch; null until its first request.
-     * @var array{model: string, effort: string}|null */
+     * last_emitted tracks the last effort that was already represented on the wire
+     * so unchanged selections do not emit another configuration_update.
+     *
+     * @var array{model: string, effort: string, last_emitted?: string, transitions?: list<array{message_key: string, effort: string}>}|null */
     #[ORM\Column(name: 'reasoning_baseline', type: 'json', nullable: true)]
     public ?array $reasoningBaseline = null;
 
