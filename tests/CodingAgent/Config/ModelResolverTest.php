@@ -675,7 +675,7 @@ class ModelResolverTest extends TestCase
                 'llama_cpp' => [
                     'type' => 'generic',
                     'enabled' => true,
-                    'base_url' => 'http://192.168.2.38:8052/v1',
+                    'base_url' => 'http://10.0.0.89:8052/v1',
                     'models' => [
                         'flash' => [
                             'id' => 'flash',

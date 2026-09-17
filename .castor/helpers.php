@@ -2455,7 +2455,7 @@ function check_llm_generation_ready(?float $checkWallDeadline = null): void
         }
     }
 
-    $baseUrl = 'http://192.168.2.38:9052';
+    $baseUrl = 'http://10.0.0.89:9052';
     $model = 'test';
     $url = $baseUrl.'/v1/chat/completions';
     // Use a realistic smoke-test prompt with enough max_tokens to avoid

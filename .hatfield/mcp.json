@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "websearch": {
-      "url": "http://192.168.2.38:9001/sse",
+      "url": "http://10.0.0.89:9001/sse",
       "timeoutMs": 60000,
       "availability": "all"
     },
