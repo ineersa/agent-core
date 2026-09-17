@@ -10,7 +10,7 @@ namespace Ineersa\CodingAgent\Tool\CodeMode;
  * Warning duplication and Xdebug stacks are prevented at process start
  * (display_errors=0, xdebug.mode=off, log_errors=1). This helper only
  * normalizes script/bootstrap paths and renders labeled stream sections.
- * Size limits belong to host stream tails and ordinary OutputCap, not a
+ * Size limits belong to ordinary OutputCap, not a
  * separate diagnostics truncation marker.
  *
  * @internal
