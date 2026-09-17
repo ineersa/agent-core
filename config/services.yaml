@@ -1007,17 +1007,18 @@ services:
     tags:
       - { name: agent_core.tool_result_processor, priority: 0 }
 
-  # OutputCap must rewrite oversized tool text before Astra stamps durable
-  # reasoning-transition keys against the final LLM-facing history.
+  # Astra stamps durable MESSAGE_KEY values from original history text before
+  # OutputCap rewrites oversized tool text (saved-path filenames change on each
+  # retry). OutputCap preserves those keys when it rebuilds capped messages.
   Ineersa\CodingAgent\Tool\OutputCapLlmTransformHook:
     autoconfigure: false
     tags:
-      - { name: agent_core.transform_context_hook, priority: 100 }
+      - { name: agent_core.transform_context_hook, priority: 0 }
 
   Ineersa\CodingAgent\Agent\Execution\AstraReasoningTransitionTransformHook:
     autoconfigure: false
     tags:
-      - { name: agent_core.transform_context_hook, priority: 0 }
+      - { name: agent_core.transform_context_hook, priority: 100 }
 
   Ineersa\AgentCore\Application\Handler\ToolExecutor:
     factory: ['Ineersa\AgentCore\Application\Handler\ToolExecutor', 'fromSettings']

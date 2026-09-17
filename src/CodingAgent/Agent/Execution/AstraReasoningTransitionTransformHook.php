@@ -22,8 +22,9 @@ use Symfony\AI\Platform\Bridge\OpenAICodex\CodexReasoningTransitionMetadata;
  * after SessionAwareModelResolver decides an update is required. Compaction and
  * resume clear the session baseline so discarded switches are not kept.
  *
- * Runs after {@see \Ineersa\CodingAgent\Tool\OutputCapLlmTransformHook} so keys
- * and markers are assigned against the final LLM-facing text.
+ * Runs before {@see \Ineersa\CodingAgent\Tool\OutputCapLlmTransformHook} so
+ * durable MESSAGE_KEY values are derived from original history text and survive
+ * later LLM-facing rewrites (including OutputCap saved-path filenames).
  */
 final readonly class AstraReasoningTransitionTransformHook implements TransformContextHookInterface
 {
@@ -127,6 +128,11 @@ final readonly class AstraReasoningTransitionTransformHook implements TransformC
         }
 
         $message = $messages[$index];
+        $existing = $message->metadata[CodexReasoningTransitionMetadata::MESSAGE_KEY] ?? null;
+        if (\is_string($existing) && '' !== $existing) {
+            return $existing;
+        }
+
         $role = self::anchorRole($message);
         if (null === $role) {
             return null;

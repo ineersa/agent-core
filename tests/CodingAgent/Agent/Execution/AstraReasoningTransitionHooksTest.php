@@ -340,16 +340,23 @@ final class AstraReasoningTransitionHooksTest extends IsolatedKernelTestCase
             $outputCap,
             \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
         );
-        $cappedHistory = $capHook->transformContext($history, null, $sessionId);
-        $this->assertNotSame($oversized, $cappedHistory[1]->content[0]['text'] ?? null);
-
         $transformHook = $this->createTransformHook($store);
-        $marked = $transformHook->transformContext($cappedHistory, null, $sessionId);
-        $expectedKey = AstraReasoningTransitionTransformHook::messageKeyInHistory($cappedHistory, 1);
+        // Production order: Astra stamps immutable source keys first, then OutputCap
+        // rewrites oversized text (saved-path filenames differ on every retry).
+        $marked = $transformHook->transformContext($history, null, $sessionId);
+        $expectedKey = AstraReasoningTransitionTransformHook::messageKeyInHistory($history, 1);
         $this->assertNotNull($expectedKey);
         $this->assertSame($expectedKey, $marked[1]->metadata[CodexReasoningTransitionMetadata::MESSAGE_KEY] ?? null);
 
-        $bag = (new AgentMessageConverter())->toMessageBag($marked);
+        $firstPass = $capHook->transformContext($marked, null, $sessionId);
+        $this->assertNotSame($oversized, $firstPass[1]->content[0]['text'] ?? null);
+        $this->assertSame($expectedKey, $firstPass[1]->metadata[CodexReasoningTransitionMetadata::MESSAGE_KEY] ?? null);
+        $firstSavedPath = $firstPass[1]->metadata['model_notifications'][0]['metadata']['saved_path']
+            ?? $firstPass[1]->details['model_notifications'][0]['metadata']['saved_path']
+            ?? null;
+        $this->assertIsString($firstSavedPath);
+
+        $bag = (new AgentMessageConverter())->toMessageBag($firstPass);
         $requestHook = new AstraReasoningTransitionRequestHook($store);
         $requestHook->beforeProviderRequest(
             $modelRef,
@@ -366,8 +373,16 @@ final class AstraReasoningTransitionHooksTest extends IsolatedKernelTestCase
             $store->listReasoningTransitions($sessionId, $modelRef),
         );
 
-        $retryMarked = $transformHook->transformContext($cappedHistory, null, $sessionId);
-        $this->assertSame('high', $retryMarked[1]->metadata[CodexReasoningTransitionMetadata::KEY] ?? null);
+        // Retry invokeOnce re-runs transforms against the ORIGINAL oversized history.
+        $retryMarked = $transformHook->transformContext($history, null, $sessionId);
+        $retryCapped = $capHook->transformContext($retryMarked, null, $sessionId);
+        $secondSavedPath = $retryCapped[1]->metadata['model_notifications'][0]['metadata']['saved_path']
+            ?? $retryCapped[1]->details['model_notifications'][0]['metadata']['saved_path']
+            ?? null;
+        $this->assertIsString($secondSavedPath);
+        $this->assertNotSame($firstSavedPath, $secondSavedPath);
+        $this->assertSame($expectedKey, $retryCapped[1]->metadata[CodexReasoningTransitionMetadata::MESSAGE_KEY] ?? null);
+        $this->assertSame('high', $retryCapped[1]->metadata[CodexReasoningTransitionMetadata::KEY] ?? null);
         $retryDecision = $store->claimReasoningBaseline($sessionId, $modelRef, 'high');
         $this->assertIsArray($retryDecision);
         $this->assertNull($retryDecision['update']);

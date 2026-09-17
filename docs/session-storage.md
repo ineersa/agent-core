@@ -46,8 +46,9 @@ Table `hatfield_session` stores id, display name, timestamps, provider cache key
 The nullable `reasoning_baseline` JSON column stores the provider-qualified model
 and fixed effort for Astra reasoning updates, plus the last emitted effort and
 history-bound transition markers keyed by surviving request segments. The selected
-`reasoning` remains independent. Resume and successful compaction clear the
-baseline so discarded switches are not replayed; the next request establishes it
+`reasoning` remains independent. Resume, async compaction success, and hook
+replacement-summary compaction clear the baseline so discarded switches are not
+replayed; the next request establishes it
 from the current selection. Model changes also clear it. Worker recreation and
 socket reconnection do not clear it.
 
