@@ -41,8 +41,6 @@ final readonly class CodeModeHostBridge
     private const int DEFAULT_GRACE_SECONDS = 5;
     private const int POLL_INTERVAL_MICROS = 20_000;
     private const int MAX_UNIX_SOCKET_PATH_BYTES = 100;
-    private const int STDERR_TAIL_CHARS = 4000;
-    private const int STDOUT_TAIL_CHARS = 4000;
     private const int SCRIPT_WRAPPER_PREFIX_LINES = 3;
     private const string TOOLBOX_LOCATOR_KEY = 'toolbox';
 
@@ -71,17 +69,14 @@ final readonly class CodeModeHostBridge
             $process = null;
             $server = null;
             $connection = null;
-            $output = new \stdClass();
-            $output->stdout = '';
-            $output->stderr = '';
 
             try {
                 $this->writeScript($workspace['script'], $script);
                 $server = $this->createSocketServer($workspace['socket']);
                 $process = $this->startProcess($workspace, $cancelToken, $memoryLimit);
-                $connection = $this->acceptConnection($server, $process, $output, $cancelToken, $timeoutSeconds, $workspace['startedAtNs']);
+                $connection = $this->acceptConnection($server, $process, $cancelToken, $timeoutSeconds, $workspace['startedAtNs']);
 
-                return $this->serve($connection, $process, $output, $parentContext, $cancelToken, $timeoutSeconds, $workspace['startedAtNs']);
+                return $this->serve($connection, $process, $parentContext, $cancelToken, $timeoutSeconds, $workspace['startedAtNs']);
             } finally {
                 $this->stopProcess($process);
                 $this->closeResource($connection);
@@ -92,31 +87,29 @@ final readonly class CodeModeHostBridge
     }
 
     /**
-     * @param resource  $connection
-     * @param \stdClass $output
+     * @param resource $connection
      */
     private function serve(
         mixed $connection,
         Process $process,
-        object $output,
         ?ToolContext $parentContext,
         CancellationTokenInterface $cancelToken,
         ?int $timeoutSeconds,
         int $startedAtNs,
     ): mixed {
-        $waiter = function () use ($connection, $process, $output, $cancelToken, $timeoutSeconds, $startedAtNs): void {
-            $this->waitWhileBlocked($connection, $process, $output, $cancelToken, $timeoutSeconds, $startedAtNs);
+        $waiter = function () use ($connection, $process, $cancelToken, $timeoutSeconds, $startedAtNs): void {
+            $this->waitWhileBlocked($connection, $process, $cancelToken, $timeoutSeconds, $startedAtNs);
         };
 
         while (true) {
             $this->assertNotCancelledOrTimedOut($cancelToken, $timeoutSeconds, $startedAtNs);
-            $this->drainProcessOutput($process, $output);
+            $this->drainProcessOutput($process);
 
             if (!$this->waitForReadable($connection, $cancelToken, $timeoutSeconds, $startedAtNs)) {
-                $this->drainProcessOutput($process, $output);
+                $this->drainProcessOutput($process);
                 if (!$process->isRunning()) {
                     // No buffered bytes left after the child exited.
-                    throw $this->earlyExitException($process, $output);
+                    throw $this->earlyExitException($process);
                 }
 
                 continue;
@@ -124,15 +117,15 @@ final readonly class CodeModeHostBridge
 
             $frame = CodeModeIpc::read($connection, $waiter);
             if (null === $frame) {
-                $this->drainProcessOutput($process, $output);
+                $this->drainProcessOutput($process);
                 if (!$process->isRunning()) {
-                    throw $this->earlyExitException($process, $output);
+                    throw $this->earlyExitException($process);
                 }
 
                 // Socket EOF can race process death (for example OOM). Poll briefly
                 // so stderr can be drained into the early-exit path instead of a
                 // generic closed-connection message.
-                throw $this->connectionClosedException($process, $output, $cancelToken, $timeoutSeconds, $startedAtNs);
+                throw $this->connectionClosedException($process, $cancelToken, $timeoutSeconds, $startedAtNs);
             }
 
             $type = $frame['type'] ?? null;
@@ -142,7 +135,7 @@ final readonly class CodeModeHostBridge
             }
 
             if ('return' === $type) {
-                $this->drainProcessOutput($process, $output);
+                $this->drainProcessOutput($process);
                 if (($frame['ok'] ?? false) === true) {
                     try {
                         $result = CodeModeValueCodec::assertEncodable($frame['result'] ?? null, 'Code-mode script return value');
@@ -150,7 +143,7 @@ final readonly class CodeModeHostBridge
                         throw new ToolCallException(CodeModeDiagnostics::normalizePaths($exception->getMessage(), self::SCRIPT_WRAPPER_PREFIX_LINES), retryable: false, previous: $exception);
                     }
 
-                    return $this->packExecutionResult($result, $output);
+                    return $this->packExecutionResult($result, $process);
                 }
 
                 $message = \is_string($frame['error'] ?? null) ? $frame['error'] : 'Code-mode script failed.';
@@ -478,6 +471,7 @@ final readonly class CodeModeHostBridge
         $valueCodec = $this->materializeValueCodec($workspace['dir']);
         // Keep stderr for warnings/fatals, but suppress display_errors and Xdebug
         // stacks so each warning is not mirrored into stdout with a call stack.
+        // Symfony Process already buffers stdout/stderr on php://temp streams.
         $process = new Process(
             [
                 $this->phpCliBinary(),
@@ -500,8 +494,6 @@ final readonly class CodeModeHostBridge
         );
         $process->setTimeout(null);
         $process->setIdleTimeout(null);
-        // Keep stderr available for fatal tails. Drain/discard stdout while waiting
-        // so a chatty script cannot grow an unbounded host-side buffer.
 
         try {
             $process->start();
@@ -517,23 +509,16 @@ final readonly class CodeModeHostBridge
      *
      * @return resource
      */
-    /**
-     * @param resource  $server
-     * @param \stdClass $output
-     *
-     * @return resource
-     */
     private function acceptConnection(
         mixed $server,
         Process $process,
-        object $output,
         CancellationTokenInterface $cancelToken,
         ?int $timeoutSeconds,
         int $startedAtNs,
     ): mixed {
         while (true) {
             $this->assertNotCancelledOrTimedOut($cancelToken, $timeoutSeconds, $startedAtNs);
-            $this->drainProcessOutput($process, $output);
+            $this->drainProcessOutput($process);
             $connection = @stream_socket_accept($server, 0.0);
             if (false !== $connection) {
                 stream_set_blocking($connection, false);
@@ -545,7 +530,7 @@ final readonly class CodeModeHostBridge
             // connect, write its return frame, and exit while the connection is
             // still queued on the listening socket.
             if (!$process->isRunning()) {
-                $this->drainProcessOutput($process, $output);
+                $this->drainProcessOutput($process);
                 $connection = @stream_socket_accept($server, 0.0);
                 if (false !== $connection) {
                     stream_set_blocking($connection, false);
@@ -553,7 +538,7 @@ final readonly class CodeModeHostBridge
                     return $connection;
                 }
 
-                throw $this->earlyExitException($process, $output);
+                throw $this->earlyExitException($process);
             }
 
             usleep(self::POLL_INTERVAL_MICROS);
@@ -583,19 +568,17 @@ final readonly class CodeModeHostBridge
     }
 
     /**
-     * @param resource  $connection
-     * @param \stdClass $output
+     * @param resource $connection
      */
     private function waitWhileBlocked(
         mixed $connection,
         Process $process,
-        object $output,
         CancellationTokenInterface $cancelToken,
         ?int $timeoutSeconds,
         int $startedAtNs,
     ): void {
         $this->assertNotCancelledOrTimedOut($cancelToken, $timeoutSeconds, $startedAtNs);
-        $this->drainProcessOutput($process, $output);
+        $this->drainProcessOutput($process);
 
         $read = [$connection];
         $write = [$connection];
@@ -605,10 +588,10 @@ final readonly class CodeModeHostBridge
             throw new ToolCallException('Failed while waiting for code-mode IPC progress.', retryable: true);
         }
 
-        $this->drainProcessOutput($process, $output);
+        $this->drainProcessOutput($process);
         if (0 === $selected && !$process->isRunning()) {
             // Progress wait during an in-flight frame; peer death mid-frame is fatal.
-            throw $this->earlyExitException($process, $output);
+            throw $this->earlyExitException($process);
         }
     }
 
@@ -670,12 +653,8 @@ final readonly class CodeModeHostBridge
         return $remaining;
     }
 
-    /**
-     * @param \stdClass $output
-     */
     private function connectionClosedException(
         Process $process,
-        object $output,
         CancellationTokenInterface $cancelToken,
         int $timeoutSeconds,
         int $startedAtNs,
@@ -683,24 +662,21 @@ final readonly class CodeModeHostBridge
         $deadlineNs = hrtime(true) + 200_000_000;
         while ($process->isRunning() && hrtime(true) < $deadlineNs) {
             $this->assertNotCancelledOrTimedOut($cancelToken, $timeoutSeconds, $startedAtNs);
-            $this->drainProcessOutput($process, $output);
+            $this->drainProcessOutput($process);
             usleep(self::POLL_INTERVAL_MICROS);
         }
 
-        $this->drainProcessOutput($process, $output);
+        $this->drainProcessOutput($process);
         if (!$process->isRunning()) {
-            return $this->earlyExitException($process, $output);
+            return $this->earlyExitException($process);
         }
 
         return new ToolCallException('Code-mode script closed the host connection before returning a value.', retryable: false);
     }
 
-    /**
-     * @param \stdClass $output
-     */
-    private function earlyExitException(Process $process, object $output): ToolCallException
+    private function earlyExitException(Process $process): ToolCallException
     {
-        $this->drainProcessOutput($process, $output);
+        $this->drainProcessOutput($process);
 
         $exitCode = $process->getExitCode();
         $message = \sprintf(
@@ -709,8 +685,8 @@ final readonly class CodeModeHostBridge
         );
 
         $diagnostics = CodeModeDiagnostics::prepare(
-            (string) $output->stdout,
-            (string) $output->stderr,
+            $process->getOutput(),
+            $process->getErrorOutput(),
             self::SCRIPT_WRAPPER_PREFIX_LINES,
         );
 
@@ -720,55 +696,17 @@ final readonly class CodeModeHostBridge
         );
     }
 
-    /**
-     * @param \stdClass $output
-     */
-    private function drainProcessOutput(Process $process, object $output): void
+    private function drainProcessOutput(Process $process): void
     {
-        try {
-            $stdoutChunk = $process->getIncrementalOutput();
-            if ('' === $stdoutChunk && !$process->isRunning()) {
-                $full = $process->getOutput();
-                if (\strlen($full) > \strlen($output->stdout)) {
-                    $stdoutChunk = substr($full, \strlen($output->stdout));
-                }
-            }
-
-            $stderrChunk = $process->getIncrementalErrorOutput();
-            if ('' === $stderrChunk && !$process->isRunning()) {
-                // Final drain: Incremental can miss already-buffered stderr after exit.
-                $full = $process->getErrorOutput();
-                if (\strlen($full) > \strlen($output->stderr)) {
-                    $stderrChunk = substr($full, \strlen($output->stderr));
-                }
-            }
-        } catch (\Symfony\Component\Process\Exception\LogicException) {
-            return;
-        }
-
-        if ('' !== $stdoutChunk) {
-            $output->stdout .= $stdoutChunk;
-            if (\strlen($output->stdout) > self::STDOUT_TAIL_CHARS) {
-                $output->stdout = substr($output->stdout, -self::STDOUT_TAIL_CHARS);
-            }
-        }
-
-        if ('' !== $stderrChunk) {
-            $output->stderr .= $stderrChunk;
-            if (\strlen($output->stderr) > self::STDERR_TAIL_CHARS) {
-                $output->stderr = substr($output->stderr, -self::STDERR_TAIL_CHARS);
-            }
-        }
+        // Pump Process pipes into its php://temp stdout/stderr buffers.
+        $process->isRunning();
     }
 
-    /**
-     * @param \stdClass $output
-     */
-    private function packExecutionResult(mixed $result, object $output): mixed
+    private function packExecutionResult(mixed $result, Process $process): mixed
     {
         $diagnostics = CodeModeDiagnostics::prepare(
-            (string) $output->stdout,
-            (string) $output->stderr,
+            $process->getOutput(),
+            $process->getErrorOutput(),
             self::SCRIPT_WRAPPER_PREFIX_LINES,
         );
 
