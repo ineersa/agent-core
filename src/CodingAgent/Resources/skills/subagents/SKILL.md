@@ -55,7 +55,7 @@ Directories are scanned non-recursively for `*.md`. Parent sessions inject **`<a
 ## Child safety (always enforced)
 
 - **`subagent`, `fork`, and `agent_resume` are never available inside child runs** (hard strip after tool/MCP merge).
-- **`agents.subagent_excluded_tools`** (default: `settings`, `hatfield_docs`) is stripped from every child, inherit-all and explicit lists.
+- **`agents.subagent_excluded_tools`** (default: `hatfield_docs`) is stripped from every child, inherit-all and explicit lists.
 - Child extensions: effective allowlist = `agents.extensions.always_on` ∪ frontmatter `extensions`. Default `always_on` is **SafeGuard**. Omitted frontmatter `extensions` means **only always_on** — children do **not** inherit optional entries from global `extensions.enabled`.
 - Nested launch is also blocked when parent `session.kind` is `agent_child`.
 - Foreground only: the tool blocks until all children finish. Background launch is not implemented. Every valid discovered definition is launchable; remove one by deleting/moving its file (frontmatter `disabled` is rejected as unknown).

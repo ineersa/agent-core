@@ -74,7 +74,7 @@ hatfield agents:init
 - **Single mode:** `agent` + `task` blocks until the child finishes. Success returns the full handoff inline unless the response exceeds 50,000 characters.
 - **Parallel mode:** `tasks` list — up to `agents.max_agents` children; results are bounded summaries.
 - Responses over 50,000 characters omit inline handoffs and return a notice with artifact references. The full handoffs remain available through `agent_retrieve`.
-- Default child denylist includes `settings` and `hatfield_docs` (`agents.subagent_excluded_tools`). Empty list disables the denylist.
+- Default child denylist includes `hatfield_docs` (`agents.subagent_excluded_tools`). Empty list disables the denylist.
 - **Always stripped on every child:** `subagent`, `fork`, and `agent_resume` (no nested child launches/resumes).
 - Durable timeout: `agents.subagent_tool_timeout_seconds` (default `86400`, min `60`) schedules deferred-batch interruption. This is not a generic ToolExecutor cap.
 - Child extensions: `agents.extensions.always_on` ∪ per-agent frontmatter `extensions` only (does **not** use `forks.extensions.*` or parent `extensions.enabled`).

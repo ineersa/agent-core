@@ -320,7 +320,7 @@ class AppConfigTest extends TestCase
                 'enabled' => false,
                 'max_agents' => 6,
                 'paths' => ['custom'],
-                'subagent_excluded_tools' => ['settings'],
+                'subagent_excluded_tools' => ['bash'],
             ],
             'forks' => ['model' => 'deepseek/deepseek-v4-pro', 'thinking_level' => 'high'],
         ]);
@@ -333,7 +333,7 @@ class AppConfigTest extends TestCase
         $this->assertSame(6, $config->agents->maxAgents);
         $this->assertCount(1, $config->agents->paths);
         $this->assertStringEndsWith('custom', $config->agents->paths[0]);
-        $this->assertSame(['settings'], $config->agents->subagentExcludedTools);
+        $this->assertSame(['bash'], $config->agents->subagentExcludedTools);
         $this->assertSame('deepseek/deepseek-v4-pro', $config->forks->model);
         $this->assertSame('high', $config->forks->thinkingLevel);
     }

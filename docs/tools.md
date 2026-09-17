@@ -21,7 +21,6 @@ servers. Tool availability does not bypass approval policy.
 | `bg_status` | List, inspect logs, or stop accepted background processes | Session-scoped. Does not expose private foreground supervision. |
 | `ask_human` | Ask for text, confirmation, or a choice | Waits for a human response. Cancellation is not approval. |
 | `code_mode` | Run a PHP script that calls other tools through `tool(name, arguments)` | Disabled by default (`tools.code_mode.enabled`). Raw PHP bypasses toolbox hooks. Checkout/PHAR reuse the launching PHP CLI; fused native builds need `php` on PATH. |
-| `settings` | Read effective settings, set overrides, or remove overrides | Mutations specify user or project scope and pass approval checks. |
 | `hatfield_docs` | List and read packaged Hatfield documentation | Does not automatically discover extension-package READMEs. |
 | `subagent` | Launch a named child agent, singly or in parallel | Uses discovered agent definitions and child tool policy. |
 | `agent_resume` | Continue an existing child or fork with a follow-up task | Artifacts must belong to the current parent session. |

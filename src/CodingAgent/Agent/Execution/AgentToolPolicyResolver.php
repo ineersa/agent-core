@@ -54,7 +54,7 @@ final readonly class AgentToolPolicyResolver
             static fn (string $name): bool => 'subagent' !== $name && 'fork' !== $name && 'agent_resume' !== $name,
         ));
 
-        // Parent-only tools (settings, hatfield_docs, …) are stripped for every child,
+        // Parent-only tools (hatfield_docs, …) are stripped for every child,
         // whether the definition omitted tools (inherit-all) or requested them explicitly.
         $excluded = $this->agentsConfig->subagentExcludedTools;
         if ([] !== $excluded) {

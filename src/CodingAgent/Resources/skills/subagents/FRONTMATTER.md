@@ -13,7 +13,7 @@ Markdown file with YAML frontmatter + instruction body. Unknown keys are rejecte
 
 | Field | Default | Notes |
 | --- | --- | --- |
-| `tools` | inherit parent non-MCP + global MCP when omitted | Child launch resolves the active tool registry, then always strips `subagent` and `fork`, then applies `agents.subagent_excluded_tools` (default `settings`, `hatfield_docs`). Explicit non-empty allowlist recommended for restricted agents. YAML list preferred; comma-separated string is normalized. |
+| `tools` | inherit parent non-MCP + global MCP when omitted | Child launch resolves the active tool registry, then always strips `subagent` and `fork`, then applies `agents.subagent_excluded_tools` (default `hatfield_docs`). Explicit non-empty allowlist recommended for restricted agents. YAML list preferred; comma-separated string is normalized. |
 
 Invalid explicit values: empty list `tools: []`, blank entries, or whitespace-only comma strings.
 

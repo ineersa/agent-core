@@ -903,10 +903,6 @@ services:
     arguments:
       $denormalizer: '@serializer'
 
-  Ineersa\CodingAgent\Tool\SettingsTool:
-    arguments:
-      $serializer: '@serializer'
-
   Symfony\AI\Agent\Toolbox\ToolCallArgumentResolverInterface:
     alias: Ineersa\CodingAgent\Tool\RawAwareToolCallArgumentResolver
 

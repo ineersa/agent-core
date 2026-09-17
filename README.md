@@ -120,14 +120,11 @@ configured through provider setup or [model settings](docs/settings-models.md).
 
 ## Make it fit your workflow
 
-Ask Hatfield to change its settings in plain language. Its `settings` tool can read,
-set, or remove user and project overrides. Specify which scope you want to change,
-then use `/settings-show` to check the current settings.
-
-User settings live in `~/.hatfield/settings.yaml`. Repository settings live in
-`.hatfield/settings.yaml` and override user settings. Keep overrides small rather
-than copying the defaults. Put credentials in user settings or reference environment
-variables with `env:NAME`.
+Edit user settings in `~/.hatfield/settings.yaml` and project settings in
+`.hatfield/settings.yaml`. Project settings override user settings. Keep overrides
+small rather than copying the defaults. Put credentials in user settings or reference
+environment variables with `env:NAME`. Use `/settings-show` to inspect the effective
+configuration.
 
 Add [MCP servers](docs/mcp.md) for external tools, [skills](docs/skills.md) for reusable
 instructions, and [prompt templates](docs/prompt-templates.md) for repeated tasks.
