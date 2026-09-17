@@ -141,7 +141,13 @@ final readonly class ExecuteLlmStepWorker
             $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
 
             $hasStreamDeltas = [] !== $response->deltas();
-            if (null === $assistantMessage && !$hasStreamDeltas && null === $response->error) {
+            $isAborted = 'aborted' === $response->stopReason;
+            if (
+                !$isAborted
+                && null === $assistantMessage
+                && !$hasStreamDeltas
+                && null === $response->error
+            ) {
                 $response = new PlatformInvocationResult(
                     assistantMessage: null,
                     deltas: $response->deltas,
@@ -161,7 +167,15 @@ final readonly class ExecuteLlmStepWorker
                 $assistantMessage = null;
             }
 
-            if (null !== $response->error) {
+            if ($isAborted) {
+                $this->logger->info('llm.request.cancelled', [
+                    'duration_ms' => round($durationMs, 3),
+                    'event_type' => 'llm.request.cancelled',
+                    'model' => $response->model,
+                    'reasoning' => $response->reasoning,
+                    'stop_reason' => 'aborted',
+                ]);
+            } elseif (null !== $response->error) {
                 $logCtx = [
                     'duration_ms' => round($durationMs, 3),
                     'event_type' => 'llm.request.failed',

@@ -135,6 +135,51 @@ final class ExecuteLlmStepWorkerTest extends TestCase
         $this->assertCount(0, $retryLogs, 'No thinking-only retry on provider error.');
     }
 
+    public function testZeroDeltaAbortedResultPreservesShapeAndLogsCancellation(): void
+    {
+        $aborted = new PlatformInvocationResult(
+            assistantMessage: null,
+            deltas: [],
+            usage: [],
+            stopReason: 'aborted',
+            error: null,
+            model: 'fake/model',
+            reasoning: 'low',
+        );
+
+        $platform = $this->createAlternatingPlatform([$aborted]);
+        $testBus = new TestMessageBus();
+        $testLogger = new TestLogger();
+        $worker = new ExecuteLlmStepWorker($platform, $testBus, logger: $testLogger);
+
+        $worker(new ExecuteLlmStep(
+            runId: 'run-aborted-silence',
+            turnNo: 1,
+            stepId: 'step-aborted-silence',
+            attempt: 1,
+            idempotencyKey: 'key-aborted-silence',
+            toolsRef: 'tools-aborted-silence',
+        ));
+
+        $this->assertCount(1, $testBus->messages);
+        /** @var LlmStepResult $result */
+        $result = $testBus->messages[0];
+        $this->assertSame('aborted', $result->stopReason);
+        $this->assertNull($result->error);
+        $this->assertNull($result->assistantMessage);
+        $this->assertSame('fake/model', $result->model);
+
+        $cancelledLogs = $this->filterLogsByEventType($testLogger, 'llm.request.cancelled');
+        $this->assertCount(1, $cancelledLogs);
+        $this->assertSame('llm.request.cancelled', $cancelledLogs[0]['message']);
+
+        $failedLogs = $this->filterLogsByEventType($testLogger, 'llm.request.failed');
+        $this->assertCount(0, $failedLogs, 'Aborted silence must not be logged as provider failure.');
+
+        $completedLogs = $this->filterLogsByEventType($testLogger, 'llm.request.completed');
+        $this->assertCount(0, $completedLogs, 'Aborted silence must not be logged as completion.');
+    }
+
     public function testCommandBusDispatchFailureIsUnrecoverable(): void
     {
         $ok = new PlatformInvocationResult(

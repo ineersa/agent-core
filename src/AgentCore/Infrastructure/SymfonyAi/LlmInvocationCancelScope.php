@@ -11,6 +11,10 @@ use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
  *
  * Distinct from {@see \Ineersa\AgentCore\Infrastructure\RunLogContext}: this is
  * not logging correlation and must never be merged into log records.
+ *
+ * Outside any Fiber, the default stack is process-global. Keep at most one
+ * outside-fiber LLM invocation active per process; concurrent workers must
+ * run inside distinct Fibers so their stacks stay isolated.
  */
 final class LlmInvocationCancelScope
 {
