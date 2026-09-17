@@ -511,21 +511,48 @@ PHP);
         $this->assertStringNotContainsString('Call Stack', $stderr);
     }
 
-    public function testHugeStdoutDiagnosticsAreBoundedBeforeReturn(): void
+    public function testHugeStdoutPreservesHeadAndTailThroughHostCapture(): void
     {
         $bridge = $this->bridge();
-        $result = $this->runScript($bridge, 'echo str_repeat("X", 60000); return "tiny";');
+        // Host regression: >50k stdout must keep unique head and tail markers.
+        // Lower layers cannot prove Symfony Process capture without a real subprocess.
+        $result = $this->runScript(
+            $bridge,
+            'echo "HEAD-MARKER-".str_repeat("X", 60000)."TAIL-MARKER"; return "tiny";',
+        );
         $this->assertInstanceOf(\Ineersa\CodingAgent\Tool\CodeMode\CodeModeExecutionResult::class, $result);
         $this->assertSame('tiny', $result->result);
         $stdout = $result->diagnostics['stdout'] ?? '';
         $this->assertNotSame('', $stdout);
-        $this->assertLessThanOrEqual(4000, \strlen($stdout));
+        $this->assertGreaterThan(50_000, \strlen($stdout));
+        $this->assertStringStartsWith('HEAD-MARKER-', $stdout);
+        $this->assertStringEndsWith('TAIL-MARKER', $stdout);
+        $this->assertStringContainsString(str_repeat('X', 60_000), $stdout);
 
-        // Measured: stream capture already tails to 4000. The rendered model-
-        // facing block still needs the hard bound because of headers.
         $block = \Ineersa\CodingAgent\Tool\CodeMode\CodeModeDiagnostics::renderBlock($result->diagnostics);
-        $this->assertLessThanOrEqual(4000, \strlen($block));
-        $this->assertStringContainsString('...[code_mode diagnostics truncated]', $block);
+        $this->assertStringStartsWith("code_mode diagnostics\nstdout:\n", $block);
+        $this->assertStringNotContainsString('diagnostics truncated', $block);
+        $this->assertSame(\strlen($stdout), \strlen($block) - \strlen("code_mode diagnostics\nstdout:\n"));
+    }
+
+    public function testHugeStdoutEarlyExitPreservesHeadAndTailMarkers(): void
+    {
+        $bridge = $this->bridge();
+
+        try {
+            $this->runScript(
+                $bridge,
+                'echo "ERR-HEAD-".str_repeat("Y", 60000)."ERR-TAIL"; exit(0);',
+            );
+            $this->fail('Expected ToolCallException for early exit without return');
+        } catch (ToolCallException $exception) {
+            $message = $exception->getMessage();
+            $this->assertStringContainsString('exited without returning a value', $message);
+            $this->assertStringContainsString('ERR-HEAD-', $message);
+            $this->assertStringContainsString('ERR-TAIL', $message);
+            $this->assertStringContainsString(str_repeat('Y', 60_000), $message);
+            $this->assertStringNotContainsString('diagnostics truncated', $message);
+        }
     }
 
     public function testTypeErrorUsesNormalizedScriptPath(): void

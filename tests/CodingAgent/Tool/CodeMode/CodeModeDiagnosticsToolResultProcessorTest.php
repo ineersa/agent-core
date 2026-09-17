@@ -206,6 +206,38 @@ final class CodeModeDiagnosticsToolResultProcessorTest extends TestCase
         $this->assertContains('output_capped', $kinds);
     }
 
+    public function testErrorPathLargeDiagnosticsUseDocumentCap(): void
+    {
+        // Early-exit failures already embed prepared stdout/stderr in content.
+        // The diagnostics processor leaves isError results alone; OutputCap owns size.
+        $capCfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 20000, docCap: 50000);
+        $capProcessor = new OutputCapToolResultProcessor(
+            new OutputCap($capCfg, new LockFactory(new FlockStore($this->tmpDir)), new NullLogger()),
+            AttributeSerializerValidatorTestFactory::denormalizer(),
+        );
+        $message = "Code-mode PHP subprocess exited without returning a value (exit code 0).\nstdout:\n".str_repeat('E', 60_000);
+        $toolCall = $this->toolCall('call-err-cap', ['script' => 'exit(0);']);
+        $result = new ToolResult(
+            toolCallId: 'call-err-cap',
+            toolName: CodeModeTool::NAME,
+            content: [['type' => 'text', 'text' => $message]],
+            details: ['denied' => false],
+            isError: true,
+        );
+
+        $afterDiagnostics = $this->processor()->process($result, $toolCall);
+        $this->assertSame($result, $afterDiagnostics);
+
+        $afterCap = $capProcessor->process($afterDiagnostics, $toolCall);
+        $this->assertSame(CodeModeTool::NAME.' failed', $afterCap->content[0]['text'] ?? null);
+        $details = \is_array($afterCap->details) ? $afterCap->details : [];
+        $this->assertSame(50000, $details['output_cap']['cap'] ?? null);
+        $savedPath = (string) ($details['output_cap']['saved_path'] ?? '');
+        $this->assertFileExists($savedPath);
+        $this->assertStringContainsString(str_repeat('E', 60_000), (string) file_get_contents($savedPath));
+        $this->assertStringNotContainsString('diagnostics truncated', (string) file_get_contents($savedPath));
+    }
+
     public function testIgnoresOtherTools(): void
     {
         $processor = $this->processor();

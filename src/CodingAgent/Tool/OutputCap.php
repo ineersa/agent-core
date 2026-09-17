@@ -35,7 +35,7 @@ final class OutputCap
      *
      * @var list<string>
      */
-    private const array DOCUMENT_REPORT_TOOL_NAMES = ['fork', 'subagent', 'agent_resume', 'agent_retrieve'];
+    private const array DOCUMENT_REPORT_TOOL_NAMES = ['fork', 'subagent', 'agent_resume', 'agent_retrieve', 'code_mode'];
 
     private bool $cleanedUp = false;
 
@@ -82,8 +82,9 @@ final class OutputCap
 
     /**
      * Cap-selection precedence: a real path argument, then synthetic paths for
-     * successful document outputs, otherwise the default cap. Errors intentionally
-     * stay at the default cap because they are status envelopes rather than documents.
+     * document-report tools (including code_mode success and error text), otherwise
+     * the default cap. Other tools' errors intentionally stay at the default cap
+     * because they are status envelopes rather than documents.
      * Synthetic paths affect cap selection only and are never persisted or exposed.
      *
      * @param array<string, mixed> $arguments
@@ -95,7 +96,7 @@ final class OutputCap
             return $path;
         }
 
-        if ($isError) {
+        if ($isError && 'code_mode' !== $toolName) {
             return null;
         }
 
