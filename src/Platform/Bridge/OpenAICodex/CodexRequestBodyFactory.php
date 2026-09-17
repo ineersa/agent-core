@@ -40,23 +40,14 @@ final class CodexRequestBodyFactory
         // Payload also wins over the injected model key when both set a field.
         $jsonBody = array_merge($options, ['model' => $model->getName()], $payload);
 
-        $effort = $jsonBody[self::REASONING_UPDATE] ?? null;
-        unset($jsonBody[self::REASONING_UPDATE], $jsonBody[self::REASONING_RESET]);
-        if ('gpt-6-astra' === $model->getName() && \is_string($effort)) {
-            $input = $jsonBody['input'] ?? [];
-            // Only harness-authored updates belong in outgoing input.
-            $input = array_values(array_filter($input, static fn (array $item): bool => 'configuration_update' !== ($item['type'] ?? null)));
-            $offset = \count($input);
-            // Keep the historical prefix unchanged. Insert before new user/tool input.
-            while ($offset > 0 && ('user' === ($input[$offset - 1]['role'] ?? null)
-                || 'function_call_output' === ($input[$offset - 1]['type'] ?? null))) {
-                --$offset;
-            }
-            if ($offset < \count($input)) {
-                array_splice($input, $offset, 0, [['type' => 'configuration_update', 'reasoning' => ['effort' => $effort]]]);
-            }
-            $jsonBody['input'] = $input;
-        }
+        // History-bound updates are authored by CodexMessageBagNormalizer.
+        // Keep internal control keys off the wire.
+        unset(
+            $jsonBody[self::REASONING_UPDATE],
+            $jsonBody[self::REASONING_RESET],
+            $jsonBody['hatfield_run_id'],
+            $jsonBody['hatfield_model_ref'],
+        );
 
         // Empty prompt_cache_key in the payload must not erase a resolved options value.
         if (\array_key_exists('prompt_cache_key', $jsonBody)

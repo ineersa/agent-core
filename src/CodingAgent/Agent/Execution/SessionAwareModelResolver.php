@@ -106,8 +106,10 @@ final class SessionAwareModelResolver implements ModelResolverInterface
                 $effort = $reasoningOptions['reasoning']['effort'];
                 $baseline = $this->sessionMetadataStore->claimReasoningBaseline($sessionId, $modelRef->toString(), $effort);
                 if (null !== $baseline) {
-                    $reasoningOptions['reasoning']['effort'] = $baseline;
-                    $reasoningOptions[CodexRequestBodyFactory::REASONING_UPDATE] = $effort;
+                    $reasoningOptions['reasoning']['effort'] = $baseline['baseline'];
+                    if (\is_string($baseline['update'] ?? null) && '' !== $baseline['update']) {
+                        $reasoningOptions[CodexRequestBodyFactory::REASONING_UPDATE] = $baseline['update'];
+                    }
                 } else {
                     $reasoningOptions[CodexRequestBodyFactory::REASONING_RESET] = true;
                 }
@@ -122,7 +124,11 @@ final class SessionAwareModelResolver implements ModelResolverInterface
                 model: $modelRef->toString(),
                 providerId: $modelRef->providerId,
                 reasoning: $reasoning,
-                providerOptions: $this->resolveProviderOptions($modelRef, $sessionId),
+                providerOptions: $this->withInternalInvocationOptions(
+                    $this->resolveProviderOptions($modelRef, $sessionId),
+                    $sessionId,
+                    $modelRef,
+                ),
                 compatFeatures: $compatFeatures,
                 reasoningOptions: $reasoningOptions,
             );
@@ -172,6 +178,21 @@ final class SessionAwareModelResolver implements ModelResolverInterface
         }
 
         return ['prompt_cache_key' => $providerCacheKey];
+    }
+
+    /**
+     * @param array<string, mixed> $providerOptions
+     *
+     * @return array<string, mixed>
+     */
+    private function withInternalInvocationOptions(array $providerOptions, string $sessionId, AiModelReference $modelRef): array
+    {
+        if ('' !== $sessionId) {
+            $providerOptions['hatfield_run_id'] = $sessionId;
+        }
+        $providerOptions['hatfield_model_ref'] = $modelRef->toString();
+
+        return $providerOptions;
     }
 
     /**
