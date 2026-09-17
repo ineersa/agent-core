@@ -72,7 +72,6 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
         private SafeGuardPolicy $policy,
         private string $cwd,
         private bool $autoDenyInNoninteractive = true,
-        private string $settingsToolName = 'settings',
     ) {
     }
 
@@ -103,8 +102,6 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
         //   can display the question and relay answers.
         // - Headless/worker contexts without the env var auto-block (fail-closed),
         //   unless the operator has explicitly set auto_deny_in_noninteractive=false.
-        // - Settings set/remove always fail closed without an approval channel,
-        //   regardless of auto_deny_in_noninteractive (no silent config writes).
         if ($this->isRelaxable($decision->kind)) {
             if ($this->shouldAutoDenyRelaxable($context)) {
                 return ToolCallDecisionDTO::block(
@@ -123,15 +120,13 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
                 );
             }
 
-            $settingsMutation = $this->isSettingsMutation($context);
-
             // Stable per exact call: run_id + tool_call_id (no tracker operation key).
             $questionId = \sprintf(
                 'sg_%s',
                 hash('sha256', \sprintf('%s|%s', $context->runId ?? '', $context->toolCallId)),
             );
 
-            $categoryLabel = $settingsMutation ? 'settings mutation' : $this->friendlyCategory($decision->kind);
+            $categoryLabel = $this->friendlyCategory($decision->kind);
 
             return ToolCallDecisionDTO::requireApproval(
                 prompt: $this->approvalPrompt($categoryLabel, $decision, $context),
@@ -226,11 +221,9 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
             return $prompt;
         }
 
-        $label = $this->isSettingsMutation($context)
-            ? 'Operation'
-            : (null !== $this->extractCommand($context)
-                ? 'Command'
-                : (null !== $this->extractPath($context) ? 'Path' : 'Operation'));
+        $label = null !== $this->extractCommand($context)
+            ? 'Command'
+            : (null !== $this->extractPath($context) ? 'Path' : 'Operation');
         $input = $decision->triggerInput;
         $markdown = '';
         $cursor = 0;
@@ -337,11 +330,6 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
      */
     private function shouldAutoDenyRelaxable(ToolCallContextDTO $context): bool
     {
-        // Settings mutations always require a live approval channel.
-        if ($this->isSettingsMutation($context)) {
-            return !$this->hasApprovalChannel();
-        }
-
         if (!$this->autoDenyInNoninteractive) {
             return false;
         }
@@ -351,17 +339,6 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
         }
 
         return !$this->hasApprovalChannel();
-    }
-
-    private function isSettingsMutation(ToolCallContextDTO $context): bool
-    {
-        if ($context->toolName !== $this->settingsToolName) {
-            return false;
-        }
-
-        $operation = $context->arguments['operation'] ?? null;
-
-        return \is_string($operation) && \in_array($operation, ['set', 'remove'], true);
     }
 
     /**

@@ -286,7 +286,6 @@ extensions:
                 write: write
                 edit: edit
                 read: read
-                settings: settings
 
             # Command substrings that bypass destructive/dangerous checks.
             allow_command_patterns: []
@@ -387,7 +386,6 @@ agents:
     # Tool names always excluded from child/subagent runs (inherit-all and explicit lists).
     # Empty list disables the denylist. Parent agent tools are unaffected.
     subagent_excluded_tools:
-        - settings
         - hatfield_docs
 
     # Child-run extension selection for subagents.
