@@ -180,7 +180,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
                         stopReason: 'aborted',
                         error: null,
                         model: $effectiveModel,
-                        reasoning: (string) ($requestSummary['reasoning'] ?? ''),
+                        reasoning: $requestSummary['reasoning'],
                         modelNotifications: $modelNotifications,
                         availableTools: $availableToolsSnapshot['tools'],
                         availableToolsSchemaTokensEstimate: $availableToolsSnapshot['schema_tokens_estimate'],
