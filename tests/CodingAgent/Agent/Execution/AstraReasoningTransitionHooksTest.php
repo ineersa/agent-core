@@ -5,6 +5,12 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Agent\Execution;
 
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
+use Ineersa\AgentCore\Domain\Model\ResolvedModel;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderRequestPreparer;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ReasoningContentFeatureShaper;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ReasoningOptionsFeatureShaper;
 use Ineersa\CodingAgent\Agent\Execution\AstraReasoningTransitionRequestHook;
 use Ineersa\CodingAgent\Agent\Execution\AstraReasoningTransitionTransformHook;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
@@ -56,18 +62,81 @@ final class AstraReasoningTransitionHooksTest extends IsolatedKernelTestCase
         parent::tearDown();
     }
 
-    public function testContainerWiresHooks(): void
+    public function testContainerTaggedHooksExecuteThroughPreparerAndPreserveMarkersAcrossCompatConversion(): void
     {
         $container = static::getContainer();
+        /** @var HatfieldSessionStore $store */
+        $store = $container->get(HatfieldSessionStore::class);
+        $sessionId = $this->createSession($store, 'openai-codex/gpt-6-astra', 'medium');
+        $modelRef = 'openai-codex/gpt-6-astra';
 
-        $this->assertInstanceOf(
-            AstraReasoningTransitionRequestHook::class,
-            $container->get(AstraReasoningTransitionRequestHook::class),
+        $this->assertNull($store->claimReasoningBaseline($sessionId, $modelRef, 'medium'));
+        $decision = $store->claimReasoningBaseline($sessionId, $modelRef, 'high');
+        $this->assertSame('high', $decision['update'] ?? null);
+
+        $history = [
+            new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'first']]),
+            new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'second']]),
+        ];
+        $messageKey = AstraReasoningTransitionTransformHook::messageKeyInHistory($history, 1);
+        $this->assertNotNull($messageKey);
+        $store->rememberReasoningTransition($sessionId, $modelRef, $messageKey, 'high');
+
+        /** @var AstraReasoningTransitionTransformHook $transformHook */
+        $transformHook = $container->get(AstraReasoningTransitionTransformHook::class);
+        $marked = $transformHook->transformContext($history, null, $sessionId);
+        $this->assertSame('high', $marked[1]->metadata[CodexReasoningTransitionMetadata::KEY] ?? null);
+
+        $bag = (new AgentMessageConverter())->toMessageBagForTarget($marked, $modelRef);
+        $this->assertSame(
+            'high',
+            $bag->withoutSystemMessage()->getMessages()[1]->getMetadata()->get(CodexReasoningTransitionMetadata::KEY),
         );
-        $this->assertInstanceOf(
-            AstraReasoningTransitionTransformHook::class,
-            $container->get(AstraReasoningTransitionTransformHook::class),
+
+        $resolved = new ResolvedModel(
+            model: $modelRef,
+            providerId: 'openai-codex',
+            reasoning: 'high',
+            providerOptions: [],
+            compatFeatures: [
+                ReasoningOptionsFeatureShaper::FEATURE,
+                ReasoningContentFeatureShaper::FEATURE,
+            ],
+            reasoningOptions: [
+                'reasoning' => ['effort' => 'medium', 'summary' => 'auto'],
+                CodexRequestBodyFactory::REASONING_UPDATE => 'low',
+                'hatfield_run_id' => $sessionId,
+                'hatfield_model_ref' => $modelRef,
+            ],
         );
+
+        /** @var ProviderRequestPreparer $preparer */
+        $preparer = $container->get(ProviderRequestPreparer::class);
+        $prepared = $preparer->prepare(
+            $resolved,
+            $bag,
+            array_replace($resolved->providerOptions, $resolved->reasoningOptions),
+            new ModelInvocationInput(runId: $sessionId, messages: $marked),
+            null,
+        );
+
+        $this->assertInstanceOf(MessageBag::class, $prepared['input']);
+        $preparedMessages = $prepared['input']->withoutSystemMessage()->getMessages();
+        $this->assertSame('low', $preparedMessages[1]->getMetadata()->get(CodexReasoningTransitionMetadata::KEY));
+        $this->assertSame('low', $prepared['options'][CodexRequestBodyFactory::REASONING_UPDATE] ?? null);
+        $this->assertSame($sessionId, $prepared['options']['hatfield_run_id'] ?? null);
+
+        $transitions = $store->listReasoningTransitions($sessionId, $modelRef);
+        $this->assertNotSame([], $transitions);
+        $this->assertSame('low', $transitions[array_key_last($transitions)]['effort']);
+
+        $payload = CodexContract::create()->createRequestPayload(
+            new CodexModel('gpt-6-astra'),
+            $prepared['input'],
+            [],
+        );
+        $this->assertSame('configuration_update', $payload['input'][1]['type']);
+        $this->assertSame('low', $payload['input'][1]['reasoning']['effort']);
     }
 
     public function testUnchangedEffortDoesNotStampWhileChangeAndReturnReplayStablePrefix(): void
@@ -197,6 +266,35 @@ final class AstraReasoningTransitionHooksTest extends IsolatedKernelTestCase
         $key0 = AstraReasoningTransitionTransformHook::messageKeyInHistory($messages, 0);
         $key1 = AstraReasoningTransitionTransformHook::messageKeyInHistory($messages, 1);
         $this->assertNotSame($key0, $key1);
+    }
+
+    protected static function configureIsolatedProjectBeforeKernelBoot(string $classCwd): void
+    {
+        file_put_contents($classCwd.'/.hatfield/settings.yaml', <<<'YAML'
+ai:
+    default_model: openai-codex/gpt-6-astra
+    default_reasoning: medium
+    providers:
+        openai-codex:
+            type: codex
+            enabled: true
+            models:
+                gpt-6-astra:
+                    id: gpt-6-astra
+                    name: Astra
+                    context_window: 200000
+                    max_tokens: 65536
+                    input: [text]
+                    tool_calling: true
+                    reasoning: true
+                    reasoning_levels: [low, medium, high]
+                    thinking_level_map:
+                        low: low
+                        medium: medium
+                        high: high
+                    compatibility:
+                        supports_reasoning_configuration_updates: true
+YAML);
     }
 
     /**

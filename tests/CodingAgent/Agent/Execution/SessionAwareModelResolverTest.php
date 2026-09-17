@@ -73,7 +73,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
         $this->assertSame('llama_cpp/flash', $result->model);
         $this->assertSame('llama_cpp', $result->providerId);
         $this->assertSame('medium', $result->reasoning);
-        $this->assertSame(['hatfield_run_id' => $sessionId, 'hatfield_model_ref' => 'llama_cpp/flash'], $result->providerOptions);
+        $this->assertSame([], $result->providerOptions);
     }
 
     public function testCodexMapsStableSessionCacheIdentityToProviderPromptCacheKey(): void
@@ -88,7 +88,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
             new ModelResolutionOptions(),
         );
 
-        $this->assertSame(['prompt_cache_key', 'hatfield_run_id', 'hatfield_model_ref'], array_keys($result->providerOptions));
+        $this->assertSame(['prompt_cache_key'], array_keys($result->providerOptions));
         $this->assertInstanceOf(UuidV7::class, Uuid::fromString($result->providerOptions['prompt_cache_key']));
     }
 
@@ -104,7 +104,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
             new ModelResolutionOptions(),
         );
 
-        $this->assertSame(['prompt_cache_key' => $runId, 'hatfield_run_id' => $runId, 'hatfield_model_ref' => 'openai-codex/gpt-test'], $result->providerOptions);
+        $this->assertSame(['prompt_cache_key' => $runId], $result->providerOptions);
     }
 
     public function testGrokMapsSessionIdToProviderPromptCacheKey(): void
@@ -134,7 +134,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
             new ModelResolutionOptions(),
         );
 
-        $this->assertSame(['prompt_cache_key' => $sessionId, 'hatfield_run_id' => $sessionId, 'hatfield_model_ref' => 'xai/grok-composer'], $result->providerOptions);
+        $this->assertSame(['prompt_cache_key' => $sessionId], $result->providerOptions);
     }
 
     public function testExplicitModelWinsOverSessionMetadata(): void
@@ -302,7 +302,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
         );
 
         $this->assertSame('deepseek/deepseek-v4-pro', $result->model);
-        $this->assertSame(['hatfield_run_id' => $childRunId, 'hatfield_model_ref' => 'deepseek/deepseek-v4-pro'], $result->providerOptions);
+        $this->assertSame([], $result->providerOptions);
     }
 
     public function testChildRunStartedMetadataModelAndReasoningSelected(): void
@@ -350,7 +350,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
         $this->assertSame('llama_cpp/flash', $result->model);
         $this->assertSame('llama_cpp', $result->providerId);
         $this->assertSame('high', $result->reasoning);
-        $this->assertSame(['hatfield_run_id' => $childRunId, 'hatfield_model_ref' => 'llama_cpp/flash'], $result->providerOptions);
+        $this->assertSame([], $result->providerOptions);
     }
 
     public function testEphemeralHexRunWithoutSessionRowResolvesWithoutProviderCacheKey(): void
@@ -364,7 +364,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
             new ModelResolutionOptions(),
         );
 
-        $this->assertSame(['hatfield_run_id' => 'db1f3c6bdccc', 'hatfield_model_ref' => 'deepseek/deepseek-v4-pro'], $result->providerOptions);
+        $this->assertSame([], $result->providerOptions);
     }
 
     public function testMissingNumericSessionMetadataThrows(): void
@@ -477,12 +477,18 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
         $toHigh = $this->createResolver($data)->resolve('', true, $input, new ModelResolutionOptions());
         $this->assertSame('medium', $toHigh->reasoningOptions['reasoning']['effort']);
         $this->assertSame('high', $toHigh->reasoningOptions['codex_reasoning_update']);
+        $this->assertSame($id, $toHigh->reasoningOptions['hatfield_run_id']);
+        $this->assertSame('openai-codex/gpt-6-astra', $toHigh->reasoningOptions['hatfield_model_ref']);
+        $this->assertArrayNotHasKey('hatfield_run_id', $toHigh->providerOptions);
+        $this->assertArrayNotHasKey('hatfield_model_ref', $toHigh->providerOptions);
         $store->markReasoningEffortEmitted($id, 'openai-codex/gpt-6-astra', 'high');
 
         $store->updateMetadata($id, ['reasoning' => 'high']);
         $this->entityManager->clear();
         $stillHigh = $this->createResolver($data)->resolve('', true, $input, new ModelResolutionOptions());
         $this->assertSame(['reasoning' => ['effort' => 'medium', 'summary' => 'auto']], $stillHigh->reasoningOptions);
+        $this->assertArrayNotHasKey('hatfield_run_id', $stillHigh->reasoningOptions);
+        $this->assertArrayNotHasKey('hatfield_model_ref', $stillHigh->reasoningOptions);
 
         $store->updateMetadata($id, ['reasoning' => 'low']);
         $this->entityManager->clear();
