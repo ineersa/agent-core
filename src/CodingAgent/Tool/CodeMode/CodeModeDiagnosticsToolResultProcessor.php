@@ -5,21 +5,16 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tool\CodeMode;
 
 use Ineersa\AgentCore\Contract\Tool\ToolResultProcessorInterface;
-use Ineersa\AgentCore\Domain\Notification\ModelNotificationDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\CodingAgent\Tool\CodeModeTool;
-use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
-use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
 /**
  * Promote code_mode stdout/stderr into the model-facing tool text.
  *
  * Keeps the script return value first, then appends labeled stdout/stderr
- * sections. delivery=context notifications alone are not model-facing for tool
- * results; only delivery=tool_result_replace replaces content, so diagnostics
- * must live in the visible content text. Ordinary OutputCap then applies the
- * document-report cap and saved-output recovery to the combined text.
+ * sections in the ordinary tool result. Ordinary OutputCap then applies the
+ * document-report cap and saved-output recovery to that combined text.
  *
  * Also rewrites successful null/bool returns to explicit `null`/`true`/`false`
  * because ToolExecutor's generic scalar stringification turns false into "".
@@ -29,11 +24,6 @@ use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
  */
 final readonly class CodeModeDiagnosticsToolResultProcessor implements ToolResultProcessorInterface
 {
-    public function __construct(
-        private NormalizerInterface $normalizer,
-    ) {
-    }
-
     public function process(ToolResult $result, ToolCall $toolCall): ToolResult
     {
         if (CodeModeTool::NAME !== $toolCall->toolName) {
@@ -90,43 +80,7 @@ final readonly class CodeModeDiagnosticsToolResultProcessor implements ToolResul
             ? $diagnosticBlock
             : $visibleReturn."\n\n".$diagnosticBlock;
 
-        $stdout = (string) ($diagnostics['stdout'] ?? '');
-        $stderr = (string) ($diagnostics['stderr'] ?? '');
-        $notificationId = hash('sha256', implode('|', [
-            $toolCall->toolCallId,
-            'code_mode',
-            'diagnostics',
-            $diagnosticBlock,
-        ]));
-
-        $notification = new ModelNotificationDTO(
-            id: $notificationId,
-            source: 'code_mode',
-            kind: 'script_diagnostics',
-            severity: 'info',
-            delivery: 'context',
-            text: $diagnosticBlock,
-            toolCallId: $toolCall->toolCallId,
-            toolName: $toolCall->toolName,
-            orderIndex: $toolCall->orderIndex,
-            metadata: [
-                'stdout_chars' => \strlen($stdout),
-                'stderr_chars' => \strlen($stderr),
-                'diagnostics_chars' => \strlen($diagnosticBlock),
-            ],
-        );
-
-        $existingNotifications = \is_array($details['model_notifications'] ?? null)
-            ? $details['model_notifications']
-            : [];
-        /** @var array<string, mixed> $notificationArray */
-        $notificationArray = $this->normalizer->normalize($notification, null, [
-            AbstractObjectNormalizer::SKIP_NULL_VALUES => true,
-        ]);
-        $existingNotifications[] = $notificationArray;
-        $details['model_notifications'] = $existingNotifications;
         $details['raw_result'] = $value;
-        $details['code_mode_diagnostics'] = $diagnostics;
 
         return new ToolResult(
             toolCallId: $result->toolCallId,
