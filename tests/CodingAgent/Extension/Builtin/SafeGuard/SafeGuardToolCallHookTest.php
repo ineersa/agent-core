@@ -117,6 +117,9 @@ final class SafeGuardToolCallHookTest extends TestCase
         $this->assertStringContainsString('env |grep <fg=red>*literal*</fg> [31m', $text);
         $this->assertStringContainsString('ΔΟΚΙΜΉ', $text);
         $this->assertStringContainsString('printenv | sort', $text);
+        $this->assertStringContainsString('→ ✅ Allow', $text);
+        $this->assertStringContainsString('❌ Deny', $text);
+        $this->assertStringContainsString('session virtual-startup-session', $text);
         $this->assertStringNotContainsString('…', $text);
         $this->assertStringContainsString(new Style(color: 'yellow')->apply('env |'), $harness->ansiOutput());
     }

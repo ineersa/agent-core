@@ -110,9 +110,13 @@ final class QuestionOverlayWidget extends AbstractWidget implements WidgetContai
         $gap = max(0, $this->getStyle()?->getGap() ?? 0);
 
         $selectIndex = null;
+        $selectRows = 0;
         foreach ($this->children as $index => $child) {
             if ($child instanceof SelectListWidget) {
                 $selectIndex = $index;
+                // Reserve useful answer rows, not blank space that could hide
+                // the command or path the user is being asked to approve.
+                $selectRows = \count($widgetContext->renderWidget($child, new RenderContext($columns, max(1, intdiv($budget, 2)))));
                 break;
             }
         }
@@ -127,12 +131,11 @@ final class QuestionOverlayWidget extends AbstractWidget implements WidgetContai
             }
 
             $needsGap = $previousEmitted && $gap > 0;
-            // Prefer the select list over tall prompt/header chrome. Keep at
-            // least half the budget, plus its preceding gap, so a
-            // wrapped selected option cannot monopolize the entire overlay.
+            // Keep the measured answer rows and their preceding gap available.
+            // Short lists leave the rest of the band for the prompt.
             $reserveForSelect = 0;
             if (null !== $selectIndex && $index < $selectIndex) {
-                $reserveForSelect = $gap + max(1, intdiv($budget, 2));
+                $reserveForSelect = $gap + $selectRows;
             }
             $childBudget = $remaining - ($needsGap ? $gap : 0) - $reserveForSelect;
             if ($childBudget <= 0) {
