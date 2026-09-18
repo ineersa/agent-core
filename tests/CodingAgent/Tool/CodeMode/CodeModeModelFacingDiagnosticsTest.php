@@ -26,13 +26,12 @@ use Symfony\AI\Agent\Toolbox\ToolResult as SymfonyToolResult;
 use Symfony\AI\Platform\Result\ToolCall as SymfonyToolCall;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
-use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
-use Symfony\Component\Serializer\Serializer;
 
 /**
  * Thesis: returning-script stdout/stderr become model-facing tool text through
  * ToolExecutor processors → ToolCallResultFactory → AgentMessageNormalizer.
- * delivery=context alone is insufficient; visible content must carry diagnostics.
+ * Diagnostics live only in the ordinary tool result; no script_diagnostics
+ * notification is attached.
  *
  * @covers \Ineersa\CodingAgent\Tool\CodeMode\CodeModeDiagnosticsToolResultProcessor
  */
@@ -85,6 +84,7 @@ final class CodeModeModelFacingDiagnosticsTest extends TestCase
         $this->assertStringContainsString("stdout:\nOUT", $modelText);
         $this->assertStringContainsString("stderr:\nERR", $modelText);
         $this->assertNotSame('code_mode completed', $modelText);
+        $this->assertSame([], $notifications);
     }
 
     public function testNullReturnWithDiagnosticsRemainsVisible(): void
@@ -154,6 +154,13 @@ final class CodeModeModelFacingDiagnosticsTest extends TestCase
         // Cap wins for model-facing text via delivery=tool_result_replace.
         $this->assertNotSame($large, $modelText);
         $this->assertStringContainsString('capped', strtolower($modelText));
+        $kinds = array_map(
+            static fn (object $n): string => $n->kind,
+            $notifications,
+        );
+        $this->assertNotContains('script_diagnostics', $kinds);
+        $this->assertContains('output_capped', $kinds);
+        $this->assertCount(1, $notifications);
     }
 
     public function testHugeStdoutDiagnosticsUseDocumentCapAndSavedOutputRecovery(): void
@@ -188,8 +195,9 @@ final class CodeModeModelFacingDiagnosticsTest extends TestCase
             static fn (object $n): string => $n->kind,
             $notifications,
         );
-        $this->assertContains('script_diagnostics', $kinds);
+        $this->assertNotContains('script_diagnostics', $kinds);
         $this->assertContains('output_capped', $kinds);
+        $this->assertCount(1, $notifications);
 
         $capMeta = $domainResult->details['output_cap'] ?? null;
         $this->assertIsArray($capMeta);
@@ -204,8 +212,7 @@ final class CodeModeModelFacingDiagnosticsTest extends TestCase
 
     private function executor(ToolboxInterface $toolbox, int $defaultCap, ?int $docCap = null): ToolExecutor
     {
-        $serializer = new Serializer([new ObjectNormalizer()]);
-        $diagnostics = new CodeModeDiagnosticsToolResultProcessor($serializer);
+        $diagnostics = new CodeModeDiagnosticsToolResultProcessor();
         $capCfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: $defaultCap, docCap: $docCap ?? $defaultCap);
         $cap = new OutputCapToolResultProcessor(
             new OutputCap($capCfg, new LockFactory(new FlockStore($this->tmpDir)), new NullLogger()),
