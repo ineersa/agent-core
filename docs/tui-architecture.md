@@ -22,28 +22,11 @@ For user-facing editor and command reference, see [terminal usage](terminal-usag
 
 ## Frame and cursor output
 
-Hatfield no longer replaces Symfony's `Renderer`. Symfony TUI 8.2 caches maximum
-visible widths on `LineBufferInterface` and skips per-row width rescans when the
-cached maximum fits the available columns.
-
-`InteractiveMode` and `SetupScreen` install Hatfield's
-[`SynchronizedCursorScreenWriterAliasInstaller`](../src/Tui/Terminal/SynchronizedCursorScreenWriterAliasInstaller.php)
-before constructing Symfony TUI. Symfony constructs its final `ScreenWriter`
-internally, so the installer aliases Hatfield's copy under the Symfony class name.
-
-[`SynchronizedCursorScreenWriter`](../src/Tui/Terminal/SynchronizedCursorScreenWriter.php)
-hides the hardware cursor during full, differential, and deletion repaints. It
-restores the cursor position, shape, and visibility before releasing synchronized
-output. Terminals that ignore synchronized output still receive the hide-cursor
-command before painting starts. For overheight frames with an editor cursor, it
-also repeats the cursor commit on the next event-loop turn without repainting
-content. This workaround remains because partial presentation recurred with
-synchronized restoration alone. New frames replace or cancel the pending commit, and reset
-or shutdown cancels it.
-
-The copy stays aligned with the pinned Symfony source. A source-hash regression
-guard detects upstream drift. [Upstream follow-up #460](https://github.com/ineersa/agent-core/issues/460)
-tracks the fix needed to remove the copy and alias installer.
+Hatfield no longer replaces Symfony's `Renderer` or `ScreenWriter`. Symfony TUI
+8.2 caches maximum visible widths on `LineBufferInterface` and skips per-row
+width rescans when the cached maximum fits the available columns. The stock
+`ScreenWriter` publishes cursor hide/restore inside the synchronized output
+window and scrolls overheight growth with line feeds.
 
 ## Key types
 

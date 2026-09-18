@@ -10,6 +10,16 @@
             "options": {
                 "symlink": true
             }
+        },
+        {
+            "type": "path",
+            "url": "/home/ineersa/projects/agent-core-worktrees/2026-08-22-upstream-multiline-select-options/var/tmp/trial/symfony-tui-dep",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "symfony/tui": "8.2.x-dev"
+                }
+            }
         }
     ],
     "require": {

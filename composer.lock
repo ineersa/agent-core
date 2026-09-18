@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "f375cd00181b0b80f8d3e4a54872d8d8",
+    "content-hash": "51d94ecb9a8cea70cc6a1421c9deb550",
     "packages": [
         {
             "name": "amphp/amp",
@@ -2768,7 +2768,7 @@
         },
         {
             "name": "ineersa/hatfield-extension-api",
-            "version": "dev-main",
+            "version": "dev-task/2026-08-22-upstream-multiline-select-options",
             "dist": {
                 "type": "path",
                 "url": ".hatfield/extensions/extension-api",
@@ -7669,16 +7669,16 @@
         },
         {
             "name": "symfony/polyfill-intl-grapheme",
-            "version": "v1.41.0",
+            "version": "1.x-dev",
             "source": {
                 "type": "git",
                 "url": "https://github.com/symfony/polyfill-intl-grapheme.git",
-                "reference": "bb899c1db0aa8127dc3afe8cda4a67eb24915f8d"
+                "reference": "5c69701711222b93e048afa5b2e8a3f821e00f31"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/symfony/polyfill-intl-grapheme/zipball/bb899c1db0aa8127dc3afe8cda4a67eb24915f8d",
-                "reference": "bb899c1db0aa8127dc3afe8cda4a67eb24915f8d",
+                "url": "https://api.github.com/repos/symfony/polyfill-intl-grapheme/zipball/5c69701711222b93e048afa5b2e8a3f821e00f31",
+                "reference": "5c69701711222b93e048afa5b2e8a3f821e00f31",
                 "shasum": ""
             },
             "require": {
@@ -7687,6 +7687,7 @@
             "suggest": {
                 "ext-intl": "For best performance"
             },
+            "default-branch": true,
             "type": "library",
             "extra": {
                 "thanks": {
@@ -7727,7 +7728,7 @@
                 "shim"
             ],
             "support": {
-                "source": "https://github.com/symfony/polyfill-intl-grapheme/tree/v1.41.0"
+                "source": "https://github.com/symfony/polyfill-intl-grapheme/tree/1.x"
             },
             "funding": [
                 {
@@ -7747,7 +7748,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2026-07-28T08:25:59+00:00"
+            "time": "2026-09-10T07:29:42+00:00"
         },
         {
             "name": "symfony/polyfill-intl-normalizer",
@@ -9070,28 +9071,22 @@
         {
             "name": "symfony/tui",
             "version": "8.2.x-dev",
-            "source": {
-                "type": "git",
-                "url": "https://github.com/symfony/tui.git",
-                "reference": "11815c044d4f43a7773719e98d6901e9a7976a9f"
-            },
             "dist": {
-                "type": "zip",
-                "url": "https://api.github.com/repos/symfony/tui/zipball/11815c044d4f43a7773719e98d6901e9a7976a9f",
-                "reference": "11815c044d4f43a7773719e98d6901e9a7976a9f",
-                "shasum": ""
+                "type": "path",
+                "url": "/home/ineersa/projects/agent-core-worktrees/2026-08-22-upstream-multiline-select-options/var/tmp/trial/symfony-tui-dep",
+                "reference": "194489de874ffbf7d04d18bf3da92e480d89f057"
             },
             "require": {
                 "php": ">=8.4.1",
                 "revolt/event-loop": "^1.0",
                 "symfony/event-dispatcher": "^8.0",
+                "symfony/polyfill-intl-grapheme": "^1.42.1",
                 "symfony/string": "^8.0"
             },
             "require-dev": {
                 "league/commonmark": "^2.9",
                 "tempest/highlight": "^2.16"
             },
-            "default-branch": true,
             "type": "library",
             "autoload": {
                 "psr-4": {
@@ -9101,7 +9096,6 @@
                     "/Tests/"
                 ]
             },
-            "notification-url": "https://packagist.org/downloads/",
             "license": [
                 "MIT"
             ],
@@ -9123,28 +9117,10 @@
                 "terminal",
                 "tui"
             ],
-            "support": {
-                "source": "https://github.com/symfony/tui/tree/8.2"
-            },
-            "funding": [
-                {
-                    "url": "https://symfony.com/sponsor",
-                    "type": "custom"
-                },
-                {
-                    "url": "https://github.com/fabpot",
-                    "type": "github"
-                },
-                {
-                    "url": "https://github.com/nicolas-grekas",
-                    "type": "github"
-                },
-                {
-                    "url": "https://tidelift.com/funding/github/packagist/symfony/symfony",
-                    "type": "tidelift"
-                }
-            ],
-            "time": "2026-09-06T09:49:49+00:00"
+            "transport-options": {
+                "symlink": false,
+                "relative": false
+            }
         },
         {
             "name": "symfony/type-info",

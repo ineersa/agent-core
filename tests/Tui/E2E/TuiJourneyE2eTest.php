@@ -429,7 +429,7 @@ final class TuiJourneyE2eTest extends TestCase
     }
 
     /**
-     * Integration guard for the app-owned ScreenWriter in the packaged TUI.
+     * Integration guard for overheight bottom chrome in the packaged TUI.
      * tmux consumes terminal bytes synchronously, so real-terminal presentation
      * latency remains covered by manual GNOME Terminal and Kitty validation.
      */

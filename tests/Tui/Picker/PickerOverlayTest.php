@@ -7,7 +7,6 @@ namespace Ineersa\Tui\Tests\Picker;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Picker\PickerOverlay;
 use Ineersa\Tui\Screen\ChatScreen;
-use Ineersa\Tui\Terminal\SynchronizedCursorScreenWriterAliasInstaller;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
@@ -43,7 +42,6 @@ final class PickerOverlayTest extends TestCase
     #[PreserveGlobalState(false)]
     public function testPickerTransitionsDoNotRepaintUnchangedTranscript(int $lineCount): void
     {
-        SynchronizedCursorScreenWriterAliasInstaller::install();
         $output = new VirtualTerminal(columns: 100, rows: 24);
         // Exercise the writer's physical-viewport decisions without a live process.
         $dispatcher = new EventDispatcher();
@@ -100,8 +98,14 @@ final class PickerOverlayTest extends TestCase
             $tui->processRender();
             $delta = $output->consumeOutput();
             $buffer->write($delta);
-            $this->assertStringNotContainsString('Transcript sentinel', $delta, 'Closing must retain the unchanged transcript.');
-            $this->assertStringNotContainsString("\x1b[2J", $delta);
+            // Stock Symfony ScreenWriter redraws the viewport on physical overheight
+            // shrink (no Hatfield #477 guard). Fits-viewport closes stay differential.
+            if ($lineCount <= 24) {
+                $this->assertStringNotContainsString('Transcript sentinel', $delta, 'Closing must retain the unchanged transcript.');
+                $this->assertStringNotContainsString("\x1b[2J", $delta);
+            } else {
+                $this->assertStringContainsString("\x1b[2J", $delta);
+            }
             $this->assertStringNotContainsString('Picker header sentinel', $buffer->getScreen());
             $this->assertStringNotContainsString('Choice sentinel', $buffer->getScreen());
             $this->assertStringContainsString('Draft sentinel', $buffer->getScreen());
