@@ -94,7 +94,7 @@ final class InProcessSelectHistoryTurnEmitsRunHistoryPositionChangedTest extends
         );
         $sink = new InMemoryRuntimeEventSink();
 
-        $this->client($eventStore, $historySelectionService, $sink)->send(self::RUN_ID, new UserCommand(
+        $this->client($eventStore, $historySelectionService, $sink, $activeRunContext)->send(self::RUN_ID, new UserCommand(
             type: 'select_history_turn',
             payload: ['turn_no' => 1],
         ));
@@ -142,6 +142,7 @@ final class InProcessSelectHistoryTurnEmitsRunHistoryPositionChangedTest extends
         InMemoryEventStore $eventStore,
         HistorySelectionServiceInterface $historySelectionService,
         InMemoryRuntimeEventSink $sink,
+        TestActiveRunContext $activeRunContext,
     ): InProcessAgentSessionClient {
         $container = self::getContainer();
 
@@ -161,6 +162,7 @@ final class InProcessSelectHistoryTurnEmitsRunHistoryPositionChangedTest extends
             commandBus: new TestMessageBus(),
             sessionRepairService: $this->createStub(\Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface::class),
             transientSink: $sink,
+            activeRunContext: $activeRunContext,
         );
     }
 }
