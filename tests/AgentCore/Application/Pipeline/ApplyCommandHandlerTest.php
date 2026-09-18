@@ -8,17 +8,24 @@ use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler;
 use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
+use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
+use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
+use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
+use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
+use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use PHPUnit\Framework\TestCase;
 
@@ -1456,7 +1463,7 @@ final class ApplyCommandHandlerTest extends TestCase
         $commandRouter = new CommandRouter([]);
         $collector = new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector();
         $collector->registerExpectedBatch('run-deferred-cancel', 1, 'step-d', [
-            new \Ineersa\AgentCore\Domain\Message\ExecuteToolCall(
+            new ExecuteToolCall(
                 'run-deferred-cancel',
                 1,
                 'step-d',
@@ -1478,7 +1485,7 @@ final class ApplyCommandHandlerTest extends TestCase
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
             toolBatchCollector: $collector,
-            serializer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::serializer(),
+            serializer: AttributeSerializerValidatorTestFactory::serializer(),
         );
 
         $assistant = new AgentMessage(
@@ -1547,8 +1554,8 @@ final class ApplyCommandHandlerTest extends TestCase
         $commandRouter = new CommandRouter([]);
         $collector = new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(defaultMaxParallelism: 2);
         $collector->registerExpectedBatch('run-multi-d', 1, 'step-m', [
-            new \Ineersa\AgentCore\Domain\Message\ExecuteToolCall('run-multi-d', 1, 'step-m', 1, 'idemp-a', 'call-a', 'bash', ['command' => 'a'], 0),
-            new \Ineersa\AgentCore\Domain\Message\ExecuteToolCall('run-multi-d', 1, 'step-m', 1, 'idemp-b', 'call-b', 'bash', ['command' => 'b'], 1),
+            new ExecuteToolCall('run-multi-d', 1, 'step-m', 1, 'idemp-a', 'call-a', 'bash', ['command' => 'a'], 0),
+            new ExecuteToolCall('run-multi-d', 1, 'step-m', 1, 'idemp-b', 'call-b', 'bash', ['command' => 'b'], 1),
         ]);
         $collector->admitHumanInputSuspension('run-multi-d', 1, 'step-m', 'call-a', 'q-a');
         $collector->admitHumanInputSuspension('run-multi-d', 1, 'step-m', 'call-b', 'q-b');
@@ -1561,7 +1568,7 @@ final class ApplyCommandHandlerTest extends TestCase
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
             toolBatchCollector: $collector,
-            serializer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::serializer(),
+            serializer: AttributeSerializerValidatorTestFactory::serializer(),
         );
 
         $assistant = new AgentMessage(
@@ -1617,5 +1624,272 @@ final class ApplyCommandHandlerTest extends TestCase
         $this->assertCount(2, $toolMessages);
         $this->assertSame(['call-a', 'call-b'], array_map(static fn (AgentMessage $message): ?string => $message->toolCallId, $toolMessages));
         $this->assertContains('agent_end', array_map(static fn ($event) => $event->type, $result->events));
+    }
+
+    public function testCancelPreservesCompletedUnprojectedSiblingAndSynthesizesOnlyDeferredWait(): void
+    {
+        $serializer = AttributeSerializerValidatorTestFactory::serializer();
+        $commandStore = new InMemoryCommandStore();
+        $commandRouter = new CommandRouter([]);
+        $collector = new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(defaultMaxParallelism: 2);
+        $collector->registerExpectedBatch('run-partial-d', 1, 'step-p', [
+            new ExecuteToolCall('run-partial-d', 1, 'step-p', 1, 'idemp-a', 'call-a', 'bash', ['command' => 'a'], 0),
+            new ExecuteToolCall('run-partial-d', 1, 'step-p', 1, 'idemp-b', 'call-b', 'ask_human', ['prompt' => 'B?'], 1),
+        ]);
+
+        $completedA = new ToolCallResult(
+            runId: 'run-partial-d',
+            turnNo: 1,
+            stepId: 'step-p',
+            attempt: 1,
+            idempotencyKey: 'result-a',
+            toolCallId: 'call-a',
+            orderIndex: 0,
+            result: [
+                'tool_name' => 'bash',
+                'content' => [['type' => 'text', 'text' => 'A succeeded']],
+                'details' => [
+                    'model_notifications' => [[
+                        'id' => 'n-a',
+                        'source' => 'output_cap',
+                        'kind' => 'output_capped',
+                        'severity' => 'warning',
+                        'delivery' => 'tool_result_replace',
+                        'text' => 'A capped for model',
+                        'tool_call_id' => 'call-a',
+                        'tool_name' => 'bash',
+                        'order_index' => 0,
+                    ]],
+                ],
+            ],
+            isError: false,
+            error: null,
+        );
+        $accepted = $collector->collect($completedA);
+        $this->assertTrue($accepted->accepted);
+        $this->assertFalse($accepted->complete);
+        $this->assertNotNull($collector->getStoredResult('run-partial-d', 1, 'step-p', 'call-a'));
+
+        $collector->admitHumanInputSuspension('run-partial-d', 1, 'step-p', 'call-b', 'q-b');
+
+        $handler = new ApplyCommandHandler(
+            commandStore: $commandStore,
+            commandRouter: $commandRouter,
+            commandMailboxPolicy: new CommandMailboxPolicy($commandStore, $commandRouter),
+            eventFactory: new EventFactory(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            maxPendingCommands: 10,
+            toolBatchCollector: $collector,
+            serializer: $serializer,
+        );
+
+        $assistant = new AgentMessage(
+            role: 'assistant',
+            content: [['type' => 'text', 'text' => 'tools']],
+            metadata: [
+                'tool_calls' => [
+                    ['id' => 'call-a', 'name' => 'bash', 'arguments' => ['command' => 'a'], 'order_index' => 0],
+                    ['id' => 'call-b', 'name' => 'ask_human', 'arguments' => ['prompt' => 'B?'], 'order_index' => 1],
+                ],
+            ],
+        );
+
+        $state = new RunState(
+            runId: 'run-partial-d',
+            status: RunStatus::WaitingHuman,
+            version: 5,
+            turnNo: 1,
+            lastSeq: 11,
+            pendingToolCalls: ['call-a' => true, 'call-b' => false],
+            messages: [$assistant],
+            activeStepId: 'step-p',
+            pendingHumanInputRequests: [
+                \Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO::toolCallFromPayload(
+                    ['question_id' => 'q-b', 'prompt' => 'B?'],
+                    ['run_id' => 'run-partial-d', 'turn_no' => 1, 'step_id' => 'step-p', 'tool_call_id' => 'call-b'],
+                ),
+            ],
+            model: 'test-model',
+        );
+
+        $result = $handler->handle(new ApplyCommand(
+            runId: 'run-partial-d',
+            turnNo: 1,
+            stepId: 'cancel-partial',
+            attempt: 1,
+            idempotencyKey: 'cancel-partial-1',
+            kind: CoreCommandKind::Cancel,
+            payload: ['reason' => 'Outstanding human questions cancelled on session attach.'],
+        ), $state);
+
+        $this->assertSame(RunStatus::Cancelled, $result->nextState?->status);
+        $this->assertSame([], $result->nextState?->pendingToolCalls);
+        $this->assertSame([], $result->nextState?->pendingHumanInputRequests);
+
+        $toolMessages = array_values(array_filter(
+            $result->nextState?->messages ?? [],
+            static fn (AgentMessage $message): bool => 'tool' === $message->role,
+        ));
+        $this->assertCount(2, $toolMessages);
+        $this->assertSame('call-a', $toolMessages[0]->toolCallId);
+        $this->assertFalse($toolMessages[0]->isError);
+        $this->assertSame('A capped for model', $toolMessages[0]->content[0]['text'] ?? null);
+        $this->assertSame($completedA->result, $toolMessages[0]->details);
+        $this->assertIsArray($toolMessages[0]->details['details']['model_notifications'] ?? null);
+        $this->assertSame(
+            'A capped for model',
+            $toolMessages[0]->details['details']['model_notifications'][0]['text'] ?? null,
+        );
+        $this->assertSame('call-b', $toolMessages[1]->toolCallId);
+        $this->assertTrue($toolMessages[1]->isError);
+
+        $eventTypes = array_map(static fn ($event): string => $event->type, $result->events);
+        $this->assertSame(
+            ['agent_command_applied', 'tool_execution_end', 'tool_batch_committed', 'agent_end'],
+            $eventTypes,
+        );
+        $codec = new ToolExecutionEndPayloadCodec($serializer);
+        $ends = array_values(array_filter(
+            $result->events,
+            static fn ($event): bool => RunEventTypeEnum::ToolExecutionEnd->value === $event->type,
+        ));
+        $this->assertCount(1, $ends);
+        $this->assertSame('call-b', $codec->fromEventPayload($ends[0]->payload)->toolCallId);
+
+        $priorAEnd = new RunEvent(
+            'run-partial-d',
+            10,
+            1,
+            RunEventTypeEnum::ToolExecutionEnd->value,
+            $codec->toEventPayload($completedA),
+        );
+        $replayed = (new RunStateReducer(
+            AttributeSerializerValidatorTestFactory::denormalizer(),
+            $codec,
+        ))->replay(
+            RunState::queued('run-partial-d')->with([
+                'model' => 'test-model',
+            ]),
+            array_merge(
+                [
+                    new RunEvent('run-partial-d', 1, 0, RunEventTypeEnum::RunStarted->value, [
+                        'step_id' => 'start',
+                        'payload' => [
+                            'messages' => [],
+                            'metadata' => ['model' => 'test-model'],
+                        ],
+                    ]),
+                    new RunEvent('run-partial-d', 2, 1, RunEventTypeEnum::LlmStepCompleted->value, [
+                        'step_id' => 'step-p',
+                        'turn_no' => 1,
+                        'assistant_message' => [
+                            'role' => 'assistant',
+                            'content' => [['type' => 'text', 'text' => 'tools']],
+                            'tool_calls' => [
+                                ['id' => 'call-a', 'name' => 'bash', 'arguments' => ['command' => 'a'], 'order_index' => 0],
+                                ['id' => 'call-b', 'name' => 'ask_human', 'arguments' => ['prompt' => 'B?'], 'order_index' => 1],
+                            ],
+                        ],
+                    ]),
+                    $priorAEnd,
+                    new RunEvent('run-partial-d', 11, 1, RunEventTypeEnum::WaitingHuman->value, [
+                        'kind' => 'interrupt',
+                        'question_id' => 'q-b',
+                        'prompt' => 'B?',
+                        'continuation_kind' => 'tool_call',
+                        'continuation_ref' => [
+                            'run_id' => 'run-partial-d',
+                            'turn_no' => 1,
+                            'step_id' => 'step-p',
+                            'tool_call_id' => 'call-b',
+                        ],
+                    ]),
+                ],
+                $result->events,
+            ),
+        );
+
+        $replayTools = array_values(array_filter(
+            $replayed->messages,
+            static fn (AgentMessage $message): bool => 'tool' === $message->role,
+        ));
+        $this->assertCount(2, $replayTools);
+        $this->assertSame($toolMessages[0]->toolCallId, $replayTools[0]->toolCallId);
+        $this->assertSame($toolMessages[0]->isError, $replayTools[0]->isError);
+        $this->assertSame($toolMessages[0]->content, $replayTools[0]->content);
+        $this->assertSame($toolMessages[0]->details, $replayTools[0]->details);
+        $this->assertSame($toolMessages[0]->toolName, $replayTools[0]->toolName);
+        $this->assertSame($toolMessages[1]->toolCallId, $replayTools[1]->toolCallId);
+        $this->assertSame($toolMessages[1]->isError, $replayTools[1]->isError);
+        $this->assertSame($toolMessages[1]->content, $replayTools[1]->content);
+        $this->assertSame($toolMessages[1]->details, $replayTools[1]->details);
+        $this->assertSame($toolMessages[1]->toolName, $replayTools[1]->toolName);
+        $this->assertSame(RunStatus::Cancelled, $replayed->status);
+    }
+
+    public function testCancelCompletedUnprojectedSiblingFailsClosedWhenStoredResultMissing(): void
+    {
+        $serializer = AttributeSerializerValidatorTestFactory::serializer();
+        $commandStore = new InMemoryCommandStore();
+        $commandRouter = new CommandRouter([]);
+        $collector = new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(defaultMaxParallelism: 2);
+        $collector->registerExpectedBatch('run-missing-store', 1, 'step-m', [
+            new ExecuteToolCall('run-missing-store', 1, 'step-m', 1, 'idemp-a', 'call-a', 'bash', ['command' => 'a'], 0, mode: 'parallel', maxParallelism: 2),
+            new ExecuteToolCall('run-missing-store', 1, 'step-m', 1, 'idemp-b', 'call-b', 'ask_human', ['prompt' => 'B?'], 1, mode: 'parallel', maxParallelism: 2),
+        ]);
+        $collector->admitHumanInputSuspension('run-missing-store', 1, 'step-m', 'call-b', 'q-b');
+
+        $handler = new ApplyCommandHandler(
+            commandStore: $commandStore,
+            commandRouter: $commandRouter,
+            commandMailboxPolicy: new CommandMailboxPolicy($commandStore, $commandRouter),
+            eventFactory: new EventFactory(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            maxPendingCommands: 10,
+            toolBatchCollector: $collector,
+            serializer: $serializer,
+        );
+
+        $assistant = new AgentMessage(
+            role: 'assistant',
+            content: [['type' => 'text', 'text' => 'tools']],
+            metadata: [
+                'tool_calls' => [
+                    ['id' => 'call-a', 'name' => 'bash', 'arguments' => ['command' => 'a'], 'order_index' => 0],
+                    ['id' => 'call-b', 'name' => 'ask_human', 'arguments' => ['prompt' => 'B?'], 'order_index' => 1],
+                ],
+            ],
+        );
+
+        $state = new RunState(
+            runId: 'run-missing-store',
+            status: RunStatus::WaitingHuman,
+            version: 5,
+            turnNo: 1,
+            lastSeq: 11,
+            pendingToolCalls: ['call-a' => true, 'call-b' => false],
+            messages: [$assistant],
+            activeStepId: 'step-m',
+            pendingHumanInputRequests: [
+                \Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO::toolCallFromPayload(
+                    ['question_id' => 'q-b', 'prompt' => 'B?'],
+                    ['run_id' => 'run-missing-store', 'turn_no' => 1, 'step_id' => 'step-m', 'tool_call_id' => 'call-b'],
+                ),
+            ],
+            model: 'test-model',
+        );
+
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('Cannot project completed tool call "call-a" during deferred-tool cancel: stored result is missing for turn=1 step=step-m.');
+
+        $handler->handle(new ApplyCommand(
+            runId: 'run-missing-store',
+            turnNo: 1,
+            stepId: 'cancel-missing',
+            attempt: 1,
+            idempotencyKey: 'cancel-missing-1',
+            kind: CoreCommandKind::Cancel,
+            payload: ['reason' => 'Outstanding human questions cancelled on session attach.'],
+        ), $state);
     }
 }

@@ -18,6 +18,7 @@ use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Domain\Notification\ModelNotificationCodec;
 use Ineersa\AgentCore\Domain\Run\CurrentToolCallDTO;
 use Ineersa\AgentCore\Domain\Run\HumanInputContinuationKindEnum;
 use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
@@ -1005,19 +1006,18 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                     continue;
                 }
 
-                // Durable-but-unprojected sibling: keep assistant tool_calls matched.
-                $info = $toolCallInfoMap[$tcId] ?? null;
-                $toolName = \is_string($info['name'] ?? null) ? $info['name'] : 'unknown';
-                $orderIndex = \is_int($info['order_index'] ?? null) ? $info['order_index'] : 0;
-                $syntheticResult = $this->syntheticCancelledToolResult(
-                    runId: $runId,
-                    turnNo: $state->turnNo,
-                    stepId: $syntheticStepId,
-                    toolCallId: $tcId,
-                    toolName: $toolName,
-                    orderIndex: $orderIndex,
-                );
-                $messages[] = $this->messageNormalizer->toolMessage($syntheticResult);
+                // Durable-but-unprojected sibling: ends already exist; project the
+                // stored result only. Never re-emit ToolExecutionEnd or replace
+                // success with a synthetic cancel. Missing stored results fail closed.
+                $collectorStepId = $state->activeStepId ?? $syntheticStepId;
+                if (null === $this->toolBatchCollector) {
+                    throw new \LogicException(\sprintf('Cancel of deferred tool-call human waits requires ToolBatchCollector to project completed call "%s".', $tcId));
+                }
+                $stored = $this->toolBatchCollector->getStoredResult($runId, $state->turnNo, $collectorStepId, $tcId);
+                if (null === $stored) {
+                    throw new \LogicException(\sprintf('Cannot project completed tool call "%s" during deferred-tool cancel: stored result is missing for turn=%d step=%s.', $tcId, $state->turnNo, $collectorStepId));
+                }
+                $this->appendToolMessage(messages: $messages, result: $stored);
                 ++$projectedToolMessageCount;
 
                 continue;
@@ -1039,7 +1039,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 'type' => RunEventTypeEnum::ToolExecutionEnd->value,
                 'payload' => $codec->toEventPayload($syntheticResult),
             ];
-            $messages[] = $this->messageNormalizer->toolMessage($syntheticResult);
+            $this->appendToolMessage(messages: $messages, result: $syntheticResult);
             ++$projectedToolMessageCount;
         }
 
@@ -1123,6 +1123,17 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         }
 
         return false;
+    }
+
+    /** @param list<AgentMessage> $messages */
+    private function appendToolMessage(array &$messages, ToolCallResult $result): void
+    {
+        if (null === $this->serializer) {
+            throw new \LogicException('Projecting tool messages during deferred-tool cancel requires a serializer for notification details.');
+        }
+
+        $notifications = ModelNotificationCodec::denormalizeFromDetails($this->serializer, $result->result['details'] ?? null);
+        $messages[] = $this->messageNormalizer->toolMessage($result, $notifications);
     }
 
     private function syntheticCancelledToolResult(
