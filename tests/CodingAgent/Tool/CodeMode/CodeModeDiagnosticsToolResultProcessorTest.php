@@ -18,8 +18,6 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
-use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
-use Symfony\Component\Serializer\Serializer;
 
 /**
  * @covers \Ineersa\CodingAgent\Tool\CodeMode\CodeModeDiagnosticsToolResultProcessor
@@ -139,7 +137,7 @@ final class CodeModeDiagnosticsToolResultProcessorTest extends TestCase
         $this->assertSame('code_mode completed', $processed->content[0]['text'] ?? null);
     }
 
-    public function testDiagnosticsAreAttachedAsModelNotificationWithoutReplacingReturn(): void
+    public function testDiagnosticsStayInVisibleToolResultWithoutNotificationOrMetadata(): void
     {
         $processor = $this->processor();
         $toolCall = $this->toolCall('call-2', ['script' => 'echo "out"; return 9;']);
@@ -162,18 +160,11 @@ final class CodeModeDiagnosticsToolResultProcessorTest extends TestCase
         $this->assertStringContainsString("stdout:\nout", $visible);
         $this->assertStringContainsString("stderr:\nwarn", $visible);
         $this->assertSame(9, $processed->details['raw_result'] ?? null);
-        $this->assertSame(['stdout' => 'out', 'stderr' => 'warn'], $processed->details['code_mode_diagnostics'] ?? null);
-        $notifications = $processed->details['model_notifications'] ?? null;
-        $this->assertIsArray($notifications);
-        $this->assertCount(1, $notifications);
-        $this->assertSame('code_mode', $notifications[0]['source'] ?? null);
-        $this->assertSame('script_diagnostics', $notifications[0]['kind'] ?? null);
-        $this->assertSame('context', $notifications[0]['delivery'] ?? null);
-        $this->assertStringContainsString('stdout:', (string) ($notifications[0]['text'] ?? ''));
-        $this->assertStringContainsString('stderr:', (string) ($notifications[0]['text'] ?? ''));
+        $this->assertArrayNotHasKey('code_mode_diagnostics', \is_array($processed->details) ? $processed->details : []);
+        $this->assertArrayNotHasKey('model_notifications', \is_array($processed->details) ? $processed->details : []);
     }
 
-    public function testDiagnosticsThenOutputCapPreservesCapAndKeepsNotifications(): void
+    public function testDiagnosticsThenOutputCapPreservesCapWithoutDiagnosticsNotification(): void
     {
         $diagnostics = $this->processor();
         $capCfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 50, docCap: 50);
@@ -202,8 +193,9 @@ final class CodeModeDiagnosticsToolResultProcessorTest extends TestCase
         $notifications = $afterCap->details['model_notifications'] ?? null;
         $this->assertIsArray($notifications);
         $kinds = array_map(static fn (array $n): string => (string) ($n['kind'] ?? ''), $notifications);
-        $this->assertContains('script_diagnostics', $kinds);
+        $this->assertNotContains('script_diagnostics', $kinds);
         $this->assertContains('output_capped', $kinds);
+        $this->assertCount(1, $notifications);
     }
 
     public function testErrorPathLargeDiagnosticsUseDocumentCap(): void
@@ -261,7 +253,7 @@ final class CodeModeDiagnosticsToolResultProcessorTest extends TestCase
 
     private function processor(): CodeModeDiagnosticsToolResultProcessor
     {
-        return new CodeModeDiagnosticsToolResultProcessor(new Serializer([new ObjectNormalizer()]));
+        return new CodeModeDiagnosticsToolResultProcessor();
     }
 
     /**
