@@ -262,12 +262,10 @@ final class ApplyCommandHandlerTest extends TestCase
 
         $result = $handler->handle($message, $state);
 
-        // HumanResponse should be rejected when run is Cancelled
-        $this->assertNotNull($result->nextState);
-        $this->assertSame(RunStatus::Cancelled, $result->nextState->status);
-        $this->assertSame('Run is already cancelled.', $result->nextState->errorMessage);
-        $this->assertCount(1, $result->events);
-        $this->assertSame('agent_command_rejected', $result->events[0]->type);
+        // Late human_response after cancel is a safe no-op (no state / events).
+        $this->assertNull($result->nextState);
+        $this->assertSame([], $result->events);
+        $this->assertSame([], $result->postCommit);
     }
 
     public function testSteerWhileRunningQueuesButDoesNotDispatchAdvanceRun(): void
@@ -1450,5 +1448,174 @@ final class ApplyCommandHandlerTest extends TestCase
 
         $this->assertSame(RunStatus::Cancelled, $result->nextState->status);
         $this->assertContains('agent_end', array_map(static fn ($e) => $e->type, $result->events));
+    }
+
+    public function testCancelDeferredToolCallHumanWaitTerminalizesWithSyntheticResults(): void
+    {
+        $commandStore = new InMemoryCommandStore();
+        $commandRouter = new CommandRouter([]);
+        $collector = new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector();
+        $collector->registerExpectedBatch('run-deferred-cancel', 1, 'step-d', [
+            new \Ineersa\AgentCore\Domain\Message\ExecuteToolCall(
+                'run-deferred-cancel',
+                1,
+                'step-d',
+                1,
+                'idemp-d',
+                'call-d',
+                'bash',
+                ['command' => 'ls'],
+                0,
+            ),
+        ]);
+        $collector->admitHumanInputSuspension('run-deferred-cancel', 1, 'step-d', 'call-d', 'q-d');
+
+        $handler = new ApplyCommandHandler(
+            commandStore: $commandStore,
+            commandRouter: $commandRouter,
+            commandMailboxPolicy: new CommandMailboxPolicy($commandStore, $commandRouter),
+            eventFactory: new EventFactory(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            maxPendingCommands: 10,
+            toolBatchCollector: $collector,
+            serializer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::serializer(),
+        );
+
+        $assistant = new AgentMessage(
+            role: 'assistant',
+            content: [['type' => 'text', 'text' => 'need approval']],
+            metadata: [
+                'tool_calls' => [
+                    ['id' => 'call-d', 'name' => 'bash', 'arguments' => ['command' => 'ls'], 'order_index' => 0],
+                ],
+            ],
+        );
+
+        $state = new RunState(
+            runId: 'run-deferred-cancel',
+            status: RunStatus::WaitingHuman,
+            version: 4,
+            turnNo: 1,
+            lastSeq: 9,
+            isStreaming: false,
+            pendingToolCalls: ['call-d' => false],
+            messages: [$assistant],
+            activeStepId: 'step-d',
+            currentToolCalls: [
+                new \Ineersa\AgentCore\Domain\Run\CurrentToolCallDTO(
+                    \Ineersa\AgentCore\Domain\Run\ToolBatchIdentity::fromTurnAndStep(1, 'step-d'),
+                    'call-d',
+                    0,
+                    \Ineersa\AgentCore\Domain\Run\RunOperationalToolCallStatusEnum::WaitingHuman,
+                    1,
+                ),
+            ],
+            pendingHumanInputRequests: [
+                \Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO::toolCallFromPayload(
+                    ['question_id' => 'q-d', 'prompt' => 'Allow?'],
+                    ['run_id' => 'run-deferred-cancel', 'turn_no' => 1, 'step_id' => 'step-d', 'tool_call_id' => 'call-d'],
+                ),
+            ],
+            model: 'test-model',
+        );
+
+        $result = $handler->handle(new ApplyCommand(
+            runId: 'run-deferred-cancel',
+            turnNo: 1,
+            stepId: 'cancel-deferred',
+            attempt: 1,
+            idempotencyKey: 'cancel-deferred-1',
+            kind: CoreCommandKind::Cancel,
+            payload: ['reason' => 'Outstanding human questions cancelled on session attach.'],
+        ), $state);
+
+        $this->assertSame(RunStatus::Cancelled, $result->nextState?->status);
+        $this->assertSame([], $result->nextState?->pendingToolCalls);
+        $this->assertSame([], $result->nextState?->pendingHumanInputRequests);
+        $this->assertSame(
+            ['agent_command_applied', 'tool_execution_end', 'tool_batch_committed', 'agent_end'],
+            array_map(static fn ($event): string => $event->type, $result->events),
+        );
+        $this->assertSame('tool', $result->nextState?->messages[1]->role);
+        $this->assertSame('call-d', $result->nextState?->messages[1]->toolCallId);
+        $this->assertTrue($result->nextState?->messages[1]->isError);
+    }
+
+    public function testCancelMultiDeferredToolCallHumanWaitsSynthesizesAll(): void
+    {
+        $commandStore = new InMemoryCommandStore();
+        $commandRouter = new CommandRouter([]);
+        $collector = new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(defaultMaxParallelism: 2);
+        $collector->registerExpectedBatch('run-multi-d', 1, 'step-m', [
+            new \Ineersa\AgentCore\Domain\Message\ExecuteToolCall('run-multi-d', 1, 'step-m', 1, 'idemp-a', 'call-a', 'bash', ['command' => 'a'], 0),
+            new \Ineersa\AgentCore\Domain\Message\ExecuteToolCall('run-multi-d', 1, 'step-m', 1, 'idemp-b', 'call-b', 'bash', ['command' => 'b'], 1),
+        ]);
+        $collector->admitHumanInputSuspension('run-multi-d', 1, 'step-m', 'call-a', 'q-a');
+        $collector->admitHumanInputSuspension('run-multi-d', 1, 'step-m', 'call-b', 'q-b');
+
+        $handler = new ApplyCommandHandler(
+            commandStore: $commandStore,
+            commandRouter: $commandRouter,
+            commandMailboxPolicy: new CommandMailboxPolicy($commandStore, $commandRouter),
+            eventFactory: new EventFactory(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            maxPendingCommands: 10,
+            toolBatchCollector: $collector,
+            serializer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::serializer(),
+        );
+
+        $assistant = new AgentMessage(
+            role: 'assistant',
+            content: [['type' => 'text', 'text' => 'need two']],
+            metadata: [
+                'tool_calls' => [
+                    ['id' => 'call-a', 'name' => 'bash', 'arguments' => ['command' => 'a'], 'order_index' => 0],
+                    ['id' => 'call-b', 'name' => 'bash', 'arguments' => ['command' => 'b'], 'order_index' => 1],
+                ],
+            ],
+        );
+
+        $state = new RunState(
+            runId: 'run-multi-d',
+            status: RunStatus::WaitingHuman,
+            version: 6,
+            turnNo: 1,
+            lastSeq: 12,
+            pendingToolCalls: ['call-a' => false, 'call-b' => false],
+            messages: [$assistant],
+            activeStepId: 'step-m',
+            pendingHumanInputRequests: [
+                \Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO::toolCallFromPayload(
+                    ['question_id' => 'q-a', 'prompt' => 'A?'],
+                    ['run_id' => 'run-multi-d', 'turn_no' => 1, 'step_id' => 'step-m', 'tool_call_id' => 'call-a'],
+                ),
+                \Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO::toolCallFromPayload(
+                    ['question_id' => 'q-b', 'prompt' => 'B?'],
+                    ['run_id' => 'run-multi-d', 'turn_no' => 1, 'step_id' => 'step-m', 'tool_call_id' => 'call-b'],
+                ),
+            ],
+            model: 'test-model',
+        );
+
+        $result = $handler->handle(new ApplyCommand(
+            runId: 'run-multi-d',
+            turnNo: 1,
+            stepId: 'cancel-multi',
+            attempt: 1,
+            idempotencyKey: 'cancel-multi-1',
+            kind: CoreCommandKind::Cancel,
+            payload: [],
+        ), $state);
+
+        $this->assertSame(RunStatus::Cancelled, $result->nextState?->status);
+        $this->assertSame([], $result->nextState?->pendingToolCalls);
+        $this->assertSame([], $result->nextState?->pendingHumanInputRequests);
+        $toolMessages = array_values(array_filter(
+            $result->nextState?->messages ?? [],
+            static fn (AgentMessage $message): bool => 'tool' === $message->role,
+        ));
+        $this->assertCount(2, $toolMessages);
+        $this->assertSame(['call-a', 'call-b'], array_map(static fn (AgentMessage $message): ?string => $message->toolCallId, $toolMessages));
+        $this->assertContains('agent_end', array_map(static fn ($event) => $event->type, $result->events));
     }
 }

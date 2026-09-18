@@ -13,9 +13,11 @@ use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\CommandCancellationOptions;
+use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
+use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Run\CurrentToolCallDTO;
 use Ineersa\AgentCore\Domain\Run\HumanInputContinuationKindEnum;
 use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
@@ -26,6 +28,8 @@ use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
+use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
 final readonly class ApplyCommandHandler implements RunMessageHandler
 {
@@ -34,6 +38,8 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         CoreCommandKind::Steer,
         CoreCommandKind::FollowUp,
     ];
+
+    private const string SYNTHETIC_USER_CANCEL_MESSAGE = 'Tool execution cancelled by user.';
 
     public function __construct(
         private CommandStoreInterface $commandStore,
@@ -45,6 +51,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         private ?MessageBusInterface $commandBus = null,
         private ?ToolBatchCollector $toolBatchCollector = null,
         private ?LoggerInterface $logger = null,
+        private (NormalizerInterface&DenormalizerInterface)|null $serializer = null,
     ) {
     }
 
@@ -82,7 +89,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         }
 
         if (RunStatus::Cancelled === $state->status
-            && !\in_array($message->kind, [CoreCommandKind::FollowUp, CoreCommandKind::AppendMessage], true)) {
+            && !\in_array($message->kind, [CoreCommandKind::FollowUp, CoreCommandKind::AppendMessage, CoreCommandKind::HumanResponse], true)) {
             return $this->rejectCommand($state, $message, 'Run is already cancelled.');
         }
 
@@ -305,6 +312,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                         'streamingMessage' => null,
                         'pendingToolCalls' => [],
                         'currentToolCalls' => [],
+                        'pendingHumanInputRequests' => [],
                         'errorMessage' => $reason,
                         'activeStepId' => null,
                         'currentOperation' => null,
@@ -359,6 +367,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 'lastSeq' => $state->lastSeq + \count($events),
                 'errorMessage' => $reason,
                 'currentToolCalls' => [],
+                'pendingHumanInputRequests' => [],
                 'activeStepId' => null,
                 'currentOperation' => null,
             ]);
@@ -378,6 +387,22 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             );
         }
 
+        // Deferred tool-call human waits leave pendingToolCalls===false with no
+        // worker in flight. Cancel must synthesize terminal tool results now —
+        // otherwise Cancelling waits forever for a ToolCallResult that will never arrive.
+        if (RunStatus::WaitingHuman === $state->status
+            && [] !== $state->pendingHumanInputRequests
+            && $this->hasOnlyDeferredToolHumanWaits($state)
+        ) {
+            return $this->terminalizeWaitingToolCallHumanCancel(
+                $state,
+                $runId,
+                $reason,
+                $eventSpecs,
+                $hasPendingAppendMessage,
+            );
+        }
+
         $nextState = $state->with([
             'status' => RunStatus::Cancelling,
             'version' => $state->version + 1,
@@ -387,6 +412,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 static fn (CurrentToolCallDTO $toolCall): CurrentToolCallDTO => $toolCall->withStatus(RunOperationalToolCallStatusEnum::Cancelled),
                 $state->currentToolCalls,
             ),
+            'pendingHumanInputRequests' => [],
         ]);
 
         return new HandlerResult(
@@ -491,29 +517,33 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         }
 
         if (RunStatus::WaitingHuman !== $state->status) {
-            return $this->rejectCommand(
-                $state,
-                $message,
-                'human_response command is only allowed while run is waiting for human input.',
-            );
+            // Late answers after cancel / follow-up abandonment are safe no-ops.
+            // Tool-call redrive above still handles post-commit retries while Running.
+            $this->logLateHumanResponseNoOp($state, $questionId, 'run_not_waiting_human');
+
+            return new HandlerResult();
         }
 
         $activeRequest = $state->pendingHumanInputRequests[0] ?? null;
         if (null === $activeRequest) {
+            $this->logLateHumanResponseNoOp($state, $questionId, 'empty_pending_queue');
+
+            return new HandlerResult();
+        }
+        if (null === $questionId || '' === $questionId) {
             return $this->rejectCommand(
                 $state,
                 $message,
-                'human_response rejected: no pending human-input request.',
+                'human_response rejected: missing non-empty question_id.',
             );
         }
-        if (null === $questionId || $questionId !== $activeRequest->questionId) {
+        if ($questionId !== $activeRequest->questionId) {
             // Multi-request post-commit redrive gap: q1 answer may already have been
             // applied (batch durable, status still WaitingHuman because q2 remains).
             // If Messenger redelivers q1's human_response, do not reject against active
             // q2 — redrive the exact stored call when the durable answer is equivalent.
             // Conflicts / missing stored answer still fail closed below.
             if (null !== $this->toolBatchCollector
-                && null !== $questionId
                 && \array_key_exists('answer', $message->payload)
             ) {
                 $redrive = $this->tryRedriveToolCallHumanResponse($state, $message, $questionId);
@@ -522,14 +552,24 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 }
             }
 
-            return $this->rejectCommand(
-                $state,
-                $message,
-                \sprintf(
-                    'human_response rejected: question_id does not match the active pending request (expected "%s").',
-                    $activeRequest->questionId,
-                ),
-            );
+            // Already-cancelled / superseded ids are ignored; only true FIFO head
+            // mismatches against a still-pending queue fail closed.
+            foreach ($state->pendingHumanInputRequests as $pending) {
+                if ($pending->questionId === $questionId) {
+                    return $this->rejectCommand(
+                        $state,
+                        $message,
+                        \sprintf(
+                            'human_response rejected: question_id does not match the active pending request (expected "%s").',
+                            $activeRequest->questionId,
+                        ),
+                    );
+                }
+            }
+
+            $this->logLateHumanResponseNoOp($state, $questionId, 'unknown_or_superseded_question_id');
+
+            return new HandlerResult();
         }
         if (HumanInputContinuationKindEnum::ToolCall === $activeRequest->continuationKind) {
             return $this->applyToolCallHumanResponse($state, $message, $options, $activeRequest, $questionId);
@@ -894,6 +934,238 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             nextState: $nextState,
             events: [$queuedEvent],
         );
+    }
+
+    /**
+     * WaitingHuman with only deferred tool-call suspensions: every pending human
+     * request is ToolCall-continuation and every unresolved pendingToolCalls id
+     * is tied to such a wait. No worker will finish those false slots.
+     */
+    private function hasOnlyDeferredToolHumanWaits(RunState $state): bool
+    {
+        if ([] === $state->pendingHumanInputRequests) {
+            return false;
+        }
+
+        $deferredCallIds = [];
+        foreach ($state->pendingHumanInputRequests as $request) {
+            if (HumanInputContinuationKindEnum::ToolCall !== $request->continuationKind) {
+                return false;
+            }
+            $toolCallId = $request->toolCallId();
+            if (null === $toolCallId || '' === $toolCallId) {
+                return false;
+            }
+            $deferredCallIds[$toolCallId] = true;
+        }
+
+        foreach ($state->pendingToolCalls as $toolCallId => $resolved) {
+            if (true === $resolved) {
+                continue;
+            }
+            if (!isset($deferredCallIds[$toolCallId])) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * @param list<array{type: string, payload: array<string, mixed>}> $eventSpecs
+     */
+    private function terminalizeWaitingToolCallHumanCancel(
+        RunState $state,
+        string $runId,
+        string $reason,
+        array $eventSpecs,
+        bool $hasPendingAppendMessage,
+    ): HandlerResult {
+        $messages = $state->messages;
+        $toolCallInfoMap = $this->buildToolCallInfoMap($state);
+        $pendingToolCalls = $state->pendingToolCalls;
+        $batchIds = array_keys($pendingToolCalls);
+        usort($batchIds, static function (string $a, string $b) use ($toolCallInfoMap): int {
+            $orderA = isset($toolCallInfoMap[$a]['order_index']) && \is_int($toolCallInfoMap[$a]['order_index']) ? $toolCallInfoMap[$a]['order_index'] : 0;
+            $orderB = isset($toolCallInfoMap[$b]['order_index']) && \is_int($toolCallInfoMap[$b]['order_index']) ? $toolCallInfoMap[$b]['order_index'] : 0;
+
+            return $orderA <=> $orderB;
+        });
+
+        $syntheticStepId = $state->activeStepId ?? \sprintf('synthetic-cancel-%d', hrtime(true));
+        $projectedToolMessageCount = 0;
+        if (null === $this->serializer) {
+            throw new \LogicException('Cancel of deferred tool-call human waits requires a serializer for ToolExecutionEnd payloads.');
+        }
+        $codec = new ToolExecutionEndPayloadCodec($this->serializer);
+
+        foreach ($batchIds as $tcId) {
+            if (true === ($pendingToolCalls[$tcId] ?? null)) {
+                if ($this->stateContainsToolMessageForId($messages, $tcId)) {
+                    continue;
+                }
+
+                // Durable-but-unprojected sibling: keep assistant tool_calls matched.
+                $info = $toolCallInfoMap[$tcId] ?? null;
+                $toolName = \is_string($info['name'] ?? null) ? $info['name'] : 'unknown';
+                $orderIndex = \is_int($info['order_index'] ?? null) ? $info['order_index'] : 0;
+                $syntheticResult = $this->syntheticCancelledToolResult(
+                    runId: $runId,
+                    turnNo: $state->turnNo,
+                    stepId: $syntheticStepId,
+                    toolCallId: $tcId,
+                    toolName: $toolName,
+                    orderIndex: $orderIndex,
+                );
+                $messages[] = $this->messageNormalizer->toolMessage($syntheticResult);
+                ++$projectedToolMessageCount;
+
+                continue;
+            }
+
+            $info = $toolCallInfoMap[$tcId] ?? null;
+            $toolName = \is_string($info['name'] ?? null) ? $info['name'] : 'unknown';
+            $orderIndex = \is_int($info['order_index'] ?? null) ? $info['order_index'] : 0;
+            $syntheticResult = $this->syntheticCancelledToolResult(
+                runId: $runId,
+                turnNo: $state->turnNo,
+                stepId: $syntheticStepId,
+                toolCallId: $tcId,
+                toolName: $toolName,
+                orderIndex: $orderIndex,
+            );
+
+            $eventSpecs[] = [
+                'type' => RunEventTypeEnum::ToolExecutionEnd->value,
+                'payload' => $codec->toEventPayload($syntheticResult),
+            ];
+            $messages[] = $this->messageNormalizer->toolMessage($syntheticResult);
+            ++$projectedToolMessageCount;
+        }
+
+        if ($projectedToolMessageCount > 0) {
+            $eventSpecs[] = [
+                'type' => RunEventTypeEnum::ToolBatchCommitted->value,
+                'payload' => [
+                    'count' => $projectedToolMessageCount,
+                    'turn_no' => $state->turnNo,
+                    'step_id' => $state->activeStepId ?? $syntheticStepId,
+                ],
+            ];
+        }
+
+        $eventSpecs[] = [
+            'type' => RunEventTypeEnum::AgentEnd->value,
+            'payload' => [
+                'reason' => 'cancelled',
+            ],
+        ];
+
+        $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
+
+        $nextState = $state->with([
+            'status' => RunStatus::Cancelled,
+            'version' => $state->version + 1,
+            'lastSeq' => $state->lastSeq + \count($events),
+            'isStreaming' => false,
+            'streamingMessage' => null,
+            'pendingToolCalls' => [],
+            'currentToolCalls' => [],
+            'pendingHumanInputRequests' => [],
+            'messages' => $messages,
+            'errorMessage' => $reason,
+            'activeStepId' => null,
+            'currentOperation' => null,
+        ]);
+
+        $postCommit = [];
+        if ($hasPendingAppendMessage) {
+            $followUpAdvance = $this->followUpAdvanceCallback($runId, $state->turnNo, 'post-cancel-advance');
+            if (null !== $followUpAdvance) {
+                $postCommit[] = $followUpAdvance;
+            }
+        }
+
+        return new HandlerResult(
+            nextState: $nextState,
+            events: $events,
+            postCommit: $postCommit,
+        );
+    }
+
+    /**
+     * @return array<string, array<string, mixed>>
+     */
+    private function buildToolCallInfoMap(RunState $state): array
+    {
+        $toolCallInfoMap = [];
+        foreach (array_reverse($state->messages) as $replayMsg) {
+            if ('assistant' === $replayMsg->role && \is_array($replayMsg->metadata['tool_calls'] ?? null)) {
+                foreach ($replayMsg->metadata['tool_calls'] as $tc) {
+                    if (\is_string($tc['id'] ?? null)) {
+                        $toolCallInfoMap[$tc['id']] = $tc;
+                    }
+                }
+                break;
+            }
+        }
+
+        return $toolCallInfoMap;
+    }
+
+    /** @param list<AgentMessage> $messages */
+    private function stateContainsToolMessageForId(array $messages, string $toolCallId): bool
+    {
+        foreach ($messages as $message) {
+            if ('tool' === $message->role && $message->toolCallId === $toolCallId) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function syntheticCancelledToolResult(
+        string $runId,
+        int $turnNo,
+        string $stepId,
+        string $toolCallId,
+        string $toolName,
+        int $orderIndex,
+    ): ToolCallResult {
+        $cancelMessage = self::SYNTHETIC_USER_CANCEL_MESSAGE;
+
+        return new ToolCallResult(
+            runId: $runId,
+            turnNo: $turnNo,
+            stepId: $stepId,
+            attempt: 1,
+            idempotencyKey: hash('sha256', \sprintf('cancel-%s-%s', $runId, $toolCallId)),
+            toolCallId: $toolCallId,
+            orderIndex: $orderIndex,
+            result: [
+                'tool_name' => $toolName,
+                'content' => [['type' => 'text', 'text' => $cancelMessage]],
+            ],
+            isError: true,
+            error: [
+                'type' => 'cancelled',
+                'message' => $cancelMessage,
+            ],
+        );
+    }
+
+    private function logLateHumanResponseNoOp(RunState $state, ?string $questionId, string $reason): void
+    {
+        $this->logger?->info('Late human_response ignored', [
+            'component' => 'apply_command_handler',
+            'event_type' => 'human_response.late_noop',
+            'run_id' => $state->runId,
+            'question_id' => $questionId,
+            'run_status' => $state->status->value,
+            'reason' => $reason,
+            'pending_human_count' => \count($state->pendingHumanInputRequests),
+        ]);
     }
 
     private function followUpAdvanceCallback(string $runId, int $turnNo, string $prefix): ?callable

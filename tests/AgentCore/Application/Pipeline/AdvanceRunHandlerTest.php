@@ -15,6 +15,7 @@ use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
+use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use Ineersa\AgentCore\Tests\Support\Builder\AdvanceRunMessageBuilder;
@@ -211,6 +212,12 @@ final class AdvanceRunHandlerTest extends TestCase
             ->withTurnNo(22)
             ->withLastSeq(278)
             ->withMessages([new AgentMessage(role: 'assistant', content: [['type' => 'text', 'text' => 'Please confirm']])])
+            ->withPendingHumanInputRequests([
+                PendingHumanInputRequestDTO::modelTurnFromInterruptPayload([
+                    'question_id' => 'ah_waiting',
+                    'prompt' => 'Please confirm',
+                ]),
+            ])
             ->build();
 
         $message = AdvanceRunMessageBuilder::create('run-waiting-human-advance')
@@ -225,6 +232,7 @@ final class AdvanceRunHandlerTest extends TestCase
         $this->assertSame(RunStatus::Running, $result->nextState->status, 'WaitingHuman run with pending FollowUp should transition to Running');
         $this->assertSame(279, $result->nextState->turnNo, 'Turn should advance to max(lastSeq, turnNo)+1');
         $this->assertNull($result->nextState->errorMessage, 'errorMessage should be cleared when transitioning WaitingHuman → Running');
+        $this->assertSame([], $result->nextState->pendingHumanInputRequests, 'Follow-up must clear orphaned pending human requests');
 
         $eventTypes = array_map(static fn ($e) => $e->type, $result->events);
         $this->assertContains('agent_command_applied', $eventTypes, 'Expected agent_command_applied event');

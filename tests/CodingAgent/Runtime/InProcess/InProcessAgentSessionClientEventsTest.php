@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\InProcess;
 
+use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\History\HistorySelectionServiceInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\RefreshRunContext;
+use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
 use Ineersa\CodingAgent\Config\ModelResolver;
@@ -176,6 +179,24 @@ final class InProcessAgentSessionClientEventsTest extends IsolatedKernelTestCase
             commandBus: $commandBus ?? new TestMessageBus(),
             sessionRepairService: $this->createStub(\Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface::class),
             transientSink: $transientSink,
+            activeRunContext: new class implements ActiveRunContextInterface {
+                public function stateFor(string $runId): RunState
+                {
+                    return RunState::queued($runId)->with(['status' => RunStatus::Completed]);
+                }
+
+                public function remember(RunState $state): void
+                {
+                }
+
+                public function invalidate(string $runId): void
+                {
+                }
+
+                public function clear(): void
+                {
+                }
+            },
         );
     }
 }

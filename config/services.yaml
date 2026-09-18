@@ -750,6 +750,7 @@ services:
   Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler:
     arguments:
       $commandBus: '@agent.command.bus'
+      $serializer: '@serializer'
 
   Ineersa\AgentCore\Application\Pipeline\LlmStepResultHandler:
     arguments:
@@ -1160,6 +1161,7 @@ services:
       $commandBus: '@agent.command.bus'
       $mcpDispatcher: '@Ineersa\CodingAgent\Mcp\McpSessionLifecycleDispatcher'
       $sessionRepairService: '@Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface'
+      $activeRunContext: '@Ineersa\AgentCore\Contract\ActiveRunContextInterface'
 
   # ─── MCP-04 / MCP-05 Dynamic MCP tool registration + invocation ────
 
