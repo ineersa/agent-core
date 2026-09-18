@@ -66,9 +66,9 @@ Do this before proposing a test strategy, adding tests, running Castor tests, or
 - **Never signal, kill, restart, or otherwise touch root-owned workers**, or processes tagged with `HATFIELD_SESSION_ID`. If a root-owned process looks stale, report it and leave it alone.
 - DB-touching tests boot the Symfony kernel and use the test container (`IsolatedKernelTestCase` / skill docs).
 
-## JetBrains IDE tools
+## Code navigation
 
-Use `code_search` for conceptual discovery and `rg`/`find` for literal text and file searches. Prefer available JetBrains IDE tools for symbol resolution, references, call hierarchy, diagnostics, and semantic refactoring. Target the exact checkout using the active runtime's project-scoping and open-project capability. Use filesystem tools when IDE tools are unavailable or insufficient. Exact tool names and capabilities come from the active coding agent's system instructions.
+Use `code_search` for conceptual discovery and `rg`/`find` for literal text and file searches. Read relevant files and callers before editing. Run searches and validation against the exact checkout or task worktree.
 
 ## Specification fidelity and minimality
 
@@ -134,7 +134,7 @@ External task board (not the code repo): `/home/ineersa/projects/agent-core-task
 
 By default, `task_list` lists TODO, IN-PROGRESS, CODE-REVIEW, and DONE. Use `status=CANCELLED` to list cancelled tasks. Use `include_archive=true` or `status=ARCHIVE` to list archived tasks.
 
-Task status/metadata moves do **not** commit to agent-core. Code branches, worktrees, PRs, merges do. Worktree creation updates parent IDEA module exclusions when present, creates minimal worktree-local `.idea` metadata from the integration primary module, and opens the exact worktree in JetBrains via MCP when available. DONE/CANCELLED cleanup closes that exact project before worktree removal.
+Task status/metadata moves do **not** commit to agent-core. Code branches, worktrees, PRs, merges do. Worktree creation updates parent IDEA module exclusions when present and creates minimal worktree-local `.idea` metadata from the integration primary module. This filesystem setup supports jbcontext and editor use without an IDE server. DONE/CANCELLED cleanup removes exclusions after successful worktree removal.
 
 ### Implementation ownership
 

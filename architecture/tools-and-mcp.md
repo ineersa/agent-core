@@ -17,7 +17,7 @@ every tool. MCP and enabled extensions contribute additional registrations.
 | `subagent`, `agent_resume`, `agent_retrieve`, `fork` | `src/CodingAgent/Agent/Tool` handlers and providers |
 | Task-board operations | task-workflow extension registrations |
 | `recall` | observational-memory extension registration |
-| Server-advertised names, including IDE tools | MCP catalog and `McpToolRegistrar` |
+| Server-advertised names | MCP catalog and `McpToolRegistrar` |
 
 ## Design from definition to invocation
 

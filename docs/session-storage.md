@@ -44,10 +44,13 @@ Base path: `sessions.path` setting (default under project `.hatfield/sessions/`)
 Table `hatfield_session` stores id, display name, timestamps, provider cache key, and related session metadata. Directory name is canonical; embedded IDs are validated on read.
 
 The nullable `reasoning_baseline` JSON column stores the provider-qualified model
-and fixed effort for Astra reasoning updates. The selected `reasoning` remains
-independent. Resume clears the baseline, and the next request establishes it from
-the current selection. Model changes also clear it. Worker recreation and socket
-reconnection do not clear it.
+and fixed effort for Astra reasoning updates, plus the last emitted effort and
+history-bound transition markers keyed by surviving request segments. The selected
+`reasoning` remains independent. Resume, async compaction success, hook
+replacement-summary compaction, and history-tail discard on rewind/edit clear the
+baseline so discarded switches are not replayed; the next request establishes it
+from the current selection. Model changes also clear it. Worker recreation and
+socket reconnection do not clear it.
 
 ### Naming
 
@@ -82,6 +85,13 @@ Deferred subagent supervision (single and parallel) uses durable batch records a
 | Lazy draft | New interactive session without an initial prompt may delay DB row creation until first message |
 | Process restart | Controller/runtime recover from session dir + DB; event projection rebuilds |
 | Catalog recovery | On startup after schema migrations, orphan numeric `sessions/<id>/events.jsonl` dirs without a `hatfield_session` row are reinserted into the catalog (same id) |
+
+Resume, relaunch, and reload attach through the controller `resume` command into
+`InProcessAgentSessionClient::attach()`. If the rebuilt run is WaitingHuman or still
+has pending human-input requests, attach cancels those waits before
+`context_refreshed`. The run becomes Cancelled rather than remaining WaitingHuman.
+History events are kept; late answers to cancelled question ids do not reopen them.
+See [human-input.md](human-input.md).
 
 ### Catalog recovery after state DB loss
 

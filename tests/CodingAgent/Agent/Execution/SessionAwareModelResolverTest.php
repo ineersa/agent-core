@@ -47,7 +47,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
         $this->tempDir = TestDirectoryIsolation::createProjectTempDir('hatfield-resolver', 0o750);
         $this->homeDir = $this->tempDir.'/home';
         mkdir($this->homeDir, 0777, true);
-        mkdir($this->homeDir.'/.hatfield', 0777, true);
+        TestDirectoryIsolation::createHatfieldTree($this->homeDir);
         file_put_contents($this->homeDir.'/.hatfield/settings.yaml', "tui:\n    theme: cyberpunk\n");
     }
 
@@ -469,25 +469,59 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
 
         $first = $resolver->resolve('', true, $input, new ModelResolutionOptions());
         $this->assertSame(['reasoning' => ['effort' => 'medium', 'summary' => 'auto'], 'codex_reasoning_reset' => true], $first->reasoningOptions);
-        foreach (['medium', 'high', 'low'] as $effort) {
-            $store->updateMetadata($id, ['reasoning' => $effort]);
-            $this->entityManager->clear();
-            $result = $this->createResolver($data)->resolve('', true, $input, new ModelResolutionOptions());
-            $this->assertSame('medium', $result->reasoningOptions['reasoning']['effort']);
-            $this->assertSame($effort, $result->reasoningOptions['codex_reasoning_update']);
-        }
+        $unchanged = $this->createResolver($data)->resolve('', true, $input, new ModelResolutionOptions());
+        $this->assertSame(['reasoning' => ['effort' => 'medium', 'summary' => 'auto']], $unchanged->reasoningOptions);
+
+        $store->updateMetadata($id, ['reasoning' => 'high']);
+        $this->entityManager->clear();
+        $toHigh = $this->createResolver($data)->resolve('', true, $input, new ModelResolutionOptions());
+        $this->assertSame('medium', $toHigh->reasoningOptions['reasoning']['effort']);
+        $this->assertSame('high', $toHigh->reasoningOptions['codex_reasoning_update']);
+        $this->assertSame($id, $toHigh->reasoningOptions['hatfield_run_id']);
+        $this->assertSame('openai-codex/gpt-6-astra', $toHigh->reasoningOptions['hatfield_model_ref']);
+        $this->assertArrayNotHasKey('hatfield_run_id', $toHigh->providerOptions);
+        $this->assertArrayNotHasKey('hatfield_model_ref', $toHigh->providerOptions);
+        $store->rememberReasoningTransition($id, 'openai-codex/gpt-6-astra', 'transition-high', 'high');
+
+        $store->updateMetadata($id, ['reasoning' => 'high']);
+        $this->entityManager->clear();
+        $stillHigh = $this->createResolver($data)->resolve('', true, $input, new ModelResolutionOptions());
+        $this->assertSame(['reasoning' => ['effort' => 'medium', 'summary' => 'auto']], $stillHigh->reasoningOptions);
+        $this->assertArrayNotHasKey('hatfield_run_id', $stillHigh->reasoningOptions);
+        $this->assertArrayNotHasKey('hatfield_model_ref', $stillHigh->reasoningOptions);
+
+        $store->updateMetadata($id, ['reasoning' => 'low']);
+        $this->entityManager->clear();
+        $toLow = $this->createResolver($data)->resolve('', true, $input, new ModelResolutionOptions());
+        $this->assertSame('medium', $toLow->reasoningOptions['reasoning']['effort']);
+        $this->assertSame('low', $toLow->reasoningOptions['codex_reasoning_update']);
+        $store->rememberReasoningTransition($id, 'openai-codex/gpt-6-astra', 'transition-low', 'low');
+
+        $store->updateMetadata($id, ['reasoning' => 'medium']);
+        $this->entityManager->clear();
+        $backToBaseline = $this->createResolver($data)->resolve('', true, $input, new ModelResolutionOptions());
+        $this->assertSame('medium', $backToBaseline->reasoningOptions['reasoning']['effort']);
+        $this->assertSame('medium', $backToBaseline->reasoningOptions['codex_reasoning_update']);
+        $store->rememberReasoningTransition($id, 'openai-codex/gpt-6-astra', 'transition-medium', 'medium');
+
+        $store->updateMetadata($id, ['reasoning' => 'low']);
+        $this->entityManager->clear();
+        $toLowAgain = $this->createResolver($data)->resolve('', true, $input, new ModelResolutionOptions());
+        $this->assertSame('medium', $toLowAgain->reasoningOptions['reasoning']['effort']);
+        $this->assertSame('low', $toLowAgain->reasoningOptions['codex_reasoning_update']);
+        $store->rememberReasoningTransition($id, 'openai-codex/gpt-6-astra', 'transition-low-again', 'low');
 
         $override = $resolver->resolve('openai-codex/gpt-6-astra', true, $input, new ModelResolutionOptions(['thinking_level' => 'high']));
         $this->assertSame(['reasoning' => ['effort' => 'high', 'summary' => 'auto']], $override->reasoningOptions);
         $this->assertSame('medium', $store->findSession($id)->reasoningBaseline['effort']);
 
         $store->resetReasoningBaseline($id);
-        $resumed = $resolver->resolve('', true, $input, new ModelResolutionOptions());
+        $resumed = $this->createResolver($data)->resolve('', true, $input, new ModelResolutionOptions());
         $this->assertSame(['reasoning' => ['effort' => 'low', 'summary' => 'auto'], 'codex_reasoning_reset' => true], $resumed->reasoningOptions);
         $store->updateMetadata($id, ['model' => 'openai-codex/gpt-test']);
         $this->assertNull($store->findSession($id)->reasoningBaseline);
         $store->updateMetadata($id, ['model' => 'openai-codex/gpt-6-astra', 'reasoning' => 'high']);
-        $changed = $resolver->resolve('', true, $input, new ModelResolutionOptions());
+        $changed = $this->createResolver($data)->resolve('', true, $input, new ModelResolutionOptions());
         $this->assertSame(['reasoning' => ['effort' => 'high', 'summary' => 'auto'], 'codex_reasoning_reset' => true], $changed->reasoningOptions);
     }
 

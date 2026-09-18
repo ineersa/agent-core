@@ -11,33 +11,48 @@ use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketContinuationState;
 
 final class CodexRequestBodyFactoryTest extends TestCase
 {
-    public function testUpdatePreservesHistoryAndDoesNotAccumulate(): void
+    public function testInternalReasoningControlsAreStrippedWithoutMovingInput(): void
     {
         $factory = new CodexRequestBodyFactory();
         $model = new CodexModel('gpt-6-astra');
-        $history = [['role' => 'user', 'content' => 'first'], ['role' => 'assistant', 'content' => 'answer']];
-        $tool = ['type' => 'function_call_output', 'call_id' => 'call-1', 'output' => 'done'];
-        $options = ['reasoning' => ['effort' => 'medium'], CodexRequestBodyFactory::REASONING_UPDATE => 'high'];
-        $body = $factory->build($model, ['input' => [...$history, $tool]], $options);
-        $this->assertSame([...$history, ['type' => 'configuration_update', 'reasoning' => ['effort' => 'high']], $tool], $body['input']);
+        $input = [
+            ['role' => 'user', 'content' => 'first'],
+            ['type' => 'message', 'role' => 'assistant', 'content' => 'answer'],
+            ['type' => 'configuration_update', 'reasoning' => ['effort' => 'high']],
+            ['role' => 'user', 'content' => 'second'],
+        ];
+        $options = [
+            'reasoning' => ['effort' => 'medium'],
+            CodexRequestBodyFactory::REASONING_UPDATE => 'high',
+            'hatfield_run_id' => '55',
+            'hatfield_model_ref' => 'openai-codex/gpt-6-astra',
+        ];
+
+        $body = $factory->build($model, ['input' => $input], $options);
+
+        $this->assertSame($input, $body['input']);
         $this->assertSame('medium', $body['reasoning']['effort']);
         $this->assertArrayNotHasKey(CodexRequestBodyFactory::REASONING_UPDATE, $body);
-        $this->assertSame($body, $factory->build($model, $body, $options));
+        $this->assertArrayNotHasKey('hatfield_run_id', $body);
+        $this->assertArrayNotHasKey('hatfield_model_ref', $body);
         $this->assertArrayNotHasKey('truncation', $body);
         $this->assertArrayNotHasKey('context_management', $body);
     }
 
-    public function testNoInputNeverBecomesUpdateOnlyAndEmptyDeltaStaysEmpty(): void
+    public function testStableUpdatePrefixProducesEmptyDeltaOnRepeat(): void
     {
         $factory = new CodexRequestBodyFactory();
         $model = new CodexModel('gpt-6-astra');
-        $options = ['reasoning' => ['effort' => 'medium'], CodexRequestBodyFactory::REASONING_UPDATE => 'high'];
-        foreach ([[], [['type' => 'configuration_update', 'reasoning' => ['effort' => 'low']]]] as $input) {
-            $this->assertSame([], $factory->build($model, ['input' => $input], $options)['input']);
-        }
-        $first = $factory->build($model, ['input' => [['role' => 'user', 'content' => 'first']]], ['reasoning' => ['effort' => 'medium']]);
+        $first = $factory->build($model, [
+            'input' => [
+                ['role' => 'user', 'content' => 'first'],
+                ['type' => 'configuration_update', 'reasoning' => ['effort' => 'high']],
+                ['role' => 'user', 'content' => 'second'],
+            ],
+        ], ['reasoning' => ['effort' => 'medium']]);
         $state = CodexWebSocketContinuationState::fromSuccessfulResponse($first, 'resp-1', []);
-        $repeated = $factory->build($model, ['input' => $first['input']], $options);
+        $repeated = $factory->build($model, ['input' => $first['input']], ['reasoning' => ['effort' => 'medium']]);
+
         $this->assertSame(['previous_response_id' => 'resp-1', 'input' => []], $state->buildDeltaRequest($repeated));
     }
 

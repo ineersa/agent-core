@@ -16,6 +16,7 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\CompactionStepResult;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 
@@ -34,6 +35,7 @@ final class CompactionStepResultHandler implements RunMessageHandler, RunMessage
     public function __construct(
         private CompactionServiceInterface $compactionService,
         private EventFactory $eventFactory,
+        private ?HatfieldSessionStore $sessionMetadataStore = null,
         private LoggerInterface $logger = new NullLogger(),
     ) {
     }
@@ -398,6 +400,11 @@ final class CompactionStepResultHandler implements RunMessageHandler, RunMessage
             'currentOperation' => null,
             'lastAppliedCompactionKey' => $message->idempotencyKey(),
         ]);
+
+        // Discarded conversation may still contain prior reasoning switches.
+        // Keep the selected effort and re-establish the baseline on the next
+        // Astra request instead of replaying transitions across rewritten history.
+        $this->sessionMetadataStore?->resetReasoningBaseline($runId);
 
         // Continue the LLM turn ONLY when the compaction was holding a
         // pending turn open (pre-LLM guard path) AND cancellation has NOT

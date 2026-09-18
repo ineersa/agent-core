@@ -215,9 +215,11 @@ final class HatfieldSessionStore
 
     /**
      * Claim the first request's effort. Return null for that first request,
-     * or the fixed effort for subsequent requests in the same model epoch.
+     * or the decision for subsequent requests in the same model epoch.
+     *
+     * @return array{baseline: string, update: ?string, last_emitted: string}|null
      */
-    public function claimReasoningBaseline(string $sessionId, string $model, string $effort): ?string
+    public function claimReasoningBaseline(string $sessionId, string $model, string $effort): ?array
     {
         $entity = $this->fetchEntityOrNull($sessionId);
         if (null === $entity) {
@@ -225,13 +227,109 @@ final class HatfieldSessionStore
         }
 
         if ($model === ($entity->reasoningBaseline['model'] ?? null)) {
-            return $entity->reasoningBaseline['effort'];
+            $baseline = $entity->reasoningBaseline['effort'] ?? null;
+            if (!\is_string($baseline) || '' === $baseline) {
+                return null;
+            }
+
+            $lastEmitted = $entity->reasoningBaseline['last_emitted'] ?? $baseline;
+            if (!\is_string($lastEmitted) || '' === $lastEmitted) {
+                $lastEmitted = $baseline;
+            }
+
+            return [
+                'baseline' => $baseline,
+                'update' => $effort === $lastEmitted ? null : $effort,
+                'last_emitted' => $lastEmitted,
+            ];
         }
 
-        $entity->reasoningBaseline = ['model' => $model, 'effort' => $effort];
+        $entity->reasoningBaseline = [
+            'model' => $model,
+            'effort' => $effort,
+            'last_emitted' => $effort,
+            'transitions' => [],
+        ];
         $this->entityManager->flush();
 
         return null;
+    }
+
+    /**
+     * Remember a history-bound reasoning transition for later request rebuild.
+     *
+     * @param non-empty-string $messageKey
+     * @param non-empty-string $effort
+     */
+    public function rememberReasoningTransition(string $sessionId, string $model, string $messageKey, string $effort): void
+    {
+        $entity = $this->fetchEntityOrNull($sessionId);
+        if (null === $entity) {
+            return;
+        }
+
+        $baseline = $entity->reasoningBaseline;
+        if (!\is_array($baseline)
+            || ($baseline['model'] ?? null) !== $model
+            || !\is_string($baseline['effort'] ?? null)
+            || '' === $baseline['effort']) {
+            return;
+        }
+
+        $transitions = \is_array($baseline['transitions'] ?? null) ? $baseline['transitions'] : [];
+        $next = [];
+        foreach ($transitions as $transition) {
+            if (!\is_array($transition)) {
+                continue;
+            }
+            $existingKey = $transition['message_key'] ?? null;
+            if (!\is_string($existingKey) || '' === $existingKey || $existingKey === $messageKey) {
+                continue;
+            }
+            $existingEffort = $transition['effort'] ?? null;
+            if (!\is_string($existingEffort) || '' === $existingEffort) {
+                continue;
+            }
+            $next[] = ['message_key' => $existingKey, 'effort' => $existingEffort];
+        }
+        $next[] = ['message_key' => $messageKey, 'effort' => $effort];
+
+        $baseline['transitions'] = $next;
+        $baseline['last_emitted'] = $effort;
+        $entity->reasoningBaseline = $baseline;
+        $this->entityManager->flush();
+    }
+
+    /**
+     * @return list<array{message_key: string, effort: string}>
+     */
+    public function listReasoningTransitions(string $sessionId, string $model): array
+    {
+        $entity = $this->fetchEntityOrNull($sessionId);
+        if (null === $entity) {
+            return [];
+        }
+
+        $baseline = $entity->reasoningBaseline;
+        if (!\is_array($baseline) || ($baseline['model'] ?? null) !== $model) {
+            return [];
+        }
+
+        $transitions = \is_array($baseline['transitions'] ?? null) ? $baseline['transitions'] : [];
+        $out = [];
+        foreach ($transitions as $transition) {
+            if (!\is_array($transition)) {
+                continue;
+            }
+            $messageKey = $transition['message_key'] ?? null;
+            $effort = $transition['effort'] ?? null;
+            if (!\is_string($messageKey) || '' === $messageKey || !\is_string($effort) || '' === $effort) {
+                continue;
+            }
+            $out[] = ['message_key' => $messageKey, 'effort' => $effort];
+        }
+
+        return $out;
     }
 
     public function resetReasoningBaseline(string $sessionId): void

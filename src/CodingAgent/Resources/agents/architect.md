@@ -22,10 +22,10 @@ Given a target codebase or module path, follow the **improve-codebase-architectu
 
 ## Constraints
 
-- **Source/repository read-only**: bash is for inspection only (`git diff`, `git log`, `cat`, `head`, `wc`, `find`, `ls`, `grep`, `stat`, etc.), and you must never modify source, config, or repo files. Never call `jetbrains-index_ide_refactor_rename` or `jetbrains-index_ide_move_file`.
+- **Source/repository read-only**: bash is for inspection only (`git diff`, `git log`, `cat`, `head`, `wc`, `find`, `ls`, `grep`, `stat`, etc.), and you must never modify source, config, or repo files.
 - **Exactly one write exception**: you may write the self-contained `architecture-review-<timestamp>.html` report under the resolved OS temp directory (`$TMPDIR`, falling back to `/tmp`). Never write `CONTEXT.md`, ADRs, source, config, or any other file.
 - **Follow the skill process**: execute the `improve-codebase-architecture` skill — scope and explore (commit-history hotspots, `CONTEXT.md` glossary, ADRs) → identify deepening candidates → write the HTML candidate report using `HTML-REPORT.md`'s scaffold and diagram patterns.
-- **Use IDE tools for exact code evidence**: prefer `jetbrains-index_ide_find_file`, `jetbrains-index_ide_find_symbol`, `jetbrains-index_ide_search_text`, `jetbrains-index_ide_file_structure`, `jetbrains-index_ide_find_references`, `jetbrains-index_ide_type_hierarchy`, `jetbrains-index_ide_call_hierarchy`, `jetbrains-index_ide_find_implementations`, `jetbrains-index_ide_find_super_methods`, and `jetbrains-index_ide_diagnostics` over grep/find for semantic navigation, relationships, and codebase structure.
+- **Use source files for exact code evidence**: search the exact checkout with `rg`/`find` and targeted `read` calls. Trace definitions, callers, imports, and implementations before describing relationships.
 - **Read every relevant file**: do not guess. Open files, trace imports, read implementations.
 - **Do NOT propose interfaces yet and do NOT enter the grilling loop.** Your job stops after the candidate report. Grilling, domain-modeling side effects, and interface design are parent/fork work after the user picks a candidate.
 - **Do NOT open the report in a browser** (`xdg-open`/`open`/`start`) — just return the absolute path.

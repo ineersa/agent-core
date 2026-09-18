@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Symfony\AI\Platform\Bridge\OpenAICodex\Contract\Message;
 
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexModel;
+use Symfony\AI\Platform\Bridge\OpenAICodex\CodexReasoningTransitionMetadata;
 use Symfony\AI\Platform\Contract\Normalizer\ModelContractNormalizer;
 use Symfony\AI\Platform\Message\MessageBag;
+use Symfony\AI\Platform\Message\MessageInterface;
 use Symfony\AI\Platform\Model;
 use Symfony\Component\Serializer\Exception\ExceptionInterface;
 use Symfony\Component\Serializer\Normalizer\NormalizerAwareInterface;
@@ -15,11 +17,13 @@ use Symfony\Component\Serializer\Normalizer\NormalizerAwareTrait;
 /**
  * Codex-specific MessageBag normalizer.
  *
- * Extends the OpenResponses pattern with two additional behaviors:
+ * Extends the OpenResponses pattern with three additional behaviors:
  * 1. Flattens multi-item normalizer output (reasoning + message) into the
  *    input array, not as a nested array.
  * 2. Skips messages that normalize to an empty array (thinking-only messages
  *    with no signature produce no input items).
+ * 3. Emits history-bound configuration_update items immediately before each
+ *    message that carries a codex_reasoning_effort marker.
  *
  * This is separated from the OpenResponses MessageBagNormalizer because the
  * Codex contract must flatten reasoning items (separate top-level input items
@@ -47,12 +51,24 @@ final class CodexMessageBagNormalizer extends ModelContractNormalizer implements
         $input = [];
 
         foreach ($data->withoutSystemMessage()->getMessages() as $message) {
+            if (!$message instanceof MessageInterface) {
+                continue;
+            }
+
             $normalized = $this->normalizer->normalize($message, $format, $context);
 
             // Skip empty results (thinking-only messages with no signature
             // return [] from CodexAssistantMessageNormalizer).
             if (\is_array($normalized) && [] === $normalized) {
                 continue;
+            }
+
+            $effort = $message->getMetadata()->get(CodexReasoningTransitionMetadata::KEY);
+            if (\is_string($effort) && '' !== $effort) {
+                $input[] = [
+                    'type' => 'configuration_update',
+                    'reasoning' => ['effort' => $effort],
+                ];
             }
 
             // Flatten when the normalized result is a sequential list.

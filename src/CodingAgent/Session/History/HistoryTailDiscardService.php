@@ -14,6 +14,7 @@ use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Message\ApplyShellCommand;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -21,6 +22,8 @@ use Psr\Log\LoggerInterface;
  * while active turns exist after the current selected tip.
  *
  * Shared choke point used by RunMessageProcessor before handlers run.
+ * An actual discard also clears Astra reasoning_baseline so transitions
+ * anchored on discarded forward history cannot suppress the selected effort.
  */
 final readonly class HistoryTailDiscardService implements HistoryTailDiscardInterface
 {
@@ -34,6 +37,7 @@ final readonly class HistoryTailDiscardService implements HistoryTailDiscardInte
     public function __construct(
         private EventStoreInterface $eventStore,
         private HistoryProjector $projector,
+        private HatfieldSessionStore $sessionMetadataStore,
         private LoggerInterface $logger,
     ) {
     }
@@ -95,6 +99,10 @@ final readonly class HistoryTailDiscardService implements HistoryTailDiscardInte
         );
 
         $persisted = $this->eventStore->append($discardEvent);
+
+        // Drop transitions keyed to the discarded forward tail so the next
+        // request re-establishes the still-selected effort as baseline.
+        $this->sessionMetadataStore->resetReasoningBaseline($runId);
 
         $this->logger->info('history_tail_discarded.appended', [
             'run_id' => $runId,

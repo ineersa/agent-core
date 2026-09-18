@@ -750,6 +750,7 @@ services:
   Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler:
     arguments:
       $commandBus: '@agent.command.bus'
+      $serializer: '@serializer'
 
   Ineersa\AgentCore\Application\Pipeline\LlmStepResultHandler:
     arguments:
@@ -1003,6 +1004,19 @@ services:
     tags:
       - { name: agent_core.tool_result_processor, priority: 0 }
 
+  # Astra stamps durable MESSAGE_KEY values from original history text before
+  # OutputCap rewrites oversized tool text (saved-path filenames change on each
+  # retry). OutputCap preserves those keys when it rebuilds capped messages.
+  Ineersa\CodingAgent\Tool\OutputCapLlmTransformHook:
+    autoconfigure: false
+    tags:
+      - { name: agent_core.transform_context_hook, priority: 0 }
+
+  Ineersa\CodingAgent\Agent\Execution\AstraReasoningTransitionTransformHook:
+    autoconfigure: false
+    tags:
+      - { name: agent_core.transform_context_hook, priority: 100 }
+
   Ineersa\AgentCore\Application\Handler\ToolExecutor:
     factory: ['Ineersa\AgentCore\Application\Handler\ToolExecutor', 'fromSettings']
     arguments:
@@ -1147,6 +1161,7 @@ services:
       $commandBus: '@agent.command.bus'
       $mcpDispatcher: '@Ineersa\CodingAgent\Mcp\McpSessionLifecycleDispatcher'
       $sessionRepairService: '@Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface'
+      $activeRunContext: '@Ineersa\AgentCore\Contract\ActiveRunContextInterface'
 
   # ─── MCP-04 / MCP-05 Dynamic MCP tool registration + invocation ────
 

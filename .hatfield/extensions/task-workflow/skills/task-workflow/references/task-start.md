@@ -24,5 +24,5 @@ Do not move to CODE-REVIEW, push, create a PR, or launch a reviewer in this phas
 
 - Run targeted task-branch checks in the task worktree.
 - `castor check` does not kill leaked QA workers. Treat survivors as lifecycle bugs. Diagnose them with `castor clean:cleanup:workers:list`. Use cleanup only as an investigated last resort.
-- Worktree setup updates parent IDEA exclusions, creates minimal local IDEA metadata, and opens the exact worktree through `jetbrains-index_ide_open_project`. DONE or CANCELLED cleanup closes that project before removing the worktree. An IDE integration failure does not fail the status transition. Scope semantic IDE tools to the exact worktree.
+- Worktree setup updates parent IDEA exclusions and creates minimal local `.idea` metadata for jbcontext and editor use. It does not require an IDE server. DONE or CANCELLED cleanup removes exclusions after successful worktree removal.
 - Task status and metadata live on the external board. They do not commit to `agent-core`.
