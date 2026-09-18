@@ -120,7 +120,6 @@ also have private tools that are not the main session's catalog.
 
 MCP servers advertise their own tool names and schemas. `/mcp` shows configured
 servers and discovered tools. [MCP configuration](mcp.md) controls availability.
-IDE tools are supplied by the configured integration, not by the fixed built-in list.
 
 ## Failure diagnostics
 

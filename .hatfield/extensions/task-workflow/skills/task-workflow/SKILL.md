@@ -1,7 +1,7 @@
 ---
 name: task-workflow
 description: "Routes task workflow phases to focused procedures. Load for task-explain, task-start, task-to-pr, task-review-iterate, task-done, implementation ownership, reviewer workflows, or compaction recovery."
-version: 1.1.0
+version: 1.1.1
 ---
 
 # Task workflow router

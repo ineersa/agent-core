@@ -25,10 +25,8 @@ Thoroughness (infer from task, default medium):
 
 Strategy:
 1. Use `code_search` for conceptual discovery and `rg`/`find` for literal text and file searches.
-2. Use available IDE tools for definitions, references, and call hierarchy. Target the exact checkout using the active runtime's project-scoping and open-project capability.
-3. If IDE tools are unavailable or insufficient, use filesystem searches and targeted `read` calls.
-4. Read targeted sections after tool evidence identifies the right files.
-5. Identify types, interfaces, key functions, and dependencies between files. Keep reconnaissance read-only. Do not use refactoring tools.
+2. Run searches in the exact checkout and read targeted sections after searches identify the relevant files.
+3. Trace definitions, callers, imports, and implementations to identify dependencies between files. Keep reconnaissance read-only.
 
 Your output format:
 

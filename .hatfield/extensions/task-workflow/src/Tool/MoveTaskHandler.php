@@ -216,9 +216,6 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
         if (null !== $wtResult->ideaSetupNote && '' !== $wtResult->ideaSetupNote) {
             $notes[] = $wtResult->ideaSetupNote;
         }
-        if (null !== $wtResult->ideOpenNote && '' !== $wtResult->ideOpenNote) {
-            $notes[] = $wtResult->ideOpenNote;
-        }
 
         return $text;
     }
