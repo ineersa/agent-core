@@ -40,6 +40,26 @@ use Symfony\Component\Tui\Widget\VerticallyExpandableInterface;
 #[AllowMockObjectsWithoutExpectations]
 final class TuiQuestionOverlayBudgetVirtualTest extends TestCase
 {
+    public function testTwoRowBudgetKeepsAnAnswerVisible(): void
+    {
+        $terminal = new VirtualTerminal(columns: 40, rows: 2);
+        $tui = new Tui(terminal: $terminal);
+        $overlay = new QuestionOverlayWidget();
+        $overlay->setStyle(new \Symfony\Component\Tui\Style\Style(gap: 1));
+        $overlay->add(new \Symfony\Component\Tui\Widget\TextWidget('Question heading'));
+        $overlay->add(new SelectListWidget([['value' => 'alpha', 'label' => 'Alpha answer']]));
+        $tui->add($overlay);
+        try {
+            $tui->start();
+            $tui->processRender();
+            $buffer = new ScreenBuffer(width: 40, height: 2);
+            $buffer->write($terminal->getOutput());
+            $this->assertStringContainsString('→ Alpha answer', $buffer->getScreen());
+        } finally {
+            $tui->stop();
+        }
+    }
+
     #[Test]
     #[DataProvider('terminalGeometries')]
     public function testBusyWaitingScreenKeepsSelectedArrowAndUsefulOptions(int $columns, int $rows, int $minVisibleChoices): void

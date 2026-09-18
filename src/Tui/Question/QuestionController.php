@@ -230,9 +230,6 @@ final class QuestionController
             maxVisible: SelectListKeybindings::MAX_VISIBLE,
             keybindings: $kb,
         );
-        // Prefer remaining overlay budget over default blank fill so short
-        // choice lists stay compact inside the hard 12-row question cap.
-        $this->listWidget->expandVertically(false);
         // Scope stylesheet rules to this overlay only; other pickers stay on defaults.
         $this->listWidget->addStyleClass('question-choice-list');
 

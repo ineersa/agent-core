@@ -6,7 +6,6 @@ namespace Ineersa\Tui\Question;
 
 use Symfony\Component\Tui\Render\RenderContext;
 use Symfony\Component\Tui\Widget\AbstractWidget;
-use Symfony\Component\Tui\Widget\ParentInterface;
 use Symfony\Component\Tui\Widget\SelectListWidget;
 use Symfony\Component\Tui\Widget\WidgetContainerInterface;
 
@@ -33,7 +32,7 @@ use Symfony\Component\Tui\Widget\WidgetContainerInterface;
  * surrounding ChatScreen frame and trip ScreenWriter's overheight-shrink
  * clear path.
  */
-final class QuestionOverlayWidget extends AbstractWidget implements WidgetContainerInterface, ParentInterface
+final class QuestionOverlayWidget extends AbstractWidget implements WidgetContainerInterface
 {
     public const int MAX_PHYSICAL_ROWS = 12;
 
@@ -129,11 +128,11 @@ final class QuestionOverlayWidget extends AbstractWidget implements WidgetContai
 
             $needsGap = $previousEmitted && $gap > 0;
             // Prefer the select list over tall prompt/header chrome. Keep at
-            // least half the remaining budget (min 2 rows when possible) so a
+            // least half the budget, plus its preceding gap, so a
             // wrapped selected option cannot monopolize the entire overlay.
             $reserveForSelect = 0;
             if (null !== $selectIndex && $index < $selectIndex) {
-                $reserveForSelect = max(1, min($remaining - ($needsGap ? $gap : 0), intdiv($budget, 2)));
+                $reserveForSelect = $gap + max(1, intdiv($budget, 2));
             }
             $childBudget = $remaining - ($needsGap ? $gap : 0) - $reserveForSelect;
             if ($childBudget <= 0) {
