@@ -74,18 +74,25 @@ final class CodeModeDiagnosticsTranscriptVirtualRenderTest extends TestCase
             $lines[] = \sprintf('diag_line_%02d', $i);
         }
         $stdout = implode("\n", $lines);
-        $visible = $this->executeVisibleResult(new CodeModeExecutionResult('ok', [
+        $domainResult = $this->executeDomainResult(new CodeModeExecutionResult('ok', [
             'stdout' => $stdout,
         ]), defaultCap: 50_000);
+        $visible = (string) ($domainResult->content[0]['text'] ?? '');
+        $details = \is_array($domainResult->details) ? $domainResult->details : [];
 
         $this->assertStringContainsString('code_mode diagnostics', $visible);
         $this->assertStringContainsString('diag_line_00', $visible);
         $this->assertStringContainsString('diag_line_11', $visible);
+        $notifications = ModelNotificationCodec::denormalizeFromDetails(
+            AttributeSerializerValidatorTestFactory::denormalizer(),
+            $details,
+        );
+        $this->assertSame([], $notifications);
 
         [$projector, $blocksCollapsed] = $this->projectToolResult(
             toolCallId: 'call-uncapped',
             visibleResult: $visible,
-            details: [],
+            details: $details,
         );
 
         $this->assertSame([], array_values(array_filter(
@@ -165,13 +172,6 @@ final class CodeModeDiagnosticsTranscriptVirtualRenderTest extends TestCase
         $this->assertStringNotContainsString('code_mode diagnostics', $plain);
         $this->assertStringNotContainsString('diag_line', $plain);
         $this->assertStringNotContainsString('script_diagnostics', $plain);
-    }
-
-    private function executeVisibleResult(CodeModeExecutionResult $raw, int $defaultCap, ?int $docCap = null): string
-    {
-        $domainResult = $this->executeDomainResult($raw, $defaultCap, $docCap);
-
-        return (string) ($domainResult->content[0]['text'] ?? '');
     }
 
     private function executeDomainResult(CodeModeExecutionResult $raw, int $defaultCap, ?int $docCap = null): \Ineersa\AgentCore\Domain\Tool\ToolResult
