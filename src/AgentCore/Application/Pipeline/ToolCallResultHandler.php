@@ -202,6 +202,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
                 'streamingMessage' => null,
                 'pendingToolCalls' => [],
                 'currentToolCalls' => [],
+                'pendingHumanInputRequests' => [],
                 'messages' => $messages,
                 'activeStepId' => null,
                 'currentOperation' => null,

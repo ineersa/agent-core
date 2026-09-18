@@ -253,7 +253,9 @@ final readonly class RunStateReducer
             return $state->with($changes);
         }
 
-        // steer / follow_up / append_message: append message to prompt context
+        // steer / follow_up / append_message: append message to prompt context.
+        // These lifecycle advances abandon any outstanding human-input queue so a
+        // later response cannot target a superseded question behind a new wait.
         if (\in_array($kind, ['steer', 'follow_up', 'append_message'], true)) {
             $messagePayload = \is_array($payload['message'] ?? null) ? $payload['message'] : null;
             if (null !== $messagePayload) {
@@ -266,6 +268,7 @@ final readonly class RunStateReducer
             return $state->with([
                 'status' => RunStatus::Running,
                 'errorMessage' => null,
+                'pendingHumanInputRequests' => [],
             ]);
         }
 
@@ -273,22 +276,37 @@ final readonly class RunStateReducer
         // ModelTurn may append a human message; ToolCall has no model-visible message.
         // Status stays WaitingHuman while more pending requests remain.
         if ('human_response' === $kind) {
+            $questionId = \is_string($payload['question_id'] ?? null) ? $payload['question_id'] : null;
+            if (null === $questionId || '' === $questionId) {
+                throw new \InvalidArgumentException('human_response event is missing non-empty question_id.');
+            }
+
+            $matchingIndex = null;
+            foreach ($state->pendingHumanInputRequests as $index => $pending) {
+                if ($pending->questionId === $questionId) {
+                    $matchingIndex = $index;
+                    break;
+                }
+            }
+
+            // Late answers for already-cancelled / superseded questions are no-ops.
+            // Same-turn FIFO multi-question queues still require the matching id to
+            // remain pending; answering a non-head id fails closed.
+            // Validate before mutating the by-ref message accumulator so a stale
+            // answer cannot enter model history.
+            if (null === $matchingIndex) {
+                return $state;
+            }
+            if (0 !== $matchingIndex) {
+                throw new \InvalidArgumentException(\sprintf('human_response event question_id "%s" does not match the active pending request.', $questionId));
+            }
+
             $messagePayload = \is_array($payload['message'] ?? null) ? $payload['message'] : null;
             if (null !== $messagePayload) {
                 $msg = AgentMessage::fromPayload($messagePayload);
                 if (null !== $msg) {
                     $messages[] = $msg;
                 }
-            }
-
-            $questionId = \is_string($payload['question_id'] ?? null) ? $payload['question_id'] : null;
-            if (null === $questionId || '' === $questionId) {
-                throw new \InvalidArgumentException('human_response event is missing non-empty question_id.');
-            }
-
-            $active = $state->pendingHumanInputRequests[0] ?? null;
-            if (null === $active || $active->questionId !== $questionId) {
-                throw new \InvalidArgumentException(\sprintf('human_response event question_id "%s" does not match the active pending request.', $questionId));
             }
 
             $remaining = array_values(\array_slice($state->pendingHumanInputRequests, 1));
@@ -308,7 +326,7 @@ final readonly class RunStateReducer
             ]);
         }
 
-        // cancel: transition to Cancelling
+        // cancel: transition to Cancelling and drop outstanding human-input waits.
         if ('cancel' === $kind) {
             $reason = \is_string($payload['reason'] ?? null) ? $payload['reason'] : null;
 
@@ -319,6 +337,7 @@ final readonly class RunStateReducer
                     $state->currentToolCalls,
                 ),
                 'errorMessage' => $reason,
+                'pendingHumanInputRequests' => [],
             ]);
         }
 
@@ -552,6 +571,7 @@ final readonly class RunStateReducer
             'isStreaming' => false,
             'streamingMessage' => null,
             'pendingToolCalls' => [],
+            'pendingHumanInputRequests' => [],
             'activeStepId' => null,
             'currentOperation' => null,
         ]);

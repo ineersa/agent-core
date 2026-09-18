@@ -153,6 +153,9 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                 $preparedState = $preparedState->with([
                     'status' => RunStatus::Running,
                     'errorMessage' => null,
+                    // Follow-up / steer / append abandon outstanding human waits so
+                    // a newly displayed question cannot sit behind an orphaned one.
+                    'pendingHumanInputRequests' => [],
                 ]);
             // Fall through to the turn-advance code below.
             } else {

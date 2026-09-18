@@ -86,6 +86,13 @@ Deferred subagent supervision (single and parallel) uses durable batch records a
 | Process restart | Controller/runtime recover from session dir + DB; event projection rebuilds |
 | Catalog recovery | On startup after schema migrations, orphan numeric `sessions/<id>/events.jsonl` dirs without a `hatfield_session` row are reinserted into the catalog (same id) |
 
+Resume, relaunch, and reload attach through the controller `resume` command into
+`InProcessAgentSessionClient::attach()`. If the rebuilt run is WaitingHuman or still
+has pending human-input requests, attach cancels those waits before
+`context_refreshed`. The run becomes Cancelled rather than remaining WaitingHuman.
+History events are kept; late answers to cancelled question ids do not reopen them.
+See [human-input.md](human-input.md).
+
 ### Catalog recovery after state DB loss
 
 If `.hatfield/state.sqlite` is deleted or loses `hatfield_session` rows while session directories remain, startup reconciles **canonical** positive-digit directories that contain `events.jsonl`:
