@@ -22,7 +22,6 @@ final class TranscriptToolResultPreviewWidget extends AbstractWidget
     public function __construct(
         private readonly string $body,
         private readonly int $lineLimit,
-        private readonly bool $fullRender,
         private readonly bool $fromEnd,
         private readonly bool $prependBlankLine,
         private readonly TranscriptDisplayState $displayState,
@@ -48,7 +47,6 @@ final class TranscriptToolResultPreviewWidget extends AbstractWidget
         $preview = $this->linePreviewService->apply(
             $renderedLines,
             $this->lineLimit,
-            $this->fullRender,
             $this->displayState,
             $this->fromEnd,
         );

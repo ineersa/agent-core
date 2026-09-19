@@ -213,29 +213,28 @@ final class BashToolTest extends IsolatedKernelTestCase
             ThemeColorEnum::Error->value => '#ff3366',
             ThemeColorEnum::Text->value => '',
         ]);
-        foreach ([false, true] as $expanded) {
-            $projector->reset();
-            $harness = new VirtualTuiHarness(
-                sessionId: self::TEST_SESSION,
-                palette: $palette,
-                displayState: new TranscriptDisplayState(previewableBlocksExpanded: $expanded),
-            );
-            $harness->screen()->setWorkingVisible(false);
-            foreach ($events as $event) {
-                $runtimeEvent = $translator->translate($event);
-                $this->assertNotNull($runtimeEvent);
-                $projector->accept($runtimeEvent);
-                $harness->screen()->setTranscriptBlocks($projector->blocks());
-                $harness->render();
-            }
-            $plain = $harness->plainScreenText();
-            foreach (array_filter(explode("\n", $text)) as $line) {
-                $this->assertStringContainsString($line, $plain);
-            }
-            $color = $isError ? '255;51;102' : '57;255;20';
-            $firstLine = preg_quote(explode("\n", $text)[0], '/');
-            $this->assertMatchesRegularExpression('/\x1b\[38;2;'.$color.'m\s*'.$firstLine.'/', $harness->ansiOutput());
+        // Full output is visible when expanded. TuiCollapsedToolCardVirtualRenderTest
+        // covers bounded failed previews and the Ctrl+O expansion/collapse cycle.
+        $harness = new VirtualTuiHarness(
+            sessionId: self::TEST_SESSION,
+            palette: $palette,
+            displayState: new TranscriptDisplayState(previewableBlocksExpanded: true),
+        );
+        $harness->screen()->setWorkingVisible(false);
+        foreach ($events as $event) {
+            $runtimeEvent = $translator->translate($event);
+            $this->assertNotNull($runtimeEvent);
+            $projector->accept($runtimeEvent);
+            $harness->screen()->setTranscriptBlocks($projector->blocks());
+            $harness->render();
         }
+        $plain = $harness->plainScreenText();
+        foreach (array_filter(explode("\n", $text)) as $line) {
+            $this->assertStringContainsString($line, $plain);
+        }
+        $color = $isError ? '255;51;102' : '57;255;20';
+        $firstLine = preg_quote(explode("\n", $text)[0], '/');
+        $this->assertMatchesRegularExpression('/\x1b\[38;2;'.$color.'m\s*'.$firstLine.'/', $harness->ansiOutput());
     }
 
     public static function commandOutcomes(): iterable

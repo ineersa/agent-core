@@ -89,7 +89,7 @@ final readonly class TranscriptBlockWidgetFactory
             return $this->toolRenderer->buildToolCallWidget($block, $theme);
         }
 
-        // RENDER-04: normal ToolResult → compact card (header, body preview unless error/cancel/timeout).
+        // RENDER-04: ToolResult cards use bounded body previews, including failed results.
         if (TranscriptBlockKindEnum::ToolResult === $block->kind) {
             return $this->toolRenderer->buildToolResultWidget($block, $theme);
         }

@@ -28,7 +28,6 @@ final readonly class EditToolCallDiffRenderer
         $preview = $this->linePreview->apply(
             $rawLines,
             $displayConfig->diffPreviewLines,
-            fullRender: false,
             displayState: $displayState,
         );
 
