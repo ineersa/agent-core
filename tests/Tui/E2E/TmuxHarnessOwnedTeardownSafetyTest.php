@@ -100,7 +100,7 @@ final class TmuxHarnessOwnedTeardownSafetyTest extends TestCase
 
     #[Test]
     #[Group('tui-e2e-replay')]
-    public function killAllCleansSessionAfterProductShutdownWithoutForceSignals(): void
+    public function killAllRefusesLiveNonzeroWindowAndCleansAfterProductShutdown(): void
     {
         if (!TmuxHarness::isAvailable()) {
             $this->markTestSkipped('tmux is required for owned teardown proof');
@@ -108,19 +108,42 @@ final class TmuxHarnessOwnedTeardownSafetyTest extends TestCase
 
         $harness = new TmuxHarness();
         $pane = $harness->startDetached(
-            'exec php -r '.escapeshellarg('fwrite(STDOUT, "ready\\n"); fflush(STDOUT); fread(STDIN, 1);'),
+            'exec env -u HATFIELD_SESSION_ID php -r '.escapeshellarg('fwrite(STDOUT, "ready\\n"); fflush(STDOUT); fread(STDIN, 1);'),
             'tmux-harness-graceful',
             80,
             24,
         );
-        $harness->waitForCaptureContains($pane, 'ready', 2.0);
-        $panePid = $harness->panePid($pane);
-        $this->assertGreaterThan(1, $panePid);
-
-        $harness->sendKey($pane, 'C-d');
-        $harness->killAll();
+        try {
+            $harness->waitForCaptureContains($pane, 'ready', 2.0);
+            $panePid = $harness->panePid($pane);
+            $this->assertGreaterThan(1, $panePid);
+            // Only this owned session changes. Never depend on the server's base-index.
+            $this->invokePrivate($harness, 'runTmux', [\sprintf(
+                'tmux move-window -s %s -t %s',
+                escapeshellarg($pane->session),
+                escapeshellarg($pane->session.':7'),
+            )]);
+            $this->assertTrue($harness->paneExists($pane));
+            $stateCommand = \sprintf('tmux display-message -p -t %s "#{pane_dead}"', escapeshellarg($pane->paneId));
+            $this->assertSame('0', $this->invokePrivate($harness, 'runTmux', [$stateCommand]));
+            $refusal = null;
+            try {
+                $harness->killAll();
+            } catch (\RuntimeException $e) {
+                $refusal = $e;
+            }
+            $this->assertNotNull($refusal, 'A missing window 0 must not authorize killing a live session');
+            $this->assertStringContainsString('still has live panes or pane processes', $refusal->getMessage());
+            $this->assertTrue($harness->paneExists($pane));
+            $this->assertSame('0', $this->invokePrivate($harness, 'runTmux', [$stateCommand]));
+        } finally {
+            if ($harness->paneExists($pane)) {
+                $harness->sendKey($pane, 'C-d');
+                $harness->waitUntilPaneExits($pane, 2.0);
+            }
+            $harness->killAll();
+        }
         $this->assertFalse($harness->paneExists($pane));
-        $this->assertFalse(@posix_kill($panePid, 0), 'product shutdown plus harness wait must clear the pane process without force signals');
     }
 
     #[Test]

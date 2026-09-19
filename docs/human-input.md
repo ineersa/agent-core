@@ -61,6 +61,14 @@ Typical outcomes:
 
 Answers are correlated to the exact pending request — not “latest question wins” across unrelated ids.
 
+## Reading long prompts
+
+Choice, confirmation, and tool-approval overlays show a `Partial prompt` notice
+when the prompt exceeds the available rows. While the answer list has focus,
+press **Ctrl+Up** or **Ctrl+Down** to page through the prompt without changing
+the selected answer. The notice shows the visible row range. Ordinary arrow
+keys still select answers, and Enter submits the selection.
+
 ## Child agents / live view
 
 Child subagents may also request human input. In the parent TUI:

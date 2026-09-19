@@ -9,6 +9,7 @@ use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Question\QuestionKind;
 use Ineersa\Tui\Question\QuestionOption;
+use Ineersa\Tui\Question\QuestionOverlayWidget;
 use Ineersa\Tui\Question\QuestionRequest;
 use Ineersa\Tui\Question\QuestionSource;
 use Ineersa\Tui\Screen\ChatScreen;
@@ -20,7 +21,6 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Tui\Render\Renderer;
 use Symfony\Component\Tui\Tui;
-use Symfony\Component\Tui\Widget\ContainerWidget;
 use Symfony\Component\Tui\Widget\EditorWidget;
 use Symfony\Component\Tui\Widget\MarkdownWidget;
 use Symfony\Component\Tui\Widget\SelectListWidget;
@@ -103,7 +103,7 @@ class QuestionControllerTest extends TestCase
             kind: QuestionKind::Text,
             prompt: $longPrompt);
 
-        $container = new ContainerWidget();
+        $container = new QuestionOverlayWidget();
         // Constructor-valid controller bound to a real screen carrying the
         // test palette; the overlay container is injected for inspection.
         $palette = new ThemePalette(
@@ -126,8 +126,7 @@ class QuestionControllerTest extends TestCase
         $addBanner = new \ReflectionMethod($controller, 'addTextBanner');
         $addBanner->invoke($controller, $request);
 
-        $childrenProp = new \ReflectionProperty(ContainerWidget::class, 'children');
-        $children = $childrenProp->getValue($container);
+        $children = $container->all();
 
         $this->assertCount(3, $children, 'Text overlay should be header + prompt + hint');
         $this->assertInstanceOf(TextWidget::class, $children[0]);
@@ -179,9 +178,9 @@ class QuestionControllerTest extends TestCase
         $controller->open($request);
 
         $containerProp = new \ReflectionProperty($controller, 'container');
-        /** @var ContainerWidget $container */
+        /** @var QuestionOverlayWidget $container */
         $container = $containerProp->getValue($controller);
-        $this->assertInstanceOf(ContainerWidget::class, $container);
+        $this->assertInstanceOf(QuestionOverlayWidget::class, $container);
 
         $children = $container->all();
         $this->assertInstanceOf(SelectListWidget::class, $children[2]);
@@ -190,7 +189,12 @@ class QuestionControllerTest extends TestCase
         $accentProbe = $theme->color(ThemeColorEnum::Accent, 'PROBE');
         $renderer = new Renderer();
         $renderer->addStyleSheet((new ThemeStyleSheetFactory())->createQuestionChoiceList($palette));
-        $rendered = $renderer->renderFrame($container, 96, 30)->toArray();
+        // QuestionOverlayWidget is a leaf host, not ContainerWidget, so use the
+        // generic widget renderer after the overlay is mounted into ChatScreen.
+        $rendered = $renderer->renderWidgetLines(
+            $container,
+            new \Symfony\Component\Tui\Render\RenderContext(96, 30),
+        )->toArray();
         $joined = implode("\n", $rendered);
         $plainLines = array_map(
             static fn (string $line): string => trim(preg_replace('/\x1b\[[0-9;]*m/', '', $line) ?? $line, " \t\r\n"),

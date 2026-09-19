@@ -7669,16 +7669,16 @@
         },
         {
             "name": "symfony/polyfill-intl-grapheme",
-            "version": "v1.41.0",
+            "version": "1.x-dev",
             "source": {
                 "type": "git",
                 "url": "https://github.com/symfony/polyfill-intl-grapheme.git",
-                "reference": "bb899c1db0aa8127dc3afe8cda4a67eb24915f8d"
+                "reference": "5c69701711222b93e048afa5b2e8a3f821e00f31"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/symfony/polyfill-intl-grapheme/zipball/bb899c1db0aa8127dc3afe8cda4a67eb24915f8d",
-                "reference": "bb899c1db0aa8127dc3afe8cda4a67eb24915f8d",
+                "url": "https://api.github.com/repos/symfony/polyfill-intl-grapheme/zipball/5c69701711222b93e048afa5b2e8a3f821e00f31",
+                "reference": "5c69701711222b93e048afa5b2e8a3f821e00f31",
                 "shasum": ""
             },
             "require": {
@@ -7687,6 +7687,7 @@
             "suggest": {
                 "ext-intl": "For best performance"
             },
+            "default-branch": true,
             "type": "library",
             "extra": {
                 "thanks": {
@@ -7727,7 +7728,7 @@
                 "shim"
             ],
             "support": {
-                "source": "https://github.com/symfony/polyfill-intl-grapheme/tree/v1.41.0"
+                "source": "https://github.com/symfony/polyfill-intl-grapheme/tree/1.x"
             },
             "funding": [
                 {
@@ -7747,7 +7748,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2026-07-28T08:25:59+00:00"
+            "time": "2026-09-10T07:29:42+00:00"
         },
         {
             "name": "symfony/polyfill-intl-normalizer",
@@ -9073,18 +9074,19 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/symfony/tui.git",
-                "reference": "11815c044d4f43a7773719e98d6901e9a7976a9f"
+                "reference": "008cdca391a52b1db0dd4a3c2e146ecc895aa930"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/symfony/tui/zipball/11815c044d4f43a7773719e98d6901e9a7976a9f",
-                "reference": "11815c044d4f43a7773719e98d6901e9a7976a9f",
+                "url": "https://api.github.com/repos/symfony/tui/zipball/008cdca391a52b1db0dd4a3c2e146ecc895aa930",
+                "reference": "008cdca391a52b1db0dd4a3c2e146ecc895aa930",
                 "shasum": ""
             },
             "require": {
                 "php": ">=8.4.1",
                 "revolt/event-loop": "^1.0",
                 "symfony/event-dispatcher": "^8.0",
+                "symfony/polyfill-intl-grapheme": "^1.42.1",
                 "symfony/string": "^8.0"
             },
             "require-dev": {
@@ -9144,7 +9146,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2026-09-06T09:49:49+00:00"
+            "time": "2026-09-18T07:03:57+00:00"
         },
         {
             "name": "symfony/type-info",
