@@ -109,15 +109,13 @@ The screen owns widgets and focus, not the whole application service graph. Pare
 and child polling have different recovery and ownership rules; they are not merely
 two names for one interchangeable loop.
 
-At the terminal output boundary, Hatfield's `SynchronizedCursorScreenWriter` hides
-the hardware cursor during repaint and restores it before releasing synchronized
-output. It replaces Symfony's internally constructed writer through a startup
-alias and repeats the cursor commit on the next event-loop turn for overheight
-frames with an editor cursor. See
-[frame and cursor output](../docs/tui-architecture.md#frame-and-cursor-output)
-for the local copy and upstream removal plan.
+At the terminal output boundary, Symfony TUI's stock `ScreenWriter` hides
+the hardware cursor during repaints and restores cursor state before releasing
+synchronized output. See
+[frame and cursor output](../docs/tui-architecture.md#frame-and-cursor-output).
 
 Sources: [InteractiveMode](../src/Tui/Application/InteractiveMode.php),
 [LlmPlatformAdapter](../src/AgentCore/Infrastructure/SymfonyAi/LlmPlatformAdapter.php),
 [RuntimeEventMapper](../src/CodingAgent/Runtime/Protocol/RuntimeEventMapper.php),
 [TUI reference](../docs/tui-architecture.md), [provider catalog](../docs/ai-catalog.md).
+

@@ -516,7 +516,7 @@ final class ChatScreen
      * overlay, then re-adds everything in original order so the overlay
      * renders directly above the editor area:
      *
-     *   … → status → compactHeader → overlay → editorSep → editor →
+     *   … → status → overlay → compactHeader → editorSep → editor →
      *   footerSep → footer
      *
      * @throws \LogicException when the screen has not been mounted yet
@@ -527,16 +527,19 @@ final class ChatScreen
             throw new \LogicException('insertOverlayBeforeEditor() requires ChatScreen to be mounted first. Call mount() before inserting overlays.');
         }
 
-        // Remove editor area and everything below it (reverse mount order).
+        // Remove compact header + editor area and everything below it (reverse mount order)
+        // so the question overlay sits above prompts/skills/agents/MCP.
         $this->tui->remove($this->footerWidget);
         $this->tui->remove($this->footerSepWidget);
         $this->tui->remove($this->promptEditor->getWidget());
         $this->tui->remove($this->editorSepWidget);
+        $this->tui->remove($this->compactHeaderWidget);
 
-        // Add the overlay (appended after the compact header).
+        // Add the overlay (appended after status / above the compact header).
         $this->tui->add($widget);
 
-        // Restore editor area widgets in original mount order.
+        // Restore compact header + editor area widgets in original mount order.
+        $this->tui->add($this->compactHeaderWidget);
         $this->tui->add($this->editorSepWidget);
         $this->tui->add($this->promptEditor->getWidget());
         $this->tui->add($this->footerSepWidget);
