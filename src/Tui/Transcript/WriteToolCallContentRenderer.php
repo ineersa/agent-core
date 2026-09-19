@@ -42,7 +42,6 @@ final readonly class WriteToolCallContentRenderer
         $preview = $this->linePreview->apply(
             $rawLines,
             $displayConfig->diffPreviewLines,
-            fullRender: false,
             displayState: $displayState,
         );
 

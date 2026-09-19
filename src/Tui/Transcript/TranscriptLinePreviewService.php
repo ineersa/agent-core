@@ -20,14 +20,9 @@ final readonly class TranscriptLinePreviewService
     public function apply(
         array $lines,
         int $lineLimit,
-        bool $fullRender,
         TranscriptDisplayState $displayState,
         bool $fromEnd = false,
     ): array {
-        if ($fullRender) {
-            return ['lines' => $lines, 'ellipsis' => null];
-        }
-
         if ($lineLimit <= 0 || \count($lines) <= $lineLimit) {
             return ['lines' => $lines, 'ellipsis' => null];
         }
