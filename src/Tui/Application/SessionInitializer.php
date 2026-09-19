@@ -16,6 +16,7 @@ use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\Finder\Finder;
 
 /**
  * Initializes session state for the interactive TUI.
@@ -83,6 +84,17 @@ final readonly class SessionInitializer
         }
 
         $state = new TuiSessionState(sessionId: $sessionId, resuming: $resuming);
+
+        // Attachments survive reload and history truncation; the retained transcript
+        // cannot tell us which image numbers are still occupied on disk.
+        $attachmentsDir = $this->sessionStore->resolveSessionsBasePath().'/'.$sessionId.'/attachments';
+        if ($resuming && is_dir($attachmentsDir)) {
+            foreach (Finder::create()->files()->depth(0)->in($attachmentsDir)->name('/^pasted-image-\d+\.[^.]+$/') as $file) {
+                if (preg_match('/^pasted-image-(\d+)\./', $file->getFilename(), $match)) {
+                    $state->nextPastedImageIndex = max($state->nextPastedImageIndex, (int) $match[1] + 1);
+                }
+            }
+        }
 
         // Inject session ID as the run ID when starting with an initial prompt
         if (null !== $request && '' !== $request->prompt && '' === $request->runId) {

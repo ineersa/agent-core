@@ -433,6 +433,7 @@ parameters:
       - SymfonySerializer
       - SymfonyTui
       - SymfonyConsole
+      - SymfonyFinder
 
     TuiListener:
       - TuiExport
