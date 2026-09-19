@@ -13,6 +13,7 @@ declare(strict_types=1);
 use Castor\Attribute\AsTask;
 
 use function CastorTasks\build_idea_run_config_xml;
+use function CastorTasks\project_root_dir;
 use function CastorTasks\qa_test_home_shell_prefix;
 
 require_once __DIR__.'/../vendor/autoload.php';
@@ -69,6 +70,19 @@ function qa_observability_env_command(): string
     return qa_test_home_shell_prefix()
         .' env '.qa_unset_session_transport_dsn_env_flags()
         .' DD_TRACE_ENABLED=0 DD_TRACE_CLI_ENABLED=0 DD_LOGS_INJECTION=0 DD_TRACE_APPEND_TRACE_IDS_TO_LOGS=false';
+}
+
+/**
+ * Project-local Symfony CLI config root, shared across isolated QA homes.
+ */
+function symfony_cli_config_home(): string
+{
+    return project_root_dir().'/var/symfony-cli';
+}
+
+function qa_symfony_cli_env_command(): string
+{
+    return qa_observability_env_command().' XDG_CONFIG_HOME='.escapeshellarg(symfony_cli_config_home());
 }
 
 /**
