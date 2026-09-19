@@ -10,6 +10,7 @@ declare(strict_types=1);
  */
 
 use Castor\Attribute\AsTask;
+use Symfony\Component\Filesystem\Path;
 
 use function CastorTasks\ensure_dead_code_symfony_container_xml;
 use function CastorTasks\project_root_dir;
@@ -83,7 +84,7 @@ function lsp_check(string $path = ''): void
         '--timeout=90',
     ];
     if ('' !== $path) {
-        $args[] = $path;
+        $args[] = Path::makeAbsolute($path, (string) getcwd());
     }
 
     $command = qa_symfony_cli_env_command().' '.implode(' ', array_map('escapeshellarg', $args));
@@ -96,6 +97,10 @@ function lsp_check(string $path = ''): void
     }
 
     $exitCode = $result->getExitCode();
+    if (124 === $exitCode) {
+        fail_quality('Symfony Language Tools timed out after 100 seconds.');
+    }
+
     $decoded = json_decode($output, true);
     if (!is_array($decoded)) {
         if (127 === $exitCode) {

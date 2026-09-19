@@ -230,9 +230,7 @@ function _run_castor_check_body(string $root, string $qaRunId, float $checkWallD
         ],
         'lsp:check' => [
             'cmd' => timeout_check_command(
-                qa_check_run_env_command()
-                    .' XDG_CONFIG_HOME='.escapeshellarg(symfony_cli_config_home())
-                    .' '.escapeshellarg($castorBin).' lsp:check',
+                qa_check_run_env_command().' '.escapeshellarg($castorBin).' lsp:check',
                 110,
             ),
         ],
