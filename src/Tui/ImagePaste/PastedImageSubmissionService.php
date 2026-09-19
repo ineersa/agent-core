@@ -29,11 +29,6 @@ final class PastedImageSubmissionService
     ) {
     }
 
-    public function textContainsPlaceholder(string $text): bool
-    {
-        return 1 === preg_match(PastedImagePlaceholderFormatter::PLACEHOLDER_PATTERN, $text);
-    }
-
     /**
      * @return string|null Resolved prompt text, or null when promotion failed (error surfaced)
      */
@@ -42,8 +37,7 @@ final class PastedImageSubmissionService
         TuiSessionState $state,
         ChatScreen $screen,
     ): ?string {
-        if (!preg_match(PastedImagePlaceholderFormatter::PLACEHOLDER_PATTERN, $text)
-            && [] === $state->pastedImagePendingByIndex) {
+        if ([] === $state->pastedImagePendingByIndex) {
             return $text;
         }
 
@@ -75,9 +69,9 @@ final class PastedImageSubmissionService
 
                 $pending = $state->pastedImagePendingByIndex[$index] ?? null;
                 if (null === $pending) {
-                    $this->surfaceError($state, $screen, \sprintf('Missing staged image for %s.', $placeholder));
-
-                    return null;
+                    // Placeholder-shaped prose is ordinary text unless this editor
+                    // has a staged image for it. Saved attachments are not staged input.
+                    continue;
                 }
 
                 try {

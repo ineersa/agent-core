@@ -506,8 +506,7 @@ final class SubmitListener implements TuiListenerRegistrar
             }
         }
 
-        if (!$pastedImageSubmissionService->textContainsPlaceholder($text)
-            && [] === $state->pastedImagePendingByIndex) {
+        if ([] === $state->pastedImagePendingByIndex) {
             return $text;
         }
 

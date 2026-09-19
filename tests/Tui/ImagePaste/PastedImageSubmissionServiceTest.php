@@ -7,24 +7,37 @@ namespace Ineersa\Tui\Tests\ImagePaste;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ImageToolConfig;
+use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
+use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\Tui\Application\SessionInitializer;
 use Ineersa\Tui\Editor\PromptEditor;
+use Ineersa\Tui\ImagePaste\ClipboardImageReadResultDTO;
 use Ineersa\Tui\ImagePaste\PastedImagePendingDTO;
 use Ineersa\Tui\ImagePaste\PastedImageSubmissionService;
 use Ineersa\Tui\ImagePaste\PastedImageValidationService;
+use Ineersa\Tui\Listener\ImagePasteInputListener;
+use Ineersa\Tui\Listener\SubmitListener;
+use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
+use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
+use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
 use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use PHPUnit\Framework\Attributes\Test;
+use Symfony\Component\Tui\Event\TickEvent;
 
 final class PastedImageSubmissionServiceTest extends IsolatedKernelTestCase
 {
+    use TuiRuntimeContextBuilderTrait;
+
     private string $projectDir;
 
     protected function setUp(): void
@@ -38,6 +51,102 @@ final class PastedImageSubmissionServiceTest extends IsolatedKernelTestCase
     {
         TestDirectoryIsolation::removeDirectory($this->projectDir);
         parent::tearDown();
+    }
+
+    #[Test]
+    public function resumedPasteUsesHighestAttachmentNumberAndPreservesQuotedText(): void
+    {
+        $store = self::getContainer()->get(HatfieldSessionStore::class);
+        $initializer = self::getContainer()->get(SessionInitializer::class);
+        $sessionId = $store->createSession('seed');
+        $this->assertSame(1, $initializer->initialize($sessionId)->nextPastedImageIndex);
+        $attachments = $store->ensureSessionAttachmentsDirectory($sessionId);
+        $png = file_get_contents(__DIR__.'/../E2E/fixtures/paste-test-1x1.png');
+        $this->assertNotFalse($png);
+        file_put_contents($attachments.'/pasted-image-1.png', $png);
+        file_put_contents($attachments.'/pasted-image-7.webp', 'existing image bytes');
+        file_put_contents($attachments.'/unrelated-100.png', 'not a pasted image');
+        $staged = $this->projectDir.'/new-image.png';
+        file_put_contents($staged, $png);
+
+        $state = $initializer->initialize($sessionId);
+        $state->handle = new RunHandle($sessionId);
+        $client = $this->createMock(AgentSessionClient::class);
+        $client->expects($this->once())->method('send')->with($sessionId, $this->callback(
+            static fn (UserCommand $command): bool => 'follow_up' === $command->type
+                && str_contains($command->text, 'Error: [Image #1]. [Image #8: ')
+                && str_contains($command->text, '/attachments/pasted-image-8.png'),
+        ));
+
+        $harness = new VirtualTuiHarness(sessionId: $sessionId);
+        $context = $this->buildTuiContext()->withTui($harness->tui())->withScreen($harness->screen())
+            ->withState($state)->withClient($client)->withSessionStore($store)->build();
+        self::getContainer()->get(SubmitListener::class)->register($context);
+        (new ImagePasteInputListener(
+            new FakeClipboardImageReader(ClipboardImageReadResultDTO::image($staged)),
+            new PastedImageValidationService(new ImageToolConfig(), new TestLogger()),
+            new TranscriptBlockFactory(),
+            new TestLogger(),
+        ))->register($context);
+
+        try {
+            $harness->startInputLoop();
+            $harness->sendInput('Error: [Image #1]. ');
+            $harness->sendInput("\x16");
+            $context->ticks->dispatch(new TickEvent());
+            $this->assertSame('Error: [Image #1]. [Image #8]', $harness->screen()->editorText());
+            $harness->sendInput("\r");
+
+            $this->assertSame($png, file_get_contents($attachments.'/pasted-image-8.png'));
+            $this->assertSame($png, file_get_contents($attachments.'/pasted-image-1.png'));
+            $this->assertSame('existing image bytes', file_get_contents($attachments.'/pasted-image-7.webp'));
+            $this->assertSame([], $state->pastedImagePendingByIndex);
+            $this->assertSame(9, $initializer->initialize($sessionId)->nextPastedImageIndex);
+        } finally {
+            $harness->stopInputLoop();
+        }
+    }
+
+    #[Test]
+    public function failedPromotionStillAllowsTypedAndPastedErrorTextToBeSubmitted(): void
+    {
+        $store = self::getContainer()->get(HatfieldSessionStore::class);
+        $sessionId = $store->createSession('seed');
+        $state = new TuiSessionState($sessionId);
+        $state->handle = new RunHandle($sessionId);
+        $staged = $this->projectDir.'/invalid-image.png';
+        file_put_contents($staged, 'not an image');
+        $state->pastedImagePendingByIndex[2] = new PastedImagePendingDTO($staged);
+        $text = 'Image paste: Session attachment already exists for [Image #1].';
+        $client = $this->createMock(AgentSessionClient::class);
+        $client->expects($this->exactly(2))->method('send')->with($sessionId, $this->callback(
+            static fn (UserCommand $command): bool => 'follow_up' === $command->type && $text === $command->text,
+        ));
+        $harness = new VirtualTuiHarness(sessionId: $sessionId);
+        $context = $this->buildTuiContext()->withTui($harness->tui())->withScreen($harness->screen())
+            ->withState($state)->withClient($client)->withSessionStore($store)->build();
+        self::getContainer()->get(SubmitListener::class)->register($context);
+
+        try {
+            $harness->startInputLoop();
+            $harness->sendInput('[Image #2]');
+            $harness->sendInput("\r");
+            $this->assertStringContainsString('Image paste:', $harness->plainScreenText());
+            $this->assertSame(RunActivityStateEnum::Idle, $state->activity);
+            $this->assertArrayHasKey(2, $state->pastedImagePendingByIndex);
+
+            foreach ([$text, "\x1b[200~".$text."\x1b[201~"] as $input) {
+                $harness->sendInput($input);
+                $this->assertSame($text, $harness->screen()->editorText());
+                $harness->sendInput("\r");
+                $this->assertSame(RunActivityStateEnum::Starting, $state->activity);
+                $state->activity = RunActivityStateEnum::Idle;
+            }
+            $this->assertSame([], $state->pastedImagePendingByIndex);
+            $this->assertFileDoesNotExist($staged);
+        } finally {
+            $harness->stopInputLoop();
+        }
     }
 
     #[Test]
@@ -188,7 +297,8 @@ final class PastedImageSubmissionServiceTest extends IsolatedKernelTestCase
 
         $state = new TuiSessionState($sessionId);
         $state->pastedImagePendingByIndex[1] = new PastedImagePendingDTO($staged1);
-        // No pending entry for [Image #2] — preflight must fail before promoting #1.
+        // A genuine staged image that disappeared must fail before promoting #1.
+        $state->pastedImagePendingByIndex[2] = new PastedImagePendingDTO($this->projectDir.'/missing-image.png');
 
         /** @var AppConfig $appConfig */
         $appConfig = self::getContainer()->get(AppConfig::class);
