@@ -40,6 +40,31 @@ use Symfony\Component\Tui\Widget\VerticallyExpandableInterface;
 #[AllowMockObjectsWithoutExpectations]
 final class TuiQuestionOverlayBudgetVirtualTest extends TestCase
 {
+    public function testTextQuestionBudgetTracksEditorGrowthAndShrinkWithoutResize(): void
+    {
+        $harness = new VirtualTuiHarness(columns: 80, rows: 16, sessionId: 'question-resize');
+        $screen = $harness->screen();
+        $controller = new QuestionController(new QuestionCoordinator(), $screen);
+        $controller->open(new QuestionRequest(
+            requestId: 'changing-editor',
+            source: QuestionSource::AgentCore,
+            kind: QuestionKind::Text,
+            prompt: implode("\n\n", array_map(static fn (int $i): string => 'Prompt row '.$i, range(1, 20))),
+            header: 'QUESTION_HEADER',
+        ));
+        $initial = $harness->plainScreenText();
+        $this->assertStringContainsString('QUESTION_HEADER', $initial);
+
+        $screen->promptEditor()->replaceText("First line\nSecond line\nThird line\nLast line");
+        $grown = $harness->plainScreenText();
+        $this->assertStringContainsString('QUESTION_HEADER', $grown);
+        $this->assertStringContainsString('Last line', $grown);
+        $this->assertStringContainsString('session question-resize', $grown);
+
+        $screen->promptEditor()->replaceText('');
+        $this->assertSame($initial, $harness->plainScreenText(), 'Shrinking the editor must restore the question budget');
+    }
+
     public function testTwoRowBudgetKeepsAnAnswerVisible(): void
     {
         $terminal = new VirtualTerminal(columns: 40, rows: 2);

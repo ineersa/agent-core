@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Question;
 
+use Symfony\Component\Tui\Ansi\AnsiUtils;
 use Symfony\Component\Tui\Render\RenderContext;
 use Symfony\Component\Tui\Widget\AbstractWidget;
+use Symfony\Component\Tui\Widget\MarkdownWidget;
 use Symfony\Component\Tui\Widget\SelectListWidget;
 use Symfony\Component\Tui\Widget\WidgetContainerInterface;
 
@@ -38,6 +40,36 @@ final class QuestionOverlayWidget extends AbstractWidget implements WidgetContai
 
     /** @var list<AbstractWidget> */
     private array $children = [];
+
+    /** @var array<int, int> */
+    private array $lowerBlockRevisions = [];
+
+    private int $promptOffset = 0;
+    private int $promptPageRows = 0;
+    private int $promptMaxOffset = 0;
+
+    public function pagePrompt(int $direction): void
+    {
+        $offset = max(0, min($this->promptMaxOffset, $this->promptOffset + $direction * $this->promptPageRows));
+        if ($offset !== $this->promptOffset) {
+            $this->promptOffset = $offset;
+            $this->invalidate();
+        }
+    }
+
+    public function beforeRender(): void
+    {
+        // Sibling invalidation reaches our parent, not this widget. Check the
+        // dependencies before Symfony can reuse the cached row budget.
+        $revisions = [];
+        foreach ($this->lowerSiblings() as $sibling) {
+            $revisions[spl_object_id($sibling)] = $sibling->getRenderRevision();
+        }
+        if ($revisions !== $this->lowerBlockRevisions) {
+            $this->lowerBlockRevisions = $revisions;
+            $this->invalidate();
+        }
+    }
 
     /**
      * @return $this
@@ -149,7 +181,9 @@ final class QuestionOverlayWidget extends AbstractWidget implements WidgetContai
             if ([] === $childLines) {
                 continue;
             }
-            if (\count($childLines) > $childBudget) {
+            if (null !== $selectIndex && $child instanceof MarkdownWidget) {
+                $childLines = $this->promptWindow($childLines, $childBudget, $columns);
+            } elseif (\count($childLines) > $childBudget) {
                 $childLines = \array_slice($childLines, 0, $childBudget);
             }
 
@@ -176,6 +210,32 @@ final class QuestionOverlayWidget extends AbstractWidget implements WidgetContai
     }
 
     /**
+     * @param list<string> $lines
+     *
+     * @return list<string>
+     */
+    private function promptWindow(array $lines, int $rows, int $columns): array
+    {
+        if (\count($lines) <= $rows) {
+            $this->promptOffset = $this->promptPageRows = $this->promptMaxOffset = 0;
+
+            return $lines;
+        }
+
+        // Keep the warning visible on every page, including the last one.
+        $this->promptPageRows = max(0, $rows - 1);
+        $this->promptMaxOffset = max(0, \count($lines) - $this->promptPageRows);
+        $this->promptOffset = min($this->promptOffset, $this->promptMaxOffset);
+        $visible = \array_slice($lines, $this->promptOffset, $this->promptPageRows);
+        $notice = $this->promptPageRows > 0
+            ? \sprintf('Partial prompt %d-%d/%d Ctrl+↑/↓', $this->promptOffset + 1, $this->promptOffset + $this->promptPageRows, \count($lines))
+            : 'Prompt clipped; enlarge terminal';
+        $visible[] = AnsiUtils::truncateToWidth($notice, $columns);
+
+        return $visible;
+    }
+
+    /**
      * Measure siblings rendered after this overlay in the parent container.
      *
      * That lower block (compact header + editor separators + editor + footer)
@@ -185,17 +245,31 @@ final class QuestionOverlayWidget extends AbstractWidget implements WidgetContai
     private function measureLowerBlockRows(RenderContext $context): int
     {
         $widgetContext = $this->getContext();
-        $parent = $this->getParent();
-        if (null === $widgetContext || !$parent instanceof WidgetContainerInterface) {
+        if (null === $widgetContext) {
             return 0;
         }
 
         $columns = $context->getColumns();
         $rows = max(1, $context->getRows());
         $siblingContext = new RenderContext($columns, $rows);
-        $seenSelf = false;
         $lowerRows = 0;
 
+        foreach ($this->lowerSiblings() as $sibling) {
+            $lowerRows += \count($widgetContext->renderWidget($sibling, $siblingContext));
+        }
+
+        return max(0, $lowerRows);
+    }
+
+    /** @return list<AbstractWidget> */
+    private function lowerSiblings(): array
+    {
+        $parent = $this->getParent();
+        if (!$parent instanceof WidgetContainerInterface) {
+            return [];
+        }
+        $siblings = [];
+        $seenSelf = false;
         foreach ($parent->all() as $sibling) {
             if ($sibling === $this) {
                 $seenSelf = true;
@@ -205,9 +279,9 @@ final class QuestionOverlayWidget extends AbstractWidget implements WidgetContai
                 continue;
             }
 
-            $lowerRows += \count($widgetContext->renderWidget($sibling, $siblingContext));
+            $siblings[] = $sibling;
         }
 
-        return max(0, $lowerRows);
+        return $siblings;
     }
 }

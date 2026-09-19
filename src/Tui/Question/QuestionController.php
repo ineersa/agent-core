@@ -9,6 +9,8 @@ use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Widget\SelectListKeybindings;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
+use Symfony\Component\Tui\Input\Key;
+use Symfony\Component\Tui\Input\Keybindings;
 use Symfony\Component\Tui\Style\Style;
 use Symfony\Component\Tui\Widget\SelectListWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
@@ -223,7 +225,11 @@ final class QuestionController
 
         $items = $this->buildItems($request);
         $items = $this->styleConfirmItems($items, $request->kind);
-        $kb = SelectListKeybindings::standard();
+        $kb = new Keybindings([
+            ...SelectListKeybindings::standardBindings(),
+            'prompt_up' => [Key::ctrl(Key::UP)],
+            'prompt_down' => [Key::ctrl(Key::DOWN)],
+        ]);
 
         $this->listWidget = new SelectListWidget(
             items: $items,
@@ -232,6 +238,19 @@ final class QuestionController
         );
         // Scope stylesheet rules to this overlay only; other pickers stay on defaults.
         $this->listWidget->addStyleClass('question-choice-list');
+
+        $container = $this->container;
+        $this->listWidget->onInput(static function (string $data) use ($kb, $container): bool {
+            foreach (['prompt_up' => -1, 'prompt_down' => 1] as $action => $direction) {
+                if ($kb->matches($data, $action)) {
+                    $container->pagePrompt($direction);
+
+                    return true;
+                }
+            }
+
+            return false;
+        });
 
         $this->listWidget->onSelect(function (SelectEvent $event): void {
             $item = $event->getItem();
