@@ -142,8 +142,12 @@ final class QuestionOverlayWidget extends AbstractWidget implements WidgetContai
         $gap = max(0, $this->getStyle()?->getGap() ?? 0);
 
         $selectIndex = null;
+        $promptIndex = null;
         $selectRows = 0;
         foreach ($this->children as $index => $child) {
+            if ($child instanceof MarkdownWidget) {
+                $promptIndex = $index;
+            }
             if ($child instanceof SelectListWidget) {
                 $selectIndex = $index;
                 // Reserve useful answer rows, not blank space that could hide
@@ -151,6 +155,10 @@ final class QuestionOverlayWidget extends AbstractWidget implements WidgetContai
                 $selectRows = \count($widgetContext->renderWidget($child, new RenderContext($columns, max(1, intdiv($budget, 2)))));
                 break;
             }
+        }
+        if (null !== $promptIndex && null !== $selectIndex) {
+            // A prompt/warning row takes precedence over decorative spacing.
+            $gap = min($gap, max(0, $budget - $selectRows - 1));
         }
 
         $lines = [];
@@ -168,6 +176,10 @@ final class QuestionOverlayWidget extends AbstractWidget implements WidgetContai
             $reserveForSelect = 0;
             if (null !== $selectIndex && $index < $selectIndex) {
                 $reserveForSelect = $gap + $selectRows;
+                if (null !== $promptIndex && $index < $promptIndex) {
+                    // Omit or shorten the header before hiding the approval prompt.
+                    $reserveForSelect += $gap + 1;
+                }
             }
             $childBudget = $remaining - ($needsGap ? $gap : 0) - $reserveForSelect;
             if ($childBudget <= 0) {

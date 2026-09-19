@@ -85,6 +85,45 @@ final class TuiQuestionOverlayBudgetVirtualTest extends TestCase
         }
     }
 
+    #[DataProvider('smallApprovalBudgets')]
+    public function testSmallApprovalBudgetKeepsPromptWarningAboveAnswers(int $budget, string $notice): void
+    {
+        $terminal = new VirtualTerminal(columns: 80, rows: 24);
+        $tui = new Tui(terminal: $terminal);
+        $overlay = new QuestionOverlayWidget();
+        $overlay->setStyle(new \Symfony\Component\Tui\Style\Style(gap: 1));
+        $overlay->add(new \Symfony\Component\Tui\Widget\TextWidget('Decorative approval header'));
+        $overlay->add(new \Symfony\Component\Tui\Widget\MarkdownWidget(str_repeat("Approval operation\n\n", 10)));
+        $overlay->add(new SelectListWidget([
+            ['value' => 'allow', 'label' => 'Allow'],
+            ['value' => 'deny', 'label' => 'Deny'],
+        ]));
+        $tui->add($overlay);
+        // Model remaining overlay room in a normal terminal, not a tiny terminal.
+        $tui->add(new \Symfony\Component\Tui\Widget\TextWidget(implode("\n", array_fill(0, 24 - $budget, 'LOWER_CHROME'))));
+        try {
+            $tui->start();
+            $tui->processRender();
+            $buffer = new ScreenBuffer(width: 80, height: 24);
+            $buffer->write($terminal->getOutput());
+            $screen = $buffer->getScreen();
+            $this->assertStringContainsString($notice, $screen);
+            $this->assertStringContainsString('→ Allow', $screen);
+            $this->assertStringContainsString('Deny', $screen);
+            $this->assertSame(24 - $budget, substr_count($screen, 'LOWER_CHROME'));
+            $this->assertStringNotContainsString('Decorative approval header', $screen);
+        } finally {
+            $tui->stop();
+        }
+    }
+
+    /** @return iterable<string, array{int, string}> */
+    public static function smallApprovalBudgets(): iterable
+    {
+        yield 'four remaining rows' => [4, 'Prompt clipped; enlarge terminal'];
+        yield 'five remaining rows' => [5, 'Ctrl+↑/↓'];
+    }
+
     #[Test]
     #[DataProvider('terminalGeometries')]
     public function testBusyWaitingScreenKeepsSelectedArrowAndUsefulOptions(int $columns, int $rows, int $minVisibleChoices): void
