@@ -13,8 +13,8 @@ declare(strict_types=1);
  *
  * Lanes (typical shell timeouts):
  *   deptrac (30s), test ParaTest (120s), test:controller-replay (150s),
- *   test:tui (210s), test:llm-real (210s), phpstan (90s), dead-code (150s),
- *   cs-check (30s), docs:validate (30s).
+ *   test:tui (210s), test:llm-real (210s), phpstan (90s), lsp:check (110s),
+ *   dead-code (150s), cs-check (30s), docs:validate (30s).
  *   Absolute castor check wall clock: castor_test_runner_max_seconds() (210s)
  *   from check() entry — lock wait, QA init, preflight, lanes, and finalizers
  *   all consume the same budget. Per-lane Castor hard timeouts and preflight
@@ -184,7 +184,7 @@ function _run_castor_check_body(string $root, string $qaRunId, float $checkWallD
     //
     // Unit/integration ParaTest excludes llm-real (build_check_paratest_command).
     // Live llm-real runs as its own parallel lane (same command as castor test:llm-real).
-    // docs:validate reuses the dedicated Castor task (same implementation as `castor docs:validate`).
+    // lsp:check and docs:validate reuse their dedicated Castor tasks.
     $allCheckCommands = [
         'deptrac' => [
             'cmd' => timeout_check_command(
@@ -226,6 +226,14 @@ function _run_castor_check_body(string $root, string $qaRunId, float $checkWallD
                 qa_check_run_env_command().' '.$phpBin.' vendor/bin/phpstan analyse -c phpstan.dist.neon --no-progress'
                     .' --error-format=json --no-ansi',
                 90,
+            ),
+        ],
+        'lsp:check' => [
+            'cmd' => timeout_check_command(
+                qa_check_run_env_command()
+                    .' XDG_CONFIG_HOME='.escapeshellarg(symfony_cli_config_home())
+                    .' '.escapeshellarg($castorBin).' lsp:check',
+                110,
             ),
         ],
         'dead-code' => [
