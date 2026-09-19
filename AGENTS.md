@@ -32,7 +32,9 @@ Before touching an area, read its nearest nested `AGENTS.md`. Nested instruction
 
 **All QA, test, lint, static analysis, and formatting go through Castor.** Do not run raw `vendor/bin/*` except to isolate a Castor failure. Reports land under `var/reports/` (per-run dirs via `HATFIELD_QA_REPORTS_DIR`).
 
-Key commands: `castor check` (includes `docs:validate` and `dead-code`), `castor test`, `castor test:tui`, `castor test:controller-replay`, `castor test:llm-real`, `castor deptrac`, `castor phpstan`, `castor dead-code`, `castor cs-check`, `castor cs-fix`, `castor docs:validate`.
+Key commands: `castor check` (includes `lsp:check`, `docs:validate`, and `dead-code`), `castor test`, `castor test:tui`, `castor test:controller-replay`, `castor test:llm-real`, `castor deptrac`, `castor phpstan`, `castor lsp:check [--path=PATH]`, `castor dead-code`, `castor cs-check`, `castor cs-fix`, `castor docs:validate`.
+
+`castor lsp:check [--path=PATH]` runs Symfony Language Tools runtime diagnostics for the project or a selected file or directory. Runtime analysis executes application code. The task requires Symfony CLI with Language Tools 0.21.0 or newer. Errors, incomplete analysis, missing tools, and unsupported versions fail the task. Warnings remain visible but do not fail it.
 
 Timeouts, check lock, llama-proxy cache guard, ParaTest budgets, preflight, and worker diagnostics: load the `testing` skill (`.agents/skills/testing/SKILL.md`).
 

@@ -62,6 +62,26 @@ final class QaSessionEnvSanitizationTest extends TestCase
         );
     }
 
+    public function testSymfonyCliPrefixUsesStableProjectConfigAndUnsetsSessionTransportDsns(): void
+    {
+        self::requireCastorFiles();
+
+        $prefix = qa_symfony_cli_env_command();
+
+        $this->assertStringContainsString(
+            'XDG_CONFIG_HOME='.escapeshellarg(ProjectDir::get().'/var/symfony-cli'),
+            $prefix,
+        );
+        foreach (self::DSN_VARS as $var) {
+            $this->assertStringContainsString('-u '.$var, $prefix, $var.' must be unset in the Symfony CLI prefix');
+        }
+        $this->assertSame(
+            \count(self::DSN_VARS),
+            substr_count($prefix, ' -u '),
+            'exactly the six DSN vars must be unset, no more',
+        );
+    }
+
     public function testCheckParatestCommandUnsetsAllSixSessionTransportDsns(): void
     {
         self::requireCastorFiles();

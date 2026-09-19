@@ -130,6 +130,7 @@ final class TuiSubagentProgressE2eTest extends TestCase
             $this->tmux->saveAnsiSnapshot($pane, 'subagent-progress-resume');
             $this->persistComparisonArtifacts($pane, 'subagent-progress-resume');
             $this->tmux->sendKey($pane, 'C-d');
+            $this->tmux->waitUntilPaneExits($pane);
         } catch (\Throwable $e) {
             $this->tmux->saveAnsiSnapshot($pane, 'subagent-progress-resume-FAILURE');
             $this->persistComparisonArtifacts($pane, 'subagent-progress-resume-FAILURE');

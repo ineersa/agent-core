@@ -10,9 +10,12 @@ declare(strict_types=1);
  */
 
 use Castor\Attribute\AsTask;
+use Symfony\Component\Filesystem\Path;
 
 use function CastorTasks\ensure_dead_code_symfony_container_xml;
+use function CastorTasks\project_root_dir;
 use function CastorTasks\regenerate_dead_code_baseline;
+use function CastorTasks\run_quiet_command;
 use function CastorTasks\summarize_deptrac_json;
 use function CastorTasks\summarize_php_cs_fixer_json;
 use function CastorTasks\summarize_phpstan_json;
@@ -63,6 +66,60 @@ function phpstan(?string $path = null): void
     }
     if (0 !== $exitCode) {
         fail_quality(sprintf('PHPStan failed with exit code %d', $exitCode));
+    }
+}
+
+#[AsTask(name: 'lsp:check', description: 'Run Symfony Language Tools diagnostics')]
+function lsp_check(string $path = ''): void
+{
+    $args = [
+        'symfony',
+        'lsp:check',
+        '--workspace='.project_root_dir(),
+        '--format=json',
+        '--environment=dev',
+        '--debug',
+        '--profile',
+        '--verbose',
+        '--timeout=90',
+    ];
+    if ('' !== $path) {
+        $args[] = Path::makeAbsolute($path, (string) getcwd());
+    }
+
+    $command = qa_symfony_cli_env_command().' '.implode(' ', array_map('escapeshellarg', $args));
+    $result = run_quiet_command(timeout_check_command($command, 100));
+    $output = $result->getOutput();
+    $errorOutput = $result->getErrorOutput();
+    echo $output;
+    if ('' !== $errorOutput) {
+        fwrite(\STDERR, $errorOutput);
+    }
+
+    $exitCode = $result->getExitCode();
+    if (124 === $exitCode) {
+        fail_quality('Symfony Language Tools timed out after 100 seconds.');
+    }
+
+    $decoded = json_decode($output, true);
+    if (!is_array($decoded)) {
+        if (127 === $exitCode) {
+            fail_quality('Symfony CLI is required to run Symfony Language Tools.');
+        }
+        fail_quality(sprintf('Symfony Language Tools did not return valid JSON (exit code %d).', $exitCode));
+    }
+
+    $version = $decoded['tool']['version'] ?? null;
+    if (!is_string($version) || version_compare($version, '0.21.0', '<')) {
+        fail_quality('Symfony Language Tools 0.21.0 or newer is required. Install or update it through Symfony CLI.');
+    }
+
+    if (true !== ($decoded['complete'] ?? false)) {
+        fail_quality('Symfony Language Tools analysis was incomplete.');
+    }
+
+    if (0 !== $exitCode) {
+        fail_quality(sprintf('Symfony Language Tools failed with exit code %d.', $exitCode));
     }
 }
 
