@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "f375cd00181b0b80f8d3e4a54872d8d8",
+    "content-hash": "57c6fe0656f19d131b36888a8093c0b5",
     "packages": [
         {
             "name": "amphp/amp",
@@ -9070,16 +9070,16 @@
         },
         {
             "name": "symfony/tui",
-            "version": "8.2.x-dev",
+            "version": "dev-fix/tui-screenwriter-in-place-viewport",
             "source": {
                 "type": "git",
-                "url": "https://github.com/symfony/tui.git",
-                "reference": "008cdca391a52b1db0dd4a3c2e146ecc895aa930"
+                "url": "https://github.com/ineersa/tui.git",
+                "reference": "e682d162f31aa82832d8255f4c9c3fd17977e903"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/symfony/tui/zipball/008cdca391a52b1db0dd4a3c2e146ecc895aa930",
-                "reference": "008cdca391a52b1db0dd4a3c2e146ecc895aa930",
+                "url": "https://api.github.com/repos/ineersa/tui/zipball/e682d162f31aa82832d8255f4c9c3fd17977e903",
+                "reference": "e682d162f31aa82832d8255f4c9c3fd17977e903",
                 "shasum": ""
             },
             "require": {
@@ -9093,7 +9093,6 @@
                 "league/commonmark": "^2.9",
                 "tempest/highlight": "^2.16"
             },
-            "default-branch": true,
             "type": "library",
             "autoload": {
                 "psr-4": {
@@ -9103,7 +9102,6 @@
                     "/Tests/"
                 ]
             },
-            "notification-url": "https://packagist.org/downloads/",
             "license": [
                 "MIT"
             ],
@@ -9126,27 +9124,9 @@
                 "tui"
             ],
             "support": {
-                "source": "https://github.com/symfony/tui/tree/8.2"
+                "source": "https://github.com/ineersa/tui/tree/fix/tui-screenwriter-in-place-viewport"
             },
-            "funding": [
-                {
-                    "url": "https://symfony.com/sponsor",
-                    "type": "custom"
-                },
-                {
-                    "url": "https://github.com/fabpot",
-                    "type": "github"
-                },
-                {
-                    "url": "https://github.com/nicolas-grekas",
-                    "type": "github"
-                },
-                {
-                    "url": "https://tidelift.com/funding/github/packagist/symfony/symfony",
-                    "type": "tidelift"
-                }
-            ],
-            "time": "2026-09-18T07:03:57+00:00"
+            "time": "2026-09-19T23:45:14+00:00"
         },
         {
             "name": "symfony/type-info",
@@ -13605,7 +13585,14 @@
             "time": "2025-12-08T11:19:18+00:00"
         }
     ],
-    "aliases": [],
+    "aliases": [
+        {
+            "package": "symfony/tui",
+            "version": "dev-fix/tui-screenwriter-in-place-viewport",
+            "alias": "8.2.x-dev",
+            "alias_normalized": "8.2.9999999.9999999-dev"
+        }
+    ],
     "minimum-stability": "dev",
     "stability-flags": {
         "ineersa/hatfield-extension-api": 20,
