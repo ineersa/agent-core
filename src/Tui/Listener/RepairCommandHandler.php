@@ -89,7 +89,7 @@ final class RepairCommandHandler implements SlashCommandHandler
         }
 
         if ($result->staleCancellationRepaired) {
-            return 'Session repaired: stale cancellation terminalized.';
+            return $result->message;
         }
 
         if ($result->activeOperationsRedriven > 0) {

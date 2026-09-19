@@ -136,6 +136,10 @@ Repair reuses the current operation identity. It does not mark unfinished work a
 completed, roll back side effects, or clear abandoned claimed messages. Check whether
 the original command or external tool already performed its action before redispatching.
 
+If a cancelled or failed terminal history has unmatched assistant tool calls, repair
+appends synthetic error tool results and a batch commit. This restores valid model
+history without repeating tool execution or appending another terminal event.
+
 Calls waiting for human input are not redispatched. Compaction repair requires a
 saved prepared request and refuses safely when that request is unavailable.
 Do not edit queue rows or event logs to force recovery while a controller is live.

@@ -38,6 +38,8 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
 {
     private const string SYNTHETIC_CANCEL_MESSAGE = 'Tool execution cancelled by user.';
 
+    private const string SYNTHETIC_FAILED_TOOL_MESSAGE = 'Tool result unavailable: the run failed before the result was committed.';
+
     private ToolExecutionEndPayloadCodec $toolExecutionEndPayloadCodec;
 
     public function __construct(
@@ -116,6 +118,16 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         $replayed = $this->runStateReducer->replay(RunState::queued($runId), $sorted);
 
         if ($this->hasTerminalAgentEnd($sorted)) {
+            if ($this->terminalReasonIs($sorted, $replayed, RunStatus::Failed, 'failed')) {
+                return $this->repairTerminalFailedMalformedBatch(
+                    runId: $runId,
+                    apply: $apply,
+                    sorted: $sorted,
+                    replayed: $replayed,
+                    storedState: $storedState,
+                );
+            }
+
             return $this->repairTerminalCancelledMalformedBatch(
                 runId: $runId,
                 apply: $apply,
@@ -217,7 +229,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             sorted: $sorted,
             storedState: $storedState,
             successMessage: 'Stale non-terminal cancellation repaired.',
-            requireCancelledStatus: true,
+            requiredStatus: RunStatus::Cancelled,
         );
     }
 
@@ -241,13 +253,66 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             return $this->noRepairResult('No repairable corruption detected.');
         }
 
-        if (!$this->isCancelledTerminal($sorted, $replayed)) {
+        if (!$this->terminalReasonIs($sorted, $replayed, RunStatus::Cancelled, 'cancelled')) {
             return $this->noRepairResult('No repairable corruption detected.');
         }
 
+        return $this->repairTerminalMalformedBatch(
+            runId: $runId,
+            apply: $apply,
+            sorted: $sorted,
+            replayed: $replayed,
+            storedState: $storedState,
+            dryRunMessage: 'Terminal cancelled session has unmatched assistant tool calls; repair available.',
+            successMessage: 'Terminal cancelled session repaired: missing tool messages appended.',
+            requiredStatus: RunStatus::Cancelled,
+            stepIdPrefix: 'repair-cancel',
+        );
+    }
+
+    /**
+     * A failed result handler can persist agent_end(failed) after tool execution
+     * without committing the result into message history. Append an explicit
+     * unavailable result so a resumed session has a valid assistant/tool pair.
+     *
+     * @param list<RunEvent> $sorted
+     */
+    private function repairTerminalFailedMalformedBatch(
+        string $runId,
+        bool $apply,
+        array $sorted,
+        RunState $replayed,
+        RunState $storedState,
+    ): RepairResult {
+        return $this->repairTerminalMalformedBatch(
+            runId: $runId,
+            apply: $apply,
+            sorted: $sorted,
+            replayed: $replayed,
+            storedState: $storedState,
+            dryRunMessage: 'Terminal failed session has unmatched assistant tool calls; repair available.',
+            successMessage: 'Failed session repaired: missing tool messages appended.',
+            requiredStatus: RunStatus::Failed,
+            stepIdPrefix: 'repair-failed',
+        );
+    }
+
+    /**
+     * @param list<RunEvent> $sorted
+     */
+    private function repairTerminalMalformedBatch(
+        string $runId,
+        bool $apply,
+        array $sorted,
+        RunState $replayed,
+        RunState $storedState,
+        string $dryRunMessage,
+        string $successMessage,
+        RunStatus $requiredStatus,
+        string $stepIdPrefix,
+    ): RepairResult {
         $missingIds = $this->missingToolResultIds($replayed->messages);
         if (null === $missingIds) {
-            // Append-only repair cannot reorder events, so unclosed-batch shapes are not repairable.
             return $this->noRepairResult('No repairable corruption detected: append-only repair cannot reorder events for unclosed tool-call batches.');
         }
         if ([] === $missingIds) {
@@ -258,13 +323,13 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             return new RepairResult(
                 repairableStaleCancellationDetected: true,
                 staleCancellationRepaired: false,
-                message: 'Terminal cancelled session has unmatched assistant tool calls; repair available.',
+                message: $dryRunMessage,
             );
         }
 
         $maxSeq = $this->replayEventPreparer->maxSequence($sorted);
         $turnNo = $replayed->turnNo;
-        $stepId = $replayed->activeStepId ?? \sprintf('repair-cancel-%d', hrtime(true));
+        $stepId = $replayed->activeStepId ?? \sprintf('%s-%d', $stepIdPrefix, hrtime(true));
         $toolInfo = $this->toolCallInfoFromEvents($sorted);
         $eventSpecs = [];
 
@@ -276,28 +341,38 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         });
 
         foreach ($missingIds as $toolCallId) {
-            $info = $toolInfo[$toolCallId] ?? [];
-            $toolName = \is_string($info['name'] ?? null) ? $info['name'] : 'unknown';
-            $orderIndex = \is_int($info['order_index'] ?? null) ? $info['order_index'] : 0;
-
             if ($this->hasDurableToolEnd($sorted, $toolCallId)) {
                 continue;
             }
 
-            // No durable end yet — append one typed synthetic cancellation result.
-            $this->appendSyntheticCancelledToolResultEvents(
-                eventSpecs: $eventSpecs,
-                runId: $runId,
-                turnNo: $turnNo,
-                stepId: $stepId,
-                toolCallId: $toolCallId,
-                toolName: $toolName,
-                orderIndex: $orderIndex,
-            );
+            $info = $toolInfo[$toolCallId] ?? [];
+            $toolName = \is_string($info['name'] ?? null) ? $info['name'] : 'unknown';
+            $orderIndex = \is_int($info['order_index'] ?? null) ? $info['order_index'] : 0;
+            if (RunStatus::Failed === $requiredStatus) {
+                $this->appendSyntheticFailedToolResultEvents(
+                    eventSpecs: $eventSpecs,
+                    runId: $runId,
+                    turnNo: $turnNo,
+                    stepId: $stepId,
+                    toolCallId: $toolCallId,
+                    toolName: $toolName,
+                    orderIndex: $orderIndex,
+                );
+            } else {
+                $this->appendSyntheticCancelledToolResultEvents(
+                    eventSpecs: $eventSpecs,
+                    runId: $runId,
+                    turnNo: $turnNo,
+                    stepId: $stepId,
+                    toolCallId: $toolCallId,
+                    toolName: $toolName,
+                    orderIndex: $orderIndex,
+                );
+            }
         }
 
-        // ToolBatchCommitted is the retained ordering boundary. It flushes every
-        // durable end for this incomplete batch, including ends that predate repair.
+        // ToolBatchCommitted flushes every durable end for the incomplete batch,
+        // including ends that predate repair.
         $eventSpecs[] = [
             'type' => RunEventTypeEnum::ToolBatchCommitted->value,
             'payload' => [
@@ -314,8 +389,8 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             eventSpecs: $eventSpecs,
             sorted: $sorted,
             storedState: $storedState,
-            successMessage: 'Terminal cancelled session repaired: missing tool messages appended.',
-            requireCancelledStatus: true,
+            successMessage: $successMessage,
+            requiredStatus: $requiredStatus,
             requireValidToolCallSequence: true,
         );
     }
@@ -332,26 +407,27 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         array $sorted,
         RunState $storedState,
         string $successMessage,
-        bool $requireCancelledStatus,
+        RunStatus $requiredStatus,
         bool $requireValidToolCallSequence = false,
     ): RepairResult {
         $proposedEvents = $this->eventFactory->eventsFromSpecs($runId, $turnNo, $maxSeq + 1, $eventSpecs);
         $hypothetical = array_merge($sorted, $proposedEvents);
         $hypotheticalReplay = $this->runStateReducer->replay(RunState::queued($runId), $hypothetical);
 
-        if ($requireCancelledStatus && RunStatus::Cancelled !== $hypotheticalReplay->status) {
+        if ($requiredStatus !== $hypotheticalReplay->status) {
             $this->logger->warning('session_repair.refused', [
                 'run_id' => $runId,
                 'component' => 'session.repair',
                 'event_type' => 'session.repair.refused',
                 'refusal_reason' => SessionRepairRefusalReasonEnum::ReplayValidationFailed->value,
                 'final_status' => $hypotheticalReplay->status->value,
+                'required_status' => $requiredStatus->value,
             ]);
 
             return new RepairResult(
                 repairableStaleCancellationDetected: false,
                 staleCancellationRepaired: false,
-                message: 'Session repair refused: hypothetical replay did not reach Cancelled.',
+                message: \sprintf('Session repair refused: hypothetical replay did not preserve %s.', $requiredStatus->value),
                 refusalReason: SessionRepairRefusalReasonEnum::ReplayValidationFailed,
             );
         }
@@ -423,9 +499,9 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
     /**
      * @param list<RunEvent> $sorted
      */
-    private function isCancelledTerminal(array $sorted, RunState $replayed): bool
+    private function terminalReasonIs(array $sorted, RunState $replayed, RunStatus $status, string $reason): bool
     {
-        if (RunStatus::Cancelled === $replayed->status) {
+        if ($status === $replayed->status) {
             return true;
         }
 
@@ -434,7 +510,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
                 continue;
             }
 
-            return 'cancelled' === ($event->payload['reason'] ?? null);
+            return $reason === ($event->payload['reason'] ?? null);
         }
 
         return false;
@@ -474,22 +550,77 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         string $toolName,
         int $orderIndex,
     ): void {
+        $this->appendSyntheticToolErrorResultEvents(
+            eventSpecs: $eventSpecs,
+            runId: $runId,
+            turnNo: $turnNo,
+            stepId: $stepId,
+            toolCallId: $toolCallId,
+            toolName: $toolName,
+            orderIndex: $orderIndex,
+            idempotencyPurpose: 'repair-cancel',
+            errorType: 'cancelled',
+            message: self::SYNTHETIC_CANCEL_MESSAGE,
+        );
+    }
+
+    /**
+     * @param list<array{type: string, payload: array<string, mixed>}> $eventSpecs
+     */
+    private function appendSyntheticFailedToolResultEvents(
+        array &$eventSpecs,
+        string $runId,
+        int $turnNo,
+        string $stepId,
+        string $toolCallId,
+        string $toolName,
+        int $orderIndex,
+    ): void {
+        $this->appendSyntheticToolErrorResultEvents(
+            eventSpecs: $eventSpecs,
+            runId: $runId,
+            turnNo: $turnNo,
+            stepId: $stepId,
+            toolCallId: $toolCallId,
+            toolName: $toolName,
+            orderIndex: $orderIndex,
+            idempotencyPurpose: 'repair-failed',
+            errorType: 'result_not_committed',
+            message: self::SYNTHETIC_FAILED_TOOL_MESSAGE,
+        );
+    }
+
+    /**
+     * @param list<array{type: string, payload: array<string, mixed>}> $eventSpecs
+     */
+    private function appendSyntheticToolErrorResultEvents(
+        array &$eventSpecs,
+        string $runId,
+        int $turnNo,
+        string $stepId,
+        string $toolCallId,
+        string $toolName,
+        int $orderIndex,
+        string $idempotencyPurpose,
+        string $errorType,
+        string $message,
+    ): void {
         $syntheticResult = new ToolCallResult(
             runId: $runId,
             turnNo: $turnNo,
             stepId: $stepId,
             attempt: 1,
-            idempotencyKey: hash('sha256', \sprintf('repair-cancel-%s-%s', $runId, $toolCallId)),
+            idempotencyKey: hash('sha256', \sprintf('%s-%s-%s', $idempotencyPurpose, $runId, $toolCallId)),
             toolCallId: $toolCallId,
             orderIndex: $orderIndex,
             result: [
                 'tool_name' => $toolName,
-                'content' => [['type' => 'text', 'text' => self::SYNTHETIC_CANCEL_MESSAGE]],
+                'content' => [['type' => 'text', 'text' => $message]],
             ],
             isError: true,
             error: [
-                'type' => 'cancelled',
-                'message' => self::SYNTHETIC_CANCEL_MESSAGE,
+                'type' => $errorType,
+                'message' => $message,
             ],
         );
 

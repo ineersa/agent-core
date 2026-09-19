@@ -85,6 +85,22 @@ final class RepairCommandHandlerTest extends TestCase
     }
 
     #[Test]
+    public function reportsAppliedRepairMessage(): void
+    {
+        $client = new RepairCommandSpyClient();
+        $client->result = new RepairResult(true, true, 'Failed session repaired: missing tool messages appended.');
+        $state = new TuiSessionState('repair');
+        $state->handle = new RunHandle('run-failed');
+        $handler = new RepairCommandHandler($client, $state, new NullLogger());
+
+        $result = $handler->handle(new SlashCommand('repair', '', '/repair'));
+
+        $this->assertInstanceOf(TranscriptMessage::class, $result);
+        $this->assertSame('Failed session repaired: missing tool messages appended.', $result->text);
+        $this->assertSame('system', $result->style);
+    }
+
+    #[Test]
     public function logsStructuredDegradationWhenRepairThrows(): void
     {
         $client = new RepairCommandSpyClient();

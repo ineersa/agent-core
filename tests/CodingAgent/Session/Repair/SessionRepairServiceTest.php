@@ -105,6 +105,85 @@ final class SessionRepairServiceTest extends TestCase
         $this->assertSame($before, $this->readEvents($runId));
     }
 
+    public function testRepairsFailedTerminalToolBatchWithMissingResult(): void
+    {
+        $runId = 'failed-tool-result';
+        $turnNo = 7;
+        $stepId = 'advance-after-tools-failed';
+        $toolCallId = 'call-failed-result';
+        $factory = new EventFactory();
+        $this->persistRunEvents($runId, $factory->eventsFromSpecs($runId, $turnNo, 1, [
+            ['type' => RunEventTypeEnum::RunStarted->value, 'payload' => ['messages' => []]],
+            ['type' => RunEventTypeEnum::TurnAdvanced->value, 'payload' => ['turn_no' => $turnNo, 'step_id' => $stepId]],
+            ['type' => RunEventTypeEnum::LlmStepCompleted->value, 'payload' => [
+                'step_id' => $stepId,
+                'assistant_message' => [
+                    'role' => 'assistant',
+                    'content' => null,
+                    'tool_calls' => [[
+                        'id' => $toolCallId,
+                        'name' => 'bash',
+                        'arguments' => ['command' => 'castor test'],
+                        'order_index' => 0,
+                    ]],
+                ],
+            ]],
+            ['type' => RunEventTypeEnum::ToolExecutionStart->value, 'payload' => [
+                'tool_call_id' => $toolCallId,
+                'tool_name' => 'bash',
+                'order_index' => 0,
+                'mode' => 'parallel',
+            ]],
+            ['type' => RunEventTypeEnum::AgentEnd->value, 'payload' => [
+                'reason' => 'failed',
+                'error' => 'Handling ToolCallResult failed: Tool batch snapshot write failed.',
+                'message_type' => ToolCallResult::class,
+            ]],
+        ]));
+
+        $runStore = new TestActiveRunContext();
+        $runStore->remember(new RunState(
+            runId: $runId,
+            status: RunStatus::Failed,
+            version: 1,
+            turnNo: $turnNo,
+            lastSeq: 5,
+            activeStepId: $stepId,
+            model: 'test-model',
+        ));
+        $service = $this->createService($runStore);
+        $before = $this->readEvents($runId);
+
+        $dryRun = $service->repair($runId, false);
+        $this->assertTrue($dryRun->repairableStaleCancellationDetected);
+        $this->assertFalse($dryRun->staleCancellationRepaired);
+        $this->assertStringContainsString('failed session has unmatched assistant tool calls', $dryRun->message);
+        $this->assertSame($before, $this->readEvents($runId));
+
+        $applied = $service->repair($runId, true);
+        $this->assertTrue($applied->staleCancellationRepaired);
+        $this->assertStringContainsString('Failed session repaired', $applied->message);
+
+        $events = $this->readEvents($runId);
+        $this->assertSame(1, $this->countEvents($events, RunEventTypeEnum::ToolExecutionEnd->value));
+        $this->assertSame(1, $this->countEvents($events, RunEventTypeEnum::ToolBatchCommitted->value));
+        $this->assertSame(1, $this->countEvents($events, RunEventTypeEnum::AgentEnd->value));
+
+        $messages = $this->replayMessages($runId);
+        $this->assertCount(2, $messages);
+        $this->assertSame('assistant', $messages[0]->role);
+        $this->assertSame('tool', $messages[1]->role);
+        $this->assertSame($toolCallId, $messages[1]->toolCallId);
+        $this->assertTrue($messages[1]->isError);
+        $this->assertStringContainsString('run failed before the result was committed', (string) ($messages[1]->content[0]['text'] ?? ''));
+        $this->assertReplayStatus($runId, RunStatus::Failed);
+
+        $lineCountAfterFirst = \count($this->readRawLines($runId));
+        $second = $service->repair($runId, true);
+        $this->assertFalse($second->repairableStaleCancellationDetected);
+        $this->assertSame($lineCountAfterFirst, \count($this->readRawLines($runId)));
+    }
+
     public function testDryRunDoesNotDispatchAndApplyRedrivesCurrentLlmWithSameIdentity(): void
     {
         $runId = 'repair-llm';
