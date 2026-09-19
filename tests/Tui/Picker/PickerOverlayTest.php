@@ -41,7 +41,7 @@ final class PickerOverlayTest extends TestCase
     #[DataProvider('transcriptHeights')]
     #[RunInSeparateProcess]
     #[PreserveGlobalState(false)]
-    public function testPickerTransitionsDoNotRepaintUnchangedTranscript(int $lineCount, int $rows): void
+    public function testPickerTransitionsPreserveTranscriptWithoutWholeScreenClear(int $lineCount, int $rows): void
     {
         $output = new VirtualTerminal(columns: 100, rows: $rows);
         // Exercise the writer's physical-viewport decisions without a live process.
@@ -83,8 +83,10 @@ final class PickerOverlayTest extends TestCase
             $tui->processRender();
             $delta = $output->consumeOutput();
             $buffer->write($delta);
-            $this->assertStringNotContainsString('Transcript sentinel', $delta, 'Opening must retain the unchanged transcript.');
             $this->assertStringNotContainsString("\x1b[2J", $delta);
+            if ($lineCount <= $rows) {
+                $this->assertStringNotContainsString('Transcript sentinel', $delta, 'Opening must retain the unchanged transcript.');
+            }
             $this->assertStringContainsString('Picker header sentinel', $buffer->getScreen());
             $this->assertStringContainsString('Choice sentinel 1', $buffer->getScreen());
             for ($i = 2; $i <= min(5, $itemCount); ++$i) {
@@ -102,13 +104,11 @@ final class PickerOverlayTest extends TestCase
             $tui->processRender();
             $delta = $output->consumeOutput();
             $buffer->write($delta);
-            // Stock Symfony ScreenWriter redraws the viewport on physical overheight
-            // shrink (no Hatfield #477 guard). Fits-viewport closes stay differential.
+            $this->assertStringNotContainsString("\x1b[2J", $delta);
+            // Overheight transitions may repaint the viewport in place.
+            // Fits-viewport closes stay differential.
             if ($lineCount <= $rows) {
                 $this->assertStringNotContainsString('Transcript sentinel', $delta, 'Closing must retain the unchanged transcript.');
-                $this->assertStringNotContainsString("\x1b[2J", $delta);
-            } else {
-                $this->assertStringContainsString("\x1b[2J", $delta);
             }
             $this->assertStringNotContainsString('Picker header sentinel', $buffer->getScreen());
             $this->assertStringNotContainsString('Choice sentinel', $buffer->getScreen());
