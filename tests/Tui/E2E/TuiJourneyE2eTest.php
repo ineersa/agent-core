@@ -86,6 +86,7 @@ final class TuiJourneyE2eTest extends TestCase
             $this->journeyPhase10OverheightHotkeysUsesPackagedWriter($pane);
 
             $this->tmux->sendKey($pane, 'C-d');
+            $this->tmux->waitUntilPaneExits($pane);
         } catch (\Throwable $e) {
             $this->tmux->saveAnsiSnapshot($pane, 'journey-FAILURE');
             try {
