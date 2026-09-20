@@ -39,6 +39,7 @@ final class TuiVirtualInputTest extends TestCase
     use TuiRuntimeContextBuilderTrait;
 
     private const string SESSION_ID = 'virtual-input-session';
+    private const int HOTKEYS_VIEWPORT_ROWS = 81;
 
     private const string DOUBLE_BANG_UNSUPPORTED = '!! is not supported. Use ! to execute shell commands.';
 
@@ -121,7 +122,7 @@ final class TuiVirtualInputTest extends TestCase
     {
         $hotkeyRegistry = new HotkeyRegistry();
         // Tall virtual screen so the full hotkeys catalog and reserved status row stay in the viewport.
-        $harness = new VirtualTuiHarness(columns: 120, rows: 81, sessionId: self::SESSION_ID);
+        $harness = new VirtualTuiHarness(columns: 120, rows: self::HOTKEYS_VIEWPORT_ROWS, sessionId: self::SESSION_ID);
         $state = new TuiSessionState(self::SESSION_ID);
 
         $context = $this->buildTuiContext()
@@ -176,7 +177,7 @@ final class TuiVirtualInputTest extends TestCase
     public function testHotkeysTableReflowsAfterVirtualResize(): void
     {
         $hotkeyRegistry = new HotkeyRegistry();
-        $harness = new VirtualTuiHarness(columns: 120, rows: 80, sessionId: self::SESSION_ID);
+        $harness = new VirtualTuiHarness(columns: 120, rows: self::HOTKEYS_VIEWPORT_ROWS, sessionId: self::SESSION_ID);
         $state = new TuiSessionState(self::SESSION_ID);
 
         $context = $this->buildTuiContext()
@@ -198,8 +199,8 @@ final class TuiVirtualInputTest extends TestCase
 
         $harness->startInputLoop();
         try {
-            // Keep height tall so the table stays in-viewport; only width reflows.
-            $harness->terminal()->simulateResize(40, 80);
+            // Keep the full catalog and reserved status row in view; only width reflows.
+            $harness->terminal()->simulateResize(40, self::HOTKEYS_VIEWPORT_ROWS);
             $harness->render();
             $narrow = $harness->plainScreenText();
         } finally {
