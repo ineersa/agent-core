@@ -9074,12 +9074,12 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/ineersa/tui.git",
-                "reference": "e682d162f31aa82832d8255f4c9c3fd17977e903"
+                "reference": "5818dc28888921d87e7b4696335ca60152305a1e"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/ineersa/tui/zipball/e682d162f31aa82832d8255f4c9c3fd17977e903",
-                "reference": "e682d162f31aa82832d8255f4c9c3fd17977e903",
+                "url": "https://api.github.com/repos/ineersa/tui/zipball/5818dc28888921d87e7b4696335ca60152305a1e",
+                "reference": "5818dc28888921d87e7b4696335ca60152305a1e",
                 "shasum": ""
             },
             "require": {
@@ -9126,7 +9126,7 @@
             "support": {
                 "source": "https://github.com/ineersa/tui/tree/fix/tui-screenwriter-in-place-viewport"
             },
-            "time": "2026-09-19T23:45:14+00:00"
+            "time": "2026-09-20T20:24:18+00:00"
         },
         {
             "name": "symfony/type-info",
