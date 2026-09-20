@@ -120,8 +120,8 @@ final class TuiVirtualInputTest extends TestCase
     public function testHotkeysSlashCommandRoutesLocallyAndRendersKeyboardShortcutsTable(): void
     {
         $hotkeyRegistry = new HotkeyRegistry();
-        // Tall virtual screen so the full hotkeys catalog stays in the viewport.
-        $harness = new VirtualTuiHarness(columns: 120, rows: 80, sessionId: self::SESSION_ID);
+        // Tall virtual screen so the full hotkeys catalog and reserved status row stay in the viewport.
+        $harness = new VirtualTuiHarness(columns: 120, rows: 81, sessionId: self::SESSION_ID);
         $state = new TuiSessionState(self::SESSION_ID);
 
         $context = $this->buildTuiContext()
