@@ -122,6 +122,7 @@ final class TuiProviderErrorE2eTest extends TestCase
 
             // Send clean exit.
             $this->tmux->sendKey($pane, 'C-d');
+            $this->tmux->waitUntilPaneExits($pane);
         } catch (\Throwable $e) {
             $this->tmux->saveAnsiSnapshot($pane, 'provider-error-FAILURE');
             try {

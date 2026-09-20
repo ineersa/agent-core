@@ -127,6 +127,7 @@ final class TuiOmCommandsE2eTest extends IsolatedKernelTestCase
 
             $this->saveAnsiSnapshot($pane, 'om-commands-smoke');
             $this->tmux->sendKey($pane, 'C-d');
+            $this->tmux->waitUntilPaneExits($pane);
         } catch (\Throwable $e) {
             $this->saveAnsiSnapshot($pane, 'om-commands-smoke-FAILURE');
             try {
@@ -197,6 +198,7 @@ final class TuiOmCommandsE2eTest extends IsolatedKernelTestCase
 
             $this->saveAnsiSnapshot($pane, 'om-background-status-once');
             $this->tmux->sendKey($pane, 'C-d');
+            $this->tmux->waitUntilPaneExits($pane);
         } catch (\Throwable $e) {
             $this->saveAnsiSnapshot($pane, 'om-background-status-once-FAILURE');
             try {

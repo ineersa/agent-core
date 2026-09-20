@@ -12,7 +12,7 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
  *
  * Owns which ToolResult pairs with a ToolCall and which tool cards are suppressed
  * (ask_human HITL, standalone results consumed by an exchange, empty assistant
- * placeholder before a Question). Result-body presentation facts (full-render,
+ * placeholder before a Question). Result-body presentation facts (failure status,
  * body text, meta truthiness) live in {@see TranscriptToolResultFacts} and are
  * consumed here only for candidate scoring. Rendering stays in
  * {@see TranscriptBlockWidgetFactory}; projection ownership of indexes, stable
@@ -175,7 +175,7 @@ final readonly class TranscriptToolPresentationPolicy
     {
         $score = 0;
 
-        if ($this->toolResultFacts->toolResultIsFullRender($resultBlock)) {
+        if ($this->toolResultFacts->toolResultIsUnsuccessful($resultBlock)) {
             $score += 1000;
         }
 
@@ -218,7 +218,7 @@ final readonly class TranscriptToolPresentationPolicy
 
         if (TranscriptBlockKindEnum::ToolResult === $block->kind
             && $this->isAskHumanToolName($block->meta['tool_name'] ?? null)
-            && !$this->toolResultFacts->toolResultIsFullRender($block)) {
+            && !$this->toolResultFacts->toolResultIsUnsuccessful($block)) {
             return true;
         }
 
