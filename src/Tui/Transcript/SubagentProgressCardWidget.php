@@ -18,6 +18,11 @@ use function Symfony\Component\String\u;
 /**
  * Semantic subagent progress card: owns typed snapshot → plain lines → themed rails.
  *
+ * Live single cards keep a fixed nine-row footprint. Parallel cards allocate
+ * two rows per declared child so progress updates stay inside the addressable
+ * viewport instead of mutating rows that have entered native scrollback.
+ * Detailed child activity remains available through /agents-live.
+ *
  * Style elements are registered via {@see ThemeStyleSheetFactory::createSubagentProgressCard()} in ChatScreen.
  */
 final class SubagentProgressCardWidget extends AbstractWidget
@@ -54,7 +59,7 @@ final class SubagentProgressCardWidget extends AbstractWidget
         $inChild = false;
         foreach ($workingLines as $line) {
             if ('' === $line) {
-                $inChild = false;
+                $lines[] = $this->fitLine($this->applyElement($borderEl, '│ '), $width);
                 continue;
             }
             if ($isParallel && str_starts_with($line, '#')) {
@@ -78,12 +83,12 @@ final class SubagentProgressCardWidget extends AbstractWidget
                 $width,
             );
         }
-        if (null !== $this->expandHandoffHint) {
-            $lines[] = $this->fitLine(
-                $this->applyElement($borderEl, '│ ').$this->applyElement('muted', $this->expandHandoffHint),
-                $width,
-            );
-        }
+        // Reserve the handoff-hint row while the child is live so terminal
+        // completion does not change the progress card's height.
+        $lines[] = $this->fitLine(
+            $this->applyElement($borderEl, '│ ').$this->applyElement('muted', $this->expandHandoffHint ?? ''),
+            $width,
+        );
 
         $bottom = $this->applyElement($borderEl, '╰─');
         if ($this->streaming) {
@@ -117,51 +122,32 @@ final class SubagentProgressCardWidget extends AbstractWidget
         $status = $this->normalizeStatus($progress->status);
         $lines = [$this->formatHeaderLine($progress, $progress->agentName, $status, $childIndex)];
 
-        if ('' !== $progress->taskSummary) {
-            $lines[] = 'Task '.$this->truncate($progress->taskSummary, 120);
+        $taskMaxLength = null === $childIndex ? 120 : 60;
+        $task = '' === $progress->taskSummary ? '' : 'Task '.$this->truncate($progress->taskSummary, $taskMaxLength);
+        $activity = $this->formatCurrentActivity($progress, $status);
+
+        if (null !== $childIndex) {
+            $detail = implode(' · ', array_filter([$activity, $task], static fn (string $part): bool => '' !== $part));
+
+            return [...$lines, $detail];
         }
 
-        if (null !== $progress->artifactPath && '' !== $progress->artifactPath) {
-            $lines[] = 'Artifact '.$progress->artifactPath;
-        } else {
-            $lines[] = 'Artifact '.$progress->artifactId;
-        }
-
-        $lines[] = 'Run '.$this->truncate($progress->agentRunId, 80);
-
-        $activeTool = $progress->activeTool ?? '';
-        if ('' !== $activeTool && $this->isActiveStatus($status)) {
-            $lines[] = 'Active '.$this->sanitizeInlineValue($activeTool);
-        }
-
-        foreach ($progress->recentTools as $toolLine) {
-            if ($toolLine === $activeTool) {
-                continue;
-            }
-            $lines[] = '› '.$this->sanitizeInlineValue($toolLine);
-        }
-
-        if (null !== $progress->assistantExcerpt && '' !== $progress->assistantExcerpt) {
-            $lines[] = $this->truncate($progress->assistantExcerpt, 200);
-        }
+        $lines[] = $task;
+        $artifact = null !== $progress->artifactPath && '' !== $progress->artifactPath
+            ? $progress->artifactPath
+            : $progress->artifactId;
+        $lines[] = 'Artifact '.$artifact.' · Run '.$this->truncate($progress->agentRunId, 80);
+        $lines[] = $activity;
 
         $footer = $this->formatFooter($progress);
-        if ('' !== $footer) {
-            $lines[] = $footer;
-        }
+        $lines[] = $footer;
 
         $contextLine = $this->formatContextUsageLine($progress);
-        if (null !== $contextLine) {
-            $lines[] = $contextLine;
-        }
+        $lines[] = $contextLine ?? '';
 
-        if (null === $childIndex) {
-            if ($this->needsLiveHint($status)) {
-                $lines[] = 'Ctrl+\\ / /agents-live to inspect, steer, or answer';
-            } elseif (\in_array($status, ['completed', 'failed', 'cancelled'], true)) {
-                $lines[] = $this->retrieveGuidance($status);
-            }
-        }
+        $lines[] = $this->needsLiveHint($status)
+            ? 'Ctrl+\\ / /agents-live to inspect, steer, or answer'
+            : $this->retrieveGuidance($status);
 
         return $lines;
     }
@@ -176,9 +162,15 @@ final class SubagentProgressCardWidget extends AbstractWidget
         $total = max($progress->totalCount, 1);
         $lines = [\sprintf('parallel subagents (%d/%d completed)', $completed, $total)];
 
+        $childrenByIndex = [];
         foreach ($progress->children as $child) {
-            $lines[] = '';
-            foreach ($this->buildSingleLines($child, $child->index) as $line) {
+            $childrenByIndex[$child->index] = $child;
+        }
+
+        for ($index = 1; $index <= $total; ++$index) {
+            $child = $childrenByIndex[$index] ?? null;
+            $childLines = null === $child ? ['', ''] : $this->buildSingleLines($child, $index);
+            foreach ($childLines as $line) {
                 $lines[] = $line;
             }
         }
@@ -190,6 +182,20 @@ final class SubagentProgressCardWidget extends AbstractWidget
         }
 
         return $lines;
+    }
+
+    private function formatCurrentActivity(
+        SubagentProgressSingleSnapshotDTO|SubagentProgressChildRowDTO $progress,
+        string $status,
+    ): string {
+        $activeTool = $progress->activeTool ?? '';
+        if ('' !== $activeTool && $this->isActiveStatus($status)) {
+            return 'Active '.$this->sanitizeInlineValue($activeTool);
+        }
+
+        $recentTool = [] === $progress->recentTools ? '' : $progress->recentTools[array_key_last($progress->recentTools)];
+
+        return '' === $recentTool ? '' : '› '.$this->sanitizeInlineValue($recentTool);
     }
 
     private function formatHeaderLine(
