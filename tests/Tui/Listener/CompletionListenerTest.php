@@ -16,6 +16,7 @@ use Ineersa\Tui\Completion\SlashCommandCompletionProvider;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\CompletionListener;
 use Ineersa\Tui\Listener\CompletionMenu;
+use Ineersa\Tui\Listener\FooterStateSegmentProvider;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
@@ -23,10 +24,15 @@ use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
+use Ineersa\Tui\Transcript\TranscriptBlockFactory;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Tui\Terminal\ScreenBuffer;
+use Symfony\Component\Tui\Terminal\TerminalInterface;
+use Symfony\Component\Tui\Terminal\VirtualTerminal;
 use Symfony\Component\Tui\Tui;
 
 #[CoversClass(CompletionListener::class)]
@@ -389,6 +395,88 @@ final class CompletionListenerTest extends TestCase
     }
 
     #[Test]
+    public function longTranscriptAutocompleteUpdatesThePhysicalViewportWithoutStaleChrome(): void
+    {
+        $columns = 224;
+        $rows = 60;
+        $output = new VirtualTerminal(columns: $columns, rows: $rows);
+        $dispatcher = new EventDispatcher();
+        $terminal = $this->createStub(TerminalInterface::class);
+        $terminal->method('getEventDispatcher')->willReturn($dispatcher);
+        $terminal->method('getColumns')->willReturn($columns);
+        $terminal->method('getRows')->willReturn($rows);
+        $terminal->method('isVirtual')->willReturn(false);
+        $terminal->method('write')->willReturnCallback($output->write(...));
+        $terminal->method('showCursor')->willReturnCallback($output->showCursor(...));
+        $terminal->method('hideCursor')->willReturnCallback($output->hideCursor(...));
+
+        $editor = new PromptEditor();
+        $screen = new ChatScreen(new DefaultTheme(new ThemePalette('test')), 'autocomplete-viewport', $editor);
+        $tui = new Tui(terminal: $terminal, eventDispatcher: $dispatcher);
+        $screen->mount($tui);
+
+        $catalog = new SlashCommandCatalog();
+        foreach (['task-done', 'task-explain', 'task-review-iterate', 'task-start', 'task-to-pr', 'tasks', 'tasks-code-review', 'tasks-done', 'tasks-in-progress', 'tasks-todo'] as $name) {
+            $catalog->registerMetadata(new CommandMetadata(name: $name, aliases: [], description: 'Command '.$name));
+        }
+
+        $state = new TuiSessionState('autocomplete-viewport');
+        $state->footerModel = 'test-model';
+        $state->footerReasoning = 'high';
+        $state->contextWindow = 1_050_000;
+        $state->cwd = 'projects/agent-core';
+        $state->branch = 'main';
+        $screen->addFooterProvider(new FooterStateSegmentProvider($state));
+
+        (new CompletionListener(new SlashCommandCompletionProvider($catalog)))->register(
+            $this->buildTuiContext()
+                ->withTui($tui)
+                ->withState($state)
+                ->withScreen($screen)
+                ->build(),
+        );
+
+        $screen->setTranscriptBlocks([(new TranscriptBlockFactory())->system(
+            runId: 'autocomplete-viewport',
+            text: implode("\n", array_map(static fn (int $i): string => 'Transcript sentinel '.$i, range(1, 100))),
+            seq: 1,
+        )]);
+        $tui->setFocus($screen->editorWidget());
+
+        $buffer = new ScreenBuffer(width: $columns, height: $rows);
+        $tui->requestRender();
+        $tui->processRender();
+        $buffer->write($output->consumeOutput());
+
+        $clearLineCounts = [];
+        foreach (str_split('/task-done') as $key) {
+            $tui->handleInput($key);
+            $tui->processRender();
+            $delta = $output->consumeOutput();
+            $buffer->write($delta);
+            $this->assertStringNotContainsString("\x1b[2J", $delta, 'Autocomplete refinement must not clear the whole screen.');
+            $clearLineCounts[] = substr_count($delta, "\x1b[2K");
+        }
+
+        $tui->handleInput("\t");
+        $tui->processRender();
+        $buffer->write($output->consumeOutput());
+
+        $tui->handleInput("\n");
+        $tui->processRender();
+        $newlineDelta = $output->consumeOutput();
+        $buffer->write($newlineDelta);
+        $this->assertStringNotContainsString("\x1b[2J", $newlineDelta, 'Submitting after the menu closes must not clear the whole screen.');
+
+        $plain = $buffer->getScreen();
+        $this->assertSame(1, substr_count($plain, '/task-done'));
+        $this->assertSame(1, substr_count($plain, '◆ test-model'));
+        $this->assertSame(1, substr_count($plain, 'session autocomplete-viewport'));
+        $this->assertLessThanOrEqual(16, max($clearLineCounts), 'Autocomplete refinement must repaint only its changed suffix.');
+        $this->assertLessThanOrEqual(10, substr_count($newlineDelta, "\x1b[2K"), 'Submitting after the menu closes must not repaint the entire 60-row viewport.');
+    }
+
+    #[Test]
     public function typingNonSlashTextDoesNotOpenCompletion(): void
     {
         $this->tui->setFocus($this->screen->editorWidget());
@@ -708,7 +796,7 @@ final class CompletionListenerTest extends TestCase
         $sessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
+            dispatcher: new EventDispatcher(),
         );
         $isolatedContext = new TuiRuntimeContext(
             tui: $isolatedTui,
@@ -894,7 +982,7 @@ final class CompletionListenerTest extends TestCase
             $sessionStore = new HatfieldSessionStore(
                 appConfig: $appConfig,
                 entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-                dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), );
+                dispatcher: new EventDispatcher(), );
             $context = new TuiRuntimeContext(
                 tui: $isolatedTui,
                 client: $this->createStub(AgentSessionClient::class),
@@ -957,7 +1045,7 @@ final class CompletionListenerTest extends TestCase
             $sessionStore = new HatfieldSessionStore(
                 appConfig: $appConfig,
                 entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-                dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), );
+                dispatcher: new EventDispatcher(), );
             $context = new TuiRuntimeContext(
                 tui: $isolatedTui,
                 client: $this->createStub(AgentSessionClient::class),
@@ -1016,7 +1104,7 @@ final class CompletionListenerTest extends TestCase
             $sessionStore = new HatfieldSessionStore(
                 appConfig: $appConfig,
                 entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-                dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), );
+                dispatcher: new EventDispatcher(), );
             $context = new TuiRuntimeContext(
                 tui: $isolatedTui,
                 client: $this->createStub(AgentSessionClient::class),
@@ -1080,7 +1168,7 @@ final class CompletionListenerTest extends TestCase
             $sessionStore = new HatfieldSessionStore(
                 appConfig: $appConfig,
                 entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-                dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), );
+                dispatcher: new EventDispatcher(), );
             $context = new TuiRuntimeContext(
                 tui: $isolatedTui,
                 client: $this->createStub(AgentSessionClient::class),
