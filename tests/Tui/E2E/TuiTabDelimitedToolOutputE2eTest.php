@@ -23,9 +23,9 @@ use Symfony\Component\Tui\Render\RenderContext;
 /**
  * Real-terminal proof for tab-delimited tool output.
  *
- * ScreenBuffer treats tabs differently from tmux. Replaying the same rendered
- * frame in a fixed 224x60 pane detects terminal autowrap that moves status,
- * editor, or footer rows outside the positions assigned by the renderer.
+ * ScreenBuffer models tab stops but does not model right-margin autowrap.
+ * Replaying the same rendered frame in a fixed 224x60 pane detects autowrap
+ * that moves status, editor, or footer rows outside their assigned positions.
  */
 #[Group('tui-e2e-replay')]
 final class TuiTabDelimitedToolOutputE2eTest extends TestCase
@@ -122,6 +122,7 @@ final class TuiTabDelimitedToolOutputE2eTest extends TestCase
                 message: 'Rendered footer did not reach its assigned row.',
             );
 
+            // A real terminal must agree with ScreenBuffer's assigned rows.
             $this->assertSame($expectedFrame, $actualFrame);
             foreach ($renderedRows as $row) {
                 $this->assertStringNotContainsString("\t", $row);
@@ -143,7 +144,7 @@ final class TuiTabDelimitedToolOutputE2eTest extends TestCase
     {
         return implode("\n", [
             "Context (7.4)\tpass\t42s\thttps://github.com/symfony/symfony/actions/runs/19999999999/job/59999999999",
-            "PHPUnit tests on Linux with PHP 8.5 and all optional dependencies enabled for the complete framework test matrix\tpass\t1m32s\thttps://github.com/symfony/symfony/actions/runs/19999999999/job/59999999998",
+            "PHPUnit tests on Linux with PHP 8.5 and all optional dependencies enabled for the complete framework test matrix and full CI\tpass\t1m32s\thttps://github.com/symfony/symfony/actions/runs/19999999999/job/59999999998",
             "PHPStan analysis for src, tests, bridges, contracts, components, and integration fixtures\tpass\t58s\thttps://github.com/symfony/symfony/actions/runs/19999999999/job/59999999997",
         ]);
     }
