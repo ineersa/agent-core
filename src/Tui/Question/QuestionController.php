@@ -167,10 +167,9 @@ final class QuestionController
     private function dismissToEditor(): void
     {
         $this->screen->setFocus($this->screen->editorWidget());
-        // Keep the reserved overlay band mounted with blank rows so removing the
-        // select list does not shrink an already-overheight ChatScreen frame and
-        // trip ScreenWriter::redrawViewport(). Final close() still removes the
-        // band when the free-form answer is submitted or cancelled.
+        // Keep the reserved overlay band mounted with blank rows so switching to
+        // free-form input does not move the editor. Final close() removes the band
+        // when the free-form answer is submitted or cancelled.
         if (null !== $this->container) {
             $this->container->clear();
             $this->container->setStyle(new Style(gap: 0));
