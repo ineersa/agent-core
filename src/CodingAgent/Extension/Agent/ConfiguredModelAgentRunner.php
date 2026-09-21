@@ -27,7 +27,8 @@ use Symfony\AI\Platform\PlatformInterface;
 /**
  * Internal Hatfield runner for the public ExtensionApi agent capability.
  *
- * Reuses the configured Symfony AI Platform, configured Symfony AI Platform and Agent-owned toolbox loop, and Hatfield routing metadata. Publicly blocking; streams
+ * Reuses the configured Symfony AI Platform, Agent-owned toolbox loop, and
+ * Hatfield routing metadata. Publicly blocking; streams
  * internally so Codex WebSocket and HTTP streaming providers complete.
  *
  * When {@see AgentCallRequestDTO::$maxDurationSeconds} is set, this runner

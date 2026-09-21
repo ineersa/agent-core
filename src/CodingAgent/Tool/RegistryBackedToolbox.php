@@ -18,6 +18,7 @@ use Symfony\AI\Agent\Toolbox\Exception\ToolException;
 use Symfony\AI\Agent\Toolbox\Exception\ToolExecutionException;
 use Symfony\AI\Agent\Toolbox\Exception\ToolExecutionExceptionInterface;
 use Symfony\AI\Agent\Toolbox\Exception\ToolNotFoundException;
+use Symfony\AI\Agent\Toolbox\MapToolArgumentsDescriber;
 use Symfony\AI\Agent\Toolbox\Toolbox;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolverInterface;
@@ -81,7 +82,7 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
     public function __construct(
         private ToolRegistryInterface $registry,
         private ToolCallArgumentResolverInterface $argumentResolver,
-        private Factory $schemaFactory = new Factory(),
+        private Factory $schemaFactory = new Factory(new MapToolArgumentsDescriber()),
         private ?EventDispatcherInterface $eventDispatcher = null,
         private ?ExtensionHookRegistry $rewriteHookProvider = null,
         private ?StackToolExecutionContextAccessor $contextAccessor = null,

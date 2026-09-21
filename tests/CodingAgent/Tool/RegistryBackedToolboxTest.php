@@ -154,7 +154,10 @@ final class RegistryBackedToolboxTest extends TestCase
             promptLine: 'view_image: View',
         );
 
-        $toolbox = $this->createToolbox($registry);
+        $toolbox = new RegistryBackedToolbox(
+            $registry,
+            new RawAwareToolCallArgumentResolver(new ToolCallArgumentResolver()),
+        );
         $tools = $toolbox->getTools();
 
         $this->assertCount(1, $tools);
