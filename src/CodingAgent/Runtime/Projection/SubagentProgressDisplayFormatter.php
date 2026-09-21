@@ -14,8 +14,9 @@ use function Symfony\Component\String\u;
 /**
  * Builds compact inline transcript text for structured subagent progress snapshots.
  *
- * Stored on ToolResult blocks as visible text; {@see \Ineersa\Tui\Transcript\SubagentResultRenderer}
- * applies the same layout for terminal rendering (kept in sync intentionally).
+ * ToolResult blocks retain the full progress text, including recent tools and
+ * the assistant excerpt. {@see \Ineersa\Tui\Transcript\SubagentResultRenderer}
+ * renders a smaller, height-stable card and directs users to /agents-live for details.
  *
  * Accepts typed snapshots only. Wire arrays are denormalized once at the
  * RuntimeEvent projection boundary before calling this formatter.

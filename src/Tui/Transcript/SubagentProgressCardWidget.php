@@ -18,9 +18,9 @@ use function Symfony\Component\String\u;
 /**
  * Semantic subagent progress card: owns typed snapshot → plain lines → themed rails.
  *
- * Live single cards keep a fixed nine-row footprint. Parallel cards allocate
- * two rows per declared child so progress updates stay inside the addressable
- * viewport instead of mutating rows that have entered native scrollback.
+ * Live single cards keep a fixed nine-row footprint. Parallel cards use four
+ * shared rows plus two rows per declared child. Progress updates therefore stay
+ * inside the addressable viewport instead of mutating native scrollback rows.
  * Detailed child activity remains available through /agents-live.
  *
  * Style elements are registered via {@see ThemeStyleSheetFactory::createSubagentProgressCard()} in ChatScreen.
@@ -56,23 +56,21 @@ final class SubagentProgressCardWidget extends AbstractWidget
         $header = [] !== $workingLines ? array_shift($workingLines) : 'subagent';
         $lines = [$this->fitLine($this->applyElement($borderEl, '╭─ '.$header), $width)];
 
-        $inChild = false;
         foreach ($workingLines as $line) {
             if ('' === $line) {
                 $lines[] = $this->fitLine($this->applyElement($borderEl, '│ '), $width);
                 continue;
             }
             if ($isParallel && str_starts_with($line, '#')) {
-                $inChild = true;
                 $childStatus = $this->childStatusFromLine($line);
                 $lines[] = $this->fitLine(
-                    $this->applyElement($borderEl, '├─ ').$this->styleBodyLine($line, $childStatus, true),
+                    $this->applyElement($borderEl, '├─ ').$this->styleBodyLine($line, $childStatus),
                     $width,
                 );
                 continue;
             }
             $lines[] = $this->fitLine(
-                $this->applyElement($borderEl, '│ ').$this->styleBodyLine($line, $status, $inChild && str_starts_with($line, '#')),
+                $this->applyElement($borderEl, '│ ').$this->styleBodyLine($line, $status),
                 $width,
             );
         }
@@ -123,7 +121,8 @@ final class SubagentProgressCardWidget extends AbstractWidget
         $lines = [$this->formatHeaderLine($progress, $progress->agentName, $status, $childIndex)];
 
         $taskMaxLength = null === $childIndex ? 120 : 60;
-        $task = '' === $progress->taskSummary ? '' : 'Task '.$this->truncate($progress->taskSummary, $taskMaxLength);
+        $taskSummary = $this->truncate($progress->taskSummary, $taskMaxLength);
+        $task = '' === $taskSummary ? '' : 'Task '.$taskSummary;
         $activity = $this->formatCurrentActivity($progress, $status);
 
         if (null !== $childIndex) {
@@ -167,6 +166,7 @@ final class SubagentProgressCardWidget extends AbstractWidget
             $childrenByIndex[$child->index] = $child;
         }
 
+        // Snapshot producers assign children contiguous, one-based indices.
         for ($index = 1; $index <= $total; ++$index) {
             $child = $childrenByIndex[$index] ?? null;
             $childLines = null === $child ? ['', ''] : $this->buildSingleLines($child, $index);
@@ -175,11 +175,9 @@ final class SubagentProgressCardWidget extends AbstractWidget
             }
         }
 
-        if ($this->needsLiveHint($status)) {
-            $lines[] = 'Ctrl+\\ / /agents-live to inspect, steer, or answer';
-        } elseif (\in_array($status, ['completed', 'failed', 'cancelled'], true)) {
-            $lines[] = $this->retrieveGuidance($status);
-        }
+        $lines[] = $this->needsLiveHint($status)
+            ? 'Ctrl+\\ / /agents-live to inspect, steer, or answer'
+            : $this->retrieveGuidance($status);
 
         return $lines;
     }
@@ -225,9 +223,9 @@ final class SubagentProgressCardWidget extends AbstractWidget
         return implode(' · ', $parts);
     }
 
-    private function styleBodyLine(string $line, string $status, bool $childHeader): string
+    private function styleBodyLine(string $line, string $status): string
     {
-        if ($childHeader || $this->looksLikeHeaderLine($line)) {
+        if ($this->looksLikeHeaderLine($line)) {
             return $this->applyElement($this->headerElement($status), $line);
         }
         if (str_starts_with($line, 'Task ') || str_starts_with($line, 'Artifact ') || str_starts_with($line, 'Run ')) {

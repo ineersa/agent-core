@@ -164,6 +164,8 @@ final class SubagentResultRendererTest extends TestCase
             ]),
             array_merge($base, ['status' => 'waiting_human', 'recent_tools' => ['ask_human: confirm'], 'tool_count' => 3]),
             array_merge($base, ['status' => 'completed', 'recent_tools' => ['read: path="final.php"'], 'tool_count' => 4]),
+            array_merge($base, ['status' => 'failed', 'recent_tools' => ['bash: command="failed"'], 'tool_count' => 4]),
+            array_merge($base, ['status' => 'cancelled', 'tool_count' => 4]),
         ];
 
         $heights = [];
@@ -180,7 +182,7 @@ final class SubagentResultRendererTest extends TestCase
             $heights[] = \count($this->renderBlockLines($block));
         }
 
-        $this->assertSame([9, 9, 9, 9, 9], $heights);
+        $this->assertSame([9, 9, 9, 9, 9, 9, 9], $heights);
     }
 
     public function testParallelProgressCardAllocatesTwoRowsPerChildAcrossLifecycleUpdates(): void
@@ -209,6 +211,14 @@ final class SubagentResultRendererTest extends TestCase
                 'mode' => 'parallel', 'status' => 'completed', 'completed_count' => 2, 'total_count' => 2,
                 'children' => [$child(1, 'completed'), $child(2, 'completed')],
             ],
+            [
+                'mode' => 'parallel', 'status' => 'failed', 'completed_count' => 0, 'total_count' => 2,
+                'children' => [$child(1, 'failed'), $child(2, 'failed')],
+            ],
+            [
+                'mode' => 'parallel', 'status' => 'cancelled', 'completed_count' => 0, 'total_count' => 2,
+                'children' => [$child(1, 'cancelled'), $child(2, 'cancelled')],
+            ],
         ];
 
         $heights = [];
@@ -225,7 +235,24 @@ final class SubagentResultRendererTest extends TestCase
             $heights[] = \count($this->renderBlockLines($block));
         }
 
-        $this->assertSame([8, 8, 8], $heights);
+        $this->assertSame([8, 8, 8, 8, 8], $heights);
+    }
+
+    public function testWhitespaceOnlyTaskSummaryUsesReservedRow(): void
+    {
+        $progress = [
+            'mode' => 'single', 'status' => 'running', 'agent_name' => 'scout',
+            'artifact_id' => 'agent_whitespace', 'agent_run_id' => 'run-whitespace',
+            'task_summary' => " \t\n ", 'model' => 'test/model', 'reasoning' => 'medium',
+        ];
+        $block = new TranscriptBlock(
+            id: 'tool_result_whitespace', kind: TranscriptBlockKindEnum::ToolResult, runId: 'run1', seq: 1,
+            text: '', meta: ['tool_name' => 'subagent', 'subagent_progress' => $this->snapshot($progress)], streaming: true,
+        );
+        $plain = preg_replace('/\x1b\[[0-9;]*m/', '', implode("\n", $this->renderBlockLines($block))) ?? '';
+
+        $this->assertStringNotContainsString('Task ', $plain);
+        $this->assertCount(9, $this->renderBlockLines($block));
     }
 
     #[\PHPUnit\Framework\Attributes\DataProvider('terminalStatuses')]
