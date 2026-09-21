@@ -92,9 +92,6 @@ final class TuiStartupVirtualRenderTest extends TestCase
 
         $screen->setWorkingMessage(null);
         $this->assertSame($idleRevision, $this->workingWidgetRenderRevision($screen));
-
-        $screen->setWorkingMessage(null);
-        $this->assertSame($idleRevision, $this->workingWidgetRenderRevision($screen));
     }
 
     /**

@@ -45,18 +45,6 @@ final class CodexOAuthServiceTest extends TestCase
         @rmdir($this->tmpDir);
     }
 
-    public function testConstructWithStorage(): void
-    {
-        $service = new CodexOAuthService($this->storage, $this->refresher);
-        $this->assertInstanceOf(CodexOAuthService::class, $service);
-    }
-
-    public function testConstructAcceptsNullRefresher(): void
-    {
-        $service = new CodexOAuthService($this->storage);
-        $this->assertInstanceOf(CodexOAuthService::class, $service);
-    }
-
     public function testRefreshCredentialsThrowsWhenNoStoredCredentials(): void
     {
         $service = new CodexOAuthService($this->storage, $this->refresher);

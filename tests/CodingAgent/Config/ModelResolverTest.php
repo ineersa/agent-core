@@ -60,6 +60,7 @@ class ModelResolverTest extends TestCase
         $result = $resolver->resolveInitialModel(null, '');
 
         $this->assertNotNull($result);
+        $this->assertSame('deepseek/deepseek-v4-pro', $result->toString());
     }
 
     public function testUnavailableDefaultFallsBackToFirstAvailableAndWarns(): void

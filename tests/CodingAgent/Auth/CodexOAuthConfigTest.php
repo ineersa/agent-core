@@ -54,7 +54,6 @@ final class CodexOAuthConfigTest extends TestCase
         yield 'double dot' => ['..'];
         yield 'contains space' => ['my profile'];
         yield 'leading dot' => ['.hidden'];
-        yield 'contains whitespace' => ['work personal'];
         yield 'contains special chars' => ['work@home'];
         yield 'contains dollar' => ['acct$'];
     }

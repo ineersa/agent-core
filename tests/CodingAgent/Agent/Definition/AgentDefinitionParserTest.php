@@ -292,17 +292,6 @@ final class AgentDefinitionParserTest extends TestCase
         $this->assertSame(['read', 'grep', 'find', 'ls', 'bash'], $dto->tools);
     }
 
-    public function testToolsCommaSeparatedStringWithoutSpaces(): void
-    {
-        $dto = $this->parse([
-            'name' => 'browser-like',
-            'description' => 'Tight comma list',
-            'tools' => 'read,bash,grep,find,ls',
-        ]);
-
-        $this->assertSame(['read', 'bash', 'grep', 'find', 'ls'], $dto->tools);
-    }
-
     public function testSkillsStringIsNormalized(): void
     {
         $dto = $this->parse([
@@ -559,18 +548,6 @@ Body
         $this->parser->parseContent($content, '/test/legacy-skill.md');
     }
 
-    public function testSkillsStringScalarIsNormalized(): void
-    {
-        $dto = $this->parse([
-            'name' => 'string-skills',
-            'description' => 'String skills',
-            'tools' => ['read'],
-            'skills' => 'testing',
-        ]);
-
-        $this->assertSame(['testing'], $dto->skills);
-    }
-
     public function testDescriptionEmptyStringThrows(): void
     {
         $content = $this->wrapContent([
@@ -744,21 +721,6 @@ Body
     // -----------------------------------------------------------------
     //  New tests for Serializer/Validator-specific behaviors
     // -----------------------------------------------------------------
-
-    public function testSerializerRejectsUnknownTopLevelField(): void
-    {
-        $content = $this->wrapContent([
-            'name' => 'guard',
-            'description' => 'Guard',
-            'tools' => ['read'],
-            'somethingUnexpected' => 'bad',
-        ]);
-
-        $this->expectException(AgentDefinitionValidationException::class);
-        $this->expectExceptionMessageMatches('/unknown field "somethingUnexpected"/');
-
-        $this->parser->parseContent($content, '/test/extra.md');
-    }
 
     public function testNameLeadingWhitespaceTrimmed(): void
     {

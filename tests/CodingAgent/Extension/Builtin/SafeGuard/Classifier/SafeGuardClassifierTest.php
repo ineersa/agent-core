@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Extension\Builtin\SafeGuard\Classifier;
 
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Classifier\SafeGuardClassifier;
-use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Policy\SafeGuardDecision;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Policy\SafeGuardDecisionKind;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Policy\SafeGuardPolicy;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardConfig;
@@ -247,18 +246,4 @@ final class SafeGuardClassifierTest extends TestCase
     }
 
     // ── Decision convenience methods ──
-
-    public function testAllowDecisionIsAllowed(): void
-    {
-        $decision = SafeGuardDecision::allow('bash');
-
-        $this->assertTrue($decision->isAllowed());
-    }
-
-    public function testBlockDecisionIsNotAllowed(): void
-    {
-        $decision = SafeGuardDecision::block(SafeGuardDecisionKind::HardBlock, 'no', 'bash');
-
-        $this->assertFalse($decision->isAllowed());
-    }
 }

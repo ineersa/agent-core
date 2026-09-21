@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Compaction;
 
-use Ineersa\AgentCore\Contract\Compaction\PreLlmCompactionGuardInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Model\RunModelResolverInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
@@ -177,11 +176,6 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
         $this->assertFalse(
             $guard->shouldCompactBeforeLlmStep('run-1', 1, $messages, null),
         );
-    }
-
-    public function testImplementsInterface(): void
-    {
-        $this->assertInstanceOf(PreLlmCompactionGuardInterface::class, $this->guard);
     }
 
     /**

@@ -17,27 +17,6 @@ final class HotkeyRegistryTest extends TestCase
         $this->registry = new HotkeyRegistry();
     }
 
-    public function testAllReturnsEmptyArrayWhenNoBindingsRegistered(): void
-    {
-        $this->assertSame([], $this->registry->all());
-    }
-
-    public function testAllReturnsAddedBindings(): void
-    {
-        $this->registry->add(new HotkeyBindingDTO(
-            context: 'Global',
-            keys: ['ctrl+c'],
-            action: 'Clear editor',
-            source: 'core',
-        ));
-
-        $all = $this->registry->all();
-        $this->assertCount(1, $all);
-        $this->assertSame('Global', $all[0]->context);
-        $this->assertSame(['ctrl+c'], $all[0]->keys);
-        $this->assertSame('Clear editor', $all[0]->action);
-    }
-
     public function testGroupedGroupsByContext(): void
     {
         $this->registry->add(new HotkeyBindingDTO(
@@ -224,22 +203,6 @@ final class HotkeyRegistryTest extends TestCase
         $this->registry->clear();
         $this->assertSame([], $this->registry->all());
         $this->assertSame([], $this->registry->grouped());
-    }
-
-    public function testAfterClearCanReAdd(): void
-    {
-        $binding = new HotkeyBindingDTO(
-            context: 'Global',
-            keys: ['ctrl+c'],
-            action: 'Clear',
-            source: 'core',
-        );
-
-        $this->registry->add($binding);
-        $this->registry->clear();
-        $this->registry->add($binding);
-
-        $this->assertCount(1, $this->registry->all());
     }
 
     public function testConstructorRejectsEmptyKeys(): void

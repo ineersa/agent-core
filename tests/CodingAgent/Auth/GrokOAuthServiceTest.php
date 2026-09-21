@@ -37,18 +37,6 @@ final class GrokOAuthServiceTest extends TestCase
         TestDirectoryIsolation::removeDirectory($this->tmpDir);
     }
 
-    public function testConstructWithStorage(): void
-    {
-        $service = new GrokOAuthService($this->storage, $this->failingRefresher());
-        $this->assertInstanceOf(GrokOAuthService::class, $service);
-    }
-
-    public function testConstructAcceptsNullRefresher(): void
-    {
-        $service = new GrokOAuthService($this->storage);
-        $this->assertInstanceOf(GrokOAuthService::class, $service);
-    }
-
     public function testRefreshCredentialsThrowsWhenNoStoredCredentials(): void
     {
         $service = new GrokOAuthService($this->storage, $this->failingRefresher());

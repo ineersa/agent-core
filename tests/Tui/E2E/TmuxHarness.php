@@ -32,12 +32,6 @@ final class TmuxHarness
     public const float TUI_STARTUP_LOGO_TIMEOUT_PARALLEL = 20.0;
 
     /**
-     * Generic transcript/marker/shell-output waits when test:tui runs under
-     * full parallel castor check load (unit + controller-replay + llm-real).
-     */
-    public const float TUI_GATE_CALLBACK_TIMEOUT_PARALLEL = 20.0;
-
-    /**
      * Per-call deadline for fast interactive tmux control commands
      * (capture, send-key, display-message, etc.). Generous enough
      * to never flake on a healthy system.
@@ -230,22 +224,6 @@ final class TmuxHarness
     {
         return $this->runTmux(
             \sprintf('tmux capture-pane -p -e -t %s 2>&1', escapeshellarg($pane->paneId)),
-            self::TMUX_CMD_TIMEOUT,
-            throwOnTimeout: false,
-        );
-    }
-
-    /**
-     * Capture pane scrollback with ANSI escape codes preserved.
-     */
-    public function captureAnsiWithHistory(TmuxPane $pane, int $lines = 1000): string
-    {
-        return $this->runTmux(
-            \sprintf(
-                'tmux capture-pane -p -e -S -%d -E - -t %s 2>&1',
-                $lines,
-                escapeshellarg($pane->paneId),
-            ),
             self::TMUX_CMD_TIMEOUT,
             throwOnTimeout: false,
         );

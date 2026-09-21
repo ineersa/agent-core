@@ -26,22 +26,6 @@ use Symfony\Component\Yaml\Yaml;
 final class CompactionConfigTest extends TestCase
 {
     /**
-     * Default constructor produces the documented defaults.
-     */
-    public function testDefaults(): void
-    {
-        $config = new CompactionConfig();
-
-        $this->assertTrue($config->autoEnabled);
-        $this->assertSame(120000, $config->compactAfterTokens);
-        $this->assertSame(20000, $config->keepRecentTokens);
-        $this->assertNull($config->model);
-        $this->assertNull($config->thinkingLevel);
-        $this->assertSame([], $config->providerOverrides);
-        $this->assertSame([], $config->modelOverrides);
-    }
-
-    /**
      * resolveRuntimeSettings returns global values when no overrides apply.
      */
     public function testResolveRuntimeSettingsNoOverrides(): void

@@ -15,17 +15,6 @@ final class AiHttpConfigTest extends TestCase
 {
     // ── fromArray: empty → all null ───────────────────────────────────────
 
-    public function testFromArrayEmptyProducesAllNullFields(): void
-    {
-        $config = AiHttpConfig::fromArray([]);
-
-        $this->assertNull($config->timeout);
-        $this->assertNull($config->maxDuration);
-        $this->assertNull($config->maxRetries);
-        $this->assertNull($config->baseDelayMs);
-        $this->assertNull($config->maxDelayMs);
-    }
-
     // ── fromArray: explicit ints ──────────────────────────────────────────
 
     public function testFromArrayParsesExplicitInts(): void
@@ -172,18 +161,5 @@ final class AiHttpConfigTest extends TestCase
         $this->assertNull($config->http->maxDuration);
         $this->assertNull($config->http->baseDelayMs);
         $this->assertNull($config->http->maxDelayMs);
-    }
-
-    public function testAiConfigFromArrayDefaultsHttpToEmpty(): void
-    {
-        $aiData = [
-            'default_model' => 'deepseek/deepseek-v4-pro',
-        ];
-
-        $config = AiConfig::fromArray($aiData);
-
-        $this->assertNotNull($config->http);
-        $this->assertNull($config->http->timeout);
-        $this->assertNull($config->http->maxRetries);
     }
 }

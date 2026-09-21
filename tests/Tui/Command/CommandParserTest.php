@@ -44,13 +44,6 @@ final class CommandParserTest extends TestCase
         $this->assertInstanceOf(NormalPromptCommand::class, $result);
     }
 
-    public function testTextWithSurroundingWhitespaceIsTrimmed(): void
-    {
-        $result = $this->parser->parse('  hello world  ');
-
-        $this->assertInstanceOf(NormalPromptCommand::class, $result);
-    }
-
     // ─── SlashCommand cases ────────────────────────────────────────────
 
     public function testSlashHelpReturnsSlashCommand(): void
@@ -87,14 +80,6 @@ final class CommandParserTest extends TestCase
         $result = $this->parser->parse('/');
 
         $this->assertInstanceOf(NormalPromptCommand::class, $result);
-    }
-
-    public function testSlashSpaceReturnsNormalPrompt(): void
-    {
-        $result = $this->parser->parse('/ ');
-
-        $this->assertInstanceOf(NormalPromptCommand::class, $result);
-        // After trim: "/ " → "/", which is a lone slash → NormalPrompt
     }
 
     public function testDoubleSlashEscapedReturnsNormalPrompt(): void
@@ -210,13 +195,6 @@ final class CommandParserTest extends TestCase
     public function testMultilineWithExclamationInMiddleIsNormalPrompt(): void
     {
         $result = $this->parser->parse("hello\n!world");
-
-        $this->assertInstanceOf(NormalPromptCommand::class, $result);
-    }
-
-    public function testOriginalTextPreservesTrimmedInput(): void
-    {
-        $result = $this->parser->parse('  some text  ');
 
         $this->assertInstanceOf(NormalPromptCommand::class, $result);
     }

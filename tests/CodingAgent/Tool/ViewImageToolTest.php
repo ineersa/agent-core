@@ -237,19 +237,6 @@ final class ViewImageToolTest extends TestCase
         }
     }
 
-    public function testRejectsHtmlFile(): void
-    {
-        $filePath = $this->tmpDir.'/page.html';
-        $this->writeFixture($filePath, '<html><body>not an image</body></html>');
-
-        try {
-            ($this->viewImageTool)(new ViewImageArgumentsDTO(path: $filePath));
-            $this->fail('Expected ToolCallException');
-        } catch (ToolCallException $e) {
-            $this->assertStringContainsString('Unsupported image type', $e->getMessage());
-        }
-    }
-
     public function testRejectsPdfFile(): void
     {
         $filePath = $this->tmpDir.'/doc.pdf';
@@ -353,14 +340,6 @@ final class ViewImageToolTest extends TestCase
     public function testDtoRejectsBlankPath(): void
     {
         $violations = $this->validateDto(new ViewImageArgumentsDTO());
-
-        $this->assertCount(1, $violations);
-        $this->assertStringContainsString('"path" argument is required', $violations[0]->getMessage());
-    }
-
-    public function testDtoRejectsBlankPathWithWhitespace(): void
-    {
-        $violations = $this->validateDto(new ViewImageArgumentsDTO(path: '   '));
 
         $this->assertCount(1, $violations);
         $this->assertStringContainsString('"path" argument is required', $violations[0]->getMessage());

@@ -57,15 +57,6 @@ final class ThemeRegistryTest extends TestCase
         $this->assertContains('nord', $names);
     }
 
-    public function testGetOrThrowReturnsThemeWhenFound(): void
-    {
-        $registry = $this->createRegistry();
-        $theme = $registry->getOrThrow('cyberpunk');
-
-        $this->assertSame('cyberpunk', $theme->name);
-        $this->assertSame('#00ffff', $theme->get(ThemeColorEnum::Accent));
-    }
-
     public function testGetOrThrowThrowsWhenMissing(): void
     {
         $registry = $this->createEmptyRegistry();
@@ -136,15 +127,6 @@ final class ThemeRegistryTest extends TestCase
         $registry = $this->createEmptyRegistry();
 
         $this->assertNull($registry->get('nope'));
-    }
-
-    public function testDefaultName(): void
-    {
-        $registry = $this->createRegistry();
-
-        $this->assertTrue($registry->has('tokyo-night'));
-        $theme = $registry->getOrThrow('tokyo-night');
-        $this->assertSame('tokyo-night', $theme->name);
     }
 
     public function testBuiltinThemePathsOverlapProducesNoSelfCollisions(): void

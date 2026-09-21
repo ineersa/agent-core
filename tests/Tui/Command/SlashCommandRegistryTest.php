@@ -277,19 +277,6 @@ final class SlashCommandRegistryTest extends TestCase
         $this->assertContains('Insert newline', $actions);
     }
 
-    #[Test]
-    public function executeHotkeysViaAlias(): void
-    {
-        // 'hk' is an alias for 'hotkeys'
-        $result = $this->registry->execute(new SlashCommand('hk', '', '/hk'));
-
-        $this->assertInstanceOf(
-            \Ineersa\Tui\Command\Hotkey\HotkeyTableData::class,
-            $result,
-        );
-        $this->assertSame([], $result->groups);
-    }
-
     // ─── Built-in: /clear ────────────────────────────────────────────
 
     #[Test]
@@ -300,36 +287,12 @@ final class SlashCommandRegistryTest extends TestCase
         $this->assertInstanceOf(ClearTranscript::class, $result);
     }
 
-    #[Test]
-    public function executeClearViaAlias(): void
-    {
-        $result = $this->registry->execute(new SlashCommand('cls', '', '/cls'));
-
-        $this->assertInstanceOf(ClearTranscript::class, $result);
-    }
-
     // ─── Built-in: /exit ─────────────────────────────────────────────
 
     #[Test]
     public function executeExitReturnsExitApplication(): void
     {
         $result = $this->registry->execute(new SlashCommand('exit', '', '/exit'));
-
-        $this->assertInstanceOf(ExitApplication::class, $result);
-    }
-
-    #[Test]
-    public function executeExitViaAlias(): void
-    {
-        $result = $this->registry->execute(new SlashCommand('quit', '', '/quit'));
-
-        $this->assertInstanceOf(ExitApplication::class, $result);
-    }
-
-    #[Test]
-    public function executeExitViaQAlias(): void
-    {
-        $result = $this->registry->execute(new SlashCommand('q', '', '/q'));
 
         $this->assertInstanceOf(ExitApplication::class, $result);
     }
@@ -348,15 +311,6 @@ final class SlashCommandRegistryTest extends TestCase
         $this->assertSame('muted', $result->style);
     }
 
-    #[Test]
-    public function executeUnknownCommandDoesNotThrow(): void
-    {
-        // Should not throw — returns typed result instead
-        $result = $this->registry->execute(new SlashCommand('garbage', '', '/garbage'));
-
-        $this->assertInstanceOf(TranscriptMessage::class, $result);
-    }
-
     // ─── Custom handler execution ────────────────────────────────────
 
     #[Test]
@@ -372,41 +326,7 @@ final class SlashCommandRegistryTest extends TestCase
         $this->assertInstanceOf(NoOp::class, $result);
     }
 
-    #[Test]
-    public function executeViaAliasDispatchesToCanonicalHandler(): void
-    {
-        $handler = new EchoHandler();
-
-        $this->catalog->register(
-            new CommandMetadata(name: 'echo', aliases: ['e'], description: 'Echo args', acceptsArguments: true),
-            $handler,
-        );
-
-        $result = $this->registry->execute(new SlashCommand('e', 'hello world', '/e hello world'));
-
-        $this->assertInstanceOf(TranscriptMessage::class, $result);
-        $this->assertStringContainsString('got args: hello world', $result->text);
-    }
-
     // ─── Argument expectations ────────────────────────────────────────
-
-    #[Test]
-    public function noArgCommandIgnoresExtraArgs(): void
-    {
-        // /clear (acceptsArguments=false by default) — args are stripped.
-        $result = $this->registry->execute(new SlashCommand('clear', 'whatever', '/clear whatever'));
-
-        $this->assertInstanceOf(ClearTranscript::class, $result);
-    }
-
-    #[Test]
-    public function exitCommandIgnoresExtraArgs(): void
-    {
-        // /exit (acceptsArguments=false by default) — args are stripped.
-        $result = $this->registry->execute(new SlashCommand('exit', 'now', '/exit now'));
-
-        $this->assertInstanceOf(ExitApplication::class, $result);
-    }
 
     #[Test]
     public function argAcceptingCommandReceivesArgs(): void

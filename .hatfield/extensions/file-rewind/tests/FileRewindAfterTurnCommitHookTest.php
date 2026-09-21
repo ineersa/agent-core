@@ -14,6 +14,7 @@ use Ineersa\HatfieldExt\FileRewind\FileRewindLedgerStore;
 use Ineersa\HatfieldExt\FileRewind\FileRewindService;
 use Ineersa\HatfieldExt\FileRewind\GitProcessRunner;
 use Ineersa\HatfieldExt\FileRewind\HiddenGitSnapshotBackend;
+use Ineersa\HatfieldExt\FileRewind\RewindProjectIdentity;
 use Ineersa\HatfieldExt\FileRewind\RewindStoragePaths;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -69,7 +70,7 @@ final class FileRewindAfterTurnCommitHookTest extends TestCase
             effectsCount: 0,
         ));
 
-        $this->assertTrue($this->service->hasCheckpointForTurn('run-hook', 2));
+        $this->assertSame(2, $this->checkpointAnchorSeq('run-hook', 2));
     }
 
     public function testRecordsCheckpointOnAgentEnd(): void
@@ -87,7 +88,7 @@ final class FileRewindAfterTurnCommitHookTest extends TestCase
             effectsCount: 0,
         ));
 
-        $this->assertTrue($this->service->hasCheckpointForTurn('run-hook', 1));
+        $this->assertSame(5, $this->checkpointAnchorSeq('run-hook', 1));
     }
 
     public function testRecordsCheckpointOnPostToolToolBatchCommitted(): void
@@ -109,7 +110,7 @@ final class FileRewindAfterTurnCommitHookTest extends TestCase
             effectsCount: 0,
         ));
 
-        $this->assertTrue($this->service->hasCheckpointForTurn('run-hook', 1));
+        $this->assertSame(11, $this->checkpointAnchorSeq('run-hook', 1));
     }
 
     public function testSkipsMidToolBatchWhenEffectsStillPending(): void
@@ -151,7 +152,7 @@ final class FileRewindAfterTurnCommitHookTest extends TestCase
             effectsCount: 0,
         ));
 
-        $this->assertTrue($this->service->hasCheckpointForTurn('run-hook', 2));
+        $this->assertSame(9, $this->checkpointAnchorSeq('run-hook', 2));
     }
 
     public function testRecordsCheckpointWhenToolBatchAndFinalAssistantShareCommit(): void
@@ -174,7 +175,7 @@ final class FileRewindAfterTurnCommitHookTest extends TestCase
             effectsCount: 0,
         ));
 
-        $this->assertTrue($this->service->hasCheckpointForTurn('run-hook', 2));
+        $this->assertSame(2, $this->checkpointAnchorSeq('run-hook', 2));
     }
 
     public function testRecordsCheckpointOnToolBatchCommitWithToolResultEvents(): void
@@ -197,29 +198,7 @@ final class FileRewindAfterTurnCommitHookTest extends TestCase
             effectsCount: 0,
         ));
 
-        $this->assertTrue($this->service->hasCheckpointForTurn('run-hook', 1));
-    }
-
-    public function testRecordsCheckpointWhenToolBatchSharesCommitWithAgentCommandApplied(): void
-    {
-        file_put_contents($this->projectDir.'/test.txt', "LINE_ONE\n");
-        $hook = new FileRewindAfterTurnCommitHook(
-            $this->service,
-            new FileRewindConfig(enabled: true, maxRetainedTurns: 10),
-        );
-
-        $hook->onAfterTurnCommit(new AfterTurnCommitHookContextDTO(
-            runId: 'run-hook',
-            turnNo: 1,
-            status: 'running',
-            events: [
-                new AfterTurnCommitEventSummaryDTO(11, 'tool_batch_committed'),
-                new AfterTurnCommitEventSummaryDTO(12, 'agent_command_applied'),
-            ],
-            effectsCount: 0,
-        ));
-
-        $this->assertTrue($this->service->hasCheckpointForTurn('run-hook', 1));
+        $this->assertSame(11, $this->checkpointAnchorSeq('run-hook', 1));
     }
 
     public function testSkipsWhenDisabled(): void
@@ -238,5 +217,18 @@ final class FileRewindAfterTurnCommitHookTest extends TestCase
         ));
 
         $this->assertFalse($this->service->hasCheckpointForTurn('run-hook', 1));
+    }
+
+    private function checkpointAnchorSeq(string $runId, int $turnNo): int
+    {
+        $rows = array_values(array_filter(
+            $this->ledgerStore->readCheckpoints(RewindProjectIdentity::fromProjectRoot($this->projectDir)),
+            static fn (array $row): bool => $runId === ($row['run_id'] ?? null)
+                && $turnNo === ($row['turn_no'] ?? null),
+        ));
+
+        $this->assertCount(1, $rows);
+
+        return (int) ($rows[0]['anchor_seq'] ?? 0);
     }
 }

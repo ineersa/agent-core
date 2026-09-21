@@ -117,20 +117,6 @@ final class AgentArtifactRegistryTest extends TestCase
         $this->assertDirectoryDoesNotExist($this->projectDir.'/.hatfield/sessions/'.$agentRunId);
     }
 
-    public function testCreateWithDifferentArtifactIds(): void
-    {
-        $parentRunId = 'parent-'.bin2hex(random_bytes(4));
-
-        $entry1 = $this->registry->create($parentRunId, 'scout-001', 'child-a', 'scout', AgentArtifactKindEnum::Subagent);
-        $entry2 = $this->registry->create($parentRunId, 'scout-002', 'child-b', 'scout', AgentArtifactKindEnum::Subagent);
-
-        $this->assertSame('scout-001', $entry1->artifactId);
-        $this->assertSame('scout-002', $entry2->artifactId);
-
-        $all = $this->registry->list($parentRunId);
-        $this->assertCount(2, $all);
-    }
-
     public function testPromoteToRunningForwardOnlyDoesNotRegressCompletedUnderLock(): void
     {
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));
