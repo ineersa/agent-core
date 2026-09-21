@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Path\PathResolver;
 use Ineersa\CodingAgent\Tool\Arguments\ReadFileArgumentsDTO;
+use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
 
 /**
  * Read a text file as plain UTF-8 content.
@@ -58,7 +59,10 @@ final class ReadFileTool implements HatfieldToolProviderInterface
      * @throws ToolCallException on operational file read failures
      * @throws \RuntimeException on cancellation or timeout (runtime concerns)
      */
-    public function __invoke(ReadFileArgumentsDTO $arguments): string
+    public function __invoke(
+        #[MapToolArguments]
+        ReadFileArgumentsDTO $arguments,
+    ): string
     {
         return $this->toolRuntime->run(function () use ($arguments): string {
             $path = $arguments->path;

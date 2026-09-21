@@ -13,6 +13,7 @@ use Ineersa\CodingAgent\Tool\Event\ToolCallFailedEvent;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallContextDTO;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
+use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
 use Symfony\AI\Agent\Toolbox\Exception\ToolException;
 use Symfony\AI\Agent\Toolbox\Exception\ToolExecutionException;
 use Symfony\AI\Agent\Toolbox\Exception\ToolExecutionExceptionInterface;
@@ -20,6 +21,7 @@ use Symfony\AI\Agent\Toolbox\Exception\ToolNotFoundException;
 use Symfony\AI\Agent\Toolbox\Toolbox;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolverInterface;
+use Symfony\AI\Agent\Toolbox\ToolFactory\MemoryToolFactory;
 use Symfony\AI\Agent\Toolbox\ToolResult;
 use Symfony\AI\Platform\Contract\JsonSchema\Factory;
 use Symfony\AI\Platform\Result\ToolCall;
@@ -40,16 +42,16 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  *   rewrite hooks (rewrite the flat ToolCall arguments first)
  *   → native Toolbox::execute()
  *     → ToolCallRequested (policy hooks see rewritten flat args)
- *     → RawAwareToolCallArgumentResolver (typed DTO tools: wraps the flat
- *       provider map under the reflected parameter name, then the native
- *       resolver denormalizes the DTO; raw-array tools pass the flat map
- *       through under their `$arguments` parameter)
+ *     → RawAwareToolCallArgumentResolver (raw-array tools pass the flat map
+ *       through under their `$arguments` parameter; typed DTO tools use
+ *       Symfony AI `#[MapToolArguments]` whole-payload mapping)
  *     → ToolCallArgumentsResolved (ValidateToolCallArgumentsListener)
  *     → handler invoke → ToolCallSucceeded/Failed
  *
- * Typed DTO tools are model-visible with flat arguments: the DTO's object
- * schema is exposed at the Tool root (no `{arguments: ...}` envelope), and
- * the flat provider map is wrapped internally before native resolution.
+ * Typed DTO tools are model-visible with flat arguments: public Symfony AI
+ * `MemoryToolFactory` generates `#[MapToolArguments]` schemas, then Hatfield
+ * drops nullable DTO properties from `required` so the provider schema stays
+ * faithful to optional fields.
  *
  * Mutable registry semantics are preserved without a revision counter:
  * provider Tool metadata and the one-definition native Toolbox are memoized
@@ -242,14 +244,11 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
     /**
      * Build the native Symfony AI Tool metadata for one registered definition.
      *
-     * Typed DTO handlers (parametersJsonSchema === null) get their provider
-     * schema from Symfony AI's JsonSchema Factory directly
-     * (buildParameters(handler::class, '__invoke')) so DTO types/constraints
-     * and the provider-visible schema cannot drift. The registry definition
-     * remains canonical for name/description. The provider-visible schema is
-     * the single DTO parameter's object schema hoisted to the Tool root (flat
-     * arguments, no parameter envelope); the argument resolver wraps flat
-     * payloads back under the parameter name before native resolution.
+     * Typed DTO handlers (parametersJsonSchema === null) must declare
+     * `#[MapToolArguments]` on a parameter. Attribute presence is checked via
+     * the public attribute class; Symfony AI `MemoryToolFactory` owns signature
+     * validation and flat schema generation. Nullable properties are then
+     * dropped from `required`.
      *
      * Raw-array handlers (runtime-provided schema) keep their schema and are
      * flagged so the argument resolver passes the flat provider map through.
@@ -266,13 +265,35 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
             );
         }
 
-        $parameters = $this->schemaFactory->buildParameters($definition->handler::class, '__invoke');
+        if (!$this->hasMapToolArgumentsAttribute($definition->handler)) {
+            throw new \LogicException(\sprintf('Typed tool "%s" must declare #[MapToolArguments] on its DTO parameter.', $definition->name));
+        }
 
+        $factory = new MemoryToolFactory($this->schemaFactory);
+        $factory->addTool($definition->handler, $definition->name, $definition->description);
+
+        $generated = null;
+        foreach ($factory->getTool($definition->handler) as $tool) {
+            $generated = $tool;
+            break;
+        }
+
+        if (null === $generated) {
+            throw new \LogicException(\sprintf('Typed tool "%s" did not produce Symfony AI tool metadata.', $definition->name));
+        }
+
+        $parameters = $generated->getParameters();
+        if (!\is_array($parameters)) {
+            throw new \LogicException(\sprintf('Typed tool "%s" must produce an object parameter schema via #[MapToolArguments].', $definition->name));
+        }
+
+        // Keep registry name/description authoritative and apply Hatfield
+        // nullable-required normalization to the public factory schema.
         return new Tool(
-            reference: new ExecutionReference($definition->handler::class, '__invoke'),
+            reference: $generated->getReference(),
             name: $definition->name,
             description: $definition->description,
-            parameters: $this->flattenDtoParameters($parameters, $definition->name),
+            parameters: $this->normalizeNullableRequired($parameters),
         );
     }
 
@@ -306,43 +327,6 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
         }
 
         return $schema;
-    }
-
-    /**
-     * Hoist the single DTO parameter's object schema to the Tool root.
-     *
-     * Symfony AI generates `{type: object, properties: {<param>: <DTO schema>},
-     * required: [<param>], additionalProperties: false}` for a handler declared
-     * `__invoke(SomeDto $arguments)`. The model must see the DTO fields flat,
-     * so the parameter property's own object schema becomes the Tool's root
-     * parameters (raw tools already expose flat schemas).
-     *
-     * Only the exact single-object-parameter shape is supported; anything else
-     * (scalar parameters, multiple parameters) is an internal contract
-     * violation and fails fast instead of silently producing a wrong schema.
-     *
-     * @param array<string, mixed>|null $parameters
-     *
-     * @return array<string, mixed>
-     */
-    private function flattenDtoParameters(?array $parameters, string $toolName): array
-    {
-        $properties = \is_array($parameters) ? ($parameters['properties'] ?? null) : null;
-
-        if (!\is_array($parameters)
-            || ($parameters['type'] ?? null) !== 'object'
-            || !\is_array($properties)
-            || 1 !== \count($properties)
-        ) {
-            throw new \LogicException(\sprintf('Typed tool "%s" must produce exactly one object parameter schema for flat DTO arguments, got: %s.', $toolName, null === $parameters ? 'null' : json_encode($parameters, \JSON_THROW_ON_ERROR)));
-        }
-
-        $dtoSchema = reset($properties);
-        if (!\is_array($dtoSchema) || ($dtoSchema['type'] ?? null) !== 'object') {
-            throw new \LogicException(\sprintf('Typed tool "%s" must take exactly one DTO (object) parameter for flat DTO arguments, got: %s.', $toolName, json_encode($dtoSchema, \JSON_THROW_ON_ERROR)));
-        }
-
-        return $this->normalizeNullableRequired($dtoSchema);
     }
 
     /**
@@ -396,6 +380,18 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
         $type = $propertySchema['type'] ?? null;
 
         return \is_array($type) && \in_array('null', $type, true);
+    }
+
+    private function hasMapToolArgumentsAttribute(object $handler): bool
+    {
+        $method = new \ReflectionMethod($handler, '__invoke');
+        foreach ($method->getParameters() as $parameter) {
+            if ([] !== $parameter->getAttributes(MapToolArguments::class)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

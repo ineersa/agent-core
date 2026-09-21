@@ -12,6 +12,7 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentRetrieveArgumentsDTO;
 use Ineersa\CodingAgent\Tool\HatfieldToolProviderInterface;
 use Ineersa\CodingAgent\Tool\ToolDefinitionDTO;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
+use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
 
 /**
  * Model-visible `agent_retrieve` tool for parent-scoped subagent artifacts.
@@ -29,7 +30,10 @@ final class AgentRetrieveTool implements HatfieldToolProviderInterface
     ) {
     }
 
-    public function __invoke(AgentRetrieveArgumentsDTO $arguments): string
+    public function __invoke(
+        #[MapToolArguments]
+        AgentRetrieveArgumentsDTO $arguments,
+    ): string
     {
         return $this->toolRuntime->run(function () use ($arguments): string {
             $context = $this->contextAccessor->current();

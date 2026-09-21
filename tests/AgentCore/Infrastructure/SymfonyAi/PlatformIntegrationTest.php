@@ -1261,6 +1261,11 @@ final readonly class FakeTokenUsage implements TokenUsageInterface
     {
         return $this->totalTokens;
     }
+
+    public function getModel(): ?string
+    {
+        return null;
+    }
 }
 
 final class MutableRunOperationalStatusReader implements RunOperationalStatusReaderInterface

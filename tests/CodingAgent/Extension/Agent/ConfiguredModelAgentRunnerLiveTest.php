@@ -16,7 +16,7 @@ use Symfony\Component\Yaml\Yaml;
  * Live smoke for the public ExtensionApi blocking agent runner.
  *
  * Thesis: agent()->run() returns only after the configured provider stream is
- * fully drained and native AgentProcessor has executed an isolated
+ * fully drained and Agent-owned toolbox loop has executed an isolated
  * extension-only tool call. Unique first prompt avoids llama-proxy cache collisions.
  */
 #[Group('llm-real')]

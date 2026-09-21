@@ -11,6 +11,7 @@ use Ineersa\CodingAgent\Agent\Execution\SubagentArgumentsDTO;
 use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use Psr\Container\ContainerInterface;
+use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
 
 /**
  * Execution handler for the `subagent` tool.
@@ -35,7 +36,10 @@ final class SubagentToolHandler
     ) {
     }
 
-    public function __invoke(SubagentArgumentsDTO $arguments): DeferredToolCompletionOutcome
+    public function __invoke(
+        #[MapToolArguments]
+        SubagentArgumentsDTO $arguments,
+    ): DeferredToolCompletionOutcome
     {
         return $this->toolRuntime->run(function () use ($arguments): DeferredToolCompletionOutcome {
             $context = $this->contextAccessor->current();

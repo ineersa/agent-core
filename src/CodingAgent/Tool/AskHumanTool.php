@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tool;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Tool\AskHuman\AskHumanArgumentsDTO;
 use Ineersa\CodingAgent\Tool\AskHuman\AskHumanPayloadFactory;
+use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
 
 /**
  * Model-visible ask_human tool — returns an interrupt payload immediately
@@ -52,7 +53,10 @@ final class AskHumanTool implements HatfieldToolProviderInterface
      *
      * @return array<string, mixed> Interrupt payload with kind=interrupt
      */
-    public function __invoke(AskHumanArgumentsDTO $arguments): array
+    public function __invoke(
+        #[MapToolArguments]
+        AskHumanArgumentsDTO $arguments,
+    ): array
     {
         return $this->payloadFactory->createPayload($arguments);
     }

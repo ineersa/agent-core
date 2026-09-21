@@ -19,6 +19,7 @@ use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
+use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallRequested;
 use Symfony\AI\Agent\Toolbox\Exception\ToolNotFoundException;
 use Symfony\AI\Agent\Toolbox\Toolbox;
@@ -522,8 +523,10 @@ final class ToolExecutorTest extends TestCase
             {
             }
 
-            public function __invoke(ReadFileArgumentsDTO $arguments): mixed
-            {
+            public function __invoke(
+                #[MapToolArguments]
+                ReadFileArgumentsDTO $arguments,
+            ): mixed {
                 $this->seen = $arguments->path;
 
                 return 'ok:'.$arguments->path;
@@ -561,8 +564,10 @@ final class ToolExecutorTest extends TestCase
         // NotNormalizableValueException must reach the model as an actionable
         // non-retryable ToolCallException message, not a generic fault.
         $handler = new class {
-            public function __invoke(ReadFileArgumentsDTO $arguments): mixed
-            {
+            public function __invoke(
+                #[MapToolArguments]
+                ReadFileArgumentsDTO $arguments,
+            ): mixed {
                 return 'unreachable';
             }
         };

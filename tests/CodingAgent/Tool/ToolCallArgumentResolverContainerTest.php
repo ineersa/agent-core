@@ -16,6 +16,7 @@ use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolverInterface;
 use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\AI\Platform\Tool\ExecutionReference;
 use Symfony\AI\Platform\Tool\Tool;
+use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
 
 /**
  * Container wiring of ToolCallArgumentResolver: config/services.yaml injects
@@ -216,7 +217,10 @@ final class ToolCallArgumentResolverContainerTest extends IsolatedKernelTestCase
 
 final class SnakeCaseResolutionProbe
 {
-    public function __invoke(AgentRetrieveArgumentsDTO $arguments): string
+    public function __invoke(
+        #[MapToolArguments]
+        AgentRetrieveArgumentsDTO $arguments,
+    ): string
     {
         return 'ok';
     }
@@ -224,7 +228,10 @@ final class SnakeCaseResolutionProbe
 
 final class SubagentResolutionProbe
 {
-    public function __invoke(SubagentArgumentsDTO $arguments): string
+    public function __invoke(
+        #[MapToolArguments]
+        SubagentArgumentsDTO $arguments,
+    ): string
     {
         return 'ok';
     }

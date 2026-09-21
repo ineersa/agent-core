@@ -21,6 +21,7 @@ use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultDecisionDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultHookInterface;
 use PHPUnit\Framework\TestCase;
+use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallArgumentsResolved;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallFailed;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallRequested;
@@ -52,10 +53,10 @@ use Symfony\Component\Validator\ValidatorBuilder;
  *
  * RegistryBackedToolbox is a thin registry/rewrite decorator that delegates
  * execution to the native Symfony AI Toolbox. DTO-typed tools expose flat
- * provider arguments (the DTO's object schema at the Tool root, wrapped
- * internally under the reflected parameter name before native resolution);
- * raw-array tools (MCP, extension adapters) receive the flat provider map
- * through the raw-arguments resolver.
+ * provider arguments via Symfony AI `#[MapToolArguments]` (DTO object schema
+ * at the Tool root, whole-payload denormalization); raw-array tools (MCP,
+ * extension adapters) receive the flat provider map through the
+ * raw-arguments resolver.
  */
 final class RegistryBackedToolboxTest extends TestCase
 {
@@ -151,8 +152,10 @@ final class RegistryBackedToolboxTest extends TestCase
     public function testGetToolsForDtoToolUsesNativeGeneratedSchema(): void
     {
         $handler = new class {
-            public function __invoke(ViewImageArgumentsDTO $arguments): string
-            {
+            public function __invoke(
+                #[MapToolArguments]
+                ViewImageArgumentsDTO $arguments,
+            ): string {
                 return 'ok';
             }
         };
@@ -187,6 +190,80 @@ final class RegistryBackedToolboxTest extends TestCase
         // path is required; nullable-with-default props are not.
         $this->assertSame(['path'], $parameters['required']);
         $this->assertFalse($parameters['additionalProperties']);
+    }
+
+    public function testGetToolsForMappedDtoWithSingleNestedObjectPropertyKeepsFlatRoot(): void
+    {
+        $handler = new class {
+            public function __invoke(
+                #[MapToolArguments]
+                NestedObjectPropertyArgumentsDTO $arguments,
+            ): string {
+                return $arguments->filter->path;
+            }
+        };
+        $registry = new ToolRegistry();
+        $registry->registerTool(
+            name: 'nested_filter',
+            description: 'Nested filter',
+            handler: $handler,
+            promptLine: 'nested_filter: Nested',
+        );
+
+        $parameters = $this->createToolbox($registry)->getTools()[0]->getParameters();
+
+        // A mapped DTO with one nested-object property must stay flat at the
+        // Tool root. The old nested-envelope heuristic would reject this shape.
+        $this->assertSame('object', $parameters['type']);
+        $this->assertArrayHasKey('filter', $parameters['properties']);
+        $this->assertSame('object', $parameters['properties']['filter']['type']);
+        $this->assertArrayHasKey('path', $parameters['properties']['filter']['properties']);
+        $this->assertSame(['filter'], $parameters['required']);
+    }
+
+    public function testGetToolsRejectsTypedDtoWithoutMapToolArgumentsAttribute(): void
+    {
+        $handler = new class {
+            public function __invoke(ViewImageArgumentsDTO $arguments): string
+            {
+                return 'ok';
+            }
+        };
+        $registry = new ToolRegistry();
+        $registry->registerTool(
+            name: 'view_image',
+            description: 'View an image',
+            handler: $handler,
+            promptLine: 'view_image: View',
+        );
+
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('must declare #[MapToolArguments] on its DTO parameter');
+        $this->createToolbox($registry)->getTools();
+    }
+
+    public function testGetToolsSurfacesNativeInvalidMapToolArgumentsConfiguration(): void
+    {
+        $handler = new class {
+            public function __invoke(
+                #[MapToolArguments]
+                ViewImageArgumentsDTO $arguments,
+                string $extra,
+            ): string {
+                return 'ok';
+            }
+        };
+        $registry = new ToolRegistry();
+        $registry->registerTool(
+            name: 'view_image',
+            description: 'View an image',
+            handler: $handler,
+            promptLine: 'view_image: View',
+        );
+
+        $this->expectException(\Symfony\AI\Agent\Toolbox\Exception\ToolConfigurationException::class);
+        $this->expectExceptionMessage('Invalid #[MapToolArguments] usage');
+        $this->createToolbox($registry)->getTools();
     }
 
     public function testGetToolsIncludesDynamicAfterPermanent(): void
@@ -287,8 +364,10 @@ final class RegistryBackedToolboxTest extends TestCase
         $handler = new class {
             public ?ViewImageArgumentsDTO $seen = null;
 
-            public function __invoke(ViewImageArgumentsDTO $arguments): string
-            {
+            public function __invoke(
+                #[MapToolArguments]
+                ViewImageArgumentsDTO $arguments,
+            ): string {
                 $this->seen = $arguments;
 
                 return 'ok:'.$arguments->path;
@@ -315,8 +394,10 @@ final class RegistryBackedToolboxTest extends TestCase
         $handler = new class {
             public ?AgentRetrieveArgumentsDTO $seen = null;
 
-            public function __invoke(AgentRetrieveArgumentsDTO $arguments): string
-            {
+            public function __invoke(
+                #[MapToolArguments]
+                AgentRetrieveArgumentsDTO $arguments,
+            ): string {
                 $this->seen = $arguments;
 
                 return 'ok:'.$arguments->artifact_id;
@@ -331,7 +412,7 @@ final class RegistryBackedToolboxTest extends TestCase
 
         // Real resolver path with the app serializer stack (camel_case_to_snake_case
         // name converter) — no hand-written key mapping anywhere. Provider args
-        // are flat; the resolver wraps them under the reflected parameter name.
+        // are flat; #[MapToolArguments] denormalizes the whole payload into the DTO.
         $toolbox = $this->createToolbox($registry, resolver: $this->createNameConverterResolver());
         $result = $toolbox->execute(new ToolCall('call-snake', 'agent_retrieve', ['artifact_id' => 'agent_abc', 'limit' => 5]));
 
@@ -347,8 +428,10 @@ final class RegistryBackedToolboxTest extends TestCase
         // Native Symfony AI behavior: unknown keys are not resolved onto the DTO.
         $registry = new ToolRegistry();
         $handler = new class {
-            public function __invoke(ViewImageArgumentsDTO $arguments): string
-            {
+            public function __invoke(
+                #[MapToolArguments]
+                ViewImageArgumentsDTO $arguments,
+            ): string {
                 return 'ok:'.$arguments->path;
             }
         };
@@ -386,7 +469,7 @@ final class RegistryBackedToolboxTest extends TestCase
         $this->assertSame('evented result', $result->getResult());
         $this->assertSame([
             ['requested', 'evented', 'evented'],
-            // Native resolution nests flat provider args under the sole handler parameter name.
+            // Native #[MapToolArguments] maps the flat provider args onto the DTO.
             ['arguments_resolved', true, ['arguments' => ['query' => 'hello']]],
             // Succeeded carries the native resolved argument shape.
             ['succeeded', true, ['arguments' => ['query' => 'hello']], 'evented result'],
@@ -397,8 +480,10 @@ final class RegistryBackedToolboxTest extends TestCase
     {
         $registry = new ToolRegistry();
         $handler = new class {
-            public function __invoke(ViewImageArgumentsDTO $arguments): string
-            {
+            public function __invoke(
+                #[MapToolArguments]
+                ViewImageArgumentsDTO $arguments,
+            ): string {
                 return 'ok';
             }
         };
@@ -551,8 +636,10 @@ final class RegistryBackedToolboxTest extends TestCase
     {
         $registry = new ToolRegistry();
         $handler = new class {
-            public function __invoke(ViewImageArgumentsDTO $arguments): string
-            {
+            public function __invoke(
+                #[MapToolArguments]
+                ViewImageArgumentsDTO $arguments,
+            ): string {
                 return 'nope';
             }
         };
@@ -574,7 +661,7 @@ final class RegistryBackedToolboxTest extends TestCase
         $dispatcher->addListener(ToolCallArgumentsResolved::class, new ValidateToolCallArgumentsListener($validator));
 
         // Flat provider call with the mandatory DTO property missing: the flat
-        // map is wrapped under the reflected parameter name, the native resolver
+        // payload is mapped onto the DTO, the native resolver
         // denormalizes the empty DTO, and the validator listener turns the
         // NotBlank violation into a deterministic fault-tolerant result.
         $toolbox = new FaultTolerantToolbox($this->createToolbox($registry, $dispatcher));
@@ -588,8 +675,10 @@ final class RegistryBackedToolboxTest extends TestCase
     {
         $registry = new ToolRegistry();
         $handler = new class {
-            public function __invoke(ViewImageArgumentsDTO $arguments): string
-            {
+            public function __invoke(
+                #[MapToolArguments]
+                ViewImageArgumentsDTO $arguments,
+            ): string {
                 return 'nope';
             }
         };
@@ -628,15 +717,17 @@ final class RegistryBackedToolboxTest extends TestCase
             name: 'fragile',
             description: 'Fragile',
             handler: new class {
-                public function __invoke(FragileCountArgumentsDTO $arguments): string
-                {
+                public function __invoke(
+                    #[MapToolArguments]
+                    FragileCountArgumentsDTO $arguments,
+                ): string {
                     return 'count:'.$arguments->count;
                 }
             },
             promptLine: 'fragile',
         );
 
-        // Resolver/denormalizer failure before handler invoke: the wrapped
+        // Resolver/denormalizer failure before handler invoke: the
         // NotNormalizableValueException is translated into a non-retryable
         // ToolCallException with the actionable serializer message.
         $toolbox = new FaultTolerantToolbox($this->createToolbox($registry));
@@ -902,8 +993,10 @@ final class RegistryBackedToolboxTest extends TestCase
         $handler = new class {
             public ?string $seen = null;
 
-            public function __invoke(ViewImageArgumentsDTO $arguments): string
-            {
+            public function __invoke(
+                #[MapToolArguments]
+                ViewImageArgumentsDTO $arguments,
+            ): string {
                 $this->seen = $arguments->path;
 
                 return 'ok';
@@ -924,7 +1017,7 @@ final class RegistryBackedToolboxTest extends TestCase
         $result = $toolbox->execute(new ToolCall('call-rw-dto', 'view_image', ['path' => 'original.png']));
 
         $this->assertSame('ok', $result->getResult());
-        // The rewritten flat args were wrapped and resolved into the DTO before invoke.
+        // The rewritten flat args were resolved into the DTO before invoke.
         $this->assertSame('rewritten.png', $handler->seen);
     }
 
@@ -960,8 +1053,10 @@ final class RegistryBackedToolboxTest extends TestCase
             name: 'view_image',
             description: 'View',
             handler: new class {
-                public function __invoke(ViewImageArgumentsDTO $arguments): string
-                {
+                public function __invoke(
+                    #[MapToolArguments]
+                    ViewImageArgumentsDTO $arguments,
+                ): string {
                     throw new ToolCallException('rejected at runtime');
                 }
             },
@@ -995,8 +1090,10 @@ final class RegistryBackedToolboxTest extends TestCase
     {
         $registry = new ToolRegistry();
         $handler = new class {
-            public function __invoke(ViewImageArgumentsDTO $arguments): string
-            {
+            public function __invoke(
+                #[MapToolArguments]
+                ViewImageArgumentsDTO $arguments,
+            ): string {
                 return 'nope';
             }
         };
@@ -1343,6 +1440,26 @@ final class RegistryBackedToolboxSharedClassHandler
     public function __invoke(array $arguments = []): string
     {
         return 'tag:'.$this->tag;
+    }
+}
+
+/**
+ * Nested object property used to prove mapped flat schemas may contain one
+ * nested-object field without being mistaken for an unmapped envelope.
+ */
+final class NestedObjectFilterDTO
+{
+    public function __construct(
+        public readonly string $path = '',
+    ) {
+    }
+}
+
+final class NestedObjectPropertyArgumentsDTO
+{
+    public function __construct(
+        public readonly NestedObjectFilterDTO $filter = new NestedObjectFilterDTO(),
+    ) {
     }
 }
 
