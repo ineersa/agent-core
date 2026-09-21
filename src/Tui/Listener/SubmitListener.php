@@ -398,6 +398,9 @@ final class SubmitListener implements TuiListenerRegistrar
                     // arrives.  The poller auto-dispatches queued follow-ups
                     // on the same path as cancellation completion.
                     $state->queuedFollowUp = $text;
+                    $queuedMessages = $state->queuedUserMessages;
+                    $queuedMessages[] = $text;
+                    $screen->syncQueuedUserMessages($queuedMessages);
                     $screen->setWorkingMessage('Message queued — waiting for compaction to complete...');
                 } elseif ($state->activity->isActive()) {
                     $client->send(

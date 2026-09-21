@@ -57,11 +57,10 @@ final class TuiSessionState
     public bool $isShellRun = false;
 
     /**
-     * When the user submits a message while the run is Cancelling, the
-     * message text is stored here.  It is dispatched as a follow_up
-     * only after the RuntimeEventPoller observes the Cancelling→Cancelled
-     * transition, avoiding race conditions where steer/follow_up commands
-     * are rejected by AgentCore during the Cancelling grace window.
+     * When the user submits a message while the run is Cancelling or Compacting,
+     * the message text is stored here. It is dispatched as a follow_up only after
+     * RuntimeEventPoller observes the corresponding terminal transition, avoiding
+     * races with cancellation or compaction maintenance.
      */
     public ?string $queuedFollowUp = null;
 

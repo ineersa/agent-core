@@ -33,6 +33,7 @@ use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
+use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
@@ -170,6 +171,23 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
             }));
 
         $this->dispatchSubmit('/review steer');
+    }
+
+    #[Test]
+    public function normalPromptQueuesWhileCompacting(): void
+    {
+        $this->state->handle = new RunHandle('run-1');
+        $this->state->activity = RunActivityStateEnum::Compacting;
+        $this->state->sessionId = 'test-session';
+
+        $this->client->expects($this->never())->method('send');
+
+        $harness = new VirtualTuiHarness(sessionId: 'test-session');
+        $screen = $this->dispatchSubmit('Run the checks after compaction', screen: $harness->screen());
+
+        $this->assertSame('Run the checks after compaction', $this->state->queuedFollowUp);
+        $this->assertSame('Message queued — waiting for compaction to complete...', $screen->workingMessage());
+        $this->assertStringContainsString('⏳ Run the checks after compaction', $harness->plainScreenText());
     }
 
     // ── DispatchRuntime sends follow_up while idle/completed ────────
@@ -700,12 +718,16 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
      *
      * @return ChatScreen the screen after dispatch (for state inspection)
      */
-    private function dispatchSubmit(string $text, ?HatfieldSessionStore $sessionStore = null, ?PromptHistory $history = null, ?SubmissionRouter $router = null): ChatScreen
+    private function dispatchSubmit(string $text, ?HatfieldSessionStore $sessionStore = null, ?PromptHistory $history = null, ?SubmissionRouter $router = null, ?ChatScreen $screen = null): ChatScreen
     {
         $tui = new Tui();
-        $theme = new DefaultTheme(new ThemePalette('test'));
-        $promptEditor = new PromptEditor();
-        $screen = new ChatScreen($theme, $this->state->sessionId, $promptEditor);
+        if (null === $screen) {
+            $theme = new DefaultTheme(new ThemePalette('test'));
+            $promptEditor = new PromptEditor();
+            $screen = new ChatScreen($theme, $this->state->sessionId, $promptEditor);
+        } else {
+            $promptEditor = $screen->promptEditor();
+        }
 
         // Set the text in the editor (will be extracted by SubmitListener)
         $promptEditor->setText($text);
