@@ -402,8 +402,17 @@ final class SubmitListener implements TuiListenerRegistrar
                     $queuedMessages[] = $text;
                     $screen->syncQueuedUserMessages($queuedMessages);
                     $screen->setWorkingMessage('Message queued — waiting for compaction to complete...');
-                    $tui->requestRender();
-                    $tui->processRender();
+                    try {
+                        $tui->requestRender();
+                        $tui->processRender();
+                    } catch (\Throwable $e) {
+                        // Non-fatal: the next tick will render the queued message.
+                        $logger->debug('SubmitListener: queued-message render failed (non-fatal)', [
+                            'component' => 'SubmitListener',
+                            'exception' => $e,
+                            'session_id' => $state->sessionId,
+                        ]);
+                    }
                 } elseif ($state->activity->isActive()) {
                     $client->send(
                         $state->handle->runId,

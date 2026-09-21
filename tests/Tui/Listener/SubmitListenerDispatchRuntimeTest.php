@@ -190,6 +190,33 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
         $this->assertStringContainsString('⏳ Run the checks after compaction', $harness->plainScreenText());
     }
 
+    #[Test]
+    public function queuedCompactionMessageSurvivesImmediateRenderFailure(): void
+    {
+        $this->state->handle = new RunHandle('run-1');
+        $this->state->activity = RunActivityStateEnum::Compacting;
+
+        $tui = $this->getMockBuilder(Tui::class)
+            ->onlyMethods(['processRender'])
+            ->getMock();
+        $renderCount = 0;
+        $tui->expects($this->exactly(2))
+            ->method('processRender')
+            ->willReturnCallback(static function () use (&$renderCount): void {
+                ++$renderCount;
+                if (2 === $renderCount) {
+                    throw new \RuntimeException('terminal unavailable');
+                }
+            });
+        $this->client->expects($this->never())->method('send');
+
+        $this->dispatchSubmit('Run the checks after compaction', tui: $tui);
+
+        $this->assertSame('Run the checks after compaction', $this->state->queuedFollowUp);
+        $this->assertSame(RunActivityStateEnum::Compacting, $this->state->activity);
+        $this->assertSame([], $this->state->transcript);
+    }
+
     // ── DispatchRuntime sends follow_up while idle/completed ────────
 
     #[Test]
@@ -718,9 +745,9 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
      *
      * @return ChatScreen the screen after dispatch (for state inspection)
      */
-    private function dispatchSubmit(string $text, ?HatfieldSessionStore $sessionStore = null, ?PromptHistory $history = null, ?SubmissionRouter $router = null, ?ChatScreen $screen = null): ChatScreen
+    private function dispatchSubmit(string $text, ?HatfieldSessionStore $sessionStore = null, ?PromptHistory $history = null, ?SubmissionRouter $router = null, ?ChatScreen $screen = null, ?Tui $tui = null): ChatScreen
     {
-        $tui = new Tui();
+        $tui ??= new Tui();
         if (null === $screen) {
             $theme = new DefaultTheme(new ThemePalette('test'));
             $promptEditor = new PromptEditor();
