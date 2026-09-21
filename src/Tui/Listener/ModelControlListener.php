@@ -6,7 +6,6 @@ namespace Ineersa\Tui\Listener;
 
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
-use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Layout\InputPriority;
@@ -23,8 +22,9 @@ use Symfony\Component\Tui\Event\InputEvent;
  *  - Ctrl+P listener cycles favorite models
  *  - Shift+Tab listener cycles reasoning levels
  *
- * Persists changes through ModelSelectionService and updates
- * TuiSessionState for immediate footer refresh.
+ * Persists changes through PendingModelSelection so settings, session
+ * metadata, and draft pending request stay aligned. Updates TuiSessionState
+ * for immediate footer refresh.
  *
  * Command metadata is registered once per process via
  * {@see registerCatalog()}; each session binds fresh handlers wired to
@@ -87,10 +87,12 @@ final class ModelControlListener implements TuiListenerRegistrar, SlashCommandCa
             }
             $event->stopPropagation();
 
-            $nextRef = $modelService->cycleFavoriteModel($state->sessionId);
+            $nextRef = $modelService->nextFavoriteModel($state->sessionId);
             if (null === $nextRef) {
                 return;
             }
+
+            PendingModelSelection::updateModel($modelService, $nextRef, $state);
 
             // Update footer state for immediate refresh.
             // getDisplayReasoning returns 'off' for non-thinking models so
@@ -99,24 +101,6 @@ final class ModelControlListener implements TuiListenerRegistrar, SlashCommandCa
 
             // Apply editor border colour matching the new reasoning level.
             $screen->applyEditorBorderColor($state->footerReasoning);
-
-            // For draft sessions, carry the model into the request so it is
-            // used when the draft is promoted on first submit.  Without this,
-            // SubmitListener reads $state->request?->model (null) and the
-            // StartRunRequest carries no model, leaving the runtime to resolve
-            // from stale AppConfig.
-            if ('' === $state->sessionId) {
-                // When $state->request is null (plain /new with no prior
-                // --model), the empty-string prompt is just a carrier —
-                // SubmitListener merges the real prompt from editor text
-                // during draft promotion.
-                $carrier = $state->request ?? new StartRunRequest(
-                    prompt: '',
-                    runId: '',
-                    cwd: '',
-                );
-                $state->request = $carrier->withModel($nextRef->toString());
-            }
         }, priority: InputPriority::MODEL_CONTROL);
 
         // ── Register Shift+Tab — cycle reasoning levels ──
@@ -130,13 +114,14 @@ final class ModelControlListener implements TuiListenerRegistrar, SlashCommandCa
             $event->stopPropagation();
 
             // Only cycle when the current model supports thinking levels.
-            // When the model does not support thinking, the handler returns
-            // null and we do nothing — no status entry, no footer colour
-            // change, no misleading visual feedback.
-            $nextLevel = $modelService->cycleReasoningForCurrentModel($state->sessionId);
+            // When the model does not support thinking, do nothing — no
+            // status entry, no footer colour change, no misleading feedback.
+            $nextLevel = $modelService->nextReasoningLevel($state->sessionId);
             if (null === $nextLevel) {
                 return;
             }
+
+            PendingModelSelection::updateReasoning($modelService, $nextLevel, $state);
 
             // Update footer colour through the state field.
             // The FooterStateSegmentProvider reads this to colour the ◆

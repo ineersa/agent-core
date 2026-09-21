@@ -205,14 +205,21 @@ final class HatfieldSessionStore
      */
     public function exists(string $sessionId): bool
     {
-        return null !== $this->fetchEntityOrNull($sessionId);
+        $id = $this->parsePositiveSessionId($sessionId);
+        if (null === $id) {
+            return false;
+        }
+
+        return $this->getRepository()->existsById($id);
     }
 
     /**
      * Claim the first request's effort. Return null for that first request,
-     * or the fixed effort for subsequent requests in the same model epoch.
+     * or the decision for subsequent requests in the same model epoch.
+     *
+     * @return array{baseline: string, update: ?string, last_emitted: string}|null
      */
-    public function claimReasoningBaseline(string $sessionId, string $model, string $effort): ?string
+    public function claimReasoningBaseline(string $sessionId, string $model, string $effort): ?array
     {
         $entity = $this->fetchEntityOrNull($sessionId);
         if (null === $entity) {
@@ -220,13 +227,109 @@ final class HatfieldSessionStore
         }
 
         if ($model === ($entity->reasoningBaseline['model'] ?? null)) {
-            return $entity->reasoningBaseline['effort'];
+            $baseline = $entity->reasoningBaseline['effort'] ?? null;
+            if (!\is_string($baseline) || '' === $baseline) {
+                return null;
+            }
+
+            $lastEmitted = $entity->reasoningBaseline['last_emitted'] ?? $baseline;
+            if (!\is_string($lastEmitted) || '' === $lastEmitted) {
+                $lastEmitted = $baseline;
+            }
+
+            return [
+                'baseline' => $baseline,
+                'update' => $effort === $lastEmitted ? null : $effort,
+                'last_emitted' => $lastEmitted,
+            ];
         }
 
-        $entity->reasoningBaseline = ['model' => $model, 'effort' => $effort];
+        $entity->reasoningBaseline = [
+            'model' => $model,
+            'effort' => $effort,
+            'last_emitted' => $effort,
+            'transitions' => [],
+        ];
         $this->entityManager->flush();
 
         return null;
+    }
+
+    /**
+     * Remember a history-bound reasoning transition for later request rebuild.
+     *
+     * @param non-empty-string $messageKey
+     * @param non-empty-string $effort
+     */
+    public function rememberReasoningTransition(string $sessionId, string $model, string $messageKey, string $effort): void
+    {
+        $entity = $this->fetchEntityOrNull($sessionId);
+        if (null === $entity) {
+            return;
+        }
+
+        $baseline = $entity->reasoningBaseline;
+        if (!\is_array($baseline)
+            || ($baseline['model'] ?? null) !== $model
+            || !\is_string($baseline['effort'] ?? null)
+            || '' === $baseline['effort']) {
+            return;
+        }
+
+        $transitions = \is_array($baseline['transitions'] ?? null) ? $baseline['transitions'] : [];
+        $next = [];
+        foreach ($transitions as $transition) {
+            if (!\is_array($transition)) {
+                continue;
+            }
+            $existingKey = $transition['message_key'] ?? null;
+            if (!\is_string($existingKey) || '' === $existingKey || $existingKey === $messageKey) {
+                continue;
+            }
+            $existingEffort = $transition['effort'] ?? null;
+            if (!\is_string($existingEffort) || '' === $existingEffort) {
+                continue;
+            }
+            $next[] = ['message_key' => $existingKey, 'effort' => $existingEffort];
+        }
+        $next[] = ['message_key' => $messageKey, 'effort' => $effort];
+
+        $baseline['transitions'] = $next;
+        $baseline['last_emitted'] = $effort;
+        $entity->reasoningBaseline = $baseline;
+        $this->entityManager->flush();
+    }
+
+    /**
+     * @return list<array{message_key: string, effort: string}>
+     */
+    public function listReasoningTransitions(string $sessionId, string $model): array
+    {
+        $entity = $this->fetchEntityOrNull($sessionId);
+        if (null === $entity) {
+            return [];
+        }
+
+        $baseline = $entity->reasoningBaseline;
+        if (!\is_array($baseline) || ($baseline['model'] ?? null) !== $model) {
+            return [];
+        }
+
+        $transitions = \is_array($baseline['transitions'] ?? null) ? $baseline['transitions'] : [];
+        $out = [];
+        foreach ($transitions as $transition) {
+            if (!\is_array($transition)) {
+                continue;
+            }
+            $messageKey = $transition['message_key'] ?? null;
+            $effort = $transition['effort'] ?? null;
+            if (!\is_string($messageKey) || '' === $messageKey || !\is_string($effort) || '' === $effort) {
+                continue;
+            }
+            $out[] = ['message_key' => $messageKey, 'effort' => $effort];
+        }
+
+        return $out;
     }
 
     public function resetReasoningBaseline(string $sessionId): void
@@ -248,7 +351,12 @@ final class HatfieldSessionStore
      */
     public function deleteSession(string $sessionId): void
     {
-        $entity = $this->fetchEntityOrNull($sessionId);
+        $id = $this->parsePositiveSessionId($sessionId);
+        if (null === $id || !$this->getRepository()->existsById($id)) {
+            throw new \RuntimeException(\sprintf('Session "%s" not found.', $sessionId));
+        }
+
+        $entity = $this->entityManager->find(HatfieldSession::class, $id);
         if (null === $entity) {
             throw new \RuntimeException(\sprintf('Session "%s" not found.', $sessionId));
         }
@@ -450,18 +558,42 @@ final class HatfieldSessionStore
      */
     private function fetchEntityOrNull(string $sessionId): ?HatfieldSession
     {
-        // ctype_digit rejects UUID prefixes like "3d451..." that PHP would
-        // otherwise coerce with (int) into an unrelated session primary key.
+        $id = $this->parsePositiveSessionId($sessionId);
+        if (null === $id) {
+            return null;
+        }
+
+        $entity = $this->entityManager->find(HatfieldSession::class, $id);
+        if (null === $entity) {
+            return null;
+        }
+
+        // Mutable session metadata (model/reasoning/name/baseline) can change
+        // in another process while this EM still holds the identity-map copy.
+        // Refresh before returning or mutating so Doctrine dirty-checks against
+        // the committed row. Existence/delete use COUNT instead of this helper.
+        // If another process deletes the row between find() and refresh(),
+        // Doctrine returns the managed entity unchanged.
+        $this->entityManager->refresh($entity);
+
+        return $entity;
+    }
+
+    /**
+     * Parse a public session id into a positive hatfield_session primary key.
+     *
+     * ctype_digit rejects UUID prefixes like "3d451..." that PHP would
+     * otherwise coerce with (int) into an unrelated session primary key.
+     */
+    private function parsePositiveSessionId(string $sessionId): ?int
+    {
         if ('' === $sessionId || !ctype_digit($sessionId)) {
             return null;
         }
 
         $id = (int) $sessionId;
-        if ($id <= 0) {
-            return null;
-        }
 
-        return $this->entityManager->find(HatfieldSession::class, $id);
+        return $id > 0 ? $id : null;
     }
 
     /**

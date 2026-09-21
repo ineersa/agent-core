@@ -97,6 +97,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->extensionHooks([]),
             $this->metadataReader(isChild: true),
             AttributeSerializerValidatorTestFactory::create()[0],
+            $this->sessionStore(),
         );
 
         $result = $handler->handle(
@@ -152,6 +153,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->extensionHooks([]),
             $this->metadataReader(runId: 'run-pre-llm-compact'),
             AttributeSerializerValidatorTestFactory::create()[0],
+            $this->sessionStore(),
         );
         $started = $handler->handle($request, $advanceResult->nextState);
 
@@ -198,6 +200,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->extensionHooks([$hook]),
             $this->metadataReader(),
             AttributeSerializerValidatorTestFactory::create()[0],
+            $this->sessionStore(),
         );
         $request = new CompactRun('run-1', 5, 'step-1', 1, 'key-1', 'manual');
 
@@ -264,6 +267,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->extensionHooks([]),
             $this->metadataReader(),
             AttributeSerializerValidatorTestFactory::create()[0],
+            $this->sessionStore(),
         );
 
         $result = $handler->handle(
@@ -353,6 +357,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->extensionHooks([]),
             $this->metadataReader(),
             AttributeSerializerValidatorTestFactory::create()[0],
+            $this->sessionStore(),
         );
 
         $result = $handler->handle(
@@ -397,6 +402,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->extensionHooks([]),
             $this->metadataReader(),
             AttributeSerializerValidatorTestFactory::create()[0],
+            $this->sessionStore(),
         );
 
         $result = $handler->handle(
@@ -459,6 +465,7 @@ final class CompactRunHandlerTest extends TestCase
                 $this->extensionHooks([]),
                 $this->metadataReader(),
                 AttributeSerializerValidatorTestFactory::create()[0],
+                $this->sessionStore(),
             );
 
             $result = $handler->handle(
@@ -521,6 +528,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->extensionHooks([$cancelHook]),
             $this->metadataReader(),
             AttributeSerializerValidatorTestFactory::create()[0],
+            $this->sessionStore(),
         );
 
         $result = $handler->handle(
@@ -604,6 +612,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->extensionHooks([$replaceHook]),
             $this->metadataReader(),
             AttributeSerializerValidatorTestFactory::create()[0],
+            $this->sessionStore(),
         );
 
         $result = $handler->handle(
@@ -916,6 +925,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->extensionHooks([$hook]),
             $this->metadataReader(),
             AttributeSerializerValidatorTestFactory::create()[0],
+            $this->sessionStore(),
         );
 
         $handler->handle(
@@ -971,6 +981,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->extensionHooks([$hook]),
             $this->metadataReader(),
             AttributeSerializerValidatorTestFactory::create()[0],
+            $this->sessionStore(),
         );
 
         $result = $handler->handle(
@@ -1042,6 +1053,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->extensionHooks([$cancelHook]),
             $this->metadataReader(),
             AttributeSerializerValidatorTestFactory::create()[0],
+            $this->sessionStore(),
         );
 
         $result = $handler->handle(
@@ -1105,6 +1117,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->extensionHooks([]),
             $this->metadataReader(),
             AttributeSerializerValidatorTestFactory::create()[0],
+            $this->sessionStore(),
         );
 
         $result = $handler->handle(
@@ -1152,6 +1165,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->extensionHooks([]),
             $this->metadataReader(),
             AttributeSerializerValidatorTestFactory::create()[0],
+            $this->sessionStore(),
         );
 
         $result = $handler->handle(
@@ -1230,6 +1244,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->extensionHooks([$cancelHook]),
             $this->metadataReader(),
             AttributeSerializerValidatorTestFactory::create()[0],
+            $this->sessionStore(),
         );
 
         $result = $handler->handle(
@@ -1335,6 +1350,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->extensionHooks([], [$publicHook]),
             $this->metadataReader(),
             AttributeSerializerValidatorTestFactory::create()[0],
+            $this->sessionStore(),
         );
 
         $result = $handler->handle(
@@ -1579,7 +1595,7 @@ final class CompactRunHandlerTest extends TestCase
         $sessionMetaRc = new \ReflectionClass(HatfieldSessionStore::class);
         $sessionMetaStore = $sessionMetaRc->newInstanceWithoutConstructor();
 
-        $modelResolver = new ModelResolver($appConfig, $sessionMetaStore);
+        $modelResolver = new ModelResolver($appConfig, $sessionMetaStore, new NullLogger());
 
         // Persistence deps are never accessed by getCurrentModel().
         $settingsWriter = (new \ReflectionClass(SettingsOverrideWriter::class))->newInstanceWithoutConstructor();
@@ -1600,6 +1616,19 @@ final class CompactRunHandlerTest extends TestCase
     private function hooks(array $hooks = []): CompactionHookDispatcher
     {
         return new CompactionHookDispatcher($hooks);
+    }
+
+    /**
+     * Required CompactRunHandler dependency. Structural handler tests use non-numeric
+     * run ids, so {@see HatfieldSessionStore::resetReasoningBaseline()} is a no-op.
+     */
+    private function sessionStore(): HatfieldSessionStore
+    {
+        return new HatfieldSessionStore(
+            appConfig: $this->createAppConfig(),
+            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
+        );
     }
 
     private function metadataReader(bool $isChild = false, string $runId = 'child-run'): StubRunRelationshipReader

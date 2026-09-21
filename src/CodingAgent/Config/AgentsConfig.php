@@ -32,7 +32,7 @@ final readonly class AgentsConfig
 
         public int $subagentToolTimeoutSeconds = 86400,
 
-        public array $subagentExcludedTools = ['settings', 'hatfield_docs'],
+        public array $subagentExcludedTools = ['hatfield_docs'],
 
         public ChildExtensionsConfigDTO $extensions = new ChildExtensionsConfigDTO(),
     ) {
@@ -164,7 +164,7 @@ final readonly class AgentsConfig
     private static function resolveSubagentExcludedTools(array $raw): array
     {
         if (!\array_key_exists('subagent_excluded_tools', $raw)) {
-            return ['settings', 'hatfield_docs'];
+            return ['hatfield_docs'];
         }
 
         $value = $raw['subagent_excluded_tools'];

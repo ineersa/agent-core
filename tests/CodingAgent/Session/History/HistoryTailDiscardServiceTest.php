@@ -11,11 +11,16 @@ use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\LoggingConfig;
+use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\History\HistoryProjector;
 use Ineersa\CodingAgent\Session\History\HistoryTailDiscardService;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 
 #[CoversClass(HistoryTailDiscardService::class)]
 final class HistoryTailDiscardServiceTest extends TestCase
@@ -56,7 +61,12 @@ final class HistoryTailDiscardServiceTest extends TestCase
                 );
             });
 
-        $service = new HistoryTailDiscardService($store, new HistoryProjector(), new NullLogger());
+        $service = new HistoryTailDiscardService(
+            $store,
+            new HistoryProjector(),
+            $this->sessionStore(),
+            new NullLogger(),
+        );
         $state = new RunState(
             runId: $runId,
             status: RunStatus::Completed,
@@ -86,7 +96,12 @@ final class HistoryTailDiscardServiceTest extends TestCase
         $store->method('allFor')->willReturn($events);
         $store->expects($this->never())->method('append');
 
-        $service = new HistoryTailDiscardService($store, new HistoryProjector(), new NullLogger());
+        $service = new HistoryTailDiscardService(
+            $store,
+            new HistoryProjector(),
+            $this->sessionStore(),
+            new NullLogger(),
+        );
         $state = new RunState(
             runId: $runId,
             status: RunStatus::Completed,
@@ -105,6 +120,7 @@ final class HistoryTailDiscardServiceTest extends TestCase
         $service = new HistoryTailDiscardService(
             $this->createStub(EventStoreInterface::class),
             new HistoryProjector(),
+            $this->sessionStore(),
             new NullLogger(),
         );
 
@@ -133,6 +149,23 @@ final class HistoryTailDiscardServiceTest extends TestCase
             kind: 'select_history_turn',
             payload: [],
         )));
+    }
+
+    /**
+     * Structural tests use non-numeric run ids, so
+     * {@see HatfieldSessionStore::resetReasoningBaseline()} is a no-op.
+     */
+    private function sessionStore(): HatfieldSessionStore
+    {
+        return new HatfieldSessionStore(
+            appConfig: new AppConfig(
+                tui: new TuiConfig(theme: 'default'),
+                logging: new LoggingConfig(),
+                cwd: '/tmp',
+            ),
+            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+            dispatcher: new EventDispatcher(),
+        );
     }
 
     /**

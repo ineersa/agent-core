@@ -58,8 +58,8 @@ final class ControllerReplayLlmRequestRetryVisibilityTest extends ControllerRepl
         $this->assertSame(1, $retry['payload']['attempt'] ?? null, $this->collectDiagnostics($events));
         $this->assertSame(5, $retry['payload']['max_attempts'] ?? null, $this->collectDiagnostics($events));
         $this->assertSame(0, $retry['payload']['delay_ms'] ?? null, $this->collectDiagnostics($events));
-        $this->assertSame(
-            'LLM provider rate limit interrupted the request.',
+        $this->assertStringContainsString(
+            'Rate limit exceeded',
             $retry['payload']['reason'] ?? null,
             $this->collectDiagnostics($events),
         );

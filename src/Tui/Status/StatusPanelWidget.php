@@ -13,6 +13,8 @@ use Symfony\Component\Tui\Widget\AbstractWidget;
  * Status panel widget that renders keyed status entries.
  *
  * Each entry renders as a line with a left-aligned label and text value.
+ * The empty panel reserves one blank row so a single transient status can
+ * appear or clear without moving the editor and footer.
  * Entries are pushed through {@see setEntries()} (ChatScreen::setStatus is
  * the production mutator) and the widget invalidates its render cache on
  * every mutation so the next tick repaints.
@@ -47,7 +49,7 @@ final class StatusPanelWidget extends AbstractWidget
     public function render(RenderContext $context): array
     {
         if ([] === $this->entries) {
-            return [];
+            return [''];
         }
 
         $lines = [];

@@ -66,15 +66,6 @@ final class CompletionProviderRegistryTest extends TestCase
         $this->assertSame([], $result);
     }
 
-    #[Test]
-    public function returnsEmptyWhenNoProvidersRegistered(): void
-    {
-        $registry = new CompletionProviderRegistry([]);
-        $result = $registry->getSuggestions(CompletionContext::forCursorAtEnd('/test'));
-
-        $this->assertSame([], $result);
-    }
-
     // ─── Helpers ──────────────────────────────────────────────────
 
     private function emptyProvider(): CompletionProvider

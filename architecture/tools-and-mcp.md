@@ -13,11 +13,11 @@ every tool. MCP and enabled extensions contribute additional registrations.
 | `read`, `write`, `edit`, `view_image` | `ReadFileTool`, `WriteFileTool`, `EditFileTool`, `ViewImageTool` under `src/CodingAgent/Tool` |
 | `bash`, `bg_status` | `BashTool`, `BgStatusTool`, `BackgroundProcessManager` |
 | `ask_human` | `AskHumanTool` and runtime human-input continuation |
-| `settings`, `hatfield_docs` | `SettingsTool`, `HatfieldDocsTool` |
+| `hatfield_docs` | `HatfieldDocsTool` |
 | `subagent`, `agent_resume`, `agent_retrieve`, `fork` | `src/CodingAgent/Agent/Tool` handlers and providers |
 | Task-board operations | task-workflow extension registrations |
 | `recall` | observational-memory extension registration |
-| Server-advertised names, including IDE tools | MCP catalog and `McpToolRegistrar` |
+| Server-advertised names | MCP catalog and `McpToolRegistrar` |
 
 ## Design from definition to invocation
 
@@ -64,6 +64,25 @@ flowchart TB
 
 Typed built-ins use DTO field schemas and validation. Dynamic MCP arguments follow
 the server's runtime schema rather than the built-in DTO validation path.
+
+## Built-in argument ownership (inventory)
+
+| Tool | Argument owner | Input constraints | Kept in handler |
+|---|---|---|---|
+| `read` | `ReadFileArgumentsDTO` + `ReadFileTarget` | path/offset/limit; target policy | I/O read failures |
+| `write` | `WriteFileArgumentsDTO` | path/content | write I/O failures |
+| `edit` | `EditFileArgumentsDTO` + `EditFileTarget` | path/patch; target exists | patch apply / lock failures |
+| `view_image` | `ViewImageArgumentsDTO` (path only) | path shape | single handler inspection owns vision/size/MIME/dimensions + metadata |
+| `bash` | `BashArgumentsDTO` + `BashTimeoutMax` | command; timeout bounds | process lifecycle, cancel, exit failures |
+| `bg_status` | `BgStatusArgumentsDTO` | action; conditional pid | process lookup / stop / log failures |
+| `ask_human` | `AskHumanArgumentsDTO` | question/kind/choices exclusivity | none (interrupt payload only) |
+| `hatfield_docs` | `HatfieldDocsArgumentsDTO` | operation; conditional id | catalog/unknown-id / doc load failures |
+| `subagent` / `agent_resume` / `agent_retrieve` / `fork` | respective Arguments DTOs (+ task schema providers where needed) | typed launch/resume/retrieve fields | active parent run context / locator wiring |
+| MCP / extension raw tools | runtime `parametersJsonSchema` + `raw_arguments` | server/extension schema | handler or remote server |
+
+Justified non-DTO path: tools whose schema is defined at runtime (MCP and
+public extension adapters). Input errors for typed tools use Symfony validation
+messages instead of `ToolCallException` with a separate hint.
 
 ## Execute a batch, then continue the model
 

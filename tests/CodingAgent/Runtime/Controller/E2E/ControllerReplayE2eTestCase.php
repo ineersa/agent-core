@@ -198,6 +198,8 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
             // Explicitly NOT setting LLAMA_CPP_SMOKE_TEST.
         ];
 
+        $env = array_merge($env, $this->controllerSubprocessEnv());
+
         // Merge subclass extras.
         foreach ($this->replayExtraEnv() as $k => $v) {
             $env[$k] = $v;

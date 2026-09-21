@@ -21,7 +21,7 @@ settings keys and discovery rules only.
 | `agents.paths` | Extra definition files/dirs (highest precedence) | `[]` |
 | `agents.max_agents` | Max parallel children per `subagent` call | `4` |
 | `agents.subagent_tool_timeout_seconds` | Deferred-batch deadline for foreground subagent tool | `86400` (min `60`) |
-| `agents.subagent_excluded_tools` | Tool names always removed from child runs | `settings`, `hatfield_docs` |
+| `agents.subagent_excluded_tools` | Tool names always removed from child runs | `hatfield_docs` |
 | `agents.extensions.always_on` | Extension classes always loaded for children | includes SafeGuard |
 
 ### Discovery order (low → high)
@@ -78,6 +78,9 @@ Behavioral detail (discoverable vs on-demand-only, `/skill:<name>`, frontmatter)
 
 Extensions load from project `.hatfield/extensions/vendor/autoload.php` when present.
 They register **once at session start** — enablement changes require a new session.
+
+Keep `.hatfield/extensions/composer.json` with `config.prepend-autoloader: false`.
+Otherwise the extensions autoloader can shadow host packages such as `symfony/tui`.
 
 Built-in SafeGuard class may appear in defaults/`always_on` without a Composer package.
 Project packages (task-workflow, file-rewind, observational-memory, jbcontext) document their own settings keys in **package-local README files** shipped with each extension repository/package. Those keys are **not** core `hatfield_docs` catalog entries.

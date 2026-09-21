@@ -147,8 +147,9 @@ final class TuiSkillReadCardVirtualRenderTest extends TestCase
 
         $this->assertStringContainsString('read', $collapsed);
         // Path may wrap across terminal columns in VirtualTerminal output
-        // (long worktree paths can split tokens like SKILL.md mid-name).
-        $collapsedUnwrapped = str_replace("\n", '', $collapsed);
+        // with indentation on continuation lines.
+        $collapsedUnwrapped = preg_replace('/\R\s*/', '', $collapsed);
+        $this->assertIsString($collapsedUnwrapped);
         $this->assertStringContainsString('docs/unrelated', $collapsedUnwrapped);
         $this->assertStringContainsString('SKILL.md', $collapsedUnwrapped);
         $this->assertStringContainsString('path:', $collapsed);

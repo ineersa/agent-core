@@ -24,9 +24,8 @@ use Symfony\Component\Validator\ValidatorBuilder;
  *
  * Mirrors config/services.yaml wiring: the app dispatcher carries the
  * listener, and class-level DTO constraints (e.g. ReadFileTarget) run with
- * the validator instances supplied per test so settings-backed or
- * context-backed validators (ViewImageTargetValidator) receive the same
- * config/context the tool under test uses.
+ * the validator instances supplied per test so settings-backed validators
+ * receive the same config the tool under test uses.
  */
 final class ToolValidationHarness
 {

@@ -20,7 +20,7 @@ servers. Tool availability does not bypass approval policy.
 | `bash` | Run a shell command in the workspace | Local permissions apply. Timeout and cancellation do not undo completed effects. |
 | `bg_status` | List, inspect logs, or stop accepted background processes | Session-scoped. Does not expose private foreground supervision. |
 | `ask_human` | Ask for text, confirmation, or a choice | Waits for a human response. Cancellation is not approval. |
-| `settings` | Read effective settings, set overrides, or remove overrides | Mutations specify user or project scope and pass approval checks. |
+| `code_mode` | Run a PHP script that calls other tools through `tool(name, arguments)` | Disabled by default (`tools.code_mode.enabled`). Raw PHP bypasses toolbox hooks. Checkout/PHAR reuse the launching PHP CLI; fused native builds need `php` on PATH. |
 | `hatfield_docs` | List and read packaged Hatfield documentation | Does not automatically discover extension-package READMEs. |
 | `subagent` | Launch a named child agent, singly or in parallel | Uses discovered agent definitions and child tool policy. |
 | `agent_resume` | Continue an existing child or fork with a follow-up task | Artifacts must belong to the current parent session. |
@@ -44,6 +44,56 @@ Oversized text results are capped. The response can include a saved-file path an
 instructions for reading the omitted content. Those files are temporary; a path
 preserved in session history can outlive the actual saved output.
 
+## code_mode
+
+`code_mode` is off by default. Enable it with `tools.code_mode.enabled: true` in
+user or project settings, then restart Hatfield.
+
+Prefer `code_mode` for multi-step tool work when intermediate results do not need
+model interpretation. Batch related reads and lookups, filter or compare inside
+the script, and return the evidence needed for the next decision. Use direct tools
+for single calls, images, human input, and child-agent operations. Do not wrap a
+single call or dump entire intermediate results merely to use `code_mode`.
+
+The script can call registered tools, including MCP tools, through
+`tool(name, arguments)` using each tool's runtime name. Values returned by
+`tool()` stay as JSON-compatible PHP values. Strings stay strings. Extra
+`tool()` arguments fail. Use `toon_encode()` and `toon_decode()` when you need
+TOON conversion. `toon_encode()` rejects unsupported or lossy values.
+`toon_decode()` leaves valid scalar text unchanged. Nested tool failures throw
+`RuntimeException`. Missing or explicit `null` returns are visible as `null`.
+Boolean returns are visible as `true` or `false`.
+Bounded script stdout/stderr, including PHP warnings, are appended to the
+model-facing return text. The child process starts with `display_errors=0` and
+`xdebug.mode=off`, so warnings log once on stderr without an stdout mirror or
+Xdebug stacks. Errors keep useful stacks and use stable `script.php` /
+`bootstrap.php` path labels. The combined return value and diagnostics then use
+ordinary output capping with the document-report 50,000-character selection and
+saved-output recovery for both successful and failed `code_mode` results. The
+host keeps child stdout/stderr through Symfony Process capture
+(`php://temp` buffers) so ordinary capping sees the full streams; timeout and
+memory limits still bound the subprocess.
+`die()`/`exit` without a return reports that the script exited without returning
+a value, even on exit code 0.
+
+Raw PHP filesystem and process functions also work inside the script. Those
+calls bypass toolbox hooks and approvals. If you launch Hatfield under
+`hatfield-safe` or another bubblewrap wrapper, the script inherits that sandbox.
+`code_mode` does not create a separate sandbox. Checkout and PHAR reuse the PHP
+interpreter that launched Hatfield. Fused native/static binaries still need an
+installed PHP CLI available as `php` on `PATH`.
+
+`tool()` rejects `subagent`, `fork`, `agent_resume`, and `ask_human` before the
+handler runs. Those tools need deferred child ownership or interactive pause
+flow that this bridge cannot complete. Script return values and nested tool results must be JSON-compatible scalars
+or arrays. Closures, resources, objects, non-finite floats, invalid UTF-8, and
+cyclic graphs fail instead of becoming empty or substituted data. Each script
+accepts optional `timeout_seconds` (default 60, max 300) and `memory_limit_mb`
+(default 256, max 1024). The remaining parent tool budget wins when smaller.
+Nested tool calls receive the remaining script budget as cooperative ToolContext
+metadata. The host can enforce that budget only while it is polling the script; a
+nested handler that blocks synchronously can still overrun until it returns.
+
 ## Background work
 
 There is no `bg_start` tool or model-selected background flag. A long-running `bash`
@@ -64,13 +114,12 @@ MCP inheritance and explicit selectors are described in [MCP](mcp.md).
 ## Extension and MCP tools
 
 Enabled extensions can register additional tools. For example, task-workflow adds
-task-board operations, while observational-memory provides `recall`. These are
+task-board operations, while observational-memory provides `memory_search` and `recall`. These are
 extension tools, not universally available built-ins. Observer and reflector jobs
 also have private tools that are not the main session's catalog.
 
 MCP servers advertise their own tool names and schemas. `/mcp` shows configured
 servers and discovered tools. [MCP configuration](mcp.md) controls availability.
-IDE tools are supplied by the configured integration, not by the fixed built-in list.
 
 ## Failure diagnostics
 

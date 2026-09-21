@@ -6,11 +6,15 @@ namespace Ineersa\Tui\Tests\Screen;
 
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
+use Ineersa\Tui\Listener\PreviewExpansionInputListener;
+use Ineersa\Tui\Runtime\TuiSessionState;
+use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
@@ -24,7 +28,91 @@ use PHPUnit\Framework\TestCase;
  */
 final class TuiCollapsedToolCardVirtualRenderTest extends TestCase
 {
+    use TuiRuntimeContextBuilderTrait;
+
     private const string SESSION_ID = 'virtual-collapsed-tool-cards';
+
+    /** @return iterable<string, array{string, bool, bool}> */
+    public static function failedToolCards(): iterable
+    {
+        yield 'bash exchange' => ['bash', true, false];
+        yield 'bash standalone' => ['bash', false, false];
+        yield 'generic exchange' => ['code_mode', true, false];
+        yield 'read exchange' => ['read', true, false];
+        yield 'skill read' => ['read', true, true];
+        yield 'image exchange' => ['view_image', true, false];
+        yield 'image standalone' => ['view_image', false, false];
+    }
+
+    #[Test]
+    #[DataProvider('failedToolCards')]
+    public function failedOutputUsesBoundedPreviewAndCtrlOTogglesFullResult(string $toolName, bool $paired, bool $skill): void
+    {
+        $body = "Command failed with exit code 1.\n".implode("\n", array_map(
+            static fn (int $n): string => 'failure-output-line-'.$n,
+            range(0, 9),
+        ));
+        $state = new TuiSessionState(self::SESSION_ID);
+        $state->transcriptDisplayState->previewableBlocksExpanded = false;
+        $meta = ['tool_call_id' => 'failed-call', 'tool_name' => $toolName];
+        if ($skill) {
+            $meta['skill_name'] = 'test-skill';
+        }
+        $blocks = [];
+        if ($paired) {
+            $blocks[] = new TranscriptBlock(
+                id: 'failed-call', kind: TranscriptBlockKindEnum::ToolCall,
+                runId: self::SESSION_ID, seq: 1, text: $toolName,
+                meta: [...$meta, 'arguments' => ['command' => 'exit 1', 'path' => 'example.txt']],
+            );
+        }
+        $blocks[] = new TranscriptBlock(
+            id: 'failed-result', kind: TranscriptBlockKindEnum::ToolResult,
+            runId: self::SESSION_ID, seq: 2, text: $toolName,
+            meta: [...$meta, 'is_error' => true, 'result' => $body],
+        );
+        foreach ($blocks as $block) {
+            $state->appendTranscriptBlock($block);
+        }
+        $harness = new VirtualTuiHarness(
+            rows: 50,
+            sessionId: self::SESSION_ID,
+            palette: new ThemePalette('failed-tool', [ThemeColorEnum::Error->value => '#ff3366']),
+            displayState: $state->transcriptDisplayState,
+        );
+        $context = $this->buildTuiContext()->withTui($harness->tui())->withScreen($harness->screen())
+            ->withState($state)->build();
+        (new PreviewExpansionInputListener())->register($context);
+        $harness->screen()->setTranscriptBlocks($state->transcript);
+        $harness->screen()->setWorkingVisible(false);
+
+        try {
+            $harness->startInputLoop();
+            $visible = 'bash' === $toolName ? 'failure-output-line-9' : 'Command failed with exit code 1.';
+            $hidden = 'bash' === $toolName ? 'failure-output-line-0' : 'failure-output-line-9';
+            $collapsed = $harness->plainScreenText();
+            $this->assertStringContainsString($visible, $collapsed);
+            $this->assertStringNotContainsString($hidden, $collapsed);
+            $this->assertStringContainsString('7 '.('bash' === $toolName ? 'earlier' : 'more').' lines', $collapsed);
+            $this->assertStringContainsString("\x1b[38;2;255;51;102m", $harness->ansiOutput());
+
+            $harness->sendInput("\x0f");
+            $expanded = $harness->plainScreenText();
+            $this->assertTrue($state->transcriptDisplayState->previewableBlocksExpanded);
+            $this->assertSame(1, substr_count($expanded, 'Command failed with exit code 1.'));
+            foreach (range(0, 9) as $n) {
+                $this->assertSame(1, substr_count($expanded, 'failure-output-line-'.$n));
+            }
+
+            $harness->sendInput("\x0f");
+            $this->assertFalse($state->transcriptDisplayState->previewableBlocksExpanded);
+            $collapsedAgain = $harness->plainScreenText();
+            $this->assertStringContainsString($visible, $collapsedAgain);
+            $this->assertStringNotContainsString($hidden, $collapsedAgain);
+        } finally {
+            $harness->stopInputLoop();
+        }
+    }
 
     #[Test]
     public function collapsedReadShowsAllArgsAndHidesSuccessfulResult(): void

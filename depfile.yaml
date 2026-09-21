@@ -189,7 +189,16 @@ parameters:
     - name: AppRuntimeInternals
       collectors:
         - type: directory
-          value: src/CodingAgent/Runtime/(InProcess|Process|Stream|Controller|Messenger)/.*
+          value: src/CodingAgent/Runtime/(InProcess|Stream|Controller|Messenger)/.*
+        - type: classNameRegex
+          value: '#^Ineersa\\CodingAgent\\Runtime\\Process\\(AppExecutableLocator|ChainExecutableLocator|ConfigExecutableLocator|JsonlProcessAgentSessionClient|PharExecutableLocator|RuntimeEventPerRunCompactBuffer|SourceTreeExecutableLocator)$#'
+
+    # Narrow packaging/process seam reused by code_mode without opening all
+    # AppRuntimeInternals to AppTool.
+    - name: AppRuntimeProcessConfig
+      collectors:
+        - type: classNameRegex
+          value: '#^Ineersa\\CodingAgent\\Runtime\\Process\\RuntimeProcessConfig$#'
 
     - name: AppRuntimeProjection
       collectors:
@@ -228,8 +237,18 @@ parameters:
 
     - name: AppInfrastructureSymfonyAi
       collectors:
-        - type: directory
-          value: src/CodingAgent/Infrastructure/SymfonyAi/.*
+        - type: bool
+          must:
+            - type: directory
+              value: src/CodingAgent/Infrastructure/SymfonyAi/.*
+          must_not:
+            - type: classNameRegex
+              value: '#^Ineersa\\CodingAgent\\Infrastructure\\SymfonyAi\\ConfiguredSymfonyAiPlatformFactory$#'
+
+    - name: AppConfiguredSymfonyAiPlatformFactory
+      collectors:
+        - type: classNameRegex
+          value: '#^Ineersa\\CodingAgent\\Infrastructure\\SymfonyAi\\ConfiguredSymfonyAiPlatformFactory$#'
 
     - name: AppProviderQuota
       collectors:
@@ -414,6 +433,7 @@ parameters:
       - SymfonySerializer
       - SymfonyTui
       - SymfonyConsole
+      - SymfonyFinder
 
     TuiListener:
       - TuiExport
@@ -600,7 +620,12 @@ parameters:
       - TuiTranscript
       - SymfonyProcess
 
+    AppRuntimeProcessConfig:
+      - AppRuntimeInternals
+      - AppConfig
+
     AppRuntimeInternals:
+      - AppRuntimeProcessConfig
       - AppRuntimeContract
       - AppRuntimeProjection
       - AppExtensionApi
@@ -654,6 +679,11 @@ parameters:
       - AppConfig
       - SymfonyAiPlatform
       - AppAuth
+
+    AppConfiguredSymfonyAiPlatformFactory:
+      - AppInfrastructureSymfonyAi
+      - SymfonyAiPlatform
+      - SymfonyEventDispatcher
 
     # /usage provider probes: auth + catalog + HttpClient + sanitized Runtime/Contract DTOs.
     AppProviderQuota:
@@ -722,6 +752,8 @@ parameters:
       - AppTool
       - AppSkills
       - AgentCore
+      # Budgeted extension-agent runs construct a selected-provider Platform once.
+      - AppConfiguredSymfonyAiPlatformFactory
       - SymfonyAiPlatform
       - SymfonyAiAgent
       - SymfonyEventDispatcher
@@ -767,7 +799,10 @@ parameters:
       # CodingAgent Bash consults immutable child-run metadata owned by AppAgent.
       - AppAgent
       - AppConfig
+      # code_mode reuses packaging CLI/cwd resolution for owned PHP subprocesses.
+      - AppRuntimeProcessConfig
       - AppMarkdown
+      - SymfonyProcess
       - SymfonyFinder
       - SymfonyYaml
       - SymfonyAiPlatform

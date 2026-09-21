@@ -120,14 +120,11 @@ configured through provider setup or [model settings](docs/settings-models.md).
 
 ## Make it fit your workflow
 
-Ask Hatfield to change its settings in plain language. Its `settings` tool can read,
-set, or remove user and project overrides. Specify which scope you want to change,
-then use `/settings-show` to check the current settings.
-
-User settings live in `~/.hatfield/settings.yaml`. Repository settings live in
-`.hatfield/settings.yaml` and override user settings. Keep overrides small rather
-than copying the defaults. Put credentials in user settings or reference environment
-variables with `env:NAME`.
+Edit user settings in `~/.hatfield/settings.yaml` and project settings in
+`.hatfield/settings.yaml`. Project settings override user settings. Keep overrides
+small rather than copying the defaults. Put credentials in user settings or reference
+environment variables with `env:NAME`. Use `/settings-show` to inspect the effective
+configuration.
 
 Add [MCP servers](docs/mcp.md) for external tools, [skills](docs/skills.md) for reusable
 instructions, and [prompt templates](docs/prompt-templates.md) for repeated tasks.
@@ -135,6 +132,12 @@ instructions, and [prompt templates](docs/prompt-templates.md) for repeated task
 
 Built-in [SafeGuard](docs/approvals.md) checks tool calls and can allow, block, or
 request approval before execution. It is separate from optional extension packages.
+
+The optional `code_mode` tool can run PHP scripts that call other tools. It stays
+disabled until you set `tools.code_mode.enabled: true` and restart. Raw PHP inside
+those scripts bypasses toolbox hooks, and any launcher sandbox such as
+`hatfield-safe` is inherited rather than added by the tool. See the
+[tool catalog](docs/tools.md) and [settings](docs/settings.md).
 
 Optional extension packages provide task workflow, file rewind, and observational
 memory. Installing and enabling extensions is separate from launching the agent.

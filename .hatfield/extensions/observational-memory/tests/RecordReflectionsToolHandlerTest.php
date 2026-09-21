@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\HatfieldExt\ObservationalMemory\Tests;
 
 use Ineersa\HatfieldExt\ObservationalMemory\Compaction\RecordReflectionsToolHandler;
+use Ineersa\HatfieldExt\ObservationalMemory\Compaction\RequestLocalObservationIdMap;
 use Ineersa\HatfieldExt\ObservationalMemory\Support\OmIdentity;
 use PHPUnit\Framework\TestCase;
 
@@ -20,14 +21,17 @@ final class RecordReflectionsToolHandlerTest extends TestCase
             runId: 'run-1',
             reflectorSchemaVersion: 'v1',
             existingReflectionIds: [$priorId => true],
-            allowedObservationIds: ['obs-a' => true, 'obs-b' => true],
+            observationIdMap: RequestLocalObservationIdMap::forObservations([
+                ['observation_id' => 'obs-a', 'timestamp' => '2026-01-01 00:00'],
+                ['observation_id' => 'obs-b', 'timestamp' => '2026-01-02 00:00'],
+            ]),
         );
 
         $first = $handler([
             'reflections' => [
                 [
                     'content' => 'New durable decision',
-                    'supporting_observation_ids' => ['obs-b', 'obs-a'],
+                    'supporting_observation_ids' => ['2', '1'],
                 ],
             ],
         ]);
@@ -39,11 +43,11 @@ final class RecordReflectionsToolHandlerTest extends TestCase
             'reflections' => [
                 [
                     'content' => 'New durable decision',
-                    'supporting_observation_ids' => ['obs-a', 'obs-b'],
+                    'supporting_observation_ids' => ['1', '2'],
                 ],
                 [
                     'content' => 'Second durable fact',
-                    'supporting_observation_ids' => ['obs-a'],
+                    'supporting_observation_ids' => ['1'],
                 ],
             ],
         ]);
@@ -56,7 +60,7 @@ final class RecordReflectionsToolHandlerTest extends TestCase
             'reflections' => [
                 [
                     'content' => 'Prior durable fact',
-                    'supporting_observation_ids' => ['obs-a'],
+                    'supporting_observation_ids' => ['1'],
                 ],
             ],
         ]);
@@ -71,7 +75,9 @@ final class RecordReflectionsToolHandlerTest extends TestCase
             runId: 'run-1',
             reflectorSchemaVersion: 'v1',
             existingReflectionIds: [],
-            allowedObservationIds: ['obs-a' => true],
+            observationIdMap: RequestLocalObservationIdMap::forObservations([
+                ['observation_id' => 'obs-a', 'timestamp' => '2026-01-01 00:00'],
+            ]),
         );
 
         $this->assertSame([], $handler->newReflections());
@@ -89,7 +95,7 @@ final class RecordReflectionsToolHandlerTest extends TestCase
             'reflections' => [
                 [
                     'content' => 'Fact',
-                    'supporting_observation_ids' => ['obs-a'],
+                    'supporting_observation_ids' => ['1'],
                     'retained_observation_ids' => ['obs-a'],
                 ],
             ],
@@ -104,12 +110,14 @@ final class RecordReflectionsToolHandlerTest extends TestCase
             runId: 'run-1',
             reflectorSchemaVersion: 'v1',
             existingReflectionIds: [],
-            allowedObservationIds: ['obs-a' => true],
+            observationIdMap: RequestLocalObservationIdMap::forObservations([
+                ['observation_id' => 'obs-a', 'timestamp' => '2026-01-01 00:00'],
+            ]),
         );
 
         $bad = $handler([
             'reflections' => [
-                ['content' => 'Fact', 'supporting_observation_ids' => ['missing']],
+                ['content' => 'Fact', 'supporting_observation_ids' => ['999']],
             ],
         ]);
         $this->assertSame(1, $bad['rejected']);
@@ -118,7 +126,7 @@ final class RecordReflectionsToolHandlerTest extends TestCase
         $jwt = $handler([
             'reflections' => [[
                 'content' => 'Service uses JWT tokens for API authentication',
-                'supporting_observation_ids' => ['obs-a'],
+                'supporting_observation_ids' => ['1'],
             ]],
         ]);
         $this->assertSame(1, $jwt['added']);
@@ -127,12 +135,14 @@ final class RecordReflectionsToolHandlerTest extends TestCase
             runId: 'run-1',
             reflectorSchemaVersion: 'v1',
             existingReflectionIds: [],
-            allowedObservationIds: ['obs-a' => true],
+            observationIdMap: RequestLocalObservationIdMap::forObservations([
+                ['observation_id' => 'obs-a', 'timestamp' => '2026-01-01 00:00'],
+            ]),
         );
         $secret = $handler2([
             'reflections' => [[
                 'content' => 'api_key=sk-live-should-not-be-stored',
-                'supporting_observation_ids' => ['obs-a'],
+                'supporting_observation_ids' => ['1'],
             ]],
         ]);
         $this->assertSame(1, $secret['rejected']);

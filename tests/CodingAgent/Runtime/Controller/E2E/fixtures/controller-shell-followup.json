@@ -1,0 +1,15 @@
+{
+  "$schema": "Synthetic controller replay — normal follow-up after completed shells",
+  "fixture_source": "synthetic",
+  "synthetic_reason": "One explicit LLM turn for the normal follow-up; any additional turn exhausts the replay queue.",
+  "model": "llama_cpp_test/test",
+  "provider_id": "llama_cpp_test",
+  "reasoning": "off",
+  "stop_reason": "stop",
+  "deltas": [
+    {
+      "type": "text",
+      "content": "follow-up after shells completed"
+    }
+  ]
+}

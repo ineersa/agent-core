@@ -150,7 +150,11 @@ abstract class ControllerE2eTestCase extends TestCase
      */
     protected function controllerSubprocessEnv(): array
     {
-        return [];
+        return [
+            // Isolate compiled container from concurrent Castor lanes that share
+            // the project .hatfield/cache/test root when HATFIELD_CACHE_DIR is unset.
+            'HATFIELD_CACHE_DIR' => $this->tempDir.'/.hatfield/cache',
+        ];
     }
 
     /**
@@ -543,6 +547,7 @@ abstract class ControllerE2eTestCase extends TestCase
     protected function collectDiagnostics(array $events): string
     {
         $this->drainStderr();
+        $this->refreshTrackedControllerPids();
 
         $chunks = [
             'Temp dir: '.$this->tempDir,
@@ -570,7 +575,7 @@ abstract class ControllerE2eTestCase extends TestCase
                 $rows = $db->query('SELECT count(*), queue_name FROM messenger_messages GROUP BY queue_name');
                 if (false !== $rows) {
                     foreach ($rows as $row) {
-                        $chunks[] = '  '.($row[0] ?? 0).' messages in '.escapeshellarg($row[1] ?? '?');
+                        $chunks[] = '  '.($row[0] ?? 0).' messages in queue '.($row[1] ?? '?');
                     }
                 }
             } catch (\Throwable $e) {
@@ -671,7 +676,7 @@ ai:
         llama_cpp_test:
             type: generic
             enabled: true
-            base_url: http://192.168.2.38:9052/v1
+            base_url: http://10.0.0.89:9052/v1
             api: openai-completions
             api_key: dummy
             completions_path: /chat/completions

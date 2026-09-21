@@ -61,6 +61,14 @@ Typical outcomes:
 
 Answers are correlated to the exact pending request — not “latest question wins” across unrelated ids.
 
+## Reading long prompts
+
+Choice, confirmation, and tool-approval overlays show a `Partial prompt` notice
+when the prompt exceeds the available rows. While the answer list has focus,
+press **Ctrl+Up** or **Ctrl+Down** to page through the prompt without changing
+the selected answer. The notice shows the visible row range. Ordinary arrow
+keys still select answers, and Enter submits the selection.
+
 ## Child agents / live view
 
 Child subagents may also request human input. In the parent TUI:
@@ -81,6 +89,22 @@ events are rediscovered from the snapshot on reopening; local bash-background
 Cancel returns the answer string `'Cancelled by user'`. Treat it as an abort signal:
 reformulate or continue without treating the question as answered, and do not
 immediately retry the same question. Do not invent answers in tool results.
+
+### Lifecycle cancellation (cancel / resume / relaunch / reload)
+
+Outstanding pending human questions are cancelled when the run is cancelled, when
+a follow-up / steer / append advances past WaitingHuman, and when a session
+attaches again (`/resume`, relaunch, reload). Attach cancel is durable: it writes
+the same cancel / terminal events as an Esc cancel so live state and event replay
+agree.
+
+- Same-turn multi-question queues remain FIFO until that lifecycle boundary.
+- Late `human_response` commands for cancelled or superseded question ids are
+  ignored (no model-history message). Malformed empty question ids still reject.
+- Deferred tool-call approvals (`pendingToolCalls === false` while WaitingHuman)
+  synthesize cancelled tool results on cancel so the run reaches Cancelled instead
+  of hanging in Cancelling with no worker.
+- Ordinary `context_refreshed` alone does not cancel pending questions.
 
 ## Related
 

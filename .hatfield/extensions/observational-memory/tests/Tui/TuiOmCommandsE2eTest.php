@@ -127,6 +127,7 @@ final class TuiOmCommandsE2eTest extends IsolatedKernelTestCase
 
             $this->saveAnsiSnapshot($pane, 'om-commands-smoke');
             $this->tmux->sendKey($pane, 'C-d');
+            $this->tmux->waitUntilPaneExits($pane);
         } catch (\Throwable $e) {
             $this->saveAnsiSnapshot($pane, 'om-commands-smoke-FAILURE');
             try {
@@ -197,6 +198,7 @@ final class TuiOmCommandsE2eTest extends IsolatedKernelTestCase
 
             $this->saveAnsiSnapshot($pane, 'om-background-status-once');
             $this->tmux->sendKey($pane, 'C-d');
+            $this->tmux->waitUntilPaneExits($pane);
         } catch (\Throwable $e) {
             $this->saveAnsiSnapshot($pane, 'om-background-status-once-FAILURE');
             try {
@@ -262,7 +264,7 @@ final class TuiOmCommandsE2eTest extends IsolatedKernelTestCase
                     'llama_cpp_test' => [
                         'type' => 'generic',
                         'enabled' => true,
-                        'base_url' => 'http://192.168.2.38:9052/v1',
+                        'base_url' => 'http://10.0.0.89:9052/v1',
                         'api' => 'openai-completions',
                         'api_key' => 'dummy',
                         'completions_path' => '/chat/completions',

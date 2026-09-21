@@ -4,17 +4,14 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool;
 
-use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Agent\Artifact\AgentRetrieveArgumentsDTO;
-use Ineersa\CodingAgent\Config\ImageToolConfig;
 use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\CodingAgent\Extension\ExtensionToolHookEventSubscriber;
 use Ineersa\CodingAgent\Tool\Arguments\ViewImageArgumentsDTO;
 use Ineersa\CodingAgent\Tool\RawAwareToolCallArgumentResolver;
 use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
-use Ineersa\CodingAgent\Tool\Validation\ViewImage\ViewImageTargetValidator;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallRewriteHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultContextDTO;
@@ -29,7 +26,6 @@ use Symfony\AI\Agent\Toolbox\Event\ToolCallSucceeded;
 use Symfony\AI\Agent\Toolbox\EventListener\ValidateToolCallArgumentsListener;
 use Symfony\AI\Agent\Toolbox\Exception\ToolNotFoundException;
 use Symfony\AI\Agent\Toolbox\FaultTolerantToolbox;
-use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver;
 use Symfony\AI\Agent\Toolbox\ToolResult;
 use Symfony\AI\Platform\Result\ToolCall;
@@ -45,7 +41,6 @@ use Symfony\Component\Serializer\Normalizer\BackedEnumNormalizer;
 use Symfony\Component\Serializer\Normalizer\DateTimeNormalizer;
 use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
 use Symfony\Component\Serializer\Serializer;
-use Symfony\Component\Validator\ConstraintValidatorFactory;
 use Symfony\Component\Validator\ValidatorBuilder;
 
 /**
@@ -60,16 +55,6 @@ use Symfony\Component\Validator\ValidatorBuilder;
  */
 final class RegistryBackedToolboxTest extends TestCase
 {
-    /* ───────── ToolboxInterface contract ───────── */
-
-    public function testImplementsToolboxInterface(): void
-    {
-        $registry = new ToolRegistry();
-        $toolbox = $this->createToolbox($registry);
-
-        $this->assertInstanceOf(ToolboxInterface::class, $toolbox);
-    }
-
     /* ───────── getTools() ───────── */
 
     public function testGetToolsReturnsEmptyForEmptyRegistry(): void
@@ -649,12 +634,6 @@ final class RegistryBackedToolboxTest extends TestCase
         // (config/services.yaml) with the container validator; mirror both here.
         $validator = (new ValidatorBuilder())
             ->enableAttributeMapping()
-            ->setConstraintValidatorFactory(new ConstraintValidatorFactory([
-                ViewImageTargetValidator::class => new ViewImageTargetValidator(
-                    new ImageToolConfig(),
-                    new StackToolExecutionContextAccessor(),
-                ),
-            ]))
             ->getValidator();
 
         $dispatcher = new EventDispatcher();
@@ -686,16 +665,9 @@ final class RegistryBackedToolboxTest extends TestCase
 
         // Production wires ValidateToolCallArgumentsListener on the app dispatcher
         // (config/services.yaml) with the container validator (service-aware
-        // constraint validator factory); mirror both here so the class-level
-        // ViewImageTarget constraint resolves its autowired validator.
+        // constraint validator factory); mirror both here.
         $validator = (new ValidatorBuilder())
             ->enableAttributeMapping()
-            ->setConstraintValidatorFactory(new ConstraintValidatorFactory([
-                ViewImageTargetValidator::class => new ViewImageTargetValidator(
-                    new ImageToolConfig(),
-                    new StackToolExecutionContextAccessor(),
-                ),
-            ]))
             ->getValidator();
 
         $dispatcher = new EventDispatcher();
@@ -1101,12 +1073,6 @@ final class RegistryBackedToolboxTest extends TestCase
 
         $validator = (new ValidatorBuilder())
             ->enableAttributeMapping()
-            ->setConstraintValidatorFactory(new ConstraintValidatorFactory([
-                ViewImageTargetValidator::class => new ViewImageTargetValidator(
-                    new ImageToolConfig(),
-                    new StackToolExecutionContextAccessor(),
-                ),
-            ]))
             ->getValidator();
 
         $dispatcher = new EventDispatcher();

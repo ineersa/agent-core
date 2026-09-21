@@ -225,22 +225,6 @@ class AppConfigTest extends TestCase
     //  tui.transcript config hydration
     // ──────────────────────────────────────────────
 
-    public function testTranscriptConfigDefaults(): void
-    {
-        $config = $this->buildConfig();
-
-        // theme_paths uses #[SerializedName('theme_paths')]; this assertion
-        // proves the test serializer correctly reads SerializedName attributes.
-        $this->assertSame(['/app/config/themes'], $config->tui->themePaths);
-
-        $transcript = $config->tui->transcript;
-        $this->assertTrue($transcript->thinking->visible);
-        $this->assertSame('dim_italic', $transcript->thinking->style);
-        $this->assertFalse($transcript->previews->expandedByDefault);
-        $this->assertSame(8, $transcript->previews->toolResultLines);
-        $this->assertSame(20, $transcript->previews->diffLines);
-    }
-
     public function testTranscriptConfigHydratesFromYaml(): void
     {
         $this->writeDefaults([
@@ -300,18 +284,6 @@ class AppConfigTest extends TestCase
     // the documented defaults. Detailed per-field failure cases live in
     // PromptsConfigTest / AgentsConfigTest.
 
-    public function testTargetSectionsDefaultWhenOmitted(): void
-    {
-        $config = $this->buildConfig();
-
-        $this->assertSame([], $config->prompts->paths);
-        $this->assertTrue($config->agents->enabled);
-        $this->assertSame(4, $config->agents->maxAgents);
-        $this->assertSame([], $config->agents->paths);
-        $this->assertNull($config->forks->model);
-        $this->assertNull($config->forks->thinkingLevel);
-    }
-
     public function testTargetSectionsHydrateValidValues(): void
     {
         $this->defaultsWith([
@@ -320,7 +292,7 @@ class AppConfigTest extends TestCase
                 'enabled' => false,
                 'max_agents' => 6,
                 'paths' => ['custom'],
-                'subagent_excluded_tools' => ['settings'],
+                'subagent_excluded_tools' => ['bash'],
             ],
             'forks' => ['model' => 'deepseek/deepseek-v4-pro', 'thinking_level' => 'high'],
         ]);
@@ -333,28 +305,9 @@ class AppConfigTest extends TestCase
         $this->assertSame(6, $config->agents->maxAgents);
         $this->assertCount(1, $config->agents->paths);
         $this->assertStringEndsWith('custom', $config->agents->paths[0]);
-        $this->assertSame(['settings'], $config->agents->subagentExcludedTools);
+        $this->assertSame(['bash'], $config->agents->subagentExcludedTools);
         $this->assertSame('deepseek/deepseek-v4-pro', $config->forks->model);
         $this->assertSame('high', $config->forks->thinkingLevel);
-    }
-
-    public function testEmptySectionArraysRemainValidDefaults(): void
-    {
-        // Empty YAML mapping and empty list both decode to []; shape is
-        // indistinguishable, so empty [] stays a valid empty/default section.
-        $this->defaultsWith([
-            'prompts' => [],
-            'agents' => ['paths' => []],
-            'forks' => [],
-        ]);
-
-        $config = $this->buildConfig();
-
-        $this->assertSame([], $config->prompts->paths);
-        $this->assertTrue($config->agents->enabled);
-        $this->assertSame([], $config->agents->paths);
-        $this->assertNull($config->forks->model);
-        $this->assertNull($config->forks->thinkingLevel);
     }
 
     public function testForksNullAndBlankUnsetValuesLoadAsNull(): void

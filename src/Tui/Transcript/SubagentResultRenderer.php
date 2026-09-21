@@ -132,7 +132,6 @@ final readonly class SubagentResultRenderer
         $preview = $this->linePreviewService->apply(
             $lines,
             $this->displayConfig->toolResultPreviewLines,
-            fullRender: false,
             displayState: $this->displayState,
         );
 

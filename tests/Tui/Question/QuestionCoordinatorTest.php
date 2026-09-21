@@ -42,15 +42,6 @@ final class QuestionCoordinatorTest extends TestCase
         $this->assertSame($r1, $coordinator->activeRequest());
     }
 
-    public function testActionRequiredFalseInitially(): void
-    {
-        $coordinator = new QuestionCoordinator();
-
-        $this->assertFalse($coordinator->actionRequired());
-        $this->assertNull($coordinator->activeRequest());
-        $this->assertNull($coordinator->activeRequest());
-    }
-
     // ─── Answer / advance ──────────────────────────────────────────────
 
     public function testAnswerResolvesActiveAndAdvancesToNext(): void
@@ -363,22 +354,6 @@ final class QuestionCoordinatorTest extends TestCase
     }
 
     // ─── Status tracking ───────────────────────────────────────────────
-
-    public function testActiveStatusIsNullWhenEmpty(): void
-    {
-        $coordinator = new QuestionCoordinator();
-        $this->assertNull($coordinator->activeRequest());
-    }
-
-    public function testActiveStatusAfterAnswerLastRequest(): void
-    {
-        $coordinator = new QuestionCoordinator();
-        $coordinator->enqueue($this->tuiRequest('r1'));
-
-        $coordinator->answer('ok');
-
-        $this->assertNull($coordinator->activeRequest());
-    }
 
     // ─── Answer with no active is no-op ────────────────────────────────
 

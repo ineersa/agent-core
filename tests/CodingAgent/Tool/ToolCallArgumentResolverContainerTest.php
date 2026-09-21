@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool;
 
+use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Agent\Artifact\AgentRetrieveArgumentsDTO;
 use Ineersa\CodingAgent\Agent\Execution\SubagentArgumentsDTO;
 use Ineersa\CodingAgent\Agent\Execution\SubagentTaskDTO;
@@ -158,8 +159,8 @@ final class ToolCallArgumentResolverContainerTest extends IsolatedKernelTestCase
     public function testContainerValidatorEnforcesReadFileTargetClassConstraint(): void
     {
         // Production wiring proof: the app container validator resolves the
-        // autowired ReadFileTargetValidator/EditFileTargetValidator/
-        // ViewImageTargetValidator through the service-aware constraint
+        // autowired ReadFileTargetValidator/EditFileTargetValidator through
+        // the service-aware constraint
         // validator factory, and the real listener turns violations into
         // deterministic fault results.
         $toolbox = new FaultTolerantToolbox(self::getContainer()->get(ToolboxInterface::class));
@@ -171,14 +172,16 @@ final class ToolCallArgumentResolverContainerTest extends IsolatedKernelTestCase
         $this->assertStringContainsString('Check the file path and try again.', $message);
     }
 
-    public function testContainerValidatorEnforcesViewImageTargetClassConstraint(): void
+    public function testContainerViewImageMissingTargetFailsInHandler(): void
     {
-        $toolbox = new FaultTolerantToolbox(self::getContainer()->get(ToolboxInterface::class));
+        $toolbox = self::getContainer()->get(ToolboxInterface::class);
 
-        $result = $toolbox->execute(new ToolCall('call-view-missing', 'view_image', ['path' => '/definitely/not/here.png']));
-
-        $message = (string) $result->getResult();
-        $this->assertStringContainsString('does not exist or is not readable', $message);
+        try {
+            $toolbox->execute(new ToolCall('call-view-missing', 'view_image', ['path' => '/definitely/not/here.png']));
+            $this->fail('Expected ToolCallException');
+        } catch (ToolCallException $e) {
+            $this->assertStringContainsString('does not exist or is not readable', $e->getMessage());
+        }
     }
 
     /**

@@ -94,14 +94,6 @@ final class PromptTemplateSubstitutorTest extends TestCase
         $this->assertSame('x y $arguments $Arguments', $result);
     }
 
-    public function testAtCaseSensitivity(): void
-    {
-        // $@ replaces, $@s (non-placeholder) should not be affected unless it matches $@ exactly
-        // $@ is matched exactly as a string
-        $result = $this->substitutor->substitute('$@', ['a', 'b']);
-        $this->assertSame('a b', $result);
-    }
-
     public function testAtInBracesIsNotSliceSyntax(): void
     {
         // ${@} without a colon and digit is NOT slice syntax.

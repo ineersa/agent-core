@@ -13,12 +13,6 @@ use PHPUnit\Framework\TestCase;
 
 final class PromptsConfigTest extends TestCase
 {
-    public function testDefaultIsEmpty(): void
-    {
-        $config = new PromptsConfig();
-        $this->assertSame([], $config->paths);
-    }
-
     public function testFromRawWithNullFails(): void
     {
         $this->expectException(\InvalidArgumentException::class);

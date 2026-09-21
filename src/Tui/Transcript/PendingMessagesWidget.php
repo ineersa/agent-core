@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Transcript;
 
 use Ineersa\Tui\Theme\TuiTheme;
+use Symfony\Component\Tui\Ansi\AnsiUtils;
 use Symfony\Component\Tui\Ansi\TextWrapper;
 use Symfony\Component\Tui\Render\RenderContext;
 use Symfony\Component\Tui\Widget\AbstractWidget;
@@ -53,7 +54,8 @@ final class PendingMessagesWidget extends AbstractWidget
 
         $lines = [];
         foreach ($this->messages as $msg) {
-            $lines[] = $this->theme->muted(\sprintf('%s %s', TranscriptGlyphs::GLYPH_PROGRESS, $msg));
+            $normalized = str_replace("\t", str_repeat(' ', AnsiUtils::TAB_WIDTH), $msg);
+            $lines[] = $this->theme->muted(\sprintf('%s %s', TranscriptGlyphs::GLYPH_PROGRESS, $normalized));
         }
 
         return TextWrapper::wrapTextWithAnsi(implode("\n", $lines), $context->getColumns());

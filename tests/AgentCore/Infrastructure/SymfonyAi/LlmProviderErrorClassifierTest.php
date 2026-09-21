@@ -31,7 +31,7 @@ final class LlmProviderErrorClassifierTest extends TestCase
 
         $this->assertFalse($result['retryable']);
         $this->assertSame($category, $result['error_category']);
-        $this->assertStringNotContainsString('arbitrary provider prose', $result['user_message']);
+        $this->assertSame('arbitrary provider prose', $result['user_message']);
     }
 
     public static function permanentExceptionProvider(): array
@@ -140,7 +140,7 @@ final class LlmProviderErrorClassifierTest extends TestCase
 
         $this->assertTrue($result['retryable']);
         $this->assertSame(LlmProviderErrorClassifier::CATEGORY_TIMEOUT, $result['error_category']);
-        $this->assertSame('LLM provider request timed out.', $result['user_message']);
+        $this->assertSame('Codex WebSocket idle timeout.', $result['user_message']);
         $this->assertSame('Codex WebSocket idle timeout.', $result['message']);
     }
 
@@ -153,7 +153,21 @@ final class LlmProviderErrorClassifierTest extends TestCase
 
         $this->assertTrue($result['retryable']);
         $this->assertSame(LlmProviderErrorClassifier::CATEGORY_PROVIDER, $result['error_category']);
-        $this->assertSame('LLM provider request failed.', $result['user_message']);
+        $this->assertSame('[server_error/server_error] overloaded please try again', $result['user_message']);
+    }
+
+    public function testDisplayedDiagnosticIsBoundedAndRedacted(): void
+    {
+        $result = $this->classifier->classify([
+            'http_status_code' => 402,
+            'message' => "\x1b[31mGrok Build usage balance exhausted token=private-value ".str_repeat('x', 600),
+        ]);
+
+        $this->assertStringContainsString('HTTP 402:', $result['user_message']);
+        $this->assertStringContainsString('Grok Build usage balance exhausted', $result['user_message']);
+        $this->assertStringNotContainsString('private-value', $result['user_message']);
+        $this->assertStringNotContainsString("\x1b", $result['user_message']);
+        $this->assertLessThanOrEqual(510, mb_strlen($result['user_message']));
     }
 
     public function testClassifierPreservesStructuredDiagnosticsAndStripsFreeTextHelpers(): void

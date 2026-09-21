@@ -542,6 +542,25 @@ class ReasoningOptionsResolverTest extends TestCase
         $this->assertSame([], $resolver->resolve($this->modelRef('llama_cpp', 'flash'), 'xhigh'));
     }
 
+    public function testLlamaCppThinkingFormatOffStillReturnsEmptyFromSharedResolver(): void
+    {
+        // Shared ReasoningOptionsResolver must not invent llama.cpp disable options for
+        // session/default off. Explicit Dropper off is handled by ConfiguredModelAgentRunner.
+        $provider = $this->provider(
+            'llama_cpp',
+            $this->model([
+                'id' => 'flash',
+                'reasoning' => true,
+                'thinkingLevelMap' => [],
+            ]),
+            new AiCompatibility(thinkingFormat: 'llama_cpp'),
+        );
+
+        $resolver = $this->resolverForProviders(['llama_cpp' => $provider]);
+
+        $this->assertSame([], $resolver->resolve($this->modelRef('llama_cpp', 'flash'), 'off'));
+    }
+
     // ── Case insensitivity ────────────────────────────────────────────────
 
     public function testLevelIsCaseInsensitive(): void

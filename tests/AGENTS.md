@@ -39,7 +39,7 @@ Bad tests are worse than missing tests. Prefer deletion/demotion over keeping a 
 
 ### Demotion / deletion evidence
 
-When deleting or demoting an E2E/live case, record a short proof mapping (test or PR/task note): what lower-layer test(s) retain the contract. Reviewers MUST reject demotions with no mapping.
+For every deletion or demotion, record the behavior being removed and the exact remaining test method that protects it. If no test remains, explain why the behavior is not a requirement or record explicit approval for the coverage loss. This applies to unit cases and data-provider rows as well as E2E and live cases. Reviewers MUST reject unsupported equivalence claims. "Trivial", "uses mocks", and "already covered" are not sufficient reasons.
 
 ## Shared infrastructure (do not duplicate)
 
@@ -105,7 +105,7 @@ For tool-focused LLM smoke: assert intended `tool_name`, matching `tool_call_id`
 
 1. **Virtual / in-process** (`tests/Tui/Screen/`, `VirtualTuiHarness`): layout, editor input, local slash commands, render on `ScreenBuffer`. Run: `castor test`.
 2. **Controller replay** (`ControllerReplayE2eTestCase`): runtime protocol, events, shell/tool ordering. Run: `castor test:controller-replay`.
-3. **Minimal tmux smoke** (`#[Group('tui-e2e-replay')]`, `castor test:tui`): real TTY/tmux/process boot only. `TuiJourneyE2eTest` is narrow integration smoke — not a template for every feature.
+3. **Minimal tmux smoke** (`#[Group('tui-e2e-replay')]`, `castor test:tui`): real TTY/tmux/process boot only. Keep each journey limited to a unique terminal or packaged-artifact contract.
 
 When tmux is required: `startDetached()`, isolated project dir, `sendLiteral`/`sendKey`, short targeted waits (`waitForCaptureContains` / `waitForCallback`), `saveAnsiSnapshot()` for artifacts. Avoid broad 30–60s caps and fixed `usleep()` unless delay is the behavior under test.
 
@@ -113,16 +113,49 @@ Use `TuiE2eDatabaseEnv` for paired app + Messenger transport DB isolation. Prefe
 
 TUI work is incomplete without automated proof at the lowest correct layer. Service-only DTO tests, custom smoke scripts, or picker/footer-only checks are not sole proof. Root `AGENTS.md` + testing skill own `castor check` triggers and live-vs-replay policy.
 
-## What NOT to test
+## Test value and fault detection
 
-Do not write tests that only:
+Before adding, retaining, rewriting, or deleting a test, answer this question:
 
-- Verify PHP intrinsics (enum `from()`/`value` round-trip)
-- Verify trivial getter/setter pairs
-- Verify class/method existence
-- Exhaustively enumerate enum cases in dedicated cases
+> What plausible incorrect change would make this test fail, and why would that change matter?
 
-One representative behavior test is enough. Also do **not** keep: soft/conditional live proofs, timing-window races, duplicate tmux journeys of virtual coverage, or prose-only LLM assertions (see Hard quality standards).
+Executing production lines is not sufficient evidence of value. Identify the observable contract and the assertion that detects its violation. Use independently specified examples or invariants, not the production algorithm as the expected result.
+
+### Review signals
+
+The following are review signals, not automatic deletion rules:
+
+| Signal | What to inspect |
+|---|---|
+| Tests its own setup | The test stubs the behavior under test, then asserts the configured return. No meaningful production behavior executes. |
+| Checks trivial mechanics | Getter, setter, constructor assignment, class-existence, or enum-case checks lack an invariant, compatibility contract, or relevant regression. |
+| Locks down implementation details | Private methods, internal collection layouts, or helper call order are required despite equivalent observable behavior. |
+| Copies the implementation as its oracle | The expected result repeats the production algorithm or uses the same production helper. |
+| Misses the claimed behavior | A resume test checks only `assertNotNull()`, or a configuration-save test checks only exit code zero. The claimed operation could break without failing the test. |
+| Repeats coverage without a distinct risk | Equivalent inputs assert the same outcome without a boundary, different integration path, or useful diagnostic value. Shared line coverage alone does not establish duplication. |
+| Re-tests framework primitives | A hand-built dummy container proves lookup, rather than exercising Hatfield's configured services. |
+| Freezes incidental output | A whole prompt, debug message, or snapshot is asserted when only a smaller contract matters. |
+| Exercises artificial impossibilities | Reflection manufactures a state that no supported input, persisted data, lifecycle transition, or dependency failure can produce. |
+
+Audit data-provider rows and overlapping layers against these signals. A different input or executed branch alone does not establish a distinct risk. Do not hide cases in loops, merge unrelated scenarios into giant tests, or change discovery to meet a reduction target.
+
+### Preserve meaningful contracts
+
+- Small tests can protect persisted enum values, protocol fields, security-sensitive defaults, and known regressions. Do not delete them merely because they are small.
+- Exact snapshots are appropriate when rendered output or serialization is the contract. Incidental wording is different from a specified format.
+- Mocks can verify meaningful arguments, invocation counts, or that a denied operation never executes. Mock usage alone is not a deletion reason.
+- Tests of Hatfield's actual container, serializer configuration, or validation policy protect application integration. Do not confuse them with tests of framework primitives.
+- Flakiness or expense does not establish that the protected behavior is useless. Repair, isolate, or move the proof to the lowest correct layer. If it still violates the hard quality standards, delete it with the required coverage-loss evidence rather than keep a bad test.
+
+### Match claims to the mechanism exercised
+
+- A mocked `Process::stop()` expectation proves a cancellation request, not that real descendants terminate.
+- A mocked repository can prove orchestration, not SQLite locking, transactions, or persistence across restart.
+- Manually invoking a keepalive callback proves callback behavior, not signal delivery or worker lifecycle.
+
+Retain useful narrow tests, but name their actual scope. They cannot replace integration proof of a mechanism they do not execute.
+
+Delete tests with no meaningful contract. Consolidate demonstrated duplicates. Rewrite important tests whose assertions miss their contract. Keep meaningful regression, safety, lifecycle, and integration coverage. Apply the deletion-evidence requirement above to every proposed cut.
 
 ## One test class per production class
 

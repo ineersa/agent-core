@@ -32,12 +32,6 @@ final class TmuxHarness
     public const float TUI_STARTUP_LOGO_TIMEOUT_PARALLEL = 20.0;
 
     /**
-     * Generic transcript/marker/shell-output waits when test:tui runs under
-     * full parallel castor check load (unit + controller-replay + llm-real).
-     */
-    public const float TUI_GATE_CALLBACK_TIMEOUT_PARALLEL = 20.0;
-
-    /**
      * Per-call deadline for fast interactive tmux control commands
      * (capture, send-key, display-message, etc.). Generous enough
      * to never flake on a healthy system.
@@ -230,22 +224,6 @@ final class TmuxHarness
     {
         return $this->runTmux(
             \sprintf('tmux capture-pane -p -e -t %s 2>&1', escapeshellarg($pane->paneId)),
-            self::TMUX_CMD_TIMEOUT,
-            throwOnTimeout: false,
-        );
-    }
-
-    /**
-     * Capture pane scrollback with ANSI escape codes preserved.
-     */
-    public function captureAnsiWithHistory(TmuxPane $pane, int $lines = 1000): string
-    {
-        return $this->runTmux(
-            \sprintf(
-                'tmux capture-pane -p -e -S -%d -E - -t %s 2>&1',
-                $lines,
-                escapeshellarg($pane->paneId),
-            ),
             self::TMUX_CMD_TIMEOUT,
             throwOnTimeout: false,
         );
@@ -516,9 +494,11 @@ final class TmuxHarness
      */
     private function awaitOwnedSessionShutdownOrFail(string $session): void
     {
+        // Each owned session has one pane. Resolve it through the session rather
+        // than assuming window/pane indexes: both tmux base indexes are configurable.
         $panePidRaw = $this->runTmux(
             \sprintf(
-                'tmux display-message -p -t %s:0.0 "#{pane_pid}" 2>/dev/null',
+                'tmux display-message -p -t %s "#{pane_pid}" 2>/dev/null',
                 escapeshellarg($session),
             ),
             2.0,
@@ -526,7 +506,13 @@ final class TmuxHarness
         );
         $panePid = (int) trim($panePidRaw);
         if ($panePid <= 1) {
-            $this->destroyEmptyTmuxSession($session);
+            $exists = $this->runTmux(\sprintf(
+                'tmux has-session -t %s 2>/dev/null && printf exists',
+                escapeshellarg($session),
+            ));
+            if ('' !== $exists) {
+                throw new \RuntimeException(\sprintf('Cannot determine pane PID for owned tmux session %s; refusing to destroy it.', $session));
+            }
 
             return;
         }
@@ -544,9 +530,7 @@ final class TmuxHarness
         $deadline = microtime(true) + 2.0;
         while (microtime(true) < $deadline) {
             $alive = $this->ownedPaneProcessSnapshot($panePid);
-            if ([] === $alive) {
-                $this->destroyEmptyTmuxSession($session);
-
+            if ([] === $alive && $this->releaseExitedTmuxSession($session)) {
                 return;
             }
 
@@ -554,9 +538,7 @@ final class TmuxHarness
         }
 
         $alive = $this->ownedPaneProcessSnapshot($panePid);
-        if ([] === $alive) {
-            $this->destroyEmptyTmuxSession($session);
-
+        if ([] === $alive && $this->releaseExitedTmuxSession($session)) {
             return;
         }
 
@@ -573,7 +555,31 @@ final class TmuxHarness
             throw new \RuntimeException($this->formatProtectedTeardownLeak($session, $panePid, $protected));
         }
 
-        throw new \RuntimeException(\sprintf('Owned tmux session %s still has untagged pane processes after product shutdown wait (pane_pid=%d, leftovers=%s). Harness refuses force signals and kill-session while the tree is alive; fix product exit ownership or the test shutdown protocol.', $session, $panePid, implode(',', $untagged)));
+        throw new \RuntimeException(\sprintf('Owned tmux session %s still has live panes or pane processes after product shutdown wait (pane_pid=%d, local_untagged_leftovers=%s). Harness refuses force signals and kill-session while the tree is alive; fix product exit ownership or the test shutdown protocol.', $session, $panePid, implode(',', $untagged)));
+    }
+
+    private function releaseExitedTmuxSession(string $session): bool
+    {
+        // A shared tmux server can live outside our PID namespace. Its live
+        // pane PIDs then look absent in /proc and to posix_kill(pid, 0).
+        // Only tmux can confirm those panes have exited; local absence alone
+        // must never authorize kill-session (which would send SIGHUP).
+        $states = $this->runTmux(\sprintf(
+            'tmux list-panes -t %s -F "#{pane_dead}" 2>/dev/null',
+            escapeshellarg($session),
+        ));
+        if ('' === $states) {
+            // Already gone, or lookup failed. Neither permits kill-session.
+            return true;
+        }
+        foreach (explode("\n", $states) as $state) {
+            if ('1' !== $state) {
+                return false;
+            }
+        }
+        $this->destroyEmptyTmuxSession($session);
+
+        return true;
     }
 
     private function destroyEmptyTmuxSession(string $session): void

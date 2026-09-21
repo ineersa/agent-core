@@ -139,13 +139,17 @@ final class TickPollListener implements TuiListenerRegistrar
                 $state->pendingEditorPromptText = null;
             }
 
-            // The pending-queue widget (slot 4, above the editor) reflects transient
-            // queued steer/follow-up messages. Sync every tick regardless of transcript
-            // changes, since a user.message_queued event mutates state without a block.
+            // The pending-queue widget (slot 4, above the editor) reflects canonical
+            // queued messages plus a follow-up held locally while compaction finishes.
+            // Sync every tick because neither source produces a transcript block.
             if ($liveActive) {
                 $screen->syncQueuedUserMessages($state->subagentLiveView->childQueuedUserMessages);
             } else {
-                $screen->syncQueuedUserMessages($state->queuedUserMessages);
+                $queuedMessages = $state->queuedUserMessages;
+                if (RunActivityStateEnum::Compacting === $state->activity && null !== $state->queuedFollowUp) {
+                    $queuedMessages[] = $state->queuedFollowUp;
+                }
+                $screen->syncQueuedUserMessages($queuedMessages);
             }
 
             // Open the question overlay whenever the coordinator has an

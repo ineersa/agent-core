@@ -29,7 +29,7 @@ final class TranscriptToolPresentationPolicyTest extends TestCase
     }
 
     #[Test]
-    public function fullRenderCandidateBeatsLongerNonErrorCandidate(): void
+    public function failedCandidateBeatsLongerNonErrorCandidate(): void
     {
         $call = $this->callBlock('c1', 'edit', seq: 1);
         $errorCandidate = $this->resultBlock('r-err', 'c1', seq: 2, meta: ['tool_name' => 'edit', 'is_error' => true, 'result' => 'boom']);
@@ -42,7 +42,7 @@ final class TranscriptToolPresentationPolicyTest extends TestCase
             [],
         );
 
-        $this->assertSame('r-err', $selected?->id, 'is_error full-render bonus (+1000) must dominate body length');
+        $this->assertSame('r-err', $selected?->id, 'is_error failure bonus (+1000) must dominate body length');
     }
 
     #[Test]
@@ -158,7 +158,7 @@ final class TranscriptToolPresentationPolicyTest extends TestCase
     }
 
     #[Test]
-    public function askHumanResultIsSuppressedOnlyWhenNotFullRender(): void
+    public function askHumanResultIsSuppressedOnlyWhenSuccessful(): void
     {
         $suppressed = $this->resultBlock('r-ask', 'ah1', seq: 2, meta: ['tool_name' => 'ask_human', 'result' => '{"kind":"interrupt"}']);
         $this->assertTrue($this->policy->isTranscriptWidgetSuppressed($suppressed), 'non-error ask_human result must be hidden (Question is authoritative)');

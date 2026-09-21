@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Screen;
 
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingleSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
@@ -49,6 +50,90 @@ use Symfony\Component\Tui\Widget\TextWidget;
 final class TuiMountedTranscriptVirtualTest extends TestCase
 {
     private const string SESSION_ID = 'virtual-mounted-transcript';
+
+    public function testCompletedSubagentCardAndHandoffRenderInMountedTranscript(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID, columns: 120, rows: 60);
+        $harness->screen()->setTranscriptBlocks([
+            new TranscriptBlock(
+                id: 'subagent-mounted',
+                kind: TranscriptBlockKindEnum::ToolResult,
+                runId: self::SESSION_ID,
+                seq: 1,
+                text: "# Handoff\n\nMounted handoff finding.\n\n".implode("\n", array_map(
+                    static fn (int $line): string => '- handoff detail '.$line,
+                    range(1, 12),
+                )),
+                meta: [
+                    'tool_name' => 'subagent',
+                    'subagent_progress' => new SubagentProgressSingleSnapshotDTO(
+                        mode: 'single',
+                        status: 'completed',
+                        agentName: 'scout',
+                        artifactId: 'agent_virtual_mounted',
+                        agentRunId: 'child-run-mounted',
+                        taskSummary: 'Inspect mounted transcript rendering',
+                        model: 'deepseek/deepseek-v4-flash',
+                        reasoning: 'medium',
+                        llmStepCount: 3,
+                        artifactPath: 'artifacts/agents/agent_virtual_mounted',
+                    ),
+                ],
+            ),
+        ]);
+        $harness->screen()->setWorkingVisible(false);
+
+        $plain = $harness->plainScreenText();
+        $ansi = $harness->ansiOutput();
+        $this->assertStringContainsString('✓ scout [completed]', $plain);
+        $this->assertStringContainsString('Task Inspect mounted transcript rendering', $plain);
+        $this->assertStringContainsString('Artifact artifacts/agents/agent_virtual_mounted', $plain);
+        $this->assertStringContainsString('3 LLM steps', $plain);
+        $this->assertStringContainsString('Handoff', $plain);
+        $this->assertStringContainsString('Mounted handoff finding.', $plain);
+        $this->assertStringContainsString('more line', $plain);
+        $this->assertStringNotContainsString('handoff detail 12', $plain);
+        $this->assertMatchesRegularExpression('/\x1b\[3m(?:\x1b\[[0-9;]*m)*… \d+ more lines?/', $ansi);
+    }
+
+    public function testExhaustedProviderErrorReachesRenderedTranscript(): void
+    {
+        $logger = new \Ineersa\AgentCore\Tests\Support\TestLogger();
+        $executor = new \Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryExecutor(
+            policy: new \Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy(maxRetries: 1, baseDelayMs: 0),
+            clock: new MockClock(),
+            logger: $logger,
+        );
+        $result = $executor->execute(
+            invoke: static fn () => new \Ineersa\AgentCore\Domain\Model\PlatformInvocationResult(
+                assistantMessage: null,
+                error: (new \Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier())->classify([
+                    'message' => 'Unexpected response code 402: {"error":"Grok Build usage balance exhausted"}',
+                    'http_status_code' => 402,
+                ]),
+            ),
+            isCancelled: static fn (): bool => false,
+            runId: self::SESSION_ID,
+            stepId: 'grok-failure',
+        );
+        $this->assertFalse($result->error['retryable']);
+        $this->assertTrue($result->error['retry_exhausted']);
+        $this->assertStringContainsString('Grok Build usage balance exhausted', $logger->records[0]['context']['reason']);
+
+        $tui = new Tui(terminal: new VirtualTerminal(columns: 160, rows: 20));
+        $transcript = new TranscriptMountedWidget(theme: new DefaultTheme(new ThemePalette('errors', [])));
+        $tui->add($transcript);
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addSubscriber(new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\RunLifecycleProjectionSubscriber());
+        $projector = new TranscriptProjector($dispatcher, new TranscriptProjectionState());
+        $projector->accept(new RuntimeEvent('run.failed', self::SESSION_ID, 1, ['error' => $result->error['user_message']]));
+        $transcript->applyChangeSet($projector->drainChanges());
+        $rendered = AnsiUtils::stripAnsiCodes(implode("\n", $transcript->getContext()->renderWidget($transcript, new RenderContext(160, 20))));
+
+        $this->assertStringContainsString('HTTP 402', $rendered);
+        $this->assertStringContainsString('Grok Build usage balance exhausted', $rendered);
+        $this->assertStringContainsString('after retries were exhausted', $rendered);
+    }
 
     #[Test]
     public function testToolTimersTickIndependentlyAndFreezeAcrossReplay(): void

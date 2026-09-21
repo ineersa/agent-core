@@ -127,7 +127,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         $resolvedModel = null !== $this->modelResolver
             ? $this->modelResolver->resolve(
                 defaultModel: $request->model,
-                messages: $this->messageConverter->toMessageBag($messages),
+                hasConversationMessages: $this->hasConversationMessages($messages),
                 input: $request->input,
                 options: new ModelResolutionOptions($request->options->extraOptions),
             )
@@ -156,6 +156,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         // Provider transport can fail synchronously during invoke (e.g. Codex WS
         // send_failure before asStream()). Classify here so bounded LLM retry sees
         // a retryable PlatformInvocationResult instead of a generic worker exception.
+        LlmInvocationCancelScope::enter($cancelToken);
         try {
             $platform = new PreparedInvocationPlatform(
                 $this->platform,
@@ -164,36 +165,55 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
                 $request->input,
                 $cancelToken,
             );
-            $deferredResult = $platform->invoke(
-                $input->getModel(),
-                $input->getMessageBag(),
-                array_replace($inputOptions, ['stream' => true]),
-            );
-        } catch (\Throwable $exception) {
-            return $this->errorResult(
-                deltas: [],
-                exception: $exception,
-                deferredResult: null,
-                modelName: $effectiveModel,
-                requestSummary: $requestSummary,
-                modelNotifications: $modelNotifications,
-                availableTools: $availableToolsSnapshot['tools'],
-                availableToolsSchemaTokensEstimate: $availableToolsSnapshot['schema_tokens_estimate'],
-            );
-        }
+            try {
+                $deferredResult = $platform->invoke(
+                    $input->getModel(),
+                    $input->getMessageBag(),
+                    array_replace($inputOptions, ['stream' => true]),
+                );
+            } catch (\Throwable $exception) {
+                if ($this->isStreamCancellation($exception)) {
+                    return new PlatformInvocationResult(
+                        assistantMessage: null,
+                        deltas: [],
+                        usage: [],
+                        stopReason: 'aborted',
+                        error: null,
+                        model: $effectiveModel,
+                        reasoning: $requestSummary['reasoning'],
+                        modelNotifications: $modelNotifications,
+                        availableTools: $availableToolsSnapshot['tools'],
+                        availableToolsSchemaTokensEstimate: $availableToolsSnapshot['schema_tokens_estimate'],
+                    );
+                }
 
-        return $this->consumeStream(
-            $deferredResult,
-            $cancelToken,
-            $request->input->runId ?? '',
-            $request->input->stepId,
-            $effectiveModel,
-            $requestSummary,
-            $modelNotifications,
-            $request->options->streamObserverEnabled,
-            $availableToolsSnapshot['tools'],
-            $availableToolsSnapshot['schema_tokens_estimate'],
-        );
+                return $this->errorResult(
+                    deltas: [],
+                    exception: $exception,
+                    deferredResult: null,
+                    modelName: $effectiveModel,
+                    requestSummary: $requestSummary,
+                    modelNotifications: $modelNotifications,
+                    availableTools: $availableToolsSnapshot['tools'],
+                    availableToolsSchemaTokensEstimate: $availableToolsSnapshot['schema_tokens_estimate'],
+                );
+            }
+
+            return $this->consumeStream(
+                $deferredResult,
+                $cancelToken,
+                $request->input->runId ?? '',
+                $request->input->stepId,
+                $effectiveModel,
+                $requestSummary,
+                $modelNotifications,
+                $request->options->streamObserverEnabled,
+                $availableToolsSnapshot['tools'],
+                $availableToolsSnapshot['schema_tokens_estimate'],
+            );
+        } finally {
+            LlmInvocationCancelScope::leave();
+        }
     }
 
     /**
@@ -287,7 +307,23 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             $resolvedMessageBag = $hook->convertToLlm($messages, $cancelToken, $modelName);
         }
 
-        return $resolvedMessageBag ?? $this->messageConverter->toMessageBag($messages);
+        return $resolvedMessageBag ?? $this->messageConverter->toMessageBagForTarget($messages, $modelName);
+    }
+
+    /**
+     * True when any non-system AgentMessage is present.
+     *
+     * @param list<AgentMessage> $messages
+     */
+    private function hasConversationMessages(array $messages): bool
+    {
+        foreach ($messages as $message) {
+            if ('system' !== $message->role) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -453,6 +489,27 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
                 }
             }
         } catch (\Throwable $exception) {
+            if ($this->isStreamCancellation($exception)) {
+                $this->abortConnection($deferredResult);
+
+                if ($streamObserverEnabled) {
+                    $this->notifyStreamEnd($runId, $stepId);
+                }
+
+                return new PlatformInvocationResult(
+                    assistantMessage: $this->buildAssistantMessage($deltas),
+                    deltas: $deltas,
+                    usage: $this->extractUsage($deferredResult, $modelName),
+                    stopReason: 'aborted',
+                    error: null,
+                    model: $modelName,
+                    reasoning: (string) ($requestSummary['reasoning'] ?? ''),
+                    modelNotifications: $modelNotifications,
+                    availableTools: $availableTools,
+                    availableToolsSchemaTokensEstimate: $availableToolsSchemaTokensEstimate,
+                );
+            }
+
             if ($streamObserverEnabled) {
                 $this->notifyStreamError($runId, $stepId, $exception);
             }
@@ -752,6 +809,20 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
                 'event_type' => 'llm_platform.abort_connection_exception',
             ]);
         }
+    }
+
+    private function isStreamCancellation(\Throwable $exception): bool
+    {
+        for ($current = $exception; null !== $current; $current = $current->getPrevious()) {
+            if ($current instanceof LlmStreamCancelledException) {
+                return true;
+            }
+        }
+
+        // Transport wrappers may drop previous exceptions; re-check the scoped token.
+        $token = LlmInvocationCancelScope::current();
+
+        return null !== $token && $token->isCancellationRequested();
     }
 
     /**

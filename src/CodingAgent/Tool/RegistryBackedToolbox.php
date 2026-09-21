@@ -249,6 +249,7 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
      * the public attribute class; Symfony AI `MemoryToolFactory` owns signature
      * validation and flat schema generation. Nullable properties are then
      * dropped from `required`.
+
      *
      * Raw-array handlers (runtime-provided schema) keep their schema and are
      * flagged so the argument resolver passes the flat provider map through.

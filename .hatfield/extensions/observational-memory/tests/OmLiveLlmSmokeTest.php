@@ -12,6 +12,7 @@ use Ineersa\Hatfield\ExtensionApi\Agent\AgentToolDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ExtensionToolHandlerInterface;
 use Ineersa\HatfieldExt\ObservationalMemory\Compaction\RecordReflectionsToolHandler;
 use Ineersa\HatfieldExt\ObservationalMemory\Compaction\ReflectorSystemPrompt;
+use Ineersa\HatfieldExt\ObservationalMemory\Compaction\RequestLocalObservationIdMap;
 use Ineersa\HatfieldExt\ObservationalMemory\Observer\ObserverSystemPrompt;
 use Ineersa\HatfieldExt\ObservationalMemory\Observer\RecordObservationsToolHandler;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\ObservationRepository;
@@ -192,7 +193,9 @@ final class OmLiveLlmSmokeTest extends IsolatedKernelTestCase
             runId: 'run-live-ref',
             reflectorSchemaVersion: '1',
             existingReflectionIds: [],
-            allowedObservationIds: [$obsId => true],
+            observationIdMap: RequestLocalObservationIdMap::forObservations([
+                ['observation_id' => $obsId, 'timestamp' => '2026-01-01 00:00'],
+            ]),
         );
 
         $scenario = '[llm-real:om-reflector-delta]';
@@ -205,11 +208,11 @@ final class OmLiveLlmSmokeTest extends IsolatedKernelTestCase
                 '(none yet)',
                 '',
                 'CURRENT OBSERVATIONS:',
-                \sprintf('[%s] 2026-07-26 12:00 [high] [coverage: none] User stated they use Postgres for the project database. %s', $obsId, $scenario),
+                \sprintf('[1] 2026-07-26 12:00 [high] [coverage: none] User stated they use Postgres for the project database. %s', $scenario),
                 '',
                 'Crystallize any missing durable facts or patterns into new reflections. If nothing is stable enough, do not call the tool.',
                 '',
-                'Call record_reflections once with content about Postgres and supporting_observation_ids containing only the observation id above.',
+                'Call record_reflections once with content about Postgres and supporting_observation_ids containing only "1".',
             ]),
             tools: [
                 new AgentToolDTO(
@@ -249,20 +252,22 @@ final class OmLiveLlmSmokeTest extends IsolatedKernelTestCase
         $this->assertSame($obsId, $handler->newReflections()[0]['supporting_observation_ids'][0] ?? null);
 
         $dropHandler = new \Ineersa\HatfieldExt\ObservationalMemory\Compaction\DropObservationsToolHandler(
-            allowedObservationIds: [$obsId => true],
+            observationIdMap: RequestLocalObservationIdMap::forObservations([
+                ['observation_id' => $obsId, 'timestamp' => '2026-01-01 00:00'],
+            ]),
             maxDropsAllowed: 1,
         );
         $dropScenario = '[llm-real:om-dropper-tool]';
         $runner->run(new AgentCallRequestDTO(
             model: 'llama_cpp_test/test',
             sessionId: 'run-live-drop',
-            instructions: \Ineersa\HatfieldExt\ObservationalMemory\Compaction\DropperSystemPrompt::text()."\n\nYou MUST call drop_observations once proposing the observation id from the list.",
+            instructions: \Ineersa\HatfieldExt\ObservationalMemory\Compaction\DropperSystemPrompt::text()."\n\nYou MUST call drop_observations once proposing id \"1\" from the list.",
             input: implode("\n", [
                 'CURRENT REFLECTIONS:',
                 \sprintf('[r1] User stated they use Postgres. %s', $dropScenario),
                 '',
                 'CURRENT OBSERVATIONS:',
-                \sprintf('[%s] 2026-07-26 12:00 [low] [coverage: strong] User stated they use Postgres for the project database.', $obsId),
+                '[1] 2026-07-26 12:00 [low] [coverage: strong] User stated they use Postgres for the project database.',
                 '',
                 'Active observation pool: ~100 tokens; target: ~50 tokens; fullness against target: ~200%; over target by ~50 tokens.',
                 'Maximum drops allowed this run: 1 observation. This maximum is sized to move the active pool toward the target if every proposed drop is clearly safe.',

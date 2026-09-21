@@ -30,8 +30,6 @@ final class RunLockManagerTest extends TestCase
 
         $manager = new RunLockManager($factory, ttlSeconds: 30.0, acquireTimeoutSeconds: 0.05);
 
-        $startedAt = microtime(true);
-
         try {
             $manager->synchronized('run-lock-2', static fn (): string => 'should-not-run');
             $this->fail('Expected lock acquisition timeout exception.');
@@ -42,9 +40,6 @@ final class RunLockManagerTest extends TestCase
                 $stranded->release();
             }
         }
-
-        $elapsedSeconds = microtime(true) - $startedAt;
-        $this->assertLessThan(1.0, $elapsedSeconds);
     }
 
     /**

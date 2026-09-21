@@ -1,16 +1,25 @@
 # Datadog setup for local Hatfield development
 
-Optional local log/APM wiring for maintainers. Not model-visible.
+Optional local log and process observability for maintainers. Not model-visible.
+
+Hatfield does not use the ddtrace PHP extension. It was retired on 2026-09-05 after
+`datadog-ipc-helper` processes exhausted host memory and CPU
+([dd-trace-php#4042](https://github.com/DataDog/dd-trace-php/issues/4042)). Keep the
+extension disabled. The application emits no APM spans, no `trace.*` metrics, no
+profiling data, and no log trace correlation. Observability comes from structured
+JSONL logs, the Datadog Agent's file collection and Process Check, and log-derived
+metrics defined in Datadog.
 
 ## Principles
 
-- Prefer structured event-style log messages with correlation fields (`run_id`, `session_id`, `component`, `event_type`).
-- Do **not** log raw prompts, tool output, env secrets, API keys, or full session content by default.
+- Structured event-style log messages with correlation fields (`run_id`, `session_id`, `component`, `event_type`).
+- Never log raw prompts, tool output, env secrets, API keys, or full session content.
+- Logging and application work never depend on Datadog. No Datadog client, transport, or buffer runs in the application.
 
 ## Castor helpers
 
 ```bash
-castor datadog:smoke        # package/agent/ddtrace/log-path diagnostic
+castor datadog:smoke        # Agent status, log path, and collector config diagnostic
 castor datadog:log-config   # print ops/datadog/hatfield.d/conf.yaml + install hints
 castor datadog:smoke-log    # append one JSONL smoke line under project .hatfield/logs
 ```
@@ -32,7 +41,7 @@ sudo install -o dd-agent -g dd-agent -m 0644 \
 3. Ensure the Agent user can traverse to and read Hatfield log files under the active
    log directory (`logging.path` / `HATFIELD_LOG_DIR`, default project `.hatfield/logs/`).
    On Linux this often means ACL execute on parent dirs and read on the log dir
-   (`setfacl`); exact paths depend on your checkout layout — adapt the hints printed
+   (`setfacl`). Exact paths depend on your checkout layout, so adapt the hints printed
    by `castor datadog:log-config`.
 4. Restart the Agent and write a smoke line:
 
@@ -42,12 +51,14 @@ sudo systemctl restart datadog-agent
 castor datadog:smoke-log
 ```
 
-`castor datadog:smoke-log` currently writes under project `.hatfield/logs/` only. It does
-**not** follow a custom `logging.path` / `HATFIELD_LOG_DIR`. For a non-default log path,
+`castor datadog:smoke-log` writes under project `.hatfield/logs/` only. It does
+not follow a custom `logging.path` / `HATFIELD_LOG_DIR`. For a non-default log path,
 inspect or inject a smoke line in the configured directory manually.
 
 Search Logs Explorer for the printed smoke message. The sample config includes
-masking rules for common secret shapes.
+masking rules for common secret shapes. It collects the main checkout
+(`checkout:main`) and worktree logs (`checkout:worktree`), so scope queries when a
+result should cover only one checkout.
 
 ## Hatfield process metrics
 
@@ -86,21 +97,132 @@ Short-lived processes can disappear before collection. Datadog documents
 30 seconds. Linux process I/O availability also depends on Agent access to
 `/proc/<pid>/io`; verify both I/O metrics before adding dashboard widgets.
 
-## APM (`HATFIELD_DATADOG` / ddtrace)
+## Application metrics from logs
 
-Castor launch helpers may wrap the agent process with Datadog APM env when auto-enabled:
+The dashboard (`xza-j7r-e4s`) rebuilt its former APM widgets as direct log queries.
+Counts, group-bys, ratios, and duration percentiles come from the JSONL logs the
+Agent already collects, so the dashboard needs no log-based metric, no application
+change, and no new transport. The metric definitions below cover the cases log
+widgets cannot: retention beyond the log index, metric monitors, and aggregation
+across services. Publish them only when you need one of those.
 
-| Condition | Behavior |
-|---|---|
-| `HATFIELD_DATADOG=0` (or false/off) | Force APM off |
-| `HATFIELD_DATADOG=1` (or true/on) | Force APM on **only if** the `ddtrace` extension is loaded |
-| unset | Auto: enable only when `ddtrace` is loaded **and** a local Agent trace endpoint is reachable (for example unix socket `/var/run/datadog/apm.socket`) |
+### Field rules
 
-When enabled, helpers set `DD_TRACE_ENABLED`, `DD_TRACE_CLI_ENABLED`, service/env/version,
-log injection flags, and prefer the local APM socket when present. `DD_TRACE_ENABLED=0` in
-the environment also keeps auto mode off.
+- Span metrics filter `message:agent_loop.trace.finish` and the canonical span name
+  (`tool.call`, `llm.call`). Without the finish filter, each `agent_loop.trace.start`
+  record doubles the count. Without the span-name filter, worker and orchestrator
+  finish records (`turn.execution.*`, `turn.orchestrator.*`) more than double it
+  again.
+- Tool failures are warning records, not span statuses. `tool.call` spans finish
+  `status:ok` even when a tool fails, because the worker converts the exception into a
+  model-visible tool result. Symfony AI Toolbox emits
+  `Failed to execute tool "<name>".` at warning level, and the ambient log context
+  attaches `@extra.tool_name`.
+- LLM requests emit a success/failure pair: `llm.request.completed` and
+  `llm.request.failed` (with `@context.error_category`). Retries emit
+  `llm.request.retrying` with `@context.attempt` and `@context.max_attempts`.
+- On the normal path a turn issues exactly one `llm.call` span, so
+  `hatfield.llm.turns` counts turns. `llm.request.completed` and
+  `llm.request.failed` also appear once per turn, after retries resolve;
+  `llm.request.retrying` is the record that counts retry attempts. As a
+  cross-check, `requests.completed + requests.failed` should approximately equal
+  `hatfield.llm.turns`. Verified on 2026-09-10: 1,429 `llm.call` finishes, 1,429
+  distinct `run_id` plus `turn_no` pairs, and 1,431
+  `command.application.turn_start_boundary` finishes, so the boundary span is not
+  the turn counter.
+- Span records and request events are INFO, so they need `logging.level: info`. The
+  project `.hatfield/settings.yaml` sets this; the shipped default is `warning`.
+  Failure metrics keep working at `warning` level.
+- Durations are numeric: `@context.duration_ms` works as a measure (verified against
+  indexed logs on 2026-09-11).
 
-Use `castor datadog:smoke` to inspect package status, `ddtrace` load, and today's log path.
+### Proposed log-based metrics
+
+| Metric | Log query | Group by | Measure |
+|---|---|---|---|
+| `hatfield.tool.calls` | `service:hatfield env:dev message:agent_loop.trace.finish @context.span_name:tool.call` | `@context.tool_name` | count |
+| `hatfield.tool.failures` | `service:hatfield env:dev status:warn "Failed to execute tool"` | `@extra.tool_name` | count |
+| `hatfield.llm.requests.completed` | `service:hatfield env:dev @context.event_type:llm.request.completed` | `@context.model` (optional) | count |
+| `hatfield.llm.requests.failed` | `service:hatfield env:dev @context.event_type:llm.request.failed` | `@context.error_category` | count |
+| `hatfield.llm.requests.retrying` | `service:hatfield env:dev @context.event_type:llm.request.retrying` | `@context.attempt` | count |
+| `hatfield.llm.turns` | `service:hatfield env:dev message:agent_loop.trace.finish @context.span_name:llm.call` | none | count |
+| `hatfield.llm.duration` | `service:hatfield env:dev @context.event_type:llm.request.completed` | `@context.model` (optional) | distribution of `@context.duration_ms` |
+| `hatfield.tool.duration` | `service:hatfield env:dev message:agent_loop.trace.finish @context.span_name:tool.call` | `@context.tool_name` | distribution of `@context.duration_ms` |
+
+`llm.request.completed` carries both `duration_ms` and `model`. `llm.call` span
+records also carry `@context.duration_ms` but no model attribute; use them for step
+latency when a model breakdown is not needed.
+
+Rates come from widget formulas over these metrics:
+
+```text
+# Tool error rate (all tools)
+sum:hatfield.tool.failures{service:hatfield AND $env}.as_count()
+  / sum:hatfield.tool.calls{service:hatfield AND $env}.as_count()
+
+# Edit tool error rate
+sum:hatfield.tool.failures{service:hatfield AND $env AND context.tool_name:edit}.as_count()
+  / sum:hatfield.tool.calls{service:hatfield AND $env AND context.tool_name:edit}.as_count()
+
+# LLM error rate (per turn: each turn emits one request outcome record)
+sum:hatfield.llm.requests.failed{service:hatfield AND $env}.as_count()
+  / (sum:hatfield.llm.requests.completed{service:hatfield AND $env}.as_count()
+     + sum:hatfield.llm.requests.failed{service:hatfield AND $env}.as_count())
+```
+
+Datadog turns each group-by facet into a metric tag. Confirm the exact tag name in
+Metrics Explorer after publication; the leading `@` from the log attribute is not
+part of the metric tag in practice for the checked queries.
+
+### Publication
+
+These metrics are optional; the dashboard does not depend on them.
+The connected MCP catalog publishes read-only log and metric tools, plus dashboard
+writes. It does not publish log-based metric or facet management tools. Create each
+metric in Datadog under Logs > Configuration > Log-Based Metrics, or with the Logs
+Metrics API. Then verify against a narrow window and compare the counts with the
+local log file for the same day. Expect small differences from ingestion lag and from
+worktree logs that the Agent collects.
+
+### Alternatives evaluated
+
+DogStatsD was the other candidate. The Agent's UDP listener works without the PHP
+extension (`127.0.0.1:8125`), but publishing needs a client
+(`datadog/php-datadogstatsd`, `league/statsd`, or a small emitter), a configuration
+gate, and explicit failure behavior when the Agent is down. That adds a dependency
+and a write path for signals the logs already carry, so it is not adopted here.
+Revisit DogStatsD when a required signal has no log record, for example database
+statement latency or queue depth.
+
+## Retained visibility and intentional loss
+
+Retained:
+
+- All structured application logs in Datadog Logs, including warnings and errors.
+- Dashboard widgets that query logs directly: tool and LLM throughput, latency,
+  failures, error rates, and retries, plus the log and process widgets.
+- The log-derived metrics listed above, if you publish them for longer retention or
+  metric monitors.
+- Process Check metrics: CPU, RSS, and process I/O for matched Hatfield processes.
+
+Intentionally lost with the extension:
+
+- APM traces and trace waterfall, and the `trace.*` metrics derived from them.
+- `dd.trace_id` / `dd.span_id` log correlation. Log ingestion continues; the
+  trace-linked views and trace-based filters do not.
+- Profiling and database statement spans (`PDOStatement.execute`).
+- The span-based dashboard widgets. Six were rebuilt as log queries, and the
+  Database operations and Messenger consume widgets were removed because their data
+  existed only in APM spans. See the Datadog skill's dashboard reference for the
+  current widget set.
+
+Verify extension-free operation:
+
+```bash
+php -m | grep ddtrace    # expect no output
+castor datadog:smoke     # expect: log path readable, collector config present
+castor diag:diagnostic
+```
 
 ## Provider failure diagnostics
 
@@ -118,3 +240,4 @@ before sharing them.
 
 - Logging keys: [settings.md](settings.md)
 - Runtime privacy notes: root `AGENTS.md`
+- Logging architecture: [architecture/logging.md](../architecture/logging.md)

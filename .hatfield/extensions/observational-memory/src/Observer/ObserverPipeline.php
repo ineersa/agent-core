@@ -179,6 +179,7 @@ final readonly class ObserverPipeline
                 ],
                 correlationId: $jobId ?? $correlationId,
                 maxToolCalls: self::MAX_TOOL_CALLS,
+                maxDurationSeconds: OmSettings::AGENT_HTTP_MAX_DURATION_SECONDS,
             ));
 
             // Zero observations and/or no tool call at all is successful coverage.

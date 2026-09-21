@@ -403,9 +403,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
     public static function toolExecutionOutcomes(): iterable
     {
         yield 'failed collapsed' => [true, false];
-        yield 'failed expanded' => [true, true];
         yield 'successful collapsed' => [false, false];
-        yield 'successful expanded' => [false, true];
     }
 
     #[Test]

@@ -9,8 +9,9 @@ use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Widget\SelectListKeybindings;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
+use Symfony\Component\Tui\Input\Key;
+use Symfony\Component\Tui\Input\Keybindings;
 use Symfony\Component\Tui\Style\Style;
-use Symfony\Component\Tui\Widget\ContainerWidget;
 use Symfony\Component\Tui\Widget\SelectListWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
 
@@ -31,7 +32,7 @@ use Symfony\Component\Tui\Widget\TextWidget;
 final class QuestionController
 {
     private ?SelectListWidget $listWidget = null;
-    private ?ContainerWidget $container = null;
+    private ?QuestionOverlayWidget $container = null;
     private bool $isOpen = false;
     private bool $awaitingFreeForm = false;
     private ?QuestionRequest $activeRequest = null;
@@ -46,8 +47,8 @@ final class QuestionController
     /**
      * Open the interactive question overlay.
      *
-     * Builds and mounts a ContainerWidget with header + prompt for Text
-     * kind, or header + SelectListWidget for interactive kinds.
+     * Builds and mounts a bounded {@see QuestionOverlayWidget} with header +
+     * prompt for Text kind, or header + SelectListWidget for interactive kinds.
      */
     public function open(QuestionRequest $request): void
     {
@@ -57,8 +58,9 @@ final class QuestionController
 
         $this->awaitingFreeForm = false;
         $this->activeRequest = $request;
-        $this->container = new ContainerWidget();
-        // Modest vertical rhythm between header / question / answers (native container gap).
+        $this->container = new QuestionOverlayWidget();
+        // Modest vertical rhythm between header / question / answers. The overlay
+        // host reserves select-list rows first so these gaps cannot starve options.
         $this->container->setStyle(new Style(gap: 1));
         $this->addHeader($request);
 
@@ -84,8 +86,10 @@ final class QuestionController
         $this->isOpen = false;
         $this->awaitingFreeForm = false;
         $this->screen->setStatus('action', null);
-        // Targeted overlay removal; full refresh() still redraws the screen — deeper compositor follow-up if flicker persists.
-        $this->screen->refresh();
+        // Overlay removal already invalidates the detached subtree. Avoid a
+        // broad refresh() that dirties unchanged chrome and can force a
+        // ScreenWriter clear when the frame is already overheight.
+        $this->screen->requestRender(false);
     }
 
     /**
@@ -122,10 +126,21 @@ final class QuestionController
         }
 
         $this->awaitingFreeForm = false;
-
-        if (null !== $this->activeRequest) {
-            $this->open($this->activeRequest);
+        $request = $this->activeRequest;
+        if (null === $request) {
+            return;
         }
+
+        // Free-form dismiss may leave a blank reserved overlay band mounted.
+        // Remove it before open() so the select list is rebuilt cleanly.
+        if (null !== $this->container) {
+            $this->screen->removeOverlay($this->container);
+            $this->container = null;
+            $this->listWidget = null;
+            $this->isOpen = false;
+        }
+
+        $this->open($request);
     }
 
     // ── Private helpers ──
@@ -152,9 +167,20 @@ final class QuestionController
     private function dismissToEditor(): void
     {
         $this->screen->setFocus($this->screen->editorWidget());
-        $this->close();
+        // Keep the reserved overlay band mounted with blank rows so switching to
+        // free-form input does not move the editor. Final close() removes the band
+        // when the free-form answer is submitted or cancelled.
+        if (null !== $this->container) {
+            $this->container->clear();
+            $this->container->setStyle(new Style(gap: 0));
+            $this->listWidget = null;
+            $this->isOpen = false;
+        } else {
+            $this->close();
+        }
         $this->awaitingFreeForm = true;
         $this->screen->setStatus('action', 'Type your answer and press Enter');
+        $this->screen->requestRender(false);
     }
 
     /**
@@ -198,7 +224,11 @@ final class QuestionController
 
         $items = $this->buildItems($request);
         $items = $this->styleConfirmItems($items, $request->kind);
-        $kb = SelectListKeybindings::standard();
+        $kb = new Keybindings([
+            ...SelectListKeybindings::standardBindings(),
+            'prompt_up' => [Key::ctrl(Key::UP)],
+            'prompt_down' => [Key::ctrl(Key::DOWN)],
+        ]);
 
         $this->listWidget = new SelectListWidget(
             items: $items,
@@ -207,6 +237,19 @@ final class QuestionController
         );
         // Scope stylesheet rules to this overlay only; other pickers stay on defaults.
         $this->listWidget->addStyleClass('question-choice-list');
+
+        $container = $this->container;
+        $this->listWidget->onInput(static function (string $data) use ($kb, $container): bool {
+            foreach (['prompt_up' => -1, 'prompt_down' => 1] as $action => $direction) {
+                if ($kb->matches($data, $action)) {
+                    $container->pagePrompt($direction);
+
+                    return true;
+                }
+            }
+
+            return false;
+        });
 
         $this->listWidget->onSelect(function (SelectEvent $event): void {
             $item = $event->getItem();
@@ -277,9 +320,8 @@ final class QuestionController
      */
     private function mount(QuestionRequest $request): void
     {
-        // Insert the overlay above the editor so it renders above
-        // the editor area in the single-column layout:
-        //   question overlay → editor-separator → editor → …
+        // Insert the overlay above prompts/skills/agents/MCP and the editor:
+        //   … → status → question overlay → compactHeader → editorSep → editor → …
         $this->screen->insertOverlayBeforeEditor($this->container);
         // Overlay already communicates that input is required; avoid duplicating it in the status panel.
         $this->screen->setStatus('action', null);

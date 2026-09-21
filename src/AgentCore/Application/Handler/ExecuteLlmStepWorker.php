@@ -114,7 +114,9 @@ final readonly class ExecuteLlmStepWorker
             // Adapter owns thinking-only / empty-stream recovery inside the shared
             // application retry budget. Any leftover empty success here is terminal.
             $assistantMessage = $response->assistantMessage;
+            $isAborted = 'aborted' === $response->stopReason;
             if (null !== $assistantMessage
+                && !$isAborted
                 && null === $response->error
                 && !$assistantMessage->hasToolCalls()
                 && null === $assistantMessage->asText()
@@ -141,7 +143,12 @@ final readonly class ExecuteLlmStepWorker
             $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
 
             $hasStreamDeltas = [] !== $response->deltas();
-            if (null === $assistantMessage && !$hasStreamDeltas && null === $response->error) {
+            if (
+                !$isAborted
+                && null === $assistantMessage
+                && !$hasStreamDeltas
+                && null === $response->error
+            ) {
                 $response = new PlatformInvocationResult(
                     assistantMessage: null,
                     deltas: $response->deltas,
@@ -161,7 +168,15 @@ final readonly class ExecuteLlmStepWorker
                 $assistantMessage = null;
             }
 
-            if (null !== $response->error) {
+            if ($isAborted) {
+                $this->logger->info('llm.request.cancelled', [
+                    'duration_ms' => round($durationMs, 3),
+                    'event_type' => 'llm.request.cancelled',
+                    'model' => $response->model,
+                    'reasoning' => $response->reasoning,
+                    'stop_reason' => 'aborted',
+                ]);
+            } elseif (null !== $response->error) {
                 $logCtx = [
                     'duration_ms' => round($durationMs, 3),
                     'event_type' => 'llm.request.failed',

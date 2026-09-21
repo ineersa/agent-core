@@ -8,7 +8,6 @@ use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecOptionsDTO;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecResultDTO;
 use Ineersa\HatfieldExt\TaskWorkflow\Exec\GitExecutor;
-use Ineersa\HatfieldExt\TaskWorkflow\Ide\JetBrainsMcpClient;
 use Ineersa\HatfieldExt\TaskWorkflow\Ide\WorktreeIdeaSetup;
 use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskInfo;
 use Ineersa\HatfieldExt\TaskWorkflow\Tool\InvocationControl;
@@ -186,7 +185,6 @@ final class WorktreeManager
         }
 
         $ideaSetup = WorktreeIdeaSetup::ensure($codeRoot, $worktree);
-        $ideOpenNote = JetBrainsMcpClient::openWorktreeProject($codeRoot, $worktree);
 
         return new WorktreeCreateResult(
             branch: $branch,
@@ -197,7 +195,6 @@ final class WorktreeManager
             ideaExclusionsUpdated: $exclusion['updated'],
             ideaNote: $exclusion['note'] ?? null,
             ideaSetupNote: $ideaSetup['note'] ?? null,
-            ideOpenNote: $ideOpenNote,
         );
     }
 
@@ -251,27 +248,11 @@ final class WorktreeManager
             throw new \RuntimeException("Worktree has uncommitted changes; commit them before moving to DONE.\n{$worktree}\n{$wtStatus->stdout}");
         }
 
-        // Close IDE project only after dirty-worktree preflight and only when cleanup will remove it.
-        $closedForCleanup = false;
-        if ($options['cleanupWorktree'] && is_dir($worktree)) {
-            $notes[] = JetBrainsMcpClient::closeWorktreeProject($codeRoot, $worktree);
-            $closedForCleanup = true;
-        }
-
         $merge = $this->git->git(['merge', '--no-ff', '--no-edit', $branch], $codeRoot, 120.0, $control);
         if ($merge->cancelled || $merge->timedOut) {
-            if ($closedForCleanup && is_dir($worktree)) {
-                $notes[] = JetBrainsMcpClient::openWorktreeProject($codeRoot, $worktree);
-                $notes[] = 'Reopened JetBrains project after interrupted merge for '.$worktree.'.';
-            }
-
             return $merge;
         }
         if (0 !== $merge->exitCode) {
-            if ($closedForCleanup && is_dir($worktree)) {
-                $notes[] = JetBrainsMcpClient::openWorktreeProject($codeRoot, $worktree);
-                $notes[] = 'Reopened JetBrains project after failed merge for '.$worktree.'.';
-            }
             $conflicts = $this->git->git(['diff', '--name-only', '--diff-filter=U'], $codeRoot, 120.0, $control);
             if ($conflicts->cancelled || $conflicts->timedOut) {
                 return $conflicts;
@@ -287,18 +268,9 @@ final class WorktreeManager
             // after a successful remove so a dirty/failed worktree keeps its markers.
             $cleanup = $this->cleanupWorktreeAndIdeaExclusions($codeRoot, $task, failClosed: false, control: $control);
             if ($cleanup instanceof ExecResultDTO) {
-                if ($closedForCleanup && is_dir($worktree)) {
-                    $notes[] = JetBrainsMcpClient::openWorktreeProject($codeRoot, $worktree);
-                    $notes[] = 'Reopened JetBrains project after interrupted worktree cleanup for '.$worktree.'.';
-                }
-
                 return $cleanup;
             }
             array_push($notes, ...$cleanup);
-            if ($closedForCleanup && is_dir($worktree)) {
-                $notes[] = JetBrainsMcpClient::openWorktreeProject($codeRoot, $worktree);
-                $notes[] = 'Reopened JetBrains project after failed worktree cleanup for '.$worktree.'.';
-            }
         }
 
         if ($options['deleteBranch']) {
@@ -358,36 +330,16 @@ final class WorktreeManager
             return $notes;
         }
 
-        // Fail-closed: dirty worktree must throw before close so an active dirty
-        // cancellation does not leave the IDE project closed.
+        // Fail closed before cleanup so cancellation preserves uncommitted work.
         $wtStatus = $this->git->gitOk(['status', '--porcelain'], $worktree, 120.0, $control);
         if ($wtStatus->cancelled || $wtStatus->timedOut) {
             return $wtStatus;
         }
         if ('' !== trim($wtStatus->stdout)) {
-            throw new \RuntimeException('Safe worktree cleanup failed; leaving task unmoved and IDEA project open.'."\n".'Worktree has uncommitted changes.'."\n".'Worktree: '.$worktree."\n".$wtStatus->stdout);
+            throw new \RuntimeException('Safe worktree cleanup failed; leaving task unmoved and worktree intact.'."\n".'Worktree has uncommitted changes.'."\n".'Worktree: '.$worktree."\n".$wtStatus->stdout);
         }
 
-        $notes = [];
-        $notes[] = JetBrainsMcpClient::closeWorktreeProject($codeRoot, $worktree);
-        try {
-            $cleanup = $this->cleanupWorktreeAndIdeaExclusions($codeRoot, $task, failClosed: true, control: $control);
-            if ($cleanup instanceof ExecResultDTO) {
-                // Cleanup interrupted before/without remove: reopen best-effort.
-                $notes[] = JetBrainsMcpClient::openWorktreeProject($codeRoot, $worktree);
-                $notes[] = 'Reopened JetBrains project after interrupted cancellation cleanup for '.$worktree.'.';
-
-                return $cleanup;
-            }
-            array_push($notes, ...$cleanup);
-
-            return $notes;
-        } catch (\Throwable $e) {
-            // Fail-closed remove leaves the worktree; reopen best-effort so IDE stays usable.
-            $notes[] = JetBrainsMcpClient::openWorktreeProject($codeRoot, $worktree);
-            $notes[] = 'Reopened JetBrains project after failed cancellation cleanup for '.$worktree.'.';
-            throw new \RuntimeException($e->getMessage()."\n".implode("\n", $notes), 0, $e);
-        }
+        return $this->cleanupWorktreeAndIdeaExclusions($codeRoot, $task, failClosed: true, control: $control);
     }
 
     /** @return array{updated: bool, note?: string} */

@@ -45,7 +45,7 @@ final class TranscriptToolResultFactsTest extends TestCase
     }
 
     #[Test]
-    public function fullRenderEditResultKeepsFileContextMarker(): void
+    public function failedEditResultKeepsFileContextMarker(): void
     {
         $block = new TranscriptBlock(
             id: 'r-1',
@@ -155,7 +155,7 @@ final class TranscriptToolResultFactsTest extends TestCase
     }
 
     #[Test]
-    public function toolResultIsFullRenderCoversErrorCancelAndTimeout(): void
+    public function toolResultIsUnsuccessfulCoversErrorCancelAndTimeout(): void
     {
         foreach (['is_error', 'cancelled', 'timed_out'] as $flag) {
             $block = new TranscriptBlock(
@@ -166,7 +166,7 @@ final class TranscriptToolResultFactsTest extends TestCase
                 meta: [$flag => true],
             );
 
-            $this->assertTrue($this->facts->toolResultIsFullRender($block), $flag.' should force full render');
+            $this->assertTrue($this->facts->toolResultIsUnsuccessful($block), $flag.' should mark the result unsuccessful');
         }
 
         $ok = new TranscriptBlock(
@@ -176,6 +176,6 @@ final class TranscriptToolResultFactsTest extends TestCase
             seq: 1,
             meta: ['is_error' => false],
         );
-        $this->assertFalse($this->facts->toolResultIsFullRender($ok));
+        $this->assertFalse($this->facts->toolResultIsUnsuccessful($ok));
     }
 }

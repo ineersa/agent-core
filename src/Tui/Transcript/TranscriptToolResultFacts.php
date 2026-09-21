@@ -10,7 +10,7 @@ use Symfony\Component\Yaml\Yaml;
 /**
  * Result-body presentation facts for tool results.
  *
- * Owns whether a tool result renders in full (error/cancel/timeout), its
+ * Owns whether a tool result was unsuccessful (error/cancel/timeout), its
  * display body text (including successful edit result compaction), and
  * truthiness of string/numeric meta flags. Consumed by the pairing policy's
  * candidate scoring and by {@see TranscriptToolRenderer}; pairing/suppression
@@ -19,11 +19,10 @@ use Symfony\Component\Yaml\Yaml;
 final readonly class TranscriptToolResultFacts
 {
     /**
-     * Error, cancelled, and timed_out tool results bypass preview so diagnostics are not hidden.
-     *
-     * Projection currently sets is_error for cancelled/timed_out as well; color still keys off is_error when full.
+     * Failure status controls pairing and successful-edit compaction, not expansion.
+     * Projection also sets is_error for cancelled/timed_out; color keys off is_error.
      */
-    public function toolResultIsFullRender(TranscriptBlock $block): bool
+    public function toolResultIsUnsuccessful(TranscriptBlock $block): bool
     {
         return $this->metaIsTruthy($block->meta['is_error'] ?? false)
             || $this->metaIsTruthy($block->meta['cancelled'] ?? false)
@@ -62,7 +61,7 @@ final readonly class TranscriptToolResultFacts
 
     private function compactSuccessfulEditWriteResultBody(TranscriptBlock $block, string $result): string
     {
-        if ($this->toolResultIsFullRender($block)) {
+        if ($this->toolResultIsUnsuccessful($block)) {
             return $result;
         }
 

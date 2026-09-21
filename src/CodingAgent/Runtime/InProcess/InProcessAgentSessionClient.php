@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\InProcess;
 
+use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\History\HistorySelectionServiceInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\RefreshRunContext;
 use Ineersa\AgentCore\Domain\Run\RunMetadata;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
@@ -63,6 +65,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         private readonly ModelResolver $modelResolver,
         private readonly MessageBusInterface $commandBus,
         private readonly SessionRepairServiceInterface $sessionRepairService,
+        private readonly ActiveRunContextInterface $activeRunContext,
         private readonly ?RuntimeEventSinkInterface $transientSink = null,
         private readonly ?ToolQuestionStoreInterface $toolQuestionStore = null,
         private readonly ToolQuestionAnswerResolver $answerResolver = new ToolQuestionAnswerResolver(),
@@ -88,6 +91,11 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         if (!$this->sessionMetaStore->exists($runId)) {
             throw new \RuntimeException(\sprintf('Session "%s" not found.', $runId));
         }
+
+        // Resume / relaunch / reload attach must cancel outstanding human waits
+        // before the passive context refresh. Ordinary RefreshRunContext alone
+        // must not clear pending questions.
+        $this->cancelOutstandingHumanWaitsOnAttach($runId);
 
         // Resume starts a new reasoning epoch, independent of the prior socket.
         $this->sessionMetaStore->resetReasoningBaseline($runId);
@@ -252,6 +260,16 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         }
 
         $this->mcpDispatcher->dispatchRefresh($runId);
+    }
+
+    private function cancelOutstandingHumanWaitsOnAttach(string $runId): void
+    {
+        $state = $this->activeRunContext->stateFor($runId);
+        if (RunStatus::WaitingHuman !== $state->status && [] === $state->pendingHumanInputRequests) {
+            return;
+        }
+
+        $this->runner->cancel($runId, 'Outstanding human questions cancelled on session attach.');
     }
 
     /** @return list<AgentMessage> */

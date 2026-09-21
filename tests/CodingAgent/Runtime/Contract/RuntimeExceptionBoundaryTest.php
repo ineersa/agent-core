@@ -31,16 +31,6 @@ class RuntimeExceptionBoundaryTest extends TestCase
     }
 
     #[Test]
-    public function captureEnabledReturnsNormally(): void
-    {
-        $boundary = $this->createBoundary(captureErrors: true);
-
-        // Should not throw.
-        $boundary->catch(new \RuntimeException('test error'), 'test.operation');
-        $this->assertTrue(true);
-    }
-
-    #[Test]
     public function captureEnabledDispatchesEvent(): void
     {
         $dispatched = [];

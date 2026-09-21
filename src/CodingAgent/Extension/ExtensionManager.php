@@ -144,9 +144,10 @@ final class ExtensionManager
             return;
         }
 
-        // The autoloader registers itself with spl_autoload_register().
-        // require_once prevents double-loading if the same file path is
-        // required again (e.g. during test isolation).
+        // Registers via spl_autoload_register(). Keep extensions Composer
+        // config.prepend-autoloader=false so this does not shadow the host
+        // app's Symfony packages (for example symfony/tui) after load.
+        // require_once avoids double-loading during test isolation.
         require_once $autoloadPath;
     }
 

@@ -13,31 +13,6 @@ use PHPUnit\Framework\TestCase;
  */
 final class SafeGuardPolicyTest extends TestCase
 {
-    public function testDefaultConstructorProducesEmptyPolicy(): void
-    {
-        $policy = new SafeGuardPolicy();
-
-        $this->assertSame([], $policy->allowCommandPatterns);
-        $this->assertSame([], $policy->allowWriteOutsideCwd);
-        $this->assertSame([], $policy->protectedReadPatterns);
-        $this->assertSame([], $policy->dangerousCommandPatterns);
-    }
-
-    public function testAllFieldsAccepted(): void
-    {
-        $policy = new SafeGuardPolicy(
-            allowCommandPatterns: ['rm -rf'],
-            allowWriteOutsideCwd: ['/tmp'],
-            protectedReadPatterns: ['.env.local'],
-            dangerousCommandPatterns: ['risky-cmd'],
-        );
-
-        $this->assertSame(['rm -rf'], $policy->allowCommandPatterns);
-        $this->assertSame(['/tmp'], $policy->allowWriteOutsideCwd);
-        $this->assertSame(['.env.local'], $policy->protectedReadPatterns);
-        $this->assertSame(['risky-cmd'], $policy->dangerousCommandPatterns);
-    }
-
     public function testFromConfigCopiesAllFields(): void
     {
         $config = SafeGuardConfig::fromArray([

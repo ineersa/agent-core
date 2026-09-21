@@ -83,6 +83,8 @@ services:
 
   Ineersa\CodingAgent\:
     resource: '%kernel.project_dir%/src/CodingAgent/**/*.php'
+    exclude:
+      - '%kernel.project_dir%/src/CodingAgent/Tool/CodeMode/Resources/'
 
   Ineersa\CodingAgent\Agent\Diagnostics\PromptCacheDiagnosticsInvocationSubscriber:
     arguments:
@@ -337,6 +339,12 @@ services:
   # BashToolConfig is derived from AppConfig and autowireable.
   Ineersa\CodingAgent\Config\BashToolConfig:
     factory: ['Ineersa\CodingAgent\Config\BashToolConfig', 'fromAppConfig']
+    arguments:
+      - '@Ineersa\CodingAgent\Config\AppConfig'
+
+  # CodeModeConfig is derived from AppConfig and autowireable.
+  Ineersa\CodingAgent\Config\CodeModeConfig:
+    factory: ['Ineersa\CodingAgent\Config\CodeModeConfig', 'fromAppConfig']
     arguments:
       - '@Ineersa\CodingAgent\Config\AppConfig'
 
@@ -742,6 +750,7 @@ services:
   Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler:
     arguments:
       $commandBus: '@agent.command.bus'
+      $serializer: '@serializer'
 
   Ineersa\AgentCore\Application\Pipeline\LlmStepResultHandler:
     arguments:
@@ -826,6 +835,12 @@ services:
     arguments:
       $executionServiceLocator: !service_locator
         execution: '@Ineersa\CodingAgent\Agent\Fork\ForkExecutionService'
+
+  # code_mode: definition provider is tagged; toolbox resolves only at nested invoke time.
+  Ineersa\CodingAgent\Tool\CodeMode\CodeModeHostBridge:
+    arguments:
+      $toolboxLocator: !service_locator
+        toolbox: '@Ineersa\CodingAgent\Tool\RegistryBackedToolbox'
 
   # CodingAgent ToolSetResolver — bridges ToolRegistry to AgentCore resolver seam.
   # The inner resolver (CodingAgentToolSetResolver) is wrapped by
@@ -981,6 +996,27 @@ services:
   # The toolbox wires to RegistryBackedToolbox; toolSetResolver to CodingAgentToolSetResolver.
   # Execution mode per tool is set at registration time by the tool author/provider
   # in ToolDefinitionDTO, not from settings overrides.
+  Ineersa\CodingAgent\Tool\CodeMode\CodeModeDiagnosticsToolResultProcessor:
+    tags:
+      - { name: agent_core.tool_result_processor, priority: 100 }
+
+  Ineersa\CodingAgent\Tool\OutputCapToolResultProcessor:
+    tags:
+      - { name: agent_core.tool_result_processor, priority: 0 }
+
+  # Astra stamps durable MESSAGE_KEY values from original history text before
+  # OutputCap rewrites oversized tool text (saved-path filenames change on each
+  # retry). OutputCap preserves those keys when it rebuilds capped messages.
+  Ineersa\CodingAgent\Tool\OutputCapLlmTransformHook:
+    autoconfigure: false
+    tags:
+      - { name: agent_core.transform_context_hook, priority: 0 }
+
+  Ineersa\CodingAgent\Agent\Execution\AstraReasoningTransitionTransformHook:
+    autoconfigure: false
+    tags:
+      - { name: agent_core.transform_context_hook, priority: 100 }
+
   Ineersa\AgentCore\Application\Handler\ToolExecutor:
     factory: ['Ineersa\AgentCore\Application\Handler\ToolExecutor', 'fromSettings']
     arguments:
@@ -1125,6 +1161,7 @@ services:
       $commandBus: '@agent.command.bus'
       $mcpDispatcher: '@Ineersa\CodingAgent\Mcp\McpSessionLifecycleDispatcher'
       $sessionRepairService: '@Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface'
+      $activeRunContext: '@Ineersa\AgentCore\Contract\ActiveRunContextInterface'
 
   # ─── MCP-04 / MCP-05 Dynamic MCP tool registration + invocation ────
 

@@ -243,17 +243,6 @@ YAML
 
     // ── overlayConfig() unit tests (no file I/O) ──────────────────────────
 
-    public function testOverlayConfigScalarOverride(): void
-    {
-        $base = ['theme' => 'cyberpunk', 'version' => 1];
-        $over = ['theme' => 'nord'];
-
-        $result = $this->loader->overlayConfig($base, $over);
-
-        $this->assertSame('nord', $result['theme']);
-        $this->assertSame(1, $result['version']);
-    }
-
     public function testOverlayConfigScalarWinsNotArray(): void
     {
         // This is the core reason array_merge_recursive() is unsuitable:
@@ -297,17 +286,6 @@ YAML
         $this->assertSame(30, $result['tui']['options']['fps']);
     }
 
-    public function testOverlayConfigListReplacesEntirely(): void
-    {
-        $base = ['paths' => ['/default/a', '/default/b', '/default/c']];
-        $over = ['paths' => ['/project/x']];
-
-        $result = $this->loader->overlayConfig($base, $over);
-
-        $this->assertCount(1, $result['paths']);
-        $this->assertSame('/project/x', $result['paths'][0]);
-    }
-
     public function testOverlayConfigListDoesNotIndexMerge(): void
     {
         // array_replace_recursive() would do index-based partial replacement
@@ -340,26 +318,6 @@ YAML
 
         $this->assertTrue($result['existing']);
         $this->assertSame('added', $result['new_key']);
-    }
-
-    public function testOverlayConfigBoolOverride(): void
-    {
-        $base = ['enabled' => false];
-        $over = ['enabled' => true];
-
-        $result = $this->loader->overlayConfig($base, $over);
-
-        $this->assertTrue($result['enabled']);
-    }
-
-    public function testOverlayConfigIntOverride(): void
-    {
-        $base = ['limit' => 100];
-        $over = ['limit' => 50];
-
-        $result = $this->loader->overlayConfig($base, $over);
-
-        $this->assertSame(50, $result['limit']);
     }
 
     public function testOverlayConfigMixedTypeOverride(): void

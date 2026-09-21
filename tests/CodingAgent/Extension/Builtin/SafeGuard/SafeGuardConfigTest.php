@@ -39,16 +39,6 @@ final class SafeGuardConfigTest extends TestCase
         $this->assertContains('service-account', $config->protectedReadPatterns);
     }
 
-    public function testFromArrayEmptyDataReturnsDefaults(): void
-    {
-        $config = SafeGuardConfig::fromArray([]);
-
-        $this->assertSame([], $config->allowCommandPatterns);
-        $this->assertSame([], $config->allowWriteOutsideCwd);
-        $this->assertNotEmpty($config->protectedReadPatterns);
-        $this->assertSame('bash', $config->bashToolName);
-    }
-
     public function testFromArrayParsesAllFields(): void
     {
         $config = SafeGuardConfig::fromArray([
@@ -117,17 +107,5 @@ final class SafeGuardConfigTest extends TestCase
 
         // Empty string '' is filtered, whitespace-only '  ' passes through
         $this->assertSame(['valid', '  '], $config->allowCommandPatterns);
-    }
-
-    public function testToolNamesDefaultWhenMissing(): void
-    {
-        $config = SafeGuardConfig::fromArray([
-            'tool_names' => ['bash' => 'run'],
-        ]);
-
-        $this->assertSame('run', $config->bashToolName);
-        $this->assertSame('write', $config->writeToolName);
-        $this->assertSame('edit', $config->editToolName);
-        $this->assertSame('read', $config->readToolName);
     }
 }

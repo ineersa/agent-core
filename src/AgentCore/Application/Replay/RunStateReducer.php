@@ -253,7 +253,9 @@ final readonly class RunStateReducer
             return $state->with($changes);
         }
 
-        // steer / follow_up / append_message: append message to prompt context
+        // steer / follow_up / append_message: append message to prompt context.
+        // These lifecycle advances abandon any outstanding human-input queue so a
+        // later response cannot target a superseded question behind a new wait.
         if (\in_array($kind, ['steer', 'follow_up', 'append_message'], true)) {
             $messagePayload = \is_array($payload['message'] ?? null) ? $payload['message'] : null;
             if (null !== $messagePayload) {
@@ -266,6 +268,7 @@ final readonly class RunStateReducer
             return $state->with([
                 'status' => RunStatus::Running,
                 'errorMessage' => null,
+                'pendingHumanInputRequests' => [],
             ]);
         }
 
@@ -273,22 +276,37 @@ final readonly class RunStateReducer
         // ModelTurn may append a human message; ToolCall has no model-visible message.
         // Status stays WaitingHuman while more pending requests remain.
         if ('human_response' === $kind) {
+            $questionId = \is_string($payload['question_id'] ?? null) ? $payload['question_id'] : null;
+            if (null === $questionId || '' === $questionId) {
+                throw new \InvalidArgumentException('human_response event is missing non-empty question_id.');
+            }
+
+            $matchingIndex = null;
+            foreach ($state->pendingHumanInputRequests as $index => $pending) {
+                if ($pending->questionId === $questionId) {
+                    $matchingIndex = $index;
+                    break;
+                }
+            }
+
+            // Late answers for already-cancelled / superseded questions are no-ops.
+            // Same-turn FIFO multi-question queues still require the matching id to
+            // remain pending; answering a non-head id fails closed.
+            // Validate before mutating the by-ref message accumulator so a stale
+            // answer cannot enter model history.
+            if (null === $matchingIndex) {
+                return $state;
+            }
+            if (0 !== $matchingIndex) {
+                throw new \InvalidArgumentException(\sprintf('human_response event question_id "%s" does not match the active pending request.', $questionId));
+            }
+
             $messagePayload = \is_array($payload['message'] ?? null) ? $payload['message'] : null;
             if (null !== $messagePayload) {
                 $msg = AgentMessage::fromPayload($messagePayload);
                 if (null !== $msg) {
                     $messages[] = $msg;
                 }
-            }
-
-            $questionId = \is_string($payload['question_id'] ?? null) ? $payload['question_id'] : null;
-            if (null === $questionId || '' === $questionId) {
-                throw new \InvalidArgumentException('human_response event is missing non-empty question_id.');
-            }
-
-            $active = $state->pendingHumanInputRequests[0] ?? null;
-            if (null === $active || $active->questionId !== $questionId) {
-                throw new \InvalidArgumentException(\sprintf('human_response event question_id "%s" does not match the active pending request.', $questionId));
             }
 
             $remaining = array_values(\array_slice($state->pendingHumanInputRequests, 1));
@@ -308,7 +326,7 @@ final readonly class RunStateReducer
             ]);
         }
 
-        // cancel: transition to Cancelling
+        // cancel: transition to Cancelling and drop outstanding human-input waits.
         if ('cancel' === $kind) {
             $reason = \is_string($payload['reason'] ?? null) ? $payload['reason'] : null;
 
@@ -319,6 +337,7 @@ final readonly class RunStateReducer
                     $state->currentToolCalls,
                 ),
                 'errorMessage' => $reason,
+                'pendingHumanInputRequests' => [],
             ]);
         }
 
@@ -353,6 +372,9 @@ final readonly class RunStateReducer
         $stepId = \is_string($payload['step_id'] ?? null) ? $payload['step_id'] : $state->activeStepId;
 
         if (null !== $assistantPayload) {
+            if (!isset($assistantPayload['model']) && \is_string($payload['model'] ?? null)) {
+                $assistantPayload['model'] = $payload['model'];
+            }
             // Replay the assistant payload via a dedicated helper that
             // handles tool-call-only messages (content: null) which
             // AgentMessage::fromPayload() would reject.
@@ -549,6 +571,7 @@ final readonly class RunStateReducer
             'isStreaming' => false,
             'streamingMessage' => null,
             'pendingToolCalls' => [],
+            'pendingHumanInputRequests' => [],
             'activeStepId' => null,
             'currentOperation' => null,
         ]);
@@ -773,7 +796,7 @@ final readonly class RunStateReducer
 
         // fromPayload succeeded — standard path for text-bearing messages.
         if (null !== $msg) {
-            return $this->withReplayedAssistantToolCalls($msg, $payload);
+            return $this->withReplayedAssistantMetadata($msg, $payload);
         }
 
         // Only handle assistant-role payloads where content is null/missing.
@@ -786,11 +809,8 @@ final readonly class RunStateReducer
             return null;
         }
 
-        $metadata = [];
-        $rawToolCalls = \is_array($payload['tool_calls'] ?? null) ? $payload['tool_calls'] : [];
-        if ([] !== $rawToolCalls) {
-            $metadata['tool_calls'] = $rawToolCalls;
-        }
+        $metadata = $this->replayedAssistantMetadata($payload);
+        $rawToolCalls = \is_array($metadata['tool_calls'] ?? null) ? $metadata['tool_calls'] : [];
 
         $details = \is_array($payload['details'] ?? null) && [] !== $payload['details']
             ? $payload['details']
@@ -820,20 +840,24 @@ final readonly class RunStateReducer
     /**
      * Canonical llm_step_completed assistant payloads store tool_calls at the
      * top level (see AgentMessageNormalizer::assistantMessagePayload()).
-     * AgentMessage::fromPayload() only reads metadata.tool_calls, so text-bearing
+     * AgentMessage::fromPayload() only reads metadata.*, so text-bearing
      * assistant messages must copy top-level tool_calls into metadata on replay.
+     * Request-time conversion also needs the step model as source identity;
+     * that comes from llm_step_completed.model, not a duplicated assistant field.
      *
      * @param array<string, mixed> $payload
      */
-    private function withReplayedAssistantToolCalls(AgentMessage $message, array $payload): AgentMessage
+    private function withReplayedAssistantMetadata(AgentMessage $message, array $payload): AgentMessage
     {
-        $rawToolCalls = \is_array($payload['tool_calls'] ?? null) ? $payload['tool_calls'] : [];
-        if ([] === $rawToolCalls) {
+        $replayed = $this->replayedAssistantMetadata($payload);
+        if ([] === $replayed) {
             return $message;
         }
 
         $metadata = $message->metadata;
-        $metadata['tool_calls'] = $rawToolCalls;
+        foreach ($replayed as $key => $value) {
+            $metadata[$key] = $value;
+        }
 
         return new AgentMessage(
             role: $message->role,
@@ -846,5 +870,29 @@ final readonly class RunStateReducer
             isError: $message->isError,
             metadata: $metadata,
         );
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     *
+     * @return array<string, mixed>
+     */
+    private function replayedAssistantMetadata(array $payload): array
+    {
+        $metadata = [];
+
+        $rawToolCalls = \is_array($payload['tool_calls'] ?? null) ? $payload['tool_calls'] : [];
+        if ([] !== $rawToolCalls) {
+            $metadata['tool_calls'] = $rawToolCalls;
+        }
+
+        // Derive request-local source identity from the step model. Do not
+        // require a duplicated source_model field inside assistant_message.
+        $sourceModel = \is_string($payload['model'] ?? null) ? $payload['model'] : null;
+        if (\is_string($sourceModel) && '' !== $sourceModel) {
+            $metadata['source_model'] = $sourceModel;
+        }
+
+        return $metadata;
     }
 }

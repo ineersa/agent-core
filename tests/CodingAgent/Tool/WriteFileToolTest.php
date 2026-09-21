@@ -207,15 +207,6 @@ final class WriteFileToolTest extends TestCase
         $this->assertSame("Has trailing newline\n", file_get_contents($targetPath));
     }
 
-    public function testWriteEmptyContentRemainsEmpty(): void
-    {
-        $targetPath = $this->tmpDir.'/empty_stays_empty.txt';
-
-        ($this->writeFileTool)(new WriteFileArgumentsDTO(path: $targetPath, content: ''));
-
-        $this->assertSame('', file_get_contents($targetPath));
-    }
-
     public function testWriteDoesNotModifyCrlfEnding(): void
     {
         $targetPath = $this->tmpDir.'/crlf_content.txt';

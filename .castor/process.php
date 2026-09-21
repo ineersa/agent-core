@@ -215,6 +215,14 @@ function run_commands_parallel(array $commands, array $timeouts = []): array
             $pInfo = $processes[$step];
             $elapsed = (hrtime(true) - $pInfo['start']) / 1e9;
 
+            // A process can exit after writing more data than the poll-loop
+            // read consumed. Drain the bytes already buffered in each pipe
+            // before closing it, or output can end inside a UTF-8 code point.
+            // The helper caps reads so a noisy surviving grandchild cannot
+            // keep the runner here forever after the step timeout has ended.
+            $pInfo['outBuf'] .= drain_available_process_output($pInfo['pipes'][0]);
+            $pInfo['errBuf'] .= drain_available_process_output($pInfo['pipes'][1]);
+
             // ── Snapshot descendant tree BEFORE intermediate parents exit ──
             // Once proc_close() returns, intermediate parents are dead and
             // grandchildren are reparented to systemd — pgrep -P can no
@@ -266,6 +274,8 @@ function run_commands_parallel(array $commands, array $timeouts = []): array
                 _reap_process_group($pInfo['sid']);
             }
 
+            $output = normalize_process_output_utf8($output);
+
             // ── Kill any descendant that survived session + PG kills ──
             // pgrep -P descendants + ps sid scan give us the full set.
             foreach (array_merge($descendantPids, $sessionPids) as $pid) {
@@ -292,6 +302,32 @@ function run_commands_parallel(array $commands, array $timeouts = []): array
     }
 
     return $results;
+}
+
+/** @param resource $pipe */
+function drain_available_process_output($pipe, int $maxReads = 64): string
+{
+    $output = '';
+    for ($reads = 0; $reads < $maxReads; ++$reads) {
+        $chunk = @fread($pipe, 65536);
+        if (false === $chunk || '' === $chunk) {
+            return $output;
+        }
+
+        $output .= $chunk;
+    }
+
+    return $output;
+}
+
+function normalize_process_output_utf8(string $output): string
+{
+    if (mb_check_encoding($output, 'UTF-8')) {
+        return $output;
+    }
+
+    return mb_scrub($output, 'UTF-8')
+        ."\n[Castor replaced malformed UTF-8 bytes in captured process output]";
 }
 
 // ── Process-group cleanup (belt-and-suspenders) ───────────────

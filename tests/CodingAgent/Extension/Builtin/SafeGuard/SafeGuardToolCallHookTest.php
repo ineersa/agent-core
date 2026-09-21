@@ -11,12 +11,15 @@ use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardToolCallHook;
 use Ineersa\Hatfield\ExtensionApi\Approval\ApprovalAnswerContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallDecisionKindEnum;
+use Ineersa\Tui\Listener\CtrlCInputInterceptor;
 use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Question\QuestionKind;
 use Ineersa\Tui\Question\QuestionOption;
 use Ineersa\Tui\Question\QuestionRequest;
 use Ineersa\Tui\Question\QuestionSource;
+use Ineersa\Tui\Runtime\TuiSessionState;
+use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\ThemePalette;
@@ -26,6 +29,8 @@ use Symfony\Component\Tui\Style\Style;
 /** SafeGuard classification + approval answer mapping (no interactive Always-allow). */
 final class SafeGuardToolCallHookTest extends TestCase
 {
+    use TuiRuntimeContextBuilderTrait;
+
     private SafeGuardToolCallHook $hook;
     private string $cwd;
     private string|false $approvalChannelEnvBackup = false;
@@ -53,15 +58,6 @@ final class SafeGuardToolCallHookTest extends TestCase
     {
         $dto = $this->hook->onToolCall(new ToolCallContextDTO('c1', 'bash', ['command' => 'ls -la'], 0));
         $this->assertSame(ToolCallDecisionKindEnum::Allow, $dto->kind);
-    }
-
-    public function testBashDestructiveStillRequiresApprovalWhenChannelSet(): void
-    {
-        putenv('HATFIELD_APPROVAL_CHANNEL=controller');
-        $_ENV['HATFIELD_APPROVAL_CHANNEL'] = 'controller';
-        $_SERVER['HATFIELD_APPROVAL_CHANNEL'] = 'controller';
-        $dto = $this->hook->onToolCall(new ToolCallContextDTO('c2', 'bash', ['command' => 'rm -rf /tmp/x'], 0));
-        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
     }
 
     public function testApprovalPromptContainsEscapedInputWithClassifierMatchesStyledAsMarkdown(): void
@@ -117,8 +113,68 @@ final class SafeGuardToolCallHookTest extends TestCase
         $this->assertStringContainsString('env |grep <fg=red>*literal*</fg> [31m', $text);
         $this->assertStringContainsString('ΔΟΚΙΜΉ', $text);
         $this->assertStringContainsString('printenv | sort', $text);
+        $this->assertStringContainsString('→ ✅ Allow', $text);
+        $this->assertStringContainsString('❌ Deny', $text);
+        $this->assertStringContainsString('session virtual-startup-session', $text);
         $this->assertStringNotContainsString('…', $text);
         $this->assertStringContainsString(new Style(color: 'yellow')->apply('env |'), $harness->ansiOutput());
+    }
+
+    public function testLongApprovalPromptCanBeReadBeforeAnswering(): void
+    {
+        putenv('HATFIELD_APPROVAL_CHANNEL=controller');
+        $command = implode("\n", array_map(static fn (int $i): string => 'printenv # OPERATION_'.$i, range(1, 20)))."\nrm FINAL_OPERATION";
+        $dto = $this->hook->onToolCall(new ToolCallContextDTO('long-render', 'bash', ['command' => $command], 0));
+        $harness = new VirtualTuiHarness(columns: 42, rows: 24);
+        (new CtrlCInputInterceptor())->register($this->buildTuiContext()
+            ->withTui($harness->tui())
+            ->withScreen($harness->screen())
+            ->withState(new TuiSessionState('long-approval'))
+            ->build());
+        $coordinator = new QuestionCoordinator();
+        $controller = new QuestionController($coordinator, $harness->screen());
+        $request = new QuestionRequest(
+            requestId: 'long-approval',
+            source: QuestionSource::AgentCore,
+            kind: QuestionKind::Choice,
+            prompt: (string) $dto->details['prompt'],
+            choices: [new QuestionOption('✅ Allow'), new QuestionOption('❌ Deny')],
+            allowOther: false,
+        );
+        $answers = [];
+        $coordinator->enqueue($request, onAnswer: static function (mixed $answer) use (&$answers): void {
+            $answers[] = $answer;
+        });
+        $harness->startInputLoop();
+        try {
+            $controller->open($request);
+            $first = $harness->plainScreenText();
+            $this->assertStringContainsString('Partial prompt', $first);
+            $this->assertStringContainsString('Ctrl+↑/↓', $first);
+            $this->assertStringNotContainsString('FINAL_OPERATION', $first);
+            $pages = $first;
+            for ($i = 0; $i < 20; ++$i) {
+                $harness->sendInput("\x1b[1;5B"); // Ctrl+Down pages the prompt, not the answer list.
+                $this->assertTrue($harness->tui()->isRunning(), 'Prompt paging must not exit the TUI');
+                $page = $harness->plainScreenText();
+                $this->assertStringContainsString('→ ✅ Allow', $page);
+                $this->assertStringContainsString('❌ Deny', $page);
+                $pages .= "\n".$page;
+            }
+            foreach (range(1, 20) as $i) {
+                $this->assertStringContainsString('OPERATION_'.$i, $pages);
+            }
+            $this->assertStringContainsString('FINAL_OPERATION', $harness->plainScreenText());
+            $this->assertSame([], $answers, 'Inspecting the command must not submit an approval');
+            for ($i = 0; $i < 20; ++$i) {
+                $harness->sendInput("\x1b[1;5A"); // Ctrl+Up returns to the prompt start.
+            }
+            $this->assertSame($first, $harness->plainScreenText());
+            $harness->sendInput("\x1b[B\r");
+            $this->assertSame(['❌ Deny'], $answers);
+        } finally {
+            $harness->stopInputLoop();
+        }
     }
 
     public function testBashDestructiveRequiresApprovalWithAllowDenyOnly(): void
@@ -142,39 +198,6 @@ final class SafeGuardToolCallHookTest extends TestCase
         $this->assertStringContainsString("**Path:**\n\n\\/tmp\\/out\\.txt", (string) ($dto->details['prompt'] ?? ''));
     }
 
-    public function testRawSettingsMutationWithChannelStillRequiresApproval(): void
-    {
-        putenv('HATFIELD_APPROVAL_CHANNEL=controller');
-        $_ENV['HATFIELD_APPROVAL_CHANNEL'] = 'controller';
-        $_SERVER['HATFIELD_APPROVAL_CHANNEL'] = 'controller';
-        // settings is a raw-array tool: arguments stay flat, never enveloped.
-        $dto = $this->hook->onToolCall(new ToolCallContextDTO(
-            'c8',
-            'settings',
-            ['operation' => 'set', 'path' => 'tui.theme', 'scope' => 'project', 'value' => 'nord'],
-            0,
-        ));
-        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
-        $this->assertSame('custom_dangerous', $dto->details['category'] ?? null);
-    }
-
-    public function testRawSettingsWithTopLevelArgumentsKeyIsNotMisunwrapped(): void
-    {
-        putenv('HATFIELD_APPROVAL_CHANNEL=controller');
-        $_ENV['HATFIELD_APPROVAL_CHANNEL'] = 'controller';
-        $_SERVER['HATFIELD_APPROVAL_CHANNEL'] = 'controller';
-        // settings stays flat: a top-level `arguments` key in its raw
-        // value/schema is an ordinary field of the raw map, not a typed
-        // built-in envelope (typed calls never carry an envelope).
-        $dto = $this->hook->onToolCall(new ToolCallContextDTO(
-            'c9',
-            'settings',
-            ['arguments' => ['operation' => 'set', 'path' => 'tui.theme', 'scope' => 'project']],
-            0,
-        ));
-        $this->assertSame(ToolCallDecisionKindEnum::Allow, $dto->kind);
-    }
-
     public function testResolveApprovalAnswerAllowReturnsAllow(): void
     {
         $decision = $this->hook->resolveApprovalAnswer(new ApprovalAnswerContextDTO('q', '✅ Allow', 'bash', ['category' => 'destructive']));
@@ -195,36 +218,12 @@ final class SafeGuardToolCallHookTest extends TestCase
         $this->assertSame('safeguard_cancelled', $decision->reason);
     }
 
-    public function testOnApprovalAnsweredIsNoOp(): void
-    {
-        // Must not throw and must not mutate settings (writer removed).
-        $this->hook->onApprovalAnswered(new ApprovalAnswerContextDTO(
-            'q',
-            '✅ Allow',
-            'bash',
-            ['category' => 'destructive', 'command' => 'rm -rf /tmp/build'],
-        ));
-        $this->addToAssertionCount(1);
-    }
-
     public function testAutoDenyBlocksWhenNoApprovalChannel(): void
     {
         $hook = $this->createHook(true);
         $dto = $hook->onToolCall(new ToolCallContextDTO('c6', 'bash', ['command' => 'rm -rf /tmp/x'], 0));
         $this->assertSame(ToolCallDecisionKindEnum::Block, $dto->kind);
         $this->assertTrue((bool) ($dto->details['auto_denied'] ?? false));
-    }
-
-    public function testSettingsMutationWithoutChannelFailsClosed(): void
-    {
-        $hook = $this->createHook(false);
-        $dto = $hook->onToolCall(new ToolCallContextDTO(
-            'c7',
-            'settings',
-            ['operation' => 'set', 'path' => 'tui.theme', 'scope' => 'project', 'value' => 'nord'],
-            0,
-        ));
-        $this->assertSame(ToolCallDecisionKindEnum::Block, $dto->kind);
     }
 
     private function createHook(bool $autoDeny): SafeGuardToolCallHook

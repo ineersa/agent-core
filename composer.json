@@ -5,6 +5,10 @@
     "description": "Monorepo for the agent-core ecosystem, consolidated into a single modular monolith.",
     "repositories": [
         {
+            "type": "vcs",
+            "url": "https://github.com/ineersa/tui"
+        },
+        {
             "type": "path",
             "url": ".hatfield/extensions/extension-api",
             "options": {
@@ -44,7 +48,7 @@
         "symfony/ai-platform": "^0.12",
         "symfony/validator": "^8.0",
         "symfony/uid": "^8.0",
-        "symfony/tui": "8.1.x-dev",
+        "symfony/tui": "dev-fix/tui-screenwriter-in-place-viewport as 8.2.x-dev",
         "symfony/ai-generic-platform": "^0.12",
         "symfony/ai-open-responses-platform": "^0.12",
         "monolog/monolog": "^3.10",

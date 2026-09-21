@@ -20,6 +20,7 @@ use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Config\BashToolConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcessRepository;
+use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 use Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface;
 use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
@@ -130,21 +131,6 @@ final class BashToolTest extends IsolatedKernelTestCase
 
     /* ── Successful completion ── */
 
-    public function testSuccessfulCommand(): void
-    {
-        $this->createManager();
-
-        $result = $this->withContext(self::TEST_SESSION, function (): string {
-            return ($this->makeBashTool())(new BashArgumentsDTO(command: 'echo "hello from bash"'));
-        });
-
-        $this->assertStringContainsString('hello from bash', $result);
-        $this->assertStringNotContainsString('timed out', $result);
-        $this->assertStringNotContainsString('cancelled', $result);
-        $this->assertStringNotContainsString('background', $result);
-        $this->assertStringNotContainsString('failed', $result);
-    }
-
     public function testSuccessfulCommandWithNewlines(): void
     {
         $this->createManager();
@@ -213,29 +199,28 @@ final class BashToolTest extends IsolatedKernelTestCase
             ThemeColorEnum::Error->value => '#ff3366',
             ThemeColorEnum::Text->value => '',
         ]);
-        foreach ([false, true] as $expanded) {
-            $projector->reset();
-            $harness = new VirtualTuiHarness(
-                sessionId: self::TEST_SESSION,
-                palette: $palette,
-                displayState: new TranscriptDisplayState(previewableBlocksExpanded: $expanded),
-            );
-            $harness->screen()->setWorkingVisible(false);
-            foreach ($events as $event) {
-                $runtimeEvent = $translator->translate($event);
-                $this->assertNotNull($runtimeEvent);
-                $projector->accept($runtimeEvent);
-                $harness->screen()->setTranscriptBlocks($projector->blocks());
-                $harness->render();
-            }
-            $plain = $harness->plainScreenText();
-            foreach (array_filter(explode("\n", $text)) as $line) {
-                $this->assertStringContainsString($line, $plain);
-            }
-            $color = $isError ? '255;51;102' : '57;255;20';
-            $firstLine = preg_quote(explode("\n", $text)[0], '/');
-            $this->assertMatchesRegularExpression('/\x1b\[38;2;'.$color.'m\s*'.$firstLine.'/', $harness->ansiOutput());
+        // Full output is visible when expanded. TuiCollapsedToolCardVirtualRenderTest
+        // covers bounded failed previews and the Ctrl+O expansion/collapse cycle.
+        $harness = new VirtualTuiHarness(
+            sessionId: self::TEST_SESSION,
+            palette: $palette,
+            displayState: new TranscriptDisplayState(previewableBlocksExpanded: true),
+        );
+        $harness->screen()->setWorkingVisible(false);
+        foreach ($events as $event) {
+            $runtimeEvent = $translator->translate($event);
+            $this->assertNotNull($runtimeEvent);
+            $projector->accept($runtimeEvent);
+            $harness->screen()->setTranscriptBlocks($projector->blocks());
+            $harness->render();
         }
+        $plain = $harness->plainScreenText();
+        foreach (array_filter(explode("\n", $text)) as $line) {
+            $this->assertStringContainsString($line, $plain);
+        }
+        $color = $isError ? '255;51;102' : '57;255;20';
+        $firstLine = preg_quote(explode("\n", $text)[0], '/');
+        $this->assertMatchesRegularExpression('/\x1b\[38;2;'.$color.'m\s*'.$firstLine.'/', $harness->ansiOutput());
     }
 
     public static function commandOutcomes(): iterable
@@ -749,39 +734,58 @@ final class BashToolTest extends IsolatedKernelTestCase
 
     public function testProcessFinishesWhilePromptBlocksReturnsCompletedOutput(): void
     {
-        // Adapter blocks briefly (simulating user considering the prompt)
-        // while the command finishes.  BashTool must re-check process
-        // status after shouldBackground() returns instead of blindly
-        // backgrounding a completed command.
-        //
-        // Timing: the supervision loop polls at 50ms intervals.  First poll
-        // at ~50ms calls shouldBackground.  Adapter blocks 200ms.  During
-        // that block the process (sleep 0.2 ≈ 200ms) finishes.  On return,
-        // the re-check finds the process completed.
+        $releasePipe = $this->tmpDir.'/finish-during-prompt-'.bin2hex(random_bytes(4)).'.fifo';
+        $this->assertTrue(posix_mkfifo($releasePipe, 0o600), 'Release FIFO must be created');
+        $releaseArg = escapeshellarg($releasePipe);
+        $releaseEndpoint = fopen($releasePipe, 'r+b');
+        $this->assertIsResource($releaseEndpoint, 'Parent must own the release FIFO endpoint');
+        $this->assertTrue(stream_set_blocking($releaseEndpoint, false), 'Release FIFO endpoint must be nonblocking');
+
+        // The child cannot finish before shouldBackground() releases it. The
+        // adapter then waits for the owned process record to reach a terminal
+        // state, which models a user answering after command completion without
+        // depending on a scheduler-sensitive sleep window.
         $promptAdapter = $this->createMock(BashBackgroundPromptAdapterInterface::class);
         $promptAdapter
             ->expects($this->once())
             ->method('shouldBackground')
-            ->willReturnCallback(static function (): bool {
-                usleep(200_000); // Block while the command finishes
+            ->willReturnCallback(function (string $command, int $pid) use ($releaseEndpoint): bool {
+                $this->assertSame(
+                    8,
+                    fwrite($releaseEndpoint, "release\n"),
+                    'Release must be delivered to the waiting owned child',
+                );
 
-                return true;
+                $deadline = microtime(true) + 2.0;
+                do {
+                    $record = $this->manager->find($pid, self::TEST_SESSION);
+                    if (null !== $record && BackgroundProcessStatusEnum::Running !== $record->status) {
+                        return true;
+                    }
+
+                    usleep(10_000);
+                } while (microtime(true) < $deadline);
+
+                self::fail('Owned bash process did not reach a terminal state after release');
             });
 
         $this->bashConfig = new BashToolConfig(
             defaultTimeoutSeconds: 30,
             backgroundPromptThresholdSeconds: 0, // trigger immediately
-            pollIntervalMicros: 50_000,
+            pollIntervalMicros: 10_000,
             logTailChars: 20000,
         );
         $this->createManager();
 
-        // Command that finishes while the adapter is blocking.
-        // sleep 0.1 (≈100ms) is longer than the poll interval (50ms)
-        // but short enough to finish during the 200ms adapter block.
-        $result = $this->withContext(self::TEST_SESSION, function () use ($promptAdapter): string {
-            return ($this->makeBashTool($promptAdapter))(new BashArgumentsDTO(command: 'sleep 0.1 && echo "Hello world"'));
-        });
+        try {
+            $result = $this->withContext(self::TEST_SESSION, function () use ($promptAdapter, $releaseArg): string {
+                return ($this->makeBashTool($promptAdapter))(new BashArgumentsDTO(
+                    command: 'IFS= read -r release < '.$releaseArg.'; echo "Hello world"',
+                ));
+            });
+        } finally {
+            fclose($releaseEndpoint);
+        }
 
         // Must show the completed output, not a backgrounding notice or timeout.
         $this->assertStringContainsString('Hello world', $result);
@@ -1035,8 +1039,12 @@ final class BashToolTest extends IsolatedKernelTestCase
         $staleEntity->finish(0, new \DateTimeImmutable('-1 hour'));
         $store->flush();
 
-        $releaseFile = $this->tmpDir.'/pid-reuse-release-'.bin2hex(random_bytes(4));
-        $releaseArg = escapeshellarg($releaseFile);
+        $releasePipe = $this->tmpDir.'/pid-reuse-release-'.bin2hex(random_bytes(4)).'.fifo';
+        $this->assertTrue(posix_mkfifo($releasePipe, 0o600), 'Release FIFO must be created');
+        $releaseArg = escapeshellarg($releasePipe);
+        $releaseEndpoint = fopen($releasePipe, 'r+b');
+        $this->assertIsResource($releaseEndpoint, 'Parent must own the release FIFO endpoint');
+        $this->assertTrue(stream_set_blocking($releaseEndpoint, false), 'Release FIFO endpoint must be nonblocking');
 
         $this->bashConfig = new BashToolConfig(
             defaultTimeoutSeconds: 30,
@@ -1045,32 +1053,33 @@ final class BashToolTest extends IsolatedKernelTestCase
             logTailChars: 20000,
         );
 
-        $promptAdapter = new class($store, $em, $staleId, $releaseFile) implements BashBackgroundPromptAdapterInterface {
-            public function __construct(
-                private readonly ProcessStore $store,
-                private readonly \Doctrine\ORM\EntityManagerInterface $em,
-                private readonly int $staleRecordId,
-                private readonly string $releaseFile,
-            ) {
-            }
-
-            public function shouldBackground(string $command, int $pid, string $logPath, float $elapsedSeconds): bool
-            {
-                $stale = $this->store->fetchByRecordId($this->staleRecordId);
+        $promptAdapter = $this->createMock(BashBackgroundPromptAdapterInterface::class);
+        $promptAdapter
+            ->expects($this->once())
+            ->method('shouldBackground')
+            ->willReturnCallback(function (string $command, int $pid) use ($store, $em, $staleId, $releaseEndpoint): bool {
+                $stale = $store->fetchByRecordId($staleId);
                 if (null !== $stale) {
                     $stale->pid = $pid;
-                    $this->em->flush();
+                    $em->flush();
                 }
 
-                touch($this->releaseFile);
+                $this->assertSame(
+                    8,
+                    fwrite($releaseEndpoint, "release\n"),
+                    'Release must be delivered to the waiting owned child',
+                );
 
                 return false;
-            }
-        };
+            });
 
-        $result = $this->withContext(self::TEST_SESSION, function () use ($promptAdapter, $releaseArg): string {
-            return ($this->makeBashTool($promptAdapter))(new BashArgumentsDTO(command: 'while [ ! -f '.$releaseArg.' ]; do :; done; echo '.escapeshellarg(self::DATETIME_MARKER)));
-        });
+        try {
+            $result = $this->withContext(self::TEST_SESSION, function () use ($promptAdapter, $releaseArg): string {
+                return ($this->makeBashTool($promptAdapter))(new BashArgumentsDTO(command: 'IFS= read -r release < '.$releaseArg.'; echo '.escapeshellarg(self::DATETIME_MARKER)));
+            });
+        } finally {
+            fclose($releaseEndpoint);
+        }
 
         $this->assertStringContainsString(self::DATETIME_MARKER, $result);
         $this->assertStringNotContainsString(self::COMPOSER_MARKER, $result);

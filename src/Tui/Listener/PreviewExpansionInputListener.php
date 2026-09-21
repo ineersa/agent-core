@@ -39,9 +39,15 @@ final class PreviewExpansionInputListener implements TuiListenerRegistrar
                 $state->transcriptDisplayState->previewableBlocksExpanded =
                     !$state->transcriptDisplayState->previewableBlocksExpanded;
 
-                // Re-push blocks so TranscriptMountedWidget reconciles with the updated
-                // preview expansion fingerprint and re-renders tool/diff previews.
-                $screen->setTranscriptBlocks($state->transcript);
+                // Re-push the visible transcript so TranscriptMountedWidget reconciles
+                // with the updated preview expansion fingerprint and re-renders
+                // tool/diff previews. While live view owns the screen, the child
+                // transcript must be re-pushed instead of the parent's.
+                $screen->setTranscriptBlocks(
+                    $state->subagentLiveView->active
+                        ? $state->subagentLiveView->childTranscript
+                        : $state->transcript,
+                );
 
                 $tui->requestRender();
             },

@@ -32,7 +32,9 @@ Before touching an area, read its nearest nested `AGENTS.md`. Nested instruction
 
 **All QA, test, lint, static analysis, and formatting go through Castor.** Do not run raw `vendor/bin/*` except to isolate a Castor failure. Reports land under `var/reports/` (per-run dirs via `HATFIELD_QA_REPORTS_DIR`).
 
-Key commands: `castor check` (includes `docs:validate` and `dead-code`), `castor test`, `castor test:tui`, `castor test:controller-replay`, `castor test:llm-real`, `castor deptrac`, `castor phpstan`, `castor dead-code`, `castor cs-check`, `castor cs-fix`, `castor docs:validate`.
+Key commands: `castor check` (includes `lsp:check`, `docs:validate`, and `dead-code`), `castor test`, `castor test:tui`, `castor test:controller-replay`, `castor test:llm-real`, `castor deptrac`, `castor phpstan`, `castor lsp:check [--path=PATH]`, `castor dead-code`, `castor cs-check`, `castor cs-fix`, `castor docs:validate`.
+
+`castor lsp:check [--path=PATH]` runs Symfony Language Tools runtime diagnostics for the project or a selected file or directory. Runtime analysis executes application code. The task requires Symfony CLI with Language Tools 0.21.0 or newer. Errors, incomplete analysis, missing tools, and unsupported versions fail the task. Warnings remain visible but do not fail it.
 
 Timeouts, check lock, llama-proxy cache guard, ParaTest budgets, preflight, and worker diagnostics: load the `testing` skill (`.agents/skills/testing/SKILL.md`).
 
@@ -66,9 +68,9 @@ Do this before proposing a test strategy, adding tests, running Castor tests, or
 - **Never signal, kill, restart, or otherwise touch root-owned workers**, or processes tagged with `HATFIELD_SESSION_ID`. If a root-owned process looks stale, report it and leave it alone.
 - DB-touching tests boot the Symfony kernel and use the test container (`IsolatedKernelTestCase` / skill docs).
 
-## JetBrains IDE tools
+## Code navigation
 
-When JetBrains IDE integration is available in the active coding agent/runtime, prefer those tools for semantic navigation, references/call hierarchy, diagnostics, and semantic rename/move. Target the exact checkout using that runtime's project-scoping and open-project capability. Fall back to filesystem/`rg`/`find` for docs, generated artifacts, bulk ops, or when IDE tools are unavailable/insufficient. Exact tool names and capabilities come from the active coding agent's system instructions (Pi and Hatfield expose different names).
+Use `code_search` for conceptual discovery and `rg`/`find` for literal text and file searches. Read relevant files and callers before editing. Run searches and validation against the exact checkout or task worktree.
 
 ## Specification fidelity and minimality
 
@@ -130,11 +132,11 @@ Module-specific Runtime, TUI, and Extension API rules live in their nearest loca
 
 ## Task workflow
 
-External task board (not the code repo): `/home/ineersa/projects/agent-core-tasks` under `TODO/`, `IN-PROGRESS/`, `CODE-REVIEW/`, `DONE/`, `ARCHIVE/`, `CANCELLED/` (`.pi/settings.json` → `taskWorkflow.taskRoot`).
+External task board (not the code repo): `/home/ineersa/projects/agent-core-tasks` under `TODO/`, `IN-PROGRESS/`, `CODE-REVIEW/`, `DONE/`, `ARCHIVE/`, `CANCELLED/`.
 
 By default, `task_list` lists TODO, IN-PROGRESS, CODE-REVIEW, and DONE. Use `status=CANCELLED` to list cancelled tasks. Use `include_archive=true` or `status=ARCHIVE` to list archived tasks.
 
-Task status/metadata moves do **not** commit to agent-core. Code branches, worktrees, PRs, merges do. Worktree creation updates parent IDEA module exclusions when present, creates minimal worktree-local `.idea` metadata from the integration primary module, and opens the exact worktree in JetBrains via MCP when available. DONE/CANCELLED cleanup closes that exact project before worktree removal.
+Task status/metadata moves do **not** commit to agent-core. Code branches, worktrees, PRs, merges do. Worktree creation updates parent IDEA module exclusions when present and creates minimal worktree-local `.idea` metadata from the integration primary module. This filesystem setup supports jbcontext and editor use without an IDE server. DONE/CANCELLED cleanup removes exclusions after successful worktree removal.
 
 ### Implementation ownership
 
@@ -175,6 +177,7 @@ Load the task-workflow skill when deciding implementation ownership or preparing
 - `docs/ai-catalog.md`: AI provider catalog, `providers:update`, and settings overlay
 - `docs/compaction.md`: compaction, `/compact`, events, and hooks
 - `docs/session-storage.md`: sessions, replay, locking, resume, and fork
+- `docs/history-conversion.md`: request-time history conversion across providers/models
 - `docs/tui-architecture.md`: layout, widgets, slots, and themes
 - `docs/tui-testing.md`: tmux testing, snapshots, and keybindings
 - `docs/distribution.md`: release artifacts, installer, and publishing

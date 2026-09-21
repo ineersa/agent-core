@@ -251,7 +251,7 @@ class ModelPickerControllerTest extends TestCase
         );
         $sessionMetaStore = $hatfieldSessionStore;
 
-        return new ModelSelectionService($appConfig, new ModelResolver($appConfig, $sessionMetaStore), $homeWriter, $sessionMetaStore);
+        return new ModelSelectionService($appConfig, new ModelResolver($appConfig, $sessionMetaStore, new NullLogger()), $homeWriter, $sessionMetaStore);
     }
 
     private function standardAiData(): array
@@ -280,7 +280,7 @@ class ModelPickerControllerTest extends TestCase
                 'llama_cpp' => [
                     'type' => 'generic',
                     'enabled' => true,
-                    'base_url' => 'http://192.168.2.38:8052/v1',
+                    'base_url' => 'http://10.0.0.89:8052/v1',
                     'models' => [
                         'flash' => [
                             'id' => 'flash',

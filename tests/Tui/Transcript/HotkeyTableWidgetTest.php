@@ -204,6 +204,6 @@ final class HotkeyTableWidgetTest extends TestCase
         $root->add($widget);
         $renderer = new Renderer((new ThemeStyleSheetFactory())->createHotkeyTable($this->theme->getPalette()));
 
-        return $renderer->render($root, $width, 40);
+        return $renderer->renderFrame($root, $width, 40)->toArray();
     }
 }

@@ -609,6 +609,40 @@ final class RuntimeEventPollerTest extends TestCase
         $this->assertFalse($called);
     }
 
+    public function testQueuedFollowUpDispatchedOnceWhenCompactionCompletes(): void
+    {
+        $this->state->queuedFollowUp = 'Run the checks after compaction';
+        $this->state->activity = RunActivityStateEnum::Compacting;
+
+        $event = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::CompactionCompleted->value,
+            runId: 'test-run',
+            seq: 10,
+        );
+
+        $this->client->expects($this->once())
+            ->method('events')
+            ->with('test-run', $this->anything())
+            ->willReturn([$event]);
+        $this->client->expects($this->once())
+            ->method('send')
+            ->with(
+                'test-run',
+                $this->callback(static fn ($cmd): bool => $cmd instanceof UserCommand
+                    && 'follow_up' === $cmd->type
+                    && 'Run the checks after compaction' === $cmd->text
+                ),
+            );
+
+        $this->projector->method('accept');
+        $this->projector->method('drainChanges')->willReturn(TranscriptChangeSet::incremental([]));
+
+        $this->poller->poll($this->state, $this->client);
+
+        $this->assertNull($this->state->queuedFollowUp);
+        $this->assertSame(RunActivityStateEnum::Starting, $this->state->activity);
+    }
+
     /**
      * When activity is Cancelling and a queued follow-up exists,
      * CompactionCompleted must NOT dispatch the follow-up — it

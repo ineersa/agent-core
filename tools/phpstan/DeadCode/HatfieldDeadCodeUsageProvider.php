@@ -11,13 +11,11 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\Defer
 use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedMetadataDTO;
 use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedSessionMetadataDTO;
 use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedToolsScopeDTO;
+use Ineersa\CodingAgent\Infrastructure\SymfonyAi\Http\LlmCancelAwareHttpClient;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressChildRowDTO;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressParallelSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingleSnapshotDTO;
-use Ineersa\CodingAgent\Tests\Runtime\Controller\E2E\Replay\StreamPacingHttpClient;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
-use Ineersa\Tui\Terminal\CachedWidthValidationRenderer;
-use Ineersa\Tui\Terminal\SynchronizedCursorScreenWriter;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use ShipMonk\PHPStan\DeadCode\Provider\ReflectionBasedMemberUsageProvider;
 use ShipMonk\PHPStan\DeadCode\Provider\VirtualUsageData;
@@ -82,18 +80,12 @@ final class HatfieldDeadCodeUsageProvider extends ReflectionBasedMemberUsageProv
 
         // Measured with this rule removed: ShipMonk reports both required
         // HttpClientInterface methods as "all usages excluded by tests excluder".
-        if (StreamPacingHttpClient::class === $className
+        // LlmCancelAwareHttpClient::stream is invoked by vendor AsyncResponse via
+        // HttpClientInterface; concrete override call sites are not attributed.
+        if (LlmCancelAwareHttpClient::class === $className
             && \in_array($method->getName(), ['stream', 'withOptions'], true)
             && $method->getDeclaringClass()->implementsInterface(HttpClientInterface::class)) {
-            return VirtualUsageData::withNote('Required HttpClientInterface methods reported unused after test-usage exclusion');
-        }
-
-        if (CachedWidthValidationRenderer::class === $className) {
-            return VirtualUsageData::withNote('Symfony TUI Renderer contract installed through class_alias');
-        }
-
-        if (SynchronizedCursorScreenWriter::class === $className) {
-            return VirtualUsageData::withNote('Symfony TUI ScreenWriter contract installed through class_alias');
+            return VirtualUsageData::withNote('HttpClientInterface method called through vendor AsyncResponse / typed interface');
         }
 
         return null;

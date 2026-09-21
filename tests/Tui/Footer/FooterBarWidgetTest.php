@@ -204,6 +204,6 @@ final class FooterBarWidgetTest extends TestCase
         $root = new ContainerWidget();
         $root->add($widget);
 
-        return (new Renderer())->render($root, $width, 40);
+        return (new Renderer())->renderFrame($root, $width, 40)->toArray();
     }
 }

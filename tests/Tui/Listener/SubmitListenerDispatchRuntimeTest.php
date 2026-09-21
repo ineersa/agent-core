@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Listener;
 
 use Doctrine\ORM\EntityManagerInterface;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
@@ -32,12 +33,12 @@ use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
+use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
-use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\Tui\Event\SubmitEvent;
 use Symfony\Component\Tui\Tui;
@@ -49,7 +50,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
     private TuiSessionState $state;
     /** @var AgentSessionClient&\PHPUnit\Framework\MockObject\MockObject */
     private AgentSessionClient $client;
-    private LoggerInterface $logger;
+    private TestLogger $logger;
     private SlashCommandCatalog $catalog;
     private SubmissionRouter $router;
     private QuestionCoordinator $questionCoordinator;
@@ -61,7 +62,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
 
         $this->state = new TuiSessionState('test-session');
         $this->client = $this->createMock(AgentSessionClient::class);
-        $this->logger = new NullLogger();
+        $this->logger = new TestLogger();
         $this->questionCoordinator = new QuestionCoordinator();
 
         // Build a catalog with a template command returning DispatchRuntime
@@ -170,6 +171,53 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
             }));
 
         $this->dispatchSubmit('/review steer');
+    }
+
+    #[Test]
+    public function normalPromptQueuesWhileCompacting(): void
+    {
+        $this->state->handle = new RunHandle('run-1');
+        $this->state->activity = RunActivityStateEnum::Compacting;
+        $this->state->sessionId = 'test-session';
+
+        $this->client->expects($this->never())->method('send');
+
+        $harness = new VirtualTuiHarness(sessionId: 'test-session');
+        $screen = $this->dispatchSubmit('Run the checks after compaction', screen: $harness->screen());
+
+        $this->assertSame('Run the checks after compaction', $this->state->queuedFollowUp);
+        $this->assertSame('Message queued — waiting for compaction to complete...', $screen->workingMessage());
+        $this->assertStringContainsString('⏳ Run the checks after compaction', $harness->plainScreenText());
+    }
+
+    #[Test]
+    public function queuedCompactionMessageSurvivesImmediateRenderFailure(): void
+    {
+        $this->state->handle = new RunHandle('run-1');
+        $this->state->activity = RunActivityStateEnum::Compacting;
+
+        $tui = $this->getMockBuilder(Tui::class)
+            ->onlyMethods(['processRender'])
+            ->getMock();
+        $renderCount = 0;
+        $tui->expects($this->exactly(2))
+            ->method('processRender')
+            ->willReturnCallback(static function () use (&$renderCount): void {
+                ++$renderCount;
+                if (2 === $renderCount) {
+                    throw new \RuntimeException('terminal unavailable');
+                }
+            });
+        $this->client->expects($this->never())->method('send');
+
+        $this->dispatchSubmit('Run the checks after compaction', tui: $tui);
+
+        $this->assertSame('Run the checks after compaction', $this->state->queuedFollowUp);
+        $this->assertSame(RunActivityStateEnum::Compacting, $this->state->activity);
+        $this->assertSame([], $this->state->transcript);
+        $this->assertSame('error', $this->logger->records[0]['level']);
+        $this->assertSame('submit_listener.queued_message_render_failed', $this->logger->records[0]['message']);
+        $this->assertSame('terminal unavailable', $this->logger->records[0]['context']['exception']->getMessage());
     }
 
     // ── DispatchRuntime sends follow_up while idle/completed ────────
@@ -321,6 +369,88 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
         $this->assertNotSame('', $this->state->sessionId, 'Draft sessionId should be promoted');
         $this->assertSame(RunActivityStateEnum::Starting, $this->state->activity);
         $this->assertNotNull($this->state->handle);
+    }
+
+    #[Test]
+    #[AllowMockObjectsWithoutExpectations]
+    public function draftModelSelectionSurvivesFirstSubmitIntoStartRequest(): void
+    {
+        // Picker/slash/Ctrl+P must update the pending draft request through
+        // PendingModelSelection so first submit starts that model, not a
+        // stale AppConfig default.
+        $this->state->sessionId = '';
+        $this->state->handle = null;
+        $this->state->activity = RunActivityStateEnum::Idle;
+        $this->state->request = null;
+
+        $appConfig = self::footerAppConfig($this->tempCwd);
+        $homeDir = $this->tempCwd.'/home';
+        mkdir($homeDir.'/.hatfield', 0777, true);
+        file_put_contents($homeDir.'/.hatfield/settings.yaml', "tui:\n    theme: default\n");
+        $pathResolver = new \Ineersa\CodingAgent\Config\SettingsPathResolver($this->tempCwd, $homeDir);
+        $homeWriter = new \Ineersa\CodingAgent\Config\SettingsOverrideWriter(
+            $pathResolver,
+            \Symfony\Component\PropertyAccess\PropertyAccess::createPropertyAccessor(),
+            new \Symfony\Component\Filesystem\Filesystem(),
+        );
+
+        $nextId = 1;
+        $entityById = [];
+        $persisted = null;
+        $em = $this->createMock(EntityManagerInterface::class);
+        $em->method('persist')->willReturnCallback(static function ($entity) use (&$persisted): void {
+            $persisted = $entity;
+        });
+        $em->method('flush')->willReturnCallback(
+            static function () use (&$persisted, &$nextId, &$entityById): void {
+                if ($persisted instanceof HatfieldSession) {
+                    $persisted->id = $nextId++;
+                    $entityById[(string) $persisted->id] = $persisted;
+                    $persisted = null;
+                }
+            },
+        );
+        $em->method('find')->willReturnCallback(
+            static fn (string $class, mixed $id): ?HatfieldSession => $entityById[(string) $id] ?? null,
+        );
+
+        $sessionStore = new HatfieldSessionStore(
+            appConfig: $appConfig,
+            entityManager: $em,
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
+        );
+        $modelService = new \Ineersa\CodingAgent\Config\ModelSelectionService(
+            $appConfig,
+            new \Ineersa\CodingAgent\Config\ModelResolver($appConfig, $sessionStore, new NullLogger()),
+            $homeWriter,
+            $sessionStore,
+        );
+
+        $selected = \Ineersa\CodingAgent\Config\Ai\AiModelReference::tryParse('llama_cpp_test/test');
+        $this->assertNotNull($selected);
+        \Ineersa\Tui\Listener\PendingModelSelection::updateModel($modelService, $selected, $this->state);
+        $this->assertSame('llama_cpp_test/test', $this->state->request?->model);
+
+        $startedModel = null;
+        $this->client->expects($this->once())
+            ->method('start')
+            ->willReturnCallback(
+                static function (StartRunRequest $req) use (&$startedModel, &$entityById): RunHandle {
+                    $startedModel = $req->model;
+                    $entity = $entityById[$req->runId] ?? null;
+                    \assert(null !== $entity);
+                    $entity->model = $req->model;
+                    $entity->reasoning = $req->reasoning ?? 'off';
+
+                    return new RunHandle('draft-run-selected');
+                },
+            );
+
+        $this->dispatchSubmit('/review selected-model', $sessionStore);
+
+        $this->assertSame('llama_cpp_test/test', $startedModel, 'First submit must start the draft-selected model');
+        $this->assertNotSame('', $this->state->sessionId);
+        $this->assertSame('llama_cpp_test/test', $this->state->request?->model);
     }
 
     // ── Shell restart path for DispatchRuntime ─────────────────
@@ -618,12 +748,16 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
      *
      * @return ChatScreen the screen after dispatch (for state inspection)
      */
-    private function dispatchSubmit(string $text, ?HatfieldSessionStore $sessionStore = null, ?PromptHistory $history = null, ?SubmissionRouter $router = null): ChatScreen
+    private function dispatchSubmit(string $text, ?HatfieldSessionStore $sessionStore = null, ?PromptHistory $history = null, ?SubmissionRouter $router = null, ?ChatScreen $screen = null, ?Tui $tui = null): ChatScreen
     {
-        $tui = new Tui();
-        $theme = new DefaultTheme(new ThemePalette('test'));
-        $promptEditor = new PromptEditor();
-        $screen = new ChatScreen($theme, $this->state->sessionId, $promptEditor);
+        $tui ??= new Tui();
+        if (null === $screen) {
+            $theme = new DefaultTheme(new ThemePalette('test'));
+            $promptEditor = new PromptEditor();
+            $screen = new ChatScreen($theme, $this->state->sessionId, $promptEditor);
+        } else {
+            $promptEditor = $screen->promptEditor();
+        }
 
         // Set the text in the editor (will be extracted by SubmitListener)
         $promptEditor->setText($text);
@@ -654,7 +788,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
             subagentLiveInputPolicy: new SubagentLiveInputPolicy(),
             logger: $this->logger,
             pastedImageSubmissionService: new \Ineersa\Tui\ImagePaste\PastedImageSubmissionService(
-                new \Ineersa\Tui\ImagePaste\PastedImageValidationService(new \Ineersa\CodingAgent\Config\ImageToolConfig(), new \Ineersa\AgentCore\Tests\Support\TestLogger()),
+                new \Ineersa\Tui\ImagePaste\PastedImageValidationService(new \Ineersa\CodingAgent\Config\ImageToolConfig(), new TestLogger()),
                 $context->sessionStore,
                 new \Ineersa\CodingAgent\Config\AppConfig(
                     tui: new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'),
@@ -663,7 +797,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
                     cwd: $this->tempCwd,
                 ),
                 new \Ineersa\Tui\Transcript\TranscriptBlockFactory(),
-                new \Ineersa\AgentCore\Tests\Support\TestLogger(),
+                new TestLogger(),
             ),
         );
         $listener->register($context);
@@ -680,6 +814,48 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
         ($listeners[0])(new SubmitEvent($promptEditor->getWidget(), $text));
 
         return $screen;
+    }
+
+    /**
+     * AppConfig with a minimal AI catalog for draft model-selection tests.
+     */
+    private static function footerAppConfig(string $cwd): \Ineersa\CodingAgent\Config\AppConfig
+    {
+        $raw = [
+            'tui' => ['theme' => 'default'],
+            'ai' => [
+                'default_model' => 'llama_cpp_test/test',
+                'default_reasoning' => 'off',
+                'providers' => [
+                    'llama_cpp_test' => [
+                        'type' => 'generic',
+                        'enabled' => true,
+                        'base_url' => 'http://127.0.0.1:9052/v1',
+                        'models' => [
+                            'test' => [
+                                'name' => 'test',
+                                'context_window' => 32768,
+                                'max_tokens' => 32768,
+                                'input' => ['text'],
+                                'tool_calling' => true,
+                                'reasoning' => false,
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ];
+        $ai = \Ineersa\CodingAgent\Config\Ai\AiConfig::optionalFromArray($raw);
+
+        return new \Ineersa\CodingAgent\Config\AppConfig(
+            tui: new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'),
+            logging: new \Ineersa\CodingAgent\Config\LoggingConfig(),
+            sessions: new \Ineersa\CodingAgent\Config\SessionsConfig(),
+            ai: $ai,
+            raw: $raw,
+            catalog: null !== $ai ? new \Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog($ai) : null,
+            cwd: $cwd,
+        );
     }
 
     /** @return list<string> */

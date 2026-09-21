@@ -6,10 +6,10 @@ namespace Symfony\AI\Platform\Bridge\OpenAICodex\Contract;
 
 use Symfony\AI\Platform\Bridge\OpenAICodex\Contract\Message\CodexAssistantMessageNormalizer;
 use Symfony\AI\Platform\Bridge\OpenAICodex\Contract\Message\CodexMessageBagNormalizer;
+use Symfony\AI\Platform\Bridge\OpenAICodex\Contract\Message\CodexToolCallMessageNormalizer;
 use Symfony\AI\Platform\Bridge\OpenAICodex\Contract\Message\CodexUserMessageNormalizer;
 use Symfony\AI\Platform\Bridge\OpenResponses\Contract\Message\Content\ImageNormalizer;
 use Symfony\AI\Platform\Bridge\OpenResponses\Contract\Message\Content\TextNormalizer;
-use Symfony\AI\Platform\Bridge\OpenResponses\Contract\Message\ToolCallMessageNormalizer;
 use Symfony\AI\Platform\Contract;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
@@ -60,7 +60,7 @@ final class CodexContract extends Contract
         $codexNormalizers = [
             new CodexMessageBagNormalizer(),
             new CodexAssistantMessageNormalizer(),
-            new ToolCallMessageNormalizer(),
+            new CodexToolCallMessageNormalizer(),
             new CodexUserMessageNormalizer(),
             new ImageNormalizer(),
             new TextNormalizer(),

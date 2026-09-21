@@ -26,7 +26,6 @@ use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
-use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\PropertyAccess\PropertyAccess;
 use Symfony\Component\Uid\Uuid;
@@ -48,7 +47,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
         $this->tempDir = TestDirectoryIsolation::createProjectTempDir('hatfield-resolver', 0o750);
         $this->homeDir = $this->tempDir.'/home';
         mkdir($this->homeDir, 0777, true);
-        mkdir($this->homeDir.'/.hatfield', 0777, true);
+        TestDirectoryIsolation::createHatfieldTree($this->homeDir);
         file_put_contents($this->homeDir.'/.hatfield/settings.yaml', "tui:\n    theme: cyberpunk\n");
     }
 
@@ -66,7 +65,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
         // Empty defaultModel => no explicit override => session metadata model wins.
         $result = $resolver->resolve(
             '',
-            new MessageBag(),
+            false,
             new ModelInvocationInput(runId: $sessionId),
             new ModelResolutionOptions(),
         );
@@ -84,7 +83,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
 
         $result = $resolver->resolve(
             '',
-            new MessageBag(),
+            false,
             new ModelInvocationInput(runId: $sessionId),
             new ModelResolutionOptions(),
         );
@@ -100,7 +99,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
 
         $result = $resolver->resolve(
             'openai-codex/gpt-test',
-            new MessageBag(),
+            false,
             new ModelInvocationInput(runId: $runId),
             new ModelResolutionOptions(),
         );
@@ -130,7 +129,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
 
         $result = $resolver->resolve(
             '',
-            new MessageBag(),
+            false,
             new ModelInvocationInput(runId: $sessionId),
             new ModelResolutionOptions(),
         );
@@ -148,7 +147,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
         // the caller already resolved a specific model string.
         $result = $resolver->resolve(
             'deepseek/deepseek-v4-pro',
-            new MessageBag(),
+            false,
             new ModelInvocationInput(runId: $sessionId),
             new ModelResolutionOptions(),
         );
@@ -163,7 +162,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
 
         $result = $resolver->resolve(
             'deepseek/deepseek-v4-pro',
-            new MessageBag(),
+            false,
             new ModelInvocationInput(),
             new ModelResolutionOptions(),
         );
@@ -181,7 +180,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
 
         $result = $resolver->resolve(
             'fallback-model',
-            new MessageBag(),
+            false,
             new ModelInvocationInput(),
             new ModelResolutionOptions(),
         );
@@ -199,7 +198,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
 
         $resolver->resolve(
             '',
-            new MessageBag(),
+            false,
             new ModelInvocationInput(),
             new ModelResolutionOptions(),
         );
@@ -216,7 +215,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
         // Empty defaultModel => no explicit override => session metadata model wins.
         $result = $resolver->resolve(
             '',
-            new MessageBag(),
+            false,
             new ModelInvocationInput(runId: $sessionId),
             new ModelResolutionOptions(),
         );
@@ -236,7 +235,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
 
         $resolver->resolve(
             'any-model',
-            new MessageBag(),
+            false,
             new ModelInvocationInput(),
             new ModelResolutionOptions(),
         );
@@ -250,7 +249,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
         // Empty thinking_level in options + empty defaultModel => session reasoning wins.
         $result = $resolver->resolve(
             '',
-            new MessageBag(),
+            false,
             new ModelInvocationInput(runId: $sessionId),
             new ModelResolutionOptions(),
         );
@@ -266,7 +265,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
         // thinking_level in ModelResolutionOptions overrides session reasoning.
         $result = $resolver->resolve(
             '',
-            new MessageBag(),
+            false,
             new ModelInvocationInput(runId: $sessionId),
             new ModelResolutionOptions(['thinking_level' => 'low']),
         );
@@ -282,7 +281,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
         // Empty string thinking_level => no override => session reasoning wins.
         $result = $resolver->resolve(
             '',
-            new MessageBag(),
+            false,
             new ModelInvocationInput(runId: $sessionId),
             new ModelResolutionOptions(['thinking_level' => '']),
         );
@@ -297,7 +296,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
 
         $result = $resolver->resolve(
             '',
-            new MessageBag(),
+            false,
             new ModelInvocationInput(runId: $childRunId),
             new ModelResolutionOptions(),
         );
@@ -343,7 +342,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
         $resolver = $this->createResolver($this->standardAiData(), $reader);
         $result = $resolver->resolve(
             '',
-            new MessageBag(),
+            false,
             new ModelInvocationInput(runId: $childRunId),
             new ModelResolutionOptions(),
         );
@@ -360,7 +359,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
 
         $result = $resolver->resolve(
             '',
-            new MessageBag(),
+            false,
             new ModelInvocationInput(runId: 'db1f3c6bdccc'),
             new ModelResolutionOptions(),
         );
@@ -377,7 +376,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
 
         $resolver->resolve(
             '',
-            new MessageBag(),
+            false,
             new ModelInvocationInput(runId: '42'),
             new ModelResolutionOptions(),
         );
@@ -399,7 +398,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
 
         $resolver->resolve(
             '',
-            new MessageBag(),
+            false,
             new ModelInvocationInput(runId: $sessionId),
             new ModelResolutionOptions(),
         );
@@ -438,7 +437,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
 
         $result = $resolver->resolve(
             '',
-            new MessageBag(),
+            false,
             new ModelInvocationInput(),
             new ModelResolutionOptions(),
         );
@@ -464,32 +463,65 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
         $id = $this->writeSessionMetadata('astra', ['model' => 'openai-codex/gpt-6-astra', 'reasoning' => 'medium']);
         $store = static::getContainer()->get(HatfieldSessionStore::class);
         $input = new ModelInvocationInput(runId: $id);
-        $messages = new MessageBag(\Symfony\AI\Platform\Message\Message::ofUser('Hello'));
         $resolver = $this->createResolver($data);
-        $resolver->resolve('', new MessageBag(), $input, new ModelResolutionOptions());
+        $resolver->resolve('', false, $input, new ModelResolutionOptions());
         $this->assertNull($store->findSession($id)->reasoningBaseline);
 
-        $first = $resolver->resolve('', $messages, $input, new ModelResolutionOptions());
+        $first = $resolver->resolve('', true, $input, new ModelResolutionOptions());
         $this->assertSame(['reasoning' => ['effort' => 'medium', 'summary' => 'auto'], 'codex_reasoning_reset' => true], $first->reasoningOptions);
-        foreach (['medium', 'high', 'low'] as $effort) {
-            $store->updateMetadata($id, ['reasoning' => $effort]);
-            $this->entityManager->clear();
-            $result = $this->createResolver($data)->resolve('', $messages, $input, new ModelResolutionOptions());
-            $this->assertSame('medium', $result->reasoningOptions['reasoning']['effort']);
-            $this->assertSame($effort, $result->reasoningOptions['codex_reasoning_update']);
-        }
+        $unchanged = $this->createResolver($data)->resolve('', true, $input, new ModelResolutionOptions());
+        $this->assertSame(['reasoning' => ['effort' => 'medium', 'summary' => 'auto']], $unchanged->reasoningOptions);
 
-        $override = $resolver->resolve('openai-codex/gpt-6-astra', $messages, $input, new ModelResolutionOptions(['thinking_level' => 'high']));
+        $store->updateMetadata($id, ['reasoning' => 'high']);
+        $this->entityManager->clear();
+        $toHigh = $this->createResolver($data)->resolve('', true, $input, new ModelResolutionOptions());
+        $this->assertSame('medium', $toHigh->reasoningOptions['reasoning']['effort']);
+        $this->assertSame('high', $toHigh->reasoningOptions['codex_reasoning_update']);
+        $this->assertSame($id, $toHigh->reasoningOptions['hatfield_run_id']);
+        $this->assertSame('openai-codex/gpt-6-astra', $toHigh->reasoningOptions['hatfield_model_ref']);
+        $this->assertArrayNotHasKey('hatfield_run_id', $toHigh->providerOptions);
+        $this->assertArrayNotHasKey('hatfield_model_ref', $toHigh->providerOptions);
+        $store->rememberReasoningTransition($id, 'openai-codex/gpt-6-astra', 'transition-high', 'high');
+
+        $store->updateMetadata($id, ['reasoning' => 'high']);
+        $this->entityManager->clear();
+        $stillHigh = $this->createResolver($data)->resolve('', true, $input, new ModelResolutionOptions());
+        $this->assertSame(['reasoning' => ['effort' => 'medium', 'summary' => 'auto']], $stillHigh->reasoningOptions);
+        $this->assertArrayNotHasKey('hatfield_run_id', $stillHigh->reasoningOptions);
+        $this->assertArrayNotHasKey('hatfield_model_ref', $stillHigh->reasoningOptions);
+
+        $store->updateMetadata($id, ['reasoning' => 'low']);
+        $this->entityManager->clear();
+        $toLow = $this->createResolver($data)->resolve('', true, $input, new ModelResolutionOptions());
+        $this->assertSame('medium', $toLow->reasoningOptions['reasoning']['effort']);
+        $this->assertSame('low', $toLow->reasoningOptions['codex_reasoning_update']);
+        $store->rememberReasoningTransition($id, 'openai-codex/gpt-6-astra', 'transition-low', 'low');
+
+        $store->updateMetadata($id, ['reasoning' => 'medium']);
+        $this->entityManager->clear();
+        $backToBaseline = $this->createResolver($data)->resolve('', true, $input, new ModelResolutionOptions());
+        $this->assertSame('medium', $backToBaseline->reasoningOptions['reasoning']['effort']);
+        $this->assertSame('medium', $backToBaseline->reasoningOptions['codex_reasoning_update']);
+        $store->rememberReasoningTransition($id, 'openai-codex/gpt-6-astra', 'transition-medium', 'medium');
+
+        $store->updateMetadata($id, ['reasoning' => 'low']);
+        $this->entityManager->clear();
+        $toLowAgain = $this->createResolver($data)->resolve('', true, $input, new ModelResolutionOptions());
+        $this->assertSame('medium', $toLowAgain->reasoningOptions['reasoning']['effort']);
+        $this->assertSame('low', $toLowAgain->reasoningOptions['codex_reasoning_update']);
+        $store->rememberReasoningTransition($id, 'openai-codex/gpt-6-astra', 'transition-low-again', 'low');
+
+        $override = $resolver->resolve('openai-codex/gpt-6-astra', true, $input, new ModelResolutionOptions(['thinking_level' => 'high']));
         $this->assertSame(['reasoning' => ['effort' => 'high', 'summary' => 'auto']], $override->reasoningOptions);
         $this->assertSame('medium', $store->findSession($id)->reasoningBaseline['effort']);
 
         $store->resetReasoningBaseline($id);
-        $resumed = $resolver->resolve('', $messages, $input, new ModelResolutionOptions());
+        $resumed = $this->createResolver($data)->resolve('', true, $input, new ModelResolutionOptions());
         $this->assertSame(['reasoning' => ['effort' => 'low', 'summary' => 'auto'], 'codex_reasoning_reset' => true], $resumed->reasoningOptions);
         $store->updateMetadata($id, ['model' => 'openai-codex/gpt-test']);
         $this->assertNull($store->findSession($id)->reasoningBaseline);
         $store->updateMetadata($id, ['model' => 'openai-codex/gpt-6-astra', 'reasoning' => 'high']);
-        $changed = $resolver->resolve('', $messages, $input, new ModelResolutionOptions());
+        $changed = $this->createResolver($data)->resolve('', true, $input, new ModelResolutionOptions());
         $this->assertSame(['reasoning' => ['effort' => 'high', 'summary' => 'auto'], 'codex_reasoning_reset' => true], $changed->reasoningOptions);
     }
 
@@ -509,7 +541,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
         $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
         $homeWriter = new SettingsOverrideWriter($pathResolver, PropertyAccess::createPropertyAccessor(), new Filesystem());
         $appConfig = $this->makeAppConfig($aiData);
-        $selectionService = new ModelSelectionService($appConfig, new ModelResolver($appConfig, $sessionMetaStore), $homeWriter, $sessionMetaStore);
+        $selectionService = new ModelSelectionService($appConfig, new ModelResolver($appConfig, $sessionMetaStore, new \Psr\Log\NullLogger()), $homeWriter, $sessionMetaStore);
 
         $catalog = $appConfig->catalog ?? new HatfieldModelCatalog(new AiConfig(defaultModel: '', defaultReasoning: 'medium', providers: []));
 
@@ -614,7 +646,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
                 'llama_cpp' => [
                     'type' => 'generic',
                     'enabled' => true,
-                    'base_url' => 'http://192.168.2.38:8052/v1',
+                    'base_url' => 'http://10.0.0.89:8052/v1',
                     'models' => [
                         'flash' => [
                             'id' => 'flash',

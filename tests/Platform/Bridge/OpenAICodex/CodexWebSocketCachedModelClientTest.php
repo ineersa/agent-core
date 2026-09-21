@@ -588,12 +588,12 @@ final class CodexWebSocketCachedModelClientTest extends TestCase
         $secondOptions = [
             'prompt_cache_key' => $cacheKey,
             'reasoning' => ['effort' => 'medium', 'summary' => 'auto'],
-            CodexRequestBodyFactory::REASONING_UPDATE => 'high',
         ];
         $secondPayload = [
             'input' => [
                 ['role' => 'user', 'content' => 'first'],
                 ['type' => 'message', 'role' => 'assistant', 'content' => 'ok'],
+                ['type' => 'configuration_update', 'reasoning' => ['effort' => 'high']],
                 ['role' => 'user', 'content' => 'second'],
             ],
         ];
@@ -610,15 +610,15 @@ final class CodexWebSocketCachedModelClientTest extends TestCase
         $secondFrame = json_decode($frames[1], true, flags: \JSON_THROW_ON_ERROR);
         $this->assertSame('resp_cached_1', $secondFrame['previous_response_id']);
         $this->assertSame('medium', $secondFrame['reasoning']['effort']);
-        $this->assertCount(2, $secondFrame['input']);
-        $this->assertSame('configuration_update', $secondFrame['input'][0]['type']);
-        $this->assertSame('high', $secondFrame['input'][0]['reasoning']['effort']);
-        $this->assertSame('second', $secondFrame['input'][1]['content']);
+        $this->assertSame([
+            ['type' => 'configuration_update', 'reasoning' => ['effort' => 'high']],
+            ['role' => 'user', 'content' => 'second'],
+        ], $secondFrame['input']);
 
         foreach (['high', 'low'] as $index => $effort) {
             $secondPayload['input'][] = ['type' => 'message', 'role' => 'assistant', 'content' => 'ok'];
+            $secondPayload['input'][] = ['type' => 'configuration_update', 'reasoning' => ['effort' => $effort]];
             $secondPayload['input'][] = ['role' => 'user', 'content' => 'next-'.$index];
-            $secondOptions[CodexRequestBodyFactory::REASONING_UPDATE] = $effort;
             $result = $client->request(new CodexModel('gpt-6-astra'), $secondPayload, $secondOptions);
             iterator_to_array($result->getDataStream());
             $frame = json_decode($frames[$index + 2], true, flags: \JSON_THROW_ON_ERROR);
