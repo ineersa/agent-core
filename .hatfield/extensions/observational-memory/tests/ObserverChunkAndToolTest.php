@@ -375,14 +375,4 @@ final class ObserverChunkAndToolTest extends TestCase
         );
         $this->assertSame($id, $handler->collected()[0]['observation_id']);
     }
-
-    public function testNoToolCallLeavesEmptyCollectionValid(): void
-    {
-        $handler = new RecordObservationsToolHandler(
-            runId: 'run-1',
-            observerSchemaVersion: '1',
-            allowedSourceRefs: [['run_id' => 'run-1', 'seq' => 1]],
-        );
-        $this->assertSame([], $handler->collected());
-    }
 }

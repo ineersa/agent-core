@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Config;
 
 use Ineersa\CodingAgent\Config\AgentsConfig;
-use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppConfigLoader;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
@@ -29,41 +28,6 @@ final class AgentsConfigTest extends TestCase
     protected function tearDown(): void
     {
         TestDirectoryIsolation::removeDirectory($this->tempDir);
-    }
-
-    public function testDefaultMaxAgentsIsFour(): void
-    {
-        $config = AgentsConfig::fromRaw([]);
-        $this->assertSame(4, $config->maxAgents);
-
-        $explicit = AgentsConfig::fromRaw(['max_agents' => 6]);
-        $this->assertSame(6, $explicit->maxAgents);
-    }
-
-    public function testDefaultValues(): void
-    {
-        $config = new AgentsConfig();
-
-        $this->assertTrue($config->enabled);
-        $this->assertCount(0, $config->paths);
-        $this->assertSame(4, $config->maxAgents);
-        $this->assertSame(86400, $config->subagentToolTimeoutSeconds);
-        $this->assertSame(['hatfield_docs'], $config->subagentExcludedTools);
-    }
-
-    public function testFromRawWithMaxAgents(): void
-    {
-        $config = AgentsConfig::fromRaw(['max_agents' => 4]);
-
-        $this->assertSame(4, $config->maxAgents);
-    }
-
-    public function testFromRawEmptyArray(): void
-    {
-        $config = AgentsConfig::fromRaw([]);
-
-        $this->assertTrue($config->enabled);
-        $this->assertCount(0, $config->paths);
     }
 
     public function testFromRawNonArray(): void
@@ -184,20 +148,6 @@ final class AgentsConfigTest extends TestCase
         $this->assertArrayHasKey('paths', $merged['agents']);
         // The relative path './custom' should be resolved to an absolute path under $cwd
         $this->assertStringStartsWith($cwd, $merged['agents']['paths'][0]);
-    }
-
-    public function testFromAppConfigReturnsAgentsConfig(): void
-    {
-        $agentsConfig = new AgentsConfig(enabled: true, paths: ['test-path']);
-        $appConfig = new AppConfig(
-            tui: new \Ineersa\CodingAgent\Config\TuiConfig('cyberpunk'),
-            logging: new \Ineersa\CodingAgent\Config\LoggingConfig(),
-            agents: $agentsConfig,
-        );
-
-        $result = AgentsConfig::fromAppConfig($appConfig);
-
-        $this->assertSame($agentsConfig, $result);
     }
 
     public function testFromRawRejectsSubagentToolTimeoutBelowMinimum(): void

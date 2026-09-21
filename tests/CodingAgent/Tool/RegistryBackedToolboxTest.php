@@ -25,7 +25,6 @@ use Symfony\AI\Agent\Toolbox\Event\ToolCallSucceeded;
 use Symfony\AI\Agent\Toolbox\EventListener\ValidateToolCallArgumentsListener;
 use Symfony\AI\Agent\Toolbox\Exception\ToolNotFoundException;
 use Symfony\AI\Agent\Toolbox\FaultTolerantToolbox;
-use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver;
 use Symfony\AI\Agent\Toolbox\ToolResult;
 use Symfony\AI\Platform\Result\ToolCall;
@@ -55,16 +54,6 @@ use Symfony\Component\Validator\ValidatorBuilder;
  */
 final class RegistryBackedToolboxTest extends TestCase
 {
-    /* ───────── ToolboxInterface contract ───────── */
-
-    public function testImplementsToolboxInterface(): void
-    {
-        $registry = new ToolRegistry();
-        $toolbox = $this->createToolbox($registry);
-
-        $this->assertInstanceOf(ToolboxInterface::class, $toolbox);
-    }
-
     /* ───────── getTools() ───────── */
 
     public function testGetToolsReturnsEmptyForEmptyRegistry(): void

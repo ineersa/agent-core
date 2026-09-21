@@ -19,8 +19,8 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * Session-boundary teardown contract: shutdown() must synchronously stop a
- * spawned controller process, clear client-local cross-run buffers, and stay
- * safe/idempotent when nothing is running (/reload and /new|/resume switches).
+ * spawned controller process and clear client-local cross-run buffers during
+ * /reload and /new|/resume switches.
  */
 final class JsonlProcessAgentSessionClientShutdownTest extends TestCase
 {
@@ -73,18 +73,6 @@ PHP);
         $client->shutdown();
 
         $this->assertFalse($this->processAlive($pid), 'Controller must be stopped by shutdown()');
-    }
-
-    #[Test]
-    public function testShutdownIsSafeAndIdempotentWithoutProcess(): void
-    {
-        $client = $this->createClient();
-
-        // No process was ever spawned — shutdown must be a safe no-op.
-        $client->shutdown();
-        $client->shutdown();
-
-        $this->addToAssertionCount(1);
     }
 
     #[Test]

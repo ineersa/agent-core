@@ -17,12 +17,6 @@ use PHPUnit\Framework\TestCase;
  */
 final class SafeGuardExtensionTest extends TestCase
 {
-    public function testExtensionImplementsHatfieldExtensionInterface(): void
-    {
-        $extension = new SafeGuardExtension();
-        $this->assertInstanceOf(\Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface::class, $extension);
-    }
-
     public function testRegisterCreatesHookAndCallsRegisterToolCallHook(): void
     {
         $extension = new SafeGuardExtension();

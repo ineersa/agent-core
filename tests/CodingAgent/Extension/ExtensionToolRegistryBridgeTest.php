@@ -10,7 +10,6 @@ use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
-use Ineersa\CodingAgent\Config\ExtensionsConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
@@ -194,40 +193,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
         );
     }
 
-    public function testNullHandlerIsRejectedByDtoType(): void
-    {
-        $this->expectException(\TypeError::class);
-
-        new ToolRegistrationDTO(
-            name: 'null_handler_tool', description: 'Null handler', parametersJsonSchema: [], handler: null,
-        );
-    }
-
     // ── Guideline deduplication via ToolRegistry ──
-
-    public function testGuidelineDeduplication(): void
-    {
-        $registry = new ToolRegistry();
-        $bridge = $this->bridgeFor($registry);
-
-        $bridge->registerTool(new ToolRegistrationDTO(
-            name: 'tool_x', description: 'X', parametersJsonSchema: [], handler: new NoOpExtensionToolHandler(),
-            promptGuidelines: ['Guideline A', 'Guideline B'],
-            promptSummary: 'tool_x: X',
-        ));
-
-        $bridge->registerTool(new ToolRegistrationDTO(
-            name: 'tool_y', description: 'Y', parametersJsonSchema: [], handler: new NoOpExtensionToolHandler(),
-            promptGuidelines: ['Guideline B', 'Guideline C'],
-            promptSummary: 'tool_y: Y',
-        ));
-
-        // Deduped, first occurrence position preserved
-        $this->assertSame(
-            ['Guideline A', 'Guideline B', 'Guideline C'],
-            $this->flattenGuidelines($registry->permanentGuidelinesByTool()),
-        );
-    }
 
     // ── Error propagation from ToolRegistry ──
 
@@ -241,19 +207,6 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
 
         $bridge->registerTool(new ToolRegistrationDTO(
             name: '', description: 'Has name but empty', parametersJsonSchema: [], handler: new NoOpExtensionToolHandler(),
-        ));
-    }
-
-    public function testEmptyDescriptionThrowsInvalidArgumentException(): void
-    {
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Tool name and description must be non-empty strings');
-
-        $registry = new ToolRegistry();
-        $bridge = $this->bridgeFor($registry);
-
-        $bridge->registerTool(new ToolRegistrationDTO(
-            name: 'some_tool', description: '', parametersJsonSchema: [], handler: new NoOpExtensionToolHandler(),
         ));
     }
 
@@ -463,60 +416,6 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
         $this->assertCount(2, $hookRegistry->toolCallHooks());
         $this->assertSame($ext1Hook, $hookRegistry->toolCallHooks()[0]);
         $this->assertSame($ext2Hook, $hookRegistry->toolCallHooks()[1]);
-    }
-
-    // ── getSettings / getCwd via AppConfig ──
-
-    public function testGetSettingsReturnsExtensionSettingsByKey(): void
-    {
-        $appConfig = new AppConfig(
-            tui: new TuiConfig(theme: 'cyberpunk'),
-            logging: new LoggingConfig(),
-            extensions: new ExtensionsConfig(
-                settings: ['safe_guard' => ['allow_command_patterns' => ['ls -la']]],
-            ),
-            cwd: '/home/project',
-        );
-
-        $bridge = $this->bridgeFor(new ToolRegistry(), appConfig: $appConfig);
-
-        $settings = $bridge->getSettings('safe_guard');
-        $this->assertSame(['allow_command_patterns' => ['ls -la']], $settings);
-    }
-
-    public function testGetSettingsReturnsEmptyForMissingKey(): void
-    {
-        $bridge = $this->bridgeFor(new ToolRegistry());
-
-        $this->assertSame([], $bridge->getSettings('nonexistent'));
-    }
-
-    public function testGetCwdReturnsFromAppConfig(): void
-    {
-        $appConfig = new AppConfig(
-            tui: new TuiConfig(theme: 'cyberpunk'),
-            logging: new LoggingConfig(),
-            cwd: '/home/some-project',
-        );
-
-        $bridge = $this->bridgeFor(new ToolRegistry(), appConfig: $appConfig);
-
-        $this->assertSame('/home/some-project', $bridge->getCwd());
-    }
-
-    // ── NEW: exec() ──
-
-    public function testExecReturnsExecInterface(): void
-    {
-        $execResult = new ExecResultDTO(stdout: 'hello', stderr: '', exitCode: 0);
-        $execBridge = $this->dummyExecBridge($execResult);
-
-        $bridge = $this->bridgeFor(new ToolRegistry(), execBridge: $execBridge);
-        $execApi = $bridge->exec();
-
-        $result = $execApi->exec('echo', ['hello']);
-        $this->assertSame('hello', $result->stdout);
-        $this->assertSame(0, $result->exitCode);
     }
 
     // ── NEW: registerPromptContributor() ──

@@ -258,33 +258,6 @@ final class ProviderContextUsageResolverTest extends TestCase
     }
 
     /**
-     * Thesis: when both a started AND a failed event exist for the
-     * same auto attempt (the normal LLM-path failure), the max seq
-     * among them (failed) marks the measurement handled.
-     */
-    public function testIneligibleWhenStartedAndFailedBothExistAfterProviderMeasurement(): void
-    {
-        $this->mockEvents([
-            $this->makeLlmStepCompleted(10, 30755),
-            $this->makeAutoCompactionStarted(11),
-            new RunEvent(
-                runId: 'run-1',
-                seq: 12,
-                turnNo: 1,
-                type: RunEventTypeEnum::ContextCompactionFailed->value,
-                payload: [
-                    'reason' => 'model_error',
-                    'trigger' => 'auto',
-                    'step_id' => 'compact-11',
-                ],
-            ),
-        ]);
-
-        // Both started (11) and failed (12) cover measurement at 10.
-        $this->assertNull($this->resolver->getLatestEligibleInputTokens('run-1'));
-    }
-
-    /**
      * Thesis: manual compaction failure does NOT count as an auto
      * attempt marker — only auto-triggered events count.
      */

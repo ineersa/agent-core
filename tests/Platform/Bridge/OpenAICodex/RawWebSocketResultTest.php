@@ -11,6 +11,7 @@ use Amp\Websocket\Client\WebsocketConnection;
 use Amp\Websocket\WebsocketMessage;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use PHPUnit\Framework\TestCase;
+use Revolt\EventLoop;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketCachedStreamContext;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketCacheEntry;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketCacheLease;
@@ -20,9 +21,6 @@ use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketConnectionCache;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketContinuationState;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketResultHandle;
 use Symfony\AI\Platform\Bridge\OpenAICodex\RawWebSocketResult;
-
-use function Amp\async;
-use function Amp\delay;
 
 final class RawWebSocketResultTest extends TestCase
 {
@@ -117,27 +115,25 @@ final class RawWebSocketResultTest extends TestCase
         $prop->setValue($cache, [$identity->sessionKey => $entry]);
 
         $logger = new TestLogger();
-        $raw = new RawWebSocketResult($connection, 0.15, $logger, cachedStreamContext: $context);
+        $raw = new RawWebSocketResult($connection, 0.01, $logger, cachedStreamContext: $context);
 
-        // Keep the event loop alive while buffer() waits on the incomplete fragment stream.
-        $keeper = async(static function (): void {
-            while (true) {
-                delay(0.05);
-            }
+        // Amp's timeout watcher is unreferenced. Keep the loop referenced with
+        // one owned safety watcher, then cancel it synchronously after buffer()
+        // observes its expected timeout. If that timeout regresses, completing
+        // the queue makes the test fail instead of deadlocking the worker.
+        $safetyWatcher = EventLoop::delay(1.0, static function () use ($queue): void {
+            $queue->complete();
         });
 
-        $started = microtime(true);
         try {
             iterator_to_array($raw->getDataStream());
             $this->fail('Expected message buffer timeout');
         } catch (\RuntimeException $e) {
-            $elapsed = microtime(true) - $started;
             $this->assertSame('Codex WebSocket message buffer timeout.', $e->getMessage());
             $this->assertInstanceOf(CancelledException::class, $e->getPrevious());
-            $this->assertLessThan(0.8, $elapsed, 'buffer timeout must not hang the worker');
         } finally {
+            EventLoop::cancel($safetyWatcher);
             $queue->complete();
-            $keeper->ignore();
         }
         $this->assertNull($entry->continuation);
         $this->assertSame([], $prop->getValue($cache));

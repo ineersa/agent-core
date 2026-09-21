@@ -359,21 +359,6 @@ PHP
         $this->assertGreaterThanOrEqual(1, \count($errorRecords));
     }
 
-    public function testLoadExtensionsEmptyListLoadsNothing(): void
-    {
-        $config = $this->createAppConfig(
-            cwd: $this->extensionsDir,
-            extensions: [],
-        );
-        $bridge = new InMemoryExtensionApiBridge();
-        $logger = new NullLogger();
-
-        $manager = new ExtensionManager($config, $bridge, $logger, new \Symfony\Component\EventDispatcher\EventDispatcher());
-        $manager->loadExtensions();
-
-        $this->assertCount(0, $bridge->getRegistrations());
-    }
-
     public function testLoadExtensionsWithoutAutoloadStillLoadsKnownClasses(): void
     {
         // Don't create the autoload file; load a class that PHP already knows

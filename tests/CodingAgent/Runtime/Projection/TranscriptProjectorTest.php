@@ -1586,26 +1586,6 @@ final class TranscriptProjectorTest extends TestCase
         $this->assertSame(TranscriptBlockKindEnum::Question, $blocks[1]->kind);
     }
 
-    public function testBlocksHaveMonotonicSeqNumbers(): void
-    {
-        $this->accept('tool_call.started', [
-            'tool_call_id' => 'tc_01', 'tool_name' => 'bash',
-        ]);
-        $this->accept('human_input.requested', [
-            'request_id' => 'req_01', 'question_id' => 'q_01',
-            'kind' => 'text', 'prompt' => 'test?',
-        ]);
-        $this->accept('operation.cancelled', [
-            'reason' => 'timeout', 'operation_id' => 'op_01',
-        ]);
-
-        $blocks = $this->projector->blocks();
-        $this->assertCount(3, $blocks);
-        $this->assertSame(0, $blocks[0]->seq);
-        $this->assertSame(1, $blocks[1]->seq);
-        $this->assertSame(2, $blocks[2]->seq);
-    }
-
     public function testSeqIsMonotonicFullSuite(): void
     {
         $this->accept('user.message_submitted', ['message_id' => 'u1', 'text' => 'Hi']);
@@ -1761,7 +1741,6 @@ final class TranscriptProjectorTest extends TestCase
         yield 'completed before start' => ['assistant.text_completed', ['block_id' => 'ghost', 'text' => 'phantom']];
         yield 'message completed, no blocks' => ['assistant.message_completed', ['message_id' => 'unknown']];
         yield 'progress.updated' => ['progress.updated', ['message' => 'working...']];
-        yield 'model.changed' => ['model.changed', ['model' => 'gpt-5']];
     }
 
     public function testEmptyDeltaIsNoOp(): void

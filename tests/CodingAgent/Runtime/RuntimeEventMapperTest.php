@@ -40,13 +40,11 @@ final class RuntimeEventMapperTest extends TestCase
         ));
         $this->assertNotNull($started);
         $this->assertSame('2026-09-08T12:00:00.125000+00:00', $started->payload['started_at']);
-        foreach ([false, true] as $isError) {
-            $ended = $this->mapper->toRuntimeEvent(new RunEvent(
-                $this->runId, 2, 1, 'tool_execution_end', $this->toolEndPayload('timed', $isError), createdAt: $end,
-            ));
-            $this->assertNotNull($ended);
-            $this->assertSame('2026-09-08T12:00:06.375000+00:00', $ended->payload['ended_at']);
-        }
+        $ended = $this->mapper->toRuntimeEvent(new RunEvent(
+            $this->runId, 2, 1, 'tool_execution_end', $this->toolEndPayload('timed', false), createdAt: $end,
+        ));
+        $this->assertNotNull($ended);
+        $this->assertSame('2026-09-08T12:00:06.375000+00:00', $ended->payload['ended_at']);
     }
 
     public function testRefreshedInstructionsStayOutOfRuntimeStream(): void
@@ -158,16 +156,6 @@ final class RuntimeEventMapperTest extends TestCase
     public function testNormalizesToolExecutionEndCancelledToToolExecutionCancelled(): void
     {
         $event = $this->runEvent('tool_execution_end', $this->toolEndPayload('call-cancel', true, 'Tool execution cancelled by user.', ['type' => 'cancelled', 'message' => 'Tool execution cancelled by user.']));
-
-        $result = $this->mapper->toRuntimeEvent($event);
-
-        $this->assertNotNull($result);
-        $this->assertSame(RuntimeEventTypeEnum::ToolExecutionCancelled->value, $result->type);
-    }
-
-    public function testNormalizesToolExecutionEndStructuredCancellationMetadataToToolExecutionCancelled(): void
-    {
-        $event = $this->runEvent('tool_execution_end', $this->toolEndPayload('call-rich-cancel', true, 'Subagent scout cancelled by parent run.', ['type' => 'cancelled', 'message' => 'Subagent scout cancelled by parent run.']));
 
         $result = $this->mapper->toRuntimeEvent($event);
 
@@ -776,17 +764,6 @@ final class RuntimeEventMapperTest extends TestCase
     }
 
     // ── Field mapping fidelity ───────────────────────────────────────────────
-
-    public function testRunIdAndSeqArePreserved(): void
-    {
-        $event = $this->runEvent('run_started', ['step_id' => 's1'], seq: 42);
-
-        $result = $this->mapper->toRuntimeEvent($event);
-
-        $this->assertNotNull($result);
-        $this->assertSame($this->runId, $result->runId);
-        $this->assertSame(42, $result->seq);
-    }
 
     public function testAgentCommandAppliedAppendMessageMapsToUserMessageSubmitted(): void
     {

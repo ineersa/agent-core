@@ -182,9 +182,10 @@ final class OutputCapTest extends TestCase
         $this->assertFileExists($fresh);
         $this->assertFileDoesNotExist($stale);
 
-        $missing = $this->outputCap(new OutputCapConfig(storageDir: $this->tmpDir.'/nonexistent'));
+        $missingDir = $this->tmpDir.'/nonexistent';
+        $missing = $this->outputCap(new OutputCapConfig(storageDir: $missingDir));
         $missing->cleanup();
-        $this->assertTrue(true);
+        $this->assertDirectoryDoesNotExist($missingDir);
     }
 
     public function testPersistTriggersCleanupOnFirstUse(): void
