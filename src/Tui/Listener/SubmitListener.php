@@ -402,6 +402,8 @@ final class SubmitListener implements TuiListenerRegistrar
                     $queuedMessages[] = $text;
                     $screen->syncQueuedUserMessages($queuedMessages);
                     $screen->setWorkingMessage('Message queued — waiting for compaction to complete...');
+                    $tui->requestRender();
+                    $tui->processRender();
                 } elseif ($state->activity->isActive()) {
                     $client->send(
                         $state->handle->runId,
