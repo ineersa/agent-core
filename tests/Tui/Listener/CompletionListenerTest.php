@@ -454,6 +454,7 @@ final class CompletionListenerTest extends TestCase
             $tui->processRender();
             $delta = $output->consumeOutput();
             $buffer->write($delta);
+            $this->assertStringNotContainsString("\x1b[2J", $delta, 'Autocomplete refinement must not clear the whole screen.');
             $clearLineCounts[] = substr_count($delta, "\x1b[2K");
         }
 
@@ -465,13 +466,14 @@ final class CompletionListenerTest extends TestCase
         $tui->processRender();
         $newlineDelta = $output->consumeOutput();
         $buffer->write($newlineDelta);
+        $this->assertStringNotContainsString("\x1b[2J", $newlineDelta, 'Submitting after the menu closes must not clear the whole screen.');
 
         $plain = $buffer->getScreen();
         $this->assertSame(1, substr_count($plain, '/task-done'));
         $this->assertSame(1, substr_count($plain, '◆ test-model'));
         $this->assertSame(1, substr_count($plain, 'session autocomplete-viewport'));
         $this->assertLessThanOrEqual(16, max($clearLineCounts), 'Autocomplete refinement must repaint only its changed suffix.');
-        $this->assertLessThanOrEqual(10, substr_count($newlineDelta, "\x1b[2K"), 'A one-line editor growth must not repaint the entire 60-row viewport.');
+        $this->assertLessThanOrEqual(10, substr_count($newlineDelta, "\x1b[2K"), 'Submitting after the menu closes must not repaint the entire 60-row viewport.');
     }
 
     #[Test]
