@@ -30,6 +30,46 @@ final class ChatScreenStatusRowVirtualRenderTest extends TestCase
     private const array CIRCLE_FRAMES = ['◐', '◓', '◑', '◒'];
 
     #[Test]
+    public function testSingleStatusUsesReservedRowWithoutMovingEditorOrFooter(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
+        $screen = $harness->screen();
+        $screen->setTranscriptBlocks([
+            (new TranscriptBlockFactory())->system(runId: self::SESSION_ID, text: 'anchor transcript', seq: 1),
+        ]);
+        $screen->promptEditor()->setText('editor anchor');
+
+        $harness->render();
+        $emptyText = $harness->plainScreenText();
+        $emptyEditorIndex = $this->lineIndex($emptyText, 'editor anchor');
+        $emptyFooterIndex = $this->footerLineIndex($emptyText);
+        $emptySepIndex = $this->footerSeparatorLineIndexAboveFooter($emptyText);
+
+        $screen->setStatus('om-background', 'Observational memory: observer running');
+        $harness->render();
+        $shownText = $harness->plainScreenText();
+        $this->assertStringContainsString('om-background', $shownText);
+        $this->assertSame($emptyEditorIndex, $this->lineIndex($shownText, 'editor anchor'));
+        $this->assertSame($emptyFooterIndex, $this->footerLineIndex($shownText));
+        $this->assertSame($emptySepIndex, $this->footerSeparatorLineIndexAboveFooter($shownText));
+
+        $screen->setStatus('om-background', null);
+        $harness->render();
+        $clearedText = $harness->plainScreenText();
+        $this->assertStringNotContainsString('om-background', $clearedText);
+        $this->assertSame($emptyEditorIndex, $this->lineIndex($clearedText, 'editor anchor'));
+        $this->assertSame($emptyFooterIndex, $this->footerLineIndex($clearedText));
+        $this->assertSame($emptySepIndex, $this->footerSeparatorLineIndexAboveFooter($clearedText));
+
+        $screen->setStatus('first', 'First status');
+        $screen->setStatus('second', 'Second status');
+        $harness->render();
+        $multipleText = $harness->plainScreenText();
+        $this->assertStringContainsString('First status', $multipleText);
+        $this->assertStringContainsString('Second status', $multipleText);
+    }
+
+    #[Test]
     public function testFooterAndEditorRegionAnchorsStableAcrossWorkingVisibilityLifecycle(): void
     {
         $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
