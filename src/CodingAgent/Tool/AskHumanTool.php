@@ -56,8 +56,7 @@ final class AskHumanTool implements HatfieldToolProviderInterface
     public function __invoke(
         #[MapToolArguments]
         AskHumanArgumentsDTO $arguments,
-    ): array
-    {
+    ): array {
         return $this->payloadFactory->createPayload($arguments);
     }
 

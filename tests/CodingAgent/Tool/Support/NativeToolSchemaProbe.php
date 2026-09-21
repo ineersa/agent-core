@@ -12,6 +12,7 @@ use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
 use Ineersa\CodingAgent\Tool\Schema\BashTimeoutSchemaProvider;
 use Ineersa\CodingAgent\Tool\Schema\SubagentTasksSchemaProvider;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
+use Symfony\AI\Agent\Toolbox\MapToolArgumentsDescriber;
 use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver;
 use Symfony\AI\Platform\Contract\JsonSchema\Describer\Describer;
 use Symfony\AI\Platform\Contract\JsonSchema\Describer\MethodDescriber;
@@ -62,7 +63,7 @@ final class NativeToolSchemaProbe
      */
     public static function schemaFactory(): Factory
     {
-        return new Factory(new Describer([
+        return new Factory(new MapToolArgumentsDescriber(new Describer([
             new SerializerDescriber(),
             new TypeInfoDescriber(),
             new MethodDescriber(),
@@ -72,6 +73,6 @@ final class NativeToolSchemaProbe
                 BashTimeoutSchemaProvider::class => new BashTimeoutSchemaProvider(new BashToolConfig()),
                 SubagentTasksSchemaProvider::class => new SubagentTasksSchemaProvider(new AgentsConfig()),
             ]),
-        ]));
+        ])));
     }
 }

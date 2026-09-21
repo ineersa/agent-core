@@ -43,8 +43,7 @@ final class WriteFileTool implements HatfieldToolProviderInterface
     public function __invoke(
         #[MapToolArguments]
         WriteFileArgumentsDTO $arguments,
-    ): string
-    {
+    ): string {
         return $this->toolRuntime->run(static function () use ($arguments): string {
             $path = $arguments->path;
             $content = $arguments->content;

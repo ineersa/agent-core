@@ -31,8 +31,7 @@ final class ForkToolHandler
     public function __invoke(
         #[MapToolArguments]
         ForkArgumentsDTO $arguments,
-    ): DeferredToolCompletionOutcome
-    {
+    ): DeferredToolCompletionOutcome {
         return $this->toolRuntime->run(function () use ($arguments): DeferredToolCompletionOutcome {
             $context = $this->contextAccessor->current();
             if (null === $context) {

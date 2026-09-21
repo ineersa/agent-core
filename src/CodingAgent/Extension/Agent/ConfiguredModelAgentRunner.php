@@ -231,6 +231,7 @@ final readonly class ConfiguredModelAgentRunner implements AgentRunnerInterface
 
         return [];
     }
+
     private function drainExecution(Execution $execution): void
     {
         // Fully consume the lazy execution so SSE/WebSocket transports complete
@@ -241,5 +242,4 @@ final readonly class ConfiguredModelAgentRunner implements AgentRunnerInterface
             }
         }
     }
-
 }

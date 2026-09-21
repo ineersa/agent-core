@@ -33,8 +33,7 @@ final class AgentRetrieveTool implements HatfieldToolProviderInterface
     public function __invoke(
         #[MapToolArguments]
         AgentRetrieveArgumentsDTO $arguments,
-    ): string
-    {
+    ): string {
         return $this->toolRuntime->run(function () use ($arguments): string {
             $context = $this->contextAccessor->current();
             if (null === $context) {

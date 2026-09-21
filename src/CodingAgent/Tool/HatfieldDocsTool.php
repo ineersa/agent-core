@@ -48,8 +48,7 @@ final class HatfieldDocsTool implements HatfieldToolProviderInterface
     public function __invoke(
         #[MapToolArguments]
         HatfieldDocsArgumentsDTO $arguments,
-    ): string
-    {
+    ): string {
         return $this->toolRuntime->run(function () use ($arguments): string {
             // operation is Choice-constrained on the DTO; id is required for
             // read via a When constraint, so no default branch is needed.

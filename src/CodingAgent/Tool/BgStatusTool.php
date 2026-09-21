@@ -59,8 +59,7 @@ final class BgStatusTool implements HatfieldToolProviderInterface
     public function __invoke(
         #[MapToolArguments]
         BgStatusArgumentsDTO $arguments,
-    ): string
-    {
+    ): string {
         // action is Choice-constrained and pid is conditionally required on
         // the DTO; the native ValidateToolCallArgumentsListener guarantees
         // both before the handler runs.

@@ -37,8 +37,7 @@ final class AgentResumeToolHandler
     public function __invoke(
         #[MapToolArguments]
         AgentResumeArgumentsDTO $arguments,
-    ): DeferredToolCompletionOutcome
-    {
+    ): DeferredToolCompletionOutcome {
         return $this->toolRuntime->run(function () use ($arguments): DeferredToolCompletionOutcome {
             $context = $this->contextAccessor->current();
             if (null === $context) {

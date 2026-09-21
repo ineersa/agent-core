@@ -39,8 +39,7 @@ final class SubagentToolHandler
     public function __invoke(
         #[MapToolArguments]
         SubagentArgumentsDTO $arguments,
-    ): DeferredToolCompletionOutcome
-    {
+    ): DeferredToolCompletionOutcome {
         return $this->toolRuntime->run(function () use ($arguments): DeferredToolCompletionOutcome {
             $context = $this->contextAccessor->current();
             if (null === $context) {

@@ -61,8 +61,7 @@ final class ViewImageTool implements HatfieldToolProviderInterface
     public function __invoke(
         #[MapToolArguments]
         ViewImageArgumentsDTO $arguments,
-    ): array
-    {
+    ): array {
         return $this->toolRuntime->run(function () use ($arguments): array {
             $path = $arguments->path;
             $resolvedPath = PathResolver::resolve($path);

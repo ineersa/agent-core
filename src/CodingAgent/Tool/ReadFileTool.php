@@ -62,8 +62,7 @@ final class ReadFileTool implements HatfieldToolProviderInterface
     public function __invoke(
         #[MapToolArguments]
         ReadFileArgumentsDTO $arguments,
-    ): string
-    {
+    ): string {
         return $this->toolRuntime->run(function () use ($arguments): string {
             $path = $arguments->path;
             $offset = $arguments->offset;
