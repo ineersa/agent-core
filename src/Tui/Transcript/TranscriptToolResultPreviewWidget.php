@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Transcript;
 
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
+use Symfony\Component\Tui\Ansi\AnsiUtils;
 use Symfony\Component\Tui\Ansi\TextWrapper;
 use Symfony\Component\Tui\Render\RenderContext;
 use Symfony\Component\Tui\Style\Padding;
@@ -35,8 +36,9 @@ final class TranscriptToolResultPreviewWidget extends AbstractWidget
     /** @return list<string> */
     public function render(RenderContext $context): array
     {
+        $body = str_replace("\t", str_repeat(' ', AnsiUtils::TAB_WIDTH), $this->body);
         $styledLines = [];
-        foreach (explode("\n", $this->body) as $line) {
+        foreach (explode("\n", $body) as $line) {
             $styledLines[] = $this->theme->color($this->color, $line);
         }
 
