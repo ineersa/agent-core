@@ -84,14 +84,4 @@ class TranscriptDisplayConfigMapperTest extends TestCase
         );
         $this->assertTrue($stateTrue->previewableBlocksExpanded);
     }
-
-    public function testDisplayStateIsMutable(): void
-    {
-        // Ensure TranscriptDisplayState is actually mutable (not readonly)
-        $state = new TranscriptDisplayState(previewableBlocksExpanded: false);
-        $this->assertFalse($state->previewableBlocksExpanded);
-
-        $state->previewableBlocksExpanded = true;
-        $this->assertTrue($state->previewableBlocksExpanded);
-    }
 }

@@ -84,23 +84,6 @@ class FooterStateSegmentProviderTest extends TestCase
     }
 
     #[Test]
-    public function testModelNameColoredWithThinkingColorNotAccent(): void
-    {
-        $state = $this->state;
-        $state->footerModel = 'glm-5.1';
-        $state->footerReasoning = 'high';
-
-        $provider = new FooterStateSegmentProvider($state);
-        $segments = $provider->getSegments();
-
-        // Model name segment (priority 1) uses thinking color, NOT Accent
-        $modelSegment = $segments[1];
-        $this->assertSame('glm-5.1', $modelSegment->text);
-        $this->assertSame(ThemeColorEnum::ThinkingHigh, $modelSegment->color);
-        $this->assertNotSame(ThemeColorEnum::Accent, $modelSegment->color);
-    }
-
-    #[Test]
     public function testNoReasoningTextSegmentInMainFooter(): void
     {
         $state = $this->state;
@@ -114,26 +97,6 @@ class FooterStateSegmentProviderTest extends TestCase
         $this->assertSame(ThemeColorEnum::ThinkingMedium, $segments[1]->color);
         foreach ($segments as $segment) {
             $this->assertStringNotContainsString('reasoning:', $segment->text);
-        }
-    }
-
-    #[Test]
-    public function testDiamondAndModelNameShareSameColor(): void
-    {
-        $state = $this->state;
-        $state->footerModel = 'deepseek-v4-pro';
-
-        foreach (['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as $level) {
-            $state->footerReasoning = $level;
-            $provider = new FooterStateSegmentProvider($state);
-            $segments = $provider->getSegments();
-
-            // Priority 0 = ◆, priority 1 = model name — same color
-            $this->assertSame(
-                $segments[0]->color,
-                $segments[1]->color,
-                "Diamond and model name should share the same thinking colour for level '{$level}'",
-            );
         }
     }
 

@@ -21,13 +21,6 @@ use Symfony\Component\Tui\Tui;
 #[CoversClass(TuiSessionSwitchService::class)]
 final class SessionSwitchServiceTest extends TestCase
 {
-    public function testHasPendingSwitchIsFalseInitially(): void
-    {
-        $service = $this->createService();
-
-        $this->assertNull($service->consumePendingSwitch());
-    }
-
     public function testConsumePendingSwitchReturnsNullWhenNothingPending(): void
     {
         $service = $this->createService();

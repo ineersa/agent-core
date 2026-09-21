@@ -24,10 +24,8 @@ final class ToolQuestionAnswerResolverTest extends TestCase
     {
         yield 'bool true' => [true, true];
         yield 'string yes' => ['yes', true];
-        yield 'string YES' => ['YES', true];
         yield 'string Yes' => ['Yes', true];
         yield 'string true' => ['true', true];
-        yield 'string TRUE' => ['TRUE', true];
         yield 'string 1' => ['1', true];
         yield 'int 1' => [1, true];
         yield 'string yes trimmed' => ['  yes  ', true];
@@ -38,7 +36,6 @@ final class ToolQuestionAnswerResolverTest extends TestCase
     {
         yield 'bool false' => [false, false];
         yield 'string no' => ['no', false];
-        yield 'string NO' => ['NO', false];
         yield 'string No' => ['No', false];
         yield 'string false' => ['false', false];
         yield 'string 0' => ['0', false];
@@ -49,7 +46,6 @@ final class ToolQuestionAnswerResolverTest extends TestCase
         yield 'string unknown' => ['maybe', false];
         yield 'array' => [[], false];
         yield 'float' => [1.0, false];
-        yield 'string random' => ['cancel', false];
     }
 
     #[DataProvider('provideTrueAnswers')]

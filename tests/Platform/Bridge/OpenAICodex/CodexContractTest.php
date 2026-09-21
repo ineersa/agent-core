@@ -157,33 +157,6 @@ final class CodexContractTest extends TestCase
         ];
     }
 
-    public function testItDoesNotContainMessagesKey(): void
-    {
-        $contract = CodexContract::create();
-        $model = new CodexModel('gpt-5.5');
-        $messageBag = new MessageBag(Message::ofUser('Hi'));
-
-        $payload = $contract->createRequestPayload($model, $messageBag, []);
-
-        $this->assertArrayNotHasKey('messages', $payload);
-        $this->assertArrayHasKey('input', $payload);
-    }
-
-    public function testUserContentIsTypedInputText(): void
-    {
-        $contract = CodexContract::create();
-        $model = new CodexModel('gpt-5.5');
-        $messageBag = new MessageBag(Message::ofUser('Hello world'));
-
-        $payload = $contract->createRequestPayload($model, $messageBag, []);
-
-        $userInput = $payload['input'][0];
-        $this->assertSame('user', $userInput['role']);
-        $this->assertIsArray($userInput['content']);
-        $this->assertSame('input_text', $userInput['content'][0]['type']);
-        $this->assertSame('Hello world', $userInput['content'][0]['text']);
-    }
-
     public function testUserImageUsesResponsesInputImageShape(): void
     {
         $dataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';

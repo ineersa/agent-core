@@ -8,7 +8,6 @@ use Ineersa\AgentCore\Contract\Compaction\CompactionPrepareResult;
 use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
 use Ineersa\AgentCore\Contract\Compaction\CompactResult;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
-use Ineersa\AgentCore\Contract\Extension\HookSubscriberInterface;
 use Ineersa\AgentCore\Contract\Model\RunModelResolverInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -355,15 +354,6 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $subscriber->handleAfterTurnCommit($context);
 
         $this->assertCount(0, $this->commandBus->messages);
-    }
-
-    // ─────────────────────────────────────────────────────────────────
-    //  Test: interface contract
-    // ─────────────────────────────────────────────────────────────────
-
-    public function testImplementsHookSubscriberInterface(): void
-    {
-        $this->assertInstanceOf(HookSubscriberInterface::class, $this->subscriber);
     }
 
     // ─────────────────────────────────────────────────────────────────

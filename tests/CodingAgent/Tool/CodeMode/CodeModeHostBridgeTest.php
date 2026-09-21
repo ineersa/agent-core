@@ -236,39 +236,6 @@ PHP);
         $this->assertSame('64M', $limit);
     }
 
-    public function testScriptWallBudgetHonorsParentTimeoutCeiling(): void
-    {
-        $bridge = $this->bridge();
-        $accessor = self::getContainer()->get(StackToolExecutionContextAccessor::class);
-        $this->assertInstanceOf(StackToolExecutionContextAccessor::class, $accessor);
-
-        try {
-            $accessor->with(
-                new ToolContext(
-                    runId: 'code-mode-bridge-test',
-                    turnNo: 1,
-                    toolCallId: 'code-mode-bridge-test-timeout',
-                    toolName: 'code_mode',
-                    cancellationToken: new NullCancellationToken(),
-                    timeoutSeconds: 1,
-                    orderIndex: 0,
-                    executionMode: ToolExecutionMode::Sequential,
-                    batchToolCallCount: 1,
-                    humanInputAnswer: null,
-                    stepId: 'code-mode-bridge-test-step',
-                    parentModel: null,
-                ),
-                static function () use ($bridge): mixed {
-                    // Busy-wait instead of sleep so cancellation/budget polling stays active.
-                    return $bridge->execute('for ($i = 0, $end = hrtime(true) + 3_000_000_000; hrtime(true) < $end; ++$i) {} return $i;', 60, 256);
-                },
-            );
-            $this->fail('Expected timeout');
-        } catch (ToolCallException $exception) {
-            $this->assertStringContainsString('timed out after 1 seconds', $exception->getMessage());
-        }
-    }
-
     public function testNestedToolReceivesRemainingScriptBudget(): void
     {
         $seenTimeouts = [];

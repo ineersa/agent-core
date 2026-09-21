@@ -48,21 +48,6 @@ final class DurableResultConverterTest extends TestCase
     // ── Single valid tool call ────────────────────────────────────────────────
 
     #[Test]
-    public function streamOptionRoutesToStreamPath(): void
-    {
-        $result = $this->streamResult([
-            $this->chunk(['choices' => [['finish_reason' => 'stop']]]),
-        ]);
-
-        $options = ['stream' => true];
-        // Verify the option is set correctly
-        $this->assertTrue($options['stream'] ?? false);
-
-        $converted = $this->converter->convert($result, $options);
-        $this->assertInstanceOf(StreamResult::class, $converted, 'Should return StreamResult for stream=true');
-    }
-
-    #[Test]
     public function convertsSingleValidToolCall(): void
     {
         $deltas = $this->collectStream($this->streamResult([

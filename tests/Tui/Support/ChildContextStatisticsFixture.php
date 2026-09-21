@@ -79,28 +79,4 @@ final class ChildContextStatisticsFixture
             'context_window' => self::CONTEXT_WINDOW,
         ];
     }
-
-    /**
-     * Deepseek provider slice for isolated Hatfield settings (context window resolution).
-     *
-     * @return array<string, mixed>
-     */
-    public static function deepseekProviderSettings(): array
-    {
-        return [
-            'type' => 'generic',
-            'enabled' => true,
-            'api' => 'openai-completions',
-            'api_key' => 'dummy',
-            'models' => [
-                'deepseek-v4-flash' => [
-                    'name' => 'DeepSeek V4 Flash',
-                    'context_window' => self::CONTEXT_WINDOW,
-                    'max_tokens' => self::CONTEXT_WINDOW,
-                    'input' => ['text'],
-                    'reasoning' => false,
-                ],
-            ],
-        ];
-    }
 }

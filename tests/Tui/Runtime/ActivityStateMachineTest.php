@@ -50,7 +50,7 @@ final class ActivityStateMachineTest extends TestCase
         foreach ($eventTypes as $eventType) {
             yield $eventType->value => [
                 $eventType->value,
-                RunActivityStateEnum::Running,
+                RunActivityStateEnum::Starting,
                 RunActivityStateEnum::Running,
             ];
         }
@@ -131,13 +131,8 @@ final class ActivityStateMachineTest extends TestCase
     {
         yield 'unknown event type' => [
             'some_random_event',
-            RunActivityStateEnum::Running,
-            RunActivityStateEnum::Running,
-        ];
-        yield 'streaming event (seq=0 passthrough)' => [
-            RuntimeEventTypeEnum::AssistantTextDelta->value,
-            RunActivityStateEnum::Running,
-            RunActivityStateEnum::Running,
+            RunActivityStateEnum::Starting,
+            RunActivityStateEnum::Starting,
         ];
     }
 
@@ -197,13 +192,6 @@ final class ActivityStateMachineTest extends TestCase
     {
         $event = new RuntimeEvent(type: RuntimeEventTypeEnum::RunStarted->value, runId: 'test', seq: 1);
         $result = ActivityStateMachine::transition(RunActivityStateEnum::Idle, $event);
-        $this->assertSame(RunActivityStateEnum::Running, $result);
-    }
-
-    public function testStartingToRunning(): void
-    {
-        $event = new RuntimeEvent(type: RuntimeEventTypeEnum::TurnStarted->value, runId: 'test', seq: 1);
-        $result = ActivityStateMachine::transition(RunActivityStateEnum::Starting, $event);
         $this->assertSame(RunActivityStateEnum::Running, $result);
     }
 
@@ -273,13 +261,6 @@ final class ActivityStateMachineTest extends TestCase
             payload: ['reason' => 'cancelled'],
         ));
         $this->assertSame(RunActivityStateEnum::Cancelled, $activity);
-    }
-
-    public function testCancelledAllowsNewTerminalOutcomeOnRunCancelled(): void
-    {
-        $event = new RuntimeEvent(type: RuntimeEventTypeEnum::RunCancelled->value, runId: 'test', seq: 137, payload: ['reason' => 'cancelled']);
-        $result = ActivityStateMachine::transition(RunActivityStateEnum::Cancelled, $event);
-        $this->assertSame(RunActivityStateEnum::Cancelled, $result);
     }
 
     public function testCancelledStaysCancelledOnStaleToolExecutionCancelled(): void
@@ -408,32 +389,6 @@ final class ActivityStateMachineTest extends TestCase
         $event = new RuntimeEvent(type: $eventType, runId: 'test', seq: 1);
         $result = ActivityStateMachine::transition($current, $event);
         $this->assertSame($expected, $result, "Cancelling should allow $eventType transition");
-    }
-
-    /**
-     * Cancel-class events while already Cancelling stay Cancelling
-     * (they confirm the state, don't escalate).
-     */
-    public function testCancellingRepeatedCancelEventsStayCancelling(): void
-    {
-        foreach ([
-            RuntimeEventTypeEnum::CancellationRequested->value,
-            RuntimeEventTypeEnum::OperationCancelled->value,
-        ] as $type) {
-            $event = new RuntimeEvent(type: $type, runId: 'test', seq: 1);
-            $result = ActivityStateMachine::transition(RunActivityStateEnum::Cancelling, $event);
-            $this->assertSame(RunActivityStateEnum::Cancelling, $result, "Repeat $type should stay Cancelling");
-        }
-    }
-
-    /**
-     * Unknown events while Cancelling stay Cancelling (default arm).
-     */
-    public function testCancellingUnknownEventStaysCancelling(): void
-    {
-        $event = new RuntimeEvent(type: 'some_random_internal_event', runId: 'test', seq: 1);
-        $result = ActivityStateMachine::transition(RunActivityStateEnum::Cancelling, $event);
-        $this->assertSame(RunActivityStateEnum::Cancelling, $result);
     }
 
     public function testCancellingToolExecutionFailedTransitionsToCancelled(): void

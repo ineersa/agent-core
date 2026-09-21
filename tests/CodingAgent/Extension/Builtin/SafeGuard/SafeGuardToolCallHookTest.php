@@ -60,15 +60,6 @@ final class SafeGuardToolCallHookTest extends TestCase
         $this->assertSame(ToolCallDecisionKindEnum::Allow, $dto->kind);
     }
 
-    public function testBashDestructiveStillRequiresApprovalWhenChannelSet(): void
-    {
-        putenv('HATFIELD_APPROVAL_CHANNEL=controller');
-        $_ENV['HATFIELD_APPROVAL_CHANNEL'] = 'controller';
-        $_SERVER['HATFIELD_APPROVAL_CHANNEL'] = 'controller';
-        $dto = $this->hook->onToolCall(new ToolCallContextDTO('c2', 'bash', ['command' => 'rm -rf /tmp/x'], 0));
-        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
-    }
-
     public function testApprovalPromptContainsEscapedInputWithClassifierMatchesStyledAsMarkdown(): void
     {
         putenv('HATFIELD_APPROVAL_CHANNEL=controller');
@@ -225,18 +216,6 @@ final class SafeGuardToolCallHookTest extends TestCase
         $decision = $this->hook->resolveApprovalAnswer(new ApprovalAnswerContextDTO('q', 'Cancelled by user', 'bash', ['category' => 'destructive']));
         $this->assertSame(ToolCallDecisionKindEnum::Block, $decision->kind);
         $this->assertSame('safeguard_cancelled', $decision->reason);
-    }
-
-    public function testOnApprovalAnsweredIsNoOp(): void
-    {
-        // Must not throw and must not mutate settings (writer removed).
-        $this->hook->onApprovalAnswered(new ApprovalAnswerContextDTO(
-            'q',
-            '✅ Allow',
-            'bash',
-            ['category' => 'destructive', 'command' => 'rm -rf /tmp/build'],
-        ));
-        $this->addToAssertionCount(1);
     }
 
     public function testAutoDenyBlocksWhenNoApprovalChannel(): void

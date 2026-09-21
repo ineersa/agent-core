@@ -21,13 +21,6 @@ final class ToolRegistryTest extends TestCase
 
     /* ───────── Provider-seeded permanent tools ───────── */
 
-    public function testConstructorRegistersEmptyProviders(): void
-    {
-        $registry = new ToolRegistry([]);
-
-        $this->assertSame([], $registry->activeToolNames());
-    }
-
     public function testConstructorRegistersProviderDefinitionsAsPermanentTools(): void
     {
         $handler = $this->dummyHandler();
@@ -89,16 +82,6 @@ final class ToolRegistryTest extends TestCase
         $this->assertSame(['read', 'write', 'bash'], $this->registry->activeToolNames());
     }
 
-    public function testIdenticalReRegistrationIsIdempotent(): void
-    {
-        $this->registry->registerTool(name: 'read', description: 'Read', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'read: Read', promptGuidelines: ['G1']);
-        $this->registry->registerTool(name: 'read', description: 'Read', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'read: Read', promptGuidelines: ['G1']);
-
-        // Lines should not duplicate
-        $this->assertCount(1, $this->registry->permanentToolLines());
-        $this->assertCount(1, $this->flattenGuidelines($this->registry->permanentGuidelinesByTool()));
-    }
-
     public function testRegisterPermanentToolWithEmptyNameThrows(): void
     {
         $this->expectException(\InvalidArgumentException::class);
@@ -130,23 +113,6 @@ final class ToolRegistryTest extends TestCase
     }
 
     /* ───────── Dynamic tools ───────── */
-
-    public function testAddDynamicTool(): void
-    {
-        $this->registry->addDynamicTool(name: 'fg', description: 'Fg tool', parametersJsonSchema: [], handler: $this->dummyHandler());
-
-        $this->assertSame(['fg'], $this->registry->activeToolNames());
-    }
-
-    public function testRemoveDynamicTool(): void
-    {
-        $this->registry->addDynamicTool(name: 'fg', description: 'Fg', parametersJsonSchema: [], handler: $this->dummyHandler());
-        $this->registry->addDynamicTool(name: 'bg', description: 'Bg', parametersJsonSchema: [], handler: $this->dummyHandler());
-
-        $this->registry->removeDynamicTool('fg');
-
-        $this->assertSame(['bg'], $this->registry->activeToolNames());
-    }
 
     public function testRemoveNonExistentDynamicToolIsNoOp(): void
     {

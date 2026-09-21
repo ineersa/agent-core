@@ -15,15 +15,6 @@ use Symfony\Component\Validator\Validation;
  */
 final class CodeModeArgumentsDTOTest extends TestCase
 {
-    public function testDefaultsAreWithinApprovedBounds(): void
-    {
-        $dto = new CodeModeArgumentsDTO(script: 'return 1;');
-
-        $this->assertSame(CodeModeArgumentsDTO::DEFAULT_TIMEOUT_SECONDS, $dto->timeout_seconds);
-        $this->assertSame(CodeModeArgumentsDTO::DEFAULT_MEMORY_LIMIT_MB, $dto->memory_limit_mb);
-        $this->assertSame([], $this->validate($dto));
-    }
-
     public function testCustomValuesInsideBoundsPassValidation(): void
     {
         $dto = new CodeModeArgumentsDTO(

@@ -127,14 +127,4 @@ final class SubagentToolTest extends IsolatedKernelTestCase
         $message = (string) $result->getResult();
         $this->assertStringContainsString('Parallel subagent execution supports at most 4 agents per tool call, but 9 tasks were requested.', $message);
     }
-
-    public function testProviderIsAutoRegistered(): void
-    {
-        $tool = self::getContainer()->get(SubagentToolDefinitionProvider::class);
-
-        $this->assertInstanceOf(
-            \Ineersa\CodingAgent\Tool\HatfieldToolProviderInterface::class,
-            $tool,
-        );
-    }
 }

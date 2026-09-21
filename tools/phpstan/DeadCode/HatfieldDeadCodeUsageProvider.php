@@ -15,7 +15,6 @@ use Ineersa\CodingAgent\Infrastructure\SymfonyAi\Http\LlmCancelAwareHttpClient;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressChildRowDTO;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressParallelSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingleSnapshotDTO;
-use Ineersa\CodingAgent\Tests\Runtime\Controller\E2E\Replay\StreamPacingHttpClient;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use ShipMonk\PHPStan\DeadCode\Provider\ReflectionBasedMemberUsageProvider;
@@ -83,7 +82,7 @@ final class HatfieldDeadCodeUsageProvider extends ReflectionBasedMemberUsageProv
         // HttpClientInterface methods as "all usages excluded by tests excluder".
         // LlmCancelAwareHttpClient::stream is invoked by vendor AsyncResponse via
         // HttpClientInterface; concrete override call sites are not attributed.
-        if (\in_array($className, [StreamPacingHttpClient::class, LlmCancelAwareHttpClient::class], true)
+        if (LlmCancelAwareHttpClient::class === $className
             && \in_array($method->getName(), ['stream', 'withOptions'], true)
             && $method->getDeclaringClass()->implementsInterface(HttpClientInterface::class)) {
             return VirtualUsageData::withNote('HttpClientInterface method called through vendor AsyncResponse / typed interface');
