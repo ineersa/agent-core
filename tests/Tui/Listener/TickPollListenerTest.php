@@ -31,6 +31,7 @@ use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Runtime\TuiTickDispatcher;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
+use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
 use PHPUnit\Framework\TestCase;
@@ -948,6 +949,33 @@ final class TickPollListenerTest extends TestCase
         $tickEvent = new \Symfony\Component\Tui\Event\TickEvent();
 
         $this->assertNull($handler($tickEvent));
+    }
+
+    public function testTickShowsAndClearsFollowUpQueuedDuringCompaction(): void
+    {
+        $runId = 'tick-compaction-queue';
+        $harness = new VirtualTuiHarness(sessionId: $runId);
+        $state = new TuiSessionState($runId);
+        $state->activity = RunActivityStateEnum::Compacting;
+        $state->queuedFollowUp = 'Run the checks after compaction';
+        $state->queuedUserMessages = ['steer-1' => 'Existing queued steer'];
+
+        $handler = $this->registerTickHandler(
+            $this->createTickPollListener(),
+            $state,
+            poller: $this->createNoOpPoller(),
+            screen: $harness->screen(),
+        );
+
+        $handler(new \Symfony\Component\Tui\Event\TickEvent());
+        $this->assertStringContainsString('⏳ Existing queued steer', $harness->plainScreenText());
+        $this->assertStringContainsString('⏳ Run the checks after compaction', $harness->plainScreenText());
+
+        $state->activity = RunActivityStateEnum::Starting;
+        $state->queuedFollowUp = null;
+        $handler(new \Symfony\Component\Tui\Event\TickEvent());
+        $this->assertStringContainsString('⏳ Existing queued steer', $harness->plainScreenText());
+        $this->assertStringNotContainsString('⏳ Run the checks after compaction', $harness->plainScreenText());
     }
 
     private function createNoOpPoller(): RuntimeEventPoller
