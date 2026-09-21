@@ -407,7 +407,7 @@ final class SubmitListener implements TuiListenerRegistrar
                         $tui->processRender();
                     } catch (\Throwable $e) {
                         // Non-fatal: the next tick will render the queued message.
-                        $logger->debug('SubmitListener: queued-message render failed (non-fatal)', [
+                        $logger->error('submit_listener.queued_message_render_failed', [
                             'run_id' => $state->handle->runId,
                             'session_id' => $state->sessionId,
                             'component' => 'SubmitListener',

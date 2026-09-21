@@ -215,6 +215,9 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
         $this->assertSame('Run the checks after compaction', $this->state->queuedFollowUp);
         $this->assertSame(RunActivityStateEnum::Compacting, $this->state->activity);
         $this->assertSame([], $this->state->transcript);
+        $this->assertSame('error', $this->logger->records[0]['level']);
+        $this->assertSame('submit_listener.queued_message_render_failed', $this->logger->records[0]['message']);
+        $this->assertSame('terminal unavailable', $this->logger->records[0]['context']['exception']->getMessage());
     }
 
     // ── DispatchRuntime sends follow_up while idle/completed ────────
