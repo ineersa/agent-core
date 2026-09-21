@@ -398,7 +398,23 @@ final class SubmitListener implements TuiListenerRegistrar
                     // arrives.  The poller auto-dispatches queued follow-ups
                     // on the same path as cancellation completion.
                     $state->queuedFollowUp = $text;
+                    $queuedMessages = $state->queuedUserMessages;
+                    $queuedMessages[] = $text;
+                    $screen->syncQueuedUserMessages($queuedMessages);
                     $screen->setWorkingMessage('Message queued — waiting for compaction to complete...');
+                    try {
+                        $tui->requestRender();
+                        $tui->processRender();
+                    } catch (\Throwable $e) {
+                        // Non-fatal: the next tick will render the queued message.
+                        $logger->error('submit_listener.queued_message_render_failed', [
+                            'run_id' => $state->handle->runId,
+                            'session_id' => $state->sessionId,
+                            'component' => 'SubmitListener',
+                            'event_type' => 'submit_queued_message_render_failed',
+                            'exception' => $e,
+                        ]);
+                    }
                 } elseif ($state->activity->isActive()) {
                     $client->send(
                         $state->handle->runId,
