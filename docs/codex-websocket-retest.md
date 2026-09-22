@@ -106,3 +106,39 @@ The original direct probe incorrectly required populated terminal `response.outp
 An exploratory request used `gpt-5.3-codex`, which is absent from this checkout's catalog, and failed for both transports. The catalog-backed `gpt-5.6-luna` model change passed. The original post-cancel controller command was `user_message`, which maps to steering and did not start a new cancelled run. Using the supported `follow_up` command resolved that probe error without a runtime change.
 
 This is bounded correctness evidence, not a long-duration reliability or cache-hit-rate claim. The live controller used one LLM worker and no TUI. Provider-enforced expiry and loss of a previously valid server continuation were not forced; clock-driven expiry and deliberate rejection cover the client behavior. No contention failure reproduced, so concurrent stress lanes were not run. Full `castor check` and independent review remain task-workflow gates, not results of this investigation.
+
+## Interactive Sol observation
+
+A subsequent tmux run at `df1f2fd36130e070c8c4096855bb5739499576c4` launched the actual interactive TUI with cached `openai-codex/gpt-5.6-sol`, low reasoning, and isolated HOME, CWD, databases, auth, and sessions:
+
+```sh
+castor --castor-file=var/tmp/codex-probe/castor.php tui-probe
+```
+
+Sol was available. The first answer sent three full-context items. The second answer reused the socket with a one-user-item continuation. A real read-tool loop then sent one user item and one `function_call_output`, both with `previous_response_id`. The terminal showed completed answers and the tool result. Canonical events recorded three completed runs and exactly one completed tool execution. Those stages had no error-level log records.
+
+The cancellation observation barrier failed because it required the first two numbered output lines to remain visible together. The failure snapshot instead shows generated integers 117–156 and `Working...`, so output was progressing. Escape was never sent. The probe exited through the normal Ctrl+D action, without external termination signals. This run does **not** prove TUI cancellation, a post-cancel request, or TUI resume. Work stopped rather than repeating the long output journey.
+
+The probe tracked only one pane PID, not the full worker tree. Pane exit and a clean `castor clean:cleanup:workers:list` result do not establish complete worker teardown for this TUI run. Earlier controller-level ownership proof remains separate. The isolated project and credentials were removed.
+
+Ignored inspection artifacts:
+
+- `var/tmp/codex-probe/tui-sol.log`: sanitized event counts and transport summaries.
+- `var/reports/codex-tui-sol/`: plain snapshots `startup.txt`, `first-answer.txt`, `second-answer.txt`, `read-tool.txt`, and `final-or-failure.txt`.
+- `var/reports/codex-tui-sol/.hatfield/tmp/tui/smoke/`: ANSI snapshots `startup-20260922-140858.ansi`, `first-answer-20260922-140901.ansi`, `second-answer-20260922-140903.ansi`, `read-tool-20260922-140908.ansi`, and `final-or-failure-20260922-140933.ansi`.
+
+## Harbor evaluation preflight
+
+The proposed one-task evaluation was stopped **before any model request or task container launch**. Agent-core was at `df1f2fd36130e070c8c4096855bb5739499576c4`; the read-only Harbor adapter checkout was at `7e95b67`. Harbor reported version 0.22.0, and Docker client/server both reported 29.8.1.
+
+The fastest task in the existing ten-candidate report is `swe-bench/scikit-learn__scikit-learn-10297`. Its historical digest is `sha256:99b7fc2ffa0f8b2d2c7e9691991ea3d607899e37203a582b5342e306dfedc090`. The previous run took 211.35 seconds and returned reward 1.0. These are selection evidence from the old report, **not a new verifier result**. A future evaluation must resolve and verify the task digest again.
+
+Three preflight findings prevent the requested run as currently configured:
+
+1. **Current native artifact unavailable.** `castor phar:ensure` passed, and an ignored Castor artifact probe confirmed the PHAR embeds commit `df1f2fd36`. Its SHA-256 is `c862c7f093d2dcf11d727931f9fedbde6fd81a0f394c4334c79c7c71c7e1d20b`. Harbor's documented adapter uploads and directly executes a self-contained native binary; it does not provision PHP or upload a PHAR runtime. Cached native releases predate this fix. Local static prerequisites `re2c`, `flex`, and `gperf` are missing, and no local `micro.sfx` was found. No system packages were installed and no static build or CI job was launched.
+2. **Existing CI cache does not match.** GitHub lists a Linux amd64 SPC cache of 1,128,711,491 bytes with key `spc-linux-amd64-25a08afd30c1db8ba6289fc0aa0c9cadf938570225f2363269c39d28a709fd97`. The current inputs produce key `spc-linux-amd64-71a27a80380bf51a66367811dc28b7348a49ec38c4decc613277340546e0cb18`. The build policy permits exact matches only. Available uploaded artifacts are fused releases, not a standalone current SFX. No stale binary was substituted or modified.
+3. **Adapter teardown violates this investigation's ownership rules.** `controller_driver.py` explicitly sets `HATFIELD_SESSION_ID`, then unconditionally calls `terminate_process_group` in `finally`. That helper sends process-group SIGTERM and SIGKILL without UID or protected-tag checks. This is not the EOF-based shutdown used by the successful controller probe. The adapter was not changed or executed.
+
+The adapter preserves canonical session events but does not copy the project's `.hatfield/logs`. A future approved run also needs structured transport summaries retained before container deletion. The existing `logging.path` setting can direct logs into Harbor's retained agent directory; a sanitized export can then retain reuse, delta, full-context, and error counts without raw payloads.
+
+The smallest next path requires approval for a current native build on a prepared runner and a narrow adapter shutdown correction. Alternatively, supporting the current PHAR requires an approved adapter/runtime-provisioning change. Neither is an existing drop-in option. No new verifier result, tool-cycle count, transport count, token cost, or container-teardown result exists for this blocked evaluation. Harbor tracked files and containers were untouched.
