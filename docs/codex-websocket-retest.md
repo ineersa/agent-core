@@ -185,3 +185,26 @@ The verifier's first Git checkout failed with `fatal: detected dubious ownership
 Evidence is retained under the trial's `agent/` directory: `hatfield.runtime.provenance.json`, `install.smoke.txt`, `controller.summary.json`, `controller.teardown.json`, canonical sessions, and `hatfield-logs/agent-2026-09-22.log`. Verifier evidence is `verifier/test-stdout.txt`. The privacy-safe aggregate is `jobs/cached-preflight/report.json`; its generic `adapter_exception` flag includes this verifier exception and must not be interpreted as a controller failure.
 
 Harbor deleted the owned task container; a name-scoped container check found none remaining. The access-only host credential copy was removed. A token-content scan found zero credential matches in retained agent artifacts. `castor clean:cleanup:workers:list` found no stale QA candidates. No real auth was refreshed or changed, and no external process signals were used by the revised adapter.
+
+## Fixed candidate suite, stopped after task four
+
+The user authorized the existing ten-task set, then requested stopping after tasks three and four. Exactly four fresh attempts ran, sequentially; the other six did not run. The earlier single trial is excluded. Harbor revision was `1a5d9564702e8f612968877642b7b94079ea2a45`. The native artifact and production code remained unchanged from the preceding experiment.
+
+The non-root overlay now trusts exactly `/testbed` inside each container and checks Git as root and as the agent before model execution. Verifier scripts also passed shell syntax checks. Frozen task manifests record original registry digests, overlay hashes, and unchanged instruction/verifier/solution hashes. No host Git trust setting changed. Agent and verifier budgets were each 600 seconds; model and Harbor retries were zero.
+
+| Task | Verifier | Requests | Delta / full | Cached input | Cost |
+| --- | --- | --- | --- | --- | --- |
+| astropy 14182 | Pass | 8 | 6 / 2 | 72.40% | $0.054152 |
+| django 15128 | Pass | 22 | 19 / 3 | 82.44% | $0.119786 |
+| matplotlib 24870 | Fail | 15 | 14 / 1 | 75.22% | $0.084104 |
+| seaborn 3069 | Fail | 14 | 12 / 2 | 76.78% | $0.090748 |
+
+All four agents reached `run.completed`; there were no trial exceptions or transport errors/timeouts/retries. All 450 selected regression tests passed. Matplotlib failed its one issue-specific test; seaborn passed one and failed one. These are model task failures, not the previous verifier setup failure.
+
+Weighted prompt-cache usage was **78.11%**, calculated as 581,632 cached input tokens divided by 744,602 input tokens. Fifty of 59 requests reported cached tokens. Total cost was $0.3487892 and summed trial time was 677.81 seconds. These are usage-derived costs, not invoices.
+
+Four sockets served 59 requests: 55 reuses, 51 deltas, four initial full-context requests, and four `divergent_input` full-context requests. Every divergence followed an edit with a reasoning signature. Streamed and canonical tool arguments matched; the exact provider-output/history mismatch remains unproven because raw provider output was not retained. Those fallback requests still reported 83.22–93.05% cached input. Conversely, some delta requests reported zero cached tokens. Prompt caching and WebSocket continuation are distinct measurements.
+
+There were 78 tool calls, including 13 successful edits and eight bash `ToolCallException` results. Every controller recorded eight observed processes and zero shutdown survivors. No owned containers remained; the private auth copy was removed after a zero-match credential scan.
+
+The sanitized report is `reports/swe-bench-cached-2026-09-22.json` in the separate `hatfield-harbor` repository. Raw local diagnostics remain under its ignored `jobs/cached-suite-20260922/`; preparation and frozen hashes are under `jobs/cached-suite-prepared/`. Its repeatable procedure is `docs/cached-candidate-suite.md`. Deterministic Harbor validation passed 22 tests, maximum case 0.07 seconds. This four-task sample is not a complete ten-task benchmark or proof of every transport lifecycle.
