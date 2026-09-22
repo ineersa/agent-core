@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Infrastructure\ProviderQuota;
 
 use Ineersa\AgentCore\Tests\Support\TestLogger;
-use Ineersa\CodingAgent\Auth\CodexAuthRecord;
 use Ineersa\CodingAgent\Auth\CodexAuthStorage;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
@@ -17,6 +16,7 @@ use Ineersa\CodingAgent\Infrastructure\ProviderQuota\ProviderQuotaProbeService;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexAuthRecord;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 use Symfony\Component\Lock\LockFactory;

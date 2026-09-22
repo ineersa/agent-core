@@ -58,6 +58,26 @@ OAuth providers:
 Model metadata typically includes display `name`, `context_window`, `max_tokens`,
 `input` modalities, `tool_calling`, `reasoning`, optional `thinking_level_map`, and `cost`.
 
+### Codex package ownership
+
+[`ineersa/symfony-ai-openai-codex-platform`](https://github.com/ineersa/symfony-ai-openai-codex-platform)
+owns the Codex transports, request conversion, connection cache, and optional
+OAuth login and refresh command. Hatfield registers `auth:codex` and supplies
+the credential storage adapter, file locking, and `hatfield` client identity.
+Profile keys and the `~/.hatfield/auth.json` format are unchanged.
+
+Hatfield supplies model configuration and the session prompt-cache key. The
+dependency container owns one WebSocket cache per process. The LLM worker's
+shutdown subscriber closes it, and stream cancellation uses the package's
+`CancellableRawResultInterface::abort()` contract.
+
+Composer currently installs the package from its GitHub repository, with the
+revision pinned in `composer.lock`. Packagist publication is separate. The
+package targets Symfony AI `^0.12`, whose pre-1.0 APIs can change between minor
+versions. Package upgrades and Hatfield's Symfony AI upgrades require validation
+together. Package checks cover transport and OAuth behavior. Hatfield checks
+cover storage, command registration, provider wiring, and runtime lifecycle.
+
 ## Reasoning / thinking levels
 
 When a model advertises reasoning support, Hatfield maps user-facing levels

@@ -4,12 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Auth;
 
-use Ineersa\CodingAgent\Auth\CodexAuthRecord;
 use Ineersa\CodingAgent\Auth\CodexAuthStorage;
-use Ineersa\CodingAgent\Auth\CodexOAuthConfig;
-use Ineersa\CodingAgent\Auth\CodexTokenRefresher;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
+use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexAuthRecord;
+use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexTokenRefresher;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 
@@ -46,7 +45,7 @@ final class CodexAuthStorageTest extends TestCase
 
         $this->storage->saveCredentials('openai-codex', $record);
 
-        $path = $this->tmpDir.'/'.CodexOAuthConfig::AUTH_FILE;
+        $path = $this->tmpDir.'/'.CodexAuthStorage::AUTH_FILE;
         $this->assertFileExists($path);
         $this->assertSame(0600, fileperms($path) & 0777, 'auth.json must be published with mode 0600');
         $this->assertSame([], glob($this->tmpDir.'/.hatfield/*.tmp.*') ?: [], 'No temp files should remain after save');

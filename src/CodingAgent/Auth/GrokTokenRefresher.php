@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Auth;
 
 use League\OAuth2\Client\Provider\Exception\IdentityProviderException;
+use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexOAuthProvider;
 
 /**
  * Exchanges a refresh token for fresh Grok CLI OAuth credentials.

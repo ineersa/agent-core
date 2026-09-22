@@ -5,18 +5,25 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Auth;
 
 use Psr\Log\LoggerInterface;
+use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexAuthRecord;
+use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexAuthStorageInterface;
+use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexOAuthConfig;
+use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexOAuthService;
+use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexTokenRefresher;
 use Symfony\Component\Lock\LockFactory;
 
 /**
  * Codex-keyed wrapper over {@see AuthCredentialFileStore}.
  *
- * Public API unchanged. File I/O and the single file-scoped lock live in
- * the shared store; this class only owns Codex record typing + auto-refresh.
+ * File I/O and the single file-scoped lock live in the shared store.
+ * This adapter owns the Hatfield credential path and auto-refresh policy.
  *
  * @see CodexAuthRecord
  */
-final class CodexAuthStorage
+final class CodexAuthStorage implements CodexAuthStorageInterface
 {
+    public const string AUTH_FILE = '.hatfield/auth.json';
+
     private readonly AuthCredentialFileStore $store;
 
     public function __construct(
@@ -26,7 +33,7 @@ final class CodexAuthStorage
         private readonly ?LoggerInterface $logger = null,
     ) {
         $this->store = new AuthCredentialFileStore(
-            $homeDir.'/'.CodexOAuthConfig::AUTH_FILE,
+            $homeDir.'/'.self::AUTH_FILE,
             $lockFactory,
         );
     }

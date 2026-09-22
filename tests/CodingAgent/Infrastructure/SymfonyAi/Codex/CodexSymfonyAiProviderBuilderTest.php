@@ -4,10 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Infrastructure\SymfonyAi\Codex;
 
-use Ineersa\CodingAgent\Auth\CodexAuthRecord;
 use Ineersa\CodingAgent\Auth\CodexAuthStorage;
-use Ineersa\CodingAgent\Auth\CodexOAuthConfig;
-use Ineersa\CodingAgent\Auth\CodexOAuthService;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\AiModelDefinition;
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
@@ -20,8 +17,14 @@ use Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderFactory;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexAuthRecord;
+use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexOAuthService;
+use Symfony\AI\Platform\Bridge\OpenAICodex\CodexModel;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketConnectionCache;
+use Symfony\AI\Platform\Message\Message;
+use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\Component\HttpClient\MockHttpClient;
+use Symfony\Component\HttpClient\Response\MockResponse;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
@@ -47,7 +50,7 @@ final class CodexSymfonyAiProviderBuilderTest extends TestCase
     {
         parent::tearDown();
 
-        $path = $this->tmpDir.'/'.CodexOAuthConfig::AUTH_FILE;
+        $path = $this->tmpDir.'/'.CodexAuthStorage::AUTH_FILE;
         if (file_exists($path)) {
             @unlink($path);
         }
@@ -413,6 +416,39 @@ final class CodexSymfonyAiProviderBuilderTest extends TestCase
 
         $this->expectException(\InvalidArgumentException::class);
         $builder->build($provider, new MockHttpClient());
+    }
+
+    public function testPackageReceivesHatfieldIdentityWithoutInternalWireFields(): void
+    {
+        $this->authStorage->saveCredentials('openai-codex', new CodexAuthRecord(
+            'stored-access-token', 'stored-refresh-token', time() + 3600, 'stored-account-id',
+        ));
+        $http = new MockHttpClient(function (string $method, string $url, array $options): MockResponse {
+            $this->assertSame('originator: hatfield', $options['normalized_headers']['originator'][0]);
+            $this->assertSame('User-Agent: hatfield', $options['normalized_headers']['user-agent'][0]);
+            $body = json_decode($options['body'], true, flags: \JSON_THROW_ON_ERROR);
+            $this->assertArrayNotHasKey('hatfield_run_id', $body);
+            $this->assertArrayNotHasKey('hatfield_model_ref', $body);
+            $this->assertSame('0194ffff-bbbb-7ccc-8ddd-444444444444', $body['prompt_cache_key']);
+
+            return new MockResponse();
+        });
+        $builder = new CodexSymfonyAiProviderBuilder(
+            eventDispatcher: $this->createStub(EventDispatcherInterface::class),
+            codexAuth: $this->authStorage,
+            codexOAuth: new CodexOAuthService($this->authStorage),
+            codexWebSocketConnectionCache: new CodexWebSocketConnectionCache(),
+        );
+        $provider = $builder->build(new AiProviderConfig(
+            id: 'openai-codex', type: 'codex', enabled: true,
+            baseUrl: 'https://chatgpt.com/backend-api', transport: 'sse',
+        ), $http);
+        $provider->invoke(new CodexModel('gpt-5.5'), new MessageBag(Message::ofUser('hello')), [
+            'hatfield_run_id' => 'private-run',
+            'hatfield_model_ref' => 'private-model',
+            'prompt_cache_key' => '0194ffff-bbbb-7ccc-8ddd-444444444444',
+        ]);
+        $this->assertSame(1, $http->getRequestsCount());
     }
 
     /**

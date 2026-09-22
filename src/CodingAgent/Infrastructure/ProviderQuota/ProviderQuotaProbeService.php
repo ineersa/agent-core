@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Infrastructure\ProviderQuota;
 
 use Ineersa\CodingAgent\Auth\CodexAuthStorage;
-use Ineersa\CodingAgent\Auth\CodexOAuthConfig;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Runtime\Contract\ProviderQuotaReportDTO;
 use Ineersa\CodingAgent\Runtime\Contract\ProviderQuotaSectionDTO;
 use Psr\Log\LoggerInterface;
+use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexOAuthConfig;
 use Symfony\Contracts\HttpClient\Exception\TransportExceptionInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 use Symfony\Contracts\HttpClient\ResponseInterface;

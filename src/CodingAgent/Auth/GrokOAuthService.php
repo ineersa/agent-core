@@ -5,6 +5,11 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Auth;
 
 use League\OAuth2\Client\Provider\Exception\IdentityProviderException;
+use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\BrowserLauncher;
+use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexOAuthProvider;
+use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexOAuthService;
+use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\LocalCallbackServer;
+use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\ManualCodeParser;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
 /**

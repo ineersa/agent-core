@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "57c6fe0656f19d131b36888a8093c0b5",
+    "content-hash": "4736411dc32957f82d06d453aba9ee0e",
     "packages": [
         {
             "name": "amphp/amp",
@@ -2792,6 +2792,72 @@
                 "symlink": true,
                 "relative": true
             }
+        },
+        {
+            "name": "ineersa/symfony-ai-openai-codex-platform",
+            "version": "dev-main",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/ineersa/symfony-ai-openai-codex-platform.git",
+                "reference": "d5fc1c423a34512fa8c6954ba3b7f993d84474ba"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/ineersa/symfony-ai-openai-codex-platform/zipball/d5fc1c423a34512fa8c6954ba3b7f993d84474ba",
+                "reference": "d5fc1c423a34512fa8c6954ba3b7f993d84474ba",
+                "shasum": ""
+            },
+            "require": {
+                "amphp/amp": "^3.1",
+                "amphp/http": "^2.1",
+                "amphp/websocket-client": "^2.0",
+                "ext-mbstring": "*",
+                "php": ">=8.5",
+                "psr/log": "^3.0",
+                "symfony/ai-open-responses-platform": "^0.12",
+                "symfony/ai-platform": "^0.12",
+                "symfony/clock": "^8.0",
+                "symfony/event-dispatcher-contracts": "^3.0",
+                "symfony/http-client": "^8.0",
+                "symfony/http-client-contracts": "^3.0",
+                "symfony/serializer": "^8.0",
+                "symfony/uid": "^8.0"
+            },
+            "require-dev": {
+                "friendsofphp/php-cs-fixer": "^3.94",
+                "league/oauth2-client": "^2.8",
+                "phpstan/phpstan": "^2.1",
+                "phpstan/phpstan-phpunit": "^2.0",
+                "phpunit/phpunit": "^13.2",
+                "symfony/console": "^8.1",
+                "symfony/process": "^8.0"
+            },
+            "suggest": {
+                "league/oauth2-client": "^2.8, required for optional Codex OAuth login and refresh",
+                "symfony/console": "^8.1, required for the optional OAuth command and interactive login",
+                "symfony/process": "^8.0, required for optional browser launching"
+            },
+            "default-branch": true,
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "Symfony\\AI\\Platform\\Bridge\\OpenAICodex\\": "src/"
+                }
+            },
+            "autoload-dev": {
+                "psr-4": {
+                    "Symfony\\AI\\Platform\\Bridge\\OpenAICodex\\Tests\\": "tests/"
+                }
+            },
+            "license": [
+                "MIT"
+            ],
+            "description": "OpenAI Codex subscription transport and optional OAuth command for Symfony AI.",
+            "support": {
+                "source": "https://github.com/ineersa/symfony-ai-openai-codex-platform/tree/main",
+                "issues": "https://github.com/ineersa/symfony-ai-openai-codex-platform/issues"
+            },
+            "time": "2026-09-22T13:36:19+00:00"
         },
         {
             "name": "kelunik/certificate",
@@ -13596,6 +13662,7 @@
     "minimum-stability": "dev",
     "stability-flags": {
         "ineersa/hatfield-extension-api": 20,
+        "ineersa/symfony-ai-openai-codex-platform": 20,
         "symfony/tui": 20
     },
     "prefer-stable": true,

@@ -92,6 +92,17 @@ final class ConsoleEntrypointUxTest extends TestCase
         $this->assertStringContainsString('Consume messages', $out);
     }
 
+    #[Test]
+    public function codexPackageCommandUsesHatfieldStorageAndProfileHints(): void
+    {
+        $process = $this->runConsole(['auth:codex', '--refresh', '--auth-profile=work', '--no-interaction']);
+
+        $this->assertSame(1, $process->getExitCode(), $process->getErrorOutput().$process->getOutput());
+        $output = $process->getOutput().$process->getErrorOutput();
+        $this->assertStringContainsString('No stored Codex credentials found', $output);
+        $this->assertStringContainsString('auth:codex --auth-profile=work', $output);
+    }
+
     /**
      * @param list<string> $args
      */

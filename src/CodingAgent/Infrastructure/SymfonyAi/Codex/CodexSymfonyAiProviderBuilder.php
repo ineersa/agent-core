@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Infrastructure\SymfonyAi\Codex;
 
 use Ineersa\CodingAgent\Auth\CodexAuthStorage;
-use Ineersa\CodingAgent\Auth\CodexOAuthConfig;
-use Ineersa\CodingAgent\Auth\CodexOAuthService;
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ProjectedSymfonyModelCatalog;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderBuilderInterface;
 use Psr\Log\LoggerInterface;
+use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexOAuthConfig;
+use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexOAuthService;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexModel;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexTransportEnum;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketCacheSettings;
@@ -84,6 +84,9 @@ final class CodexSymfonyAiProviderBuilder implements SymfonyAiProviderBuilderInt
             websocketConnector: null,
             websocketConnectionCache: $this->codexWebSocketConnectionCache,
             websocketCacheSettings: $cacheSettings,
+            originator: 'hatfield',
+            userAgent: 'hatfield',
+            internalOptions: ['hatfield_run_id', 'hatfield_model_ref'],
         );
     }
 
