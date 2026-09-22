@@ -185,7 +185,6 @@ enables hybrid BM25 keyword and semantic vector search in the same tool.
 | `embedding_api.batch_size` | Inputs per request; each indexing job processes at most four | `4` |
 | `reranker_api.base_url` | Base URL for the `/rerank` endpoint | Required when configured |
 | `reranker_api.model_id` | Reranker model ID | Required when configured |
-| `reranker_api.query_prefix` | Reranker query prefix, joined with one space | Empty |
 | `reranker_api.batch_size` | Maximum documents per rerank request | `8` |
 | `reranker_api.document_characters` | Maximum Unicode characters per reranked chunk | `768` |
 

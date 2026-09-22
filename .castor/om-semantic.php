@@ -41,7 +41,7 @@ final class OmBenchmarkHttpClient implements HttpClientInterface
  * directory printed at startup. No live database or session is modified.
  */
 #[AsTask(name: 'om:benchmark-semantic', description: 'Benchmark full-corpus OM hybrid retrieval on a disposable SQLite backup and local endpoints')]
-function om_benchmark_semantic(string $source, string $output): void
+function om_benchmark_semantic(string $source, string $output, bool $reuse = false): void
 {
     if (!is_file($source)) {
         throw new InvalidArgumentException('Source OM database does not exist.');
@@ -49,18 +49,30 @@ function om_benchmark_semantic(string $source, string $output): void
     if (file_exists($output)) {
         throw new InvalidArgumentException('Choose a new output report path.');
     }
-    $directory = TestDirectoryIsolation::createProjectTempDir('om-semantic-benchmark');
+    if ($reuse) {
+        $resolved = realpath($source);
+        if (false === $resolved) {
+            throw new InvalidArgumentException('Missing private benchmark copy.');
+        }
+        $source = $resolved;
+        if (!str_starts_with($source, dirname(__DIR__).'/var/tmp/om-semantic-benchmark-')) {
+            throw new InvalidArgumentException('Reuse is restricted to private benchmark copies in this checkout.');
+        }
+    }
+    $directory = $reuse ? dirname($source) : TestDirectoryIsolation::createProjectTempDir('om-semantic-benchmark');
     (new Filesystem())->chmod($directory, 0o700);
     $path = $directory.'/om.sqlite';
-    $reader = new SQLite3($source, \SQLITE3_OPEN_READONLY);
-    $copy = new SQLite3($path);
-    try {
-        if (!$reader->backup($copy)) {
-            throw new RuntimeException('Unable to create a consistent read-only-source backup.');
+    if (!$reuse) {
+        $reader = new SQLite3($source, \SQLITE3_OPEN_READONLY);
+        $copy = new SQLite3($path);
+        try {
+            if (!$reader->backup($copy)) {
+                throw new RuntimeException('Unable to create a consistent read-only-source backup.');
+            }
+        } finally {
+            $reader->close();
+            $copy->close();
         }
-    } finally {
-        $reader->close();
-        $copy->close();
     }
     echo 'private_artifacts='.$directory.\PHP_EOL;
     $connection = OmDatabaseFactory::connectAndMigrate($path);
@@ -77,7 +89,9 @@ function om_benchmark_semantic(string $source, string $output): void
     $settings = SemanticSettings::fromArray($config) ?? throw new LogicException('Missing benchmark settings.');
     try {
         // A backup can itself contain derived tables; force a genuine full build.
-        $connection->executeStatement('DELETE FROM om_semantic_state');
+        if (!$reuse) {
+            $connection->executeStatement('DELETE FROM om_semantic_state');
+        }
         $observations = (int) $connection->fetchOne('SELECT COUNT(*) FROM om_observation');
         $reflections = (int) $connection->fetchOne('SELECT COUNT(*) FROM om_reflection');
         $groundTruth = $connection->fetchAllAssociative("SELECT observation_id AS id, run_id AS session_id FROM om_observation WHERE run_id = '32' AND (content LIKE '%2510%' OR content LIKE '%MapToolArguments%') ORDER BY observation_id");
@@ -87,26 +101,28 @@ function om_benchmark_semantic(string $source, string $output): void
         $start = microtime(true);
         $maximumBatchSeconds = 0.0;
         $batchCount = 0;
-        do {
-            $batchStart = microtime(true);
-            // Fresh service per batch exercises production restart/progress logic.
-            $index = new SemanticIndexService($connection, $path, $settings, new SemanticApiClient($settings, $http));
-            $complete = $index->synchronize();
-            $maximumBatchSeconds = max($maximumBatchSeconds, microtime(true) - $batchStart);
-            ++$batchCount;
-            if (0 === $batchCount % 100) {
-                echo json_encode(['batches' => $batchCount, 'seconds' => microtime(true) - $start], \JSON_THROW_ON_ERROR).\PHP_EOL;
-            }
-            if (microtime(true) - $start > 3300) {
-                throw new RuntimeException('Benchmark exceeded its 55-minute safety budget. Private checkpoint artifacts were retained.');
-            }
-        } while (!$complete);
+        if (!$reuse) {
+            do {
+                $batchStart = microtime(true);
+                // Fresh service per batch exercises production restart/progress logic.
+                $index = new SemanticIndexService($connection, $path, $settings, new SemanticApiClient($settings, $http));
+                $complete = $index->synchronize();
+                $maximumBatchSeconds = max($maximumBatchSeconds, microtime(true) - $batchStart);
+                ++$batchCount;
+                if (0 === $batchCount % 100) {
+                    echo json_encode(['batches' => $batchCount, 'seconds' => microtime(true) - $start], \JSON_THROW_ON_ERROR).\PHP_EOL;
+                }
+                if (microtime(true) - $start > 3300) {
+                    throw new RuntimeException('Benchmark exceeded its 55-minute safety budget. Private checkpoint artifacts were retained.');
+                }
+            } while (!$complete);
+        }
         $buildSeconds = microtime(true) - $start;
         $buildRequests = $counts->getArrayCopy();
         $chunkCount = (int) $connection->fetchOne('SELECT COUNT(*) FROM om_semantic_document');
         $dimension = (int) $connection->fetchOne('SELECT dimensions FROM om_semantic_state WHERE id = 1');
         $noWorkStart = microtime(true);
-        if (!$index->synchronize() || $buildRequests !== $counts->getArrayCopy()) {
+        if (!$reuse && (!$index->synchronize() || $buildRequests !== $counts->getArrayCopy())) {
             throw new RuntimeException('A completed unchanged index must not re-embed.');
         }
         $noWorkSeconds = microtime(true) - $noWorkStart;
@@ -116,6 +132,8 @@ function om_benchmark_semantic(string $source, string $output): void
             'paraphrase' => 'where we upstreamed flat DTO arguments',
             'concept' => 'Symfony AI tool arguments flattened from a data transfer object instead of nested JSON',
             'negative' => 'quasar glacier pineapple zyxwv-no-such-memory-71a9',
+            'dated_identifier' => 'MapToolArguments',
+            'dated_empty' => 'MapToolArguments',
         ];
         $results = [];
         $dates = ['observation' => [null, null], 'reflection' => [null, null]];
@@ -128,11 +146,22 @@ function om_benchmark_semantic(string $source, string $output): void
             $modeSettings = SemanticSettings::fromArray($modeConfig) ?? throw new LogicException('Missing settings.');
             $service = new SemanticIndexService($connection, $path, $modeSettings, new SemanticApiClient($modeSettings, $http));
             foreach ($queries as $label => $query) {
+                $dates = match ($label) {
+                    'dated_identifier' => ['observation' => ['2026-09-19 00:00', '2026-09-19 23:59'], 'reflection' => ['2026-09-19T00:00:00+00:00', '2026-09-19T23:59:59+00:00']],
+                    'dated_empty' => ['observation' => ['2999-01-01 00:00', null], 'reflection' => ['2999-01-01T00:00:00+00:00', null]],
+                    default => ['observation' => [null, null], 'reflection' => [null, null]],
+                };
                 $before = $counts->getArrayCopy();
                 $queryStart = microtime(true);
                 $retrieval = $service->search($query, $dates, static function (): void {});
                 $seconds = microtime(true) - $queryStart;
                 $hits = array_slice($retrieval['results'], 0, 20);
+                foreach ($hits as $hit) {
+                    [$after, $beforeDate] = $dates[$hit['kind']];
+                    if ((null !== $after && $hit['timestamp'] < $after) || (null !== $beforeDate && $hit['timestamp'] > $beforeDate)) {
+                        throw new RuntimeException('Retrieval returned a memory outside the requested dates.');
+                    }
+                }
                 $ranks = [];
                 foreach ($hits as $offset => $hit) {
                     foreach ($groundTruth as $expected) {
@@ -162,10 +191,11 @@ function om_benchmark_semantic(string $source, string $output): void
             }
         }
         $report = [
+            'query_only' => $reuse,
             'observations' => $observations, 'reflections' => $reflections, 'chunks' => $chunkCount,
             'dimensions' => $dimension, 'build_seconds' => $buildSeconds, 'batches' => $batchCount,
             'maximum_batch_seconds' => $maximumBatchSeconds, 'build_requests' => $buildRequests,
-            'no_work_seconds' => $noWorkSeconds, 'no_work_requests' => 0,
+            'no_work_seconds' => $reuse ? null : $noWorkSeconds, 'no_work_requests' => $reuse ? null : 0,
             'peak_memory_bytes' => memory_get_peak_usage(true), 'file_sizes' => $fileSizes,
             'expected_session_32_memories' => $groundTruth, 'queries' => $results,
         ];

@@ -16,7 +16,6 @@ final readonly class SemanticSettings
         public int $embeddingBatchSize,
         public ?string $rerankerUrl,
         public ?string $rerankerModel,
-        public string $rerankerQueryPrefix,
         public int $rerankerBatchSize,
         public int $rerankerDocumentCharacters,
     ) {
@@ -48,7 +47,6 @@ final readonly class SemanticSettings
             self::positive($embedding, 'batch_size', 4),
             null === $reranker ? null : self::url($reranker),
             null === $reranker ? null : self::text($reranker, 'model_id'),
-            self::text($reranker ?? [], 'query_prefix', ''),
             self::positive($reranker ?? [], 'batch_size', 8),
             self::positive($reranker ?? [], 'document_characters', 768),
         );

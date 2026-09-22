@@ -296,7 +296,7 @@ final class OmQueryService
                 return ['ok' => false,
                     'error' => $error instanceof SemanticSearchException ? $error->failureCode : 'semantic_search_failed',
                     'message' => $error instanceof SemanticSearchException ? $error->getMessage() : 'Hybrid memory search failed. Check the OM index and logs; no fallback results were returned.',
-                ];
+                ] + ($error instanceof SemanticSearchException ? $error->progress : []);
             }
         }
 

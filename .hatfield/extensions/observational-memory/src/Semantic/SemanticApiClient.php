@@ -96,9 +96,6 @@ final readonly class SemanticApiClient
      */
     private function rankDocuments(string $query, array $documents, \Closure $checkpoint): array
     {
-        if ('' !== $this->settings->rerankerQueryPrefix) {
-            $query = $this->settings->rerankerQueryPrefix.' '.$query;
-        }
         $scores = [];
         foreach (array_chunk($documents, $this->settings->rerankerBatchSize, true) as $batch) {
             $checkpoint();

@@ -11,10 +11,12 @@ use Symfony\AI\Store\Query\TextQuery;
 use Symfony\AI\Store\StoreInterface;
 
 /** Adapts vendor option names and FTS tokenization without implementing ranking. */
-final readonly class MemoryStoreAdapter implements StoreInterface
+final class MemoryStoreAdapter implements StoreInterface
 {
+    private bool $truncated = false;
+
     /** @param (\Closure(VectorDocument): bool)|null $filter */
-    public function __construct(private StoreInterface $store, private bool $text, private int $chunkCount, private ?\Closure $filter = null)
+    public function __construct(private readonly StoreInterface $store, private readonly bool $text, private readonly int $chunkCount, private readonly ?\Closure $filter = null)
     {
     }
 
@@ -47,6 +49,7 @@ final readonly class MemoryStoreAdapter implements StoreInterface
      */
     public function query(QueryInterface $query, array $options = []): iterable
     {
+        $this->truncated = false;
         if ($this->text && $query instanceof TextQuery) {
             // CombinedStore flattens text arrays. Re-tokenize here; only letters
             // and numbers enter SQLite's quoted FTS terms, never user syntax.
@@ -57,19 +60,28 @@ final readonly class MemoryStoreAdapter implements StoreInterface
             $query = new TextQuery(array_values(array_unique($matches[0])));
         }
         $limit = (int) ($options['maxItems'] ?? 100);
-        // Apply dates before candidate truncation. Vektor has no native metadata
-        // filter, so constrained queries must request the full graph candidate set.
-        $fetch = null === $this->filter ? $limit : max(1, $this->chunkCount);
+        // Vektor has no metadata filter. Bound overfetch independently of corpus
+        // size; report an exhausted budget even when few dated hits survive.
+        $fetch = min(max(1, $this->chunkCount), null === $this->filter ? $limit : 500);
         $count = 0;
+        $seen = 0;
         foreach ($this->store->query($query, [$this->text ? 'maxItems' : 'k' => $fetch]) as $document) {
+            ++$seen;
+            $this->truncated = $seen >= $fetch && $this->chunkCount > $seen;
             if (null !== $this->filter && !($this->filter)($document)) {
                 continue;
             }
             yield $document;
             if (++$count >= $limit) {
+                $this->truncated = $this->truncated || $this->chunkCount > $seen;
                 break;
             }
         }
+    }
+
+    public function wasTruncated(): bool
+    {
+        return $this->truncated;
     }
 
     public function supports(string $queryClass): bool

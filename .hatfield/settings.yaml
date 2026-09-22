@@ -36,7 +36,6 @@ extensions:
             #     reranker_api:
             #         base_url: http://localhost:8060/v1
             #         model_id: bge-reranker-base-q8_0.gguf
-            #         query_prefix: ''
             #         batch_size: 8
             #         document_characters: 768
         safe_guard:

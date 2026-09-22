@@ -7,7 +7,8 @@ namespace Ineersa\HatfieldExt\ObservationalMemory\Semantic;
 /** Safe public failure. Never chain HTTP exceptions containing memory content. */
 final class SemanticSearchException extends \RuntimeException
 {
-    public function __construct(public readonly string $failureCode, string $message)
+    /** @param array<string, int> $progress */
+    public function __construct(public readonly string $failureCode, string $message, public readonly array $progress = [])
     {
         parent::__construct($message);
     }

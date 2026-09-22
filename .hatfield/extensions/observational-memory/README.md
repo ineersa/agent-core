@@ -202,15 +202,15 @@ semantic:
   reranker_api:
     base_url: http://localhost:8060/v1
     model_id: bge-reranker-base-q8_0.gguf
-    query_prefix: ''
     batch_size: 8
     document_characters: 768
 ```
 
 Both API blocks require `base_url` and `model_id`. Omit `reranker_api` to use fused
 keyword and vector ranking without reranking. A reranker without embeddings is a
-configuration error. Prefixes default to empty and apply only to queries, joined
-with one space. The embedding example includes the colon required by this model.
+configuration error. The embedding prefix defaults to empty and applies only to
+query embeddings, joined with one space. The reranker receives the raw query.
+The embedding example includes the colon required by this model.
 The other defaults are shown above. Counts must be positive; `chunk_bytes` must be
 at least four and `overlap_bytes` must be nonnegative and smaller than the chunk.
 Requests run serially with a ten-second HTTP limit. An indexing job embeds at most
@@ -223,9 +223,10 @@ the tested store packages and Vektor version in its Composer requirements.
 It retains at most 100 fused chunk candidates, optionally reranks them, and
 collapses them to source memories before applying the existing result limit.
 No raw ranking scores are returned. `truncated` is true when either the candidate
-budget or result limit is reached. Date-constrained queries apply date filtering
-before truncating each candidate list; Vektor must retrieve a larger candidate
-set because its bridge has no native metadata filter. Such queries can cost more.
+budget or result limit is reached. Date-constrained queries overfetch at most 500
+candidates per store, filter by date, and retain at most 100 per ranked list.
+Returned dates remain correct, but matches outside the bounded candidate pool
+can be omitted. Exhausting that pool sets `truncated`, even with zero surviving hits.
 
 The tool name and arguments remain unchanged. Its description, query guidance,
 and limit description switch between exact and hybrid capabilities. Reranker
@@ -250,9 +251,18 @@ forces rebuilding derived storage at the next indexing job. Deletions, changed
 chunks, changed embedding models, and missing vector files also cause rebuilding.
 Vektor soft deletes are deliberately not used: their fixed candidate buffer can
 return no results despite live documents. Search rejects incomplete, stale, dirty,
-or busy indexes instead of presenting a partial index as healthy. Storage failures
-invalidate the index; configured embedding and reranker failures return visible
-errors without fallback results. A later session start can restart failed indexing.
+or busy indexes instead of presenting a partial index as healthy. Missing storage
+or explicit corruption invalidates the index; transient read failures do not
+discard embeddings. Configured endpoint failures return visible errors without
+fallback results. A later session start can restart failed indexing. Query HTTP
+calls do not hold the index lock. The source/index snapshot is revalidated after
+embedding; reranking uses materialized hits after releasing the read lock.
+
+`index_building` includes `indexed_count` and `source_count`, both in memory units.
+The first counts current source memories represented by at least one indexed
+chunk, not fully indexed memories or search readiness. Dirty or incompatible
+indexes report zero. Counts reuse the loaded source snapshot and stored parent
+metadata rather than rescanning and rechunking the corpus.
 
 The embedding endpoint receives memory chunks and prefixed search queries. The
 reranker receives queries and bounded candidate text. Only configure trusted

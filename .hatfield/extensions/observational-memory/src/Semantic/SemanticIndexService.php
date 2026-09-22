@@ -120,14 +120,23 @@ final readonly class SemanticIndexService
             $memories = $this->memories();
             $state = $this->state();
             if (null === $state || 0 === (int) $state['complete'] || 1 === (int) $state['dirty'] || $state['signature'] !== $this->settings->signature() || $state['source_hash'] !== $this->sourceHash($memories)) {
-                throw new SemanticSearchException('index_building', 'Semantic index is building or stale; retry after indexing completes.');
+                throw $this->building($memories, $state);
             }
             if ([] === $memories || 0 === (int) $state['dimensions']) {
                 return ['results' => [], 'truncated' => false];
             }
+            // Network calls must not hold the writer lock. Revalidate the exact
+            // source/index snapshot after embedding before reading either store.
+            $lock->release();
             $checkpoint();
             $vector = $this->client->embed([$query], query: true)[0];
             $checkpoint();
+            $lock = $this->lock();
+            $currentState = $this->state();
+            $currentMemories = $this->memories();
+            if ($state !== $currentState || $state['source_hash'] !== $this->sourceHash($currentMemories)) {
+                throw $this->building($currentMemories, $currentState);
+            }
             if ($vector->getDimensions() !== (int) $state['dimensions']) {
                 $this->saveState($state['source_hash'], (int) $state['dimensions'], true, false);
                 throw new SemanticSearchException('embedding_dimensions_changed', 'Query embedding dimensions changed; the semantic index must rebuild.');
@@ -143,20 +152,26 @@ final readonly class SemanticIndexService
             $filter = $hasDates ? static fn (VectorDocument $document): bool => isset($filtered[(string) $document->getMetadata()->getParentId()]) : null;
             try {
                 if (!$this->filesExist()) {
+                    $this->saveState($state['source_hash'], (int) $state['dimensions'], true, false);
                     throw new \RuntimeException('Semantic vector files are missing.');
                 }
                 $count = (int) $this->connection->fetchOne('SELECT COUNT(*) FROM om_semantic_document');
-                $store = new CombinedStore(
-                    new MemoryStoreAdapter($this->vectorStore((int) $state['dimensions']), false, $count, $filter),
-                    new MemoryStoreAdapter(TextStore::fromDbal($this->connection, 'om_semantic_document'), true, $count, $filter),
-                );
+                $vectorStore = new MemoryStoreAdapter($this->vectorStore((int) $state['dimensions']), false, $count, $filter);
+                $textStore = new MemoryStoreAdapter(TextStore::fromDbal($this->connection, 'om_semantic_document'), true, $count, $filter);
+                $store = new CombinedStore($vectorStore, $textStore);
                 $hits = \array_slice(iterator_to_array($store->query(new HybridQuery($vector, $query), ['maxItems' => 100]), false), 0, 100);
             } catch (\Throwable $error) {
-                // Intentional invalidation, not a fallback. The next indexing job
-                // discards derived files instead of trusting a damaged graph.
-                $this->saveState($state['source_hash'], (int) $state['dimensions'], true, false);
+                // SQLite explicitly identifies corruption. Busy/locked databases
+                // and other transient failures must not discard valid embeddings.
+                if (($error instanceof \PDOException && \in_array((int) ($error->errorInfo[1] ?? 0) & 0xFF, [11, 26], true))
+                    || ($error instanceof \RuntimeException && 1 === preg_match('/^Node [0-9]+ not found in graph$/D', $error->getMessage()))) {
+                    $this->saveState($state['source_hash'], (int) $state['dimensions'], true, false);
+                }
                 throw $error;
             }
+            // Hits and canonical source rows are materialized. Their immutable
+            // snapshot can be reranked without blocking asynchronous indexing.
+            $lock->release();
             $checkpoint();
             if (null !== $this->settings->rerankerUrl && [] !== $hits) {
                 $order = $this->client->rerank($query, array_map(static fn (VectorDocument $hit): string => $hit->getMetadata()->getText() ?? '', $hits), $checkpoint);
@@ -172,10 +187,25 @@ final readonly class SemanticIndexService
             }
             $checkpoint();
 
-            return ['results' => array_values($results), 'truncated' => \count($hits) >= 100];
+            return ['results' => array_values($results), 'truncated' => \count($hits) >= 100 || $vectorStore->wasTruncated() || $textStore->wasTruncated()];
         } finally {
             $lock->release();
         }
+    }
+
+    /** @param array<string, Memory> $memories
+     * @param array<string, mixed>|null $state
+     */
+    private function building(array $memories, ?array $state): SemanticSearchException
+    {
+        $indexedCount = 0;
+        if (null !== $state && 0 === (int) $state['dirty'] && $state['signature'] === $this->settings->signature()
+            && false !== $this->connection->fetchOne("SELECT name FROM sqlite_master WHERE name = 'om_semantic_document'")) {
+            $parents = array_fill_keys(array_map('strval', $this->connection->fetchFirstColumn("SELECT DISTINCT json_extract(metadata, '$._parent_id') FROM om_semantic_document")), true);
+            $indexedCount = \count(array_intersect_key($memories, $parents));
+        }
+
+        return new SemanticSearchException('index_building', 'Semantic index is building or stale; counts show source memories represented by at least one indexed chunk, not search readiness.', ['indexed_count' => $indexedCount, 'source_count' => \count($memories)]);
     }
 
     private function lock(): LockInterface

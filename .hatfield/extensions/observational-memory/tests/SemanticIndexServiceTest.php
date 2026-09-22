@@ -87,7 +87,10 @@ final class SemanticIndexServiceTest extends IsolatedKernelTestCase
         $this->assertSame('index_building', $this->query()->search('memory')['error']);
         $this->assertFalse($this->index()->synchronize());
         $this->assertSame(4, (int) $this->connection->fetchOne('SELECT COUNT(*) FROM om_semantic_document'));
-        $this->assertSame('index_building', $this->query()->search('memory')['error']);
+        $progress = $this->query()->search('memory');
+        $this->assertSame('index_building', $progress['error']);
+        $this->assertSame(4, $progress['indexed_count']);
+        $this->assertSame(6, $progress['source_count']);
         // New service instances model successive worker jobs, not a cached cursor.
         $this->assertTrue($this->index()->synchronize());
         $this->assertSame([4, 2], array_map(static fn (array $r): int => \count($r['input']), $this->requests));
@@ -187,10 +190,11 @@ final class SemanticIndexServiceTest extends IsolatedKernelTestCase
             'embedding_api' => ['base_url' => 'http://embeddings.test/v1', 'model_id' => 'coderankembed'],
             'reranker_api' => ['base_url' => 'http://reranker.test/v1', 'model_id' => 'rank'],
         ]]);
-        $http = new MockHttpClient(static function (string $method, string $url, array $options): MockResponse {
+        $http = new MockHttpClient(function (string $method, string $url, array $options): MockResponse {
             if (str_ends_with($url, '/embeddings')) {
                 return new MockResponse('{"data":[{"index":0,"embedding":[1.0,0.0]}]}');
             }
+            $this->assertTrue($this->index()->synchronize(), 'Reranking must not hold the index writer lock.');
             $documents = json_decode($options['body'], true, flags: \JSON_THROW_ON_ERROR)['documents'];
             $scores = [];
             foreach ($documents as $i => $text) {
@@ -306,6 +310,48 @@ final class SemanticIndexServiceTest extends IsolatedKernelTestCase
             }
         }
         $this->assertSame(0, $process->getExitCode());
+        $this->assertTrue($this->query()->search('alpha')['ok']);
+    }
+
+    #[Test]
+    public function transientVendorReadFailurePreservesHealthyEmbeddings(): void
+    {
+        $this->observation('alpha');
+        $this->assertTrue($this->index()->synchronize());
+        $pdo = $this->connection->getNativeConnection();
+        $this->assertInstanceOf(\PDO::class, $pdo);
+        $previous = $pdo->getAttribute(\PDO::ATTR_STATEMENT_CLASS);
+        $pdo->setAttribute(\PDO::ATTR_STATEMENT_CLASS, [Support\TransientFtsStatement::class]);
+        try {
+            $this->index()->search('alpha', ['observation' => [null, null], 'reflection' => [null, null]], static function (): void {});
+            $this->fail('Transient read failure must propagate.');
+        } catch (\PDOException $error) {
+            $this->assertSame(5, $error->errorInfo[1]);
+        } finally {
+            $pdo->setAttribute(\PDO::ATTR_STATEMENT_CLASS, $previous);
+        }
+        $this->assertSame(0, (int) $this->connection->fetchOne('SELECT dirty FROM om_semantic_state'));
+        $this->assertSame(1, (int) $this->connection->fetchOne('SELECT complete FROM om_semantic_state'));
+        $requests = \count($this->requests);
+        $this->assertTrue($this->index()->synchronize());
+        $this->assertCount($requests, $this->requests);
+        $this->assertTrue($this->query()->search('alpha')['ok']);
+    }
+
+    #[Test]
+    public function embeddingDoesNotHoldIndexLockAndRevalidatesChangedSource(): void
+    {
+        $this->observation('alpha');
+        $this->assertTrue($this->index()->synchronize());
+        $http = new MockHttpClient(function (): MockResponse {
+            $this->observation('new concurrent memory');
+            $this->assertTrue($this->index()->synchronize());
+
+            return new MockResponse('{"data":[{"index":0,"embedding":[1.0,0.0]}]}');
+        });
+        $result = $this->query($http)->search('alpha');
+        $this->assertSame('index_building', $result['error']);
+        $this->assertArrayNotHasKey('results', $result);
         $this->assertTrue($this->query()->search('alpha')['ok']);
     }
 
