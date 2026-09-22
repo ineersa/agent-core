@@ -17,9 +17,8 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
  * callable pseudo-type cannot be used as a property type). Two handler
  * shapes exist:
  * - Typed DTO handlers (built-ins): `__invoke` takes one class-typed parameter.
- *   The parameter must declare Symfony AI's `#[MapToolArguments]` attribute.
- *   parametersJsonSchema is null and the provider schema is generated from
- *   the DTO properties and constraints.
+ *   parametersJsonSchema is null, so Symfony AI generates the provider schema;
+ *   `#[MapToolArguments]` maps the DTO properties and constraints to its root.
  * - Raw-array handlers (MCP, public extension adapters):
  *   parametersJsonSchema carries the runtime-provided schema and arguments
  *   are passed through as the flat provider map.

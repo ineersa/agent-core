@@ -212,7 +212,7 @@ final class RegistryBackedToolboxTest extends TestCase
         $this->assertSame(['filter'], $parameters['required']);
     }
 
-    public function testGetToolsRejectsTypedDtoWithoutMapToolArgumentsAttribute(): void
+    public function testGetToolsAllowsNativeUnmappedParameterSchema(): void
     {
         $handler = new class {
             public function __invoke(ViewImageArgumentsDTO $arguments): string
@@ -228,9 +228,10 @@ final class RegistryBackedToolboxTest extends TestCase
             promptLine: 'view_image: View',
         );
 
-        $this->expectException(\LogicException::class);
-        $this->expectExceptionMessage('must declare #[MapToolArguments] on its DTO parameter');
-        $this->createToolbox($registry)->getTools();
+        $parameters = $this->createToolbox($registry)->getTools()[0]->getParameters();
+
+        $this->assertArrayHasKey('arguments', $parameters['properties']);
+        $this->assertSame('object', $parameters['properties']['arguments']['type']);
     }
 
     public function testGetToolsSurfacesNativeInvalidMapToolArgumentsConfiguration(): void

@@ -13,7 +13,6 @@ use Ineersa\CodingAgent\Tool\Event\ToolCallFailedEvent;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallContextDTO;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
-use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
 use Symfony\AI\Agent\Toolbox\Exception\ToolException;
 use Symfony\AI\Agent\Toolbox\Exception\ToolExecutionException;
 use Symfony\AI\Agent\Toolbox\Exception\ToolExecutionExceptionInterface;
@@ -47,10 +46,10 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  *     → ToolCallArgumentsResolved (ValidateToolCallArgumentsListener)
  *     → handler invoke → ToolCallSucceeded/Failed
  *
- * Typed DTO tools are model-visible with flat arguments: Symfony AI's schema
+ * Mapped DTO tools are model-visible with flat arguments: Symfony AI's schema
  * factory applies `#[MapToolArguments]`, then Hatfield drops nullable DTO
  * properties from `required` so the provider schema stays faithful to
- * optional fields.
+ * optional fields. Unmapped handlers keep Symfony AI's native parameter shape.
  *
  * Mutable registry semantics are preserved without a revision counter:
  * provider Tool metadata and the one-definition native Toolbox are memoized
@@ -243,11 +242,10 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
     /**
      * Build the native Symfony AI Tool metadata for one registered definition.
      *
-     * Typed DTO handlers (parametersJsonSchema === null) must declare
-     * `#[MapToolArguments]` on a parameter. Attribute presence is checked via
-     * the public attribute class; Symfony AI's schema factory owns signature
-     * validation and flat schema generation. Nullable properties are then
-     * dropped from `required`.
+     * Handlers without a runtime-provided schema are described directly by
+     * Symfony AI's schema factory. `#[MapToolArguments]` handlers produce a
+     * flat DTO schema; ordinary handlers retain Symfony AI's parameter shape.
+     * Nullable properties are then dropped from `required`.
      *
      * Raw-array handlers (runtime-provided schema) keep their schema and are
      * flagged so the argument resolver passes the flat provider map through.
@@ -264,13 +262,9 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
             );
         }
 
-        if (!$this->hasMapToolArgumentsAttribute($definition->handler)) {
-            throw new \LogicException(\sprintf('Typed tool "%s" must declare #[MapToolArguments] on its DTO parameter.', $definition->name));
-        }
-
         $parameters = $this->schemaFactory->buildParameters($definition->handler::class, '__invoke');
         if (!\is_array($parameters)) {
-            throw new \LogicException(\sprintf('Typed tool "%s" must produce an object parameter schema via #[MapToolArguments].', $definition->name));
+            throw new \LogicException(\sprintf('Tool "%s" must produce an object parameter schema.', $definition->name));
         }
 
         // Keep registry name/description authoritative and apply Hatfield
@@ -316,11 +310,12 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
     }
 
     /**
-     * Symfony AI's JsonSchema generation marks every DTO property required,
-     * including nullable-with-default optional ones. Nullable properties are
-     * optional by definition, so drop them from `required` to keep the
-     * provider schema faithful to the DTO contract. Applied recursively so
-     * nested object schemas (e.g. subagent task items) get the same treatment.
+     * Symfony AI's JsonSchema generation marks promoted DTO properties as
+     * required from their ReflectionProperty, including Hatfield's nullable
+     * properties whose constructor default is null. Hatfield uses that shape
+     * for optional tool arguments, so drop those properties from `required`.
+     * Apply this recursively to nested Hatfield DTO schemas such as subagent
+     * task items.
      *
      * @param array<string, mixed> $schema
      *
@@ -366,18 +361,6 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
         $type = $propertySchema['type'] ?? null;
 
         return \is_array($type) && \in_array('null', $type, true);
-    }
-
-    private function hasMapToolArgumentsAttribute(object $handler): bool
-    {
-        $method = new \ReflectionMethod($handler, '__invoke');
-        foreach ($method->getParameters() as $parameter) {
-            if ([] !== $parameter->getAttributes(MapToolArguments::class)) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     /**
