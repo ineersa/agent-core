@@ -16,6 +16,7 @@ use Amp\Websocket\Rfc6455Client;
 use Amp\Websocket\WebsocketMessage;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexModel;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexRequestBodyFactory;
@@ -89,6 +90,104 @@ final class CodexWebSocketCachedModelClientTest extends TestCase
         $this->assertSame('second', $secondFrame['input'][0]['content']);
         // Delta frames must keep the resolved prompt_cache_key with previous_response_id.
         $this->assertSame($cacheKey, $secondFrame['prompt_cache_key'] ?? null);
+    }
+
+    /**
+     * A failed continuation must not be retried implicitly. The next distinct
+     * request owns a fresh socket and sends its full history, not the old delta.
+     */
+    #[DataProvider('interruptedContinuationProvider')]
+    public function testInterruptedContinuationClosesSocketAndNextRequestSendsFullHistory(string $interruption): void
+    {
+        $frames = [];
+        $freshFrames = [];
+        $oldConnection = $this->createMock(WebsocketConnection::class);
+        $oldConnection->expects($this->once())->method('close');
+        $oldConnection->method('sendText')->willReturnCallback(static function (string $frame) use (&$frames): void {
+            $frames[] = $frame;
+        });
+        $oldConnection->method('receive')->willReturnCallback(static function () use (&$frames, $interruption): ?WebsocketMessage {
+            if (1 === \count($frames)) {
+                return WebsocketMessage::fromText(json_encode([
+                    'type' => 'response.completed',
+                    'response' => [
+                        'id' => 'resp_before_interruption',
+                        'output' => [['type' => 'message', 'role' => 'assistant', 'content' => 'ok']],
+                    ],
+                ], \JSON_THROW_ON_ERROR));
+            }
+
+            return 'disconnect' === $interruption ? null : WebsocketMessage::fromText(json_encode([
+                'type' => 'error',
+                'error' => ['code' => 'previous_response_not_found', 'message' => 'Continuation is unavailable.'],
+            ], \JSON_THROW_ON_ERROR));
+        });
+        /** @var WebsocketConnection&\PHPUnit\Framework\MockObject\MockObject $freshConnection */
+        $freshConnection = $this->createStreamingConnection($freshFrames);
+        $freshConnection->expects($this->once())->method('close');
+        $connector = $this->createMock(CodexWebSocketConnectorInterface::class);
+        $connector->expects($this->exactly(2))->method('connect')->willReturn($oldConnection, $freshConnection);
+        $cache = new CodexWebSocketConnectionCache();
+        $client = new CodexWebSocketModelClient(
+            $connector,
+            new CodexWebSocketUrlResolver(),
+            new CodexWebSocketHandshakeHeadersFactory(),
+            new CodexRequestBodyFactory(),
+            'https://chatgpt.com/backend-api',
+            'access',
+            'acct-1',
+            transport: CodexTransportEnum::WebsocketCached,
+            connectionCache: $cache,
+        );
+        $model = new CodexModel('gpt-6-astra');
+        $options = ['prompt_cache_key' => '0194eeee-bbbb-7ccc-8ddd-eeeeeeeeeeee'];
+        $input = [['role' => 'user', 'content' => 'first']];
+
+        try {
+            $first = $client->request($model, ['input' => $input], $options);
+            iterator_to_array($first->getDataStream());
+            $input[] = ['type' => 'message', 'role' => 'assistant', 'content' => 'ok'];
+            $input[] = ['role' => 'user', 'content' => 'second'];
+            $interrupted = $client->request($model, ['input' => $input], $options);
+            $this->assertInstanceOf(RawWebSocketResult::class, $interrupted);
+            $delta = json_decode($frames[1], true, flags: \JSON_THROW_ON_ERROR);
+            $this->assertSame('resp_before_interruption', $delta['previous_response_id']);
+            $this->assertSame([$input[2]], $delta['input']);
+
+            if ('cancel' === $interruption) {
+                $interrupted->abort();
+            } else {
+                try {
+                    iterator_to_array($interrupted->getDataStream());
+                    $this->fail('Expected the interrupted continuation to fail.');
+                } catch (\RuntimeException $e) {
+                    $this->assertStringContainsString(
+                        'disconnect' === $interruption ? 'closed before response.completed' : 'previous_response_not_found',
+                        $e->getMessage(),
+                    );
+                }
+            }
+            $this->assertCount(2, $frames);
+            $this->assertSame([], $freshFrames, 'A failed request must not be resent.');
+
+            $input[] = ['role' => 'user', 'content' => 'next distinct request'];
+            $next = $client->request($model, ['input' => $input], $options);
+            iterator_to_array($next->getDataStream());
+            $this->assertCount(1, $freshFrames);
+            $fresh = json_decode($freshFrames[0], true, flags: \JSON_THROW_ON_ERROR);
+            $this->assertArrayNotHasKey('previous_response_id', $fresh);
+            $this->assertSame($input, $fresh['input']);
+        } finally {
+            $cache->closeAll();
+        }
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function interruptedContinuationProvider(): iterable
+    {
+        yield 'cancel before consuming response' => ['cancel'];
+        yield 'peer disconnects during continuation' => ['disconnect'];
+        yield 'provider rejects continuation' => ['rejection'];
     }
 
     /**
