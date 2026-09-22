@@ -30,8 +30,8 @@ final class CodexWebSocketContinuationComparator
     }
 
     /**
-     * Compare provider output with the history emitted by CodexContract, not
-     * with its response-only metadata. Never change the actual request items.
+     * Compare provider output with the history emitted by CodexContract,
+     * excluding fields its normalizers omit. Never change actual request items.
      */
     private static function comparableInput(mixed $item): mixed
     {
