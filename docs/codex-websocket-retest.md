@@ -142,3 +142,46 @@ Three preflight findings prevent the requested run as currently configured:
 The adapter preserves canonical session events but does not copy the project's `.hatfield/logs`. A future approved run also needs structured transport summaries retained before container deletion. The existing `logging.path` setting can direct logs into Harbor's retained agent directory; a sanitized export can then retain reuse, delta, full-context, and error counts without raw payloads.
 
 The smallest next path requires approval for a current native build on a prepared runner and a narrow adapter shutdown correction. Alternatively, supporting the current PHAR requires an approved adapter/runtime-provisioning change. Neither is an existing drop-in option. No new verifier result, tool-cycle count, transport count, token cost, or container-teardown result exists for this blocked evaluation. Harbor tracked files and containers were untouched.
+
+## Approved native build and one Harbor trial
+
+After explicit approval, the native-build and adapter blockers above were resolved. The single paid trial completed the agent run, but its verifier failed before running tests. No second trial was attempted.
+
+### Build and adapter provenance
+
+- Native executable: task worktree `var/tmp/dist/hatfield.linux-amd64`, embedded commit `777ed88a750a0eab7a376f1b840e6c721b2146bb`.
+- Native SHA-256: `7077e3d1254f94d2e7a0d959d7992050089e6a161202db152fbf9a30e813c679`.
+- PHAR SHA-256: `b6474612100e8d5ad9d3f0d303431156c8e9507645693c70fa0bbe6960ba7ec5`.
+- Harbor commits: `266b4cf25dbab492ab8323e2bd056fa8380280a6` replaces process-group signals with bounded stdin-EOF shutdown and removes inherited session tags from new children; `5512c64d0c24415b677d3d6a69e17d58ee46efcd` makes the retained log directory writable by the configured non-root agent.
+
+Build prerequisites were downloaded and extracted under ignored `var/tmp/static-tools`, not installed system-wide. The pinned SPC checkout was copied from the integration checkout without changing that checkout. An initial preparation script put downloaded packages in the wrong working directory; those owned files were moved under the ignored directory and extracted before the actual build. No stale binary or mismatched CI cache was reused.
+
+`castor distribution:build-static` built pinned PHP 8.5.8 and phpmicro, verified the PHP source hash, combined the current PHAR through SPC, and passed native smoke/topology checks. `castor distribution:verify` passed resource, native topology, and checksum checks. Logs are in `var/tmp/static-tools/build-prepared.log` and `verify.log`. Harbor's install smoke independently reported the same embedded commit before model execution.
+
+The adapter now refuses root execution. EOF shutdown waits for live members of the owned controller session, drains stdout, records survivor counts, and raises on failure without sending signals. Existing normal/error artifact preservation remains in place. Harbor's deterministic suite passed: `.venv/bin/python -m pytest --durations=5`, 19 tests in 0.37 seconds, maximum case 0.07 seconds. New tests cover a real controller/worker EOF handshake and a loud shutdown failure with signals forbidden. The main-path test verifies an enclosing `HATFIELD_SESSION_ID` does not reach the child.
+
+### Trial and results
+
+Job: `hatfield-harbor/jobs/codex-cached-20260922`, trial `scikit-learn__scikit-learn-10297__2RYxEoC`.
+
+The downloaded registry task resolved to the expected original digest `sha256:99b7fc2ffa0f8b2d2c7e9691991ea3d607899e37203a582b5342e306dfedc090`. Its ignored local copy changed only `agent.user` and Dockerfile ownership setup to run as `hatfield-eval`. Instruction, solution, and verifier files were unchanged. Harbor recorded local task digest `sha256:edef2bf6d698c0719dbb34f483be002f2f10be9981d4795a32ad17c92458c0cc`.
+
+The run used `harbor run -p jobs/cached-preflight/tasks/scikit-learn__scikit-learn-10297 -a hatfield_harbor.agent:HatfieldHarborAgent -m openai-codex/gpt-5.6-luna -n 1 -k 1 --max-retries 0 --agent-timeout-multiplier 0.1 --verifier-timeout-multiplier 0.2 --job-name codex-cached-20260922 -o jobs`, with explicit executable, settings, access-only auth, commit, and `reasoning=medium` agent kwargs. Agent time was bounded to 300 seconds; verifier time to 600 seconds. Isolated settings selected cached WebSocket, disabled model retries, used one LLM worker, and retained structured logs through `logging.path=/logs/agent/hatfield-logs`.
+
+| Observation | Result |
+| --- | --- |
+| Agent terminal | `run.completed`; 14 LLM steps |
+| Tools | 15 calls: 4 bash, 7 edit, 4 read; 11 completed, 4 failed |
+| Cached transport | 1 created connection, 13 reuses, 13 continuation deltas, 1 initial full-context request |
+| Transport failures | No divergent-input fallback, I/O error, timeout, or error-level log entry |
+| Shutdown | `session_close` cache reset and worker shutdown logged; 8 observed processes, 0 survivors |
+| Duration | Agent 88.86 seconds; total 118.29 seconds |
+| Usage | 160,835 input tokens, 121,856 cache-read tokens, 3,249 output tokens, 875 thinking tokens |
+| Cost | $0.0759086 from canonical usage accounting, not an invoice |
+| Verifier | No reward. `RewardFileNotFoundError`; issue and regression tests did not run |
+
+The verifier's first Git checkout failed with `fatal: detected dubious ownership in repository at '/testbed'`. The required non-root overlay made the agent own `/testbed`, while the unchanged verifier ran as root. This is an evaluation-environment failure, not a model failure or cached-transport failure. A future approved attempt needs a scoped Git trust/ownership correction for the verifier. The trial was not rerun to obtain a score.
+
+Evidence is retained under the trial's `agent/` directory: `hatfield.runtime.provenance.json`, `install.smoke.txt`, `controller.summary.json`, `controller.teardown.json`, canonical sessions, and `hatfield-logs/agent-2026-09-22.log`. Verifier evidence is `verifier/test-stdout.txt`. The privacy-safe aggregate is `jobs/cached-preflight/report.json`; its generic `adapter_exception` flag includes this verifier exception and must not be interpreted as a controller failure.
+
+Harbor deleted the owned task container; a name-scoped container check found none remaining. The access-only host credential copy was removed. A token-content scan found zero credential matches in retained agent artifacts. `castor clean:cleanup:workers:list` found no stale QA candidates. No real auth was refreshed or changed, and no external process signals were used by the revised adapter.
