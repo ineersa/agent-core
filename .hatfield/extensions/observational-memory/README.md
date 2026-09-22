@@ -233,6 +233,9 @@ and limit description switch between exact and hybrid capabilities. Reranker
 configuration does not change that guidance. `recall` uses the same canonical
 memory IDs and source session IDs in both modes.
 
+The [full-corpus benchmark](docs/om-semantic-retrieval-benchmark.md) records
+backfill cost, retrieval quality, bounded date filtering, and negative-query limitations.
+
 ### Index lifecycle and privacy
 
 The extension schedules indexing through `extension_agent` at session start and
