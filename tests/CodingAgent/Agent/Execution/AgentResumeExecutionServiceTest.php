@@ -277,7 +277,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         $this->seedTerminalChild($parent, $artifactId, $childRunId, latestInputTokens: 200_000, contextWindow: null);
 
         $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('child context is near the limit');
+        $this->expectExceptionMessage('threshold 200000');
 
         $this->resume(
             parentRunId: $parent,
