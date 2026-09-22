@@ -22,10 +22,12 @@ use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
 use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallRequested;
 use Symfony\AI\Agent\Toolbox\Exception\ToolNotFoundException;
+use Symfony\AI\Agent\Toolbox\MapToolArgumentsDescriber;
 use Symfony\AI\Agent\Toolbox\Toolbox;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver;
 use Symfony\AI\Agent\Toolbox\ToolResult as SymfonyToolResult;
+use Symfony\AI\Platform\Contract\JsonSchema\Factory;
 use Symfony\AI\Platform\Result\ToolCall as SymfonyToolCall;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\EventDispatcher\EventDispatcher;
@@ -433,6 +435,7 @@ final class ToolExecutorTest extends TestCase
         $toolbox = new RegistryBackedToolbox(
             registry: $registry,
             argumentResolver: new RawAwareToolCallArgumentResolver(new ToolCallArgumentResolver()),
+            schemaFactory: new Factory(new MapToolArgumentsDescriber()),
         );
         $executor = new ToolExecutor(
             defaultMode: 'parallel',
@@ -538,6 +541,7 @@ final class ToolExecutorTest extends TestCase
         $toolbox = new RegistryBackedToolbox(
             registry: $registry,
             argumentResolver: new RawAwareToolCallArgumentResolver(new ToolCallArgumentResolver()),
+            schemaFactory: new Factory(new MapToolArgumentsDescriber()),
         );
         $executor = new ToolExecutor(
             defaultMode: 'parallel',
@@ -577,6 +581,7 @@ final class ToolExecutorTest extends TestCase
         $toolbox = new RegistryBackedToolbox(
             registry: $registry,
             argumentResolver: new RawAwareToolCallArgumentResolver(new ToolCallArgumentResolver()),
+            schemaFactory: new Factory(new MapToolArgumentsDescriber()),
         );
         $executor = new ToolExecutor(
             defaultMode: 'parallel',
@@ -613,6 +618,7 @@ final class ToolExecutorTest extends TestCase
         $toolbox = new RegistryBackedToolbox(
             registry: $registry,
             argumentResolver: new RawAwareToolCallArgumentResolver(new ToolCallArgumentResolver()),
+            schemaFactory: new Factory(new MapToolArgumentsDescriber()),
         );
         $executor = new ToolExecutor(
             defaultMode: 'parallel',

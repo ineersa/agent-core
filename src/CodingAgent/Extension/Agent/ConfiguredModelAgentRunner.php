@@ -17,7 +17,6 @@ use Ineersa\Hatfield\ExtensionApi\Agent\AgentCallRequestDTO;
 use Ineersa\Hatfield\ExtensionApi\Agent\AgentRunnerInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Agent\Agent;
-use Symfony\AI\Agent\Execution\Execution;
 use Symfony\AI\Agent\Toolbox\FaultTolerantToolbox;
 use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolverInterface;
 use Symfony\AI\Platform\Message\Message;
@@ -77,16 +76,10 @@ final readonly class ConfiguredModelAgentRunner implements AgentRunnerInterface
         );
 
         $toolbox = null;
-        $maxToolCalls = null;
         if ([] !== $request->tools) {
-            // Omit maxToolCalls when null so Agent keeps its default (50).
-            // Passing null explicitly would mean unlimited iterations.
             $isolated = new IsolatedAgentToolbox(array_values($request->tools), $this->argumentResolver);
             // Fault-tolerant so execution failures are model-visible tool results.
             $toolbox = new FaultTolerantToolbox($isolated);
-            if (null !== $request->maxToolCalls) {
-                $maxToolCalls = $request->maxToolCalls;
-            }
         }
 
         $invocationInput = new ModelInvocationInput(
@@ -122,26 +115,13 @@ final readonly class ConfiguredModelAgentRunner implements AgentRunnerInterface
             $cancelToken,
         );
 
-        $agent = null === $toolbox
-            ? new Agent(
-                platform: $preparedPlatform,
-                model: $resolvedModel->model,
-                name: 'extension-agent',
-            )
-            : (null === $maxToolCalls
-                ? new Agent(
-                    platform: $preparedPlatform,
-                    model: $resolvedModel->model,
-                    name: 'extension-agent',
-                    toolbox: $toolbox,
-                )
-                : new Agent(
-                    platform: $preparedPlatform,
-                    model: $resolvedModel->model,
-                    name: 'extension-agent',
-                    toolbox: $toolbox,
-                    maxToolCalls: $maxToolCalls,
-                ));
+        $agent = new Agent(
+            platform: $preparedPlatform,
+            model: $resolvedModel->model,
+            name: 'extension-agent',
+            toolbox: $toolbox,
+            maxToolCalls: $request->maxToolCalls ?? 50,
+        );
 
         $options = ['stream' => true];
         if ('off' === $request->thinkingLevel) {
@@ -164,8 +144,7 @@ final readonly class ConfiguredModelAgentRunner implements AgentRunnerInterface
         ]);
 
         try {
-            $execution = $agent->call($messages, $options);
-            $this->drainExecution($execution);
+            $agent->call($messages, $options)->getResult();
         } catch (\Throwable $e) {
             $this->logger->error('extension.agent.run.failed', [
                 'component' => 'extension_agent_runner',
@@ -231,16 +210,5 @@ final readonly class ConfiguredModelAgentRunner implements AgentRunnerInterface
         }
 
         return [];
-    }
-
-    private function drainExecution(Execution $execution): void
-    {
-        // Fully consume the lazy execution so SSE/WebSocket transports complete
-        // and Agent-owned toolbox tool-call listeners execute.
-        $content = $execution->getContent();
-        if (is_iterable($content)) {
-            foreach ($content as $_) {
-            }
-        }
     }
 }

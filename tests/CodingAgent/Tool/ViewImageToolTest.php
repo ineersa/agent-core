@@ -463,6 +463,7 @@ final class ViewImageToolTest extends TestCase
         $toolbox = new RegistryBackedToolbox(
             $registry,
             new RawAwareToolCallArgumentResolver(new ToolCallArgumentResolver()),
+            NativeToolSchemaProbe::schemaFactory(),
         );
 
         $tokenCancelledFirst = $this->createStub(CancellationTokenInterface::class);

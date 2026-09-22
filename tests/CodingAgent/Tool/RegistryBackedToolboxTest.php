@@ -157,6 +157,7 @@ final class RegistryBackedToolboxTest extends TestCase
         $toolbox = new RegistryBackedToolbox(
             $registry,
             new RawAwareToolCallArgumentResolver(new ToolCallArgumentResolver()),
+            NativeToolSchemaProbe::schemaFactory(),
         );
         $tools = $toolbox->getTools();
 

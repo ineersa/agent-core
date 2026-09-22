@@ -43,7 +43,11 @@ final class SubagentChildExtensionMetadataTest extends IsolatedKernelTestCase
         $registry->registerTool(name: 'subagent', description: 'launch', parametersJsonSchema: [], handler: $handler, promptLine: 'subagent');
         $executor = new \Ineersa\AgentCore\Application\Handler\ToolExecutor(
             defaultMode: 'sequential', maxParallelism: 1,
-            toolbox: new \Ineersa\CodingAgent\Tool\RegistryBackedToolbox($registry, new \Ineersa\CodingAgent\Tool\RawAwareToolCallArgumentResolver(new \Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver())),
+            toolbox: new \Ineersa\CodingAgent\Tool\RegistryBackedToolbox(
+                $registry,
+                new \Ineersa\CodingAgent\Tool\RawAwareToolCallArgumentResolver(new \Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver()),
+                new \Symfony\AI\Platform\Contract\JsonSchema\Factory(new \Symfony\AI\Agent\Toolbox\MapToolArgumentsDescriber()),
+            ),
             resultStore: new \Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore(),
         );
         $result = $executor->execute(\Ineersa\AgentCore\Tests\Support\Builder\ToolCallBuilder::create('missing-extension-call')->withToolName('subagent')->withArguments([])->build());

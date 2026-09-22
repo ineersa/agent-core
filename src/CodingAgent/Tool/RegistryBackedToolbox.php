@@ -18,11 +18,9 @@ use Symfony\AI\Agent\Toolbox\Exception\ToolException;
 use Symfony\AI\Agent\Toolbox\Exception\ToolExecutionException;
 use Symfony\AI\Agent\Toolbox\Exception\ToolExecutionExceptionInterface;
 use Symfony\AI\Agent\Toolbox\Exception\ToolNotFoundException;
-use Symfony\AI\Agent\Toolbox\MapToolArgumentsDescriber;
 use Symfony\AI\Agent\Toolbox\Toolbox;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolverInterface;
-use Symfony\AI\Agent\Toolbox\ToolFactory\MemoryToolFactory;
 use Symfony\AI\Agent\Toolbox\ToolResult;
 use Symfony\AI\Platform\Contract\JsonSchema\Factory;
 use Symfony\AI\Platform\Result\ToolCall;
@@ -49,10 +47,10 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  *     → ToolCallArgumentsResolved (ValidateToolCallArgumentsListener)
  *     → handler invoke → ToolCallSucceeded/Failed
  *
- * Typed DTO tools are model-visible with flat arguments: public Symfony AI
- * `MemoryToolFactory` generates `#[MapToolArguments]` schemas, then Hatfield
- * drops nullable DTO properties from `required` so the provider schema stays
- * faithful to optional fields.
+ * Typed DTO tools are model-visible with flat arguments: Symfony AI's schema
+ * factory applies `#[MapToolArguments]`, then Hatfield drops nullable DTO
+ * properties from `required` so the provider schema stays faithful to
+ * optional fields.
  *
  * Mutable registry semantics are preserved without a revision counter:
  * provider Tool metadata and the one-definition native Toolbox are memoized
@@ -82,7 +80,7 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
     public function __construct(
         private ToolRegistryInterface $registry,
         private ToolCallArgumentResolverInterface $argumentResolver,
-        private Factory $schemaFactory = new Factory(new MapToolArgumentsDescriber()),
+        private Factory $schemaFactory,
         private ?EventDispatcherInterface $eventDispatcher = null,
         private ?ExtensionHookRegistry $rewriteHookProvider = null,
         private ?StackToolExecutionContextAccessor $contextAccessor = null,
@@ -247,7 +245,7 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
      *
      * Typed DTO handlers (parametersJsonSchema === null) must declare
      * `#[MapToolArguments]` on a parameter. Attribute presence is checked via
-     * the public attribute class; Symfony AI `MemoryToolFactory` owns signature
+     * the public attribute class; Symfony AI's schema factory owns signature
      * validation and flat schema generation. Nullable properties are then
      * dropped from `required`.
      *
@@ -270,20 +268,7 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
             throw new \LogicException(\sprintf('Typed tool "%s" must declare #[MapToolArguments] on its DTO parameter.', $definition->name));
         }
 
-        $factory = new MemoryToolFactory($this->schemaFactory);
-        $factory->addTool($definition->handler, $definition->name, $definition->description);
-
-        $generated = null;
-        foreach ($factory->getTool($definition->handler) as $tool) {
-            $generated = $tool;
-            break;
-        }
-
-        if (null === $generated) {
-            throw new \LogicException(\sprintf('Typed tool "%s" did not produce Symfony AI tool metadata.', $definition->name));
-        }
-
-        $parameters = $generated->getParameters();
+        $parameters = $this->schemaFactory->buildParameters($definition->handler::class, '__invoke');
         if (!\is_array($parameters)) {
             throw new \LogicException(\sprintf('Typed tool "%s" must produce an object parameter schema via #[MapToolArguments].', $definition->name));
         }
@@ -291,7 +276,7 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
         // Keep registry name/description authoritative and apply Hatfield
         // nullable-required normalization to the public factory schema.
         return new Tool(
-            reference: $generated->getReference(),
+            reference: new ExecutionReference($definition->handler::class, '__invoke'),
             name: $definition->name,
             description: $definition->description,
             parameters: $this->normalizeNullableRequired($parameters),
