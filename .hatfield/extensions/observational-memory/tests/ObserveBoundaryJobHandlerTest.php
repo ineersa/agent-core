@@ -100,9 +100,26 @@ final class ObserveBoundaryJobHandlerTest extends IsolatedKernelTestCase
             },
         );
 
+        $semanticApi = $this->createMock(ExtensionApiInterface::class);
+        $semanticApi->method('getCwd')->willReturn($api->getCwd());
+        $semanticApi->method('getSettings')->willReturn($api->getSettings('observational_memory') + [
+            'semantic' => ['embedding_api' => ['base_url' => 'http://embed.test/v1', 'model_id' => 'embed']],
+        ]);
+        $semanticApi->method('agent')->willReturn($api->agent());
+        $semanticApi->method('sessionEvents')->willReturn($api->sessionEvents());
+        $semanticApi->expects($this->once())->method('dispatchExtensionAgentJob')->willReturnCallback(function (ExtensionAgentJobRequestDTO $job) use ($dbPath): void {
+            self::assertSame('observational_memory.semantic_index', $job->handlerId);
+            self::assertSame(['run_id' => 'run-1'], $job->payload);
+            $committed = $this->omDatabaseFactory()->connect($dbPath);
+            try {
+                self::assertSame(1, (int) $committed->fetchOne('SELECT COUNT(*) FROM om_observation'));
+            } finally {
+                $committed->close();
+            }
+        });
         $handler = new ObserveBoundaryJobHandler(new NullLogger());
         $handler->handle(
-            $api,
+            $semanticApi,
             [
                 'run_id' => 'run-1',
                 'terminal_end_seq' => 2,

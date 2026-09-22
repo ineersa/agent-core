@@ -201,6 +201,16 @@ final class OmSchemaMigrator
             ],
             '20260726_003_active_generation_and_relevance_text' => $this->migration003Statements(),
             '20260729_004_current_activity' => $this->migration004Statements(),
+            '20260922_005_semantic_health' => [
+                'CREATE TABLE om_semantic_state (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    signature TEXT NOT NULL,
+                    source_hash TEXT NOT NULL,
+                    dimensions INTEGER NOT NULL,
+                    dirty INTEGER NOT NULL,
+                    complete INTEGER NOT NULL
+                )',
+            ],
         ];
     }
 
@@ -422,6 +432,7 @@ final class OmSchemaMigrator
             '20260725_002_reflection_multi_and_indexes' => 'Allow multiple reflections per request; add coverage/observation/request indexes',
             '20260726_003_active_generation_and_relevance_text' => 'Relevance TEXT + timestamp; chunk/part coverage; request_fingerprint; active generation tables',
             '20260729_004_current_activity' => 'Ephemeral om_current_activity for live TUI status notices',
+            '20260922_005_semantic_health' => 'Durable health and restart state for derived semantic storage',
         ];
     }
 }

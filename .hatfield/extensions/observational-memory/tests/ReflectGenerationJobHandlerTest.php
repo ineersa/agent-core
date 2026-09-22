@@ -324,6 +324,23 @@ final class ReflectGenerationJobHandlerTest extends IsolatedKernelTestCase
             throw new \RuntimeException('unexpected tool '.$tool->name);
         });
 
+        $semanticApi = $this->createMock(ExtensionApiInterface::class);
+        $semanticApi->method('getCwd')->willReturn($api->getCwd());
+        $semanticApi->method('getSettings')->willReturn($api->getSettings('observational_memory') + [
+            'semantic' => ['embedding_api' => ['base_url' => 'http://embed.test/v1', 'model_id' => 'embed']],
+        ]);
+        $semanticApi->method('agent')->willReturn($api->agent());
+        $semanticApi->expects($this->exactly(2))->method('dispatchExtensionAgentJob')->willReturnCallback(function (ExtensionAgentJobRequestDTO $job) use ($paths, $generationId): void {
+            self::assertSame('observational_memory.semantic_index', $job->handlerId);
+            $committed = $this->omDatabaseFactory()->connect($paths->databasePath);
+            try {
+                self::assertSame($generationId, $committed->fetchOne("SELECT generation_id FROM om_active_generation WHERE run_id = 'run-r'"));
+                self::assertSame(2, (int) $committed->fetchOne('SELECT COUNT(*) FROM om_reflection'));
+            } finally {
+                $committed->close();
+            }
+        });
+        $api = $semanticApi;
         $handler = new ReflectGenerationJobHandler(new NullLogger());
         $payload = [
             'run_id' => 'run-r',

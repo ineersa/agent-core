@@ -10,6 +10,7 @@ use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmActivityReporter;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmPaths;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmSettings;
+use Ineersa\HatfieldExt\ObservationalMemory\Semantic\SemanticIndexJobHandler;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\MemoryGenerationRepository;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\ObservationRepository;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\OmDatabaseFactory;
@@ -81,6 +82,7 @@ final readonly class ObserveBoundaryJobHandler implements ExtensionAgentJobHandl
                 $activity->clear($runId, $activityJobId);
             }
         }
+        SemanticIndexJobHandler::schedule($api, $settings, $runId);
     }
 
     private function maybeDispatchThresholdReflection(

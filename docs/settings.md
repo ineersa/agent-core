@@ -166,6 +166,36 @@ still need `php` on `PATH`. See [tools.md](tools.md).
 
 See [background-processes.md](background-processes.md).
 
+### Observational-memory retrieval
+
+The OM extension owns `extensions.settings.observational_memory.semantic`.
+Without this block, `memory_search` keeps escaped literal-substring matching,
+newest-first results, and no semantic indexing work. Configuring `embedding_api`
+enables hybrid BM25 keyword and semantic vector search in the same tool.
+`reranker_api` is optional and requires `embedding_api`.
+
+| Key under `semantic` | Meaning | Default |
+|---|---|---|
+| `embedding_api.base_url` | OpenAI-compatible embedding base URL, such as `http://localhost:8059/v1` | Required |
+| `embedding_api.model_id` | Embedding model ID | Required |
+| `embedding_api.query_prefix` | Query-only prefix, joined with one space | Empty |
+| `embedding_api.chunk_bytes` | Maximum UTF-8-safe document chunk size in bytes | `1200` |
+| `embedding_api.overlap_bytes` | Chunk overlap in bytes, rounded to a UTF-8 boundary | `192` |
+| `embedding_api.max_lines` | Maximum lines per document chunk | `80` |
+| `embedding_api.batch_size` | Inputs per request; each indexing job processes at most four | `4` |
+| `reranker_api.base_url` | Base URL for the `/rerank` endpoint | Required when configured |
+| `reranker_api.model_id` | Reranker model ID | Required when configured |
+| `reranker_api.query_prefix` | Reranker query prefix, joined with one space | Empty |
+| `reranker_api.batch_size` | Maximum documents per rerank request | `8` |
+| `reranker_api.document_characters` | Maximum Unicode characters per reranked chunk | `768` |
+
+The project settings file contains a commented example for `coderankembed-q8_0.gguf`
+and `bge-reranker-base-q8_0.gguf`. Its embedding prefix includes the final colon:
+`Represent this query for searching relevant code:`. Indexing is asynchronous and
+resumable. Search fails visibly while the index is incomplete or a configured
+endpoint fails. It never silently substitutes exact search or skips a configured
+reranker. Both endpoints receive memory-derived text. Choose trusted endpoints.
+
 ## Environment variables
 
 | Variable | Role |
