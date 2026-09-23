@@ -244,8 +244,10 @@ setting has no effect and hybrid search can still return unrelated neighbors.
 The `-4` shown here was measured for the named local reranker on this corpus;
 it is not a general default. See the [calibration report](docs/om-relevance-calibration.md)
 and the [50 reusable questions](docs/relevance-calibration-questions.json).
-Search fails visibly while the index is incomplete or a configured endpoint fails.
-It never silently substitutes exact search or skips a configured reranker.
+Once a clean embedding batch is indexed, search can return those memories while
+the remaining index builds. Hybrid results include `partial: true` until the
+index catches up. A configured endpoint failure remains visible; search never
+silently substitutes exact search or skips a configured reranker.
 
 The implementation uses Symfony AI's Vektor bridge for persistent HNSW vectors,
 its SQLite Store for FTS5 BM25, and `CombinedStore` for reciprocal-rank fusion.
@@ -255,8 +257,9 @@ It retrieves at most 100 chunks from each store, fuses at most 200 candidates,
 optionally reranks them, and collapses them to source memories before applying
 the existing result limit.
 No raw ranking scores are returned. `truncated` is true when either the candidate
-budget or result limit is reached. Date-constrained queries overfetch at most 500
-candidates per store, filter by date, and retain at most 100 per ranked list.
+budget or result limit is reached. Date-constrained or partial queries overfetch
+at most 500 candidates per store, filter against current memories, and retain
+at most 100 per ranked list.
 Returned dates remain correct, but matches outside the bounded candidate pool
 can be omitted. Exhausting that pool sets `truncated`, even with zero surviving hits.
 
@@ -285,10 +288,13 @@ A durable dirty marker precedes writes to the two stores. An interrupted write
 forces rebuilding derived storage at the next indexing job. Deletions, changed
 chunks, changed embedding models, and missing vector files also cause rebuilding.
 Vektor soft deletes are deliberately not used: their fixed candidate buffer can
-return no results despite live documents. Search rejects incomplete, stale, dirty,
-or busy indexes instead of presenting a partial index as healthy. Missing storage
-or explicit corruption invalidates the index; transient read failures do not
-discard embeddings. Configured endpoint failures return visible errors without
+return no results despite live documents. Search marks clean incomplete or stale
+results as `partial: true`. It checks chunk IDs against current source text
+before ranking, so deleted or edited memories do not appear from obsolete chunks.
+New memories may be absent until their chunks are indexed. Dirty, incompatible,
+uninitialized, or busy indexes still return an error. Missing storage or explicit
+corruption invalidates the index; transient read failures do not discard
+embeddings. Configured endpoint failures return visible errors without
 fallback results. A later session start can restart failed indexing. Query HTTP
 calls do not hold the index lock. The source/index snapshot is revalidated after
 embedding; reranking uses materialized hits after releasing the read lock.

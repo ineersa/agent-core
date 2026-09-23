@@ -111,7 +111,7 @@ final class ObservationalMemoryExtension implements HatfieldExtensionInterface, 
 
         $api->registerTool(new ToolRegistrationDTO(
             name: 'memory_search',
-            description: $hybrid ? 'Find prior work across sessions using hybrid search combining BM25 keyword search with semantic vector search over retained observational-memory content. Use identifiers, exact phrases, concepts, paraphrases, or natural-language descriptions. Results are relevance-ranked. Searches memory content, not raw transcript events.' : 'Find prior work across sessions by one contiguous literal substring in retained observational-memory content. '
+            description: $hybrid ? 'Find prior work across sessions using hybrid search combining BM25 keyword search with semantic vector search over retained observational-memory content. Use identifiers, exact phrases, concepts, paraphrases, or natural-language descriptions. Results are relevance-ranked. partial: true means the index is still catching up and newer memories may be missing. Searches memory content, not raw transcript events.' : 'Find prior work across sessions by one contiguous literal substring in retained observational-memory content. '
                 .'Use when resuming a task or looking for earlier conversations, PRs, issues, branches, symbols, or decisions. '
                 .'Searches memory content only, not raw transcript events. Not semantic search, regex, or wildcard syntax.',
             parametersJsonSchema: [

@@ -79,27 +79,35 @@ final class SemanticIndexServiceTest extends IsolatedKernelTestCase
     }
 
     #[Test]
-    public function backfillResumesInBoundedBatchesAndRejectsPartialOrStaleSearch(): void
+    public function backfillResumesInBoundedBatchesAndSearchesCleanIndexedMemories(): void
     {
         for ($i = 0; $i < 6; ++$i) {
             $this->observation('memory '.$i);
         }
-        $this->assertSame('index_building', $this->query()->search('memory')['error']);
+        $initial = $this->query()->search('memory');
+        $this->assertSame('index_building', $initial['error']);
+        $this->assertSame(0, $initial['indexed_count']);
+        $this->assertSame(6, $initial['source_count']);
         $this->assertFalse($this->index()->synchronize());
         $this->assertSame(4, (int) $this->connection->fetchOne('SELECT COUNT(*) FROM om_semantic_document'));
         $progress = $this->query()->search('memory');
-        $this->assertSame('index_building', $progress['error']);
-        $this->assertSame(4, $progress['indexed_count']);
-        $this->assertSame(6, $progress['source_count']);
+        $this->assertTrue($progress['ok']);
+        $this->assertTrue($progress['partial']);
+        $this->assertSame(4, $progress['count']);
         // New service instances model successive worker jobs, not a cached cursor.
         $this->assertTrue($this->index()->synchronize());
-        $this->assertSame([4, 2], array_map(static fn (array $r): int => \count($r['input']), $this->requests));
         $this->assertTrue($this->index()->synchronize());
-        $this->assertCount(2, $this->requests);
+        $this->assertSame([4, 1, 2], array_map(static fn (array $r): int => \count($r['input']), $this->requests));
+        $this->assertFalse($this->query()->search('memory')['partial']);
         $this->observation('late memory');
-        $this->assertSame('index_building', $this->query()->search('memory')['error']);
+        $stale = $this->query()->search('memory');
+        $this->assertTrue($stale['ok'], json_encode($stale, \JSON_THROW_ON_ERROR));
+        $this->assertTrue($stale['partial']);
+        $this->assertSame(6, $stale['count']);
         $this->assertTrue($this->index()->synchronize());
-        $this->assertSame(7, $this->query()->search('memory')['count']);
+        $refreshed = $this->query()->search('memory');
+        $this->assertFalse($refreshed['partial']);
+        $this->assertSame(7, $refreshed['count']);
     }
 
     #[Test]
@@ -130,7 +138,10 @@ final class SemanticIndexServiceTest extends IsolatedKernelTestCase
         $kept = $this->observation('retained memory');
         $this->assertTrue($this->index()->synchronize());
         $this->connection->delete('om_observation', ['observation_id' => $removed]);
-        $this->assertSame('index_building', $this->query()->search('alpha')['error']);
+        $stale = $this->query()->search('alpha');
+        $this->assertTrue($stale['partial']);
+        $this->assertSame([$kept], array_column($stale['results'], 'id'));
+        $this->assertSame([$kept], array_column($this->query()->search('memory')['results'], 'id'));
         $this->assertTrue($this->index()->synchronize());
         $this->assertSame([$kept], array_column($this->query()->search('memory')['results'], 'id'));
         $this->settings = $this->settings('replacement-embedding-model');
@@ -138,6 +149,26 @@ final class SemanticIndexServiceTest extends IsolatedKernelTestCase
         $this->assertTrue($this->index()->synchronize());
         $this->assertSame('replacement-embedding-model', $this->requests[array_key_last($this->requests)]['model']);
         $this->assertSame([$kept], array_column($this->query()->search('memory')['results'], 'id'));
+    }
+
+    #[Test]
+    public function changedMemoryIsExcludedUntilItsNewChunksAreIndexed(): void
+    {
+        $changed = $this->observation('alpha original');
+        $kept = $this->observation('alpha retained');
+        $older = $this->observation('alpha older', '32', '2026-09-11 12:00');
+        $this->assertTrue($this->index()->synchronize());
+        $this->connection->update('om_observation', ['content' => 'beta replacement'], ['observation_id' => $changed]);
+        $stale = $this->query()->search('alpha');
+        $this->assertTrue($stale['partial']);
+        $this->assertEqualsCanonicalizing([$kept, $older], array_column($stale['results'], 'id'));
+        $dated = $this->query()->search('alpha', after: '2026-09-12');
+        $this->assertTrue($dated['partial']);
+        $this->assertSame([$kept], array_column($dated['results'], 'id'));
+        $this->assertTrue($this->index()->synchronize());
+        $refreshed = $this->query()->search('beta');
+        $this->assertFalse($refreshed['partial']);
+        $this->assertContains($changed, array_column($refreshed['results'], 'id'));
     }
 
     #[Test]

@@ -282,7 +282,7 @@ final class OmQueryService
                 }
                 unset($result);
 
-                return ['ok' => true, 'query' => $query, 'limit' => $limit, 'truncated' => $truncated, 'count' => \count($results), 'results' => $results];
+                return ['ok' => true, 'query' => $query, 'limit' => $limit, 'truncated' => $truncated, 'partial' => $retrieval['partial'], 'count' => \count($results), 'results' => $results];
             } catch (SearchInterruptedException $error) {
                 return $error->result;
             } catch (\Throwable $error) {

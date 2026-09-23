@@ -113,7 +113,7 @@ final readonly class SemanticIndexService
      * @param array{observation: array{?string, ?string}, reflection: array{?string, ?string}} $dates
      * @param \Closure(): void                                                                 $checkpoint
      *
-     * @return array{results: list<Memory>, truncated: bool}
+     * @return array{results: list<Memory>, truncated: bool, partial: bool}
      */
     public function search(string $query, array $dates, \Closure $checkpoint): array
     {
@@ -121,12 +121,17 @@ final readonly class SemanticIndexService
         try {
             $memories = $this->memories();
             $state = $this->state();
-            if (null === $state || 0 === (int) $state['complete'] || 1 === (int) $state['dirty'] || $state['signature'] !== $this->settings->signature() || $state['source_hash'] !== $this->sourceHash($memories)) {
+            if (null === $state || 1 === (int) $state['dirty'] || $state['signature'] !== $this->settings->signature()) {
                 throw $this->building($memories, $state);
             }
-            if ([] === $memories || 0 === (int) $state['dimensions']) {
-                return ['results' => [], 'truncated' => false];
+            if ([] === $memories) {
+                return ['results' => [], 'truncated' => false, 'partial' => false];
             }
+            if (0 === (int) $state['dimensions']) {
+                throw $this->building($memories, $state);
+            }
+            $snapshotHash = $this->sourceHash($memories);
+            $partial = 0 === (int) $state['complete'] || $state['source_hash'] !== $snapshotHash;
             // Network calls must not hold the writer lock. Revalidate the exact
             // source/index snapshot after embedding before reading either store.
             $lock->release();
@@ -136,7 +141,7 @@ final readonly class SemanticIndexService
             $lock = $this->lock();
             $currentState = $this->state();
             $currentMemories = $this->memories();
-            if ($state !== $currentState || $state['source_hash'] !== $this->sourceHash($currentMemories)) {
+            if ($state !== $currentState || $snapshotHash !== $this->sourceHash($currentMemories)) {
                 throw $this->building($currentMemories, $currentState);
             }
             if ($vector->getDimensions() !== (int) $state['dimensions']) {
@@ -151,7 +156,25 @@ final readonly class SemanticIndexService
                 }
             }
             $hasDates = \count($filtered) !== \count($memories);
-            $filter = $hasDates ? static fn (VectorDocument $document): bool => isset($filtered[(string) $document->getMetadata()->getParentId()]) : null;
+            $chunkIds = [];
+            $chunker = new MemoryChunker($this->settings);
+            $filter = ($hasDates || $partial) ? static function (VectorDocument $document) use ($filtered, $memories, $hasDates, $partial, $chunker, &$chunkIds): bool {
+                $parent = (string) $document->getMetadata()->getParentId();
+                if (!isset($memories[$parent]) || ($hasDates && !isset($filtered[$parent]))) {
+                    return false;
+                }
+                if (!$partial) {
+                    return true;
+                }
+                if (!isset($chunkIds[$parent])) {
+                    $chunkIds[$parent] = [];
+                    foreach ($chunker->split($memories[$parent]['content']) as $position => $text) {
+                        $chunkIds[$parent][self::chunkId($parent, $position, $text)] = true;
+                    }
+                }
+
+                return isset($chunkIds[$parent][$document->getId()]);
+            } : null;
             try {
                 if (!$this->filesExist()) {
                     $this->saveState($state['source_hash'], (int) $state['dimensions'], true, false);
@@ -190,7 +213,7 @@ final readonly class SemanticIndexService
             }
             $checkpoint();
 
-            return ['results' => array_values($results), 'truncated' => $candidateLimitReached || $vectorStore->wasTruncated() || $textStore->wasTruncated()];
+            return ['results' => array_values($results), 'truncated' => $candidateLimitReached || $vectorStore->wasTruncated() || $textStore->wasTruncated(), 'partial' => $partial];
         } finally {
             $lock->release();
         }
@@ -268,13 +291,18 @@ final readonly class SemanticIndexService
         $chunks = [];
         foreach ($memories as $parent => $memory) {
             foreach ($chunker->split($memory['content']) as $position => $text) {
-                // 32 hexadecimal characters fit Vektor's 36-byte external-ID field.
-                $id = substr(hash('sha256', $parent.'\0'.$position.'\0'.$text), 0, 32);
+                $id = self::chunkId($parent, $position, $text);
                 $chunks[$id] = ['parent' => $parent, 'text' => $text];
             }
         }
 
         return $chunks;
+    }
+
+    private static function chunkId(string $parent, int $position, string $text): string
+    {
+        // 32 hexadecimal characters fit Vektor's 36-byte external-ID field.
+        return substr(hash('sha256', $parent.'\0'.$position.'\0'.$text), 0, 32);
     }
 
     /** @param array<string, Memory> $memories */

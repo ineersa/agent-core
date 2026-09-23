@@ -203,6 +203,7 @@ final class ObservationalMemoryExtensionRegistrationTest extends TestCase
         $this->assertStringContainsString('BM25 keyword', $text);
         $this->assertStringContainsString('semantic vector search', $text);
         $this->assertStringContainsString('relevance-ranked', $text);
+        $this->assertStringContainsString('partial: true means the index is still catching up', $text);
         $this->assertStringNotContainsString('one contiguous literal substring', $text);
         $this->assertStringNotContainsString('try one word', $text);
         $this->assertStringNotContainsString('RRF', $text);
