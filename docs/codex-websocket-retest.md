@@ -197,7 +197,7 @@ The sanitized report is `reports/swe-bench-cached-2026-09-22.json` in the separa
 
 Goal: compare provider prompt-cache reads for Django `django__django-15128` and Matplotlib `matplotlib__matplotlib-24870` on plain `websocket` with `openai-codex/gpt-6-luna` / medium against the earlier GPT-5.6 Luna / `websocket-cached` suite. Model and transport both changed, so this is not a transport causality verdict.
 
-Native artifact: `var/tmp/dist/hatfield.linux-amd64` embeds `be805cdf716936cab4b17b08d5ebab755daa8431`, SHA-256 `7d9f61a580d603cbaa4ae9b836422cf00c75f96ab8a2e4635c2381bb67ea363d`. Settings: Harbor `configs/gpt6-luna-medium-plain.yaml`.
+Native artifact: `var/tmp/dist/hatfield.linux-amd64` embeds `be805cdf716936cab4b17b08d5ebab755daa8431`, SHA-256 `7d9f61a580d603cbaa4ae9b836422cf00c75f96ab8a2e4635c2381bb67ea363d`. The full `castor distribution:build-static` failed while rebuilding `micro.sfx` (`make: No rule to make target 'micro'`). A fresh PHAR was combined with the previously verified `micro.sfx`, and `castor distribution:verify` passed. Settings: Harbor `configs/gpt6-luna-medium-plain.yaml`.
 
 First Django trial `django__django-15128__uvWSuLX` failed before any LLM step because the access-only auth JSON omitted the `refresh` key. `CodexAuthRecord::fromArray` requires `access`, `refresh`, and `accountId`. Token-free proof confirmed `refresh: ""` parses and persists; an expired empty refresh attempts refresh and fails. Corrected access-only auth used `CodexAuthStorage::saveCredentials` with an empty refresh string.
 
@@ -205,8 +205,8 @@ Corrected trials (new job path `jobs/plain-gpt6-luna-20260923-retry`):
 
 | Task | Trial | LLM steps | Cache read % | Post-hit zero-cache drops | previous_response_id | Verifier | Teardown |
 | --- | --- | ---: | ---: | ---: | ---: | --- | --- |
-| Django | `django__django-15128__BGJNGFE` | 9 | 72.48 | 0 | 0/9 | fail (1 F2P + 25 P2P) | 8 proc / 0 survivors |
-| Matplotlib | `matplotlib__matplotlib-24870__qSbMDnP` | 12 | 76.34 | 0 | 0/12 | fail (1 F2P, 65 P2P pass) | 8 proc / 0 survivors |
+| Django | `django__django-15128__BGJNGFE` | 9 | 72.48 | 0 | 0/9 | fail: 1 issue test, 25 regression tests | 8 proc / 0 survivors |
+| Matplotlib | `matplotlib__matplotlib-24870__qSbMDnP` | 12 | 76.34 | 0 | 0/12 | fail: 1 issue test; 65 regression tests pass | 8 proc / 0 survivors |
 
 Only request #1 was zero-cache in each plain trial. Baseline cached-websocket post-hit zeros remain Django #19 (18880 input) and Matplotlib #3/#8 (4950 / 15255). No request retries. Private auth removed after a zero-match credential scan. Owned containers gone. No stale QA workers.
 
