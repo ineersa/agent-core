@@ -207,13 +207,33 @@ semantic:
     min_score: -4
 ```
 
-Both API blocks require `base_url` and `model_id`. Omit `reranker_api` to use fused
-keyword and vector ranking without reranking. A reranker without embeddings is a
-configuration error. The embedding prefix defaults to empty and applies only to
-query embeddings, joined with one space. The reranker receives the raw query.
+Omit `semantic` to keep literal-substring search without indexing work. The
+endpoint URLs and model IDs in the example are not defaults.
+
+| Key under `semantic` | Meaning | Default |
+|---|---|---|
+| `embedding_api.base_url` | OpenAI-compatible embedding base URL | Required |
+| `embedding_api.model_id` | Embedding model ID | Required |
+| `embedding_api.query_prefix` | Query-only prefix, joined with one space | Empty |
+| `embedding_api.chunk_bytes` | Maximum UTF-8-safe document chunk size in bytes | `1200` |
+| `embedding_api.overlap_bytes` | Chunk overlap in bytes, rounded to a UTF-8 boundary | `192` |
+| `embedding_api.max_lines` | Maximum lines per document chunk | `80` |
+| `embedding_api.batch_size` | Inputs per request; each indexing job processes at most four | `4` |
+| `reranker_api.base_url` | Base URL for the `/rerank` endpoint | Required when configured |
+| `reranker_api.model_id` | Reranker model ID | Required when configured |
+| `reranker_api.batch_size` | Maximum documents per rerank request | `8` |
+| `reranker_api.document_characters` | Maximum Unicode characters per reranked chunk | `768` |
+| `reranker_api.min_score` | Inclusive minimum finite raw reranker score for a chunk | Unset, no score filter |
+
+Each configured API block requires `base_url` and `model_id`. Omit `reranker_api`
+to use fused keyword and vector ranking without reranking. A reranker without
+embeddings is a configuration error. The embedding prefix defaults to empty.
+It applies only to query embeddings, joined with one space. The reranker receives
+the raw query.
 The embedding example includes the colon required by this model.
-The other defaults are shown above. Counts must be positive; `chunk_bytes` must be
-at least four and `overlap_bytes` must be nonnegative and smaller than the chunk.
+Batch sizes, line limits, and document character limits must be positive.
+`chunk_bytes` must be at least four; `overlap_bytes` must be nonnegative and
+smaller than the chunk.
 Requests run serially with a ten-second HTTP limit. An indexing job embeds at most
 four chunks, even if a larger provider batch size is configured.
 `reranker_api.min_score` is optional. If set, it keeps chunks with a raw
@@ -224,6 +244,8 @@ setting has no effect and hybrid search can still return unrelated neighbors.
 The `-4` shown here was measured for the named local reranker on this corpus;
 it is not a general default. See the [calibration report](docs/om-relevance-calibration.md)
 and the [50 reusable questions](docs/relevance-calibration-questions.json).
+Search fails visibly while the index is incomplete or a configured endpoint fails.
+It never silently substitutes exact search or skips a configured reranker.
 
 The implementation uses Symfony AI's Vektor bridge for persistent HNSW vectors,
 its SQLite Store for FTS5 BM25, and `CombinedStore` for reciprocal-rank fusion.
