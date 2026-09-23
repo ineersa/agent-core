@@ -129,19 +129,7 @@ Ignored inspection artifacts:
 
 ## Harbor evaluation preflight
 
-The proposed one-task evaluation was stopped **before any model request or task container launch**. Agent-core was at `df1f2fd36130e070c8c4096855bb5739499576c4`; the read-only Harbor adapter checkout was at `7e95b67`. Harbor reported version 0.22.0, and Docker client/server both reported 29.8.1.
-
-The fastest task in the existing ten-candidate report is `swe-bench/scikit-learn__scikit-learn-10297`. Its historical digest is `sha256:99b7fc2ffa0f8b2d2c7e9691991ea3d607899e37203a582b5342e306dfedc090`. The previous run took 211.35 seconds and returned reward 1.0. These are selection evidence from the old report, **not a new verifier result**. A future evaluation must resolve and verify the task digest again.
-
-Three preflight findings prevent the requested run as currently configured:
-
-1. **Current native artifact unavailable.** `castor phar:ensure` passed, and an ignored Castor artifact probe confirmed the PHAR embeds commit `df1f2fd36`. Its SHA-256 is `c862c7f093d2dcf11d727931f9fedbde6fd81a0f394c4334c79c7c71c7e1d20b`. Harbor's documented adapter uploads and directly executes a self-contained native binary; it does not provision PHP or upload a PHAR runtime. Cached native releases predate this fix. Local static prerequisites `re2c`, `flex`, and `gperf` are missing, and no local `micro.sfx` was found. No system packages were installed and no static build or CI job was launched.
-2. **Existing CI cache does not match.** GitHub lists a Linux amd64 SPC cache of 1,128,711,491 bytes with key `spc-linux-amd64-25a08afd30c1db8ba6289fc0aa0c9cadf938570225f2363269c39d28a709fd97`. The current inputs produce key `spc-linux-amd64-71a27a80380bf51a66367811dc28b7348a49ec38c4decc613277340546e0cb18`. The build policy permits exact matches only. Available uploaded artifacts are fused releases, not a standalone current SFX. No stale binary was substituted or modified.
-3. **Adapter teardown violates this investigation's ownership rules.** `controller_driver.py` explicitly sets `HATFIELD_SESSION_ID`, then unconditionally calls `terminate_process_group` in `finally`. That helper sends process-group SIGTERM and SIGKILL without UID or protected-tag checks. This is not the EOF-based shutdown used by the successful controller probe. The adapter was not changed or executed.
-
-The adapter preserves canonical session events but does not copy the project's `.hatfield/logs`. A future approved run also needs structured transport summaries retained before container deletion. The existing `logging.path` setting can direct logs into Harbor's retained agent directory; a sanitized export can then retain reuse, delta, full-context, and error counts without raw payloads.
-
-The smallest next path requires approval for a current native build on a prepared runner and a narrow adapter shutdown correction. Alternatively, supporting the current PHAR requires an approved adapter/runtime-provisioning change. Neither is an existing drop-in option. No new verifier result, tool-cycle count, transport count, token cost, or container-teardown result exists for this blocked evaluation. Harbor tracked files and containers were untouched.
+The first Harbor attempt stopped before any model request. Blockers were a missing current native artifact, an unmatched SPC cache key, and adapter teardown that signaled process groups after setting `HATFIELD_SESSION_ID`. Those blockers were resolved in the next approved section. No verifier or transport metrics exist for this blocked preflight.
 
 ## Approved native build and one Harbor trial
 
@@ -154,9 +142,7 @@ After explicit approval, the native-build and adapter blockers above were resolv
 - PHAR SHA-256: `b6474612100e8d5ad9d3f0d303431156c8e9507645693c70fa0bbe6960ba7ec5`.
 - Harbor commits: `266b4cf25dbab492ab8323e2bd056fa8380280a6` replaces process-group signals with bounded stdin-EOF shutdown and removes inherited session tags from new children; `5512c64d0c24415b677d3d6a69e17d58ee46efcd` makes the retained log directory writable by the configured non-root agent.
 
-Build prerequisites were downloaded and extracted under ignored `var/tmp/static-tools`, not installed system-wide. The pinned SPC checkout was copied from the integration checkout without changing that checkout. An initial preparation script put downloaded packages in the wrong working directory; those owned files were moved under the ignored directory and extracted before the actual build. No stale binary or mismatched CI cache was reused.
-
-`castor distribution:build-static` built pinned PHP 8.5.8 and phpmicro, verified the PHP source hash, combined the current PHAR through SPC, and passed native smoke/topology checks. `castor distribution:verify` passed resource, native topology, and checksum checks. Logs are in `var/tmp/static-tools/build-prepared.log` and `verify.log`. Harbor's install smoke independently reported the same embedded commit before model execution.
+Build prerequisites stayed under ignored `var/tmp/static-tools`. `castor distribution:build-static` and `castor distribution:verify` passed. Harbor install smoke reported the same embedded commit before model execution.
 
 The adapter now refuses root execution. EOF shutdown waits for live members of the owned controller session, drains stdout, records survivor counts, and raises on failure without sending signals. Existing normal/error artifact preservation remains in place. Harbor's deterministic suite passed: `.venv/bin/python -m pytest --durations=5`, 19 tests in 0.37 seconds, maximum case 0.07 seconds. New tests cover a real controller/worker EOF handshake and a loud shutdown failure with signals forbidden. The main-path test verifies an enclosing `HATFIELD_SESSION_ID` does not reach the child.
 
@@ -182,9 +168,7 @@ The run used `harbor run -p jobs/cached-preflight/tasks/scikit-learn__scikit-lea
 
 The verifier's first Git checkout failed with `fatal: detected dubious ownership in repository at '/testbed'`. The required non-root overlay made the agent own `/testbed`, while the unchanged verifier ran as root. This is an evaluation-environment failure, not a model failure or cached-transport failure. A future approved attempt needs a scoped Git trust/ownership correction for the verifier. The trial was not rerun to obtain a score.
 
-Evidence is retained under the trial's `agent/` directory: `hatfield.runtime.provenance.json`, `install.smoke.txt`, `controller.summary.json`, `controller.teardown.json`, canonical sessions, and `hatfield-logs/agent-2026-09-22.log`. Verifier evidence is `verifier/test-stdout.txt`. The privacy-safe aggregate is `jobs/cached-preflight/report.json`; its generic `adapter_exception` flag includes this verifier exception and must not be interpreted as a controller failure.
-
-Harbor deleted the owned task container; a name-scoped container check found none remaining. The access-only host credential copy was removed. A token-content scan found zero credential matches in retained agent artifacts. `castor clean:cleanup:workers:list` found no stale QA candidates. No real auth was refreshed or changed, and no external process signals were used by the revised adapter.
+Trial evidence stayed under the Harbor job's `agent/` and `verifier/` directories. The privacy-safe aggregate is `jobs/cached-preflight/report.json`. Owned containers were removed, the access-only auth copy was deleted after a zero-match credential scan, and worker diagnostics found no stale QA candidates.
 
 ## Fixed candidate suite, stopped after task four
 
@@ -209,14 +193,21 @@ There were 78 tool calls, including 13 successful edits and eight bash `ToolCall
 
 The sanitized report is `reports/swe-bench-cached-2026-09-22.json` in the separate `hatfield-harbor` repository. Raw local diagnostics remain under its ignored `jobs/cached-suite-20260922/`; preparation and frozen hashes are under `jobs/cached-suite-prepared/`. Its repeatable procedure is `docs/cached-candidate-suite.md`. Deterministic Harbor validation passed 22 tests, maximum case 0.07 seconds. This four-task sample is not a complete ten-task benchmark or proof of every transport lifecycle.
 
-## Plain WebSocket GPT-6 Luna control attempt (2026-09-23)
+## Plain WebSocket GPT-6 Luna control (2026-09-23)
 
-Goal: run Django `django__django-15128` and Matplotlib `matplotlib__matplotlib-24870` once each on plain `websocket` with `openai-codex/gpt-6-luna` / medium, then compare provider prompt-cache reads against the earlier GPT-5.6 Luna / `websocket-cached` suite. Model and transport both change, so transport causality is out of scope.
+Goal: compare provider prompt-cache reads for Django `django__django-15128` and Matplotlib `matplotlib__matplotlib-24870` on plain `websocket` with `openai-codex/gpt-6-luna` / medium against the earlier GPT-5.6 Luna / `websocket-cached` suite. Model and transport both changed, so this is not a transport causality verdict.
 
-Native artifact: `var/tmp/dist/hatfield.linux-amd64` embeds `be805cdf716936cab4b17b08d5ebab755daa8431`, SHA-256 `7d9f61a580d603cbaa4ae9b836422cf00c75f96ab8a2e4635c2381bb67ea363d`. `castor distribution:build-static` failed while rebuilding `micro.sfx` (`make: No rule to make target 'micro'` after the CLI binary rebuilt). The run reused the already verified `micro.sfx` from the same worktree, combined it with a fresh PHAR for `be805cdf7`, and passed `castor distribution:verify`.
+Native artifact: `var/tmp/dist/hatfield.linux-amd64` embeds `be805cdf716936cab4b17b08d5ebab755daa8431`, SHA-256 `7d9f61a580d603cbaa4ae9b836422cf00c75f96ab8a2e4635c2381bb67ea363d`. Settings: Harbor `configs/gpt6-luna-medium-plain.yaml`.
 
-Settings: Harbor `configs/gpt6-luna-medium-plain.yaml` (`transport: websocket`, `max_retries: 0`, one LLM worker, retained `logging.path`). Prepared overlays reused the frozen candidate suite hashes for the two tasks. Trial ID `django__django-15128__uvWSuLX`.
+First Django trial `django__django-15128__uvWSuLX` failed before any LLM step because the access-only auth JSON omitted the `refresh` key. `CodexAuthRecord::fromArray` requires `access`, `refresh`, and `accountId`. Token-free proof confirmed `refresh: ""` parses and persists; an expired empty refresh attempts refresh and fails. Corrected access-only auth used `CodexAuthStorage::saveCredentials` with an empty refresh string.
 
-Result: Django failed before any LLM step. Controller terminal was `run.failed` with `Codex auth record missing required fields: access, refresh, accountId`. The private auth copy omitted the `refresh` key. Current `CodexAuthRecord::fromArray` requires `access`, `refresh`, and `accountId`. Earlier access-only Harbor/auth probes wrote `refresh` as an empty string through `CodexAuthRecord` / `CodexAuthStorage::saveCredentials`. No matplotlib trial ran. Teardown recorded eight observed processes and zero survivors. Owned containers were gone. The private auth copy was removed. Credential scan of retained trial artifacts found zero matches. No stale QA workers.
+Corrected trials (new job path `jobs/plain-gpt6-luna-20260923-retry`):
 
-Sanitized Harbor report: `/home/ineersa/projects/hatfield-harbor/reports/swe-bench-plain-gpt6-luna-2026-09-23.json`. Baseline zero-cache continuation requests retained for comparison: Django #19 (18880 input), Matplotlib #3 (4950) and #8 (15255), plus Astropy #2 and Seaborn #2/#4 from the earlier six-drop set.
+| Task | Trial | LLM steps | Cache read % | Post-hit zero-cache drops | previous_response_id | Verifier | Teardown |
+| --- | --- | ---: | ---: | ---: | ---: | --- | --- |
+| Django | `django__django-15128__BGJNGFE` | 9 | 72.48 | 0 | 0/9 | fail (1 F2P + 25 P2P) | 8 proc / 0 survivors |
+| Matplotlib | `matplotlib__matplotlib-24870__qSbMDnP` | 12 | 76.34 | 0 | 0/12 | fail (1 F2P, 65 P2P pass) | 8 proc / 0 survivors |
+
+Only request #1 was zero-cache in each plain trial. Baseline cached-websocket post-hit zeros remain Django #19 (18880 input) and Matplotlib #3/#8 (4950 / 15255). No request retries. Private auth removed after a zero-match credential scan. Owned containers gone. No stale QA workers.
+
+Sanitized Harbor report: `hatfield-harbor/reports/swe-bench-plain-gpt6-luna-2026-09-23.json`.
