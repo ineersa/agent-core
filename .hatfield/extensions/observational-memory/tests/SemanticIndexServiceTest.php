@@ -254,6 +254,7 @@ final class SemanticIndexServiceTest extends IsolatedKernelTestCase
         for ($i = 0; $i < 100; ++$i) {
             $this->observation('alpha memory '.$i);
         }
+        // Four chunks per call need 25 batches; cap at one extra call to fail fast.
         $complete = false;
         for ($i = 0; $i < 26 && !$complete; ++$i) {
             $complete = $this->index()->synchronize();
