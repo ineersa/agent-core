@@ -166,12 +166,112 @@ YAML);
         $this->assertStringNotContainsString('added:', $displayNormalized);
     }
 
+    public function testPinnedContextWindowSurvivesModelsDevSync(): void
+    {
+        file_put_contents($this->catalogPath, <<<'YAML'
+version: 2
+providers:
+    openai-codex:
+        label: 'OpenAI Codex'
+        kind: oauth
+        type: codex
+        enabled: false
+        base_url: https://chatgpt.com/backend-api
+        api: openai-responses
+        completions_path: /codex/responses
+        models:
+            gpt-6-sol:
+                name: GPT-6 Sol
+                reasoning: true
+                compatibility:
+                    supports_reasoning_configuration_updates: true
+                    pin_context_window: true
+                thinking_level_map: { off: none, minimal: low, low: low, medium: medium, high: high, xhigh: xhigh, max: max }
+                tool_calling: true
+                input: [text, image]
+                context_window: 272000
+                max_tokens: 128000
+                cost: { input: 2.00, output: 10.00, cache_read: 0.20, cache_write: 2.50 }
+            gpt-5.6-sol:
+                name: GPT-5.6 Sol
+                reasoning: true
+                thinking_level_map: { minimal: low, low: low, medium: medium, high: high, xhigh: xhigh, max: max }
+                tool_calling: true
+                input: [text, image]
+                context_window: 272000
+                max_tokens: 128000
+                cost: { input: 5.00, output: 30.00, cache_read: 0.50, cache_write: 6.25 }
+YAML);
+        file_put_contents($this->userCatalogPath, <<<'YAML'
+version: 1
+providers:
+    openai-codex:
+        label: 'Old OpenAI Codex'
+        kind: oauth
+        type: codex
+        enabled: true
+        base_url: https://stale.example
+        api: openai-responses
+        completions_path: /codex/responses
+        models:
+            gpt-6-sol:
+                name: Old GPT-6 Sol
+                context_window: 272000
+                max_tokens: 128000
+                input: [text]
+                tool_calling: true
+                reasoning: true
+                cost: { input: 2.00, output: 10.00 }
+YAML);
+
+        $payload = json_encode([
+            'openai' => [
+                'models' => [
+                    'gpt-6-sol' => [
+                        'limit' => ['context' => 1050000, 'output' => 128000],
+                        'modalities' => ['input' => ['text', 'image']],
+                        'reasoning' => true,
+                        'tool_call' => true,
+                        'cost' => ['input' => 2.5, 'output' => 12.0, 'cache_read' => 0.25, 'cache_write' => 3.0],
+                    ],
+                    'gpt-5.6-sol' => [
+                        'limit' => ['context' => 1050000, 'output' => 128000],
+                        'modalities' => ['input' => ['text', 'image']],
+                        'reasoning' => true,
+                        'tool_call' => true,
+                        'cost' => ['input' => 5.0, 'output' => 30.0],
+                    ],
+                ],
+            ],
+        ], \JSON_THROW_ON_ERROR);
+
+        $client = new MockHttpClient([
+            new MockResponse($payload, ['http_code' => 200]),
+        ]);
+
+        $output = new BufferedOutput();
+        $this->assertSame(Command::SUCCESS, $this->runCommand($client, $output));
+
+        $after = Yaml::parseFile($this->userCatalogPath);
+        $models = $after['providers']['openai-codex']['models'];
+
+        // Pinned: upstream 1050000 must not replace the curated 272k cheap-tier cap.
+        $this->assertSame(272000, $models['gpt-6-sol']['context_window']);
+        // Every other metadata key still syncs.
+        $this->assertSame(2.5, $models['gpt-6-sol']['cost']['input']);
+        $this->assertSame(['text', 'image'], $models['gpt-6-sol']['input']);
+
+        // Control: without the pin, models.dev context_window applies as before.
+        $this->assertSame(1050000, $models['gpt-5.6-sol']['context_window']);
+    }
+
     public function testNetworkErrorLeavesUserCatalogUntouched(): void
     {
         $before = (string) file_get_contents($this->userCatalogPath);
         $client = new MockHttpClient([
             new MockResponse('', ['error' => 'network down', 'http_code' => 0]),
         ]);
+
 
         $this->assertSame(Command::SUCCESS, $this->runCommand($client));
         $this->assertSame($before, (string) file_get_contents($this->userCatalogPath));

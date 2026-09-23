@@ -114,6 +114,31 @@ YAML);
             ['minimal' => null, 'low' => 'low', 'medium' => 'medium', 'high' => 'high', 'xhigh' => 'xhigh', 'max' => 'max'],
             $astra->thinkingLevelMap,
         );
+        $this->assertTrue($astra->compatibility?->supportsReasoningConfigurationUpdates);
+        $this->assertTrue($astra->compatibility?->pinContextWindow);
+
+        $sol = $ai->providers['openai-codex']->models['gpt-6-sol'];
+        $this->assertSame(272000, $sol->contextWindow);
+        $this->assertSame(128000, $sol->maxTokens);
+        $this->assertSame(['text', 'image'], $sol->input);
+        $this->assertSame(
+            ['off' => 'none', 'minimal' => 'low', 'low' => 'low', 'medium' => 'medium', 'high' => 'high', 'xhigh' => 'xhigh', 'max' => 'max'],
+            $sol->thinkingLevelMap,
+        );
+        $this->assertTrue($sol->compatibility?->supportsReasoningConfigurationUpdates);
+        $this->assertTrue($sol->compatibility?->pinContextWindow);
+        $this->assertSame(2.0, $sol->cost?->input);
+        $this->assertSame(10.0, $sol->cost?->output);
+
+        $luna = $ai->providers['openai-codex']->models['gpt-6-luna'];
+        $this->assertSame(272000, $luna->contextWindow);
+        $this->assertSame(128000, $luna->maxTokens);
+        $this->assertSame(['text', 'image'], $luna->input);
+        $this->assertSame($sol->thinkingLevelMap, $luna->thinkingLevelMap);
+        $this->assertTrue($luna->compatibility?->supportsReasoningConfigurationUpdates);
+        $this->assertTrue($luna->compatibility?->pinContextWindow);
+        $this->assertSame(0.1, $luna->cost?->input);
+        $this->assertSame(0.5, $luna->cost?->output);
     }
 
     public function testCorruptUserCopyFallsBackToBundled(): void
