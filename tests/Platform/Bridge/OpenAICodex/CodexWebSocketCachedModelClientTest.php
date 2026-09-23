@@ -251,6 +251,7 @@ final class CodexWebSocketCachedModelClientTest extends TestCase
             return $connection;
         });
 
+        $logger = new TestLogger();
         $client = new CodexWebSocketModelClient(
             $connector,
             new CodexWebSocketUrlResolver(),
@@ -259,6 +260,7 @@ final class CodexWebSocketCachedModelClientTest extends TestCase
             'https://chatgpt.com/backend-api',
             'access',
             'acct-1',
+            logger: $logger,
             transport: CodexTransportEnum::WebsocketCached,
             connectionCache: new CodexWebSocketConnectionCache(),
         );
@@ -289,6 +291,16 @@ final class CodexWebSocketCachedModelClientTest extends TestCase
         $this->assertSame('resp_tool_1', $secondFrame['previous_response_id'] ?? null);
         // Explicitly prove the prior function_call was not replayed in the delta.
         $this->assertSame([$functionCallOutput], $secondFrame['input']);
+
+        $baselineLogs = array_values(array_filter(
+            $logger->records,
+            static fn (array $record): bool => 'codex.websocket.continuation.baseline' === $record['message'],
+        ));
+        $this->assertCount(2, $baselineLogs);
+        $this->assertSame('streamed', $baselineLogs[0]['context']['baseline_source']);
+        $this->assertSame('unavailable', $baselineLogs[0]['context']['source_comparison']);
+        $this->assertSame(1, $baselineLogs[0]['context']['streamed_done_count']);
+        $this->assertSame(0, $baselineLogs[0]['context']['terminal_output_count']);
     }
 
     /**

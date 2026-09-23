@@ -403,7 +403,8 @@ final class RawWebSocketResultTest extends TestCase
         $prop = $reflection->getProperty('entries');
         $prop->setValue($cache, [$identity->sessionKey => $entry]);
 
-        $raw = new RawWebSocketResult($connection, 5.0, cachedStreamContext: $context);
+        $logger = new TestLogger();
+        $raw = new RawWebSocketResult($connection, 5.0, $logger, cachedStreamContext: $context);
         iterator_to_array($raw->getDataStream());
 
         $this->assertNotNull($entry->continuation);
@@ -424,6 +425,25 @@ final class RawWebSocketResultTest extends TestCase
         $this->assertSame('reasoning', $streamedHistoryDecision->rightItemKind);
         $this->assertSame('encrypted_content', $streamedHistoryDecision->mismatchFieldPath);
         $this->assertSame('different', $streamedHistoryDecision->mismatchRelation);
+
+        $baselineLogs = array_values(array_filter(
+            $logger->records,
+            static fn (array $record): bool => 'codex.websocket.continuation.baseline' === $record['message'],
+        ));
+        $this->assertCount(1, $baselineLogs);
+        $baseline = $baselineLogs[0]['context'];
+        $this->assertSame('terminal', $baseline['baseline_source']);
+        $this->assertSame(1, $baseline['terminal_output_count']);
+        $this->assertSame(1, $baseline['streamed_done_count']);
+        $this->assertSame('different', $baseline['source_comparison']);
+        $this->assertSame(0, $baseline['first_mismatch_index']);
+        $this->assertSame('reasoning', $baseline['left_item_kind']);
+        $this->assertSame('reasoning', $baseline['right_item_kind']);
+        $this->assertSame('encrypted_content', $baseline['mismatch_field_path']);
+        $this->assertSame('different', $baseline['mismatch_relation']);
+        $this->assertStringNotContainsString('enc_streamed', json_encode($baseline, \JSON_THROW_ON_ERROR));
+        $this->assertStringNotContainsString('enc_terminal', json_encode($baseline, \JSON_THROW_ON_ERROR));
+        $this->assertStringNotContainsString('streamed plan', json_encode($baseline, \JSON_THROW_ON_ERROR));
 
         $terminalHistoryDecision = $entry->continuation->decide([
             'model' => 'gpt-5.6-luna',

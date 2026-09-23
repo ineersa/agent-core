@@ -264,11 +264,53 @@ final class RawWebSocketResult implements CancellableRawResultInterface
             return;
         }
 
+        $responseItems = $this->resolveContinuationResponseItems($response);
+        $this->logContinuationBaselineSource($response, $responseItems);
         $context->lease->entry->continuation = CodexWebSocketContinuationState::fromSuccessfulResponse(
             $context->fullRequestBody,
             $responseId,
-            $this->resolveContinuationResponseItems($response),
+            $responseItems,
         );
+    }
+
+    /**
+     * Record where the continuation baseline came from. When both sources have
+     * the same number of items, compare them by position without logging data.
+     * A difference here is a lead, not proof that the next history item differs.
+     *
+     * @param array<string, mixed>       $response
+     * @param list<array<string, mixed>> $baselineItems
+     */
+    private function logContinuationBaselineSource(array $response, array $baselineItems): void
+    {
+        $terminalOutput = $response['output'] ?? null;
+        $source = \is_array($terminalOutput) && array_any($terminalOutput, static fn (mixed $item): bool => \is_array($item)) ? 'terminal' : 'streamed';
+        $streamedCount = \count($this->completedOutputItems);
+        $terminalCount = 'terminal' === $source ? \count($baselineItems) : 0;
+        $comparison = 'unavailable';
+        $mismatch = null;
+
+        if ('terminal' === $source && $streamedCount > 0) {
+            $comparison = 'different_count';
+            if ($terminalCount === $streamedCount) {
+                $mismatch = CodexWebSocketContinuationComparator::describePrefixMismatch($baselineItems, $this->completedOutputItems);
+                $comparison = $mismatch['prefix_normalized_equal'] ? 'equal' : 'different';
+            }
+        }
+
+        $this->logger->info('codex.websocket.continuation.baseline', [
+            'event_type' => 'codex.websocket.continuation.baseline',
+            'component' => 'raw_websocket_result',
+            'baseline_source' => $source,
+            'terminal_output_count' => $terminalCount,
+            'streamed_done_count' => $streamedCount,
+            'source_comparison' => $comparison,
+            'first_mismatch_index' => $mismatch['first_mismatch_index'] ?? null,
+            'left_item_kind' => $mismatch['left_item_kind'] ?? null,
+            'right_item_kind' => $mismatch['right_item_kind'] ?? null,
+            'mismatch_field_path' => $mismatch['mismatch_field_path'] ?? null,
+            'mismatch_relation' => $mismatch['mismatch_relation'] ?? null,
+        ]);
     }
 
     /**
