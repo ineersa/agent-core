@@ -360,6 +360,28 @@ final class AgentMessageConverterTest extends IsolatedKernelTestCase
         $this->assertCount(4, array_unique($requestIds));
     }
 
+    public function testMultipleReasoningSignaturesSurviveOnlySameModelReplay(): void
+    {
+        $assistant = new AgentMessage(
+            role: 'assistant',
+            content: [['type' => 'text', 'text' => 'answer']],
+            details: [
+                'thinking' => 'plan',
+                'thinking_signatures' => [
+                    '{"type":"reasoning","id":"rs_first","encrypted_content":"first"}',
+                    '{"type":"reasoning","id":"rs_second","encrypted_content":"second"}',
+                ],
+            ],
+            metadata: ['source_model' => 'openai-codex/model-a'],
+        );
+
+        $same = $this->converter->toMessageBagForTarget([$assistant], 'openai-codex/model-a');
+        $this->assertCount(2, $same->getMessages()[0]->getThinking());
+        $changed = $this->converter->toMessageBagForTarget([$assistant], 'openai-codex/model-b');
+        $this->assertFalse($changed->getMessages()[0]->hasThinking());
+        $this->assertStringContainsString('plan', $changed->getMessages()[0]->asText());
+    }
+
     public function testExactContextReuseWorksWithFreshlyDeserializedEqualMessages(): void
     {
         $original = [

@@ -137,8 +137,11 @@ final class ConversationHistoryConversion
             $thinkingSignature = \is_string($details['thinking_signature'] ?? null)
                 ? $details['thinking_signature']
                 : null;
+            $thinkingSignatures = \is_array($details['thinking_signatures'] ?? null)
+                ? $details['thinking_signatures']
+                : [];
 
-            if (null !== $thinking || null !== $thinkingSignature) {
+            if (null !== $thinking || null !== $thinkingSignature || [] !== $thinkingSignatures) {
                 if (\is_string($thinking) && '' !== $thinking) {
                     $content[] = [
                         'type' => 'text',
@@ -146,7 +149,7 @@ final class ConversationHistoryConversion
                     ];
                 }
 
-                unset($details['thinking'], $details['thinking_signature']);
+                unset($details['thinking'], $details['thinking_signature'], $details['thinking_signatures']);
                 $details = [] !== $details ? $details : null;
             }
         }

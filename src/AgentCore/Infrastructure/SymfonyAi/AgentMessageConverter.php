@@ -536,8 +536,21 @@ final class AgentMessageConverter
 
         $thinkingContent = \is_string($message->details['thinking'] ?? null) ? $message->details['thinking'] : null;
         $thinkingSignature = \is_string($message->details['thinking_signature'] ?? null) ? $message->details['thinking_signature'] : null;
+        $thinkingSignatures = \is_array($message->details['thinking_signatures'] ?? null)
+            ? $message->details['thinking_signatures']
+            : [];
 
-        if (null !== $thinkingContent || null !== $thinkingSignature) {
+        if ([] !== $thinkingSignatures) {
+            foreach ($thinkingSignatures as $index => $signature) {
+                if (!\is_string($signature)) {
+                    continue;
+                }
+                $contentParts[] = new Thinking(
+                    content: 0 === $index ? $thinkingContent ?? '' : '',
+                    signature: $signature,
+                );
+            }
+        } elseif (null !== $thinkingContent || null !== $thinkingSignature) {
             $contentParts[] = new Thinking(
                 content: $thinkingContent ?? '',
                 signature: $thinkingSignature,

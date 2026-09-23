@@ -33,7 +33,7 @@ final class CodexAssistantMessageNormalizer extends ModelContractNormalizer impl
     public function normalize(mixed $data, ?string $format = null, array $context = []): array
     {
         $text = '';
-        $thinkingSignature = null;
+        $thinkingSignatures = [];
         $preserveNativeItemIds = true === $data->getMetadata()->get(
             'preserve_native_item_ids',
             true,
@@ -47,15 +47,15 @@ final class CodexAssistantMessageNormalizer extends ModelContractNormalizer impl
             if ($part instanceof Thinking) {
                 $sig = $part->getSignature();
                 if (\is_string($sig) && '' !== $sig) {
-                    $thinkingSignature = $sig;
+                    $thinkingSignatures[] = $sig;
                 }
             }
         }
 
         $output = [];
 
-        if (null !== $thinkingSignature) {
-            $output[] = json_decode($thinkingSignature, true, flags: \JSON_THROW_ON_ERROR);
+        foreach ($thinkingSignatures as $signature) {
+            $output[] = json_decode($signature, true, flags: \JSON_THROW_ON_ERROR);
         }
 
         if ('' !== $text) {

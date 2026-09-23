@@ -247,7 +247,7 @@ final readonly class AgentMessageNormalizer
     /**
      * Extracts thinking details from the 0.9 content-based AssistantMessage.
      *
-     * @return array{thinking?: string|null, thinking_signature?: string|null}
+     * @return array{thinking?: string|null, thinking_signature?: string|null, thinking_signatures?: list<string>}
      */
     private function extractThinkingDetails(AssistantMessage $assistantMessage): array
     {
@@ -263,17 +263,19 @@ final readonly class AgentMessageNormalizer
             $thinkingParts,
         ));
 
-        // Signatures are per-part; we keep the last non-null signature (there is typically at most one).
-        $thinkingSignature = null;
+        // Preserve every finalized reasoning item in order for same-model replay.
+        $signatures = [];
         foreach ($thinkingParts as $part) {
             if (null !== $part->getSignature()) {
-                $thinkingSignature = $part->getSignature();
+                $signatures[] = $part->getSignature();
             }
         }
 
         return array_filter([
             'thinking' => '' !== $thinkingContent ? $thinkingContent : null,
-            'thinking_signature' => $thinkingSignature,
+            ...(1 < \count($signatures)
+                ? ['thinking_signatures' => $signatures]
+                : ['thinking_signature' => $signatures[0] ?? null]),
         ], static fn (mixed $value): bool => null !== $value);
     }
 

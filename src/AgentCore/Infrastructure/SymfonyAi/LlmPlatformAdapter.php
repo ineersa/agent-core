@@ -833,6 +833,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         $text = '';
         $thinking = '';
         $thinkingSignature = null;
+        $thinkingSignatures = [];
         $completedToolCalls = null;
 
         /** @var array<string, array{name: string, partial_json: string, order_index: int}> $partialToolCalls */
@@ -844,9 +845,10 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
                 $delta instanceof TextDelta => $text .= $delta->getText(),
                 $delta instanceof ThinkingDelta => $thinking .= $delta->getThinking(),
                 $delta instanceof ThinkingSignature => $thinkingSignature = $delta->getSignature(),
-                $delta instanceof ThinkingComplete => [$thinking, $thinkingSignature] = [
+                $delta instanceof ThinkingComplete => [$thinking, $thinkingSignature, $thinkingSignatures] = [
                     $delta->getThinking(),
                     $delta->getSignature() ?? $thinkingSignature,
+                    null !== $delta->getSignature() ? [...$thinkingSignatures, $delta->getSignature()] : $thinkingSignatures,
                 ],
                 $delta instanceof ToolCallStart => $partialToolCalls[$delta->getId()] ??= [
                     'name' => $delta->getName(),
@@ -876,7 +878,14 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             $contentParts[] = new Text($text);
         }
 
-        if ('' !== $thinking || null !== $thinkingSignature) {
+        if ([] !== $thinkingSignatures) {
+            foreach ($thinkingSignatures as $index => $signature) {
+                $contentParts[] = new Thinking(
+                    content: 0 === $index ? $thinking : '',
+                    signature: $signature,
+                );
+            }
+        } elseif ('' !== $thinking || null !== $thinkingSignature) {
             $contentParts[] = new Thinking(
                 content: $thinking,
                 signature: $thinkingSignature,
