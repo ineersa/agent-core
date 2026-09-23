@@ -211,3 +211,20 @@ Corrected trials (new job path `jobs/plain-gpt6-luna-20260923-retry`):
 Only request #1 was zero-cache in each plain trial. Baseline cached-websocket post-hit zeros remain Django #19 (18880 input) and Matplotlib #3/#8 (4950 / 15255). No request retries. Private auth removed after a zero-match credential scan. Owned containers gone. No stale QA workers.
 
 Sanitized Harbor report: `hatfield-harbor/reports/swe-bench-plain-gpt6-luna-2026-09-23.json`.
+
+## Cached GPT-5.6 Luna diagnostic rerun (2026-09-23)
+
+Goal: gather privacy-safe per-request `prompt_cache_key` fingerprints and structural continuation mismatch reasons, then rerun Django 15128 and Matplotlib 24870 once each on GPT-5.6 Luna / medium / `websocket-cached`.
+
+Product change: `CodexWebSocketContinuationState::decide()` now classifies `divergent_body`, `prefix_mismatch`, `prefix_shorter`, and `invalid_input` instead of collapsing failures to `divergent_input`. Continuation and `llm.provider.request_prepared` logs include `prompt_cache_key_present`, truncated `prompt_cache_key_fp`, `prompt_cache_key_length`, and `prompt_cache_key_changed`. No raw key, prompt, or provider payload is logged. Wire behavior is unchanged.
+
+Native artifact: `var/tmp/dist/hatfield.linux-amd64` embeds `2c1392f42240d6e2839a56df7722e67be9475dac`, SHA-256 `33dbd40145eceedceefc332cea0f83b61d8bd658d9f2d0ae8fc1e2f8d67a4080`. Full `castor distribution:build-static` failed (`re2c`, `flex`, `gperf` missing). Fresh PHAR was combined with the previously verified `micro.sfx`; `castor distribution:verify` passed. Harbor revision `9b7529eb3ab10f814b2e8fa74af86e2b828bc407` accepts the new full-context reasons.
+
+| Task | Trial | LLM steps | Cache read % | Post-hit zero-cache drops | previous_response_id | Full-context reasons | Verifier | Teardown |
+| --- | --- | ---: | ---: | ---: | ---: | --- | --- | --- |
+| Django | `django__django-15128__b4xypRQ` | 15 | 78.34 | 1 (#7) | 14/15 | `no_continuation`×1 | fail: 1 regression | 8 / 0 |
+| Matplotlib | `matplotlib__matplotlib-24870__cCVKz5z` | 11 | 83.79 | 0 | 9/11 | `no_continuation`×1, `prefix_mismatch`×1 (`reasoning`/`reasoning` at index 24) | fail: 1 issue test; 65 regression pass | 8 / 0 |
+
+Each trial kept one stable `prompt_cache_key_fp` with `prompt_cache_key_changed=false` on every turn. Django #7 was a successful delta with `previous_response_id` and zero cached tokens after strong hits on #5/#6; #8 recovered to 93.48%. Matplotlib had no post-hit zero-cache drop; its one non-initial full-context request was an explicit prefix mismatch on reasoning items, then deltas resumed with high cache reads.
+
+Sanitized local Harbor report: `reports/swe-bench-cached-gpt56-luna-diag-2026-09-23.json` (ignored). Raw diagnostics: `jobs/diag-cached-gpt56-20260923/` (ignored). Private auth removed after a zero-match credential scan. No owned containers remained.
