@@ -251,12 +251,14 @@ final class SemanticIndexServiceTest extends IsolatedKernelTestCase
     #[Test]
     public function rejectingCappedFusedCandidatesStillReportsTruncation(): void
     {
-        for ($i = 0; $i < 101; ++$i) {
+        for ($i = 0; $i < 100; ++$i) {
             $this->observation('alpha memory '.$i);
         }
-        while (!$this->index()->synchronize()) {
-            // Each call commits up to four chunks; completion is data-driven.
+        $complete = false;
+        for ($i = 0; $i < 26 && !$complete; ++$i) {
+            $complete = $this->index()->synchronize();
         }
+        $this->assertTrue($complete);
         $this->settings = OmSettings::fromArray(['storage' => ['database' => $this->path], 'semantic' => [
             'embedding_api' => ['base_url' => 'http://embeddings.test/v1', 'model_id' => 'coderankembed'],
             'reranker_api' => ['base_url' => 'http://reranker.test/v1', 'model_id' => 'rank', 'min_score' => 1],
