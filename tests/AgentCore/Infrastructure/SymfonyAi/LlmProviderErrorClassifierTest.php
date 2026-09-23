@@ -39,6 +39,8 @@ final class LlmProviderErrorClassifierTest extends TestCase
         return [
             [CancelledException::class, LlmProviderErrorClassifier::CATEGORY_UNKNOWN],
             [\TypeError::class, LlmProviderErrorClassifier::CATEGORY_UNKNOWN],
+            [\LogicException::class, LlmProviderErrorClassifier::CATEGORY_UNKNOWN],
+            [\Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketContinuationMismatchException::class, LlmProviderErrorClassifier::CATEGORY_UNKNOWN],
         ];
     }
 

@@ -15,6 +15,7 @@ final class CodexRequestBodyFactory
     /** Internal invocation option; never sent as a top-level API field. */
     public const string REASONING_UPDATE = 'codex_reasoning_update';
     public const string REASONING_RESET = 'codex_reasoning_reset';
+    public const string CONTINUATION_RESET = 'codex_continuation_reset';
 
     /**
      * @param array<string, mixed> $payload
@@ -45,6 +46,7 @@ final class CodexRequestBodyFactory
         unset(
             $jsonBody[self::REASONING_UPDATE],
             $jsonBody[self::REASONING_RESET],
+            $jsonBody[self::CONTINUATION_RESET],
             $jsonBody['hatfield_run_id'],
             $jsonBody['hatfield_model_ref'],
         );

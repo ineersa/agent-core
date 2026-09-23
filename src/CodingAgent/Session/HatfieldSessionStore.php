@@ -226,6 +226,23 @@ final class HatfieldSessionStore
             return null;
         }
 
+        // Compaction leaves a one-shot continuation-reset marker in place of a
+        // real baseline. Treat it as "no baseline" so the next Astra claim can
+        // establish a fresh epoch after rewritten history.
+        if (true === ($entity->reasoningBaseline['pending_continuation_reset'] ?? false)
+            && !\is_string($entity->reasoningBaseline['model'] ?? null)) {
+            $entity->reasoningBaseline = [
+                'model' => $model,
+                'effort' => $effort,
+                'last_emitted' => $effort,
+                'transitions' => [],
+                'pending_continuation_reset' => true,
+            ];
+            $this->entityManager->flush();
+
+            return null;
+        }
+
         if ($model === ($entity->reasoningBaseline['model'] ?? null)) {
             $baseline = $entity->reasoningBaseline['effort'] ?? null;
             if (!\is_string($baseline) || '' === $baseline) {
@@ -335,10 +352,40 @@ final class HatfieldSessionStore
     public function resetReasoningBaseline(string $sessionId): void
     {
         $entity = $this->fetchEntityOrNull($sessionId);
-        if (null !== $entity && null !== $entity->reasoningBaseline) {
-            $entity->reasoningBaseline = null;
-            $this->entityManager->flush();
+        if (null === $entity) {
+            return;
         }
+
+        // Discarded history must not inherit a prior previous_response_id.
+        // Keep a one-shot marker so the next Codex request starts a new baseline
+        // even for models that never claim a reasoning baseline.
+        $entity->reasoningBaseline = ['pending_continuation_reset' => true];
+        $this->entityManager->flush();
+    }
+
+    /**
+     * Consume a pending cached-WebSocket continuation reset after compaction
+     * or other local history replacement.
+     */
+    public function consumeContinuationReset(string $sessionId): bool
+    {
+        $entity = $this->fetchEntityOrNull($sessionId);
+        if (null === $entity || !\is_array($entity->reasoningBaseline)) {
+            return false;
+        }
+
+        if (true !== ($entity->reasoningBaseline['pending_continuation_reset'] ?? false)) {
+            return false;
+        }
+
+        unset($entity->reasoningBaseline['pending_continuation_reset']);
+        if ([] === $entity->reasoningBaseline) {
+            $entity->reasoningBaseline = null;
+        }
+
+        $this->entityManager->flush();
+
+        return true;
     }
 
     /**

@@ -218,7 +218,11 @@ final class CodexWebSocketModelClient implements ModelClientInterface
         // effective effort changed. Do not inherit that prior response state.
         // REASONING_RESET is only set for models whose catalog entry carries
         // supports_reasoning_configuration_updates.
-        if (true === ($bodyOptions[CodexRequestBodyFactory::REASONING_RESET] ?? false)
+        // CONTINUATION_RESET covers known local history replacement (compaction,
+        // summarization) so the next request starts a new baseline instead of
+        // treating the rewrite as an unexpected mismatch.
+        if ((true === ($bodyOptions[CodexRequestBodyFactory::REASONING_RESET] ?? false)
+                || true === ($bodyOptions[CodexRequestBodyFactory::CONTINUATION_RESET] ?? false))
             && null !== $lease->entry) {
             $lease->entry->continuation = null;
         }
@@ -294,14 +298,14 @@ final class CodexWebSocketModelClient implements ModelClientInterface
 
         $decision = $lease->entry->continuation->decide($fullBody);
         if (null === $decision->delta) {
-            $lease->entry->continuation = null;
-            $this->logger->info('codex.websocket.continuation.full_context', [
-                'event_type' => 'codex.websocket.continuation.full_context',
+            $this->logger->error('codex.websocket.continuation.mismatch', [
+                'event_type' => 'codex.websocket.continuation.mismatch',
                 'component' => 'codex_websocket_model_client',
                 ...$decision->toLogContext(),
             ]);
+            $this->failOutboundTransport($lease->connection, $lease, 'continuation_mismatch');
 
-            return $fullBody;
+            throw new CodexWebSocketContinuationMismatchException($decision->toLogContext(), $decision->reason);
         }
 
         $delta = $decision->delta;

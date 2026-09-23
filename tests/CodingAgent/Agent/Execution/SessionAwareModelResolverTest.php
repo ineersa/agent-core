@@ -37,6 +37,8 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
     private string $homeDir;
     private \Doctrine\ORM\EntityManagerInterface $entityManager;
 
+    private ?HatfieldSessionStore $lastResolverSessionStore = null;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -517,12 +519,46 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
 
         $store->resetReasoningBaseline($id);
         $resumed = $this->createResolver($data)->resolve('', true, $input, new ModelResolutionOptions());
-        $this->assertSame(['reasoning' => ['effort' => 'low', 'summary' => 'auto'], 'codex_reasoning_reset' => true], $resumed->reasoningOptions);
+        $this->assertSame([
+            'reasoning' => ['effort' => 'low', 'summary' => 'auto'],
+            'codex_reasoning_reset' => true,
+            'codex_continuation_reset' => true,
+        ], $resumed->reasoningOptions);
         $store->updateMetadata($id, ['model' => 'openai-codex/gpt-test']);
         $this->assertNull($store->findSession($id)->reasoningBaseline);
         $store->updateMetadata($id, ['model' => 'openai-codex/gpt-6-astra', 'reasoning' => 'high']);
         $changed = $this->createResolver($data)->resolve('', true, $input, new ModelResolutionOptions());
         $this->assertSame(['reasoning' => ['effort' => 'high', 'summary' => 'auto'], 'codex_reasoning_reset' => true], $changed->reasoningOptions);
+    }
+
+    public function testNoToolsInvocationForcesContinuationResetWithoutConsumingPendingMarker(): void
+    {
+        $data = $this->standardAiData();
+        $id = $this->writeSessionMetadata('compact-reset', ['model' => 'openai-codex/gpt-test', 'reasoning' => 'medium']);
+        $resolver = $this->createResolver($data);
+        $store = $this->lastResolverSessionStore;
+        $this->assertNotNull($store);
+        $store->claimReasoningBaseline($id, 'openai-codex/gpt-test', 'medium');
+        $store->resetReasoningBaseline($id);
+        $this->assertSame(['pending_continuation_reset' => true], $store->findSession($id)->reasoningBaseline);
+
+        $summarize = $resolver->resolve(
+            'openai-codex/gpt-test',
+            true,
+            new ModelInvocationInput(runId: $id),
+            new ModelResolutionOptions(['toolsEnabled' => false]),
+        );
+        $this->assertTrue($summarize->reasoningOptions['codex_continuation_reset'] ?? false);
+        $this->assertSame(['pending_continuation_reset' => true], $store->findSession($id)->reasoningBaseline);
+
+        $postCompact = $resolver->resolve(
+            '',
+            true,
+            new ModelInvocationInput(runId: $id),
+            new ModelResolutionOptions(),
+        );
+        $this->assertTrue($postCompact->reasoningOptions['codex_continuation_reset'] ?? false);
+        $this->assertArrayNotHasKey('pending_continuation_reset', $store->findSession($id)->reasoningBaseline ?? []);
     }
 
     public function testConfigurationUpdateBaselineAppliesToNonAstraGpt6Models(): void
@@ -561,6 +597,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
             entityManager: $this->entityManager,
             dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
         );
+        $this->lastResolverSessionStore = $hatfieldSessionStore;
         $sessionMetaStore = $hatfieldSessionStore;
 
         $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);

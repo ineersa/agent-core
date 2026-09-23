@@ -752,6 +752,182 @@ final class CodexWebSocketCachedModelClientTest extends TestCase
         $this->assertSame('medium', $resumed['reasoning']['effort']);
     }
 
+    public function testUnexpectedContinuationMismatchFailsLoudlyWithoutSendingFrame(): void
+    {
+        $cacheKey = '0194eeee-bbbb-7ccc-8ddd-111111111111';
+        self::assertUuidVersion7($cacheKey);
+
+        $frames = [];
+        $connection = $this->createMock(WebsocketConnection::class);
+        $connection->expects($this->once())->method('close');
+        $connection->method('sendText')->willReturnCallback(static function (string $frame) use (&$frames): void {
+            $frames[] = $frame;
+        });
+        $connection->method('receive')->willReturnCallback(static function (): WebsocketMessage {
+            return WebsocketMessage::fromText(json_encode([
+                'type' => 'response.completed',
+                'response' => [
+                    'id' => 'resp_mismatch_1',
+                    'output' => [[
+                        'type' => 'function_call',
+                        'id' => 'fc_native',
+                        'call_id' => 'call_native',
+                        'name' => 'read',
+                        'arguments' => '{"path":"./probe.txt"}',
+                    ]],
+                ],
+            ], \JSON_THROW_ON_ERROR));
+        });
+
+        $connectCount = 0;
+        $connector = $this->createMock(CodexWebSocketConnectorInterface::class);
+        $connector->method('connect')->willReturnCallback(static function () use (&$connectCount, $connection): WebsocketConnection {
+            ++$connectCount;
+
+            return $connection;
+        });
+
+        $logger = new TestLogger();
+        $cache = new CodexWebSocketConnectionCache();
+        $client = new CodexWebSocketModelClient(
+            $connector,
+            new CodexWebSocketUrlResolver(),
+            new CodexWebSocketHandshakeHeadersFactory(),
+            new CodexRequestBodyFactory(),
+            'https://chatgpt.com/backend-api',
+            'access',
+            'acct-1',
+            logger: $logger,
+            transport: CodexTransportEnum::WebsocketCached,
+            connectionCache: $cache,
+        );
+
+        $options = ['prompt_cache_key' => $cacheKey];
+        $first = $client->request(new CodexModel('gpt-5.6-luna'), [
+            'input' => [['role' => 'user', 'content' => 'read fixture']],
+        ], $options);
+        iterator_to_array($first->getDataStream());
+        $this->assertCount(1, $frames);
+
+        $exception = null;
+        try {
+            $client->request(new CodexModel('gpt-5.6-luna'), [
+                'input' => [
+                    ['role' => 'user', 'content' => 'read fixture'],
+                    [
+                        'type' => 'function_call',
+                        'id' => 'fc_native',
+                        'call_id' => 'call_native',
+                        'name' => 'read',
+                        'arguments' => '{"path":"./different.txt"}',
+                    ],
+                    [
+                        'type' => 'function_call_output',
+                        'call_id' => 'call_native',
+                        'output' => 'fixture',
+                    ],
+                ],
+            ], $options);
+            $this->fail('Expected CodexWebSocketContinuationMismatchException.');
+        } catch (\Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketContinuationMismatchException $caught) {
+            $exception = $caught;
+            $this->assertSame('prefix_mismatch', $exception->logContext['reason']);
+            $this->assertStringContainsString('prefix_mismatch', $exception->getMessage());
+            $this->assertStringNotContainsString('./different.txt', $exception->getMessage());
+            $this->assertStringNotContainsString($cacheKey, $exception->getMessage());
+        }
+
+        $this->assertCount(1, $frames, 'Mismatch must not send a second wire frame.');
+        $this->assertSame(1, $connectCount);
+        $mismatchLogs = array_values(array_filter(
+            $logger->records,
+            static fn (array $record): bool => 'codex.websocket.continuation.mismatch' === $record['message'],
+        ));
+        $this->assertCount(1, $mismatchLogs);
+        $this->assertSame('prefix_mismatch', $mismatchLogs[0]['context']['reason']);
+        $this->assertFalse($mismatchLogs[0]['context']['prefix_normalized_equal']);
+        $this->assertInstanceOf(\Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketContinuationMismatchException::class, $exception);
+        $this->assertInstanceOf(\LogicException::class, $exception);
+    }
+
+    public function testContinuationResetStartsFreshBaselineThenAllowsDelta(): void
+    {
+        $cacheKey = '0194eeee-bbbb-7ccc-8ddd-222222222222';
+        self::assertUuidVersion7($cacheKey);
+
+        $connectCount = 0;
+        $frames = [];
+        $connection = $this->createStreamingConnection($frames);
+        $connector = $this->createMock(CodexWebSocketConnectorInterface::class);
+        $connector->method('connect')->willReturnCallback(static function () use (&$connectCount, $connection): WebsocketConnection {
+            ++$connectCount;
+
+            return $connection;
+        });
+
+        $client = new CodexWebSocketModelClient(
+            $connector,
+            new CodexWebSocketUrlResolver(),
+            new CodexWebSocketHandshakeHeadersFactory(),
+            new CodexRequestBodyFactory(),
+            'https://chatgpt.com/backend-api',
+            'access',
+            'acct-1',
+            transport: CodexTransportEnum::WebsocketCached,
+            connectionCache: new CodexWebSocketConnectionCache(),
+        );
+
+        $options = ['prompt_cache_key' => $cacheKey];
+        $first = $client->request(new CodexModel('gpt-5.6-luna'), [
+            'input' => [['role' => 'user', 'content' => 'pre-compact']],
+        ], $options);
+        iterator_to_array($first->getDataStream());
+
+        $summarize = $client->request(new CodexModel('gpt-5.6-luna'), [
+            'input' => [
+                ['role' => 'user', 'content' => 'pre-compact'],
+                ['type' => 'message', 'role' => 'assistant', 'content' => 'ok'],
+                ['role' => 'user', 'content' => 'summarize for compaction'],
+            ],
+        ], $options + [CodexRequestBodyFactory::CONTINUATION_RESET => true]);
+        iterator_to_array($summarize->getDataStream());
+
+        $postCompact = $client->request(new CodexModel('gpt-5.6-luna'), [
+            'input' => [
+                ['role' => 'user', 'content' => 'compact summary'],
+                ['role' => 'user', 'content' => 'continue after compact'],
+            ],
+        ], $options + [CodexRequestBodyFactory::CONTINUATION_RESET => true]);
+        iterator_to_array($postCompact->getDataStream());
+
+        $followUp = $client->request(new CodexModel('gpt-5.6-luna'), [
+            'input' => [
+                ['role' => 'user', 'content' => 'compact summary'],
+                ['role' => 'user', 'content' => 'continue after compact'],
+                ['type' => 'message', 'role' => 'assistant', 'content' => 'ok'],
+                ['role' => 'user', 'content' => 'next'],
+            ],
+        ], $options);
+        iterator_to_array($followUp->getDataStream());
+
+        $this->assertSame(1, $connectCount);
+        $this->assertCount(4, $frames);
+
+        $summarizeFrame = json_decode($frames[1], true, flags: \JSON_THROW_ON_ERROR);
+        $this->assertArrayNotHasKey('previous_response_id', $summarizeFrame);
+        $this->assertArrayNotHasKey(CodexRequestBodyFactory::CONTINUATION_RESET, $summarizeFrame);
+        $this->assertCount(3, $summarizeFrame['input']);
+
+        $postCompactFrame = json_decode($frames[2], true, flags: \JSON_THROW_ON_ERROR);
+        $this->assertArrayNotHasKey('previous_response_id', $postCompactFrame);
+        $this->assertArrayNotHasKey(CodexRequestBodyFactory::CONTINUATION_RESET, $postCompactFrame);
+        $this->assertCount(2, $postCompactFrame['input']);
+
+        $followUpFrame = json_decode($frames[3], true, flags: \JSON_THROW_ON_ERROR);
+        $this->assertSame('resp_cached_1', $followUpFrame['previous_response_id']);
+        $this->assertSame([['role' => 'user', 'content' => 'next']], $followUpFrame['input']);
+    }
+
     /**
      * @param list<string> $frames
      */

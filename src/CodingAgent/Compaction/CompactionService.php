@@ -17,6 +17,7 @@ use Ineersa\AgentCore\Infrastructure\RunLogContext;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\CodingAgent\Extension\ExtensionCompactionHookDispatcher;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 
@@ -35,6 +36,7 @@ final readonly class CompactionService implements CompactionServiceInterface
         private ModelSelectionService $modelSelectionService,
         private PlatformInterface $platform,
         private ExtensionCompactionHookDispatcher $extensionHookDispatcher,
+        private ?HatfieldSessionStore $sessionMetadataStore = null,
         private LoggerInterface $logger = new NullLogger(),
     ) {
     }
@@ -340,6 +342,8 @@ final readonly class CompactionService implements CompactionServiceInterface
             'trigger' => $trigger,
             'replacement_summary' => !$rejectIneffective,
         ]);
+
+        $this->sessionMetadataStore?->resetReasoningBaseline($runId);
 
         return MessageSnapshotCompactionResult::compacted($compactResult->compactedMessages);
     }

@@ -118,6 +118,16 @@ final class SessionAwareModelResolver implements ModelResolverInterface
                 }
             }
 
+            // Compaction summarization and post-compaction chat turns must start a
+            // new cached-WebSocket baseline instead of inheriting previous_response_id.
+            if ('codex' === $this->catalog->getProvider($modelRef->providerId)?->type) {
+                if (false === ($options->values['toolsEnabled'] ?? null)) {
+                    $reasoningOptions[CodexRequestBodyFactory::CONTINUATION_RESET] = true;
+                } elseif ('' !== $sessionId && $this->sessionMetadataStore->consumeContinuationReset($sessionId)) {
+                    $reasoningOptions[CodexRequestBodyFactory::CONTINUATION_RESET] = true;
+                }
+            }
+
             // Pass 'reasoning' compat when options are present (z.ai off sends disabled thinking).
             if ([] !== $reasoningOptions && !\in_array(ReasoningOptionsFeatureShaper::FEATURE, $compatFeatures, true)) {
                 $compatFeatures[] = ReasoningOptionsFeatureShaper::FEATURE;

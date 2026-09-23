@@ -75,7 +75,7 @@ class HatfieldSession
      * last_emitted tracks the last effort that was already represented on the wire
      * so unchanged selections do not emit another configuration_update.
      *
-     * @var array{model: string, effort: string, last_emitted?: string, transitions?: list<array{message_key: string, effort: string}>}|null */
+     * @var array{model?: string, effort?: string, last_emitted?: string, transitions?: list<array{message_key: string, effort: string}>, pending_continuation_reset?: bool}|null */
     #[ORM\Column(name: 'reasoning_baseline', type: 'json', nullable: true)]
     public ?array $reasoningBaseline = null;
 

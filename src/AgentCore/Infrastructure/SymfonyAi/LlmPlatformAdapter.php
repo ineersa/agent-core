@@ -129,7 +129,13 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
                 defaultModel: $request->model,
                 hasConversationMessages: $this->hasConversationMessages($messages),
                 input: $request->input,
-                options: new ModelResolutionOptions($request->options->extraOptions),
+                options: new ModelResolutionOptions(array_replace(
+                    $request->options->extraOptions,
+                    // Internal resolver signal only; never a provider wire field.
+                    null !== $request->options->toolsEnabled
+                        ? ['toolsEnabled' => $request->options->toolsEnabled]
+                        : [],
+                )),
             )
             : new \Ineersa\AgentCore\Domain\Model\ResolvedModel($request->model);
 
