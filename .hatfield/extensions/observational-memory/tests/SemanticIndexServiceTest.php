@@ -249,6 +249,37 @@ final class SemanticIndexServiceTest extends IsolatedKernelTestCase
     }
 
     #[Test]
+    public function rejectingCappedFusedCandidatesStillReportsTruncation(): void
+    {
+        for ($i = 0; $i < 101; ++$i) {
+            $this->observation('alpha memory '.$i);
+        }
+        while (!$this->index()->synchronize()) {
+            // Each call commits up to four chunks; completion is data-driven.
+        }
+        $this->settings = OmSettings::fromArray(['storage' => ['database' => $this->path], 'semantic' => [
+            'embedding_api' => ['base_url' => 'http://embeddings.test/v1', 'model_id' => 'coderankembed'],
+            'reranker_api' => ['base_url' => 'http://reranker.test/v1', 'model_id' => 'rank', 'min_score' => 1],
+        ]]);
+        $http = new MockHttpClient(static function (string $method, string $url, array $options): MockResponse {
+            if (str_ends_with($url, '/embeddings')) {
+                return new MockResponse('{"data":[{"index":0,"embedding":[1.0,0.0]}]}');
+            }
+            $documents = json_decode($options['body'], true, flags: \JSON_THROW_ON_ERROR)['documents'];
+            $scores = [];
+            foreach ($documents as $i => $_) {
+                $scores[] = ['index' => $i, 'relevance_score' => 0];
+            }
+
+            return new MockResponse(json_encode(['results' => $scores], \JSON_THROW_ON_ERROR));
+        });
+        $result = $this->query($http)->search('alpha');
+        $this->assertTrue($result['ok']);
+        $this->assertSame(0, $result['count']);
+        $this->assertTrue($result['truncated']);
+    }
+
+    #[Test]
     public function reflectionHitsKeepRecallIdentityAndDateSemantics(): void
     {
         $id = str_repeat('f', 64);

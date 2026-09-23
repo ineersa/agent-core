@@ -38,6 +38,7 @@ extensions:
             #         model_id: bge-reranker-base-q8_0.gguf
             #         batch_size: 8
             #         document_characters: 768
+            #         min_score: -4  # Model- and corpus-specific; see OM calibration report.
         safe_guard:
             allow_write_outside_cwd: [/home/ineersa/projects/agent-core-worktrees, /tmp, /home/ineersa/projects/symfony, /home/ineersa/projects/ai]
 forks:

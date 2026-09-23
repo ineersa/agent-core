@@ -173,6 +173,7 @@ final readonly class SemanticIndexService
             // snapshot can be reranked without blocking asynchronous indexing.
             $lock->release();
             $checkpoint();
+            $candidateLimitReached = \count($hits) >= 100;
             if (null !== $this->settings->rerankerUrl && [] !== $hits) {
                 $order = $this->client->rerank($query, array_map(static fn (VectorDocument $hit): string => $hit->getMetadata()->getText() ?? '', $hits), $checkpoint);
                 $hits = array_map(static fn (int $index): VectorDocument => $hits[$index], $order);
@@ -187,7 +188,7 @@ final readonly class SemanticIndexService
             }
             $checkpoint();
 
-            return ['results' => array_values($results), 'truncated' => \count($hits) >= 100 || $vectorStore->wasTruncated() || $textStore->wasTruncated()];
+            return ['results' => array_values($results), 'truncated' => $candidateLimitReached || $vectorStore->wasTruncated() || $textStore->wasTruncated()];
         } finally {
             $lock->release();
         }
