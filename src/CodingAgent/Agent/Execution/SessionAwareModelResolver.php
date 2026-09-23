@@ -99,7 +99,6 @@ final class SessionAwareModelResolver implements ModelResolverInterface
             // as compaction. They must not claim or mutate the chat baseline.
             if (null === $explicitModel && null === $explicitReasoning
                 && 'codex' === $this->catalog->getProvider($modelRef->providerId)?->type
-                && 'gpt-6-astra' === $modelRef->modelName
                 && true === $this->catalog->getModel($modelRef)?->compatibility?->supportsReasoningConfigurationUpdates
                 && $hasConversationMessages
                 && \is_string($reasoningOptions['reasoning']['effort'] ?? null)) {
