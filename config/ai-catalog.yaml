@@ -114,6 +114,7 @@ providers:
                 reasoning: true
                 compatibility:
                     supports_reasoning_configuration_updates: true
+                    # Pinned to the 272k cheap pricing tier; see gpt-6-astra above.
                     pin_context_window: true
                 thinking_level_map: { off: none, minimal: low, low: low, medium: medium, high: high, xhigh: xhigh, max: max }
                 tool_calling: true
@@ -126,6 +127,7 @@ providers:
                 reasoning: true
                 compatibility:
                     supports_reasoning_configuration_updates: true
+                    # Pinned to the 272k cheap pricing tier; see gpt-6-astra above.
                     pin_context_window: true
                 thinking_level_map: { off: none, minimal: low, low: low, medium: medium, high: high, xhigh: xhigh, max: max }
                 tool_calling: true

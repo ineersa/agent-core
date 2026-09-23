@@ -127,8 +127,12 @@ YAML);
         );
         $this->assertTrue($sol->compatibility?->supportsReasoningConfigurationUpdates);
         $this->assertTrue($sol->compatibility?->pinContextWindow);
+        $this->assertTrue($sol->toolCalling);
+        $this->assertTrue($sol->reasoning);
         $this->assertSame(2.0, $sol->cost?->input);
         $this->assertSame(10.0, $sol->cost?->output);
+        $this->assertSame(0.2, $sol->cost?->cacheRead);
+        $this->assertSame(2.5, $sol->cost?->cacheWrite);
 
         $luna = $ai->providers['openai-codex']->models['gpt-6-luna'];
         $this->assertSame(272000, $luna->contextWindow);
@@ -137,8 +141,12 @@ YAML);
         $this->assertSame($sol->thinkingLevelMap, $luna->thinkingLevelMap);
         $this->assertTrue($luna->compatibility?->supportsReasoningConfigurationUpdates);
         $this->assertTrue($luna->compatibility?->pinContextWindow);
+        $this->assertTrue($luna->toolCalling);
+        $this->assertTrue($luna->reasoning);
         $this->assertSame(0.1, $luna->cost?->input);
         $this->assertSame(0.5, $luna->cost?->output);
+        $this->assertSame(0.01, $luna->cost?->cacheRead);
+        $this->assertSame(0.125, $luna->cost?->cacheWrite);
     }
 
     public function testCorruptUserCopyFallsBackToBundled(): void

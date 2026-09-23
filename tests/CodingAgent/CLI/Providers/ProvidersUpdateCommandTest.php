@@ -272,7 +272,6 @@ YAML);
             new MockResponse('', ['error' => 'network down', 'http_code' => 0]),
         ]);
 
-
         $this->assertSame(Command::SUCCESS, $this->runCommand($client));
         $this->assertSame($before, (string) file_get_contents($this->userCatalogPath));
     }

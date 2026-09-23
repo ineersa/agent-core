@@ -248,7 +248,6 @@ final readonly class AstraReasoningTransitionTransformHook implements TransformC
         }
 
         if ('codex' !== $this->catalog->getProvider($modelRef->providerId)?->type
-            || 'gpt-6-astra' !== $modelRef->modelName
             || true !== $this->catalog->getModel($modelRef)?->compatibility?->supportsReasoningConfigurationUpdates) {
             return null;
         }

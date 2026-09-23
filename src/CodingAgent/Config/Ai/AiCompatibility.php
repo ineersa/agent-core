@@ -37,7 +37,7 @@ final readonly class AiCompatibility
      * @param bool        $requiresReasoningContentOnAssistantMessages whether assistant messages without
      *                                                                 thinking must include an empty
      *                                                                 reasoning_content field (DeepSeek)
-     * @param bool        $pinContextWindow                             Curation override: the catalog's
+     * @param bool        $pinContextWindow                            Curation override: the catalog's
      *                                                                 context_window is authoritative and
      *                                                                 providers:update must not overwrite it
      *                                                                 from models.dev (e.g. GPT-6 models are

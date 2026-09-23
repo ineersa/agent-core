@@ -65,8 +65,8 @@ settings (`enabled`, `api_key`) and use `ai.favorite_models` for a lean picker.
    metadata on matching model ids. A model with `compatibility.pin_context_window: true`
    keeps its catalog `context_window` — models.dev reports the raw model window,
    while curated caps encode real cost policy (GPT-6 models are pinned to the
-   272k cheap pricing tier). Every other metadata key still syncs. Unknown upstream ids are listed as
-   `available upstream (not added): …`.
+   272k cheap pricing tier). Every other metadata key still syncs. Unknown
+   upstream ids are listed as `available upstream (not added): …`.
 4. Atomic write (`0600`). Offline / HTTP / JSON failures soft-fail (exit 0) and
    leave the file untouched.
 
