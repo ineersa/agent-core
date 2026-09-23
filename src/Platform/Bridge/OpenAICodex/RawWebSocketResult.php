@@ -289,12 +289,40 @@ final class RawWebSocketResult implements CancellableRawResultInterface
         $terminalCount = \count($terminalItems);
         $comparison = 'unavailable';
         $mismatch = null;
+        $reasoningPairs = 0;
+        $reasoningIdEqualPairs = 0;
+        $reasoningEncryptedEqualPairs = 0;
+        $reasoningEncryptedLengthMismatchPairs = 0;
 
         if ($terminalCount > 0 && $streamedCount > 0) {
             $comparison = 'different_count';
             if ($terminalCount === $streamedCount) {
                 $mismatch = CodexWebSocketContinuationComparator::describePrefixMismatch($terminalItems, $this->completedOutputItems);
                 $comparison = $mismatch['prefix_normalized_equal'] ? 'equal' : 'different';
+                foreach ($terminalItems as $index => $terminalItem) {
+                    $streamedItem = $this->completedOutputItems[$index] ?? null;
+                    if (!\is_array($terminalItem) || !\is_array($streamedItem)) {
+                        continue;
+                    }
+                    if ('reasoning' !== ($terminalItem['type'] ?? null) || 'reasoning' !== ($streamedItem['type'] ?? null)) {
+                        continue;
+                    }
+                    ++$reasoningPairs;
+                    $terminalId = $terminalItem['id'] ?? null;
+                    $streamedId = $streamedItem['id'] ?? null;
+                    if (\is_string($terminalId) && '' !== $terminalId && \is_string($streamedId) && '' !== $streamedId && $terminalId === $streamedId) {
+                        ++$reasoningIdEqualPairs;
+                    }
+                    $terminalEncrypted = $terminalItem['encrypted_content'] ?? null;
+                    $streamedEncrypted = $streamedItem['encrypted_content'] ?? null;
+                    if (\is_string($terminalEncrypted) && \is_string($streamedEncrypted)) {
+                        if ($terminalEncrypted === $streamedEncrypted) {
+                            ++$reasoningEncryptedEqualPairs;
+                        } elseif (\strlen($terminalEncrypted) !== \strlen($streamedEncrypted)) {
+                            ++$reasoningEncryptedLengthMismatchPairs;
+                        }
+                    }
+                }
             }
         }
 
@@ -310,6 +338,10 @@ final class RawWebSocketResult implements CancellableRawResultInterface
             'right_item_kind' => $mismatch['right_item_kind'] ?? null,
             'mismatch_field_path' => $mismatch['mismatch_field_path'] ?? null,
             'mismatch_relation' => $mismatch['mismatch_relation'] ?? null,
+            'reasoning_pair_count' => $reasoningPairs,
+            'reasoning_id_equal_pair_count' => $reasoningIdEqualPairs,
+            'reasoning_encrypted_equal_pair_count' => $reasoningEncryptedEqualPairs,
+            'reasoning_encrypted_length_mismatch_pair_count' => $reasoningEncryptedLengthMismatchPairs,
         ]);
     }
 

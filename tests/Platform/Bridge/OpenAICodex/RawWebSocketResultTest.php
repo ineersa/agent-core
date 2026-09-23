@@ -491,6 +491,10 @@ final class RawWebSocketResultTest extends TestCase
         $this->assertSame('reasoning', $baseline['right_item_kind']);
         $this->assertSame('encrypted_content', $baseline['mismatch_field_path']);
         $this->assertSame('different', $baseline['mismatch_relation']);
+        $this->assertSame(1, $baseline['reasoning_pair_count']);
+        $this->assertSame(1, $baseline['reasoning_id_equal_pair_count']);
+        $this->assertSame(0, $baseline['reasoning_encrypted_equal_pair_count']);
+        $this->assertSame(0, $baseline['reasoning_encrypted_length_mismatch_pair_count']);
         $this->assertStringNotContainsString('enc_streamed', json_encode($baseline, \JSON_THROW_ON_ERROR));
         $this->assertStringNotContainsString('enc_terminal', json_encode($baseline, \JSON_THROW_ON_ERROR));
         $this->assertStringNotContainsString('streamed plan', json_encode($baseline, \JSON_THROW_ON_ERROR));

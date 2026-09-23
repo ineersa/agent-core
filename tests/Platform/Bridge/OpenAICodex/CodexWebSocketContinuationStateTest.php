@@ -279,6 +279,14 @@ final class CodexWebSocketContinuationStateTest extends TestCase
         $this->assertSame('different', $decision->mismatchRelation);
         $this->assertSame('string', $decision->leftValueKind);
         $this->assertSame('string', $decision->rightValueKind);
+        $this->assertTrue($decision->mismatchInResponseItems);
+        $this->assertSame(0, $decision->mismatchResponseItemOffset);
+        $this->assertFalse($decision->mismatchIdsEqual);
+        $this->assertSame(\strlen('enc_history_secret'), $decision->mismatchEncryptedContentLeftLen);
+        $this->assertSame(\strlen('enc_terminal_secret'), $decision->mismatchEncryptedContentRightLen);
+        $this->assertSame(1, $decision->lastRequestInputCount);
+        $this->assertSame(1, $decision->lastResponseItemCount);
+        $this->assertSame(0, $decision->pendingFunctionCallCount);
 
         $encoded = json_encode($decision->toLogContext(), \JSON_THROW_ON_ERROR);
         $this->assertStringNotContainsString('enc_terminal_secret', $encoded);
@@ -449,5 +457,77 @@ final class CodexWebSocketContinuationStateTest extends TestCase
             ['type' => 'configuration_update', 'reasoning' => ['effort' => 'low']],
             ['role' => 'user', 'content' => 'third'],
         ], $delta['input']);
+    }
+
+    public function testPendingToolOutputsLocateRelativeToDeltaBoundaryWithoutLoggingIds(): void
+    {
+        $state = CodexWebSocketContinuationState::fromSuccessfulResponse(
+            [
+                'model' => 'gpt-5.6-luna',
+                'input' => [['role' => 'user', 'content' => 'first']],
+                'stream' => true,
+            ],
+            'resp_pending_tools',
+            [[
+                'type' => 'function_call',
+                'id' => 'fc_pending',
+                'call_id' => 'call_pending',
+                'name' => 'read',
+                'arguments' => '{}',
+            ]],
+        );
+
+        $decision = $state->decide([
+            'model' => 'gpt-5.6-luna',
+            'input' => [
+                ['role' => 'user', 'content' => 'first'],
+                [
+                    'type' => 'function_call',
+                    'id' => 'fc_pending',
+                    'call_id' => 'call_pending',
+                    'name' => 'read',
+                    'arguments' => '{}',
+                ],
+                [
+                    'type' => 'function_call_output',
+                    'call_id' => 'call_pending',
+                    'output' => 'secret-tool-output',
+                ],
+            ],
+            'stream' => true,
+        ]);
+
+        $this->assertSame(CodexWebSocketContinuationDecision::REASON_DELTA, $decision->reason);
+        $this->assertSame(1, $decision->pendingFunctionCallCount);
+        $this->assertSame(0, $decision->pendingOutputsInPrefixCount);
+        $this->assertSame(1, $decision->pendingOutputsInDeltaCount);
+        $this->assertSame(0, $decision->pendingOutputsMissingCount);
+        $this->assertSame([['type' => 'function_call_output', 'call_id' => 'call_pending', 'output' => 'secret-tool-output']], $decision->delta['input'] ?? null);
+
+        $missing = $state->decide([
+            'model' => 'gpt-5.6-luna',
+            'input' => [
+                ['role' => 'user', 'content' => 'first'],
+                [
+                    'type' => 'function_call',
+                    'id' => 'fc_pending',
+                    'call_id' => 'call_pending',
+                    'name' => 'read',
+                    'arguments' => '{}',
+                ],
+                ['role' => 'user', 'content' => 'next'],
+            ],
+            'stream' => true,
+        ]);
+        $this->assertSame(CodexWebSocketContinuationDecision::REASON_DELTA, $missing->reason);
+        $this->assertSame(1, $missing->pendingFunctionCallCount);
+        $this->assertSame(0, $missing->pendingOutputsInPrefixCount);
+        $this->assertSame(0, $missing->pendingOutputsInDeltaCount);
+        $this->assertSame(1, $missing->pendingOutputsMissingCount);
+
+        $encoded = json_encode($decision->toLogContext(), \JSON_THROW_ON_ERROR);
+        $this->assertStringNotContainsString('call_pending', $encoded);
+        $this->assertStringNotContainsString('fc_pending', $encoded);
+        $this->assertStringNotContainsString('secret-tool-output', $encoded);
     }
 }
