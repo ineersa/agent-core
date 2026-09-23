@@ -62,21 +62,7 @@ Every final application stage reported zero error-level log records. Cancellatio
 
 ## Commands and results
 
-Temporary live commands, run from the task worktree:
-
-```sh
-CODEX_PROBE_SCENARIO=astra castor --castor-file=var/tmp/codex-probe/castor.php probe
-CODEX_PROBE_SCENARIO=tool castor --castor-file=var/tmp/codex-probe/castor.php probe
-CODEX_PROBE_SCENARIO=lifecycle castor --castor-file=var/tmp/codex-probe/castor.php probe
-CODEX_PROBE_SCENARIO=model castor --castor-file=var/tmp/codex-probe/castor.php probe
-CODEX_PROBE_SCENARIO=rejection castor --castor-file=var/tmp/codex-probe/castor.php probe
-CODEX_PROBE_SCENARIO=shape castor --castor-file=var/tmp/codex-probe/castor.php probe
-castor --castor-file=var/tmp/codex-probe/castor.php controller-probe
-```
-
-The final controller probe passed. Sanitized local outputs are `controller.log`, `controller-fixed.log`, and `controller-final.log`. The intermediate fixed run proved tool continuation but still rejected text history. A shape-only probe exposed the omitted `phase` field, which the final fix handles. These temporary artifacts are not required by the product and are not committed.
-
-Live bounds were 90 seconds per direct scenario and 180 seconds for the controller scenario. Controller waits used positive events with 12-second readiness, 25-second model-turn, 15-second cancellation, and 10-second shutdown caps. These are throwaway probe safety bounds, not production or PHPUnit timeout increases. There were no blind retries or sleeps to create interaction windows.
+Temporary live probes ran from ignored `var/tmp/codex-probe/` Castor tasks (`astra`, `tool`, `lifecycle`, `model`, `rejection`, `shape`, plus `controller-probe`). The final controller probe passed. Sanitized local outputs stayed under that ignored tree. Probe safety caps were positive-event waits, not production timeout increases, and no blind retries or sleep windows were used.
 
 Committed validation:
 
@@ -99,7 +85,7 @@ The original direct probe incorrectly required populated terminal `response.outp
 
 An exploratory request used `gpt-5.3-codex`, which is absent from this checkout's catalog, and failed for both transports. The catalog-backed `gpt-5.6-luna` model change passed. The original post-cancel controller command was `user_message`, which maps to steering and did not start a new cancelled run. Using the supported `follow_up` command resolved that probe error without a runtime change.
 
-This is bounded correctness evidence, not a long-duration reliability or cache-hit-rate claim. The live controller used one LLM worker and no TUI. Provider-enforced expiry and loss of a previously valid server continuation were not forced; clock-driven expiry and deliberate rejection cover the client behavior. No contention failure reproduced, so concurrent stress lanes were not run. Full `castor check` and independent review remain task-workflow gates, not results of this investigation.
+Bounded correctness evidence only. One LLM worker, no TUI. Provider-enforced expiry and live loss of a previously valid continuation were not forced; clock-driven expiry and deliberate rejection cover client behavior. No contention failure reproduced. Full `castor check` and independent review remain later gates.
 
 ## Interactive Sol observation
 
@@ -229,4 +215,8 @@ Goal: identify the first allowlisted structural field behind Matplotlib's `reaso
 
 Product change: `describePrefixMismatch()` now also emits `mismatch_field_path`, `mismatch_relation`, and left/right value kinds for allowlisted keys only (`type`, `role`, `status`, `summary`, `encrypted_content`, and other fixed Codex item fields). Unexpected provider keys collapse to the nearest allowlisted ancestor or `.`. No hashes of content/signatures, no raw IDs/prompts/tool args, and no wire/continuation behavior change.
 
-Native artifact and live trial results are recorded after the Harbor attempt below when available.
+Native artifact: `var/tmp/dist/hatfield.linux-amd64` embeds `f3dd3553c683471a53a2c9ec9bc40c7299c52807`, SHA-256 `c027845074092d136ce75ce910d06b6e52b6aa55c89f8dae061d702db17c6426`. Full `castor distribution:build-static` failed (`re2c`, `flex`, `gperf` missing). Fresh PHAR combined with previously verified `micro.sfx`; `castor distribution:verify` passed.
+
+One Matplotlib 24870 GPT-5.6 Luna / medium / `websocket-cached` attempt (`matplotlib__matplotlib-24870__38XADPq`) failed before any LLM step: stored Codex credentials were expired and could not be refreshed with the access-only Harbor auth copy. No `prefix_mismatch` event, no field-path evidence, and no cache metrics. Teardown observed 8 processes / 0 survivors. Stopped after that infrastructure failure; no second trial. Private auth removed after a zero-match credential scan. No owned containers remained.
+
+Deterministic unit proof (no live provider): terminal `response.output` baseline vs streamed `output_item.done` reasoning signature can reject continuation with `mismatch_field_path=encrypted_content` when those shapes diverge; unexpected provider keys never appear in the path. Live cause remains unconfirmed until auth is refreshed and one trial is rerun.
