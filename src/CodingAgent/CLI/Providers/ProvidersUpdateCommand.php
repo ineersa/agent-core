@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\CLI\Providers;
 
 use Ineersa\CodingAgent\Config\Ai\AiCatalog;
+use Ineersa\CodingAgent\Config\Ai\AiCompatibility;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Style\SymfonyStyle;
@@ -221,7 +222,15 @@ final class ProvidersUpdateCommand
 
                 if (\array_key_exists($modelId, $models) && \is_array($models[$modelId])) {
                     $changed = false;
+                    $pinned = \is_array($models[$modelId]['compatibility'] ?? null)
+                        && AiCompatibility::fromArray($models[$modelId]['compatibility'])->pinContextWindow;
                     foreach (self::METADATA_KEYS as $key) {
+                        // Curation override: a pinned context_window is authoritative
+                        // (e.g. GPT-6 pinned to the 272k cheap pricing tier while
+                        // models.dev reports the raw window).
+                        if ('context_window' === $key && $pinned) {
+                            continue;
+                        }
                         if (!\array_key_exists($key, $meta)) {
                             continue;
                         }

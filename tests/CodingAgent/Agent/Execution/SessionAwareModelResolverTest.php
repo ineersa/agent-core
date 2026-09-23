@@ -525,6 +525,31 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
         $this->assertSame(['reasoning' => ['effort' => 'high', 'summary' => 'auto'], 'codex_reasoning_reset' => true], $changed->reasoningOptions);
     }
 
+    public function testConfigurationUpdateBaselineAppliesToNonAstraGpt6Models(): void
+    {
+        $data = $this->standardAiData();
+        $data['providers']['openai-codex']['compatibility'] = ['thinking_format' => 'codex'];
+        $data['providers']['openai-codex']['models']['gpt-6-sol'] = [
+            'name' => 'Sol', 'reasoning' => true,
+            'thinking_level_map' => ['off' => 'none', 'low' => 'low', 'medium' => 'medium', 'high' => 'high'],
+            'compatibility' => ['supports_reasoning_configuration_updates' => true],
+        ];
+        $id = $this->writeSessionMetadata('sol', ['model' => 'openai-codex/gpt-6-sol', 'reasoning' => 'medium']);
+        $store = static::getContainer()->get(HatfieldSessionStore::class);
+        $input = new ModelInvocationInput(runId: $id);
+        $resolver = $this->createResolver($data);
+
+        $first = $resolver->resolve('', true, $input, new ModelResolutionOptions());
+        $this->assertSame(['reasoning' => ['effort' => 'medium', 'summary' => 'auto'], 'codex_reasoning_reset' => true], $first->reasoningOptions);
+
+        $store->updateMetadata($id, ['reasoning' => 'high']);
+        $this->entityManager->clear();
+        $toHigh = $this->createResolver($data)->resolve('', true, $input, new ModelResolutionOptions());
+        $this->assertSame('medium', $toHigh->reasoningOptions['reasoning']['effort']);
+        $this->assertSame('high', $toHigh->reasoningOptions['codex_reasoning_update']);
+        $this->assertSame('openai-codex/gpt-6-sol', $toHigh->reasoningOptions['hatfield_model_ref']);
+    }
+
     private function createResolver(array $aiData, ?RunStartedMetadataReader $childMetadataReader = null): SessionAwareModelResolver
     {
         $hatfieldSessionStore = new HatfieldSessionStore(

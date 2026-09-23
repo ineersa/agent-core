@@ -26,7 +26,7 @@ extensions:
         safe_guard:
             allow_write_outside_cwd: [/home/ineersa/projects/agent-core-worktrees, /tmp, /home/ineersa/projects/symfony, /home/ineersa/projects/ai]
 forks:
-    model: openai-codex/gpt-6-astra
+    model: grok-cli/grok-composer-2.5-fast
     thinking_level: medium
     extensions:
         enabled: {}
