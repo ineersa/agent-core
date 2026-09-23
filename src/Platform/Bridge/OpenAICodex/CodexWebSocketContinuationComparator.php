@@ -9,6 +9,36 @@ namespace Symfony\AI\Platform\Bridge\OpenAICodex;
  */
 final class CodexWebSocketContinuationComparator
 {
+    /** @var array<string, string> */
+    private const array KNOWN_ITEM_TYPES = [
+        'message' => 'message',
+        'function_call' => 'function_call',
+        'function_call_output' => 'function_call_output',
+        'reasoning' => 'reasoning',
+        'configuration_update' => 'configuration_update',
+        'custom_tool_call' => 'custom_tool_call',
+        'custom_tool_call_output' => 'custom_tool_call_output',
+        'web_search_call' => 'web_search_call',
+        'file_search_call' => 'file_search_call',
+        'computer_call' => 'computer_call',
+        'computer_call_output' => 'computer_call_output',
+        'image_generation_call' => 'image_generation_call',
+        'code_interpreter_call' => 'code_interpreter_call',
+        'local_shell_call' => 'local_shell_call',
+        'mcp_call' => 'mcp_call',
+        'mcp_list_tools' => 'mcp_list_tools',
+        'mcp_approval_request' => 'mcp_approval_request',
+    ];
+
+    /** @var array<string, string> */
+    private const array KNOWN_ITEM_ROLES = [
+        'user' => 'role:user',
+        'assistant' => 'role:assistant',
+        'system' => 'role:system',
+        'developer' => 'role:developer',
+        'tool' => 'role:tool',
+    ];
+
     /**
      * @param array<string, mixed> $a
      * @param array<string, mixed> $b
@@ -112,15 +142,15 @@ final class CodexWebSocketContinuationComparator
 
         $type = $item['type'] ?? null;
         if (\is_string($type) && '' !== $type) {
-            return $type;
+            return self::KNOWN_ITEM_TYPES[$type] ?? 'other';
         }
 
         $role = $item['role'] ?? null;
         if (\is_string($role) && '' !== $role) {
-            return 'role:'.$role;
+            return self::KNOWN_ITEM_ROLES[$role] ?? 'other';
         }
 
-        return 'unknown';
+        return 'other';
     }
 
     /**

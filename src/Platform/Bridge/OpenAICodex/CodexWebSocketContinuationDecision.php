@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Symfony\AI\Platform\Bridge\OpenAICodex;
 
+use Symfony\Component\Uid\Uuid;
+use Symfony\Component\Uid\UuidV7;
+
 /**
  * Privacy-safe continuation outcome for structured WebSocket logs.
  *
@@ -38,6 +41,66 @@ final readonly class CodexWebSocketContinuationDecision
     }
 
     /**
+     * @param array{prompt_cache_key_present: bool, prompt_cache_key_fp: ?string, prompt_cache_key_length: int} $keyContext
+     */
+    public static function reject(
+        string $reason,
+        array $keyContext,
+        bool $promptCacheKeyChanged,
+        int $baselineInputCount,
+        int $currentInputCount,
+        ?int $firstMismatchIndex = null,
+        ?string $leftItemKind = null,
+        ?string $rightItemKind = null,
+        bool $prefixNormalizedEqual = false,
+    ): self {
+        return new self(
+            reason: $reason,
+            delta: null,
+            promptCacheKeyPresent: $keyContext['prompt_cache_key_present'],
+            promptCacheKeyFp: $keyContext['prompt_cache_key_fp'],
+            promptCacheKeyLength: $keyContext['prompt_cache_key_length'],
+            promptCacheKeyChanged: $promptCacheKeyChanged,
+            baselineInputCount: $baselineInputCount,
+            currentInputCount: $currentInputCount,
+            deltaInputCount: null,
+            firstMismatchIndex: $firstMismatchIndex,
+            leftItemKind: $leftItemKind,
+            rightItemKind: $rightItemKind,
+            prefixNormalizedEqual: $prefixNormalizedEqual,
+        );
+    }
+
+    /**
+     * @param array{previous_response_id: string, input: list<array<string, mixed>>}                            $delta
+     * @param array{prompt_cache_key_present: bool, prompt_cache_key_fp: ?string, prompt_cache_key_length: int} $keyContext
+     */
+    public static function accept(
+        array $delta,
+        array $keyContext,
+        bool $promptCacheKeyChanged,
+        int $baselineInputCount,
+        int $currentInputCount,
+        int $deltaInputCount,
+    ): self {
+        return new self(
+            reason: self::REASON_DELTA,
+            delta: $delta,
+            promptCacheKeyPresent: $keyContext['prompt_cache_key_present'],
+            promptCacheKeyFp: $keyContext['prompt_cache_key_fp'],
+            promptCacheKeyLength: $keyContext['prompt_cache_key_length'],
+            promptCacheKeyChanged: $promptCacheKeyChanged,
+            baselineInputCount: $baselineInputCount,
+            currentInputCount: $currentInputCount,
+            deltaInputCount: $deltaInputCount,
+            firstMismatchIndex: null,
+            leftItemKind: null,
+            rightItemKind: null,
+            prefixNormalizedEqual: true,
+        );
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public function toLogContext(): array
@@ -59,7 +122,10 @@ final readonly class CodexWebSocketContinuationDecision
     }
 
     /**
-     * Bounded fingerprint of the wire prompt_cache_key only (never content).
+     * Bounded fingerprint of a canonical UUIDv7 prompt_cache_key only.
+     *
+     * Non-UUIDv7 values stay marked present/length-only so low-entropy keys are
+     * never self-HMAC fingerprinted.
      *
      * @param array<string, mixed> $body
      *
@@ -76,10 +142,14 @@ final readonly class CodexWebSocketContinuationDecision
             ];
         }
 
+        $fingerprint = null;
+        if (Uuid::isValid($key) && Uuid::fromString($key) instanceof UuidV7) {
+            $fingerprint = substr(hash_hmac('sha256', $key, $key), 0, 16);
+        }
+
         return [
             'prompt_cache_key_present' => true,
-            // HMAC of the key with itself, truncated — same family idea as cache_family_fp.
-            'prompt_cache_key_fp' => substr(hash_hmac('sha256', $key, $key), 0, 16),
+            'prompt_cache_key_fp' => $fingerprint,
             'prompt_cache_key_length' => \strlen($key),
         ];
     }

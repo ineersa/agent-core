@@ -13,6 +13,7 @@ use Symfony\AI\Platform\Message\Message;
 use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\AI\Platform\Result\ToolCallResult;
+use Symfony\Component\Uid\UuidV7;
 
 final class CodexWebSocketContinuationStateTest extends TestCase
 {
@@ -127,9 +128,11 @@ final class CodexWebSocketContinuationStateTest extends TestCase
 
     public function testDecideClassifiesBodyMismatchSeparatelyFromPrefixMismatch(): void
     {
+        $stableKey = UuidV7::v7()->toRfc4122();
+        $changedKey = UuidV7::v7()->toRfc4122();
         $baselineBody = [
             'model' => 'gpt-5.6-luna',
-            'prompt_cache_key' => '0199aaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            'prompt_cache_key' => $stableKey,
             'input' => [['role' => 'user', 'content' => 'first']],
             'stream' => true,
         ];
@@ -141,7 +144,7 @@ final class CodexWebSocketContinuationStateTest extends TestCase
 
         $bodyMismatch = $state->decide([
             'model' => 'gpt-5.6-sol',
-            'prompt_cache_key' => '0199aaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            'prompt_cache_key' => $stableKey,
             'input' => [
                 ['role' => 'user', 'content' => 'first'],
                 ['type' => 'message', 'role' => 'assistant', 'content' => 'ok'],
@@ -154,11 +157,11 @@ final class CodexWebSocketContinuationStateTest extends TestCase
         $this->assertTrue($bodyMismatch->promptCacheKeyPresent);
         $this->assertSame(16, \strlen((string) $bodyMismatch->promptCacheKeyFp));
         $this->assertFalse($bodyMismatch->promptCacheKeyChanged);
-        $this->assertStringNotContainsString('0199', (string) $bodyMismatch->promptCacheKeyFp);
+        $this->assertStringNotContainsString($stableKey, (string) $bodyMismatch->promptCacheKeyFp);
 
         $prefixMismatch = $state->decide([
             'model' => 'gpt-5.6-luna',
-            'prompt_cache_key' => '0199bbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+            'prompt_cache_key' => $changedKey,
             'input' => [
                 ['role' => 'user', 'content' => 'first'],
                 ['type' => 'message', 'role' => 'assistant', 'content' => 'edited'],
@@ -175,19 +178,30 @@ final class CodexWebSocketContinuationStateTest extends TestCase
         $this->assertSame('message', $prefixMismatch->rightItemKind);
         $this->assertSame(16, \strlen((string) $prefixMismatch->promptCacheKeyFp));
         $this->assertNotSame($bodyMismatch->promptCacheKeyFp, $prefixMismatch->promptCacheKeyFp);
-        $this->assertStringNotContainsString('0199', json_encode($prefixMismatch->toLogContext(), \JSON_THROW_ON_ERROR));
+        $encoded = json_encode($prefixMismatch->toLogContext(), \JSON_THROW_ON_ERROR);
+        $this->assertStringNotContainsString($stableKey, $encoded);
+        $this->assertStringNotContainsString($changedKey, $encoded);
     }
 
     public function testPromptCacheKeyFingerprintNeverIncludesRawKey(): void
     {
+        $uuidKey = UuidV7::v7()->toRfc4122();
         $context = CodexWebSocketContinuationDecision::promptCacheKeyContext([
-            'prompt_cache_key' => '0199cccccccccccccccccccccccccccc',
+            'prompt_cache_key' => $uuidKey,
         ]);
 
         $this->assertTrue($context['prompt_cache_key_present']);
-        $this->assertSame(\strlen('0199cccccccccccccccccccccccccccc'), $context['prompt_cache_key_length']);
+        $this->assertSame(\strlen($uuidKey), $context['prompt_cache_key_length']);
         $this->assertSame(16, \strlen((string) $context['prompt_cache_key_fp']));
-        $this->assertStringNotContainsString('0199cccccccccccccccccccccccccccc', (string) $context['prompt_cache_key_fp']);
+        $this->assertStringNotContainsString($uuidKey, (string) $context['prompt_cache_key_fp']);
+
+        $lowEntropy = CodexWebSocketContinuationDecision::promptCacheKeyContext([
+            'prompt_cache_key' => 'session-1',
+        ]);
+        $this->assertTrue($lowEntropy['prompt_cache_key_present']);
+        $this->assertSame(9, $lowEntropy['prompt_cache_key_length']);
+        $this->assertNull($lowEntropy['prompt_cache_key_fp']);
+
         $this->assertFalse(CodexWebSocketContinuationDecision::promptCacheKeyChanged(
             ['prompt_cache_key' => 'same'],
             ['prompt_cache_key' => 'same'],
@@ -196,6 +210,31 @@ final class CodexWebSocketContinuationStateTest extends TestCase
             ['prompt_cache_key' => 'a'],
             ['prompt_cache_key' => 'b'],
         ));
+    }
+
+    public function testPrefixMismatchItemKindsAreBoundedVocabulary(): void
+    {
+        $state = CodexWebSocketContinuationState::fromSuccessfulResponse(
+            ['model' => 'gpt-5.6-luna', 'input' => [['role' => 'user', 'content' => 'first']], 'stream' => true],
+            'resp_kinds',
+            [['type' => 'totally_custom_provider_type', 'payload' => 'secret']],
+        );
+
+        $decision = $state->decide([
+            'model' => 'gpt-5.6-luna',
+            'input' => [
+                ['role' => 'user', 'content' => 'first'],
+                ['type' => 'another_custom_type', 'payload' => 'secret'],
+                ['role' => 'user', 'content' => 'next'],
+            ],
+            'stream' => true,
+        ]);
+
+        $this->assertSame(CodexWebSocketContinuationDecision::REASON_PREFIX_MISMATCH, $decision->reason);
+        $this->assertSame('other', $decision->leftItemKind);
+        $this->assertSame('other', $decision->rightItemKind);
+        $this->assertStringNotContainsString('totally_custom_provider_type', json_encode($decision->toLogContext(), \JSON_THROW_ON_ERROR));
+        $this->assertStringNotContainsString('secret', json_encode($decision->toLogContext(), \JSON_THROW_ON_ERROR));
     }
 
     public function testKeepsHistoricalConfigurationUpdateInPrefixAndDeltasOnlySuffix(): void

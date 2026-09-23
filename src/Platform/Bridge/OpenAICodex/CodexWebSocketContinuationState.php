@@ -49,60 +49,37 @@ final class CodexWebSocketContinuationState
             $this->lastResponseItems,
         );
         $baselineCount = \count($baseline);
+        $currentCount = self::inputCount($currentRequestBody);
 
         if (!CodexWebSocketContinuationComparator::requestBodiesMatchExceptInput($currentRequestBody, $this->lastRequestBody)) {
-            return new CodexWebSocketContinuationDecision(
-                reason: CodexWebSocketContinuationDecision::REASON_DIVERGENT_BODY,
-                delta: null,
-                promptCacheKeyPresent: $keyContext['prompt_cache_key_present'],
-                promptCacheKeyFp: $keyContext['prompt_cache_key_fp'],
-                promptCacheKeyLength: $keyContext['prompt_cache_key_length'],
-                promptCacheKeyChanged: $keyChanged,
-                baselineInputCount: $baselineCount,
-                currentInputCount: self::inputCount($currentRequestBody),
-                deltaInputCount: null,
-                firstMismatchIndex: null,
-                leftItemKind: null,
-                rightItemKind: null,
-                prefixNormalizedEqual: false,
+            return CodexWebSocketContinuationDecision::reject(
+                CodexWebSocketContinuationDecision::REASON_DIVERGENT_BODY,
+                $keyContext,
+                $keyChanged,
+                $baselineCount,
+                $currentCount,
             );
         }
 
         $currentInput = $currentRequestBody['input'] ?? [];
         if (!\is_array($currentInput)) {
-            return new CodexWebSocketContinuationDecision(
-                reason: CodexWebSocketContinuationDecision::REASON_INVALID_INPUT,
-                delta: null,
-                promptCacheKeyPresent: $keyContext['prompt_cache_key_present'],
-                promptCacheKeyFp: $keyContext['prompt_cache_key_fp'],
-                promptCacheKeyLength: $keyContext['prompt_cache_key_length'],
-                promptCacheKeyChanged: $keyChanged,
-                baselineInputCount: $baselineCount,
-                currentInputCount: 0,
-                deltaInputCount: null,
-                firstMismatchIndex: null,
-                leftItemKind: null,
-                rightItemKind: null,
-                prefixNormalizedEqual: false,
+            return CodexWebSocketContinuationDecision::reject(
+                CodexWebSocketContinuationDecision::REASON_INVALID_INPUT,
+                $keyContext,
+                $keyChanged,
+                $baselineCount,
+                0,
             );
         }
 
         $currentCount = \count($currentInput);
         if ($currentCount < $baselineCount) {
-            return new CodexWebSocketContinuationDecision(
-                reason: CodexWebSocketContinuationDecision::REASON_PREFIX_SHORTER,
-                delta: null,
-                promptCacheKeyPresent: $keyContext['prompt_cache_key_present'],
-                promptCacheKeyFp: $keyContext['prompt_cache_key_fp'],
-                promptCacheKeyLength: $keyContext['prompt_cache_key_length'],
-                promptCacheKeyChanged: $keyChanged,
-                baselineInputCount: $baselineCount,
-                currentInputCount: $currentCount,
-                deltaInputCount: null,
-                firstMismatchIndex: null,
-                leftItemKind: null,
-                rightItemKind: null,
-                prefixNormalizedEqual: false,
+            return CodexWebSocketContinuationDecision::reject(
+                CodexWebSocketContinuationDecision::REASON_PREFIX_SHORTER,
+                $keyContext,
+                $keyChanged,
+                $baselineCount,
+                $currentCount,
             );
         }
 
@@ -110,42 +87,31 @@ final class CodexWebSocketContinuationState
         if (!CodexWebSocketContinuationComparator::responseInputsEqual($prefix, $baseline)) {
             $mismatch = CodexWebSocketContinuationComparator::describePrefixMismatch($prefix, $baseline);
 
-            return new CodexWebSocketContinuationDecision(
-                reason: CodexWebSocketContinuationDecision::REASON_PREFIX_MISMATCH,
-                delta: null,
-                promptCacheKeyPresent: $keyContext['prompt_cache_key_present'],
-                promptCacheKeyFp: $keyContext['prompt_cache_key_fp'],
-                promptCacheKeyLength: $keyContext['prompt_cache_key_length'],
-                promptCacheKeyChanged: $keyChanged,
-                baselineInputCount: $baselineCount,
-                currentInputCount: $currentCount,
-                deltaInputCount: null,
-                firstMismatchIndex: $mismatch['first_mismatch_index'],
-                leftItemKind: $mismatch['left_item_kind'],
-                rightItemKind: $mismatch['right_item_kind'],
-                prefixNormalizedEqual: $mismatch['prefix_normalized_equal'],
+            return CodexWebSocketContinuationDecision::reject(
+                CodexWebSocketContinuationDecision::REASON_PREFIX_MISMATCH,
+                $keyContext,
+                $keyChanged,
+                $baselineCount,
+                $currentCount,
+                $mismatch['first_mismatch_index'],
+                $mismatch['left_item_kind'],
+                $mismatch['right_item_kind'],
+                $mismatch['prefix_normalized_equal'],
             );
         }
 
         $deltaInput = \array_slice($currentInput, $baselineCount);
 
-        return new CodexWebSocketContinuationDecision(
-            reason: CodexWebSocketContinuationDecision::REASON_DELTA,
-            delta: [
+        return CodexWebSocketContinuationDecision::accept(
+            [
                 'previous_response_id' => $this->lastResponseId,
                 'input' => $deltaInput,
             ],
-            promptCacheKeyPresent: $keyContext['prompt_cache_key_present'],
-            promptCacheKeyFp: $keyContext['prompt_cache_key_fp'],
-            promptCacheKeyLength: $keyContext['prompt_cache_key_length'],
-            promptCacheKeyChanged: $keyChanged,
-            baselineInputCount: $baselineCount,
-            currentInputCount: $currentCount,
-            deltaInputCount: \count($deltaInput),
-            firstMismatchIndex: null,
-            leftItemKind: null,
-            rightItemKind: null,
-            prefixNormalizedEqual: true,
+            $keyContext,
+            $keyChanged,
+            $baselineCount,
+            $currentCount,
+            \count($deltaInput),
         );
     }
 

@@ -27,13 +27,7 @@ No retry, transport default, setting, API, or persistence behavior changed. The 
 
 The fixed controller probe ran against the production code subsequently committed as `102d2175e`. Later report/comment edits do not change that behavior.
 
-Both probes used the real OAuth endpoint at `wss://chatgpt.com/backend-api/codex/responses`. Neither was added to an ordinary E2E suite. The temporary Castor task and scripts were under ignored `var/tmp/codex-probe/`.
-
-The application probe used `ControllerE2eTestCase` process discovery and JSONL facilities, `AgentTestExecutable`, and `TestDirectoryIsolation`. It launched source `bin/console agent --controller` with production provider construction and message normalization, one LLM worker, one tool worker, and only the `read` tool enabled.
-
-Each probe project had an isolated HOME, CWD, compiled cache, sessions directory, application database, and Messenger transport database. All six transport DSNs used that project's transport database. Child environment was explicit and did not inherit `HATFIELD_SESSION_ID`. The current user owned every discovered child. Stored auth was read through `CodexAuthStorage`; the isolated credential record omitted the refresh token. Real auth, settings, sessions, and databases were not modified. Temporary projects and credentials were removed after teardown.
-
-Controller shutdown used stdin EOF, not forced termination. The probe checked the tracked process tree before restart. Both controller lifetimes stopped all eight owned processes, including Messenger consumers, with zero survivors. No fallback signals were needed. Logs also recorded cache reset with `reason=session_close` and `codex.websocket.worker.shutdown`.
+Probes used the real Codex WebSocket endpoint under ignored `var/tmp/codex-probe/`. The application probe launched an isolated controller with production provider construction, one LLM worker, one tool worker, and `read` only. Auth/settings/sessions outside that tree were untouched. Controller shutdown used stdin EOF; both lifetimes stopped eight owned processes with zero survivors.
 
 ## Application-level before and after
 
@@ -216,9 +210,9 @@ Sanitized Harbor report: `hatfield-harbor/reports/swe-bench-plain-gpt6-luna-2026
 
 Goal: gather privacy-safe per-request `prompt_cache_key` fingerprints and structural continuation mismatch reasons, then rerun Django 15128 and Matplotlib 24870 once each on GPT-5.6 Luna / medium / `websocket-cached`.
 
-Product change: `CodexWebSocketContinuationState::decide()` now classifies `divergent_body`, `prefix_mismatch`, `prefix_shorter`, and `invalid_input` instead of collapsing failures to `divergent_input`. Continuation and `llm.provider.request_prepared` logs include `prompt_cache_key_present`, truncated `prompt_cache_key_fp`, `prompt_cache_key_length`, and `prompt_cache_key_changed`. No raw key, prompt, or provider payload is logged. Wire behavior is unchanged.
+Product change: `decide()` classifies `divergent_body`, `prefix_mismatch`, `prefix_shorter`, and `invalid_input`. Logs keep the same field names; `prompt_cache_key_fp` is emitted only for canonical UUIDv7 keys, and item kinds are limited to a fixed vocabulary. No raw key/prompt/provider payload is logged. Wire behavior is unchanged.
 
-Native artifact: `var/tmp/dist/hatfield.linux-amd64` embeds `2c1392f42240d6e2839a56df7722e67be9475dac`, SHA-256 `33dbd40145eceedceefc332cea0f83b61d8bd658d9f2d0ae8fc1e2f8d67a4080`. Full `castor distribution:build-static` failed (`re2c`, `flex`, `gperf` missing). Fresh PHAR was combined with the previously verified `micro.sfx`; `castor distribution:verify` passed. Harbor revision `9b7529eb3ab10f814b2e8fa74af86e2b828bc407` accepts the new full-context reasons.
+Native artifact used for the live diagnostic run: `var/tmp/dist/hatfield.linux-amd64` embeds `2c1392f42240d6e2839a56df7722e67be9475dac`, SHA-256 `33dbd40145eceedceefc332cea0f83b61d8bd658d9f2d0ae8fc1e2f8d67a4080` (pre-privacy-hardening). Later privacy hardening did not rebuild or rerun. Harbor revision `9b7529eb3ab10f814b2e8fa74af86e2b828bc407` accepts the new full-context reasons.
 
 | Task | Trial | LLM steps | Cache read % | Post-hit zero-cache drops | previous_response_id | Full-context reasons | Verifier | Teardown |
 | --- | --- | ---: | ---: | ---: | ---: | --- | --- | --- |
