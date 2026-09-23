@@ -223,14 +223,15 @@ Without a floor, the reranker sorts all candidates. Without a reranker, this
 setting has no effect and hybrid search can still return unrelated neighbors.
 The `-4` shown here was measured for the named local reranker on this corpus;
 it is not a general default. See the [calibration report](docs/om-relevance-calibration.md)
-and the [25 reusable questions](docs/relevance-calibration-questions.json).
+and the [50 reusable questions](docs/relevance-calibration-questions.json).
 
 The implementation uses Symfony AI's Vektor bridge for persistent HNSW vectors,
 its SQLite Store for FTS5 BM25, and `CombinedStore` for reciprocal-rank fusion.
 PHP needs `mbstring` and `pdo_sqlite` with SQLite FTS5 support. The extension pins
 the tested store packages and Vektor version in its Composer requirements.
-It retains at most 100 fused chunk candidates, optionally reranks them, and
-collapses them to source memories before applying the existing result limit.
+It retrieves at most 100 chunks from each store, fuses at most 200 candidates,
+optionally reranks them, and collapses them to source memories before applying
+the existing result limit.
 No raw ranking scores are returned. `truncated` is true when either the candidate
 budget or result limit is reached. Date-constrained queries overfetch at most 500
 candidates per store, filter by date, and retain at most 100 per ranked list.

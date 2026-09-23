@@ -249,14 +249,15 @@ final class SemanticIndexServiceTest extends IsolatedKernelTestCase
     }
 
     #[Test]
-    public function rejectingCappedFusedCandidatesStillReportsTruncation(): void
+    public function rerankerCanRecoverLexicalCandidatesBeyondTheFirstHundredFusedChunks(): void
     {
         for ($i = 0; $i < 100; ++$i) {
-            $this->observation('alpha memory '.$i);
+            $this->observation('alpha lexical '.$i);
+            $this->observation('omega semantic '.$i);
         }
-        // Four chunks per call need 25 batches; cap at one extra call to fail fast.
+        // Four chunks per call need 50 batches; allow one extra and fail fast.
         $complete = false;
-        for ($i = 0; $i < 26 && !$complete; ++$i) {
+        for ($i = 0; $i < 51 && !$complete; ++$i) {
             $complete = $this->index()->synchronize();
         }
         $this->assertTrue($complete);
@@ -266,19 +267,20 @@ final class SemanticIndexServiceTest extends IsolatedKernelTestCase
         ]]);
         $http = new MockHttpClient(static function (string $method, string $url, array $options): MockResponse {
             if (str_ends_with($url, '/embeddings')) {
-                return new MockResponse('{"data":[{"index":0,"embedding":[1.0,0.0]}]}');
+                return new MockResponse('{"data":[{"index":0,"embedding":[0.0,1.0]}]}');
             }
             $documents = json_decode($options['body'], true, flags: \JSON_THROW_ON_ERROR)['documents'];
             $scores = [];
-            foreach ($documents as $i => $_) {
-                $scores[] = ['index' => $i, 'relevance_score' => 0];
+            foreach ($documents as $i => $text) {
+                $scores[] = ['index' => $i, 'relevance_score' => str_starts_with($text, 'alpha') ? 1 : 0];
             }
 
             return new MockResponse(json_encode(['results' => $scores], \JSON_THROW_ON_ERROR));
         });
-        $result = $this->query($http)->search('alpha');
-        $this->assertTrue($result['ok']);
-        $this->assertSame(0, $result['count']);
+        $semantic = $this->settings->semantic;
+        $this->assertNotNull($semantic);
+        $result = (new SemanticIndexService($this->connection, $this->path, $semantic, new SemanticApiClient($semantic, $http)))->search('alpha', ['observation' => [null, null], 'reflection' => [null, null]], static function (): void {});
+        $this->assertCount(100, $result['results']);
         $this->assertTrue($result['truncated']);
     }
 

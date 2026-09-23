@@ -21,7 +21,7 @@ That floor raised judged precision and cut some negative hits, but held-out topi
 
 ## Candidate-stage results (50 questions)
 
-Symfony AI `CombinedStore` uses reciprocal rank fusion with default `rrfK=60`. Production code passes `maxItems => 100` into each store adapter, then slices the fused list to 100 before optional reranking. RRF scores are ranking scores, not confidence. Do not threshold them.
+Symfony AI `CombinedStore` uses reciprocal rank fusion with default `rrfK=60`. At measurement time, code passed `maxItems => 100` into each store adapter, then sliced the fused list to 100 before optional reranking. The adopted candidate budget is now 200 fused chunks with the same per-store budget. RRF scores are ranking scores, not confidence. Do not threshold them.
 
 Exact-target recall before reranking:
 
@@ -112,7 +112,7 @@ Evidence favors keeping CombinedStore `rrfK=60`. The clear candidate-budget leve
 3. Keep **min_score: -4** optional and model/corpus-specific. On this set it still cuts negatives with hits from 6/6 to 2/6 and raises judged precision, while dropping some exact and topical hits. Widening N under -4 did not revive held-out negatives in the top twenty among newly judged parents.
 4. Re-judge if production changes fused N or the floor. Labels for N=100 first-ten topical precision are not a complete label set for N=200 top twenty.
 
-No production code, tests, or settings were changed by this calibration pass.
+The calibration pass changed no production code or settings. The subsequent production change widened only the fused candidate cap to 200; the optional reranker floor and per-store limits remain unchanged.
 
 ## Limits
 

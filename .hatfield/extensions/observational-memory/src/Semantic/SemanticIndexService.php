@@ -28,6 +28,8 @@ use Symfony\Component\Lock\Store\FlockStore;
  */
 final readonly class SemanticIndexService
 {
+    private const int FUSED_CANDIDATE_LIMIT = 200;
+
     private string $directory;
 
     public function __construct(
@@ -159,7 +161,7 @@ final readonly class SemanticIndexService
                 $vectorStore = new MemoryStoreAdapter($this->vectorStore((int) $state['dimensions']), false, $count, $filter);
                 $textStore = new MemoryStoreAdapter(TextStore::fromDbal($this->connection, 'om_semantic_document'), true, $count, $filter);
                 $store = new CombinedStore($vectorStore, $textStore);
-                $hits = \array_slice(iterator_to_array($store->query(new HybridQuery($vector, $query), ['maxItems' => 100]), false), 0, 100);
+                $hits = \array_slice(iterator_to_array($store->query(new HybridQuery($vector, $query), ['maxItems' => 100]), false), 0, self::FUSED_CANDIDATE_LIMIT);
             } catch (\Throwable $error) {
                 // SQLite explicitly identifies corruption. Busy/locked databases
                 // and other transient failures must not discard valid embeddings.
@@ -173,7 +175,7 @@ final readonly class SemanticIndexService
             // snapshot can be reranked without blocking asynchronous indexing.
             $lock->release();
             $checkpoint();
-            $candidateLimitReached = \count($hits) >= 100;
+            $candidateLimitReached = \count($hits) >= self::FUSED_CANDIDATE_LIMIT;
             if (null !== $this->settings->rerankerUrl && [] !== $hits) {
                 $order = $this->client->rerank($query, array_map(static fn (VectorDocument $hit): string => $hit->getMetadata()->getText() ?? '', $hits), $checkpoint);
                 $hits = array_map(static fn (int $index): VectorDocument => $hits[$index], $order);
