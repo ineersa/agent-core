@@ -67,7 +67,11 @@
         "mcp/sdk": "^0.7.1",
         "league/commonmark": "^2.8",
         "tempest/highlight": "^2.27",
-        "amphp/websocket-client": "^2.0"
+        "amphp/websocket-client": "^2.0",
+        "symfony/ai-store": "0.12.0",
+        "symfony/ai-sqlite-store": "0.12.0",
+        "symfony/ai-vektor-store": "0.12.0",
+        "centamiv/vektor": "^2.0"
     },
     "require-dev": {
         "friendsofphp/php-cs-fixer": "^3.94",
@@ -78,11 +82,7 @@
         "deptrac/deptrac": "^4.6",
         "dama/doctrine-test-bundle": "^8.6",
         "brianium/paratest": "^7.23",
-        "shipmonk/dead-code-detector": "^1.4",
-        "symfony/ai-store": "0.12.0",
-        "symfony/ai-sqlite-store": "0.12.0",
-        "symfony/ai-vektor-store": "0.12.0",
-        "centamiv/vektor": "2.0.2"
+        "shipmonk/dead-code-detector": "^1.4"
     },
     "autoload": {
         "psr-4": {
