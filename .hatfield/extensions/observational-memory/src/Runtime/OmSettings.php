@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\HatfieldExt\ObservationalMemory\Runtime;
 
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
+use Ineersa\HatfieldExt\ObservationalMemory\Semantic\SemanticSettings;
 
 /**
  * Nested observational_memory settings.
@@ -48,6 +49,7 @@ final readonly class OmSettings
         public int $reflectAfterObservationTokens,
         public string $reflectorSchemaVersion,
         public int $observationsMaxTokens,
+        public ?SemanticSettings $semantic = null,
     ) {
     }
 
@@ -112,6 +114,7 @@ final readonly class OmSettings
             reflectAfterObservationTokens: $reflectAfter,
             reflectorSchemaVersion: $reflectorSchemaVersion,
             observationsMaxTokens: $observationsMaxTokens,
+            semantic: SemanticSettings::fromArray($raw['semantic'] ?? null),
         );
     }
 
@@ -134,6 +137,7 @@ final readonly class OmSettings
             reflectAfterObservationTokens: $this->reflectAfterObservationTokens,
             reflectorSchemaVersion: $this->reflectorSchemaVersion,
             observationsMaxTokens: $this->observationsMaxTokens,
+            semantic: $this->semantic,
         );
     }
 
