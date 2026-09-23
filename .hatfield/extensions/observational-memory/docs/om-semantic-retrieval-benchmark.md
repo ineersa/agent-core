@@ -89,7 +89,7 @@ The table reports the first source-session `32` result among the default 20 resu
 
 The first labeled observation ranks were respectively `1, 3, 1, 3` without reranking and `1, 2, 2, 3` with reranking. The paraphrase locates the original source session first without requiring a PR number or symbol. Reranking improves the PR-number query but is not uniformly better: it moves the first source-session hit down for the concept query.
 
-Each unfiltered query made one embedding request. Configured reranking made 13 requests for the bounded 100-chunk candidate set. All these responses were marked truncated.
+Each unfiltered query made one embedding request. Under the then-current fused 100-chunk cap, configured reranking made 13 requests. The later 50-question calibration raised the fused cap to 200; its 25-request measurements are in the [calibration report](om-relevance-calibration.md). All original benchmark responses were marked truncated.
 
 ### Negative query
 

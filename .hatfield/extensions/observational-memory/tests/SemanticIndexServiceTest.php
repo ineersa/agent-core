@@ -282,6 +282,15 @@ final class SemanticIndexServiceTest extends IsolatedKernelTestCase
         $result = (new SemanticIndexService($this->connection, $this->path, $semantic, new SemanticApiClient($semantic, $http)))->search('alpha', ['observation' => [null, null], 'reflection' => [null, null]], static function (): void {});
         $this->assertCount(100, $result['results']);
         $this->assertTrue($result['truncated']);
+
+        $strict = OmSettings::fromArray(['storage' => ['database' => $this->path], 'semantic' => [
+            'embedding_api' => ['base_url' => 'http://embeddings.test/v1', 'model_id' => 'coderankembed'],
+            'reranker_api' => ['base_url' => 'http://reranker.test/v1', 'model_id' => 'rank', 'min_score' => 2],
+        ]])->semantic;
+        $this->assertNotNull($strict);
+        $rejected = (new SemanticIndexService($this->connection, $this->path, $strict, new SemanticApiClient($strict, $http)))->search('alpha', ['observation' => [null, null], 'reflection' => [null, null]], static function (): void {});
+        $this->assertSame([], $rejected['results']);
+        $this->assertTrue($rejected['truncated']);
     }
 
     #[Test]
