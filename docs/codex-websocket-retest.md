@@ -208,3 +208,15 @@ Four sockets served 59 requests: 55 reuses, 51 deltas, four initial full-context
 There were 78 tool calls, including 13 successful edits and eight bash `ToolCallException` results. Every controller recorded eight observed processes and zero shutdown survivors. No owned containers remained; the private auth copy was removed after a zero-match credential scan.
 
 The sanitized report is `reports/swe-bench-cached-2026-09-22.json` in the separate `hatfield-harbor` repository. Raw local diagnostics remain under its ignored `jobs/cached-suite-20260922/`; preparation and frozen hashes are under `jobs/cached-suite-prepared/`. Its repeatable procedure is `docs/cached-candidate-suite.md`. Deterministic Harbor validation passed 22 tests, maximum case 0.07 seconds. This four-task sample is not a complete ten-task benchmark or proof of every transport lifecycle.
+
+## Plain WebSocket GPT-6 Luna control attempt (2026-09-23)
+
+Goal: run Django `django__django-15128` and Matplotlib `matplotlib__matplotlib-24870` once each on plain `websocket` with `openai-codex/gpt-6-luna` / medium, then compare provider prompt-cache reads against the earlier GPT-5.6 Luna / `websocket-cached` suite. Model and transport both change, so transport causality is out of scope.
+
+Native artifact: `var/tmp/dist/hatfield.linux-amd64` embeds `be805cdf716936cab4b17b08d5ebab755daa8431`, SHA-256 `7d9f61a580d603cbaa4ae9b836422cf00c75f96ab8a2e4635c2381bb67ea363d`. `castor distribution:build-static` failed while rebuilding `micro.sfx` (`make: No rule to make target 'micro'` after the CLI binary rebuilt). The run reused the already verified `micro.sfx` from the same worktree, combined it with a fresh PHAR for `be805cdf7`, and passed `castor distribution:verify`.
+
+Settings: Harbor `configs/gpt6-luna-medium-plain.yaml` (`transport: websocket`, `max_retries: 0`, one LLM worker, retained `logging.path`). Prepared overlays reused the frozen candidate suite hashes for the two tasks. Trial ID `django__django-15128__uvWSuLX`.
+
+Result: Django failed before any LLM step. Controller terminal was `run.failed` with `Codex auth record missing required fields: access, refresh, accountId`. The private auth copy omitted the `refresh` key. Current `CodexAuthRecord::fromArray` requires `access`, `refresh`, and `accountId`. Earlier access-only Harbor/auth probes wrote `refresh` as an empty string through `CodexAuthRecord` / `CodexAuthStorage::saveCredentials`. No matplotlib trial ran. Teardown recorded eight observed processes and zero survivors. Owned containers were gone. The private auth copy was removed. Credential scan of retained trial artifacts found zero matches. No stale QA workers.
+
+Sanitized Harbor report: `/home/ineersa/projects/hatfield-harbor/reports/swe-bench-plain-gpt6-luna-2026-09-23.json`. Baseline zero-cache continuation requests retained for comparison: Django #19 (18880 input), Matplotlib #3 (4950) and #8 (15255), plus Astropy #2 and Seaborn #2/#4 from the earlier six-drop set.
