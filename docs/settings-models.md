@@ -66,14 +66,15 @@ or provider compatibility rules. Unsupported levels are rejected or coerced per 
 
 `ai.default_reasoning` supplies the session default; TUI `/model` flows may persist sparse overrides.
 
-Codex Astra's model compatibility flag `supports_reasoning_configuration_updates`
+The model compatibility flag `supports_reasoning_configuration_updates`
 keeps the first request's reasoning effort fixed for the active session. Later
 requests insert the selected effort as a `configuration_update` before new input.
 This applies to plain WebSocket, cached WebSocket, and SSE. Resume or a model
 change starts a new baseline from the current selection. Explicit compaction
-overrides remain separate. The flag defaults to false and is enabled only for
-`gpt-6-astra` in the bundled catalog. A settings-level `models` map replaces the
-catalog models, so pinned Astra definitions must include the flag to enable it.
+overrides remain separate. The flag defaults to false and is enabled for the
+GPT-6 Codex models (`gpt-6-astra`, `gpt-6-sol`, `gpt-6-luna`) in the bundled
+catalog. A settings-level `models` map replaces the catalog models, so
+definitions for these models must include the flag to enable it.
 
 ## HTTP client (`ai.http`)
 

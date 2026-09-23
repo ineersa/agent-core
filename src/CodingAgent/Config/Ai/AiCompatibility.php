@@ -37,6 +37,12 @@ final readonly class AiCompatibility
      * @param bool        $requiresReasoningContentOnAssistantMessages whether assistant messages without
      *                                                                 thinking must include an empty
      *                                                                 reasoning_content field (DeepSeek)
+     * @param bool        $pinContextWindow                            Curation override: the catalog's
+     *                                                                 context_window is authoritative and
+     *                                                                 providers:update must not overwrite it
+     *                                                                 from models.dev (e.g. GPT-6 models are
+     *                                                                 pinned to the 272k cheap pricing tier
+     *                                                                 while models.dev reports the raw window)
      */
     public function __construct(
         public bool $supportsDeveloperRole = false,
@@ -46,6 +52,7 @@ final readonly class AiCompatibility
         public bool $zaiToolStream = false,
         public bool $requiresReasoningContentOnAssistantMessages = false,
         public bool $supportsReasoningConfigurationUpdates = false,
+        public bool $pinContextWindow = false,
     ) {
     }
 
@@ -67,6 +74,7 @@ final readonly class AiCompatibility
             zaiToolStream: self::boolOrDefault($data['zai_tool_stream'] ?? null, false),
             requiresReasoningContentOnAssistantMessages: self::boolOrDefault($data['requires_reasoning_content_on_assistant_messages'] ?? null, false),
             supportsReasoningConfigurationUpdates: self::boolOrDefault($data['supports_reasoning_configuration_updates'] ?? null, false),
+            pinContextWindow: self::boolOrDefault($data['pin_context_window'] ?? null, false),
         );
     }
 
