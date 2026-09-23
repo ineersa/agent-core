@@ -40,6 +40,31 @@ final class CodexWebSocketContinuationComparator
     ];
 
     /**
+     * Allowlisted object keys that may appear in mismatch field paths.
+     *
+     * Dynamic provider keys, IDs, and free-form maps stay out of logs.
+     *
+     * @var array<string, true>
+     */
+    private const array ALLOWLISTED_FIELD_KEYS = [
+        'type' => true,
+        'role' => true,
+        'status' => true,
+        'phase' => true,
+        'name' => true,
+        'call_id' => true,
+        'content' => true,
+        'text' => true,
+        'arguments' => true,
+        'output' => true,
+        'summary' => true,
+        'encrypted_content' => true,
+        'reasoning' => true,
+        'effort' => true,
+        'id' => true,
+    ];
+
+    /**
      * @param array<string, mixed> $a
      * @param array<string, mixed> $b
      */
@@ -62,12 +87,22 @@ final class CodexWebSocketContinuationComparator
     /**
      * Locate the first structural mismatch between two input prefixes.
      *
-     * Returns only kinds and an index — never item contents.
+     * Returns kinds, an index, and a privacy-safe structural field path —
+     * never item contents, hashes of secrets, or dynamic provider keys.
      *
      * @param list<mixed> $left
      * @param list<mixed> $right
      *
-     * @return array{first_mismatch_index: ?int, left_item_kind: ?string, right_item_kind: ?string, prefix_normalized_equal: bool}
+     * @return array{
+     *     first_mismatch_index: ?int,
+     *     left_item_kind: ?string,
+     *     right_item_kind: ?string,
+     *     prefix_normalized_equal: bool,
+     *     mismatch_field_path: ?string,
+     *     mismatch_relation: ?string,
+     *     left_value_kind: ?string,
+     *     right_value_kind: ?string
+     * }
      */
     public static function describePrefixMismatch(array $left, array $right): array
     {
@@ -79,17 +114,27 @@ final class CodexWebSocketContinuationComparator
                 'left_item_kind' => null,
                 'right_item_kind' => null,
                 'prefix_normalized_equal' => true,
+                'mismatch_field_path' => null,
+                'mismatch_relation' => null,
+                'left_value_kind' => null,
+                'right_value_kind' => null,
             ];
         }
 
         $limit = min(\count($leftComparable), \count($rightComparable));
         for ($i = 0; $i < $limit; ++$i) {
             if (self::encode($leftComparable[$i]) !== self::encode($rightComparable[$i])) {
+                $field = self::describeComparableValueMismatch($leftComparable[$i], $rightComparable[$i]);
+
                 return [
                     'first_mismatch_index' => $i,
                     'left_item_kind' => self::itemKind($left[$i] ?? null),
                     'right_item_kind' => self::itemKind($right[$i] ?? null),
                     'prefix_normalized_equal' => false,
+                    'mismatch_field_path' => $field['mismatch_field_path'],
+                    'mismatch_relation' => $field['mismatch_relation'],
+                    'left_value_kind' => $field['left_value_kind'],
+                    'right_value_kind' => $field['right_value_kind'],
                 ];
             }
         }
@@ -99,6 +144,10 @@ final class CodexWebSocketContinuationComparator
             'left_item_kind' => \count($left) > $limit ? self::itemKind($left[$limit] ?? null) : null,
             'right_item_kind' => \count($right) > $limit ? self::itemKind($right[$limit] ?? null) : null,
             'prefix_normalized_equal' => false,
+            'mismatch_field_path' => null,
+            'mismatch_relation' => null,
+            'left_value_kind' => null,
+            'right_value_kind' => null,
         ];
     }
 
@@ -132,6 +181,163 @@ final class CodexWebSocketContinuationComparator
         }
 
         return $item;
+    }
+
+    /**
+     * @return array{
+     *     mismatch_field_path: ?string,
+     *     mismatch_relation: ?string,
+     *     left_value_kind: ?string,
+     *     right_value_kind: ?string
+     * }
+     */
+    private static function describeComparableValueMismatch(mixed $left, mixed $right, string $path = ''): array
+    {
+        if (self::encode($left) === self::encode($right)) {
+            return self::emptyFieldMismatch();
+        }
+
+        $leftIsArray = \is_array($left);
+        $rightIsArray = \is_array($right);
+        if (!$leftIsArray || !$rightIsArray) {
+            return self::scalarFieldMismatch($path, $left, $right);
+        }
+
+        $leftList = array_is_list($left);
+        $rightList = array_is_list($right);
+        if ($leftList !== $rightList) {
+            return [
+                'mismatch_field_path' => '' !== $path ? $path : '.',
+                'mismatch_relation' => 'different',
+                'left_value_kind' => self::valueKind($left),
+                'right_value_kind' => self::valueKind($right),
+            ];
+        }
+
+        if ($leftList) {
+            $limit = min(\count($left), \count($right));
+            for ($i = 0; $i < $limit; ++$i) {
+                if (self::encode($left[$i]) !== self::encode($right[$i])) {
+                    $childPath = '' === $path ? (string) $i : $path.'.'.$i;
+
+                    return self::describeComparableValueMismatch($left[$i], $right[$i], $childPath);
+                }
+            }
+
+            return [
+                'mismatch_field_path' => '' !== $path ? $path : '.',
+                'mismatch_relation' => 'different',
+                'left_value_kind' => 'list',
+                'right_value_kind' => 'list',
+            ];
+        }
+
+        $leftKeys = array_keys($left);
+        $rightKeys = array_keys($right);
+        sort($leftKeys);
+        sort($rightKeys);
+
+        foreach (array_values(array_unique([...$leftKeys, ...$rightKeys])) as $key) {
+            $leftHas = \array_key_exists($key, $left);
+            $rightHas = \array_key_exists($key, $right);
+            $childPath = self::appendPath($path, $key);
+            if (null === $childPath) {
+                // Dynamic/untrusted keys never become log paths. Fall back to
+                // the nearest allowlisted ancestor without exposing the key.
+                return [
+                    'mismatch_field_path' => '' !== $path ? $path : '.',
+                    'mismatch_relation' => 'different',
+                    'left_value_kind' => 'object',
+                    'right_value_kind' => 'object',
+                ];
+            }
+
+            if ($leftHas !== $rightHas) {
+                return [
+                    'mismatch_field_path' => $childPath,
+                    'mismatch_relation' => $leftHas ? 'absent_right' : 'absent_left',
+                    'left_value_kind' => $leftHas ? self::valueKind($left[$key]) : 'absent',
+                    'right_value_kind' => $rightHas ? self::valueKind($right[$key]) : 'absent',
+                ];
+            }
+
+            if (self::encode($left[$key]) !== self::encode($right[$key])) {
+                return self::describeComparableValueMismatch($left[$key], $right[$key], $childPath);
+            }
+        }
+
+        return [
+            'mismatch_field_path' => '' !== $path ? $path : '.',
+            'mismatch_relation' => 'different',
+            'left_value_kind' => 'object',
+            'right_value_kind' => 'object',
+        ];
+    }
+
+    /**
+     * @return array{
+     *     mismatch_field_path: ?string,
+     *     mismatch_relation: ?string,
+     *     left_value_kind: ?string,
+     *     right_value_kind: ?string
+     * }
+     */
+    private static function scalarFieldMismatch(string $path, mixed $left, mixed $right): array
+    {
+        return [
+            'mismatch_field_path' => '' !== $path ? $path : '.',
+            'mismatch_relation' => 'different',
+            'left_value_kind' => self::valueKind($left),
+            'right_value_kind' => self::valueKind($right),
+        ];
+    }
+
+    /**
+     * @return array{
+     *     mismatch_field_path: null,
+     *     mismatch_relation: null,
+     *     left_value_kind: null,
+     *     right_value_kind: null
+     * }
+     */
+    private static function emptyFieldMismatch(): array
+    {
+        return [
+            'mismatch_field_path' => null,
+            'mismatch_relation' => null,
+            'left_value_kind' => null,
+            'right_value_kind' => null,
+        ];
+    }
+
+    private static function appendPath(string $path, mixed $key): ?string
+    {
+        if (!\is_string($key) || !isset(self::ALLOWLISTED_FIELD_KEYS[$key])) {
+            return null;
+        }
+
+        return '' === $path ? $key : $path.'.'.$key;
+    }
+
+    private static function valueKind(mixed $value): string
+    {
+        if (null === $value) {
+            return 'null';
+        }
+        if (\is_bool($value)) {
+            return 'bool';
+        }
+        if (\is_int($value) || \is_float($value)) {
+            return 'number';
+        }
+        if (\is_string($value)) {
+            return 'string';
+        }
+        if (\is_array($value)) {
+            return array_is_list($value) ? 'list' : 'object';
+        }
+
+        return 'other';
     }
 
     private static function itemKind(mixed $item): ?string

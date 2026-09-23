@@ -18,6 +18,7 @@ use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketCacheLease;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketCacheSettings;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketCompatibilityFingerprint;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketConnectionCache;
+use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketContinuationDecision;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketContinuationState;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketResultHandle;
 use Symfony\AI\Platform\Bridge\OpenAICodex\RawWebSocketResult;
@@ -338,5 +339,102 @@ final class RawWebSocketResultTest extends TestCase
             'stream' => true,
         ]);
         $this->assertNull($mergedWouldMatch);
+    }
+
+    public function testTerminalReasoningBaselineDiffersFromStreamedDoneWhenShapesDiverge(): void
+    {
+        $cache = new CodexWebSocketConnectionCache();
+        $identity = CodexWebSocketCompatibilityFingerprint::fromContext(
+            '0194dddd-bbbb-7ccc-8ddd-dddddddddddd',
+            'openai-codex',
+            'gpt-5.6-luna',
+            'https://chatgpt.com/backend-api',
+            '/codex/responses',
+            'acct-1',
+        );
+
+        $streamedDone = [
+            'type' => 'reasoning',
+            'id' => 'rs_streamed',
+            'encrypted_content' => 'enc_streamed',
+            'summary' => [['type' => 'summary_text', 'text' => 'streamed plan']],
+        ];
+        $terminalOutput = [
+            'type' => 'reasoning',
+            'id' => 'rs_terminal',
+            'status' => 'completed',
+            'encrypted_content' => 'enc_terminal',
+            'summary' => [['type' => 'summary_text', 'text' => 'terminal plan']],
+        ];
+
+        $messages = [
+            WebsocketMessage::fromText(json_encode([
+                'type' => 'response.output_item.done',
+                'item' => $streamedDone,
+            ], \JSON_THROW_ON_ERROR)),
+            WebsocketMessage::fromText(json_encode([
+                'type' => 'response.completed',
+                'response' => [
+                    'id' => 'resp_reasoning_sources',
+                    'output' => [$terminalOutput],
+                ],
+            ], \JSON_THROW_ON_ERROR)),
+        ];
+        $index = 0;
+
+        $connection = $this->createMock(WebsocketConnection::class);
+        $connection->expects($this->exactly(2))
+            ->method('receive')
+            ->willReturnCallback(static function () use (&$index, $messages): WebsocketMessage {
+                return $messages[$index++];
+            });
+        $connection->expects($this->never())->method('close');
+
+        $entry = new CodexWebSocketCacheEntry($connection, $identity, time());
+        $lease = new CodexWebSocketCacheLease($connection, true, true, false, $entry);
+        $fullRequestBody = [
+            'model' => 'gpt-5.6-luna',
+            'input' => [['role' => 'user', 'content' => 'first']],
+            'stream' => true,
+        ];
+        $context = new CodexWebSocketCachedStreamContext($cache, $lease, $fullRequestBody);
+
+        $reflection = new \ReflectionClass($cache);
+        $prop = $reflection->getProperty('entries');
+        $prop->setValue($cache, [$identity->sessionKey => $entry]);
+
+        $raw = new RawWebSocketResult($connection, 5.0, cachedStreamContext: $context);
+        iterator_to_array($raw->getDataStream());
+
+        $this->assertNotNull($entry->continuation);
+
+        // History reconstructed from the streamed done signature continues when
+        // the baseline preferred terminal output that differs from that signature.
+        $streamedHistoryDecision = $entry->continuation->decide([
+            'model' => 'gpt-5.6-luna',
+            'input' => [
+                ['role' => 'user', 'content' => 'first'],
+                $streamedDone,
+                ['role' => 'user', 'content' => 'next'],
+            ],
+            'stream' => true,
+        ]);
+        $this->assertSame(CodexWebSocketContinuationDecision::REASON_PREFIX_MISMATCH, $streamedHistoryDecision->reason);
+        $this->assertSame('reasoning', $streamedHistoryDecision->leftItemKind);
+        $this->assertSame('reasoning', $streamedHistoryDecision->rightItemKind);
+        $this->assertSame('encrypted_content', $streamedHistoryDecision->mismatchFieldPath);
+        $this->assertSame('different', $streamedHistoryDecision->mismatchRelation);
+
+        $terminalHistoryDecision = $entry->continuation->decide([
+            'model' => 'gpt-5.6-luna',
+            'input' => [
+                ['role' => 'user', 'content' => 'first'],
+                $terminalOutput,
+                ['role' => 'user', 'content' => 'next'],
+            ],
+            'stream' => true,
+        ]);
+        $this->assertSame(CodexWebSocketContinuationDecision::REASON_DELTA, $terminalHistoryDecision->reason);
+        $this->assertNotNull($terminalHistoryDecision->delta);
     }
 }

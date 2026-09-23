@@ -283,6 +283,10 @@ final class CodexWebSocketModelClient implements ModelClientInterface
                 'left_item_kind' => null,
                 'right_item_kind' => null,
                 'prefix_normalized_equal' => false,
+                'mismatch_field_path' => null,
+                'mismatch_relation' => null,
+                'left_value_kind' => null,
+                'right_value_kind' => null,
             ]);
 
             return $fullBody;

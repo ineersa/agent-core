@@ -93,10 +93,7 @@ final class CodexWebSocketContinuationState
                 $keyChanged,
                 $baselineCount,
                 $currentCount,
-                $mismatch['first_mismatch_index'],
-                $mismatch['left_item_kind'],
-                $mismatch['right_item_kind'],
-                $mismatch['prefix_normalized_equal'],
+                $mismatch,
             );
         }
 

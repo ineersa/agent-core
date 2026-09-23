@@ -237,6 +237,132 @@ final class CodexWebSocketContinuationStateTest extends TestCase
         $this->assertStringNotContainsString('secret', json_encode($decision->toLogContext(), \JSON_THROW_ON_ERROR));
     }
 
+    public function testReasoningPrefixMismatchReportsAllowlistedFieldPathWithoutRawValues(): void
+    {
+        $terminalReasoning = [
+            'type' => 'reasoning',
+            'id' => 'rs_terminal',
+            'status' => 'completed',
+            'encrypted_content' => 'enc_terminal_secret',
+            'summary' => [['type' => 'summary_text', 'text' => 'plan A']],
+            'provider_debug' => 'do-not-log',
+        ];
+        $historyReasoning = [
+            'type' => 'reasoning',
+            'id' => 'rs_history',
+            'encrypted_content' => 'enc_history_secret',
+            'summary' => [['type' => 'summary_text', 'text' => 'plan A']],
+            'provider_debug' => 'also-secret',
+        ];
+
+        $state = CodexWebSocketContinuationState::fromSuccessfulResponse(
+            ['model' => 'gpt-5.6-luna', 'input' => [['role' => 'user', 'content' => 'first']], 'stream' => true],
+            'resp_reasoning_fields',
+            [$terminalReasoning],
+        );
+
+        $decision = $state->decide([
+            'model' => 'gpt-5.6-luna',
+            'input' => [
+                ['role' => 'user', 'content' => 'first'],
+                $historyReasoning,
+                ['role' => 'user', 'content' => 'next'],
+            ],
+            'stream' => true,
+        ]);
+
+        $this->assertSame(CodexWebSocketContinuationDecision::REASON_PREFIX_MISMATCH, $decision->reason);
+        $this->assertSame(1, $decision->firstMismatchIndex);
+        $this->assertSame('reasoning', $decision->leftItemKind);
+        $this->assertSame('reasoning', $decision->rightItemKind);
+        $this->assertSame('encrypted_content', $decision->mismatchFieldPath);
+        $this->assertSame('different', $decision->mismatchRelation);
+        $this->assertSame('string', $decision->leftValueKind);
+        $this->assertSame('string', $decision->rightValueKind);
+
+        $encoded = json_encode($decision->toLogContext(), \JSON_THROW_ON_ERROR);
+        $this->assertStringNotContainsString('enc_terminal_secret', $encoded);
+        $this->assertStringNotContainsString('enc_history_secret', $encoded);
+        $this->assertStringNotContainsString('provider_debug', $encoded);
+        $this->assertStringNotContainsString('do-not-log', $encoded);
+        $this->assertStringNotContainsString('rs_terminal', $encoded);
+        $this->assertStringNotContainsString('rs_history', $encoded);
+    }
+
+    public function testReasoningPrefixMismatchReportsAbsentEncryptedContentWithoutHashing(): void
+    {
+        $withEncrypted = [
+            'type' => 'reasoning',
+            'encrypted_content' => 'enc_present',
+            'summary' => [['type' => 'summary_text', 'text' => 'same']],
+        ];
+        $withoutEncrypted = [
+            'type' => 'reasoning',
+            'summary' => [['type' => 'summary_text', 'text' => 'same']],
+        ];
+
+        $state = CodexWebSocketContinuationState::fromSuccessfulResponse(
+            ['model' => 'gpt-5.6-luna', 'input' => [['role' => 'user', 'content' => 'first']], 'stream' => true],
+            'resp_reasoning_absent',
+            [$withEncrypted],
+        );
+
+        $decision = $state->decide([
+            'model' => 'gpt-5.6-luna',
+            'input' => [
+                ['role' => 'user', 'content' => 'first'],
+                $withoutEncrypted,
+                ['role' => 'user', 'content' => 'next'],
+            ],
+            'stream' => true,
+        ]);
+
+        $this->assertSame(CodexWebSocketContinuationDecision::REASON_PREFIX_MISMATCH, $decision->reason);
+        $this->assertSame('encrypted_content', $decision->mismatchFieldPath);
+        $this->assertSame('absent_left', $decision->mismatchRelation);
+        $this->assertSame('absent', $decision->leftValueKind);
+        $this->assertSame('string', $decision->rightValueKind);
+        $this->assertStringNotContainsString('enc_present', json_encode($decision->toLogContext(), \JSON_THROW_ON_ERROR));
+    }
+
+    public function testUnexpectedProviderKeysNeverAppearInMismatchFieldPath(): void
+    {
+        $left = [
+            'type' => 'reasoning',
+            'summary' => [['type' => 'summary_text', 'text' => 'same']],
+            'totally_custom_blob' => ['nested' => 'secret-left'],
+        ];
+        $right = [
+            'type' => 'reasoning',
+            'summary' => [['type' => 'summary_text', 'text' => 'same']],
+            'totally_custom_blob' => ['nested' => 'secret-right'],
+        ];
+
+        $state = CodexWebSocketContinuationState::fromSuccessfulResponse(
+            ['model' => 'gpt-5.6-luna', 'input' => [['role' => 'user', 'content' => 'first']], 'stream' => true],
+            'resp_custom_keys',
+            [$right],
+        );
+
+        $decision = $state->decide([
+            'model' => 'gpt-5.6-luna',
+            'input' => [
+                ['role' => 'user', 'content' => 'first'],
+                $left,
+                ['role' => 'user', 'content' => 'next'],
+            ],
+            'stream' => true,
+        ]);
+
+        $this->assertSame(CodexWebSocketContinuationDecision::REASON_PREFIX_MISMATCH, $decision->reason);
+        $this->assertSame('.', $decision->mismatchFieldPath);
+        $this->assertSame('different', $decision->mismatchRelation);
+        $encoded = json_encode($decision->toLogContext(), \JSON_THROW_ON_ERROR);
+        $this->assertStringNotContainsString('totally_custom_blob', $encoded);
+        $this->assertStringNotContainsString('secret-left', $encoded);
+        $this->assertStringNotContainsString('secret-right', $encoded);
+    }
+
     public function testKeepsHistoricalConfigurationUpdateInPrefixAndDeltasOnlySuffix(): void
     {
         $baselineBody = [

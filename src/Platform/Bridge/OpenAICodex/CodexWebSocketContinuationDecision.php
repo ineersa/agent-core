@@ -37,11 +37,25 @@ final readonly class CodexWebSocketContinuationDecision
         public ?string $leftItemKind,
         public ?string $rightItemKind,
         public bool $prefixNormalizedEqual,
+        public ?string $mismatchFieldPath = null,
+        public ?string $mismatchRelation = null,
+        public ?string $leftValueKind = null,
+        public ?string $rightValueKind = null,
     ) {
     }
 
     /**
      * @param array{prompt_cache_key_present: bool, prompt_cache_key_fp: ?string, prompt_cache_key_length: int} $keyContext
+     * @param array{
+     *     first_mismatch_index?: ?int,
+     *     left_item_kind?: ?string,
+     *     right_item_kind?: ?string,
+     *     prefix_normalized_equal?: bool,
+     *     mismatch_field_path?: ?string,
+     *     mismatch_relation?: ?string,
+     *     left_value_kind?: ?string,
+     *     right_value_kind?: ?string
+     * }|null                                                                                                                                                                  $mismatch
      */
     public static function reject(
         string $reason,
@@ -49,10 +63,7 @@ final readonly class CodexWebSocketContinuationDecision
         bool $promptCacheKeyChanged,
         int $baselineInputCount,
         int $currentInputCount,
-        ?int $firstMismatchIndex = null,
-        ?string $leftItemKind = null,
-        ?string $rightItemKind = null,
-        bool $prefixNormalizedEqual = false,
+        ?array $mismatch = null,
     ): self {
         return new self(
             reason: $reason,
@@ -64,10 +75,14 @@ final readonly class CodexWebSocketContinuationDecision
             baselineInputCount: $baselineInputCount,
             currentInputCount: $currentInputCount,
             deltaInputCount: null,
-            firstMismatchIndex: $firstMismatchIndex,
-            leftItemKind: $leftItemKind,
-            rightItemKind: $rightItemKind,
-            prefixNormalizedEqual: $prefixNormalizedEqual,
+            firstMismatchIndex: $mismatch['first_mismatch_index'] ?? null,
+            leftItemKind: $mismatch['left_item_kind'] ?? null,
+            rightItemKind: $mismatch['right_item_kind'] ?? null,
+            prefixNormalizedEqual: $mismatch['prefix_normalized_equal'] ?? false,
+            mismatchFieldPath: $mismatch['mismatch_field_path'] ?? null,
+            mismatchRelation: $mismatch['mismatch_relation'] ?? null,
+            leftValueKind: $mismatch['left_value_kind'] ?? null,
+            rightValueKind: $mismatch['right_value_kind'] ?? null,
         );
     }
 
@@ -97,6 +112,10 @@ final readonly class CodexWebSocketContinuationDecision
             leftItemKind: null,
             rightItemKind: null,
             prefixNormalizedEqual: true,
+            mismatchFieldPath: null,
+            mismatchRelation: null,
+            leftValueKind: null,
+            rightValueKind: null,
         );
     }
 
@@ -118,6 +137,10 @@ final readonly class CodexWebSocketContinuationDecision
             'left_item_kind' => $this->leftItemKind,
             'right_item_kind' => $this->rightItemKind,
             'prefix_normalized_equal' => $this->prefixNormalizedEqual,
+            'mismatch_field_path' => $this->mismatchFieldPath,
+            'mismatch_relation' => $this->mismatchRelation,
+            'left_value_kind' => $this->leftValueKind,
+            'right_value_kind' => $this->rightValueKind,
         ];
     }
 

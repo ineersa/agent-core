@@ -222,3 +222,11 @@ Native artifact used for the live diagnostic run: `var/tmp/dist/hatfield.linux-a
 Each trial kept one stable `prompt_cache_key_fp` with `prompt_cache_key_changed=false` on every turn. Django #7 was a successful delta with `previous_response_id` and zero cached tokens after strong hits on #5/#6; #8 recovered to 93.48%. Matplotlib had no post-hit zero-cache drop; its one non-initial full-context request was an explicit prefix mismatch on reasoning items, then deltas resumed with high cache reads.
 
 Sanitized local Harbor report: `reports/swe-bench-cached-gpt56-luna-diag-2026-09-23.json` (ignored). Raw diagnostics: `jobs/diag-cached-gpt56-20260923/` (ignored). Private auth removed after a zero-match credential scan. No owned containers remained.
+
+## Reasoning prefix-mismatch field diagnostics (2026-09-23)
+
+Goal: identify the first allowlisted structural field behind Matplotlib's `reasoning`/`reasoning` prefix mismatch without logging raw values, then rerun at most one GPT-5.6 Luna / medium / `websocket-cached` Matplotlib 24870 trial.
+
+Product change: `describePrefixMismatch()` now also emits `mismatch_field_path`, `mismatch_relation`, and left/right value kinds for allowlisted keys only (`type`, `role`, `status`, `summary`, `encrypted_content`, and other fixed Codex item fields). Unexpected provider keys collapse to the nearest allowlisted ancestor or `.`. No hashes of content/signatures, no raw IDs/prompts/tool args, and no wire/continuation behavior change.
+
+Native artifact and live trial results are recorded after the Harbor attempt below when available.
