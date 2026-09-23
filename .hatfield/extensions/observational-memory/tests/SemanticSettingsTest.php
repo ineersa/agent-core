@@ -19,6 +19,23 @@ final class SemanticSettingsTest extends TestCase
     }
 
     #[Test]
+    public function scoreFloorIsOptionalAndDoesNotChangeStoredEmbeddingSignature(): void
+    {
+        $config = [
+            'embedding_api' => ['base_url' => 'http://embed.test', 'model_id' => 'embed'],
+            'reranker_api' => ['base_url' => 'http://rank.test', 'model_id' => 'rank'],
+        ];
+        $without = SemanticSettings::fromArray($config);
+        $this->assertNotNull($without);
+        $this->assertNull($without->rerankerMinScore);
+        $config['reranker_api']['min_score'] = -4;
+        $with = SemanticSettings::fromArray($config);
+        $this->assertNotNull($with);
+        $this->assertSame(-4.0, $with->rerankerMinScore);
+        $this->assertSame($without->signature(), $with->signature());
+    }
+
+    #[Test]
     #[DataProvider('invalidConfiguration')]
     public function rejectsInvalidConfiguration(array $config): void
     {
@@ -33,5 +50,7 @@ final class SemanticSettingsTest extends TestCase
         yield 'no HTTP endpoint' => [['embedding_api' => ['base_url' => 'file:///tmp/private', 'model_id' => 'embed']]];
         yield 'credentials in endpoint' => [['embedding_api' => ['base_url' => 'http://user:password@embed.test', 'model_id' => 'embed']]];
         yield 'zero batch' => [['embedding_api' => ['base_url' => 'http://embed.test', 'model_id' => 'embed', 'batch_size' => 0]]];
+        yield 'non-numeric floor' => [['embedding_api' => ['base_url' => 'http://embed.test', 'model_id' => 'embed'], 'reranker_api' => ['base_url' => 'http://rank.test', 'model_id' => 'rank', 'min_score' => '-4']]];
+        yield 'infinite floor' => [['embedding_api' => ['base_url' => 'http://embed.test', 'model_id' => 'embed'], 'reranker_api' => ['base_url' => 'http://rank.test', 'model_id' => 'rank', 'min_score' => \INF]]];
     }
 }

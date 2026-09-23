@@ -187,6 +187,7 @@ enables hybrid BM25 keyword and semantic vector search in the same tool.
 | `reranker_api.model_id` | Reranker model ID | Required when configured |
 | `reranker_api.batch_size` | Maximum documents per rerank request | `8` |
 | `reranker_api.document_characters` | Maximum Unicode characters per reranked chunk | `768` |
+| `reranker_api.min_score` | Inclusive minimum raw reranker score for returning a chunk; must be a finite number | Unset, no score filter |
 
 The project settings file contains a commented example for `coderankembed-q8_0.gguf`
 and `bge-reranker-base-q8_0.gguf`. Its embedding prefix includes the final colon:
@@ -194,6 +195,10 @@ and `bge-reranker-base-q8_0.gguf`. Its embedding prefix includes the final colon
 resumable. Search fails visibly while the index is incomplete or a configured
 endpoint fails. It never silently substitutes exact search or skips a configured
 reranker. Both endpoints receive memory-derived text. Choose trusted endpoints.
+Reranker scores are model-specific, not probabilities. The OM
+calibration report at `.hatfield/extensions/observational-memory/docs/om-relevance-calibration.md`
+records the measured trade-off for this corpus and model. Exact search and
+hybrid search without a reranker do not use a score floor.
 
 ## Environment variables
 

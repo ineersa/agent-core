@@ -230,6 +230,25 @@ final class SemanticIndexServiceTest extends IsolatedKernelTestCase
     }
 
     #[Test]
+    public function rejectedRerankerChunksDoNotReappearAfterParentCollapse(): void
+    {
+        $this->observation('alpha');
+        $this->assertTrue($this->index()->synchronize());
+        $this->settings = OmSettings::fromArray(['storage' => ['database' => $this->path], 'semantic' => [
+            'embedding_api' => ['base_url' => 'http://embeddings.test/v1', 'model_id' => 'coderankembed'],
+            'reranker_api' => ['base_url' => 'http://reranker.test/v1', 'model_id' => 'rank', 'min_score' => -4],
+        ]]);
+        $http = new MockHttpClient([
+            new MockResponse('{"data":[{"index":0,"embedding":[1.0,0.0]}]}'),
+            new MockResponse('{"results":[{"index":0,"relevance_score":-4.01}]}'),
+        ]);
+        $result = $this->query($http)->search('alpha');
+        $this->assertTrue($result['ok']);
+        $this->assertSame(0, $result['count']);
+        $this->assertSame([], $result['results']);
+    }
+
+    #[Test]
     public function reflectionHitsKeepRecallIdentityAndDateSemantics(): void
     {
         $id = str_repeat('f', 64);

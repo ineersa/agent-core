@@ -1,0 +1,299 @@
+[
+    {
+        "case": 1,
+        "label": "dto",
+        "split": "calibration",
+        "target_id": "eedb663d27f50d305b27b402a7c8a32ca5a3e7407fa92dd0356ee8a5a15ae512",
+        "session": "32",
+        "question": "What whole-object argument binding was missing when we considered contributing our tool adapter upstream?",
+        "relevance_topic": "whole DTO mapping and Symfony tools"
+    },
+    {
+        "case": 2,
+        "label": "tabs",
+        "split": "calibration",
+        "target_id": "5bd178a705db5429fcbea58122277411f1577a252bee7f6ee3df6587309950e7",
+        "session": "59",
+        "question": "Why did a CLI checks table push the prompt and footer into the transcript?",
+        "relevance_topic": "tabs terminal autowrap corruption"
+    },
+    {
+        "case": 3,
+        "label": "queue",
+        "split": "calibration",
+        "target_id": "2f236cdecde004e63892fcc90a493f54d374196f4bc44cace691c38879cec0db",
+        "session": "63",
+        "question": "Why was a message sent during compaction invisible even though it would run later?",
+        "relevance_topic": "queued messages during compaction presentation"
+    },
+    {
+        "case": 4,
+        "label": "fork_resume",
+        "split": "heldout",
+        "target_id": "5156f808600a747cd28281395b54bd543d07129a277969551e129c2df3c73820",
+        "session": "19",
+        "question": "What boundaries did we set for letting an existing child agent continue its work?",
+        "relevance_topic": "same-session fork resumption ownership"
+    },
+    {
+        "case": 5,
+        "label": "parallel",
+        "split": "heldout",
+        "target_id": "ab7cdcaf7bf5732a35b358cdcdb6c76ed10cb4ab0b8917f9dc9a8775c77f70ba",
+        "session": "15",
+        "question": "Why were provider calls effectively serial even though the platform already supported parallel work?",
+        "relevance_topic": "parallel provider request draining and admission"
+    },
+    {
+        "case": 6,
+        "label": "phar",
+        "split": "calibration",
+        "target_id": "ddb787d0fa5f6ca12741f5cff50c493069be27f5eb4a40b8295ba5c0a4031932",
+        "session": "1",
+        "question": "Why did editing a vendor renderer fail to produce any instrumentation when launching the agent?",
+        "relevance_topic": "packaged PHAR ignores source vendor probe"
+    },
+    {
+        "case": 7,
+        "label": "code_mode",
+        "split": "calibration",
+        "target_id": "d876461e6d5f7fdda23978415ab2641ed035499742cb2169e94d909a6ae5cfac",
+        "session": "26",
+        "question": "What safety model did we choose for PHP scripts that call tools?",
+        "relevance_topic": "code mode trust boundary and subprocess bridge"
+    },
+    {
+        "case": 8,
+        "label": "tool_cards",
+        "split": "calibration",
+        "target_id": "d3c776ba970eed9e00cd1de2467291eac33767349860ff268c3deee63db461fd",
+        "session": "3",
+        "question": "What should collapsed tool cards hide while still letting me inspect the full output?",
+        "relevance_topic": "collapsed tool call presentation expansion"
+    },
+    {
+        "case": 9,
+        "label": "child_status",
+        "split": "heldout",
+        "target_id": "4029fa00bc10bfdb7477adba8848d8b8dd1d9f81073e9fa0e64dd586535f349f",
+        "session": "1",
+        "question": "Why could a resumed child still appear completed when reopening its live view?",
+        "relevance_topic": "resumed subagent status reopening"
+    },
+    {
+        "case": 10,
+        "label": "logging",
+        "split": "heldout",
+        "target_id": "56028912d83b87564c3a82469730c8f397748bd561dcb5f60ea04ef2fca1d7a0",
+        "session": "1",
+        "question": "How did we instrument partial terminal redraws without recording conversation contents?",
+        "relevance_topic": "content-free screen writer diagnostics"
+    },
+    {
+        "case": 11,
+        "label": "cursor",
+        "split": "calibration",
+        "target_id": "aba5a766f720253eda8e1c8ca72f8f91df09df4d9e7fc192adfe59f608a28f5a",
+        "session": "1",
+        "question": "How was the deferred cursor workaround protected against upstream renderer changes?",
+        "relevance_topic": "deferred cursor integration source drift guard"
+    },
+    {
+        "case": 12,
+        "label": "redelivery",
+        "split": "calibration",
+        "target_id": "58be61bffd6124209c1dd2f9964274dba4014f72cac62dab473ef7f4154b78b5",
+        "session": "4",
+        "question": "How could one shell tool call launch two independent background commands?",
+        "relevance_topic": "Messenger lease expiry duplicate tool execution"
+    },
+    {
+        "case": 13,
+        "label": "refresh",
+        "split": "calibration",
+        "target_id": "f8c43c621cd1fc7196feabed685270de22669701e2918e0f51dcc75134d4f40a",
+        "session": "5",
+        "question": "When should generated prompts and project instructions be refreshed for an existing session?",
+        "relevance_topic": "session startup context refresh"
+    },
+    {
+        "case": 14,
+        "label": "compact_castor",
+        "split": "heldout",
+        "target_id": "e96968f73c185b802d9c3686fcad3d8353162655d978de95d376714c7fc1569d",
+        "session": "14",
+        "question": "What replaced the special extension that made task-runner output compact for models?",
+        "relevance_topic": "unconditional native Castor compact output"
+    },
+    {
+        "case": 15,
+        "label": "jbcontext",
+        "split": "heldout",
+        "target_id": "85abb4af7fb818baf3fd99bf78453b6f40cd31f5e5bf41a63b0746d0ead87a20",
+        "session": "5",
+        "question": "What prevented the semantic code indexer from starting in the first setup attempt?",
+        "relevance_topic": "jbcontext read-only home EAP eligibility"
+    },
+    {
+        "case": 16,
+        "label": "heartbeat",
+        "split": "calibration",
+        "target_id": "af96a6e2d3db2eed61fa8101a6cf616082215d5315f9c8f16ce25ff81cc12ce6",
+        "session": "39",
+        "question": "How could the worker heartbeat stop silently without an exception?",
+        "relevance_topic": "null alarm interval keepalive failure"
+    },
+    {
+        "case": 17,
+        "label": "memory_name",
+        "split": "calibration",
+        "target_id": "a9eb170fb33c97c095817154060d8dd7704759a61cb9ab80e878b048b0cc31ae",
+        "session": "44",
+        "question": "Why did we choose a plain-language name for the cross-session memory lookup tool?",
+        "relevance_topic": "memory_search naming and recall evidence"
+    },
+    {
+        "case": 18,
+        "label": "reasoning",
+        "split": "calibration",
+        "target_id": "c500cbb73e16d6accd2a8bd6ea1345421cbe70b226b67480300c245fd5ffefe7",
+        "session": "18",
+        "question": "What restrictions apply when changing reasoning effort without losing the provider prompt cache?",
+        "relevance_topic": "Astra configuration update constraints"
+    },
+    {
+        "case": 19,
+        "label": "unicode",
+        "split": "heldout",
+        "target_id": "17e7ddf7cb225f73cd81aadf7f2ac6714fa0d4b46caa7b7d11b27298ac26be21",
+        "session": "21",
+        "question": "Which output paths needed changes to avoid cutting multibyte characters in half?",
+        "relevance_topic": "UTF-8-safe truncation across tool and TUI output"
+    },
+    {
+        "case": 20,
+        "label": "human_input",
+        "split": "heldout",
+        "target_id": "6d7f632bf3eae1fd8418c5390a5ffbee2fad40f98d28146224c9a34aacb3761e",
+        "session": "8",
+        "question": "How do a model question and a tool permission request resume execution differently?",
+        "relevance_topic": "human question versus policy approval continuations"
+    },
+    {
+        "case": 21,
+        "label": "skill",
+        "split": "calibration",
+        "target_id": "5348faccda910b46638b1ec0428c67b4f0cd9cdf7f65f6cb178ba24e4be30e7f",
+        "session": "6",
+        "question": "Why was the writing guidance not discoverable until its frontmatter changed?",
+        "relevance_topic": "technical writing skill discoverability"
+    },
+    {
+        "case": 22,
+        "label": "background_scope",
+        "split": "calibration",
+        "target_id": "f0f41269979d0b1efdd6c56c592af320b61d42ea552a7ff016af3bef63aa88e0",
+        "session": "4",
+        "question": "What change prevented stopping a background command through an unscoped lookup?",
+        "relevance_topic": "background process stop session ownership"
+    },
+    {
+        "case": 23,
+        "label": "reload",
+        "split": "calibration",
+        "target_id": "cd43c51c4485ac46d144733b293437e7bf0241378adeae01d10951335620ad0e",
+        "session": "9",
+        "question": "How can reload recreate application services while keeping the same process alive?",
+        "relevance_topic": "reload kernel bootstrap same PID"
+    },
+    {
+        "case": 24,
+        "label": "test_provider",
+        "split": "heldout",
+        "target_id": "863f386e633490f7419f7cf1eceafc831acabcd7e5f844c32e6f32e0f4ee3648",
+        "session": "4",
+        "question": "Why did moving provider credentials to home settings break the live model smoke test?",
+        "relevance_topic": "test provider configuration project versus home"
+    },
+    {
+        "case": 25,
+        "label": "persistence",
+        "split": "heldout",
+        "target_id": "5e2dad28987d570cc099512da84b67f27d58f5d3bb676ad311367701c0d96a01",
+        "session": "8",
+        "question": "What is persisted first during a state transition, and what happens if the projection update fails?",
+        "relevance_topic": "canonical event append before projection invalidation"
+    },
+    {
+        "case": 26,
+        "label": "noise",
+        "split": "calibration",
+        "target_id": null,
+        "session": null,
+        "question": "quasar glacier pineapple zyxwv-no-such-memory-71a9",
+        "relevance_topic": "No matching topic expected; negative"
+    },
+    {
+        "case": 27,
+        "label": "astronomy",
+        "split": "heldout",
+        "target_id": null,
+        "session": null,
+        "question": "How do we calibrate telescope exoplanet transit photometry?",
+        "relevance_topic": "No matching topic expected; negative"
+    },
+    {
+        "case": 28,
+        "label": "cuda",
+        "split": "calibration",
+        "target_id": null,
+        "session": null,
+        "question": "How do I implement a CUDA radix sort kernel for sparse voxel octrees?",
+        "relevance_topic": "No matching topic expected; negative"
+    },
+    {
+        "case": 29,
+        "label": "stm32",
+        "split": "heldout",
+        "target_id": null,
+        "session": null,
+        "question": "How do we debug STM32 I2C DMA interrupt priority inversion?",
+        "relevance_topic": "No matching topic expected; negative"
+    },
+    {
+        "case": 30,
+        "label": "haskell",
+        "split": "calibration",
+        "target_id": null,
+        "session": null,
+        "question": "How do Haskell type families reduce dependent session types?",
+        "relevance_topic": "No matching topic expected; negative"
+    },
+    {
+        "case": 31,
+        "label": "redis",
+        "split": "heldout",
+        "target_id": null,
+        "session": null,
+        "question": "How do Redis cluster hash slots support resharding geospatial inventory queries?",
+        "relevance_topic": "No matching topic expected; negative"
+    },
+    {
+        "case": 32,
+        "label": "marine",
+        "split": "calibration",
+        "target_id": null,
+        "session": null,
+        "question": "How do we compensate sonar beamforming for underwater salinity gradients?",
+        "relevance_topic": "No matching topic expected; negative"
+    },
+    {
+        "case": 33,
+        "label": "compiler",
+        "split": "heldout",
+        "target_id": null,
+        "session": null,
+        "question": "How do I implement register allocation for a RISC-V compiler backend?",
+        "relevance_topic": "No matching topic expected; negative"
+    }
+]

@@ -48,6 +48,38 @@ final class SemanticApiClientTest extends TestCase
         (new SemanticApiClient($this->settings(), $http))->rerank('query', ['a', 'b'], static function (): void {});
     }
 
+    #[Test]
+    public function configuredFloorFiltersRawScoresAcrossBatchesIncludingAnEmptyResult(): void
+    {
+        $responses = [
+            new MockResponse('{"results":[{"index":2,"relevance_score":-4.01},{"index":0,"relevance_score":-3.9},{"index":1,"relevance_score":-4}]}'),
+            new MockResponse('{"results":[{"index":1,"relevance_score":-6},{"index":0,"relevance_score":-3.9}]}'),
+        ];
+        $settings = SemanticSettings::fromArray([
+            'embedding_api' => ['base_url' => 'http://embed.test/v1', 'model_id' => 'embed'],
+            'reranker_api' => ['base_url' => 'http://rank.test/v1', 'model_id' => 'rank', 'batch_size' => 3, 'min_score' => -4],
+        ]);
+        $this->assertNotNull($settings);
+        $client = new SemanticApiClient($settings, new MockHttpClient($responses));
+        $this->assertSame([0, 3, 1], $client->rerank('query', ['a', 'b', 'c', 'd', 'e'], static function (): void {}));
+
+        $none = new SemanticApiClient($settings, new MockHttpClient(new MockResponse('{"results":[{"index":0,"relevance_score":-4.01}]}')));
+        $this->assertSame([], $none->rerank('query', ['a'], static function (): void {}));
+    }
+
+    #[Test]
+    public function invalidScoresStillFailAboveTheConfiguredFloor(): void
+    {
+        $settings = SemanticSettings::fromArray([
+            'embedding_api' => ['base_url' => 'http://embed.test/v1', 'model_id' => 'embed'],
+            'reranker_api' => ['base_url' => 'http://rank.test/v1', 'model_id' => 'rank', 'min_score' => 10],
+        ]);
+        $this->assertNotNull($settings);
+        $client = new SemanticApiClient($settings, new MockHttpClient(new MockResponse('{"results":[{"index":0,"relevance_score":"bad"}]}')));
+        $this->expectException(SemanticSearchException::class);
+        $client->rerank('query', ['a'], static function (): void {});
+    }
+
     private function settings(): SemanticSettings
     {
         $settings = SemanticSettings::fromArray([

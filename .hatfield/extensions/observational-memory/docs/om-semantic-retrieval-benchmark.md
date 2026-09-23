@@ -93,7 +93,7 @@ Each unfiltered query made one embedding request. Configured reranking made 13 r
 
 ### Negative query
 
-`quasar glacier pineapple zyxwv-no-such-memory-71a9` returned 20 nearest candidates in both modes, taking 245.279 ms without reranking and 511.293 ms with reranking. These are not evidence that the requested topic exists. The implementation has no approved relevance threshold or abstention classifier. The negative case therefore demonstrates a limitation, not a successful absence detector. Reranking changes the irrelevant ordering but does not eliminate the results. Callers must inspect results and verify provenance.
+`quasar glacier pineapple zyxwv-no-such-memory-71a9` returned 20 nearest candidates in both modes, taking 245.279 ms without reranking and 511.293 ms with reranking. These are not evidence that the requested topic exists. This benchmark ran without a relevance floor. The subsequent [score calibration](om-relevance-calibration.md) added an optional model-specific floor, but it is not an absence detector. Callers must inspect results and verify provenance.
 
 ### Bounded date filtering
 

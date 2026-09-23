@@ -18,6 +18,7 @@ final readonly class SemanticSettings
         public ?string $rerankerModel,
         public int $rerankerBatchSize,
         public int $rerankerDocumentCharacters,
+        public ?float $rerankerMinScore,
     ) {
     }
 
@@ -34,6 +35,14 @@ final readonly class SemanticSettings
         if (null !== $reranker && !\is_array($reranker)) {
             throw new \InvalidArgumentException('semantic.reranker_api must be a mapping.');
         }
+        $minScore = null;
+        if (null !== $reranker && \array_key_exists('min_score', $reranker)) {
+            $value = $reranker['min_score'];
+            if ((!\is_int($value) && !\is_float($value)) || !is_finite((float) $value)) {
+                throw new \InvalidArgumentException('semantic.reranker_api.min_score must be a finite number.');
+            }
+            $minScore = (float) $value;
+        }
         $bytes = self::positive($embedding, 'chunk_bytes', 1200);
         $overlap = $embedding['overlap_bytes'] ?? 192;
         if (!\is_int($overlap) || $overlap < 0 || $overlap >= $bytes || $bytes < 4) {
@@ -49,6 +58,7 @@ final readonly class SemanticSettings
             null === $reranker ? null : self::text($reranker, 'model_id'),
             self::positive($reranker ?? [], 'batch_size', 8),
             self::positive($reranker ?? [], 'document_characters', 768),
+            $minScore,
         );
     }
 

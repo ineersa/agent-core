@@ -204,6 +204,7 @@ semantic:
     model_id: bge-reranker-base-q8_0.gguf
     batch_size: 8
     document_characters: 768
+    min_score: -4
 ```
 
 Both API blocks require `base_url` and `model_id`. Omit `reranker_api` to use fused
@@ -215,6 +216,14 @@ The other defaults are shown above. Counts must be positive; `chunk_bytes` must 
 at least four and `overlap_bytes` must be nonnegative and smaller than the chunk.
 Requests run serially with a ten-second HTTP limit. An indexing job embeds at most
 four chunks, even if a larger provider batch size is configured.
+`reranker_api.min_score` is optional. If set, it keeps chunks with a raw
+reranker score greater than or equal to the finite numeric floor. Scores are
+model-specific and are not probabilities; choose a floor using labeled queries.
+Without a floor, the reranker sorts all candidates. Without a reranker, this
+setting has no effect and hybrid search can still return unrelated neighbors.
+The `-4` shown here was measured for the named local reranker on this corpus;
+it is not a general default. See the [calibration report](docs/om-relevance-calibration.md)
+and the [25 reusable questions](docs/relevance-calibration-questions.json).
 
 The implementation uses Symfony AI's Vektor bridge for persistent HNSW vectors,
 its SQLite Store for FTS5 BM25, and `CombinedStore` for reciprocal-rank fusion.

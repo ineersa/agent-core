@@ -123,6 +123,11 @@ final readonly class SemanticApiClient
             $checkpoint();
         }
         // Stable ties retain the input RRF order, independent of response order.
+        // Filter only after validating every complete response, including rejected
+        // entries. A high floor must never conceal malformed provider results.
+        if (null !== $this->settings->rerankerMinScore) {
+            $scores = array_filter($scores, fn (float $score): bool => $score >= $this->settings->rerankerMinScore);
+        }
         ksort($scores);
         arsort($scores, \SORT_NUMERIC);
 
