@@ -295,5 +295,158 @@
         "session": null,
         "question": "How do I implement register allocation for a RISC-V compiler backend?",
         "relevance_topic": "No matching topic expected; negative"
+    },
+    {
+        "case": 34,
+        "label": "background_launch",
+        "split": "calibration",
+        "target_id": "4180b1880970fa51a6cb2c97ab907b87df3f66c3bf9e9269cd9ecd62242ef073",
+        "session": "19",
+        "question": "What launch-time choice for child agents did we want to discover without mid-flight conversion?",
+        "relevance_topic": "launch-time foreground/background option for subagents and forks"
+    },
+    {
+        "case": 35,
+        "label": "messenger_busy",
+        "split": "heldout",
+        "target_id": "52dc2edb9a9a720fd1a75b3e4e62b5e1e81c27d4afa668888e61f118817cedeb",
+        "session": "60",
+        "question": "Why could an idle Messenger consumer ignore signals for about five seconds during shutdown?",
+        "relevance_topic": "SQLite BEGIN IMMEDIATE blocking MCP consumer signals"
+    },
+    {
+        "case": 36,
+        "label": "autocomplete_stale",
+        "split": "calibration",
+        "target_id": "9326fe64c15e712ee31e943f7b0cc43d781801174ab6916fbadae2a1226f9782",
+        "session": "59",
+        "question": "What did the failing autocomplete diagnostic show about /task-done after the suggestion closed?",
+        "relevance_topic": "stale autocomplete overlay row after completion"
+    },
+    {
+        "case": 37,
+        "label": "castor_utf8",
+        "split": "heldout",
+        "target_id": "b033c9d3d77b7adad32b53a1e04283c7268ac43c31612fc3a94f9ef4cf1faf29",
+        "session": "56",
+        "question": "Which two pending fixes were committed before finishing the session-repair work?",
+        "relevance_topic": "Castor UTF-8 child output and unmatched tool-call session repair"
+    },
+    {
+        "case": 38,
+        "label": "worker_recovery",
+        "split": "calibration",
+        "target_id": "857900db57a22a5e5400091f1e6388c1c71fc2580bfd14ae8badef9fbf2fd239",
+        "session": "4",
+        "question": "What worker recovery model replaced keepalive timers and time-based reclaim?",
+        "relevance_topic": "worker-lifecycle recovery instead of timed reclaim"
+    },
+    {
+        "case": 39,
+        "label": "code_mode_headless",
+        "split": "heldout",
+        "target_id": "fd19224af7baa804fdf1452f70594248f69f2187da03066ba120d6633d69d5a2",
+        "session": "26",
+        "question": "What minimal design did we approve for running scripted tool calls without a full interactive session?",
+        "relevance_topic": "disposable headless code-mode subagent adapter"
+    },
+    {
+        "case": 40,
+        "label": "jbcontext_register",
+        "split": "calibration",
+        "target_id": "31ed7e6e3770cb15cfc09d2f1eab8ee497217e768e8bd458d43e62bbba2142c6",
+        "session": "5",
+        "question": "Which register-time mistakes made the semantic code extension leak eligibility across sessions?",
+        "relevance_topic": "JbcontextExtension register eligibility and status.json scoping"
+    },
+    {
+        "case": 41,
+        "label": "scrollback_gap",
+        "split": "heldout",
+        "target_id": "7debc8d1863441751c3e7c165ef37921f9128077e5ac6b43804d95655020e454",
+        "session": "59",
+        "question": "Why was the one-overlap scrollback patch still incomplete according to the advisor review?",
+        "relevance_topic": "scrollback ownership not established by one-overlap limit"
+    },
+    {
+        "case": 42,
+        "label": "tool_api_bootstrap",
+        "split": "calibration",
+        "target_id": "e0b43977b506e9ee698e877c77c4972dbc2bc28e4528d32305616a95bf2a18ce",
+        "session": "26",
+        "question": "What should \u201cno application autoloader\u201d mean for PHP scripts that call tools?",
+        "relevance_topic": "Tool API bootstrap without loading the full application"
+    },
+    {
+        "case": 43,
+        "label": "viewport_scrollback",
+        "split": "heldout",
+        "target_id": "a4f5356899e90d3f065967f7ec3d357efdc31fdea349b4b4e543bd355b43f5b8",
+        "session": "59",
+        "question": "What did the squashed Symfony TUI commit claim about viewport updates and terminal scrollback?",
+        "relevance_topic": "keep viewport updates out of terminal scrollback"
+    },
+    {
+        "case": 44,
+        "label": "bash_redelivery",
+        "split": "calibration",
+        "target_id": "2061916b9a6576832329f37b055dbb06e5fde7aa46401eb658813fffb171ab28",
+        "session": "4",
+        "question": "How can Messenger redelivery start a second shell process while the first is still running?",
+        "relevance_topic": "ExecuteToolCallWorker completion-only dedupe allows duplicate bash"
+    },
+    {
+        "case": 45,
+        "label": "async_runtime",
+        "split": "heldout",
+        "target_id": "d19d00c041ca087155c55282a46495360d71080ef7900844d4f04a1b1f1381e5",
+        "session": "15",
+        "question": "What hybrid runtime plan kept tool and MCP boundaries while allowing concurrent provider requests?",
+        "relevance_topic": "eager LLM process with bounded concurrent provider requests"
+    },
+    {
+        "case": 46,
+        "label": "unicode_caps",
+        "split": "calibration",
+        "target_id": "5caa72db184bbc90196159fbd3665acc7c74c3d4a5c2e76dc40b3d4ca84ef84b",
+        "session": "21",
+        "question": "Where did we switch text length caps to Symfony String for UTF-8 safety?",
+        "relevance_topic": "UTF-8-safe text caps across MCP TUI and workflow output"
+    },
+    {
+        "case": 47,
+        "label": "avionics",
+        "split": "calibration",
+        "target_id": null,
+        "session": null,
+        "question": "How do we calibrate weather-radar beam attenuation for convective storm cells?",
+        "relevance_topic": "No matching topic expected; negative"
+    },
+    {
+        "case": 48,
+        "label": "crispr",
+        "split": "heldout",
+        "target_id": null,
+        "session": null,
+        "question": "How do CRISPR guide RNA off-target scores change across mammalian genomes?",
+        "relevance_topic": "No matching topic expected; negative"
+    },
+    {
+        "case": 49,
+        "label": "fpga",
+        "split": "calibration",
+        "target_id": null,
+        "session": null,
+        "question": "How do I close timing on a DDR4 PHY implemented for an Artix-7 FPGA?",
+        "relevance_topic": "No matching topic expected; negative"
+    },
+    {
+        "case": 50,
+        "label": "paleoclimate",
+        "split": "heldout",
+        "target_id": null,
+        "session": null,
+        "question": "How do ice-core isotope ratios reconstruct Holocene paleoclimate trends?",
+        "relevance_topic": "No matching topic expected; negative"
     }
 ]
