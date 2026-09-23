@@ -363,6 +363,55 @@ final class CodexWebSocketContinuationStateTest extends TestCase
         $this->assertStringNotContainsString('secret-right', $encoded);
     }
 
+    public function testDeeplyNestedMismatchPathsStayBoundedWithoutIndexesOrSecrets(): void
+    {
+        $deepLeft = [
+            'type' => 'reasoning',
+            'summary' => [[
+                'type' => 'summary_text',
+                'text' => [
+                    ['type' => 'text', 'text' => ['type' => 'secret_left_nested']],
+                ],
+            ]],
+        ];
+        $deepRight = [
+            'type' => 'reasoning',
+            'summary' => [[
+                'type' => 'summary_text',
+                'text' => [
+                    ['type' => 'text', 'text' => ['type' => 'secret_right_nested']],
+                ],
+            ]],
+        ];
+
+        $state = CodexWebSocketContinuationState::fromSuccessfulResponse(
+            ['model' => 'gpt-5.6-luna', 'input' => [['role' => 'user', 'content' => 'first']], 'stream' => true],
+            'resp_deep_bound',
+            [$deepRight],
+        );
+
+        $decision = $state->decide([
+            'model' => 'gpt-5.6-luna',
+            'input' => [
+                ['role' => 'user', 'content' => 'first'],
+                $deepLeft,
+                ['role' => 'user', 'content' => 'next'],
+            ],
+            'stream' => true,
+        ]);
+
+        $this->assertSame(CodexWebSocketContinuationDecision::REASON_PREFIX_MISMATCH, $decision->reason);
+        $this->assertNotNull($decision->mismatchFieldPath);
+        $this->assertLessThanOrEqual(64, \strlen((string) $decision->mismatchFieldPath));
+        $this->assertDoesNotMatchRegularExpression('/\\.\\d+(\\.|$)/', (string) $decision->mismatchFieldPath);
+        $this->assertSame('different', $decision->mismatchRelation);
+
+        $encoded = json_encode($decision->toLogContext(), \JSON_THROW_ON_ERROR);
+        $this->assertStringNotContainsString('secret_left_nested', $encoded);
+        $this->assertStringNotContainsString('secret_right_nested', $encoded);
+        $this->assertStringNotContainsString('.0.', $encoded);
+    }
+
     public function testKeepsHistoricalConfigurationUpdateInPrefixAndDeltasOnlySuffix(): void
     {
         $baselineBody = [

@@ -64,6 +64,12 @@ final class CodexWebSocketContinuationComparator
         'id' => true,
     ];
 
+    /** Maximum nested object/list depth explored for mismatch field paths. */
+    private const int MAX_MISMATCH_DEPTH = 4;
+
+    /** Maximum characters retained in a logged mismatch field path. */
+    private const int MAX_MISMATCH_PATH_LENGTH = 64;
+
     /**
      * @param array<string, mixed> $a
      * @param array<string, mixed> $b
@@ -191,10 +197,14 @@ final class CodexWebSocketContinuationComparator
      *     right_value_kind: ?string
      * }
      */
-    private static function describeComparableValueMismatch(mixed $left, mixed $right, string $path = ''): array
+    private static function describeComparableValueMismatch(mixed $left, mixed $right, string $path = '', int $depth = 0): array
     {
         if (self::encode($left) === self::encode($right)) {
             return self::emptyFieldMismatch();
+        }
+
+        if ($depth >= self::MAX_MISMATCH_DEPTH) {
+            return self::boundedAncestorMismatch($path, $left, $right);
         }
 
         $leftIsArray = \is_array($left);
@@ -206,30 +216,20 @@ final class CodexWebSocketContinuationComparator
         $leftList = array_is_list($left);
         $rightList = array_is_list($right);
         if ($leftList !== $rightList) {
-            return [
-                'mismatch_field_path' => '' !== $path ? $path : '.',
-                'mismatch_relation' => 'different',
-                'left_value_kind' => self::valueKind($left),
-                'right_value_kind' => self::valueKind($right),
-            ];
+            return self::boundedAncestorMismatch($path, $left, $right);
         }
 
         if ($leftList) {
             $limit = min(\count($left), \count($right));
             for ($i = 0; $i < $limit; ++$i) {
                 if (self::encode($left[$i]) !== self::encode($right[$i])) {
-                    $childPath = '' === $path ? (string) $i : $path.'.'.$i;
-
-                    return self::describeComparableValueMismatch($left[$i], $right[$i], $childPath);
+                    // Keep list indexes out of logged paths; continue under the
+                    // current allowlisted ancestor with a depth budget.
+                    return self::describeComparableValueMismatch($left[$i], $right[$i], $path, $depth + 1);
                 }
             }
 
-            return [
-                'mismatch_field_path' => '' !== $path ? $path : '.',
-                'mismatch_relation' => 'different',
-                'left_value_kind' => 'list',
-                'right_value_kind' => 'list',
-            ];
+            return self::boundedAncestorMismatch($path, $left, $right);
         }
 
         $leftKeys = array_keys($left);
@@ -244,12 +244,7 @@ final class CodexWebSocketContinuationComparator
             if (null === $childPath) {
                 // Dynamic/untrusted keys never become log paths. Fall back to
                 // the nearest allowlisted ancestor without exposing the key.
-                return [
-                    'mismatch_field_path' => '' !== $path ? $path : '.',
-                    'mismatch_relation' => 'different',
-                    'left_value_kind' => 'object',
-                    'right_value_kind' => 'object',
-                ];
+                return self::boundedAncestorMismatch($path, $left, $right);
             }
 
             if ($leftHas !== $rightHas) {
@@ -262,16 +257,11 @@ final class CodexWebSocketContinuationComparator
             }
 
             if (self::encode($left[$key]) !== self::encode($right[$key])) {
-                return self::describeComparableValueMismatch($left[$key], $right[$key], $childPath);
+                return self::describeComparableValueMismatch($left[$key], $right[$key], $childPath, $depth + 1);
             }
         }
 
-        return [
-            'mismatch_field_path' => '' !== $path ? $path : '.',
-            'mismatch_relation' => 'different',
-            'left_value_kind' => 'object',
-            'right_value_kind' => 'object',
-        ];
+        return self::boundedAncestorMismatch($path, $left, $right);
     }
 
     /**
@@ -285,7 +275,7 @@ final class CodexWebSocketContinuationComparator
     private static function scalarFieldMismatch(string $path, mixed $left, mixed $right): array
     {
         return [
-            'mismatch_field_path' => '' !== $path ? $path : '.',
+            'mismatch_field_path' => self::boundedPath($path),
             'mismatch_relation' => 'different',
             'left_value_kind' => self::valueKind($left),
             'right_value_kind' => self::valueKind($right),
@@ -310,13 +300,49 @@ final class CodexWebSocketContinuationComparator
         ];
     }
 
+    /**
+     * @return array{
+     *     mismatch_field_path: ?string,
+     *     mismatch_relation: ?string,
+     *     left_value_kind: ?string,
+     *     right_value_kind: ?string
+     * }
+     */
+    private static function boundedAncestorMismatch(string $path, mixed $left, mixed $right): array
+    {
+        return [
+            'mismatch_field_path' => self::boundedPath($path),
+            'mismatch_relation' => 'different',
+            'left_value_kind' => self::valueKind($left),
+            'right_value_kind' => self::valueKind($right),
+        ];
+    }
+
     private static function appendPath(string $path, mixed $key): ?string
     {
         if (!\is_string($key) || !isset(self::ALLOWLISTED_FIELD_KEYS[$key])) {
             return null;
         }
 
-        return '' === $path ? $key : $path.'.'.$key;
+        $candidate = '' === $path ? $key : $path.'.'.$key;
+        if (\strlen($candidate) > self::MAX_MISMATCH_PATH_LENGTH) {
+            return null;
+        }
+
+        return $candidate;
+    }
+
+    private static function boundedPath(string $path): string
+    {
+        if ('' === $path) {
+            return '.';
+        }
+
+        if (\strlen($path) <= self::MAX_MISMATCH_PATH_LENGTH) {
+            return $path;
+        }
+
+        return '.';
     }
 
     private static function valueKind(mixed $value): string
