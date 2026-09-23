@@ -243,10 +243,66 @@ final class RawWebSocketResultTest extends TestCase
         unset($raw);
     }
 
-    public function testTerminalResponseOutputIsAuthoritativeOverStreamedOutputItems(): void
+    public function testTerminalOutputProvidesBaselineWhenNoCompletedStreamedItemsArrive(): void
     {
         $cache = new CodexWebSocketConnectionCache();
-        $settings = new CodexWebSocketCacheSettings();
+        $identity = CodexWebSocketCompatibilityFingerprint::fromContext(
+            '0194eeee-bbbb-7ccc-8ddd-eeeeeeeeeeee',
+            'openai-codex',
+            'gpt-5.6-luna',
+            'https://chatgpt.com/backend-api',
+            '/codex/responses',
+            'acct-1',
+        );
+        $terminal = ['type' => 'message', 'role' => 'assistant', 'content' => [['type' => 'output_text', 'text' => 'done']]];
+        $connection = $this->createMock(WebsocketConnection::class);
+        $connection->expects($this->once())->method('receive')->willReturn(WebsocketMessage::fromText(json_encode([
+            'type' => 'response.completed',
+            'response' => ['id' => 'resp_terminal_only', 'output' => [$terminal]],
+        ], \JSON_THROW_ON_ERROR)));
+        $connection->expects($this->never())->method('close');
+
+        $entry = new CodexWebSocketCacheEntry($connection, $identity, time());
+        $lease = new CodexWebSocketCacheLease($connection, true, true, false, $entry);
+        $context = new CodexWebSocketCachedStreamContext($cache, $lease, [
+            'model' => 'gpt-5.6-luna',
+            'input' => [['role' => 'user', 'content' => 'first']],
+            'stream' => true,
+        ]);
+        $reflection = new \ReflectionClass($cache);
+        $prop = $reflection->getProperty('entries');
+        $prop->setValue($cache, [$identity->sessionKey => $entry]);
+
+        $logger = new TestLogger();
+        $raw = new RawWebSocketResult($connection, 5.0, $logger, cachedStreamContext: $context);
+        iterator_to_array($raw->getDataStream());
+
+        $this->assertNotNull($entry->continuation);
+        $delta = $entry->continuation->buildDeltaRequest([
+            'model' => 'gpt-5.6-luna',
+            'input' => [
+                ['role' => 'user', 'content' => 'first'],
+                $terminal,
+                ['role' => 'user', 'content' => 'next'],
+            ],
+            'stream' => true,
+        ]);
+        $this->assertSame('resp_terminal_only', $delta['previous_response_id'] ?? null);
+        $this->assertSame([['role' => 'user', 'content' => 'next']], $delta['input'] ?? null);
+        $baselineLogs = array_values(array_filter(
+            $logger->records,
+            static fn (array $record): bool => 'codex.websocket.continuation.baseline' === $record['message'],
+        ));
+        $this->assertCount(1, $baselineLogs);
+        $baseline = $baselineLogs[0]['context'];
+        $this->assertSame('terminal', $baseline['baseline_source']);
+        $this->assertSame(1, $baseline['terminal_output_count']);
+        $this->assertSame(0, $baseline['streamed_done_count']);
+    }
+
+    public function testCompletedStreamedOutputIsAuthoritativeOverTerminalOutput(): void
+    {
+        $cache = new CodexWebSocketConnectionCache();
         $identity = CodexWebSocketCompatibilityFingerprint::fromContext(
             '0194cccc-bbbb-7ccc-8ddd-cccccccccccc',
             'openai-codex',
@@ -317,7 +373,7 @@ final class RawWebSocketResultTest extends TestCase
             'model' => 'gpt-5.6-luna',
             'input' => [
                 ['role' => 'user', 'content' => 'first'],
-                $terminal,
+                $streamed,
                 ['role' => 'user', 'content' => 'next'],
             ],
             'stream' => true,
@@ -327,21 +383,19 @@ final class RawWebSocketResultTest extends TestCase
         $this->assertSame('resp_terminal', $delta['previous_response_id']);
         $this->assertSame([['role' => 'user', 'content' => 'next']], $delta['input']);
 
-        // Streamed item must not have been merged with terminal output (no duplicate baseline).
-        $mergedWouldMatch = $entry->continuation->buildDeltaRequest([
+        $terminalHistory = $entry->continuation->buildDeltaRequest([
             'model' => 'gpt-5.6-luna',
             'input' => [
                 ['role' => 'user', 'content' => 'first'],
-                $streamed,
                 $terminal,
                 ['role' => 'user', 'content' => 'next'],
             ],
             'stream' => true,
         ]);
-        $this->assertNull($mergedWouldMatch);
+        $this->assertNull($terminalHistory);
     }
 
-    public function testTerminalReasoningBaselineDiffersFromStreamedDoneWhenShapesDiverge(): void
+    public function testStreamedReasoningBaselineMatchesHistoryWhenTerminalCiphertextDiffers(): void
     {
         $cache = new CodexWebSocketConnectionCache();
         $identity = CodexWebSocketCompatibilityFingerprint::fromContext(
@@ -355,13 +409,13 @@ final class RawWebSocketResultTest extends TestCase
 
         $streamedDone = [
             'type' => 'reasoning',
-            'id' => 'rs_streamed',
+            'id' => 'rs_123',
             'encrypted_content' => 'enc_streamed',
             'summary' => [['type' => 'summary_text', 'text' => 'streamed plan']],
         ];
         $terminalOutput = [
             'type' => 'reasoning',
-            'id' => 'rs_terminal',
+            'id' => 'rs_123',
             'status' => 'completed',
             'encrypted_content' => 'enc_terminal',
             'summary' => [['type' => 'summary_text', 'text' => 'terminal plan']],
@@ -409,8 +463,7 @@ final class RawWebSocketResultTest extends TestCase
 
         $this->assertNotNull($entry->continuation);
 
-        // History reconstructed from the streamed done signature continues when
-        // the baseline preferred terminal output that differs from that signature.
+        // History and the baseline use the same completed streamed item.
         $streamedHistoryDecision = $entry->continuation->decide([
             'model' => 'gpt-5.6-luna',
             'input' => [
@@ -420,11 +473,8 @@ final class RawWebSocketResultTest extends TestCase
             ],
             'stream' => true,
         ]);
-        $this->assertSame(CodexWebSocketContinuationDecision::REASON_PREFIX_MISMATCH, $streamedHistoryDecision->reason);
-        $this->assertSame('reasoning', $streamedHistoryDecision->leftItemKind);
-        $this->assertSame('reasoning', $streamedHistoryDecision->rightItemKind);
-        $this->assertSame('encrypted_content', $streamedHistoryDecision->mismatchFieldPath);
-        $this->assertSame('different', $streamedHistoryDecision->mismatchRelation);
+        $this->assertSame(CodexWebSocketContinuationDecision::REASON_DELTA, $streamedHistoryDecision->reason);
+        $this->assertSame([['role' => 'user', 'content' => 'next']], $streamedHistoryDecision->delta['input'] ?? null);
 
         $baselineLogs = array_values(array_filter(
             $logger->records,
@@ -432,7 +482,7 @@ final class RawWebSocketResultTest extends TestCase
         ));
         $this->assertCount(1, $baselineLogs);
         $baseline = $baselineLogs[0]['context'];
-        $this->assertSame('terminal', $baseline['baseline_source']);
+        $this->assertSame('streamed', $baseline['baseline_source']);
         $this->assertSame(1, $baseline['terminal_output_count']);
         $this->assertSame(1, $baseline['streamed_done_count']);
         $this->assertSame('different', $baseline['source_comparison']);
@@ -454,7 +504,8 @@ final class RawWebSocketResultTest extends TestCase
             ],
             'stream' => true,
         ]);
-        $this->assertSame(CodexWebSocketContinuationDecision::REASON_DELTA, $terminalHistoryDecision->reason);
-        $this->assertNotNull($terminalHistoryDecision->delta);
+        $this->assertSame(CodexWebSocketContinuationDecision::REASON_PREFIX_MISMATCH, $terminalHistoryDecision->reason);
+        $this->assertSame('encrypted_content', $terminalHistoryDecision->mismatchFieldPath);
+        $this->assertSame('different', $terminalHistoryDecision->mismatchRelation);
     }
 }

@@ -213,12 +213,14 @@ Sanitized local Harbor report: `reports/swe-bench-cached-gpt56-luna-diag-2026-09
 
 Goal: identify the first differing field and baseline source when reasoning items reject cached continuation. Run one Matplotlib and, if necessary, one Seaborn GPT-5.6 Luna / medium / `websocket-cached` trial.
 
-`describePrefixMismatch()` logs a bounded, allowlisted field path, mismatch relation, and value kinds. `codex.websocket.continuation.baseline` logs the baseline source and a bounded terminal-versus-streamed comparison when counts match. Logs contain no raw IDs, keys, prompts, encrypted values, tool arguments, or content hashes. Wire and continuation behavior did not change.
+`describePrefixMismatch()` logs a bounded, allowlisted field path, mismatch relation, and value kinds. `codex.websocket.continuation.baseline` logs the source and compares terminal versus streamed items when counts match. Logs contain no raw IDs, keys, prompts, encrypted values, tool arguments, or content hashes.
 
-Trial `38XADPq` failed before its first LLM step because the isolated auth copy had expired. After a token-free preflight, Matplotlib trial `Z2dd5DQ` completed 14 steps without a mismatch. Its binary did not contain the later baseline-source log.
+Trial `38XADPq` stopped before the LLM because isolated auth had expired. Matplotlib `Z2dd5DQ` completed 14 steps without a mismatch; its binary predates baseline-source logging.
 
-The current binary embeds `b7cd9e5c7`, SHA-256 `2fa2db625e64f4444e64266fc0ba39d647a3199a0889323e12734fd0991f3b4a`. A fresh PHAR and previously verified `micro.sfx` passed `castor distribution:verify`. Full static rebuild remains blocked by missing `re2c`, `flex`, and `gperf`.
+The trial binary embeds `b7cd9e5c7`, SHA-256 `2fa2db625e64f4444e64266fc0ba39d647a3199a0889323e12734fd0991f3b4a`. A fresh PHAR and verified `micro.sfx` passed `castor distribution:verify`; full rebuild lacked `re2c`, `flex`, and `gperf`.
 
-Matplotlib trial `yyDUGLQ` completed 16 steps without a mismatch. Seaborn trial `wBtjmv6` reproduced two full-history fallbacks. Before requests 8 and 13, both baselines came from streamed items; terminal output had zero items. The first differences at input indices 37 and 53 were `reasoning` items whose `encrypted_content` values differed. Both requests used the same cache-key fingerprint as earlier turns. The terminal-versus-streamed source split did not cause these fallbacks. Why the encrypted values differ remains unknown; Matplotlib's earlier index-24 mismatch remains unconfirmed at field level.
+Matplotlib `yyDUGLQ` ran 16 steps without a mismatch. Seaborn `wBtjmv6` fell back at requests 8 and 13: streamed-only baselines differed from history in reasoning `encrypted_content` at input indices 37 and 53. The cache-key fingerprint stayed fixed. Terminal-versus-streamed divergence did not cause these fallbacks; the encrypted-value change and Matplotlib's earlier index-24 mismatch remain unexplained.
 
 Sanitized local report: `hatfield-harbor/reports/swe-bench-diag-baseline-source-2026-09-23.json` (ignored). Each trial stopped eight owned processes with zero survivors. Private auth was removed; the credential scan had zero matches.
+
+The cache now prefers `response.output_item.done` to match history; terminal output remains fallback. Tests cover divergent terminal ciphertext for one reasoning ID and terminal-only responses. Seaborn's streamed-only mismatch remains. The missing call in the bypass trial did execute, but retained logs lack the full request needed to locate its result against the delta cut.
