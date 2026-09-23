@@ -211,12 +211,14 @@ Sanitized local Harbor report: `reports/swe-bench-cached-gpt56-luna-diag-2026-09
 
 ## Reasoning prefix-mismatch field diagnostics (2026-09-23)
 
-Goal: identify the first allowlisted structural field behind Matplotlib's `reasoning`/`reasoning` prefix mismatch without logging raw values, then rerun at most one GPT-5.6 Luna / medium / `websocket-cached` Matplotlib 24870 trial.
+Goal: identify the first differing field and baseline source when reasoning items reject cached continuation. Run one Matplotlib and, if necessary, one Seaborn GPT-5.6 Luna / medium / `websocket-cached` trial.
 
-Product change: `describePrefixMismatch()` now also emits `mismatch_field_path`, `mismatch_relation`, and left/right value kinds for allowlisted keys only (`type`, `role`, `status`, `summary`, `encrypted_content`, and other fixed Codex item fields). Unexpected provider keys collapse to the nearest allowlisted ancestor or `.`. No hashes of content/signatures, no raw IDs/prompts/tool args, and no wire/continuation behavior change.
+`describePrefixMismatch()` logs a bounded, allowlisted field path, mismatch relation, and value kinds. `codex.websocket.continuation.baseline` logs the baseline source and a bounded terminal-versus-streamed comparison when counts match. Logs contain no raw IDs, keys, prompts, encrypted values, tool arguments, or content hashes. Wire and continuation behavior did not change.
 
-Native artifact for the model-reaching retry: `var/tmp/dist/hatfield.linux-amd64` embeds `bd2da50bb257dd221e7dd666adf5b958a86177d6`, SHA-256 `63679ec94b502e59fb0c1ef43b2d757747bdb440e6c7a1373e51195820fe6de7` (fresh PHAR + previously verified `micro.sfx`; full static rebuild still blocked on missing `re2c`/`flex`/`gperf`). Path diagnostics also bound depth/length and omit list indexes.
+Trial `38XADPq` failed before its first LLM step because the isolated auth copy had expired. After a token-free preflight, Matplotlib trial `Z2dd5DQ` completed 14 steps without a mismatch. Its binary did not contain the later baseline-source log.
 
-Trial `38XADPq` failed before its first LLM step because the isolated auth copy had expired. A valid private copy then passed JWT and record-expiry preflight. Matplotlib retry `Z2dd5DQ` completed 14 steps with 13 deltas, 84.02% cached input, and no prefix mismatch or post-hit zero-cache drop. The mismatch cause remains unknown. Both trials stopped all eight owned processes; private auth was removed and credential scans were clean.
+The current binary embeds `b7cd9e5c7`, SHA-256 `2fa2db625e64f4444e64266fc0ba39d647a3199a0889323e12734fd0991f3b4a`. A fresh PHAR and previously verified `micro.sfx` passed `castor distribution:verify`. Full static rebuild remains blocked by missing `re2c`, `flex`, and `gperf`.
 
-Unit proof shows that terminal and streamed reasoning can differ at `encrypted_content`. Added after the trial, `codex.websocket.continuation.baseline` logs source, item counts, and a bounded field comparison when counts match. Pair it with the next prefix-mismatch event on recurrence. The trial binary predates this log; no later model run occurred.
+Matplotlib trial `yyDUGLQ` completed 16 steps without a mismatch. Seaborn trial `wBtjmv6` reproduced two full-history fallbacks. Before requests 8 and 13, both baselines came from streamed items; terminal output had zero items. The first differences at input indices 37 and 53 were `reasoning` items whose `encrypted_content` values differed. Both requests used the same cache-key fingerprint as earlier turns. The terminal-versus-streamed source split did not cause these fallbacks. Why the encrypted values differ remains unknown; Matplotlib's earlier index-24 mismatch remains unconfirmed at field level.
+
+Sanitized local report: `hatfield-harbor/reports/swe-bench-diag-baseline-source-2026-09-23.json` (ignored). Each trial stopped eight owned processes with zero survivors. Private auth was removed; the credential scan had zero matches.
