@@ -265,28 +265,42 @@ final class CodexWebSocketModelClient implements ModelClientInterface
      */
     private function buildWireRequestBody(CodexWebSocketCacheLease $lease, array $fullBody): array
     {
+        $keyContext = CodexWebSocketContinuationDecision::promptCacheKeyContext($fullBody);
+
         if ($lease->oneShot || null === $lease->entry || null === $lease->entry->continuation) {
             $this->logger->info('codex.websocket.continuation.full_context', [
                 'event_type' => 'codex.websocket.continuation.full_context',
                 'component' => 'codex_websocket_model_client',
                 'reason' => $lease->oneShot ? 'busy_one_shot' : 'no_continuation',
+                'prompt_cache_key_present' => $keyContext['prompt_cache_key_present'],
+                'prompt_cache_key_fp' => $keyContext['prompt_cache_key_fp'],
+                'prompt_cache_key_length' => $keyContext['prompt_cache_key_length'],
+                'prompt_cache_key_changed' => false,
+                'baseline_input_count' => 0,
+                'current_input_count' => \is_array($fullBody['input'] ?? null) ? \count($fullBody['input']) : 0,
+                'delta_input_count' => null,
+                'first_mismatch_index' => null,
+                'left_item_kind' => null,
+                'right_item_kind' => null,
+                'prefix_normalized_equal' => false,
             ]);
 
             return $fullBody;
         }
 
-        $delta = $lease->entry->continuation->buildDeltaRequest($fullBody);
-        if (null === $delta) {
+        $decision = $lease->entry->continuation->decide($fullBody);
+        if (null === $decision->delta) {
             $lease->entry->continuation = null;
             $this->logger->info('codex.websocket.continuation.full_context', [
                 'event_type' => 'codex.websocket.continuation.full_context',
                 'component' => 'codex_websocket_model_client',
-                'reason' => 'divergent_input',
+                ...$decision->toLogContext(),
             ]);
 
             return $fullBody;
         }
 
+        $delta = $decision->delta;
         $wireBody = $fullBody;
         $wireBody['previous_response_id'] = $delta['previous_response_id'];
         $wireBody['input'] = $delta['input'];
@@ -296,7 +310,7 @@ final class CodexWebSocketModelClient implements ModelClientInterface
         $this->logger->info('codex.websocket.continuation.delta', [
             'event_type' => 'codex.websocket.continuation.delta',
             'component' => 'codex_websocket_model_client',
-            'delta_input_count' => \count($delta['input']),
+            ...$decision->toLogContext(),
         ]);
 
         return $wireBody;
@@ -400,6 +414,7 @@ final class CodexWebSocketModelClient implements ModelClientInterface
             'has_store' => isset($jsonBody['store']),
             'has_stream' => isset($jsonBody['stream']),
             'has_previous_response_id' => isset($jsonBody['previous_response_id']),
+            ...CodexWebSocketContinuationDecision::promptCacheKeyContext($jsonBody),
             'cache_reused' => null !== $lease && $lease->reused,
             'cache_one_shot' => null !== $lease && $lease->oneShot,
             'originator' => $this->originator,

@@ -30,6 +30,49 @@ final class CodexWebSocketContinuationComparator
     }
 
     /**
+     * Locate the first structural mismatch between two input prefixes.
+     *
+     * Returns only kinds and an index — never item contents.
+     *
+     * @param list<mixed> $left
+     * @param list<mixed> $right
+     *
+     * @return array{first_mismatch_index: ?int, left_item_kind: ?string, right_item_kind: ?string, prefix_normalized_equal: bool}
+     */
+    public static function describePrefixMismatch(array $left, array $right): array
+    {
+        $leftComparable = array_map(self::comparableInput(...), $left);
+        $rightComparable = array_map(self::comparableInput(...), $right);
+        if (self::encode($leftComparable) === self::encode($rightComparable)) {
+            return [
+                'first_mismatch_index' => null,
+                'left_item_kind' => null,
+                'right_item_kind' => null,
+                'prefix_normalized_equal' => true,
+            ];
+        }
+
+        $limit = min(\count($leftComparable), \count($rightComparable));
+        for ($i = 0; $i < $limit; ++$i) {
+            if (self::encode($leftComparable[$i]) !== self::encode($rightComparable[$i])) {
+                return [
+                    'first_mismatch_index' => $i,
+                    'left_item_kind' => self::itemKind($left[$i] ?? null),
+                    'right_item_kind' => self::itemKind($right[$i] ?? null),
+                    'prefix_normalized_equal' => false,
+                ];
+            }
+        }
+
+        return [
+            'first_mismatch_index' => $limit,
+            'left_item_kind' => \count($left) > $limit ? self::itemKind($left[$limit] ?? null) : null,
+            'right_item_kind' => \count($right) > $limit ? self::itemKind($right[$limit] ?? null) : null,
+            'prefix_normalized_equal' => false,
+        ];
+    }
+
+    /**
      * Compare provider output with the history emitted by CodexContract,
      * excluding fields its normalizers omit. Never change actual request items.
      */
@@ -59,6 +102,25 @@ final class CodexWebSocketContinuationComparator
         }
 
         return $item;
+    }
+
+    private static function itemKind(mixed $item): ?string
+    {
+        if (!\is_array($item)) {
+            return null;
+        }
+
+        $type = $item['type'] ?? null;
+        if (\is_string($type) && '' !== $type) {
+            return $type;
+        }
+
+        $role = $item['role'] ?? null;
+        if (\is_string($role) && '' !== $role) {
+            return 'role:'.$role;
+        }
+
+        return 'unknown';
     }
 
     /**
