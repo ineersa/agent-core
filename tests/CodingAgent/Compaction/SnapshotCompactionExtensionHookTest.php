@@ -116,7 +116,6 @@ final class SnapshotCompactionExtensionHookTest extends TestCase
                 $this->createModelSelectionStub(),
                 $platform,
                 new ExtensionCompactionHookDispatcher($registry, new CompactionHookDispatcher([]), new NullLogger()),
-                null,
                 new NullLogger(),
             );
 
@@ -219,7 +218,6 @@ final class SnapshotCompactionExtensionHookTest extends TestCase
                 $this->createModelSelectionStub(),
                 $platform,
                 new ExtensionCompactionHookDispatcher($registry, new CompactionHookDispatcher([]), new NullLogger()),
-                null,
                 new NullLogger(),
             );
 
