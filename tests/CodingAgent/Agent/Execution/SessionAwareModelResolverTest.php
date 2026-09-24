@@ -522,16 +522,16 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
         $this->assertSame([
             'reasoning' => ['effort' => 'low', 'summary' => 'auto'],
             'codex_reasoning_reset' => true,
-            'codex_continuation_reset' => true,
+            'codex_continuation_generation' => 1,
         ], $resumed->reasoningOptions);
         $store->updateMetadata($id, ['model' => 'openai-codex/gpt-test']);
-        $this->assertNull($store->findSession($id)->reasoningBaseline);
+        $this->assertSame(['continuation_generation' => 2], $store->findSession($id)->reasoningBaseline);
         $store->updateMetadata($id, ['model' => 'openai-codex/gpt-6-astra', 'reasoning' => 'high']);
         $changed = $this->createResolver($data)->resolve('', true, $input, new ModelResolutionOptions());
-        $this->assertSame(['reasoning' => ['effort' => 'high', 'summary' => 'auto'], 'codex_reasoning_reset' => true], $changed->reasoningOptions);
+        $this->assertSame(['reasoning' => ['effort' => 'high', 'summary' => 'auto'], 'codex_reasoning_reset' => true, 'codex_continuation_generation' => 3], $changed->reasoningOptions);
     }
 
-    public function testNoToolsInvocationForcesContinuationResetWithoutConsumingPendingMarker(): void
+    public function testNoToolsInvocationForcesContinuationResetWithoutConsumingGeneration(): void
     {
         $data = $this->standardAiData();
         $id = $this->writeSessionMetadata('compact-reset', ['model' => 'openai-codex/gpt-test', 'reasoning' => 'medium']);
@@ -540,7 +540,8 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
         $this->assertNotNull($store);
         $store->claimReasoningBaseline($id, 'openai-codex/gpt-test', 'medium');
         $store->resetReasoningBaseline($id);
-        $this->assertSame(['pending_continuation_reset' => true], $store->findSession($id)->reasoningBaseline);
+        $generation = $store->continuationGeneration($id);
+        $this->assertSame(['continuation_generation' => $generation], $store->findSession($id)->reasoningBaseline);
 
         $summarize = $resolver->resolve(
             'openai-codex/gpt-test',
@@ -549,7 +550,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
             new ModelResolutionOptions(['toolsEnabled' => false]),
         );
         $this->assertTrue($summarize->reasoningOptions['codex_continuation_reset'] ?? false);
-        $this->assertSame(['pending_continuation_reset' => true], $store->findSession($id)->reasoningBaseline);
+        $this->assertSame($generation, $store->continuationGeneration($id));
 
         $postCompact = $resolver->resolve(
             '',
@@ -557,8 +558,15 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
             new ModelInvocationInput(runId: $id),
             new ModelResolutionOptions(),
         );
-        $this->assertTrue($postCompact->reasoningOptions['codex_continuation_reset'] ?? false);
-        $this->assertArrayNotHasKey('pending_continuation_reset', $store->findSession($id)->reasoningBaseline ?? []);
+        $this->assertSame($generation, $postCompact->reasoningOptions['codex_continuation_generation']);
+        $this->assertSame($generation, $store->continuationGeneration($id));
+        $otherWorker = $this->createResolver($data)->resolve(
+            '',
+            true,
+            new ModelInvocationInput(runId: $id),
+            new ModelResolutionOptions(),
+        );
+        $this->assertSame($generation, $otherWorker->reasoningOptions['codex_continuation_generation']);
     }
 
     public function testConfigurationUpdateBaselineAppliesToNonAstraGpt6Models(): void

@@ -128,7 +128,7 @@ final class HistoryTailDiscardClearsReasoningBaselineTest extends IsolatedKernel
 
         $this->assertTrue($result['discarded']);
         $this->assertSame(
-            ['pending_continuation_reset' => true],
+            ['continuation_generation' => $sessionStore->continuationGeneration($sessionId)],
             $sessionStore->findSession($sessionId)?->reasoningBaseline,
         );
         $this->assertSame('high', $sessionStore->findSession($sessionId)?->reasoning);

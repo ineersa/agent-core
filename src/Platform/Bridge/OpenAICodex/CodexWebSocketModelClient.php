@@ -218,13 +218,28 @@ final class CodexWebSocketModelClient implements ModelClientInterface
         // effective effort changed. Do not inherit that prior response state.
         // REASONING_RESET is only set for models whose catalog entry carries
         // supports_reasoning_configuration_updates.
-        // CONTINUATION_RESET covers known local history replacement (compaction,
-        // summarization) so the next request starts a new baseline instead of
-        // treating the rewrite as an unexpected mismatch.
+        // The durable generation lets each worker discard its own pre-compaction
+        // continuation, even after another worker has already handled a turn.
+        $generation = $bodyOptions[CodexRequestBodyFactory::CONTINUATION_GENERATION] ?? null;
+        if (null !== $lease->entry && \is_int($generation)) {
+            if (null !== $lease->entry->continuation && ($lease->entry->continuationGeneration ?? 0) !== $generation) {
+                $lease->entry->continuation = null;
+            }
+            $lease->entry->continuationGeneration = $generation;
+        }
+        // Summarization and supported in-band reasoning epochs also start fresh.
         if ((true === ($bodyOptions[CodexRequestBodyFactory::REASONING_RESET] ?? false)
                 || true === ($bodyOptions[CodexRequestBodyFactory::CONTINUATION_RESET] ?? false))
             && null !== $lease->entry) {
             $lease->entry->continuation = null;
+        }
+        if (null !== $lease->entry?->continuation
+            && $lease->entry->continuation->requiresFreshChainForTools($fullBody)) {
+            $lease->entry->continuation = null;
+            $this->logger->info('codex.websocket.continuation.tools_changed', [
+                'event_type' => 'codex.websocket.continuation.tools_changed',
+                'component' => 'codex_websocket_model_client',
+            ]);
         }
         $wireBody = $this->buildWireRequestBody($lease, $fullBody);
 
@@ -279,18 +294,7 @@ final class CodexWebSocketModelClient implements ModelClientInterface
                 'prompt_cache_key_present' => $keyContext['prompt_cache_key_present'],
                 'prompt_cache_key_fp' => $keyContext['prompt_cache_key_fp'],
                 'prompt_cache_key_length' => $keyContext['prompt_cache_key_length'],
-                'prompt_cache_key_changed' => null,
-                'baseline_input_count' => 0,
                 'current_input_count' => \is_array($fullBody['input'] ?? null) ? \count($fullBody['input']) : 0,
-                'delta_input_count' => null,
-                'first_mismatch_index' => null,
-                'left_item_kind' => null,
-                'right_item_kind' => null,
-                'prefix_normalized_equal' => false,
-                'mismatch_field_path' => null,
-                'mismatch_relation' => null,
-                'left_value_kind' => null,
-                'right_value_kind' => null,
             ]);
 
             return $fullBody;

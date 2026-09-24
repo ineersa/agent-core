@@ -130,7 +130,7 @@ final class CompactionClearsReasoningBaselineTest extends IsolatedKernelTestCase
         $this->assertNotNull($result->nextState);
         $this->assertSame(RunEventTypeEnum::ContextCompacted->value, $result->events[0]->type);
         $this->assertSame(
-            ['pending_continuation_reset' => true],
+            ['continuation_generation' => $store->continuationGeneration($sessionId)],
             $store->findSession($sessionId)?->reasoningBaseline,
         );
         $this->assertSame('high', $store->findSession($sessionId)?->reasoning);
@@ -230,7 +230,7 @@ final class CompactionClearsReasoningBaselineTest extends IsolatedKernelTestCase
 
         $this->assertSame(RunEventTypeEnum::ContextCompacted->value, $result->events[1]->type ?? null);
         $this->assertSame(
-            ['pending_continuation_reset' => true],
+            ['continuation_generation' => $store->continuationGeneration($sessionId)],
             $store->findSession($sessionId)?->reasoningBaseline,
         );
         $this->assertSame('high', $store->findSession($sessionId)?->reasoning);

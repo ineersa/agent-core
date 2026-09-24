@@ -123,8 +123,9 @@ final class SessionAwareModelResolver implements ModelResolverInterface
             if ('codex' === $this->catalog->getProvider($modelRef->providerId)?->type) {
                 if (false === ($options->values['toolsEnabled'] ?? null)) {
                     $reasoningOptions[CodexRequestBodyFactory::CONTINUATION_RESET] = true;
-                } elseif ('' !== $sessionId && $this->sessionMetadataStore->consumeContinuationReset($sessionId)) {
-                    $reasoningOptions[CodexRequestBodyFactory::CONTINUATION_RESET] = true;
+                }
+                if ('' !== $sessionId && 0 < ($generation = $this->sessionMetadataStore->continuationGeneration($sessionId) ?? 0)) {
+                    $reasoningOptions[CodexRequestBodyFactory::CONTINUATION_GENERATION] = $generation;
                 }
             }
 

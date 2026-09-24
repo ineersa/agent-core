@@ -149,7 +149,9 @@ final class HatfieldSessionStore
         }
         if (\array_key_exists('model', $meta) && \is_string($meta['model'])) {
             if ($entity->model !== $meta['model']) {
-                $entity->reasoningBaseline = null;
+                $entity->reasoningBaseline = [
+                    'continuation_generation' => ($entity->reasoningBaseline['continuation_generation'] ?? 0) + 1,
+                ];
             }
             $entity->model = $meta['model'];
             $dirty = true;
@@ -226,17 +228,16 @@ final class HatfieldSessionStore
             return null;
         }
 
-        // Compaction leaves a one-shot continuation-reset marker in place of a
-        // real baseline. Treat it as "no baseline" so the next Astra claim can
-        // establish a fresh epoch after rewritten history.
-        if (true === ($entity->reasoningBaseline['pending_continuation_reset'] ?? false)
+        // Rewritten history clears the reasoning baseline but retains the
+        // continuation generation for every LLM worker to observe.
+        if (isset($entity->reasoningBaseline['continuation_generation'])
             && !\is_string($entity->reasoningBaseline['model'] ?? null)) {
             $entity->reasoningBaseline = [
                 'model' => $model,
                 'effort' => $effort,
                 'last_emitted' => $effort,
                 'transitions' => [],
-                'pending_continuation_reset' => true,
+                'continuation_generation' => $entity->reasoningBaseline['continuation_generation'],
             ];
             $this->entityManager->flush();
 
@@ -266,6 +267,7 @@ final class HatfieldSessionStore
             'effort' => $effort,
             'last_emitted' => $effort,
             'transitions' => [],
+            'continuation_generation' => $entity->reasoningBaseline['continuation_generation'] ?? 0,
         ];
         $this->entityManager->flush();
 
@@ -356,36 +358,21 @@ final class HatfieldSessionStore
             return;
         }
 
-        // Discarded history must not inherit a prior previous_response_id.
-        // Keep a one-shot marker so the next Codex request starts a new baseline
-        // even for models that never claim a reasoning baseline.
-        $entity->reasoningBaseline = ['pending_continuation_reset' => true];
+        // Each process-local cache observes the new generation independently.
+        // A consumed boolean would reset only the first LLM worker.
+        $generation = $entity->reasoningBaseline['continuation_generation'] ?? 0;
+        $entity->reasoningBaseline = ['continuation_generation' => $generation + 1];
         $this->entityManager->flush();
     }
 
-    /**
-     * Consume a pending cached-WebSocket continuation reset after compaction
-     * or other local history replacement.
-     */
-    public function consumeContinuationReset(string $sessionId): bool
+    public function continuationGeneration(string $sessionId): ?int
     {
         $entity = $this->fetchEntityOrNull($sessionId);
-        if (null === $entity || !\is_array($entity->reasoningBaseline)) {
-            return false;
+        if (null === $entity) {
+            return null;
         }
 
-        if (true !== ($entity->reasoningBaseline['pending_continuation_reset'] ?? false)) {
-            return false;
-        }
-
-        unset($entity->reasoningBaseline['pending_continuation_reset']);
-        if ([] === $entity->reasoningBaseline) {
-            $entity->reasoningBaseline = null;
-        }
-
-        $this->entityManager->flush();
-
-        return true;
+        return $entity->reasoningBaseline['continuation_generation'] ?? 0;
     }
 
     /**

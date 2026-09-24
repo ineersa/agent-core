@@ -24,6 +24,28 @@ final class CodexWebSocketContinuationState
     }
 
     /**
+     * A changed tool catalog is a known request boundary, but must not hide a
+     * simultaneous change to previously sent history or other request fields.
+     *
+     * @param array<string, mixed> $currentRequestBody
+     */
+    public function requiresFreshChainForTools(array $currentRequestBody): bool
+    {
+        if (CodexWebSocketContinuationComparator::requestBodiesMatchExceptInput($currentRequestBody, $this->lastRequestBody)) {
+            return false;
+        }
+
+        $withPreviousTools = $currentRequestBody;
+        if (\array_key_exists('tools', $this->lastRequestBody)) {
+            $withPreviousTools['tools'] = $this->lastRequestBody['tools'];
+        } else {
+            unset($withPreviousTools['tools']);
+        }
+
+        return null !== $this->decide($withPreviousTools)->delta;
+    }
+
+    /**
      * Classify continuation eligibility with privacy-safe structural diagnostics.
      *
      * @param array<string, mixed> $currentRequestBody

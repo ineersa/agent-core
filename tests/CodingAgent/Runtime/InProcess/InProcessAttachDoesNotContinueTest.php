@@ -49,7 +49,7 @@ final class InProcessAttachDoesNotContinueTest extends IsolatedKernelTestCase
         $handle = $client->attach($runId);
 
         $this->assertSame(
-            ['pending_continuation_reset' => true],
+            ['continuation_generation' => $store->continuationGeneration($runId)],
             $store->findSession($runId)->reasoningBaseline,
         );
         $this->assertSame('high', $store->findSession($runId)->reasoning);

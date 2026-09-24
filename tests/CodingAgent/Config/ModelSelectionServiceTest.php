@@ -181,19 +181,20 @@ class ModelSelectionServiceTest extends IsolatedKernelTestCase
         $this->writeSessionMetadata($this->sessionId, ['model' => 'openai-codex/gpt-5.6-luna', 'reasoning' => 'medium']);
         $service = $this->buildService($data);
 
+        $initial = $this->sessionMetaStore->continuationGeneration($this->sessionId);
         $service->changeReasoning('high', $this->sessionId);
-        $this->assertSame(['pending_continuation_reset' => true], $this->findSessionEntity($this->sessionId)->reasoningBaseline);
-        $this->assertTrue($this->sessionMetaStore->consumeContinuationReset($this->sessionId));
+        $this->assertSame($initial + 1, $this->sessionMetaStore->continuationGeneration($this->sessionId));
 
         $service->changeReasoning('high', $this->sessionId);
-        $this->assertFalse($this->sessionMetaStore->consumeContinuationReset($this->sessionId));
+        $this->assertSame($initial + 1, $this->sessionMetaStore->continuationGeneration($this->sessionId));
 
         $service->changeReasoning('off', $this->sessionId);
-        $this->assertTrue($this->sessionMetaStore->consumeContinuationReset($this->sessionId));
+        $this->assertSame($initial + 2, $this->sessionMetaStore->continuationGeneration($this->sessionId));
 
         $this->writeSessionMetadata($this->sessionId, ['model' => 'openai-codex/gpt-6-astra', 'reasoning' => 'medium']);
+        $afterModelChange = $this->sessionMetaStore->continuationGeneration($this->sessionId);
         $service->changeReasoning('high', $this->sessionId);
-        $this->assertFalse($this->sessionMetaStore->consumeContinuationReset($this->sessionId));
+        $this->assertSame($afterModelChange, $this->sessionMetaStore->continuationGeneration($this->sessionId));
     }
 
     // ──────────────────────────────────────────────

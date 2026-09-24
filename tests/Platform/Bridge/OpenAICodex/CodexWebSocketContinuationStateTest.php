@@ -17,6 +17,36 @@ use Symfony\Component\Uid\UuidV7;
 
 final class CodexWebSocketContinuationStateTest extends TestCase
 {
+    public function testToolChangeDoesNotHideAnUnrelatedHistoryOrBodyMismatch(): void
+    {
+        $body = [
+            'model' => 'gpt-5.6-luna',
+            'input' => [['role' => 'user', 'content' => 'first']],
+            'tools' => [['name' => 'read']],
+        ];
+        $state = CodexWebSocketContinuationState::fromSuccessfulResponse(
+            $body,
+            'resp_first',
+            [['type' => 'message', 'role' => 'assistant', 'content' => 'ok']],
+        );
+        $current = [
+            'model' => 'gpt-5.6-luna',
+            'input' => [
+                ['role' => 'user', 'content' => 'first'],
+                ['type' => 'message', 'role' => 'assistant', 'content' => 'ok'],
+                ['role' => 'user', 'content' => 'next'],
+            ],
+            'tools' => [['name' => 'new_mcp_tool']],
+        ];
+
+        $this->assertTrue($state->requiresFreshChainForTools($current));
+        $current['input'][1]['content'] = 'different reply';
+        $this->assertFalse($state->requiresFreshChainForTools($current));
+        $current['input'][1]['content'] = 'ok';
+        $current['model'] = 'different-model';
+        $this->assertFalse($state->requiresFreshChainForTools($current));
+    }
+
     public function testNormalizedAssistantHistoryContinuesNativeResponseWithoutReplayingIt(): void
     {
         $contract = CodexContract::create();
