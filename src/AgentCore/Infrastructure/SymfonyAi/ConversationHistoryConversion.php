@@ -132,7 +132,15 @@ final class ConversationHistoryConversion
         $details = \is_array($message->details) ? $message->details : null;
         $content = $message->content;
 
-        if (\is_array($details)) {
+        $hasOrderedThinkingParts = false;
+        foreach ($content as $part) {
+            if (\is_array($part) && 'thinking' === ($part['type'] ?? null)) {
+                $hasOrderedThinkingParts = true;
+                break;
+            }
+        }
+
+        if (\is_array($details) || $hasOrderedThinkingParts) {
             $thinking = \is_string($details['thinking'] ?? null) ? $details['thinking'] : null;
             $thinkingSignature = \is_string($details['thinking_signature'] ?? null)
                 ? $details['thinking_signature']
@@ -141,7 +149,7 @@ final class ConversationHistoryConversion
                 ? $details['thinking_signatures']
                 : [];
 
-            if (null !== $thinking || null !== $thinkingSignature || [] !== $thinkingSignatures) {
+            if (null !== $thinking || null !== $thinkingSignature || [] !== $thinkingSignatures || $hasOrderedThinkingParts) {
                 if (\is_string($thinking) && '' !== $thinking) {
                     $content[] = [
                         'type' => 'text',
@@ -149,8 +157,17 @@ final class ConversationHistoryConversion
                     ];
                 }
 
-                unset($details['thinking'], $details['thinking_signature'], $details['thinking_signatures']);
-                $details = [] !== $details ? $details : null;
+                if (\is_array($details)) {
+                    unset($details['thinking'], $details['thinking_signature'], $details['thinking_signatures']);
+                    $details = [] !== $details ? $details : null;
+                }
+
+                if ($hasOrderedThinkingParts) {
+                    $content = array_values(array_filter(
+                        $content,
+                        static fn (mixed $part): bool => !\is_array($part) || 'thinking' !== ($part['type'] ?? null),
+                    ));
+                }
             }
         }
 

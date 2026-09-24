@@ -836,10 +836,12 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
      */
     private function buildAssistantMessage(array $deltas): ?AssistantMessage
     {
-        $text = '';
-        $thinking = '';
-        $thinkingSignature = null;
-        $thinkingSignatures = [];
+        /** @var list<ContentInterface|ToolCall> $contentParts */
+        $contentParts = [];
+        $pendingText = '';
+        $pendingThinking = '';
+        $pendingThinkingSignature = null;
+        $lastCumulativeThinking = '';
         $completedToolCalls = null;
 
         /** @var array<string, array{name: string, partial_json: string, order_index: int}> $partialToolCalls */
@@ -847,61 +849,99 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         $toolOrderCursor = 0;
 
         foreach ($deltas as $delta) {
-            match (true) {
-                $delta instanceof TextDelta => $text .= $delta->getText(),
-                $delta instanceof ThinkingDelta => $thinking .= $delta->getThinking(),
-                $delta instanceof ThinkingSignature => $thinkingSignature = $delta->getSignature(),
-                $delta instanceof ThinkingComplete => [$thinking, $thinkingSignature, $thinkingSignatures] = [
-                    $delta->getThinking(),
-                    $delta->getSignature() ?? $thinkingSignature,
-                    null !== $delta->getSignature() ? [...$thinkingSignatures, $delta->getSignature()] : $thinkingSignatures,
-                ],
-                $delta instanceof ToolCallStart => $partialToolCalls[$delta->getId()] ??= [
+            if ($delta instanceof TextDelta) {
+                if ('' !== $pendingThinking || null !== $pendingThinkingSignature) {
+                    $contentParts[] = new Thinking($pendingThinking, $pendingThinkingSignature);
+                    $pendingThinking = '';
+                    $pendingThinkingSignature = null;
+                }
+                $pendingText .= $delta->getText();
+                continue;
+            }
+
+            if ($delta instanceof ThinkingDelta) {
+                if ('' !== $pendingText) {
+                    $contentParts[] = new Text($pendingText);
+                    $pendingText = '';
+                }
+                $pendingThinking .= $delta->getThinking();
+                continue;
+            }
+
+            if ($delta instanceof ThinkingSignature) {
+                if ('' !== $pendingText) {
+                    $contentParts[] = new Text($pendingText);
+                    $pendingText = '';
+                }
+                $pendingThinkingSignature = $delta->getSignature();
+                continue;
+            }
+
+            if ($delta instanceof ThinkingComplete) {
+                if ('' !== $pendingText) {
+                    $contentParts[] = new Text($pendingText);
+                    $pendingText = '';
+                }
+                $signature = $delta->getSignature() ?? $pendingThinkingSignature;
+                if (\is_string($signature) && '' !== $signature) {
+                    $cumulative = $delta->getThinking();
+                    $segment = $cumulative;
+                    if ('' !== $lastCumulativeThinking && str_starts_with($cumulative, $lastCumulativeThinking)) {
+                        $segment = substr($cumulative, \strlen($lastCumulativeThinking));
+                    }
+                    $contentParts[] = new Thinking($segment, $signature);
+                    $lastCumulativeThinking = $cumulative;
+                    $pendingThinking = '';
+                    $pendingThinkingSignature = null;
+                } else {
+                    // Unsigned thinking stays aggregated for display; providers that
+                    // finalize multiple signature-less segments still expose one part.
+                    $pendingThinking = $delta->getThinking();
+                    $pendingThinkingSignature = null;
+                }
+                continue;
+            }
+
+            if ($delta instanceof ToolCallStart) {
+                $partialToolCalls[$delta->getId()] ??= [
                     'name' => $delta->getName(),
                     'partial_json' => '',
                     'order_index' => $toolOrderCursor++,
-                ],
-                $delta instanceof ToolInputDelta => $partialToolCalls[$delta->getId()] = [
+                ];
+                continue;
+            }
+
+            if ($delta instanceof ToolInputDelta) {
+                $partialToolCalls[$delta->getId()] = [
                     'name' => $delta->getName(),
                     'partial_json' => ($partialToolCalls[$delta->getId()]['partial_json'] ?? '').$delta->getPartialJson(),
                     'order_index' => $partialToolCalls[$delta->getId()]['order_index'] ?? $toolOrderCursor++,
-                ],
-                $delta instanceof ToolCallComplete => $completedToolCalls = $delta->getToolCalls(),
-                default => null,
-            };
+                ];
+                continue;
+            }
+
+            if ($delta instanceof ToolCallComplete) {
+                $completedToolCalls = $delta->getToolCalls();
+            }
         }
 
         $toolCalls = $completedToolCalls ?? $this->buildPartialToolCalls($partialToolCalls);
 
-        if ('' === $text && [] === $toolCalls && '' === $thinking && null === $thinkingSignature) {
-            return null;
-        }
-
-        /** @var ContentInterface[] $contentParts */
-        $contentParts = [];
-
-        if ('' !== $text) {
-            $contentParts[] = new Text($text);
-        }
-
-        if ([] !== $thinkingSignatures) {
-            foreach ($thinkingSignatures as $index => $signature) {
-                $contentParts[] = new Thinking(
-                    content: 0 === $index ? $thinking : '',
-                    signature: $signature,
-                );
-            }
-        } elseif ('' !== $thinking || null !== $thinkingSignature) {
-            $contentParts[] = new Thinking(
-                content: $thinking,
-                signature: $thinkingSignature,
-            );
+        if ('' !== $pendingText) {
+            $contentParts[] = new Text($pendingText);
+        } elseif ('' !== $pendingThinking || null !== $pendingThinkingSignature) {
+            $contentParts[] = new Thinking($pendingThinking, $pendingThinkingSignature);
         }
 
         foreach ($toolCalls as $toolCall) {
             $contentParts[] = $toolCall;
         }
 
+        if ([] === $contentParts) {
+            return null;
+        }
+
+        // ToolCall implements ContentInterface for AssistantMessage composition.
         return new AssistantMessage(...$contentParts);
     }
 
