@@ -305,7 +305,7 @@ final class CodexWebSocketModelClient implements ModelClientInterface
             ]);
             $this->failOutboundTransport($lease->connection, $lease, 'continuation_mismatch');
 
-            throw new CodexWebSocketContinuationMismatchException($decision->toLogContext(), $decision->reason);
+            throw new CodexWebSocketContinuationMismatchException($decision->reason);
         }
 
         $delta = $decision->delta;

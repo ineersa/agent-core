@@ -831,7 +831,6 @@ final class CodexWebSocketCachedModelClientTest extends TestCase
             $this->fail('Expected CodexWebSocketContinuationMismatchException.');
         } catch (\Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketContinuationMismatchException $caught) {
             $exception = $caught;
-            $this->assertSame('prefix_mismatch', $exception->logContext['reason']);
             $this->assertStringContainsString('prefix_mismatch', $exception->getMessage());
             $this->assertStringNotContainsString('./different.txt', $exception->getMessage());
             $this->assertStringNotContainsString($cacheKey, $exception->getMessage());
