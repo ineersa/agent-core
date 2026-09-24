@@ -39,6 +39,9 @@ agents:
         always_on: {}
 ai:
     providers:
+        openai-codex:
+            enabled: true
+            transport: websocket-cached
         llama_cpp:
             type: generic
             enabled: true
