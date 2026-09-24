@@ -55,6 +55,11 @@ OAuth providers:
 - `type: codex` stores tokens under `~/.hatfield/auth.json` key `openai-codex` via `bin/console auth:codex`.
 - `type: grok` (Grok CLI / cli-chat-proxy) stores tokens under key `grok-cli` via `bin/console auth:grok`. Do not set `api_key`.
 
+For Codex, `ai.providers.openai-codex.transport` accepts `websocket` (built-in
+default), `websocket-cached`, or `sse`. This repository's `.hatfield/settings.yaml`
+opts in to `websocket-cached`; other projects keep the built-in default unless
+they override it.
+
 Model metadata typically includes display `name`, `context_window`, `max_tokens`,
 `input` modalities, `tool_calling`, `reasoning`, optional `thinking_level_map`, and `cost`.
 
@@ -74,7 +79,9 @@ change starts a new baseline from the current selection. Explicit compaction
 overrides remain separate. The flag defaults to false and is enabled for the
 GPT-6 Codex models (`gpt-6-astra`, `gpt-6-sol`, `gpt-6-luna`) in the bundled
 catalog. A settings-level `models` map replaces the catalog models, so
-definitions for these models must include the flag to enable it.
+definitions for these models must include the flag to enable it. For Codex
+models without the flag, a mid-session effort change starts a fresh cached
+WebSocket continuation instead of reusing the prior response.
 
 ## HTTP client (`ai.http`)
 

@@ -278,7 +278,7 @@ final class RawWebSocketResultTest extends TestCase
         iterator_to_array($raw->getDataStream());
 
         $this->assertNotNull($entry->continuation);
-        $delta = $entry->continuation->buildDeltaRequest([
+        $delta = $entry->continuation->decide([
             'model' => 'gpt-5.6-luna',
             'input' => [
                 ['role' => 'user', 'content' => 'first'],
@@ -286,7 +286,7 @@ final class RawWebSocketResultTest extends TestCase
                 ['role' => 'user', 'content' => 'next'],
             ],
             'stream' => true,
-        ]);
+        ])->delta;
         $this->assertSame('resp_terminal_only', $delta['previous_response_id'] ?? null);
         $this->assertSame([['role' => 'user', 'content' => 'next']], $delta['input'] ?? null);
         $baselineLogs = array_values(array_filter(
@@ -369,7 +369,7 @@ final class RawWebSocketResultTest extends TestCase
         iterator_to_array($raw->getDataStream());
 
         $this->assertNotNull($entry->continuation);
-        $delta = $entry->continuation->buildDeltaRequest([
+        $delta = $entry->continuation->decide([
             'model' => 'gpt-5.6-luna',
             'input' => [
                 ['role' => 'user', 'content' => 'first'],
@@ -377,13 +377,13 @@ final class RawWebSocketResultTest extends TestCase
                 ['role' => 'user', 'content' => 'next'],
             ],
             'stream' => true,
-        ]);
+        ])->delta;
 
         $this->assertNotNull($delta);
         $this->assertSame('resp_terminal', $delta['previous_response_id']);
         $this->assertSame([['role' => 'user', 'content' => 'next']], $delta['input']);
 
-        $terminalHistory = $entry->continuation->buildDeltaRequest([
+        $terminalHistory = $entry->continuation->decide([
             'model' => 'gpt-5.6-luna',
             'input' => [
                 ['role' => 'user', 'content' => 'first'],
@@ -391,7 +391,7 @@ final class RawWebSocketResultTest extends TestCase
                 ['role' => 'user', 'content' => 'next'],
             ],
             'stream' => true,
-        ]);
+        ])->delta;
         $this->assertNull($terminalHistory);
     }
 

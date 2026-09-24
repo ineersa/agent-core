@@ -541,14 +541,16 @@ final class AgentMessageConverter
             : [];
 
         if ([] !== $thinkingSignatures) {
-            foreach ($thinkingSignatures as $index => $signature) {
+            $firstSignature = true;
+            foreach ($thinkingSignatures as $signature) {
                 if (!\is_string($signature)) {
                     continue;
                 }
                 $contentParts[] = new Thinking(
-                    content: 0 === $index ? $thinkingContent ?? '' : '',
+                    content: $firstSignature ? $thinkingContent ?? '' : '',
                     signature: $signature,
                 );
+                $firstSignature = false;
             }
         } elseif (null !== $thinkingContent || null !== $thinkingSignature) {
             $contentParts[] = new Thinking(

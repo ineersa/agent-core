@@ -24,16 +24,6 @@ final class CodexWebSocketContinuationState
     }
 
     /**
-     * @param array<string, mixed> $currentRequestBody
-     *
-     * @return array{previous_response_id: string, input: list<array<string, mixed>>}|null
-     */
-    public function buildDeltaRequest(array $currentRequestBody): ?array
-    {
-        return $this->decide($currentRequestBody)->delta;
-    }
-
-    /**
      * Classify continuation eligibility with privacy-safe structural diagnostics.
      *
      * @param array<string, mixed> $currentRequestBody

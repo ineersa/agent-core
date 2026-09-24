@@ -382,6 +382,20 @@ final class AgentMessageConverterTest extends IsolatedKernelTestCase
         $this->assertStringContainsString('plan', $changed->getMessages()[0]->asText());
     }
 
+    public function testInvalidLeadingReasoningSignatureDoesNotDiscardThinkingText(): void
+    {
+        $assistant = new AgentMessage(
+            role: 'assistant',
+            content: [['type' => 'text', 'text' => 'answer']],
+            details: ['thinking' => 'plan', 'thinking_signatures' => [null, '{"type":"reasoning","id":"rs_valid"}']],
+            metadata: ['source_model' => 'openai-codex/model-a'],
+        );
+
+        $bag = $this->converter->toMessageBagForTarget([$assistant], 'openai-codex/model-a');
+        $this->assertCount(1, $bag->getMessages()[0]->getThinking());
+        $this->assertSame('plan', $bag->getMessages()[0]->getThinking()[0]->getContent());
+    }
+
     public function testExactContextReuseWorksWithFreshlyDeserializedEqualMessages(): void
     {
         $original = [

@@ -33,13 +33,13 @@ final class CodexWebSocketContinuationStateTest extends TestCase
         ]]);
         $current = $contract->createRequestPayload($model, new MessageBag($user, Message::ofAssistant('answer'), Message::ofUser('next')), []);
 
-        $delta = $state->buildDeltaRequest($current);
+        $delta = $state->decide($current)->delta;
         $this->assertNotNull($delta);
         $this->assertSame('resp_text', $delta['previous_response_id']);
         $this->assertSame([$current['input'][2]], $delta['input']);
 
         $current['input'][1]['content'][0]['text'] = 'edited answer';
-        $this->assertNull($state->buildDeltaRequest($current), 'Changed assistant content must still reject continuation.');
+        $this->assertNull($state->decide($current)->delta, 'Changed assistant content must still reject continuation.');
     }
 
     public function testNormalizedToolHistoryContinuesNativeResponseWithoutReplayingCall(): void
@@ -63,20 +63,20 @@ final class CodexWebSocketContinuationStateTest extends TestCase
             Message::ofToolCall($call, 'fixture'),
         ), []);
 
-        $delta = $state->buildDeltaRequest($current);
+        $delta = $state->decide($current)->delta;
         $this->assertNotNull($delta);
         $this->assertSame('resp_tool', $delta['previous_response_id']);
         $this->assertSame([$current['input'][2]], $delta['input']);
 
         $changedCall = $current;
         $changedCall['input'][1]['call_id'] = 'call_other';
-        $this->assertNull($state->buildDeltaRequest($changedCall), 'A different call must not inherit the response.');
+        $this->assertNull($state->decide($changedCall)->delta, 'A different call must not inherit the response.');
         $reordered = $current;
         [$reordered['input'][0], $reordered['input'][1]] = [$reordered['input'][1], $reordered['input'][0]];
-        $this->assertNull($state->buildDeltaRequest($reordered), 'Object key order is irrelevant, but input item order is not.');
+        $this->assertNull($state->decide($reordered)->delta, 'Object key order is irrelevant, but input item order is not.');
 
         $current['input'][1]['arguments'] = '{"path":"./different.txt"}';
-        $this->assertNull($state->buildDeltaRequest($current), 'Changed tool arguments must still reject continuation.');
+        $this->assertNull($state->decide($current)->delta, 'Changed tool arguments must still reject continuation.');
     }
 
     public function testBuildsDeltaForStrictExtension(): void
@@ -102,7 +102,7 @@ final class CodexWebSocketContinuationStateTest extends TestCase
             'stream' => true,
         ];
 
-        $delta = $state->buildDeltaRequest($current);
+        $delta = $state->decide($current)->delta;
         $this->assertNotNull($delta);
         $this->assertSame('resp_123', $delta['previous_response_id']);
         $this->assertCount(1, $delta['input']);
@@ -117,11 +117,11 @@ final class CodexWebSocketContinuationStateTest extends TestCase
             [],
         );
 
-        $delta = $state->buildDeltaRequest([
+        $delta = $state->decide([
             'model' => 'gpt-5.6-sol',
             'input' => [['role' => 'user', 'content' => 'x']],
             'stream' => true,
-        ]);
+        ])->delta;
 
         $this->assertNull($delta);
     }
@@ -450,7 +450,7 @@ final class CodexWebSocketContinuationStateTest extends TestCase
             'stream' => true,
         ];
 
-        $delta = $state->buildDeltaRequest($current);
+        $delta = $state->decide($current)->delta;
         $this->assertNotNull($delta);
         $this->assertSame('resp_123', $delta['previous_response_id']);
         $this->assertSame([

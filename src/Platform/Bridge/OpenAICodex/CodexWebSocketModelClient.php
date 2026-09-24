@@ -279,7 +279,7 @@ final class CodexWebSocketModelClient implements ModelClientInterface
                 'prompt_cache_key_present' => $keyContext['prompt_cache_key_present'],
                 'prompt_cache_key_fp' => $keyContext['prompt_cache_key_fp'],
                 'prompt_cache_key_length' => $keyContext['prompt_cache_key_length'],
-                'prompt_cache_key_changed' => false,
+                'prompt_cache_key_changed' => null,
                 'baseline_input_count' => 0,
                 'current_input_count' => \is_array($fullBody['input'] ?? null) ? \count($fullBody['input']) : 0,
                 'delta_input_count' => null,

@@ -691,7 +691,7 @@ final class PlatformIntegrationTest extends TestCase
             'resp_two_reasoning',
             [$first, $second, $followUp['input'][3]],
         );
-        $delta = $baseline->buildDeltaRequest(['model' => 'gpt-5.6-luna', 'input' => $followUp['input']]);
+        $delta = $baseline->decide(['model' => 'gpt-5.6-luna', 'input' => $followUp['input']])->delta;
         $this->assertSame('resp_two_reasoning', $delta['previous_response_id'] ?? null);
         $this->assertSame([$followUp['input'][4]], $delta['input'] ?? null);
         $this->assertSame('call_one', $delta['input'][0]['call_id'] ?? null);

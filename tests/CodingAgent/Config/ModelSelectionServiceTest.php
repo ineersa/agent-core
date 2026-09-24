@@ -167,6 +167,35 @@ class ModelSelectionServiceTest extends IsolatedKernelTestCase
         $this->assertSame('llama_cpp/flash', $session->model);
     }
 
+    public function testCodexReasoningSelectionResetsContinuationWithoutConfigurationUpdates(): void
+    {
+        $data = $this->standardAiData();
+        $data['providers']['openai-codex'] = [
+            'type' => 'codex',
+            'enabled' => true,
+            'models' => [
+                'gpt-5.6-luna' => ['name' => 'Luna', 'reasoning' => true, 'thinking_level_map' => ['medium' => 'medium', 'high' => 'high']],
+                'gpt-6-astra' => ['name' => 'Astra', 'reasoning' => true, 'thinking_level_map' => ['medium' => 'medium', 'high' => 'high'], 'compatibility' => ['supports_reasoning_configuration_updates' => true]],
+            ],
+        ];
+        $this->writeSessionMetadata($this->sessionId, ['model' => 'openai-codex/gpt-5.6-luna', 'reasoning' => 'medium']);
+        $service = $this->buildService($data);
+
+        $service->changeReasoning('high', $this->sessionId);
+        $this->assertSame(['pending_continuation_reset' => true], $this->findSessionEntity($this->sessionId)->reasoningBaseline);
+        $this->assertTrue($this->sessionMetaStore->consumeContinuationReset($this->sessionId));
+
+        $service->changeReasoning('high', $this->sessionId);
+        $this->assertFalse($this->sessionMetaStore->consumeContinuationReset($this->sessionId));
+
+        $service->changeReasoning('off', $this->sessionId);
+        $this->assertTrue($this->sessionMetaStore->consumeContinuationReset($this->sessionId));
+
+        $this->writeSessionMetadata($this->sessionId, ['model' => 'openai-codex/gpt-6-astra', 'reasoning' => 'medium']);
+        $service->changeReasoning('high', $this->sessionId);
+        $this->assertFalse($this->sessionMetaStore->consumeContinuationReset($this->sessionId));
+    }
+
     // ──────────────────────────────────────────────
     //  Favorites
     // ──────────────────────────────────────────────
