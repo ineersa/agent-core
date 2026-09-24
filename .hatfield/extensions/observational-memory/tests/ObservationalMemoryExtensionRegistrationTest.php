@@ -153,6 +153,7 @@ final class ObservationalMemoryExtensionRegistrationTest extends TestCase
         $this->assertStringContainsString('all retained history', $searchGuidelines);
         $this->assertStringContainsString('No hits is not proof', $searchGuidelines);
         $this->assertStringContainsString('one contiguous literal substring', $searchGuidelines);
+        $this->assertStringContainsString('exact phrase', $search->parametersJsonSchema['properties']['query']['description']);
         $this->assertStringContainsString('not a query match score', $searchGuidelines);
         $this->assertStringContainsString('not raw transcript events', $searchGuidelines);
         $this->assertStringContainsString('recall with that memory id and session_id for provenance', $searchGuidelines);
@@ -204,6 +205,10 @@ final class ObservationalMemoryExtensionRegistrationTest extends TestCase
         $this->assertStringContainsString('semantic vector search', $text);
         $this->assertStringContainsString('relevance-ranked', $text);
         $this->assertStringContainsString('partial: true means the index is still catching up', $text);
+        $this->assertStringContainsString('Phrases are search hints, not exact-match constraints', $text);
+        $this->assertStringContainsString('A ranked hit may be unrelated; judge its content', $text);
+        $this->assertStringContainsString('truncated: true means a candidate or result limit was reached, not that more relevant memories exist', $text);
+        $this->assertStringNotContainsString('exact phrases', $text);
         $this->assertStringNotContainsString('one contiguous literal substring', $text);
         $this->assertStringNotContainsString('try one word', $text);
         $this->assertStringNotContainsString('RRF', $text);
