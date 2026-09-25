@@ -87,7 +87,7 @@ providers:
         supports_embeddings: false
         supports_thinking_levels: true
         transport: websocket
-        websocket_cache_idle_ttl_seconds: 300
+        websocket_cache_idle_ttl_seconds: 60
         websocket_cache_max_age_seconds: 3300
         compatibility:
             supports_developer_role: false
