@@ -529,19 +529,79 @@ final class AgentMessageConverter
     private function buildAssistantMessage(string $textContent, AgentMessage $message): AssistantMessage
     {
         $contentParts = [];
-
-        if ('' !== $textContent) {
-            $contentParts[] = new Text($textContent);
-        }
-
         $thinkingContent = \is_string($message->details['thinking'] ?? null) ? $message->details['thinking'] : null;
         $thinkingSignature = \is_string($message->details['thinking_signature'] ?? null) ? $message->details['thinking_signature'] : null;
+        $thinkingSignatures = \is_array($message->details['thinking_signatures'] ?? null)
+            ? $message->details['thinking_signatures']
+            : [];
+        $hasOrderedThinkingParts = false;
+        foreach ($message->content as $part) {
+            if (!\is_array($part)) {
+                continue;
+            }
+            if ('thinking' === ($part['type'] ?? null)) {
+                $hasOrderedThinkingParts = true;
+                break;
+            }
+        }
 
-        if (null !== $thinkingContent || null !== $thinkingSignature) {
-            $contentParts[] = new Thinking(
-                content: $thinkingContent ?? '',
-                signature: $thinkingSignature,
-            );
+        if ($hasOrderedThinkingParts) {
+            foreach ($message->content as $part) {
+                if (!\is_array($part)) {
+                    continue;
+                }
+
+                $type = $part['type'] ?? null;
+                if ('text' === $type) {
+                    $text = $part['text'] ?? null;
+                    if (\is_string($text) && '' !== $text) {
+                        $contentParts[] = new Text($text);
+                    }
+                    continue;
+                }
+
+                if ('thinking' !== $type) {
+                    continue;
+                }
+
+                $signature = \is_string($part['thinking_signature'] ?? null) ? $part['thinking_signature'] : null;
+                $partText = $part['text'] ?? null;
+                $attachDisplayThinking = !\is_string($partText) && null !== $thinkingContent;
+                $contentParts[] = new Thinking(
+                    content: \is_string($partText) ? $partText : ($attachDisplayThinking ? $thinkingContent : ''),
+                    signature: \is_string($signature) && '' !== $signature ? $signature : null,
+                );
+                if ($attachDisplayThinking) {
+                    $thinkingContent = null;
+                }
+            }
+
+            if ([] === $contentParts && '' !== $textContent) {
+                $contentParts[] = new Text($textContent);
+            }
+        } else {
+            if ([] !== $thinkingSignatures) {
+                $firstSignature = true;
+                foreach ($thinkingSignatures as $signature) {
+                    if (!\is_string($signature)) {
+                        continue;
+                    }
+                    $contentParts[] = new Thinking(
+                        content: $firstSignature ? $thinkingContent ?? '' : '',
+                        signature: $signature,
+                    );
+                    $firstSignature = false;
+                }
+            } elseif (null !== $thinkingContent || null !== $thinkingSignature) {
+                $contentParts[] = new Thinking(
+                    content: $thinkingContent ?? '',
+                    signature: $thinkingSignature,
+                );
+            }
+
+            if ('' !== $textContent) {
+                $contentParts[] = new Text($textContent);
+            }
         }
 
         $toolCalls = $this->assistantToolCalls($message);

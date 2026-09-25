@@ -12,6 +12,7 @@ use Ineersa\AgentCore\Contract\Model\ModelResolverInterface;
 use Ineersa\AgentCore\Contract\RunOperationalStatusDTO;
 use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationOptions;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
@@ -29,6 +30,10 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Agent\Toolbox\ToolResult;
+use Symfony\AI\Platform\Bridge\OpenAICodex\CodexModel;
+use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketContinuationDecision;
+use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketContinuationState;
+use Symfony\AI\Platform\Bridge\OpenAICodex\Contract\CodexContract;
 use Symfony\AI\Platform\Model;
 use Symfony\AI\Platform\ModelCatalog\FallbackModelCatalog;
 use Symfony\AI\Platform\ModelClientInterface;
@@ -43,6 +48,7 @@ use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
 use Symfony\AI\Platform\Result\Stream\Delta\ThinkingComplete;
 use Symfony\AI\Platform\Result\Stream\Delta\ThinkingDelta;
 use Symfony\AI\Platform\Result\Stream\Delta\ThinkingStart;
+use Symfony\AI\Platform\Result\Stream\Delta\ToolCallComplete;
 use Symfony\AI\Platform\Result\StreamResult;
 use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\AI\Platform\ResultConverterInterface;
@@ -644,6 +650,110 @@ final class PlatformIntegrationTest extends TestCase
         $thinking = $response->assistantMessage?->getThinking() ?? [];
         $this->assertCount(1, $thinking);
         $this->assertSame($expectedThinking, $thinking[0]->getContent());
+    }
+
+    public function testTwoFinalizedReasoningItemsReplayAsToolOutputDelta(): void
+    {
+        $first = ['type' => 'reasoning', 'id' => 'rs_first', 'encrypted_content' => 'enc_first'];
+        $second = ['type' => 'reasoning', 'id' => 'rs_second', 'encrypted_content' => 'enc_second'];
+        $adapter = $this->createAdapter(streamFactory: static fn (): iterable => [
+            new ThinkingComplete('first', json_encode($first, \JSON_THROW_ON_ERROR)),
+            new ThinkingComplete('second', json_encode($second, \JSON_THROW_ON_ERROR)),
+            new ToolCallComplete([new ToolCall('call_one|fc_one', 'bash', ['command' => 'pwd'])]),
+        ]);
+        $user = new AgentMessage('user', [['type' => 'text', 'text' => 'first']]);
+        $response = $adapter->invoke(new ModelInvocationRequest(
+            model: 'gpt-5.6-luna',
+            input: new ModelInvocationInput(runId: 'run-two-reasoning', messages: [$user]),
+        ));
+        $this->assertNull($response->error);
+        $this->assertNotNull($response->assistantMessage);
+
+        $assistant = (new AgentMessageNormalizer())->assistantMessage($response->assistantMessage, 'openai-codex/gpt-5.6-luna');
+        $this->assertSame('firstsecond', $assistant->details['thinking'] ?? null);
+        $this->assertSame([
+            ['type' => 'thinking', 'text' => 'first', 'thinking_signature' => json_encode($first, \JSON_THROW_ON_ERROR)],
+            ['type' => 'thinking', 'text' => 'second', 'thinking_signature' => json_encode($second, \JSON_THROW_ON_ERROR)],
+        ], $assistant->content);
+
+        $assistant = AgentMessage::fromPayload($assistant->toArray());
+        $this->assertNotNull($assistant);
+        $tool = new AgentMessage('tool', [['type' => 'text', 'text' => 'done']], toolCallId: 'call_one|fc_one', toolName: 'bash');
+        $converter = new AgentMessageConverter();
+        $contract = CodexContract::create();
+        $model = new CodexModel('gpt-5.6-luna');
+        $initial = $contract->createRequestPayload($model, $converter->toMessageBagForTarget([$user], 'openai-codex/gpt-5.6-luna'), []);
+        $followUp = $contract->createRequestPayload($model, $converter->toMessageBagForTarget([$user, $assistant, $tool], 'openai-codex/gpt-5.6-luna'), []);
+        $this->assertSame([$first, $second], \array_slice($followUp['input'], 1, 2));
+        $this->assertSame('function_call', $followUp['input'][3]['type']);
+        $this->assertSame('function_call_output', $followUp['input'][4]['type']);
+
+        $baseline = new CodexWebSocketContinuationState(
+            ['model' => 'gpt-5.6-luna', 'input' => $initial['input']],
+            'resp_two_reasoning',
+            [$first, $second, $followUp['input'][3]],
+        );
+        $delta = $baseline->decide(['model' => 'gpt-5.6-luna', 'input' => $followUp['input']])->delta;
+        $this->assertSame('resp_two_reasoning', $delta['previous_response_id'] ?? null);
+        $this->assertSame([$followUp['input'][4]], $delta['input'] ?? null);
+        $this->assertSame('call_one', $delta['input'][0]['call_id'] ?? null);
+    }
+
+    public function testInterleavedReasoningCommentaryPreservesProviderOrderOnReplay(): void
+    {
+        $first = ['type' => 'reasoning', 'id' => 'rs_first', 'encrypted_content' => 'enc_first'];
+        $second = ['type' => 'reasoning', 'id' => 'rs_second', 'encrypted_content' => 'enc_second'];
+        $adapter = $this->createAdapter(streamFactory: static fn (): iterable => [
+            new ThinkingComplete('first', json_encode($first, \JSON_THROW_ON_ERROR)),
+            new TextDelta('commentary'),
+            new ThinkingComplete('second', json_encode($second, \JSON_THROW_ON_ERROR)),
+            new ToolCallComplete([new ToolCall('call_one|fc_one', 'bash', ['command' => 'pwd'])]),
+        ]);
+        $user = new AgentMessage('user', [['type' => 'text', 'text' => 'first']]);
+        $response = $adapter->invoke(new ModelInvocationRequest(
+            model: 'gpt-5.6-luna',
+            input: new ModelInvocationInput(runId: 'run-interleaved-reasoning', messages: [$user]),
+        ));
+        $this->assertNull($response->error);
+        $this->assertNotNull($response->assistantMessage);
+
+        $assistant = (new AgentMessageNormalizer())->assistantMessage($response->assistantMessage, 'openai-codex/gpt-5.6-luna');
+        $this->assertSame('firstsecond', $assistant->details['thinking'] ?? null);
+        $this->assertSame([
+            ['type' => 'thinking', 'text' => 'first', 'thinking_signature' => json_encode($first, \JSON_THROW_ON_ERROR)],
+            ['type' => 'text', 'text' => 'commentary'],
+            ['type' => 'thinking', 'text' => 'second', 'thinking_signature' => json_encode($second, \JSON_THROW_ON_ERROR)],
+        ], $assistant->content);
+
+        $assistant = AgentMessage::fromPayload($assistant->toArray());
+        $this->assertNotNull($assistant);
+        $tool = new AgentMessage('tool', [['type' => 'text', 'text' => 'done']], toolCallId: 'call_one|fc_one', toolName: 'bash');
+        $converter = new AgentMessageConverter();
+        $contract = CodexContract::create();
+        $model = new CodexModel('gpt-5.6-luna');
+        $initial = $contract->createRequestPayload($model, $converter->toMessageBagForTarget([$user], 'openai-codex/gpt-5.6-luna'), []);
+        $followUp = $contract->createRequestPayload($model, $converter->toMessageBagForTarget([$user, $assistant, $tool], 'openai-codex/gpt-5.6-luna'), []);
+
+        $this->assertSame($first, $followUp['input'][1]);
+        $this->assertSame('message', $followUp['input'][2]['type']);
+        $this->assertSame('commentary', $followUp['input'][2]['content'][0]['text'] ?? null);
+        $this->assertSame($second, $followUp['input'][3]);
+        $this->assertSame('function_call', $followUp['input'][4]['type']);
+        $this->assertSame('function_call_output', $followUp['input'][5]['type']);
+
+        $baseline = new CodexWebSocketContinuationState(
+            ['model' => 'gpt-5.6-luna', 'input' => $initial['input']],
+            'resp_interleaved_reasoning',
+            [$first, $followUp['input'][2], $second, $followUp['input'][4]],
+        );
+        $decision = $baseline->decide(['model' => 'gpt-5.6-luna', 'input' => $followUp['input']]);
+        $this->assertSame(CodexWebSocketContinuationDecision::REASON_DELTA, $decision->reason);
+        $this->assertNotNull($decision->delta);
+        $this->assertSame('resp_interleaved_reasoning', $decision->delta['previous_response_id'] ?? null);
+        $this->assertSame([$followUp['input'][5]], $decision->delta['input'] ?? null);
+        $this->assertSame('call_one', $decision->delta['input'][0]['call_id'] ?? null);
+        $this->assertSame('function_call_output', $decision->delta['input'][0]['type'] ?? null);
+        $this->assertNotSame('', $decision->delta['input'][0]['output'] ?? '');
     }
 
     public function testTransformHookNotificationsFlowToPlatformInvocationResult(): void

@@ -446,6 +446,36 @@ final class CodexContractTest extends TestCase
         $this->assertNotNull($result[1]['content'], 'Content must not be null when text is present');
     }
 
+    public function testAssistantWithInterleavedThinkingAndTextPreservesOrder(): void
+    {
+        $first = new Thinking(
+            content: 'first',
+            signature: '{"type":"reasoning","id":"rs_1","encrypted_content":"enc_1"}',
+        );
+        $text = new Text('commentary');
+        $second = new Thinking(
+            content: 'second',
+            signature: '{"type":"reasoning","id":"rs_2","encrypted_content":"enc_2"}',
+        );
+        $assistantMessage = new AssistantMessage($first, $text, $second);
+
+        $normalizer = new CodexAssistantMessageNormalizer();
+        $result = $normalizer->normalize(
+            $assistantMessage,
+            null,
+            ['model' => new CodexModel('gpt-5.5')],
+        );
+
+        $this->assertIsArray($result);
+        $this->assertCount(3, $result);
+        $this->assertSame('reasoning', $result[0]['type']);
+        $this->assertSame('rs_1', $result[0]['id']);
+        $this->assertSame('message', $result[1]['type']);
+        $this->assertSame('commentary', $result[1]['content'][0]['text'] ?? null);
+        $this->assertSame('reasoning', $result[2]['type']);
+        $this->assertSame('rs_2', $result[2]['id']);
+    }
+
     /**
      * Regression test for #177: an empty assistant message must NOT produce
      * a content:null message item.  It must return an empty array so the

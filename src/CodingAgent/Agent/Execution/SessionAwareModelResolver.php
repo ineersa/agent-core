@@ -118,6 +118,18 @@ final class SessionAwareModelResolver implements ModelResolverInterface
                 }
             }
 
+            // Summarization uses a separate socket without changing the chat baseline.
+            // After accepted compaction, the stored generation resets every worker's
+            // chat continuation before the next turn.
+            if ('codex' === $this->catalog->getProvider($modelRef->providerId)?->type) {
+                if (false === ($options->values['toolsEnabled'] ?? null)) {
+                    $reasoningOptions[CodexRequestBodyFactory::CONTINUATION_RESET] = true;
+                }
+                if ('' !== $sessionId && 0 < ($generation = $this->sessionMetadataStore->continuationGeneration($sessionId) ?? 0)) {
+                    $reasoningOptions[CodexRequestBodyFactory::CONTINUATION_GENERATION] = $generation;
+                }
+            }
+
             // Pass 'reasoning' compat when options are present (z.ai off sends disabled thinking).
             if ([] !== $reasoningOptions && !\in_array(ReasoningOptionsFeatureShaper::FEATURE, $compatFeatures, true)) {
                 $compatFeatures[] = ReasoningOptionsFeatureShaper::FEATURE;
