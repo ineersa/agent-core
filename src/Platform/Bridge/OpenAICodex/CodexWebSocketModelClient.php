@@ -174,7 +174,10 @@ final class CodexWebSocketModelClient implements ModelClientInterface
 
         $useCache = CodexTransportEnum::WebsocketCached === $this->transport
             && null !== $this->connectionCache
-            && CodexCorrelationProvenance::Generated !== $resolution->provenance;
+            && CodexCorrelationProvenance::Generated !== $resolution->provenance
+            // Summarization is a separate request: a rejected summary must not
+            // replace the chat continuation with the summarization response.
+            && true !== ($bodyOptions[CodexRequestBodyFactory::CONTINUATION_RESET] ?? false);
 
         if (!$useCache) {
             [$connection, $effectiveRequestId, $effectiveProvenance] = $this->connectWithOptional401Refresh(
@@ -227,9 +230,8 @@ final class CodexWebSocketModelClient implements ModelClientInterface
             }
             $lease->entry->continuationGeneration = $generation;
         }
-        // Summarization and supported in-band reasoning epochs also start fresh.
-        if ((true === ($bodyOptions[CodexRequestBodyFactory::REASONING_RESET] ?? false)
-                || true === ($bodyOptions[CodexRequestBodyFactory::CONTINUATION_RESET] ?? false))
+        // Supported in-band reasoning epochs also start fresh.
+        if (true === ($bodyOptions[CodexRequestBodyFactory::REASONING_RESET] ?? false)
             && null !== $lease->entry) {
             $lease->entry->continuation = null;
         }

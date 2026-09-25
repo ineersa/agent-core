@@ -565,13 +565,11 @@ final class AgentMessageConverter
                 }
 
                 $signature = \is_string($part['thinking_signature'] ?? null) ? $part['thinking_signature'] : null;
-                if (!\is_string($signature) || '' === $signature) {
-                    continue;
-                }
-                $attachDisplayThinking = null !== $thinkingContent;
+                $partText = $part['text'] ?? null;
+                $attachDisplayThinking = !\is_string($partText) && null !== $thinkingContent;
                 $contentParts[] = new Thinking(
-                    content: $attachDisplayThinking ? $thinkingContent : '',
-                    signature: $signature,
+                    content: \is_string($partText) ? $partText : ($attachDisplayThinking ? $thinkingContent : ''),
+                    signature: \is_string($signature) && '' !== $signature ? $signature : null,
                 );
                 if ($attachDisplayThinking) {
                     $thinkingContent = null;

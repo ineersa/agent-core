@@ -118,8 +118,9 @@ final class SessionAwareModelResolver implements ModelResolverInterface
                 }
             }
 
-            // Compaction summarization and post-compaction chat turns must start a
-            // new cached-WebSocket baseline instead of inheriting previous_response_id.
+            // Summarization uses a separate socket without changing the chat baseline.
+            // After accepted compaction, the stored generation resets every worker's
+            // chat continuation before the next turn.
             if ('codex' === $this->catalog->getProvider($modelRef->providerId)?->type) {
                 if (false === ($options->values['toolsEnabled'] ?? null)) {
                     $reasoningOptions[CodexRequestBodyFactory::CONTINUATION_RESET] = true;

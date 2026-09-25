@@ -260,7 +260,7 @@ final readonly class AgentMessageNormalizer
     }
 
     /**
-     * @return list<array{type: 'text', text: string}|array{type: 'thinking', thinking_signature?: string|null}>
+     * @return list<array{type: 'text', text: string}|array{type: 'thinking', text: string, thinking_signature?: string|null}>
      */
     private function orderedAssistantContent(AssistantMessage $assistantMessage): array
     {
@@ -280,7 +280,7 @@ final readonly class AgentMessageNormalizer
             }
 
             if ($part instanceof Thinking) {
-                $entry = ['type' => 'thinking'];
+                $entry = ['type' => 'thinking', 'text' => $part->getContent()];
                 $signature = $part->getSignature();
                 if (\is_string($signature) && '' !== $signature) {
                     $entry['thinking_signature'] = $signature;

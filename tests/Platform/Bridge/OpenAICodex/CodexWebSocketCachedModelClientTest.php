@@ -940,11 +940,13 @@ final class CodexWebSocketCachedModelClientTest extends TestCase
         $connectCount = 0;
         $frames = [];
         $connection = $this->createStreamingConnection($frames);
+        $summaryConnection = $this->createStreamingConnection($frames);
+        $summaryConnection->expects($this->once())->method('close');
         $connector = $this->createMock(CodexWebSocketConnectorInterface::class);
-        $connector->method('connect')->willReturnCallback(static function () use (&$connectCount, $connection): WebsocketConnection {
+        $connector->method('connect')->willReturnCallback(static function () use (&$connectCount, $connection, $summaryConnection): WebsocketConnection {
             ++$connectCount;
 
-            return $connection;
+            return 2 === $connectCount ? $summaryConnection : $connection;
         });
 
         $client = new CodexWebSocketModelClient(
@@ -979,7 +981,7 @@ final class CodexWebSocketCachedModelClientTest extends TestCase
                 ['role' => 'user', 'content' => 'compact summary'],
                 ['role' => 'user', 'content' => 'continue after compact'],
             ],
-        ], $options + [CodexRequestBodyFactory::CONTINUATION_RESET => true]);
+        ], $options + [CodexRequestBodyFactory::CONTINUATION_GENERATION => 1]);
         iterator_to_array($postCompact->getDataStream());
 
         $followUp = $client->request(new CodexModel('gpt-5.6-luna'), [
@@ -989,10 +991,10 @@ final class CodexWebSocketCachedModelClientTest extends TestCase
                 ['type' => 'message', 'role' => 'assistant', 'content' => 'ok'],
                 ['role' => 'user', 'content' => 'next'],
             ],
-        ], $options);
+        ], $options + [CodexRequestBodyFactory::CONTINUATION_GENERATION => 1]);
         iterator_to_array($followUp->getDataStream());
 
-        $this->assertSame(1, $connectCount);
+        $this->assertSame(2, $connectCount);
         $this->assertCount(4, $frames);
 
         $summarizeFrame = json_decode($frames[1], true, flags: \JSON_THROW_ON_ERROR);
@@ -1002,12 +1004,68 @@ final class CodexWebSocketCachedModelClientTest extends TestCase
 
         $postCompactFrame = json_decode($frames[2], true, flags: \JSON_THROW_ON_ERROR);
         $this->assertArrayNotHasKey('previous_response_id', $postCompactFrame);
-        $this->assertArrayNotHasKey(CodexRequestBodyFactory::CONTINUATION_RESET, $postCompactFrame);
+        $this->assertArrayNotHasKey(CodexRequestBodyFactory::CONTINUATION_GENERATION, $postCompactFrame);
         $this->assertCount(2, $postCompactFrame['input']);
 
         $followUpFrame = json_decode($frames[3], true, flags: \JSON_THROW_ON_ERROR);
         $this->assertSame('resp_cached_1', $followUpFrame['previous_response_id']);
         $this->assertSame([['role' => 'user', 'content' => 'next']], $followUpFrame['input']);
+    }
+
+    public function testRejectedSummarizationDoesNotReplaceOriginalChatContinuation(): void
+    {
+        $cacheKey = '0194eeee-bbbb-7ccc-8ddd-333333333333';
+        self::assertUuidVersion7($cacheKey);
+
+        $chatFrames = [];
+        $summaryFrames = [];
+        $chatConnection = $this->createStreamingConnection($chatFrames);
+        $summaryConnection = $this->createStreamingConnection($summaryFrames);
+        $summaryConnection->expects($this->once())->method('close');
+        $connectCount = 0;
+        $connector = $this->createMock(CodexWebSocketConnectorInterface::class);
+        $connector->method('connect')->willReturnCallback(static function () use (&$connectCount, $chatConnection, $summaryConnection): WebsocketConnection {
+            ++$connectCount;
+
+            return 2 === $connectCount ? $summaryConnection : $chatConnection;
+        });
+        $client = new CodexWebSocketModelClient(
+            $connector,
+            new CodexWebSocketUrlResolver(),
+            new CodexWebSocketHandshakeHeadersFactory(),
+            new CodexRequestBodyFactory(),
+            'https://chatgpt.com/backend-api',
+            'access',
+            'acct-1',
+            transport: CodexTransportEnum::WebsocketCached,
+            connectionCache: new CodexWebSocketConnectionCache(),
+        );
+        $model = new CodexModel('gpt-5.6-luna');
+        $options = ['prompt_cache_key' => $cacheKey];
+        iterator_to_array($client->request($model, [
+            'input' => [['role' => 'user', 'content' => 'original chat']],
+        ], $options)->getDataStream());
+
+        // The provider completes the summary, but the application rejects it
+        // and keeps the original chat messages and generation unchanged.
+        iterator_to_array($client->request($model, [
+            'input' => [['role' => 'user', 'content' => 'summarize original chat']],
+        ], $options + [CodexRequestBodyFactory::CONTINUATION_RESET => true])->getDataStream());
+        iterator_to_array($client->request($model, [
+            'input' => [
+                ['role' => 'user', 'content' => 'original chat'],
+                ['type' => 'message', 'role' => 'assistant', 'content' => 'ok'],
+                ['role' => 'user', 'content' => 'continue original chat'],
+            ],
+        ], $options)->getDataStream());
+
+        $this->assertSame(2, $connectCount);
+        $this->assertCount(1, $summaryFrames);
+        $this->assertArrayNotHasKey('previous_response_id', json_decode($summaryFrames[0], true, flags: \JSON_THROW_ON_ERROR));
+        $this->assertCount(2, $chatFrames);
+        $next = json_decode($chatFrames[1], true, flags: \JSON_THROW_ON_ERROR);
+        $this->assertSame('resp_cached_1', $next['previous_response_id']);
+        $this->assertSame([['role' => 'user', 'content' => 'continue original chat']], $next['input']);
     }
 
     /**

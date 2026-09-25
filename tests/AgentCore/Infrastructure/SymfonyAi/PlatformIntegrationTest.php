@@ -672,8 +672,8 @@ final class PlatformIntegrationTest extends TestCase
         $assistant = (new AgentMessageNormalizer())->assistantMessage($response->assistantMessage, 'openai-codex/gpt-5.6-luna');
         $this->assertSame('firstsecond', $assistant->details['thinking'] ?? null);
         $this->assertSame([
-            ['type' => 'thinking', 'thinking_signature' => json_encode($first, \JSON_THROW_ON_ERROR)],
-            ['type' => 'thinking', 'thinking_signature' => json_encode($second, \JSON_THROW_ON_ERROR)],
+            ['type' => 'thinking', 'text' => 'first', 'thinking_signature' => json_encode($first, \JSON_THROW_ON_ERROR)],
+            ['type' => 'thinking', 'text' => 'second', 'thinking_signature' => json_encode($second, \JSON_THROW_ON_ERROR)],
         ], $assistant->content);
 
         $assistant = AgentMessage::fromPayload($assistant->toArray());
@@ -720,9 +720,9 @@ final class PlatformIntegrationTest extends TestCase
         $assistant = (new AgentMessageNormalizer())->assistantMessage($response->assistantMessage, 'openai-codex/gpt-5.6-luna');
         $this->assertSame('firstsecond', $assistant->details['thinking'] ?? null);
         $this->assertSame([
-            ['type' => 'thinking', 'thinking_signature' => json_encode($first, \JSON_THROW_ON_ERROR)],
+            ['type' => 'thinking', 'text' => 'first', 'thinking_signature' => json_encode($first, \JSON_THROW_ON_ERROR)],
             ['type' => 'text', 'text' => 'commentary'],
-            ['type' => 'thinking', 'thinking_signature' => json_encode($second, \JSON_THROW_ON_ERROR)],
+            ['type' => 'thinking', 'text' => 'second', 'thinking_signature' => json_encode($second, \JSON_THROW_ON_ERROR)],
         ], $assistant->content);
 
         $assistant = AgentMessage::fromPayload($assistant->toArray());
