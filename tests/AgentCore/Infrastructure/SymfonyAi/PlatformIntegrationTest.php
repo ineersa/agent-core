@@ -699,6 +699,53 @@ final class PlatformIntegrationTest extends TestCase
         $this->assertSame('call_one', $delta['input'][0]['call_id'] ?? null);
     }
 
+    public function testZeroArgumentCodexToolCallReplaysObjectArgumentsAndContinuesWithToolOutput(): void
+    {
+        $providerCall = [
+            'type' => 'function_call',
+            'id' => 'fc_zero',
+            'status' => 'completed',
+            'call_id' => 'call_zero',
+            'name' => 'task_list',
+            'arguments' => '{}',
+        ];
+        $adapter = $this->createAdapter(streamFactory: static fn (): iterable => [
+            new ToolCallComplete([new ToolCall('call_zero|fc_zero', 'task_list', [])]),
+        ]);
+        $user = new AgentMessage('user', [['type' => 'text', 'text' => 'list tasks']]);
+        $response = $adapter->invoke(new ModelInvocationRequest(
+            model: 'gpt-6-sol',
+            input: new ModelInvocationInput(runId: 'run-zero-arguments', messages: [$user]),
+        ));
+        $this->assertNull($response->error);
+        $this->assertNotNull($response->assistantMessage);
+
+        $assistant = (new AgentMessageNormalizer())->assistantMessage($response->assistantMessage, 'openai-codex/gpt-6-sol');
+        $assistant = AgentMessage::fromPayload($assistant->toArray());
+        $this->assertNotNull($assistant);
+        $this->assertSame([], $assistant->metadata['tool_calls'][0]['arguments'] ?? null);
+
+        $tool = new AgentMessage('tool', [['type' => 'text', 'text' => 'done']], toolCallId: 'call_zero|fc_zero', toolName: 'task_list');
+        $converter = new AgentMessageConverter();
+        $contract = CodexContract::create();
+        $model = new CodexModel('gpt-6-sol');
+        $target = 'openai-codex/gpt-6-sol';
+        $initial = $contract->createRequestPayload($model, $converter->toMessageBagForTarget([$user], $target), []);
+        $followUp = $contract->createRequestPayload($model, $converter->toMessageBagForTarget([$user, $assistant, $tool], $target), []);
+
+        $this->assertSame('{}', $followUp['input'][1]['arguments'] ?? null);
+        $state = CodexWebSocketContinuationState::fromSuccessfulResponse($initial, 'resp_zero', [$providerCall]);
+        $decision = $state->decide($followUp);
+        $this->assertSame(CodexWebSocketContinuationDecision::REASON_DELTA, $decision->reason);
+        $this->assertSame('resp_zero', $decision->delta['previous_response_id'] ?? null);
+        $this->assertSame([$followUp['input'][2]], $decision->delta['input'] ?? null);
+        $this->assertSame('function_call_output', $decision->delta['input'][0]['type'] ?? null);
+
+        $changed = $followUp;
+        $changed['input'][1]['arguments'] = '{"unexpected":true}';
+        $this->assertSame(CodexWebSocketContinuationDecision::REASON_PREFIX_MISMATCH, $state->decide($changed)->reason);
+    }
+
     public function testInterleavedReasoningCommentaryPreservesProviderOrderOnReplay(): void
     {
         $first = ['type' => 'reasoning', 'id' => 'rs_first', 'encrypted_content' => 'enc_first'];
