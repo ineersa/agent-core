@@ -13,6 +13,7 @@ use Ineersa\CodingAgent\Tool\Arguments\ViewImageArgumentsDTO;
 use Ineersa\CodingAgent\Tool\ImageProcessing\ImageAttachmentProcessor;
 use Ineersa\CodingAgent\Tool\ImageProcessing\RunVisionCheckService;
 use League\MimeTypeDetection\FinfoMimeTypeDetector;
+use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
 
 /**
  * View an image file and return compact metadata (no base64/data_url).
@@ -57,8 +58,10 @@ final class ViewImageTool implements HatfieldToolProviderInterface
      * @throws ToolCallException on policy or operational filesystem failures
      * @throws \RuntimeException on cancellation or timeout (runtime concerns)
      */
-    public function __invoke(ViewImageArgumentsDTO $arguments): array
-    {
+    public function __invoke(
+        #[MapToolArguments]
+        ViewImageArgumentsDTO $arguments,
+    ): array {
         return $this->toolRuntime->run(function () use ($arguments): array {
             $path = $arguments->path;
             $resolvedPath = PathResolver::resolve($path);

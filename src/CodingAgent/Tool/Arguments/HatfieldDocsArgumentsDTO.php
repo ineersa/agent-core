@@ -16,7 +16,7 @@ final class HatfieldDocsArgumentsDTO
         #[Schema(description: 'list catalog entries, or read one document by id.')]
         #[Assert\NotBlank(message: 'The "operation" argument must be one of: list, read.')]
         #[Assert\Choice(choices: ['list', 'read'], message: 'The "operation" argument must be one of: list, read.')]
-        public readonly string $operation = '',
+        public readonly string $operation,
         #[Schema(description: 'Logical document ID (required for read).')]
         #[Assert\When(
             expression: 'this.operation === "read"',

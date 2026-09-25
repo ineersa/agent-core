@@ -46,7 +46,7 @@ interface ToolRegistryInterface
      *
      * @param string                    $name                 Model-visible tool name
      * @param string                    $description          Provider-schema description
-     * @param array<string, mixed>|null $parametersJsonSchema JSON Schema for raw-array handlers; null for typed DTO handlers (native generation)
+     * @param array<string, mixed>|null $parametersJsonSchema JSON Schema for raw-array handlers; null to let Symfony AI describe the handler
      * @param object                    $handler              Invokable execution handler
      * @param string                    $promptLine           Single-line description for <available_tools>
      * @param list<string>              $promptGuidelines     Zero or more guideline strings for <guidelines>

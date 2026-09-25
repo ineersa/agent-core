@@ -13,6 +13,7 @@ use Ineersa\CodingAgent\Agent\Execution\AgentResumeTaskDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use Psr\Container\ContainerInterface;
+use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
 
 /**
  * Execution handler for the `agent_resume` tool.
@@ -33,8 +34,10 @@ final class AgentResumeToolHandler
     ) {
     }
 
-    public function __invoke(AgentResumeArgumentsDTO $arguments): DeferredToolCompletionOutcome
-    {
+    public function __invoke(
+        #[MapToolArguments]
+        AgentResumeArgumentsDTO $arguments,
+    ): DeferredToolCompletionOutcome {
         return $this->toolRuntime->run(function () use ($arguments): DeferredToolCompletionOutcome {
             $context = $this->contextAccessor->current();
             if (null === $context) {

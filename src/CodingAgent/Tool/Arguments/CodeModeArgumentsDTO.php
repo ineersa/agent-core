@@ -20,7 +20,7 @@ final class CodeModeArgumentsDTO
     public function __construct(
         #[Schema(description: 'PHP script source executed as a function body. Call tool(name, arguments) for registered tools including MCP names. Use toon_encode/toon_decode when needed. Use return for the final value.')]
         #[Assert\NotBlank(normalizer: 'trim', message: 'The "script" argument is required and must be a non-empty string.')]
-        public readonly string $script = '',
+        public readonly string $script,
         #[Schema(
             description: 'Script wall-clock budget in seconds (default '.self::DEFAULT_TIMEOUT_SECONDS.', max '.self::MAX_TIMEOUT_SECONDS.'). The remaining parent tool budget wins when smaller. Nested tool calls receive the remaining budget cooperatively.',
             minimum: 1,

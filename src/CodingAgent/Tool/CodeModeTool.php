@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tool;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Tool\Arguments\CodeModeArgumentsDTO;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeHostBridge;
+use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
 
 /**
  * Execute a PHP script that can call existing tools through tool(name, arguments).
@@ -34,7 +35,7 @@ final class CodeModeTool implements HatfieldToolProviderInterface
      *
      * @return mixed Final script return value
      */
-    public function __invoke(CodeModeArgumentsDTO $arguments): mixed
+    public function __invoke(#[MapToolArguments] CodeModeArgumentsDTO $arguments): mixed
     {
         return $this->hostBridge->execute(
             $arguments->script,

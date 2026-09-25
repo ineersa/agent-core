@@ -516,14 +516,18 @@ final class BashToolTest extends IsolatedKernelTestCase
      * zero handler side effects (no background process started).
      */
 
-    public function testMissingCommandBecomesFaultTolerantResult(): void
+    public function testMissingCommandBecomesActionableToolCallException(): void
     {
         $this->createManager();
 
-        $result = $this->validationToolbox()->execute(new ToolCall('call-bash', 'bash', []));
+        try {
+            $this->validationToolbox()->execute(new ToolCall('call-bash', 'bash', []));
+            $this->fail('Expected ToolCallException for the missing command.');
+        } catch (ToolCallException $e) {
+            $this->assertStringContainsString('command', $e->getMessage());
+            $this->assertFalse($e->retryable());
+        }
 
-        $message = (string) $result->getResult();
-        $this->assertStringContainsString('The "command" argument is required and must be a non-empty string.', $message);
         $this->assertSame([], $this->manager->list(self::TEST_SESSION), 'Handler must not run for invalid arguments.');
     }
 
