@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Tests\Infrastructure\SymfonyAi;
 
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\ConversationHistoryConversion;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
@@ -14,9 +15,12 @@ use Symfony\AI\Platform\Bridge\OpenAICodex\CodexModel;
 use Symfony\AI\Platform\Bridge\OpenAICodex\Contract\CodexContract;
 use Symfony\AI\Platform\Message\AssistantMessage;
 use Symfony\AI\Platform\Message\Content\Image;
+use Symfony\AI\Platform\Message\Content\Text;
+use Symfony\AI\Platform\Message\Content\Thinking;
 use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\AI\Platform\Message\ToolCallMessage;
 use Symfony\AI\Platform\Message\UserMessage;
+use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\Component\DependencyInjection\ServicesResetterInterface;
 use Symfony\Contracts\Service\ResetInterface;
 
@@ -202,6 +206,31 @@ final class AgentMessageConverterTest extends IsolatedKernelTestCase
         $this->assertSame('{"type":"reasoning","id":"rs_1"}', $assistant->getThinking()[0]->getSignature());
     }
 
+    public function testUnsignedThinkingSurvivesCanonicalRoundTripWithToolCall(): void
+    {
+        $sourceModel = 'deepseek/deepseek-reasoner';
+        $normalized = (new AgentMessageNormalizer())->assistantMessage(new AssistantMessage(
+            new Thinking('plan', null),
+            new Text('answer'),
+            new ToolCall('call_1', 'read', ['path' => './file.txt']),
+        ), $sourceModel);
+        $persisted = AgentMessage::fromPayload($normalized->toArray());
+        $this->assertNotNull($persisted);
+
+        $bag = $this->converter->toMessageBagForTarget([$persisted], $sourceModel);
+        $assistant = $bag->getMessages()[0];
+        $this->assertInstanceOf(AssistantMessage::class, $assistant);
+        $parts = $assistant->getContent();
+        $this->assertCount(3, $parts);
+        $this->assertInstanceOf(Thinking::class, $parts[0]);
+        $this->assertSame('plan', $parts[0]->getContent());
+        $this->assertNull($parts[0]->getSignature());
+        $this->assertInstanceOf(Text::class, $parts[1]);
+        $this->assertSame('answer', $parts[1]->getText());
+        $this->assertInstanceOf(ToolCall::class, $parts[2]);
+        $this->assertSame('call_1', $parts[2]->getId());
+    }
+
     public function testCrossModelConvertsThinkingToTextAndDropsSignature(): void
     {
         $original = new AgentMessage(
@@ -358,6 +387,53 @@ final class AgentMessageConverterTest extends IsolatedKernelTestCase
             $this->assertSame($call->getId(), $bag->getMessages()[$index + 1]->getToolCall()->getId());
         }
         $this->assertCount(4, array_unique($requestIds));
+    }
+
+    public function testMultipleReasoningSignaturesSurviveOnlySameModelReplay(): void
+    {
+        $assistant = new AgentMessage(
+            role: 'assistant',
+            content: [
+                ['type' => 'thinking', 'thinking_signature' => '{"type":"reasoning","id":"rs_first","encrypted_content":"first"}'],
+                ['type' => 'text', 'text' => 'answer'],
+                ['type' => 'thinking', 'thinking_signature' => '{"type":"reasoning","id":"rs_second","encrypted_content":"second"}'],
+            ],
+            details: [
+                'thinking' => 'plan',
+            ],
+            metadata: ['source_model' => 'openai-codex/model-a'],
+        );
+
+        $same = $this->converter->toMessageBagForTarget([$assistant], 'openai-codex/model-a');
+        $this->assertCount(2, $same->getMessages()[0]->getThinking());
+        $parts = $same->getMessages()[0]->getContent();
+        $this->assertInstanceOf(Thinking::class, $parts[0]);
+        $this->assertInstanceOf(Text::class, $parts[1]);
+        $this->assertInstanceOf(Thinking::class, $parts[2]);
+        $changed = $this->converter->toMessageBagForTarget([$assistant], 'openai-codex/model-b');
+        $this->assertFalse($changed->getMessages()[0]->hasThinking());
+        $this->assertStringContainsString('plan', $changed->getMessages()[0]->asText());
+        $this->assertStringContainsString('answer', $changed->getMessages()[0]->asText());
+    }
+
+    public function testUnsignedLeadingThinkingKeepsTextBeforeSignedThinking(): void
+    {
+        $assistant = new AgentMessage(
+            role: 'assistant',
+            content: [
+                ['type' => 'thinking'],
+                ['type' => 'text', 'text' => 'answer'],
+                ['type' => 'thinking', 'thinking_signature' => '{"type":"reasoning","id":"rs_valid"}'],
+            ],
+            details: ['thinking' => 'plan'],
+            metadata: ['source_model' => 'openai-codex/model-a'],
+        );
+
+        $bag = $this->converter->toMessageBagForTarget([$assistant], 'openai-codex/model-a');
+        $this->assertCount(2, $bag->getMessages()[0]->getThinking());
+        $this->assertSame('plan', $bag->getMessages()[0]->getThinking()[0]->getContent());
+        $this->assertNull($bag->getMessages()[0]->getThinking()[0]->getSignature());
+        $this->assertSame('{"type":"reasoning","id":"rs_valid"}', $bag->getMessages()[0]->getThinking()[1]->getSignature());
     }
 
     public function testExactContextReuseWorksWithFreshlyDeserializedEqualMessages(): void

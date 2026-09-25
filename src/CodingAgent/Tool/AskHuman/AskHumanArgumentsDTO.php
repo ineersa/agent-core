@@ -27,7 +27,7 @@ final class AskHumanArgumentsDTO
     public function __construct(
         #[Schema(description: 'The clear, concise question to display to the user.')]
         #[Assert\NotBlank(message: 'The "question" parameter must be provided and non-empty.')]
-        public readonly string $question = '',
+        public readonly string $question,
         #[Schema(description: 'Optional. Set to "confirm" for yes/no or approval questions (boolean). Omit for free-form text or when providing "choices". Mutually exclusive with "choices".')]
         #[Assert\Choice(choices: ['confirm'], message: 'Unsupported kind "{{ value }}". Allowed: confirm.')]
         public readonly ?string $kind = null,

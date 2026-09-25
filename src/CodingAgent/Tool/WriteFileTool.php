@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Path\PathResolver;
 use Ineersa\CodingAgent\Tool\Arguments\WriteFileArgumentsDTO;
+use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
 
 /**
  * Write (create or replace) a file at the specified path.
@@ -39,8 +40,10 @@ final class WriteFileTool implements HatfieldToolProviderInterface
      *
      * @throws \RuntimeException on filesystem errors or cancellation
      */
-    public function __invoke(WriteFileArgumentsDTO $arguments): string
-    {
+    public function __invoke(
+        #[MapToolArguments]
+        WriteFileArgumentsDTO $arguments,
+    ): string {
         return $this->toolRuntime->run(static function () use ($arguments): string {
             $path = $arguments->path;
             $content = $arguments->content;

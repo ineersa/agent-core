@@ -130,4 +130,9 @@ final readonly class FixtureTokenUsage implements \Symfony\AI\Platform\TokenUsag
     {
         return $this->totalTokens;
     }
+
+    public function getModel(): ?string
+    {
+        return null;
+    }
 }

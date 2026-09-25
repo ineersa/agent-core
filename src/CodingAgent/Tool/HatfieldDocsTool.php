@@ -12,6 +12,7 @@ use Ineersa\CodingAgent\Docs\BuiltinDocsCatalog;
 use Ineersa\CodingAgent\Docs\BuiltinDocsCatalogException;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Ineersa\CodingAgent\Tool\Arguments\HatfieldDocsArgumentsDTO;
+use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
 
 /**
  * Read-only parent-agent catalog for curated Hatfield documentation.
@@ -44,8 +45,10 @@ final class HatfieldDocsTool implements HatfieldToolProviderInterface
     /**
      * @return string TOON-encoded list metadata, or raw Markdown body for read
      */
-    public function __invoke(HatfieldDocsArgumentsDTO $arguments): string
-    {
+    public function __invoke(
+        #[MapToolArguments]
+        HatfieldDocsArgumentsDTO $arguments,
+    ): string {
         return $this->toolRuntime->run(function () use ($arguments): string {
             // operation is Choice-constrained on the DTO; id is required for
             // read via a When constraint, so no default branch is needed.

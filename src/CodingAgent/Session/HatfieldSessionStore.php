@@ -149,7 +149,9 @@ final class HatfieldSessionStore
         }
         if (\array_key_exists('model', $meta) && \is_string($meta['model'])) {
             if ($entity->model !== $meta['model']) {
-                $entity->reasoningBaseline = null;
+                $entity->reasoningBaseline = [
+                    'continuation_generation' => ($entity->reasoningBaseline['continuation_generation'] ?? 0) + 1,
+                ];
             }
             $entity->model = $meta['model'];
             $dirty = true;
@@ -226,6 +228,22 @@ final class HatfieldSessionStore
             return null;
         }
 
+        // Rewritten history clears the reasoning baseline but retains the
+        // continuation generation for every LLM worker to observe.
+        if (isset($entity->reasoningBaseline['continuation_generation'])
+            && !\is_string($entity->reasoningBaseline['model'] ?? null)) {
+            $entity->reasoningBaseline = [
+                'model' => $model,
+                'effort' => $effort,
+                'last_emitted' => $effort,
+                'transitions' => [],
+                'continuation_generation' => $entity->reasoningBaseline['continuation_generation'],
+            ];
+            $this->entityManager->flush();
+
+            return null;
+        }
+
         if ($model === ($entity->reasoningBaseline['model'] ?? null)) {
             $baseline = $entity->reasoningBaseline['effort'] ?? null;
             if (!\is_string($baseline) || '' === $baseline) {
@@ -249,6 +267,7 @@ final class HatfieldSessionStore
             'effort' => $effort,
             'last_emitted' => $effort,
             'transitions' => [],
+            'continuation_generation' => $entity->reasoningBaseline['continuation_generation'] ?? 0,
         ];
         $this->entityManager->flush();
 
@@ -335,10 +354,25 @@ final class HatfieldSessionStore
     public function resetReasoningBaseline(string $sessionId): void
     {
         $entity = $this->fetchEntityOrNull($sessionId);
-        if (null !== $entity && null !== $entity->reasoningBaseline) {
-            $entity->reasoningBaseline = null;
-            $this->entityManager->flush();
+        if (null === $entity) {
+            return;
         }
+
+        // Each process-local cache observes the new generation independently.
+        // A consumed boolean would reset only the first LLM worker.
+        $generation = $entity->reasoningBaseline['continuation_generation'] ?? 0;
+        $entity->reasoningBaseline = ['continuation_generation' => $generation + 1];
+        $this->entityManager->flush();
+    }
+
+    public function continuationGeneration(string $sessionId): ?int
+    {
+        $entity = $this->fetchEntityOrNull($sessionId);
+        if (null === $entity) {
+            return null;
+        }
+
+        return $entity->reasoningBaseline['continuation_generation'] ?? 0;
     }
 
     /**

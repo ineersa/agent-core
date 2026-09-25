@@ -129,7 +129,10 @@ final class CompactionClearsReasoningBaselineTest extends IsolatedKernelTestCase
 
         $this->assertNotNull($result->nextState);
         $this->assertSame(RunEventTypeEnum::ContextCompacted->value, $result->events[0]->type);
-        $this->assertNull($store->findSession($sessionId)?->reasoningBaseline);
+        $this->assertSame(
+            ['continuation_generation' => $store->continuationGeneration($sessionId)],
+            $store->findSession($sessionId)?->reasoningBaseline,
+        );
         $this->assertSame('high', $store->findSession($sessionId)?->reasoning);
     }
 
@@ -226,7 +229,10 @@ final class CompactionClearsReasoningBaselineTest extends IsolatedKernelTestCase
         );
 
         $this->assertSame(RunEventTypeEnum::ContextCompacted->value, $result->events[1]->type ?? null);
-        $this->assertNull($store->findSession($sessionId)?->reasoningBaseline);
+        $this->assertSame(
+            ['continuation_generation' => $store->continuationGeneration($sessionId)],
+            $store->findSession($sessionId)?->reasoningBaseline,
+        );
         $this->assertSame('high', $store->findSession($sessionId)?->reasoning);
         $this->assertSame([], $store->listReasoningTransitions($sessionId, 'openai-codex/gpt-6-astra'));
 

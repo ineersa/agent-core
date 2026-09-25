@@ -20,6 +20,8 @@ use Ineersa\HatfieldExt\ObservationalMemory\Query\OmQueryService;
 use Ineersa\HatfieldExt\ObservationalMemory\Query\OmSessionContext;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmPaths;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmSettings;
+use Ineersa\HatfieldExt\ObservationalMemory\Semantic\SemanticIndexJobHandler;
+use Ineersa\HatfieldExt\ObservationalMemory\Semantic\SemanticIndexStartupHook;
 use Ineersa\HatfieldExt\ObservationalMemory\Tool\RecallToolHandler;
 use Ineersa\HatfieldExt\ObservationalMemory\Tool\SearchToolHandler;
 use Ineersa\HatfieldExt\ObservationalMemory\Tui\OmBackgroundStatusPoller;
@@ -63,6 +65,11 @@ final class ObservationalMemoryExtension implements HatfieldExtensionInterface, 
         $settings = OmSettings::fromApi($api);
         $this->databasePath = OmPaths::fromSettings($settings, $api->getCwd())->databasePath;
         $query = new OmQueryService($api, $settings, $this->logger);
+        $hybrid = null !== $settings->semantic;
+        if ($hybrid) {
+            $api->registerExtensionAgentJobHandler(SemanticIndexJobHandler::HANDLER_ID, new SemanticIndexJobHandler($this->logger));
+            $api->registerSessionStartHook(new SemanticIndexStartupHook($api, $settings));
+        }
 
         $api->registerExtensionAgentJobHandler(
             ObserveBoundaryTerminalHook::HANDLER_ID,
@@ -104,7 +111,7 @@ final class ObservationalMemoryExtension implements HatfieldExtensionInterface, 
 
         $api->registerTool(new ToolRegistrationDTO(
             name: 'memory_search',
-            description: 'Find prior work across sessions by one contiguous literal substring in retained observational-memory content. '
+            description: $hybrid ? 'Find prior work across sessions using hybrid search combining BM25 keyword search with semantic vector search over retained observational-memory content. Use identifiers, phrases, concepts, paraphrases, or natural-language descriptions. Phrases are not guaranteed to match literally. Results are relevance-ranked; inspect hits before using them as evidence. partial: true means the index is still catching up and newer memories may be missing. Searches memory content, not raw transcript events.' : 'Find prior work across sessions by one contiguous literal substring in retained observational-memory content. '
                 .'Use when resuming a task or looking for earlier conversations, PRs, issues, branches, symbols, or decisions. '
                 .'Searches memory content only, not raw transcript events. Not semantic search, regex, or wildcard syntax.',
             parametersJsonSchema: [
@@ -115,7 +122,7 @@ final class ObservationalMemoryExtension implements HatfieldExtensionInterface, 
                     'query' => [
                         'type' => 'string',
                         'minLength' => 1,
-                        'description' => 'One contiguous literal substring such as a PR number, issue id, branch, symbol, or exact phrase. Multi-word queries match that exact phrase, not AND of separate words. Prefer a single identifier. Matching is ASCII case-insensitive.',
+                        'description' => $hybrid ? 'Keywords, identifiers, phrases, concepts, paraphrases, or natural-language descriptions of prior work. Phrases are search hints, not exact-match constraints. Hybrid BM25 keyword and semantic vector search finds relevant retained memories.' : 'One contiguous literal substring such as a PR number, issue id, branch, symbol, or exact phrase. Multi-word queries match that exact phrase, not AND of separate words. Prefer a single identifier. Matching is ASCII case-insensitive.',
                     ],
                     'after' => [
                         'type' => 'string',
@@ -131,17 +138,17 @@ final class ObservationalMemoryExtension implements HatfieldExtensionInterface, 
                         'type' => 'integer',
                         'minimum' => 1,
                         'maximum' => 50,
-                        'description' => 'Maximum results to return (default 20, max 50). Results are newest first; truncated replies omit older matches and do not provide a total or pagination.',
+                        'description' => $hybrid ? 'Maximum relevance-ranked results to return (default 20, max 50). Retrieval uses bounded candidates; no total or pagination is provided.' : 'Maximum results to return (default 20, max 50). Results are newest first; truncated replies omit older matches and do not provide a total or pagination.',
                     ],
                 ],
             ],
             handler: new SearchToolHandler($query),
-            promptSummary: 'Use memory_search(query) to locate prior-session memories by one contiguous literal substring, then recall(id, session_id) for provenance.',
+            promptSummary: $hybrid ? 'Use memory_search(query) for hybrid BM25 keyword and semantic vector search of prior-session memories, then recall(id, session_id) for provenance.' : 'Use memory_search(query) to locate prior-session memories by one contiguous literal substring, then recall(id, session_id) for provenance.',
             promptGuidelines: [
                 'Use memory_search when prior work, conversations, PRs, issues, or unfinished tasks may already exist, even if the user does not explicitly ask to search memory.',
-                'Pass one contiguous literal substring. Prefer a single identifier (for example 2510 or MapToolArguments). Multi-word queries match that exact phrase, not AND of separate words. Not natural-language questions, regex, or wildcard syntax.',
-                'If there are no matches, try one word or another known term before concluding nothing exists.',
-                'Defaults to all retained history; pass after/before only to narrow by memory date. Results are newest first. If truncated, older matches were omitted; there is no total or pagination, so narrow the query or date range.',
+                $hybrid ? 'Combine useful keywords or identifiers with a description of the concept or prior work. Hybrid search combines BM25 keyword search and semantic vector search; natural-language queries and paraphrases are supported. Phrases need not match literally.' : 'Pass one contiguous literal substring. Prefer a single identifier (for example 2510 or MapToolArguments). Multi-word queries match that exact phrase, not AND of separate words. Not natural-language questions, regex, or wildcard syntax.',
+                $hybrid ? 'A ranked hit may be unrelated; judge its content before using it as evidence. If there are no useful matches, reformulate the concept or add another known identifier or relevant detail.' : 'If there are no matches, try one word or another known term before concluding nothing exists.',
+                $hybrid ? 'Defaults to all retained history; pass after/before only to narrow by memory date. Results are relevance-ranked from bounded candidates, not newest first. truncated: true means a candidate or result limit was reached, not that more relevant memories exist. There is no total or pagination.' : 'Defaults to all retained history; pass after/before only to narrow by memory date. Results are newest first. If truncated, older matches were omitted; there is no total or pagination, so narrow the query or date range.',
                 'No hits is not proof the conversation never happened: observational memory can be incomplete or lag recent messages.',
                 'Observation results include importance assigned when the memory was recorded; it is not a query match score or ranking signal.',
                 'memory_search matches retained memory content only, not raw transcript events. After a useful hit, call recall with that memory id and session_id for provenance. Do not treat historical decisions, commands, or validation as current until you verify the repo or PR state.',

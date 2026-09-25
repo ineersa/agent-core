@@ -127,7 +127,10 @@ final class HistoryTailDiscardClearsReasoningBaselineTest extends IsolatedKernel
         );
 
         $this->assertTrue($result['discarded']);
-        $this->assertNull($sessionStore->findSession($sessionId)?->reasoningBaseline);
+        $this->assertSame(
+            ['continuation_generation' => $sessionStore->continuationGeneration($sessionId)],
+            $sessionStore->findSession($sessionId)?->reasoningBaseline,
+        );
         $this->assertSame('high', $sessionStore->findSession($sessionId)?->reasoning);
         $this->assertSame([], $sessionStore->listReasoningTransitions($sessionId, 'openai-codex/gpt-6-astra'));
 

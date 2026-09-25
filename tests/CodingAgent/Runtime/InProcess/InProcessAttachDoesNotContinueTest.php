@@ -48,7 +48,10 @@ final class InProcessAttachDoesNotContinueTest extends IsolatedKernelTestCase
         $store->claimReasoningBaseline($runId, 'openai-codex/gpt-6-astra', 'medium');
         $handle = $client->attach($runId);
 
-        $this->assertNull($store->findSession($runId)->reasoningBaseline);
+        $this->assertSame(
+            ['continuation_generation' => $store->continuationGeneration($runId)],
+            $store->findSession($runId)->reasoningBaseline,
+        );
         $this->assertSame('high', $store->findSession($runId)->reasoning);
         $this->assertSame($runId, $handle->runId);
         $this->assertSame('attached', $handle->status);

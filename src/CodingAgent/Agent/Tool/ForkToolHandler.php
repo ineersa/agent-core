@@ -11,6 +11,7 @@ use Ineersa\CodingAgent\Agent\Fork\ForkExecutionServiceInterface;
 use Ineersa\CodingAgent\Tool\Arguments\ForkArgumentsDTO;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use Psr\Container\ContainerInterface;
+use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
 
 final class ForkToolHandler
 {
@@ -27,8 +28,10 @@ final class ForkToolHandler
     ) {
     }
 
-    public function __invoke(ForkArgumentsDTO $arguments): DeferredToolCompletionOutcome
-    {
+    public function __invoke(
+        #[MapToolArguments]
+        ForkArgumentsDTO $arguments,
+    ): DeferredToolCompletionOutcome {
         return $this->toolRuntime->run(function () use ($arguments): DeferredToolCompletionOutcome {
             $context = $this->contextAccessor->current();
             if (null === $context) {

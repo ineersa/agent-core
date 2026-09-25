@@ -146,15 +146,17 @@ composer update ineersa/hatfield-ext-observational-memory
   (Observer → delta Reflector → bounded Dropper pipeline; compaction is instant projection).
 - `/om-view` — active reflections and candidate observations with 12-char display ids,
   timestamp/relevance, content, and human source event sequences.
-- `memory_search` — permanent ambient tool; find prior work across sessions by one contiguous
+- `memory_search` — permanent ambient tool. Without semantic settings, find prior work across sessions by one contiguous
   literal substring in retained observational-memory content (all history by default). Optional
   `after` / `before` memory-date filters (`YYYY-MM-DD` or `YYYY-MM-DD HH:MM`). Multi-word queries
   match that exact phrase, not AND of separate words. Results are newest first and bounded
   (default 20, max 50); truncated replies omit older matches and do not provide a total or
   pagination. Observation hits include `importance` assigned at recording time, not a query
-  match score. Searches memory content only, not raw transcript events. Not semantic search.
+  match score. Searches memory content only, not raw transcript events.
   No hits does not prove a conversation never happened; memory can lag or omit details. Prefer
-  a single identifier, then `recall` for provenance.
+  a single identifier in exact mode, then `recall` for provenance. With semantic settings,
+  the same tool combines BM25 keyword and semantic vector search, accepts natural-language
+  descriptions and paraphrases, and returns relevance-ranked results.
 - `recall` — permanent ambient tool; recover provenance for one known memory id from
   compacted memory, `/om-view`, or `memory_search` (unique lowercase 12–64 hex prefix, or full
   64-char SHA-256). Defaults to the current session; pass `session_id` from a search hit for a
@@ -165,7 +167,7 @@ composer update ineersa/hatfield-ext-observational-memory
 
 ### Search implementation notes
 
-`memory_search` uses escaped SQL `LIKE` substring matching with a small result limit. Under
+Without semantic settings, `memory_search` uses escaped SQL `LIKE` substring matching with a small result limit. Under
 default SQLite settings (and OM does not enable `case_sensitive_like`), ASCII letter case
 is insensitive, so `MapTool` matches `maptool`. `%` and `_` in the query are treated as
 literals via `ESCAPE`.
@@ -180,7 +182,142 @@ on representative (~4.9k observations) and disposable 50k-row corpora. Leading-w
 `LIKE` stayed in the low-millisecond to ~15 ms range for identifier queries such as `2510`
 and `MapToolArguments`, with `SCAN om_observation` plans. FTS5 was faster at 50k rows but
 needs schema/index maintenance and weaker exact-substring fidelity for punctuation-heavy
-identifiers. This package keeps bounded `LIKE` search without an FTS migration.
+identifiers. Exact mode keeps bounded `LIKE` search; hybrid mode has a separate derived FTS index.
+
+### Optional hybrid retrieval
+
+Configure `extensions.settings.observational_memory.semantic` to enable hybrid retrieval.
+The example below is not enabled by default:
+
+```yaml
+semantic:
+  embedding_api:
+    base_url: http://localhost:8059/v1
+    model_id: coderankembed-q8_0.gguf
+    query_prefix: 'Represent this query for searching relevant code:'
+    chunk_bytes: 1200
+    overlap_bytes: 192
+    max_lines: 80
+    batch_size: 4
+  reranker_api:
+    base_url: http://localhost:8060/v1
+    model_id: bge-reranker-base-q8_0.gguf
+    batch_size: 8
+    document_characters: 768
+    min_score: -4
+```
+
+Omit `semantic` to keep literal-substring search without indexing work. The
+endpoint URLs and model IDs in the example are not defaults.
+
+| Key under `semantic` | Meaning | Default |
+|---|---|---|
+| `embedding_api.base_url` | OpenAI-compatible embedding base URL | Required |
+| `embedding_api.model_id` | Embedding model ID | Required |
+| `embedding_api.query_prefix` | Query-only prefix, joined with one space | Empty |
+| `embedding_api.chunk_bytes` | Maximum UTF-8-safe document chunk size in bytes | `1200` |
+| `embedding_api.overlap_bytes` | Chunk overlap in bytes, rounded to a UTF-8 boundary | `192` |
+| `embedding_api.max_lines` | Maximum lines per document chunk | `80` |
+| `embedding_api.batch_size` | Inputs per request; each indexing job processes at most four | `4` |
+| `reranker_api.base_url` | Base URL for the `/rerank` endpoint | Required when configured |
+| `reranker_api.model_id` | Reranker model ID | Required when configured |
+| `reranker_api.batch_size` | Maximum documents per rerank request | `8` |
+| `reranker_api.document_characters` | Maximum Unicode characters per reranked chunk | `768` |
+| `reranker_api.min_score` | Inclusive minimum finite raw reranker score for a chunk | Unset, no score filter |
+
+Each configured API block requires `base_url` and `model_id`. Omit `reranker_api`
+to use fused keyword and vector ranking without reranking. A reranker without
+embeddings is a configuration error. The embedding prefix defaults to empty.
+It applies only to query embeddings, joined with one space. The reranker receives
+the raw query.
+The embedding example includes the colon required by this model.
+Batch sizes, line limits, and document character limits must be positive.
+`chunk_bytes` must be at least four; `overlap_bytes` must be nonnegative and
+smaller than the chunk.
+Requests run serially with a ten-second HTTP limit. An indexing job embeds at most
+four chunks, even if a larger provider batch size is configured.
+`reranker_api.min_score` is optional. If set, it keeps chunks with a raw
+reranker score greater than or equal to the finite numeric floor. Scores are
+model-specific and are not probabilities; choose a floor using labeled queries.
+Without a floor, the reranker sorts all candidates. Without a reranker, this
+setting has no effect and hybrid search can still return unrelated neighbors.
+The `-4` shown here was measured for the named local reranker on this corpus;
+it is not a general default. See the [calibration report](docs/om-relevance-calibration.md)
+and the [50 reusable questions](docs/relevance-calibration-questions.json).
+Once a clean embedding batch is indexed, search can return those memories while
+the remaining index builds. Hybrid results include `partial: true` until the
+index catches up. A configured endpoint failure remains visible; search never
+silently substitutes exact search or skips a configured reranker.
+
+The implementation uses Symfony AI's Vektor bridge for persistent HNSW vectors,
+its SQLite Store for FTS5 BM25, and `CombinedStore` for reciprocal-rank fusion.
+PHP needs `mbstring` and `pdo_sqlite` with SQLite FTS5 support. The extension pins
+the tested store packages and Vektor version in its Composer requirements.
+It retrieves at most 100 chunks from each store, fuses at most 200 candidates,
+optionally reranks them, and collapses them to source memories before applying
+the existing result limit.
+No raw ranking scores are returned. `truncated` is true when either the candidate
+budget or result limit is reached. Date-constrained or partial queries overfetch
+at most 500 candidates per store, filter against current memories, and retain
+at most 100 per ranked list.
+Returned dates remain correct, but matches outside the bounded candidate pool
+can be omitted. Exhausting that pool sets `truncated`, even with zero surviving hits.
+
+The tool name and arguments remain unchanged. Its description, query guidance,
+and limit description switch between exact and hybrid capabilities. Reranker
+configuration does not change that guidance. `recall` uses the same canonical
+memory IDs and source session IDs in both modes.
+
+The [full-corpus benchmark](docs/om-semantic-retrieval-benchmark.md) records
+backfill cost, retrieval quality, bounded date filtering, and negative-query limitations.
+
+### Index lifecycle and privacy
+
+The extension schedules indexing through `extension_agent` at session start and
+after successful observation and reflection jobs. Each worker processes one
+bounded batch and schedules a continuation until complete. SQLite records
+progress; restarting a worker does not repeat completed clean batches. Workers
+can serve different projects sequentially, with per-operation Vektor setup.
+
+Canonical observations and reflections remain in the configured OM SQLite file.
+`om_semantic_document` and its FTS table hold derived chunk text. The sibling
+`<database-path>.semantic/vektor/` directory holds vectors, chunk text metadata, and graph files.
+These are Composer dependencies, not a native SQLite extension or external service.
+
+A durable dirty marker precedes writes to the two stores. An interrupted write
+forces rebuilding derived storage at the next indexing job. Deletions, changed
+chunks, changed embedding models, and missing vector files also cause rebuilding.
+Vektor soft deletes are deliberately not used: their fixed candidate buffer can
+return no results despite live documents. Search marks clean incomplete or stale
+results as `partial: true`. It checks chunk IDs against current source text
+before ranking, so deleted or edited memories do not appear from obsolete chunks.
+New memories may be absent until their chunks are indexed. Dirty, incompatible,
+uninitialized, or busy indexes still return an error. Missing storage or explicit
+corruption invalidates the index; transient read failures do not discard
+embeddings. Configured endpoint failures return visible errors without
+fallback results. A later session start can restart failed indexing. Query HTTP
+calls do not hold the index lock. The source/index snapshot is revalidated after
+embedding; reranking uses materialized hits after releasing the read lock.
+
+`index_building` includes `indexed_count` and `source_count`, both in memory units.
+The first counts current source memories represented by at least one indexed
+chunk, not fully indexed memories or search readiness. Dirty or incompatible
+indexes report zero. Counts reuse the loaded source snapshot and stored parent
+metadata rather than rescanning and rechunking the corpus.
+
+The embedding endpoint receives memory chunks and prefixed search queries. The
+reranker receives queries and bounded candidate text. Only configure trusted
+endpoints. Logs record failure stages and correlation fields, not memory text,
+queries, vectors, response bodies, or chained HTTP exceptions. Derived files
+have the same privacy requirements as canonical memory and remain on disk when
+semantic retrieval is disabled. Deleting canonical rows prevents stale search
+immediately; the next successful indexing job removes their derived copies.
+
+To rebuild a damaged index, stop indexing for that project, remove only its
+`<database-path>.semantic/` directory, and start a session to schedule rebuilding.
+Do not remove the canonical database to repair derived storage.
+
+### Generation model
 
 One top-level `observational_memory.model` is shared by Observer, Reflector, and Dropper.
 Thinking levels are not configured; provider defaults apply. Observer uses

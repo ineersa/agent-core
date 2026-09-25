@@ -15,11 +15,11 @@ final class WriteFileArgumentsDTO
     public function __construct(
         #[Schema(description: 'File path to write (absolute, or relative to the working directory)')]
         #[Assert\NotBlank(normalizer: 'trim', message: 'The "path" argument is required and must be a non-empty string.')]
-        public readonly string $path = '',
+        public readonly string $path,
         #[Schema(description: 'Text content to write to the file')]
         #[Assert\NotNull(message: 'The "content" argument is required and must be a string.')]
         #[Assert\Type(type: 'string', message: 'The "content" argument is required and must be a string.')]
-        public readonly ?string $content = null,
+        public readonly ?string $content,
     ) {
     }
 }

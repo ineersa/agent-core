@@ -22,7 +22,7 @@ final class BashArgumentsDTO
     public function __construct(
         #[Schema(description: 'Shell command executed through bash -c; use shell quoting as needed.')]
         #[Assert\NotBlank(normalizer: 'trim', message: 'The "command" argument is required and must be a non-empty string.')]
-        public readonly string $command = '',
+        public readonly string $command,
         #[Schema(provider: BashTimeoutSchemaProvider::class)]
         #[Assert\Range(min: 1, minMessage: 'The "timeout" argument must be a positive integer.')]
         #[BashTimeoutMax]

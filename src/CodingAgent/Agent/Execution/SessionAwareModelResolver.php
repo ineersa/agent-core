@@ -99,7 +99,6 @@ final class SessionAwareModelResolver implements ModelResolverInterface
             // as compaction. They must not claim or mutate the chat baseline.
             if (null === $explicitModel && null === $explicitReasoning
                 && 'codex' === $this->catalog->getProvider($modelRef->providerId)?->type
-                && 'gpt-6-astra' === $modelRef->modelName
                 && true === $this->catalog->getModel($modelRef)?->compatibility?->supportsReasoningConfigurationUpdates
                 && $hasConversationMessages
                 && \is_string($reasoningOptions['reasoning']['effort'] ?? null)) {
@@ -116,6 +115,18 @@ final class SessionAwareModelResolver implements ModelResolverInterface
                     }
                 } else {
                     $reasoningOptions[CodexRequestBodyFactory::REASONING_RESET] = true;
+                }
+            }
+
+            // Summarization uses a separate socket without changing the chat baseline.
+            // After accepted compaction, the stored generation resets every worker's
+            // chat continuation before the next turn.
+            if ('codex' === $this->catalog->getProvider($modelRef->providerId)?->type) {
+                if (false === ($options->values['toolsEnabled'] ?? null)) {
+                    $reasoningOptions[CodexRequestBodyFactory::CONTINUATION_RESET] = true;
+                }
+                if ('' !== $sessionId && 0 < ($generation = $this->sessionMetadataStore->continuationGeneration($sessionId) ?? 0)) {
+                    $reasoningOptions[CodexRequestBodyFactory::CONTINUATION_GENERATION] = $generation;
                 }
             }
 

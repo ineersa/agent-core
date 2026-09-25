@@ -13,6 +13,7 @@ use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 use Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface;
 use Ineersa\CodingAgent\Tool\Arguments\BashArgumentsDTO;
 use Psr\Log\LoggerInterface;
+use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
 
 /**
  * Execute a shell command with foreground supervision via BackgroundProcessManager.
@@ -88,8 +89,10 @@ final class BashTool implements HatfieldToolProviderInterface
      *
      * @throws ToolCallException on validation errors or execution failures
      */
-    public function __invoke(BashArgumentsDTO $arguments): string
-    {
+    public function __invoke(
+        #[MapToolArguments]
+        BashArgumentsDTO $arguments,
+    ): string {
         return $this->toolRuntime->run(function () use ($arguments): string {
             $command = trim($arguments->command);
             $timeout = $this->resolveTimeout($arguments);

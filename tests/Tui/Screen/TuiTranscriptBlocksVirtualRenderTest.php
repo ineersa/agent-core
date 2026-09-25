@@ -40,7 +40,9 @@ use Ineersa\Tui\Transcript\TranscriptGlyphs;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\AI\Agent\Toolbox\MapToolArgumentsDescriber;
 use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver;
+use Symfony\AI\Platform\Contract\JsonSchema\Factory;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Tui\Ansi\AnsiUtils;
 
@@ -331,7 +333,11 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
             defaultMode: 'sequential',
             maxParallelism: 1,
             resultStore: new ToolExecutionResultStore(),
-            toolbox: new RegistryBackedToolbox($registry, new RawAwareToolCallArgumentResolver(new ToolCallArgumentResolver())),
+            toolbox: new RegistryBackedToolbox(
+                $registry,
+                new RawAwareToolCallArgumentResolver(new ToolCallArgumentResolver()),
+                new Factory(new MapToolArgumentsDescriber()),
+            ),
         );
         $call = ToolCallBuilder::create('bash-call')
             ->withToolName('bash')

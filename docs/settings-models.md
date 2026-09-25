@@ -55,6 +55,11 @@ OAuth providers:
 - `type: codex` stores tokens under `~/.hatfield/auth.json` key `openai-codex` via `bin/console auth:codex`.
 - `type: grok` (Grok CLI / cli-chat-proxy) stores tokens under key `grok-cli` via `bin/console auth:grok`. Do not set `api_key`.
 
+For Codex, `ai.providers.openai-codex.transport` accepts `websocket` (built-in
+default), `websocket-cached`, or `sse`. This repository's `.hatfield/settings.yaml`
+opts in to `websocket-cached`; other projects keep the built-in default unless
+they override it.
+
 Model metadata typically includes display `name`, `context_window`, `max_tokens`,
 `input` modalities, `tool_calling`, `reasoning`, optional `thinking_level_map`, and `cost`.
 
@@ -73,10 +78,10 @@ shutdown subscriber closes it, and stream cancellation uses the package's
 
 Composer currently installs the package from its GitHub repository, with the
 revision pinned in `composer.lock`. Packagist publication is separate. The
-package targets Symfony AI `^0.12`, whose pre-1.0 APIs can change between minor
-versions. Package upgrades and Hatfield's Symfony AI upgrades require validation
-together. Package checks cover transport and OAuth behavior. Hatfield checks
-cover storage, command registration, provider wiring, and runtime lifecycle.
+package supports Symfony AI `^0.12` and `^0.13`. Its pre-1.0 APIs can change
+between minor versions. Validate package and Hatfield upgrades together.
+Package checks cover transport and OAuth behavior. Hatfield checks cover
+storage, command registration, provider wiring, and runtime lifecycle.
 
 ## Reasoning / thinking levels
 
@@ -86,14 +91,17 @@ or provider compatibility rules. Unsupported levels are rejected or coerced per 
 
 `ai.default_reasoning` supplies the session default; TUI `/model` flows may persist sparse overrides.
 
-Codex Astra's model compatibility flag `supports_reasoning_configuration_updates`
+The model compatibility flag `supports_reasoning_configuration_updates`
 keeps the first request's reasoning effort fixed for the active session. Later
 requests insert the selected effort as a `configuration_update` before new input.
 This applies to plain WebSocket, cached WebSocket, and SSE. Resume or a model
 change starts a new baseline from the current selection. Explicit compaction
-overrides remain separate. The flag defaults to false and is enabled only for
-`gpt-6-astra` in the bundled catalog. A settings-level `models` map replaces the
-catalog models, so pinned Astra definitions must include the flag to enable it.
+overrides remain separate. The flag defaults to false and is enabled for the
+GPT-6 Codex models (`gpt-6-astra`, `gpt-6-sol`, `gpt-6-luna`) in the bundled
+catalog. A settings-level `models` map replaces the catalog models, so
+definitions for these models must include the flag to enable it. For Codex
+models without the flag, a mid-session effort change starts a fresh cached
+WebSocket continuation instead of reusing the prior response.
 
 ## HTTP client (`ai.http`)
 

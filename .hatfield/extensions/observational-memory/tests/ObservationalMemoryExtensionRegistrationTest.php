@@ -153,6 +153,7 @@ final class ObservationalMemoryExtensionRegistrationTest extends TestCase
         $this->assertStringContainsString('all retained history', $searchGuidelines);
         $this->assertStringContainsString('No hits is not proof', $searchGuidelines);
         $this->assertStringContainsString('one contiguous literal substring', $searchGuidelines);
+        $this->assertStringContainsString('exact phrase', $search->parametersJsonSchema['properties']['query']['description']);
         $this->assertStringContainsString('not a query match score', $searchGuidelines);
         $this->assertStringContainsString('not raw transcript events', $searchGuidelines);
         $this->assertStringContainsString('recall with that memory id and session_id for provenance', $searchGuidelines);
@@ -187,5 +188,46 @@ final class ObservationalMemoryExtensionRegistrationTest extends TestCase
         $this->assertStringContainsString('semantic search or transcript browsing', $guidelines);
         $this->assertStringContainsString('verify current repo or PR state', $guidelines);
         $this->assertStringNotContainsString('12-character memory id', $guidelines);
+    }
+
+    #[Test]
+    public function hybridRegistrationDescribesQueryCapabilitiesButNotReranking(): void
+    {
+        $embedding = ['embedding_api' => ['base_url' => 'http://embed.test/v1', 'model_id' => 'embed']];
+        $without = $this->hybridTool($embedding);
+        $with = $this->hybridTool($embedding + ['reranker_api' => ['base_url' => 'http://rank.test/v1', 'model_id' => 'rank']]);
+        $this->assertSame($without->description, $with->description);
+        $this->assertSame($without->parametersJsonSchema, $with->parametersJsonSchema);
+        $this->assertSame($without->promptSummary, $with->promptSummary);
+        $this->assertSame($without->promptGuidelines, $with->promptGuidelines);
+        $text = $with->description.' '.$with->promptSummary.' '.implode(' ', $with->promptGuidelines).' '.json_encode($with->parametersJsonSchema);
+        $this->assertStringContainsString('BM25 keyword', $text);
+        $this->assertStringContainsString('semantic vector search', $text);
+        $this->assertStringContainsString('relevance-ranked', $text);
+        $this->assertStringContainsString('partial: true means the index is still catching up', $text);
+        $this->assertStringContainsString('Phrases are search hints, not exact-match constraints', $text);
+        $this->assertStringContainsString('A ranked hit may be unrelated; judge its content', $text);
+        $this->assertStringContainsString('truncated: true means a candidate or result limit was reached, not that more relevant memories exist', $text);
+        $this->assertStringNotContainsString('exact phrases', $text);
+        $this->assertStringNotContainsString('one contiguous literal substring', $text);
+        $this->assertStringNotContainsString('try one word', $text);
+        $this->assertStringNotContainsString('RRF', $text);
+        $this->assertStringNotContainsString('reranker', $text);
+    }
+
+    private function hybridTool(array $semantic): ToolRegistrationDTO
+    {
+        $tools = [];
+        $api = $this->createMock(ExtensionApiInterface::class);
+        $api->method('getCwd')->willReturn('/project');
+        $api->method('getSettings')->willReturn(['semantic' => $semantic]);
+        $api->expects($this->once())->method('registerSessionStartHook');
+        $api->expects($this->exactly(2))->method('registerTool')->willReturnCallback(static function (ToolRegistrationDTO $tool) use (&$tools): void {
+            $tools[] = $tool;
+        });
+        (new ObservationalMemoryExtension())->register($api);
+        $this->assertSame(['memory_search', 'recall'], array_column($tools, 'name'));
+
+        return $tools[0];
     }
 }

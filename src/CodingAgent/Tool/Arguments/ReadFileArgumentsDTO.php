@@ -21,7 +21,7 @@ final class ReadFileArgumentsDTO
     public function __construct(
         #[Schema(description: 'File path to read (absolute, or relative to the working directory)')]
         #[Assert\NotBlank(normalizer: 'trim', message: 'The "path" argument is required and must be a non-empty string.')]
-        public readonly string $path = '',
+        public readonly string $path,
         #[Schema(description: 'Starting line number (1-indexed). Omit to read from the beginning.')]
         #[Assert\Range(min: 1, minMessage: 'The "offset" argument must be a positive integer.')]
         public readonly ?int $offset = null,

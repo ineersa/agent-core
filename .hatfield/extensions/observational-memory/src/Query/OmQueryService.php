@@ -9,11 +9,16 @@ use Ineersa\Hatfield\ExtensionApi\Session\SessionEventDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCancellationTokenInterface;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmPaths;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmSettings;
+use Ineersa\HatfieldExt\ObservationalMemory\Semantic\SearchInterruptedException;
+use Ineersa\HatfieldExt\ObservationalMemory\Semantic\SemanticApiClient;
+use Ineersa\HatfieldExt\ObservationalMemory\Semantic\SemanticIndexService;
+use Ineersa\HatfieldExt\ObservationalMemory\Semantic\SemanticSearchException;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\MemoryGenerationRepository;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\ObservationRepository;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\OmDatabaseFactory;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
+use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 /**
  * Extension-owned read/query surface for /om-status, /om-view, search, and recall.
@@ -36,6 +41,7 @@ final class OmQueryService
         private readonly ExtensionApiInterface $api,
         private readonly OmSettings $settings,
         private readonly LoggerInterface $logger = new NullLogger(),
+        private readonly ?HttpClientInterface $semanticHttpClient = null,
     ) {
     }
 
@@ -187,7 +193,7 @@ final class OmQueryService
     }
 
     /**
-     * Exact substring search over retained observations and reflections in the configured OM database.
+     * Exact or configured hybrid search over retained observations and reflections.
      *
      * Default scope is all retained rows (not only the active compaction pool). Optional after/before
      * filters apply to memory dates: observation `timestamp` (YYYY-MM-DD HH:MM) and reflection
@@ -203,6 +209,7 @@ final class OmQueryService
         ?ToolCancellationTokenInterface $cancellationToken = null,
         ?int $timeoutSeconds = null,
         ?int $deadlineNs = null,
+        ?string $runId = null,
     ): array {
         $query = trim($query);
         if ('' === $query) {
@@ -251,6 +258,47 @@ final class OmQueryService
         $obsBefore = $this->normalizeObservationFilter($before, lowerBound: false);
         $refAfter = $this->normalizeReflectionFilter($after, lowerBound: true);
         $refBefore = $this->normalizeReflectionFilter($before, lowerBound: false);
+
+        if (null !== $this->settings->semantic) {
+            $checkpoint = function () use ($cancellationToken, $timeoutSeconds, $deadlineNs): void {
+                $interrupt = $this->interruptMap($cancellationToken, $timeoutSeconds, $deadlineNs, 'Memory search interrupted.');
+                if (null !== $interrupt) {
+                    throw new SearchInterruptedException($interrupt);
+                }
+            };
+            try {
+                $semantic = $this->settings->semantic;
+                $index = new SemanticIndexService(
+                    $connection, OmPaths::fromSettings($this->settings, $this->api->getCwd())->databasePath,
+                    $semantic, new SemanticApiClient($semantic, $this->semanticHttpClient), $this->logger, $runId,
+                );
+                $retrieval = $index->search($query, ['observation' => [$obsAfter, $obsBefore], 'reflection' => [$refAfter, $refBefore]], $checkpoint);
+                $results = $retrieval['results'];
+                $truncated = $retrieval['truncated'] || \count($results) > $limit;
+                $results = \array_slice($results, 0, $limit);
+                foreach ($results as &$result) {
+                    $result['display_id'] = $this->displayId($result['id']);
+                    $result['content'] = $this->condense($result['content']);
+                }
+                unset($result);
+
+                return ['ok' => true, 'query' => $query, 'limit' => $limit, 'truncated' => $truncated, 'partial' => $retrieval['partial'], 'count' => \count($results), 'results' => $results];
+            } catch (SearchInterruptedException $error) {
+                return $error->result;
+            } catch (\Throwable $error) {
+                $this->logger->error('om.semantic.search_failed', [
+                    'run_id' => $runId, 'session_id' => $runId,
+                    'component' => 'observational_memory', 'event_type' => 'om.semantic.search_failed',
+                    'exception_class' => $error::class,
+                    'failure_code' => $error instanceof SemanticSearchException ? $error->failureCode : 'semantic_search_failed',
+                ]);
+
+                return ['ok' => false,
+                    'error' => $error instanceof SemanticSearchException ? $error->failureCode : 'semantic_search_failed',
+                    'message' => $error instanceof SemanticSearchException ? $error->getMessage() : 'Hybrid memory search failed. Check the OM index and logs; no fallback results were returned.',
+                ] + ($error instanceof SemanticSearchException ? $error->progress : []);
+            }
+        }
 
         // Fetch limit+1 from each table so truncated can detect overflow within one kind.
         $fetchLimit = $limit + 1;

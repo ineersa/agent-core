@@ -16,7 +16,7 @@ final class ForkArgumentsDTO
     public function __construct(
         #[Schema(description: 'Delegated task for the fork child (required).')]
         #[Assert\NotBlank(normalizer: 'trim', message: 'fork requires a non-empty task string.')]
-        public readonly string $task = '',
+        public readonly string $task,
         #[Schema(description: 'Optional model override.')]
         #[Assert\When(
             expression: 'this.model !== null',

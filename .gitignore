@@ -11,6 +11,8 @@ callgraph.json
 callgraph.html
 *.toon
 .castor.stub.php
+/.spc.cache.php
+/log/spc.output.log
 /.playwright-cli/
 /.vera/
 

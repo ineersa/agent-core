@@ -102,7 +102,7 @@ Parent-scoped continuation of an existing terminal child run via `follow_up` on 
 
 - Eligible statuses: `completed`, `failed`, `cancelled` when the child run/session is still usable.
 - Rejects in-flight artifacts (`running`, `needs_clarification`). Same-parent-current-lifetime forks are resumable; foreign-session, previous-lifetime, and otherwise ineligible targets still fail with actionable errors.
-- Refuses oversized children when latest input tokens are near context limit (`max(75% contextWindow, 200k)`; absolute 200k when window unknown).
+- Refuses oversized children when latest input tokens are near context limit (`min(75% contextWindow, 200k)`; 200k when window unknown).
 - Parent results follow the same single and parallel presentation rules as `subagent`, including the 50,000-character inline limit.
 - Same artifact id is preserved; each finalize appends an immutable handoff under `handoffs/<uuid>.md`.
 

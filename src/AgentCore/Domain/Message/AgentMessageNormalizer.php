@@ -6,6 +6,7 @@ namespace Ineersa\AgentCore\Domain\Message;
 
 use Ineersa\AgentCore\Domain\Notification\ModelNotificationDTO;
 use Symfony\AI\Platform\Message\AssistantMessage;
+use Symfony\AI\Platform\Message\Content\Text;
 use Symfony\AI\Platform\Message\Content\Thinking;
 use Symfony\AI\Platform\Result\ToolCall;
 
@@ -13,14 +14,7 @@ final readonly class AgentMessageNormalizer
 {
     public function assistantMessage(AssistantMessage $assistantMessage, ?string $sourceModel = null): AgentMessage
     {
-        $content = [];
-        $text = $assistantMessage->asText();
-        if (null !== $text) {
-            $content[] = [
-                'type' => 'text',
-                'text' => $text,
-            ];
-        }
+        $content = $this->orderedAssistantContent($assistantMessage);
 
         $metadata = [];
         if (null !== $sourceModel && '' !== $sourceModel) {
@@ -31,7 +25,7 @@ final readonly class AgentMessageNormalizer
             $metadata['tool_calls'] = $toolCalls;
         }
 
-        $details = $this->extractThinkingDetails($assistantMessage);
+        $details = $this->extractDisplayThinkingDetails($assistantMessage);
 
         return new AgentMessage(
             role: 'assistant',
@@ -46,16 +40,10 @@ final readonly class AgentMessageNormalizer
      */
     public function assistantMessagePayload(AssistantMessage $assistantMessage): array
     {
-        $text = $assistantMessage->asText();
-
+        $content = $this->orderedAssistantContent($assistantMessage);
         $payload = [
             'role' => 'assistant',
-            'content' => null === $text
-                ? null
-                : [[
-                    'type' => 'text',
-                    'text' => $text,
-                ]],
+            'content' => [] === $content ? null : $content,
         ];
 
         $toolCalls = $this->normalizeToolCalls($assistantMessage->getToolCalls());
@@ -63,7 +51,7 @@ final readonly class AgentMessageNormalizer
             $payload['tool_calls'] = $toolCalls;
         }
 
-        $details = $this->extractThinkingDetails($assistantMessage);
+        $details = $this->extractDisplayThinkingDetails($assistantMessage);
 
         if ([] !== $details) {
             $payload['details'] = $details;
@@ -247,9 +235,12 @@ final readonly class AgentMessageNormalizer
     /**
      * Extracts thinking details from the 0.9 content-based AssistantMessage.
      *
-     * @return array{thinking?: string|null, thinking_signature?: string|null}
+     * Display aggregate stays in details.thinking. Ordered signatures for same-model
+     * replay live in content parts of type thinking so interleaving with text is preserved.
+     *
+     * @return array{thinking?: string|null}
      */
-    private function extractThinkingDetails(AssistantMessage $assistantMessage): array
+    private function extractDisplayThinkingDetails(AssistantMessage $assistantMessage): array
     {
         if (!$assistantMessage->hasThinking()) {
             return [];
@@ -263,18 +254,42 @@ final readonly class AgentMessageNormalizer
             $thinkingParts,
         ));
 
-        // Signatures are per-part; we keep the last non-null signature (there is typically at most one).
-        $thinkingSignature = null;
-        foreach ($thinkingParts as $part) {
-            if (null !== $part->getSignature()) {
-                $thinkingSignature = $part->getSignature();
+        return array_filter([
+            'thinking' => '' !== $thinkingContent ? $thinkingContent : null,
+        ], static fn (mixed $value): bool => null !== $value);
+    }
+
+    /**
+     * @return list<array{type: 'text', text: string}|array{type: 'thinking', text: string, thinking_signature?: string|null}>
+     */
+    private function orderedAssistantContent(AssistantMessage $assistantMessage): array
+    {
+        $content = [];
+
+        foreach ($assistantMessage->getContent() as $part) {
+            if ($part instanceof Text) {
+                $text = $part->getText();
+                if ('' === $text) {
+                    continue;
+                }
+                $content[] = [
+                    'type' => 'text',
+                    'text' => $text,
+                ];
+                continue;
+            }
+
+            if ($part instanceof Thinking) {
+                $entry = ['type' => 'thinking', 'text' => $part->getContent()];
+                $signature = $part->getSignature();
+                if (\is_string($signature) && '' !== $signature) {
+                    $entry['thinking_signature'] = $signature;
+                }
+                $content[] = $entry;
             }
         }
 
-        return array_filter([
-            'thinking' => '' !== $thinkingContent ? $thinkingContent : null,
-            'thinking_signature' => $thinkingSignature,
-        ], static fn (mixed $value): bool => null !== $value);
+        return $content;
     }
 
     /**
