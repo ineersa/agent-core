@@ -56,7 +56,7 @@ ai:
     providers:
         openai-codex:
             enabled: true
-            transport: websocket
+            transport: websocket-cached
         llama_cpp:
             type: generic
             enabled: true
