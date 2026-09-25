@@ -11,6 +11,7 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 use Ineersa\CodingAgent\Tool\Arguments\BgStatusArgumentsDTO;
+use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
 
 /**
  * Inspect, tail-log, and stop user-accepted background processes.
@@ -55,8 +56,10 @@ final class BgStatusTool implements HatfieldToolProviderInterface
      *
      * @throws ToolCallException on validation or execution failures
      */
-    public function __invoke(BgStatusArgumentsDTO $arguments): string
-    {
+    public function __invoke(
+        #[MapToolArguments]
+        BgStatusArgumentsDTO $arguments,
+    ): string {
         // action is Choice-constrained and pid is conditionally required on
         // the DTO; the native ValidateToolCallArgumentsListener guarantees
         // both before the handler runs.

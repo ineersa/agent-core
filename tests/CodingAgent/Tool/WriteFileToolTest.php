@@ -160,15 +160,15 @@ final class WriteFileToolTest extends TestCase
 
     public function testDtoRejectsBlankPath(): void
     {
-        $violations = $this->validateDto(new WriteFileArgumentsDTO(content: 'some content'));
+        $violations = $this->validateDto(new WriteFileArgumentsDTO(path: '', content: 'some content'));
 
         $this->assertCount(1, $violations);
         $this->assertStringContainsString('"path" argument is required', $violations[0]->getMessage());
     }
 
-    public function testDtoRejectsMissingContent(): void
+    public function testDtoRejectsNullContent(): void
     {
-        $violations = $this->validateDto(new WriteFileArgumentsDTO(path: $this->tmpDir.'/test.txt'));
+        $violations = $this->validateDto(new WriteFileArgumentsDTO(path: $this->tmpDir.'/test.txt', content: null));
 
         $this->assertCount(1, $violations);
         $this->assertStringContainsString('"content" argument is required', $violations[0]->getMessage());

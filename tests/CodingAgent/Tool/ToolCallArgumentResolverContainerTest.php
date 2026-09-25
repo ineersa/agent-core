@@ -11,6 +11,7 @@ use Ineersa\CodingAgent\Agent\Execution\SubagentTaskDTO;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Config\BashToolConfig;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
 use Symfony\AI\Agent\Toolbox\FaultTolerantToolbox;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolverInterface;
@@ -125,6 +126,18 @@ final class ToolCallArgumentResolverContainerTest extends IsolatedKernelTestCase
         );
     }
 
+    public function testContainerSchemasFollowConstructorRequiredness(): void
+    {
+        foreach (['bash' => ['command'], 'write' => ['path', 'content'], 'view_image' => ['path']] as $name => $required) {
+            $parameters = $this->toolboxParameters($name);
+            $this->assertSame($required, $parameters['required'] ?? [], $name);
+        }
+
+        // Either single or parallel mode is valid, so no one field is required.
+        $parameters = $this->toolboxParameters('agent_resume');
+        $this->assertSame([], $parameters['required'] ?? []);
+    }
+
     public function testContainerValidatorRejectsBashTimeoutAboveConfiguredMax(): void
     {
         $config = self::getContainer()->get(BashToolConfig::class);
@@ -219,16 +232,20 @@ final class ToolCallArgumentResolverContainerTest extends IsolatedKernelTestCase
 
 final class SnakeCaseResolutionProbe
 {
-    public function __invoke(AgentRetrieveArgumentsDTO $arguments): string
-    {
+    public function __invoke(
+        #[MapToolArguments]
+        AgentRetrieveArgumentsDTO $arguments,
+    ): string {
         return 'ok';
     }
 }
 
 final class SubagentResolutionProbe
 {
-    public function __invoke(SubagentArgumentsDTO $arguments): string
-    {
+    public function __invoke(
+        #[MapToolArguments]
+        SubagentArgumentsDTO $arguments,
+    ): string {
         return 'ok';
     }
 }

@@ -19,7 +19,7 @@ final class BgStatusArgumentsDTO
         #[Schema(description: "Action: list session processes, log a process's output tail, or stop a process.")]
         #[Assert\NotBlank(message: 'The "action" argument is required and must be a non-empty string.')]
         #[Assert\Choice(choices: ['list', 'log', 'stop'], message: 'Invalid action "{{ value }}". Use one of: list, log, stop.')]
-        public readonly string $action = '',
+        public readonly string $action,
         #[Schema(description: 'Process PID (required for log and stop actions)')]
         #[Assert\Range(min: 1, minMessage: 'The "pid" argument must be a positive integer.')]
         #[Assert\When(

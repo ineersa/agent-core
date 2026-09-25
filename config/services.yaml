@@ -964,9 +964,13 @@ services:
         - '@Symfony\AI\Platform\Contract\JsonSchema\Describer\ValidatorConstraintsDescriber'
         - '@Symfony\AI\Platform\Contract\JsonSchema\Describer\SchemaAttributeDescriber'
 
+  Symfony\AI\Agent\Toolbox\MapToolArgumentsDescriber:
+    arguments:
+      $inner: '@Symfony\AI\Platform\Contract\JsonSchema\Describer\Describer'
+
   Symfony\AI\Platform\Contract\JsonSchema\Factory:
     arguments:
-      $objectDescriber: '@Symfony\AI\Platform\Contract\JsonSchema\Describer\Describer'
+      $objectDescriber: '@Symfony\AI\Agent\Toolbox\MapToolArgumentsDescriber'
 
   Ineersa\CodingAgent\Tool\RegistryBackedToolbox:
     arguments:

@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Path\PathResolver;
 use Ineersa\CodingAgent\Tool\Arguments\EditFileArgumentsDTO;
 use Ineersa\CodingAgent\Tool\Edit\PatchApplier;
 use Ineersa\CodingAgent\Tool\Edit\PatchFailureFormatter;
+use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
 use Symfony\Component\Lock\LockFactory;
 
 /**
@@ -36,8 +37,10 @@ final class EditFileTool implements HatfieldToolProviderInterface
         );
     }
 
-    public function __invoke(EditFileArgumentsDTO $arguments): string
-    {
+    public function __invoke(
+        #[MapToolArguments]
+        EditFileArgumentsDTO $arguments,
+    ): string {
         return $this->toolRuntime->run(function () use ($arguments): string {
             $path = $arguments->path;
             $patch = $arguments->patch;

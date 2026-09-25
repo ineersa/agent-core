@@ -17,19 +17,17 @@ use Ineersa\Hatfield\ExtensionApi\Agent\AgentCallRequestDTO;
 use Ineersa\Hatfield\ExtensionApi\Agent\AgentRunnerInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Agent\Agent;
-use Symfony\AI\Agent\Toolbox\AgentProcessor;
 use Symfony\AI\Agent\Toolbox\FaultTolerantToolbox;
 use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolverInterface;
 use Symfony\AI\Platform\Message\Message;
 use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\AI\Platform\PlatformInterface;
-use Symfony\AI\Platform\Result\StreamResult;
 
 /**
  * Internal Hatfield runner for the public ExtensionApi agent capability.
  *
- * Reuses the configured Symfony AI Platform, standard Agent + AgentProcessor
- * tool loop, and Hatfield routing metadata. Publicly blocking; streams
+ * Reuses the configured Symfony AI Platform, Agent-owned toolbox loop, and
+ * Hatfield routing metadata. Publicly blocking; streams
  * internally so Codex WebSocket and HTTP streaming providers complete.
  *
  * When {@see AgentCallRequestDTO::$maxDurationSeconds} is set, this runner
@@ -77,22 +75,11 @@ final readonly class ConfiguredModelAgentRunner implements AgentRunnerInterface
             Message::ofUser($request->input),
         );
 
-        $inputProcessors = [];
-        $outputProcessors = [];
+        $toolbox = null;
         if ([] !== $request->tools) {
-            // Omit maxToolCalls when null so AgentProcessor keeps its default (50).
-            // Passing null explicitly would mean unlimited iterations.
             $isolated = new IsolatedAgentToolbox(array_values($request->tools), $this->argumentResolver);
             // Fault-tolerant so execution failures are model-visible tool results.
             $toolbox = new FaultTolerantToolbox($isolated);
-            $processor = null === $request->maxToolCalls
-                ? new AgentProcessor($toolbox)
-                : new AgentProcessor(
-                    toolbox: $toolbox,
-                    maxToolCalls: $request->maxToolCalls,
-                );
-            $inputProcessors[] = $processor;
-            $outputProcessors[] = $processor;
         }
 
         $invocationInput = new ModelInvocationInput(
@@ -131,9 +118,9 @@ final readonly class ConfiguredModelAgentRunner implements AgentRunnerInterface
         $agent = new Agent(
             platform: $preparedPlatform,
             model: $resolvedModel->model,
-            inputProcessors: $inputProcessors,
-            outputProcessors: $outputProcessors,
             name: 'extension-agent',
+            toolbox: $toolbox,
+            maxToolCalls: $request->maxToolCalls ?? 50,
         );
 
         $options = ['stream' => true];
@@ -157,15 +144,7 @@ final readonly class ConfiguredModelAgentRunner implements AgentRunnerInterface
         ]);
 
         try {
-            $result = $agent->call($messages, $options);
-            // Fully consume stream results so SSE/WebSocket transports complete
-            // and AgentProcessor stream tool-call listeners execute.
-            if ($result instanceof StreamResult) {
-                foreach ($result->getContent() as $_) {
-                }
-            } else {
-                $result->getContent();
-            }
+            $agent->call($messages, $options)->getResult();
         } catch (\Throwable $e) {
             $this->logger->error('extension.agent.run.failed', [
                 'component' => 'extension_agent_runner',
