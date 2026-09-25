@@ -139,7 +139,7 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
     public function testToolTimersTickIndependentlyAndFreezeAcrossReplay(): void
     {
         $originalClock = Clock::get();
-        $clock = new MockClock('2026-09-08T12:00:00+00:00');
+        $clock = new MockClock('2026-09-08T12:00:00.250000+00:00');
         Clock::set($clock);
         $terminal = new VirtualTerminal(columns: 100, rows: 40);
         $tui = new Tui(terminal: $terminal);
@@ -173,6 +173,19 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
             }
             $tui->requestRender();
             $tui->processRender();
+            $this->assertStringContainsString('first · 0s', $render(), 'Live labels use whole seconds even on the initial render.');
+
+            $accept('tool_execution.started', [
+                'tool_call_id' => 'fast', 'tool_name' => 'fast', 'arguments' => ['path' => 'file.txt'],
+                'started_at' => '2026-09-08T12:00:00+00:00',
+            ]);
+            $this->assertStringContainsString('fast · 0s', $render());
+            $accept('tool_execution.completed', [
+                'tool_call_id' => 'fast', 'result' => 'contents',
+                'ended_at' => '2026-09-08T12:00:00.375000+00:00',
+            ]);
+            $this->assertStringContainsString('fast · 375ms', $render(), 'Completed fast calls retain millisecond precision over the same lifecycle.');
+
             $mounted = $transcript->all();
             $clock->modify('+5 seconds');
             $scheduler->runDue(1_000_000_000_000.0);

@@ -67,7 +67,8 @@ final class ToolDurationHeaderWidget extends TextWidget
             $durationMs = max(0, $durationMs);
             $seconds = intdiv($durationMs, 1000);
             $elapsed = $seconds < 60 ? $seconds.'s' : intdiv($seconds, 60).'m'.($seconds % 60).'s';
-            if ($durationMs < 1000) {
+            // Live labels tick once per second; millisecond precision is only meaningful when frozen.
+            if (!$this->result->streaming && $durationMs < 1000) {
                 $elapsed = $durationMs.'ms';
             }
             $elapsed = $this->theme->color(ThemeColorEnum::Dim, ' · '.$elapsed);
