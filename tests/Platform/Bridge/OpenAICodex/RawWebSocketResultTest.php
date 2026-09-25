@@ -8,6 +8,7 @@ use Amp\ByteStream\ReadableIterableStream;
 use Amp\CancelledException;
 use Amp\Pipeline\Queue;
 use Amp\Websocket\Client\WebsocketConnection;
+use Amp\Websocket\WebsocketCloseInfo;
 use Amp\Websocket\WebsocketMessage;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use PHPUnit\Framework\TestCase;
@@ -511,5 +512,39 @@ final class RawWebSocketResultTest extends TestCase
         $this->assertSame(CodexWebSocketContinuationDecision::REASON_PREFIX_MISMATCH, $terminalHistoryDecision->reason);
         $this->assertSame('encrypted_content', $terminalHistoryDecision->mismatchFieldPath);
         $this->assertSame('different', $terminalHistoryDecision->mismatchRelation);
+    }
+
+    public function testConnectionClosedWithoutTerminalSurfacesCloseCodeAndReason(): void
+    {
+        $connection = $this->createMock(WebsocketConnection::class);
+        $connection->expects($this->once())
+            ->method('receive')
+            ->willReturn(null);
+        $connection->method('getCloseInfo')
+            ->willReturn(new WebsocketCloseInfo(1011, 'Incorrect API key provided: sk-test', 0.0, true));
+        $connection->expects($this->once())->method('close');
+
+        $logger = new TestLogger();
+        $raw = new RawWebSocketResult($connection, 5.0, $logger);
+
+        try {
+            iterator_to_array($raw->getDataStream());
+            $this->fail('Expected connection closed exception');
+        } catch (\RuntimeException $e) {
+            $this->assertSame(
+                'Codex WebSocket connection closed before response.completed (close code 1011, reason: Incorrect API key provided: sk-test).',
+                $e->getMessage(),
+            );
+            $warning = null;
+            foreach ($logger->records as $record) {
+                if ('codex.websocket.stream_closed' === $record['message']) {
+                    $warning = $record;
+                }
+            }
+            $this->assertNotNull($warning);
+            $this->assertSame('warning', $warning['level']);
+            $this->assertSame(1011, $warning['context']['close_code']);
+            $this->assertSame('Incorrect API key provided: sk-test', $warning['context']['close_reason']);
+        }
     }
 }

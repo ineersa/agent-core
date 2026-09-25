@@ -136,6 +136,7 @@ final class CodexWebSocketModelClient implements ModelClientInterface
                 'cache_one_shot' => null !== $lease && $lease->oneShot,
                 'delivery_status' => 'failed',
                 'exception_class' => $e::class,
+                'exception_message' => mb_substr($e->getMessage(), 0, 500),
             ]);
 
             throw new \RuntimeException('Codex WebSocket request frame could not be sent.', previous: $e);
