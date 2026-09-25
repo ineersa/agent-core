@@ -26,7 +26,7 @@ final readonly class AiProviderConfig
      * @param bool                             $supportsThinkingLevels       Whether reasoning-level cycling is meaningful for this provider
      * @param AiCompatibility|null             $compatibility                Provider-level compatibility metadata
      * @param string|null                      $transport                    Codex transport (websocket|websocket-cached|sse); null uses Codex default
-     * @param int|null                         $websocketCacheIdleTtlSeconds Codex websocket-cached idle TTL (default 300)
+     * @param int|null                         $websocketCacheIdleTtlSeconds Codex websocket-cached idle TTL (default 60)
      * @param int|null                         $websocketCacheMaxAgeSeconds  Codex websocket-cached max age (default 3300)
      * @param array<string, AiModelDefinition> $models                       Exposed models keyed by model name
      */
