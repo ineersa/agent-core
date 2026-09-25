@@ -132,7 +132,17 @@ final class ModelSelectionService
      */
     public function changeReasoning(string $level, string $sessionId): void
     {
+        $previousLevel = $this->getCurrentReasoning($sessionId);
+        $model = $this->getCurrentModel($sessionId);
         $this->persistReasoning($level, $sessionId);
+
+        // A Codex model without configuration_update support needs a new
+        // response chain when the user changes effort (including "off").
+        if ($previousLevel !== $level && null !== $model
+            && 'codex' === $this->appConfig->catalog?->getProvider($model->providerId)?->type
+            && true !== $this->appConfig->catalog->getModel($model)?->compatibility?->supportsReasoningConfigurationUpdates) {
+            $this->sessionMetaStore->resetReasoningBaseline($sessionId);
+        }
 
         // Sync in-memory AppConfig (and its catalog) so current-process
         // consumers see the updated reasoning default immediately.
