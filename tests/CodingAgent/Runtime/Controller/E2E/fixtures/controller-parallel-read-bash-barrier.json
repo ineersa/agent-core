@@ -1,0 +1,66 @@
+{
+    "$schema": "Controller replay — native parallel read+bash barrier overlap",
+    "model": "llama_cpp_test/test",
+    "provider_id": "llama_cpp_test",
+    "reasoning": "off",
+    "recorded_at": "2026-09-25T00:00:00+00:00",
+    "recording_source": "manual",
+    "input": {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Call tools named read and bash together once. Do not call any other tool."
+            }
+        ]
+    },
+    "usage": {
+        "input_tokens": 20,
+        "output_tokens": 40,
+        "total_tokens": 60
+    },
+    "stop_reason": "tool_call",
+    "expected_text": "",
+    "deltas": [
+        {
+            "type": "tool_call_start",
+            "id": "call_parallel_read_1",
+            "name": "read"
+        },
+        {
+            "type": "tool_input_delta",
+            "id": "call_parallel_read_1",
+            "name": "read",
+            "partial_json": "{\"path\":\"./notes.txt\"}"
+        },
+        {
+            "type": "tool_call_start",
+            "id": "call_parallel_bash_1",
+            "name": "bash"
+        },
+        {
+            "type": "tool_input_delta",
+            "id": "call_parallel_bash_1",
+            "name": "bash",
+            "partial_json": "{\"command\":\"PLACEHOLDER\"}"
+        },
+        {
+            "type": "tool_call_complete",
+            "tool_calls": [
+                {
+                    "id": "call_parallel_read_1",
+                    "name": "read",
+                    "arguments": {
+                        "path": "./notes.txt"
+                    }
+                },
+                {
+                    "id": "call_parallel_bash_1",
+                    "name": "bash",
+                    "arguments": {
+                        "command": "PLACEHOLDER"
+                    }
+                }
+            ]
+        }
+    ]
+}
