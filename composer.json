@@ -45,7 +45,7 @@
         "symfony/lock": "^8.0",
         "helgesverre/toon": "^3.1",
         "symfony/ai-agent": "dev-main",
-        "symfony/ai-platform": "^0.13",
+        "symfony/ai-platform": "dev-main as 0.13.1",
         "symfony/validator": "^8.0",
         "symfony/uid": "^8.0",
         "symfony/tui": "dev-fix/tui-screenwriter-in-place-viewport as 8.2.x-dev",

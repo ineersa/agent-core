@@ -339,7 +339,7 @@ final class ViewImageToolTest extends TestCase
 
     public function testDtoRejectsBlankPath(): void
     {
-        $violations = $this->validateDto(new ViewImageArgumentsDTO());
+        $violations = $this->validateDto(new ViewImageArgumentsDTO(path: ''));
 
         $this->assertCount(1, $violations);
         $this->assertStringContainsString('"path" argument is required', $violations[0]->getMessage());

@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "257d4e6e94e8add3792522fd2e0c1fc2",
+    "content-hash": "03a168a47672470f8559a8e5225de465",
     "packages": [
         {
             "name": "amphp/amp",
@@ -5231,16 +5231,16 @@
         },
         {
             "name": "symfony/ai-platform",
-            "version": "v0.13.0",
+            "version": "dev-main",
             "source": {
                 "type": "git",
                 "url": "https://github.com/symfony/ai-platform.git",
-                "reference": "bfc85585ef84d3cb23c8ea01eee2ec1fb8ead1a4"
+                "reference": "37380dbeed8175873934df424e04c67b8400d3c6"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/symfony/ai-platform/zipball/bfc85585ef84d3cb23c8ea01eee2ec1fb8ead1a4",
-                "reference": "bfc85585ef84d3cb23c8ea01eee2ec1fb8ead1a4",
+                "url": "https://api.github.com/repos/symfony/ai-platform/zipball/37380dbeed8175873934df424e04c67b8400d3c6",
+                "reference": "37380dbeed8175873934df424e04c67b8400d3c6",
                 "shasum": ""
             },
             "require": {
@@ -5272,10 +5272,12 @@
                 "symfony/http-client-contracts": "^3.5",
                 "symfony/intl": "^7.3|^8.0",
                 "symfony/process": "^7.3|^8.0",
+                "symfony/stopwatch": "^7.3|^8.0",
                 "symfony/validator": "^7.3|^8.0",
                 "symfony/var-dumper": "^7.3|^8.0",
                 "symfony/yaml": "^7.3|^8.0"
             },
+            "default-branch": true,
             "type": "library",
             "extra": {
                 "thanks": {
@@ -5319,7 +5321,10 @@
                 "bedrock",
                 "cerebras",
                 "dockermodelrunner",
+                "edenai",
                 "elevenlabs",
+                "fireworks",
+                "higgsfield",
                 "huggingface",
                 "inference",
                 "litellm",
@@ -5334,12 +5339,15 @@
                 "perplexity",
                 "replicate",
                 "speech",
+                "together",
                 "transformers",
+                "typesafe",
+                "venice",
                 "vertexai",
                 "voyage"
             ],
             "support": {
-                "source": "https://github.com/symfony/ai-platform/tree/v0.13.0"
+                "source": "https://github.com/symfony/ai-platform/tree/main"
             },
             "funding": [
                 {
@@ -5359,7 +5367,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2026-08-30T02:33:27+00:00"
+            "time": "2026-09-24T22:43:20+00:00"
         },
         {
             "name": "symfony/cache",
@@ -7678,12 +7686,12 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/symfony/polyfill-intl-grapheme.git",
-                "reference": "5c69701711222b93e048afa5b2e8a3f821e00f31"
+                "reference": "bce1aa95713719d926cd813febe7181569d82009"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/symfony/polyfill-intl-grapheme/zipball/5c69701711222b93e048afa5b2e8a3f821e00f31",
-                "reference": "5c69701711222b93e048afa5b2e8a3f821e00f31",
+                "url": "https://api.github.com/repos/symfony/polyfill-intl-grapheme/zipball/bce1aa95713719d926cd813febe7181569d82009",
+                "reference": "bce1aa95713719d926cd813febe7181569d82009",
                 "shasum": ""
             },
             "require": {
@@ -7753,7 +7761,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2026-09-10T07:29:42+00:00"
+            "time": "2026-09-23T12:58:54+00:00"
         },
         {
             "name": "symfony/polyfill-intl-normalizer",
@@ -13592,6 +13600,12 @@
     ],
     "aliases": [
         {
+            "package": "symfony/ai-platform",
+            "version": "dev-main",
+            "alias": "0.13.1",
+            "alias_normalized": "0.13.1.0"
+        },
+        {
             "package": "symfony/tui",
             "version": "dev-fix/tui-screenwriter-in-place-viewport",
             "alias": "8.2.x-dev",
@@ -13602,6 +13616,7 @@
     "stability-flags": {
         "ineersa/hatfield-extension-api": 20,
         "symfony/ai-agent": 20,
+        "symfony/ai-platform": 20,
         "symfony/tui": 20
     },
     "prefer-stable": true,

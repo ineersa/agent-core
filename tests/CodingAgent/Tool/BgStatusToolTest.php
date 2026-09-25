@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Tool;
 
 use HelgeSverre\Toon\Toon;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
+use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
@@ -309,10 +310,10 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
 
     public function testMissingActionThrowsException(): void
     {
-        $result = $this->validationToolbox()->execute(new ToolCall('call-bg', 'bg_status', []));
+        $this->expectException(ToolCallException::class);
+        $this->expectExceptionMessage('action');
 
-        $message = (string) $result->getResult();
-        $this->assertStringContainsString('The "action" argument is required and must be a non-empty string.', $message);
+        $this->validationToolbox()->execute(new ToolCall('call-bg', 'bg_status', []));
     }
 
     /**

@@ -178,7 +178,7 @@ final class RegistryBackedToolboxTest extends TestCase
             'Path to the image file (absolute, or relative to the working directory)',
             $parameters['properties']['path']['description'],
         );
-        // path is required; nullable-with-default props are not.
+        // The constructor requires path; its nullable, defaulted fields are optional.
         $this->assertSame(['path'], $parameters['required']);
         $this->assertFalse($parameters['additionalProperties']);
     }
@@ -209,7 +209,7 @@ final class RegistryBackedToolboxTest extends TestCase
         $this->assertArrayHasKey('filter', $parameters['properties']);
         $this->assertSame('object', $parameters['properties']['filter']['type']);
         $this->assertArrayHasKey('path', $parameters['properties']['filter']['properties']);
-        $this->assertSame(['filter'], $parameters['required']);
+        $this->assertArrayNotHasKey('required', $parameters);
     }
 
     public function testGetToolsAllowsNativeUnmappedParameterSchema(): void
@@ -624,7 +624,7 @@ final class RegistryBackedToolboxTest extends TestCase
 
     /* ───────── Fault tolerance for invalid arguments ───────── */
 
-    public function testMissingMandatoryArgumentsBecomeFaultTolerantResultWithViolations(): void
+    public function testMissingMandatoryArgumentBecomesActionableToolCallException(): void
     {
         $registry = new ToolRegistry();
         $handler = new class {
@@ -637,24 +637,16 @@ final class RegistryBackedToolboxTest extends TestCase
         };
         $registry->registerTool(name: 'view_image', description: 'View', handler: $handler, promptLine: 'view_image');
 
-        // Production wires ValidateToolCallArgumentsListener on the app dispatcher
-        // (config/services.yaml) with the container validator; mirror both here.
-        $validator = (new ValidatorBuilder())
-            ->enableAttributeMapping()
-            ->getValidator();
-
-        $dispatcher = new EventDispatcher();
-        $dispatcher->addListener(ToolCallArgumentsResolved::class, new ValidateToolCallArgumentsListener($validator));
-
-        // Flat provider call with the mandatory DTO property missing: the flat
-        // payload is mapped onto the DTO, the native resolver
-        // denormalizes the empty DTO, and the validator listener turns the
-        // NotBlank violation into a deterministic fault-tolerant result.
-        $toolbox = new FaultTolerantToolbox($this->createToolbox($registry, $dispatcher));
-        $result = $toolbox->execute(new ToolCall('call-missing', 'view_image', []));
-
-        $message = (string) $result->getResult();
-        $this->assertStringContainsString('The "path" argument is required and must be a non-empty string.', $message);
+        // A required constructor parameter is missing before DTO validation
+        // can run. The resolver preserves the field name in the error.
+        $toolbox = new FaultTolerantToolbox($this->createToolbox($registry));
+        try {
+            $toolbox->execute(new ToolCall('call-missing', 'view_image', []));
+            $this->fail('Expected ToolCallException for the missing path.');
+        } catch (ToolCallException $e) {
+            $this->assertStringContainsString('path', $e->getMessage());
+            $this->assertFalse($e->retryable());
+        }
     }
 
     public function testDtoConstraintViolationBecomesFaultTolerantResultWithViolations(): void
@@ -1079,21 +1071,16 @@ final class RegistryBackedToolboxTest extends TestCase
         };
         $registry->registerTool(name: 'view_image', description: 'View', handler: $handler, promptLine: 'view_image');
 
-        $validator = (new ValidatorBuilder())
-            ->enableAttributeMapping()
-            ->getValidator();
-
-        $dispatcher = new EventDispatcher();
-        $dispatcher->addListener(ToolCallArgumentsResolved::class, new ValidateToolCallArgumentsListener($validator));
-
         // Legacy {arguments: {...}} payloads are treated as ordinary flat input:
-        // the unknown `arguments` key is ignored by native denormalization, the
-        // DTO stays empty, and validation rejects it — no compatibility shim.
-        $toolbox = new FaultTolerantToolbox($this->createToolbox($registry, $dispatcher));
-        $result = $toolbox->execute(new ToolCall('call-legacy', 'view_image', ['arguments' => ['path' => 'img.png']]));
-
-        $message = (string) $result->getResult();
-        $this->assertStringContainsString('The "path" argument is required and must be a non-empty string.', $message);
+        // the unknown `arguments` key is ignored, so the required path is
+        // missing when the native resolver constructs the DTO.
+        $toolbox = new FaultTolerantToolbox($this->createToolbox($registry));
+        try {
+            $toolbox->execute(new ToolCall('call-legacy', 'view_image', ['arguments' => ['path' => 'img.png']]));
+            $this->fail('Expected ToolCallException for the missing path.');
+        } catch (ToolCallException $e) {
+            $this->assertStringContainsString('path', $e->getMessage());
+        }
     }
 
     /* ───────── Extension-registered tools are the same path ───────── */

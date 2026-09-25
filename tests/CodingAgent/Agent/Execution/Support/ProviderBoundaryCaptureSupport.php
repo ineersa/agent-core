@@ -283,4 +283,9 @@ final class FakeTokenUsageForCapture implements TokenUsageInterface
     {
         return 2;
     }
+
+    public function getModel(): ?string
+    {
+        return null;
+    }
 }

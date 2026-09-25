@@ -126,6 +126,18 @@ final class ToolCallArgumentResolverContainerTest extends IsolatedKernelTestCase
         );
     }
 
+    public function testContainerSchemasFollowConstructorRequiredness(): void
+    {
+        foreach (['bash' => ['command'], 'write' => ['path', 'content'], 'view_image' => ['path']] as $name => $required) {
+            $parameters = $this->toolboxParameters($name);
+            $this->assertSame($required, $parameters['required'] ?? [], $name);
+        }
+
+        // Either single or parallel mode is valid, so no one field is required.
+        $parameters = $this->toolboxParameters('agent_resume');
+        $this->assertSame([], $parameters['required'] ?? []);
+    }
+
     public function testContainerValidatorRejectsBashTimeoutAboveConfiguredMax(): void
     {
         $config = self::getContainer()->get(BashToolConfig::class);
