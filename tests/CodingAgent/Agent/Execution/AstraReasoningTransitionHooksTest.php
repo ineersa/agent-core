@@ -154,6 +154,70 @@ final class AstraReasoningTransitionHooksTest extends IsolatedKernelTestCase
         $this->assertSame('low', $payload['input'][1]['reasoning']['effort']);
     }
 
+    public function testNonAstraGpt6ModelStampsAndEmitsConfigurationUpdate(): void
+    {
+        $store = $this->createStore();
+        $sessionId = $this->createSession($store, 'openai-codex/gpt-6-sol', 'medium');
+        $modelRef = 'openai-codex/gpt-6-sol';
+
+        $this->assertNull($store->claimReasoningBaseline($sessionId, $modelRef, 'medium'));
+        $decision = $store->claimReasoningBaseline($sessionId, $modelRef, 'high');
+        $this->assertSame('high', $decision['update'] ?? null);
+
+        $history = [
+            new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'first']]),
+            new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'second']]),
+        ];
+        $messageKey = AstraReasoningTransitionTransformHook::messageKeyInHistory($history, 1);
+        $this->assertNotNull($messageKey);
+        $store->rememberReasoningTransition($sessionId, $modelRef, $messageKey, 'high');
+
+        $transformHook = $this->createTransformHook($store, null, 'gpt-6-sol');
+        $marked = $transformHook->transformContext($history, null, $sessionId);
+        // Under the former hardcoded gpt-6-astra gate this marker was stripped
+        // and the request hook then dropped the reasoning update entirely.
+        $this->assertSame('high', $marked[1]->metadata[CodexReasoningTransitionMetadata::KEY] ?? null);
+        $this->assertSame($messageKey, $marked[1]->metadata[CodexReasoningTransitionMetadata::MESSAGE_KEY] ?? null);
+
+        $bag = (new AgentMessageConverter())->toMessageBagForTarget($marked, $modelRef);
+        $resolved = new ResolvedModel(
+            model: $modelRef,
+            providerId: 'openai-codex',
+            reasoning: 'high',
+            providerOptions: [],
+            compatFeatures: [
+                ReasoningOptionsFeatureShaper::FEATURE,
+                ReasoningContentFeatureShaper::FEATURE,
+            ],
+            reasoningOptions: [
+                'reasoning' => ['effort' => 'medium', 'summary' => 'auto'],
+                CodexRequestBodyFactory::REASONING_UPDATE => 'low',
+                'hatfield_run_id' => $sessionId,
+                'hatfield_model_ref' => $modelRef,
+            ],
+        );
+
+        /** @var ProviderRequestPreparer $preparer */
+        $preparer = static::getContainer()->get(ProviderRequestPreparer::class);
+        $prepared = $preparer->prepare(
+            $resolved,
+            $bag,
+            array_replace($resolved->providerOptions, $resolved->reasoningOptions),
+            new ModelInvocationInput(runId: $sessionId, messages: $marked),
+            null,
+        );
+
+        $this->assertSame('low', $prepared['options'][CodexRequestBodyFactory::REASONING_UPDATE] ?? null);
+
+        $payload = CodexContract::create()->createRequestPayload(
+            new CodexModel('gpt-6-sol'),
+            $prepared['input'],
+            [],
+        );
+        $this->assertSame('configuration_update', $payload['input'][1]['type']);
+        $this->assertSame('low', $payload['input'][1]['reasoning']['effort']);
+    }
+
     public function testUnchangedEffortDoesNotStampWhileChangeAndReturnReplayStablePrefix(): void
     {
         $store = $this->createStore();
@@ -697,9 +761,10 @@ YAML);
     private function createTransformHook(
         HatfieldSessionStore $store,
         ?RunOperationalStatusReaderInterface $statusReader = null,
+        string $model = 'gpt-6-astra',
     ): AstraReasoningTransitionTransformHook {
         $aiData = [
-            'default_model' => 'openai-codex/gpt-6-astra',
+            'default_model' => 'openai-codex/'.$model,
             'default_reasoning' => 'medium',
             'providers' => [
                 'openai-codex' => [
@@ -707,8 +772,8 @@ YAML);
                     'enabled' => true,
                     'compatibility' => ['thinking_format' => 'codex'],
                     'models' => [
-                        'gpt-6-astra' => [
-                            'name' => 'Astra',
+                        $model => [
+                            'name' => 'Model',
                             'reasoning' => true,
                             'thinking_level_map' => ['low' => 'low', 'medium' => 'medium', 'high' => 'high'],
                             'compatibility' => ['supports_reasoning_configuration_updates' => true],

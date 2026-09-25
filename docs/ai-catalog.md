@@ -7,7 +7,7 @@ description: Bundled AI provider catalog, user copy, providers:update, and setti
 
 Hatfield ships a curated AI provider catalog: connection settings plus a small
 model list per known provider (`zai`, `deepseek`, `openai-codex`, `grok-cli`).
-The bundled file is frozen in the install (`version: 4` at this writing; the
+The bundled file is frozen in the install (`version: 7` at this writing; the
 integer bumps when the bundled catalog changes). Known providers ship **with
 definitions present and `enabled: false`**. Enabling a provider is a settings /
 setup step, not an automatic first-run action. Runtime never downloads
@@ -34,6 +34,8 @@ effective AiConfig → model picker / forks
 models.dev ── only via `hatfield providers:update` ──▶
   • metadata deltas on EXISTING catalog model ids
     (context_window, max_tokens, input, reasoning, tool_calling, cost)
+    — except context_window for models pinned with
+    compatibility.pin_context_window
   • NEW upstream ids → printed hints only (never auto-added)
   • whitelist never touches base_url / api / paths / thinking_level_map
 ```
@@ -48,7 +50,7 @@ settings (`enabled`, `api_key`) and use `ai.favorite_models` for a lean picker.
 |---|---|
 | Connection (`base_url`, `api`, paths, quirks, auth command) | Bundled catalog; changes only with Hatfield releases |
 | Curated model presence + `thinking_level_map` | Bundled catalog (seed); user-added models survive rebase |
-| Cost / context / max tokens / modalities / reasoning / tool_calling | models.dev via `hatfield providers:update` (existing ids only) |
+| Cost / context / max tokens / modalities / reasoning / tool_calling | models.dev via `hatfield providers:update` (existing ids only; a `pin_context_window` model keeps its catalog context_window) |
 | Enable, API keys, `models:` trim/extend, favorites, default model | Settings overlay |
 
 ## `hatfield providers:update`
@@ -60,8 +62,11 @@ settings (`enabled`, `api_key`) and use `ai.favorite_models` for a lean picker.
    the bundled version. (Deleting a bundled model from your copy does not stick —
    rebase restores it.)
 3. **Sync** fetches `https://models.dev/api.json` and refreshes allowlisted
-   metadata on matching model ids. Unknown upstream ids are listed as
-   `available upstream (not added): …`.
+   metadata on matching model ids. A model with `compatibility.pin_context_window: true`
+   keeps its catalog `context_window` — models.dev reports the raw model window,
+   while curated caps encode real cost policy (GPT-6 models are pinned to the
+   272k cheap pricing tier). Every other metadata key still syncs. Unknown
+   upstream ids are listed as `available upstream (not added): …`.
 4. Atomic write (`0600`). Offline / HTTP / JSON failures soft-fail (exit 0) and
    leave the file untouched.
 

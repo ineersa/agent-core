@@ -33,7 +33,7 @@ use Symfony\Component\Clock\Clock;
  */
 final class AgentResumeExecutionService
 {
-    private const int ABSOLUTE_CONTEXT_TOKEN_FLOOR = 200_000;
+    private const int ABSOLUTE_CONTEXT_TOKEN_CEILING = 200_000;
 
     public function __construct(
         private readonly AgentArtifactRegistry $artifactRegistry,
@@ -397,8 +397,8 @@ final class AgentResumeExecutionService
         $latestInputTokens = null === $projection ? 0 : $projection->latestInputTokens;
         $contextWindow = null === $projection ? null : $projection->contextWindow;
         $threshold = null !== $contextWindow && $contextWindow > 0
-            ? max((int) floor(0.75 * $contextWindow), self::ABSOLUTE_CONTEXT_TOKEN_FLOOR)
-            : self::ABSOLUTE_CONTEXT_TOKEN_FLOOR;
+            ? min((int) floor(0.75 * $contextWindow), self::ABSOLUTE_CONTEXT_TOKEN_CEILING)
+            : self::ABSOLUTE_CONTEXT_TOKEN_CEILING;
 
         if ($latestInputTokens >= $threshold) {
             throw new ToolCallException(\sprintf('Refusing to resume artifact "%s": child context is near the limit (%d latest input tokens; threshold %d). Launch a fresh subagent instead.', $entry->artifactId, $latestInputTokens, $threshold), retryable: false);

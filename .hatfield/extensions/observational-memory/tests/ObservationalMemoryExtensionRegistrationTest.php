@@ -188,4 +188,40 @@ final class ObservationalMemoryExtensionRegistrationTest extends TestCase
         $this->assertStringContainsString('verify current repo or PR state', $guidelines);
         $this->assertStringNotContainsString('12-character memory id', $guidelines);
     }
+
+    #[Test]
+    public function hybridRegistrationDescribesQueryCapabilitiesButNotReranking(): void
+    {
+        $embedding = ['embedding_api' => ['base_url' => 'http://embed.test/v1', 'model_id' => 'embed']];
+        $without = $this->hybridTool($embedding);
+        $with = $this->hybridTool($embedding + ['reranker_api' => ['base_url' => 'http://rank.test/v1', 'model_id' => 'rank']]);
+        $this->assertSame($without->description, $with->description);
+        $this->assertSame($without->parametersJsonSchema, $with->parametersJsonSchema);
+        $this->assertSame($without->promptSummary, $with->promptSummary);
+        $this->assertSame($without->promptGuidelines, $with->promptGuidelines);
+        $text = $with->description.' '.$with->promptSummary.' '.implode(' ', $with->promptGuidelines).' '.json_encode($with->parametersJsonSchema);
+        $this->assertStringContainsString('BM25 keyword', $text);
+        $this->assertStringContainsString('semantic vector search', $text);
+        $this->assertStringContainsString('relevance-ranked', $text);
+        $this->assertStringNotContainsString('one contiguous literal substring', $text);
+        $this->assertStringNotContainsString('try one word', $text);
+        $this->assertStringNotContainsString('RRF', $text);
+        $this->assertStringNotContainsString('reranker', $text);
+    }
+
+    private function hybridTool(array $semantic): ToolRegistrationDTO
+    {
+        $tools = [];
+        $api = $this->createMock(ExtensionApiInterface::class);
+        $api->method('getCwd')->willReturn('/project');
+        $api->method('getSettings')->willReturn(['semantic' => $semantic]);
+        $api->expects($this->once())->method('registerSessionStartHook');
+        $api->expects($this->exactly(2))->method('registerTool')->willReturnCallback(static function (ToolRegistrationDTO $tool) use (&$tools): void {
+            $tools[] = $tool;
+        });
+        (new ObservationalMemoryExtension())->register($api);
+        $this->assertSame(['memory_search', 'recall'], array_column($tools, 'name'));
+
+        return $tools[0];
+    }
 }

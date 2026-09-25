@@ -78,7 +78,11 @@
         "deptrac/deptrac": "^4.6",
         "dama/doctrine-test-bundle": "^8.6",
         "brianium/paratest": "^7.23",
-        "shipmonk/dead-code-detector": "^1.4"
+        "shipmonk/dead-code-detector": "^1.4",
+        "symfony/ai-store": "^0.13",
+        "symfony/ai-sqlite-store": "^0.13",
+        "symfony/ai-vektor-store": "^0.13",
+        "centamiv/vektor": "2.0.2"
     },
     "autoload": {
         "psr-4": {

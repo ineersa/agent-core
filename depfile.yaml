@@ -851,11 +851,14 @@ parameters:
     HatfieldExtFileRewind:
       - AppExtensionApi
       - SymfonyTui
-    # OM may use ExtensionApi + vendor libs only (Doctrine DBAL, PSR log, Toon, Clock).
+    # OM may use ExtensionApi + vendor libs, including its optional retrieval stores.
     # Vendor packages are not Deptrac layers; only forbid project-layer leakage.
     HatfieldExtObservationalMemory:
       - AppExtensionApi
       - HatfieldExtObservationalMemory
+      - SymfonyAiPlatform
+      - SymfonyHttpClient
+      - SymfonyLock
     HatfieldExtJbcontext:
       - AppExtensionApi
       - HatfieldExtJbcontext

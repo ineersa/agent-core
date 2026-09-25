@@ -269,15 +269,15 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         );
     }
 
-    public function testRejectsOversizeContextWithMissingWindowFloor(): void
+    public function testRejectsOversizeContextWithUnknownWindowCutoff(): void
     {
-        $parent = 'parent-oversize-floor';
-        $artifactId = 'agent_oversize_floor';
-        $childRunId = 'child-oversize-floor';
+        $parent = 'parent-oversize-unknown-window';
+        $artifactId = 'agent_oversize_unknown_window';
+        $childRunId = 'child-oversize-unknown-window';
         $this->seedTerminalChild($parent, $artifactId, $childRunId, latestInputTokens: 200_000, contextWindow: null);
 
         $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('child context is near the limit');
+        $this->expectExceptionMessage('threshold 200000');
 
         $this->resume(
             parentRunId: $parent,
@@ -292,10 +292,11 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         $parent = 'parent-oversize-window';
         $artifactId = 'agent_oversize_window';
         $childRunId = 'child-oversize-window';
-        $this->seedTerminalChild($parent, $artifactId, $childRunId, latestInputTokens: 300_000, contextWindow: 400_000);
+        // 75% of a 240k window (180k) stays below the 200k absolute cap.
+        $this->seedTerminalChild($parent, $artifactId, $childRunId, latestInputTokens: 180_000, contextWindow: 240_000);
 
         $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('threshold 300000');
+        $this->expectExceptionMessage('threshold 180000');
 
         $this->resume(
             parentRunId: $parent,
@@ -303,6 +304,44 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
             childRunId: $childRunId,
             runStatus: RunStatus::Completed,
         );
+    }
+
+    public function testRejectsOversizeContextWhenLargeWindowIsCappedAtTwoHundredThousandTokens(): void
+    {
+        $parent = 'parent-oversize-capped';
+        $artifactId = 'agent_oversize_capped';
+        $childRunId = 'child-oversize-capped';
+        $this->seedTerminalChild($parent, $artifactId, $childRunId, latestInputTokens: 250_000, contextWindow: 1_050_000);
+
+        $this->expectException(ToolCallException::class);
+        $this->expectExceptionMessage('threshold 200000');
+
+        $this->resume(
+            parentRunId: $parent,
+            tasks: [new AgentResumeTaskDTO(artifact_id: $artifactId, task: 'continue')],
+            childRunId: $childRunId,
+            runStatus: RunStatus::Completed,
+        );
+    }
+
+    public function testResumesBelowTwoHundredThousandTokenCapWithLargeWindow(): void
+    {
+        $parent = 'parent-below-cap';
+        $artifactId = 'agent_below_cap';
+        $childRunId = 'child-below-cap';
+        $this->seedTerminalChild($parent, $artifactId, $childRunId, latestInputTokens: 199_999, contextWindow: 1_050_000);
+
+        $agentRunner = $this->createMock(AgentRunnerInterface::class);
+        $agentRunner->expects($this->once())->method('followUp');
+
+        $this->resume(
+            parentRunId: $parent,
+            tasks: [new AgentResumeTaskDTO(artifact_id: $artifactId, task: 'continue')],
+            childRunId: $childRunId,
+            agentRunner: $agentRunner,
+        );
+
+        $this->assertSame(AgentArtifactStatusEnum::Running, $this->registry()->get($parent, $artifactId)?->status);
     }
 
     public function testResumesDistinctFailedAndCancelledArtifactsInParallelViaExistingChildRuns(): void
