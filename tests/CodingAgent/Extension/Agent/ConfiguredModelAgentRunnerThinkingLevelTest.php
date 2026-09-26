@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Extension\Agent;
 
 use Ineersa\AgentCore\Contract\Model\ModelResolverInterface;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmInvocationCancelScope;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderCompatibilityRequestShaper;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderRequestPreparer;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\ReasoningOptionsFeatureShaper;
@@ -25,6 +26,7 @@ use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Extension\Agent\ConfiguredModelAgentRunner;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ConfiguredSymfonyAiPlatformFactory;
+use Ineersa\CodingAgent\Infrastructure\SymfonyAi\OpenCodeGo\OpenCodeGoSymfonyAiProviderBuilder;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderFactory;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
@@ -42,8 +44,8 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 /**
- * Thesis: explicit AgentCallRequestDTO thinkingLevel=off adds llama.cpp disable options
- * only when catalog thinking_format=llama_cpp; null/default and session off do not.
+ * Thesis: explicit thinkingLevel=off sends model-specific disable options;
+ * OpenCode Go extension invocations also carry the session ID into HTTP requests.
  */
 final class ConfiguredModelAgentRunnerThinkingLevelTest extends IsolatedKernelTestCase
 {
@@ -146,6 +148,33 @@ final class ConfiguredModelAgentRunnerThinkingLevelTest extends IsolatedKernelTe
         $this->assertSame(300.0, (float) $seen[0]['timeout']);
     }
 
+    public function testOpenCodeGoExtensionRunBindsSessionHeaderAndDisablesThinking(): void
+    {
+        $seen = [];
+        $transport = new MockHttpClient(static function (string $method, string $url, array $options) use (&$seen): MockResponse {
+            $seen[] = $options;
+
+            return new MockResponse(self::streamPayload('done'), ['response_headers' => ['content-type: text/event-stream']]);
+        });
+        $runner = $this->createRunner($transport, thinkingFormat: 'deepseek', defaultReasoning: 'off', openCodeGo: true);
+        $sessionId = $this->writeSession(['model' => 'opencode-go/deepseek-v4.1-flash', 'reasoning' => 'off']);
+
+        $runner->run(new AgentCallRequestDTO(
+            model: 'opencode-go/deepseek-v4.1-flash',
+            sessionId: $sessionId,
+            instructions: 'Answer.',
+            input: 'Hi.',
+            thinkingLevel: 'off',
+        ));
+
+        $this->assertCount(1, $seen);
+        $this->assertSame('x-opencode-session: '.$sessionId, $seen[0]['normalized_headers']['x-opencode-session'][0]);
+        $body = $this->decodeBody($seen[0]);
+        $this->assertSame(['type' => 'disabled'], $body['thinking']);
+        $this->assertArrayNotHasKey('reasoning_effort', $body);
+        $this->assertNull(LlmInvocationCancelScope::currentRunId());
+    }
+
     /**
      * @param list<array<string, mixed>> $seen
      */
@@ -162,24 +191,27 @@ final class ConfiguredModelAgentRunnerThinkingLevelTest extends IsolatedKernelTe
         HttpClientInterface $transport,
         ?string $thinkingFormat,
         string $defaultReasoning,
+        bool $openCodeGo = false,
     ): ConfiguredModelAgentRunner {
+        $providerId = $openCodeGo ? 'opencode-go' : 'llama_cpp';
+        $modelId = $openCodeGo ? 'deepseek-v4.1-flash' : 'flash';
         $providerCompat = null === $thinkingFormat ? null : new AiCompatibility(thinkingFormat: $thinkingFormat);
         $ai = new AiConfig(
-            defaultModel: 'llama_cpp/flash',
+            defaultModel: $providerId.'/'.$modelId,
             defaultReasoning: $defaultReasoning,
             http: new AiHttpConfig(timeout: 30, maxDuration: 120),
             providers: [
-                'llama_cpp' => new AiProviderConfig(
-                    id: 'llama_cpp',
-                    type: 'generic',
+                $providerId => new AiProviderConfig(
+                    id: $providerId,
+                    type: $openCodeGo ? 'opencode-go' : 'generic',
                     enabled: true,
                     baseUrl: 'https://example.test/v1',
                     apiKey: 'test-key',
                     compatibility: $providerCompat,
                     models: [
-                        'flash' => new AiModelDefinition(
-                            id: 'flash',
-                            name: 'flash',
+                        $modelId => new AiModelDefinition(
+                            id: $modelId,
+                            name: $modelId,
                             toolCalling: true,
                             reasoning: true,
                             contextWindow: 160000,
@@ -200,12 +232,12 @@ final class ConfiguredModelAgentRunnerThinkingLevelTest extends IsolatedKernelTe
         $providerFactory = new SymfonyAiProviderFactory(
             $appConfig,
             $dispatcher,
-            [],
+            $openCodeGo ? [new OpenCodeGoSymfonyAiProviderBuilder($dispatcher, new NullLogger())] : [],
             new NullLogger(),
             $transport,
         );
         $providers = $providerFactory->createProviders();
-        $this->assertArrayHasKey('llama_cpp', $providers);
+        $this->assertArrayHasKey($providerId, $providers);
         $platformFactory = new ConfiguredSymfonyAiPlatformFactory($providerFactory, $dispatcher);
 
         return new ConfiguredModelAgentRunner(

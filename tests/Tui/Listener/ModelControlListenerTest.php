@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Listener;
 
+use Ineersa\CodingAgent\Config\Ai\AiCatalog;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
@@ -204,6 +205,46 @@ final class ModelControlListenerTest extends TestCase
         $this->assertStringContainsString('high', $screen);
         $this->assertNotSame($beforeBorder, $this->editorBottomBorderSgr($harness->ansiOutput()));
         $harness->stopInputLoop();
+    }
+
+    #[Test]
+    public function shiftTabSelectsBundledOpenCodeGoReasoningLevel(): void
+    {
+        $catalog = new AiCatalog(\dirname(__DIR__, 3).'/config/ai-catalog.yaml', $this->homeDir);
+        $aiData = $catalog->loadProviders()['ai'];
+        $aiData['providers']['opencode-go']['enabled'] = true;
+        $aiData['default_model'] = 'opencode-go/deepseek-v4.1-flash';
+        $aiData['default_reasoning'] = 'off';
+        $appConfig = $this->makeAppConfig($aiData);
+        $modelService = $this->buildService($aiData);
+
+        $harness = new VirtualTuiHarness(sessionId: '1');
+        $state = new TuiSessionState('');
+        $state->footerReasoning = 'off';
+        $catalog = new SlashCommandCatalog();
+        $context = $this->buildTuiContext()
+            ->withTui($harness->tui())
+            ->withState($state)
+            ->withScreen($harness->screen())
+            ->withSessionServices($this->createSessionServices(
+                tui: $harness->tui(),
+                state: $state,
+                screen: $harness->screen(),
+                catalog: $catalog,
+            ))
+            ->build();
+
+        $listener = new ModelControlListener($modelService, $appConfig, new NullLogger());
+        $listener->registerCatalog($catalog);
+        $listener->register($context);
+        $harness->startInputLoop();
+        try {
+            $harness->sendInput("\x1b[Z");
+            $this->assertSame('low', $state->footerReasoning);
+            $this->assertStringContainsString('reasoning', $harness->plainScreenText());
+        } finally {
+            $harness->stopInputLoop();
+        }
     }
 
     /**
