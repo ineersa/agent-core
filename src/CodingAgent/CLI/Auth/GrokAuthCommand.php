@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\CLI\Auth;
 
-use Ineersa\CodingAgent\Auth\GrokOAuthConfig;
 use Ineersa\CodingAgent\Auth\GrokOAuthService;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Attribute\Option;
@@ -22,8 +21,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  *   bin/console auth:grok --timeout=600 --port=56122
  *   bin/console auth:grok --refresh
  *
- * No multi-account profiles (out of scope). Credentials land under key
- * 'grok-cli' in ~/.hatfield/auth.json.
+ * Credentials land under key 'grok-cli' in ~/.hatfield/auth.json.
  */
 #[AsCommand(name: 'auth:grok', description: 'Authenticate with xAI Grok CLI subscription (OAuth PKCE)')]
 final class GrokAuthCommand
@@ -65,7 +63,6 @@ final class GrokAuthCommand
                 noBrowser: $noBrowser,
                 timeout: $timeout,
                 port: $port,
-                providerKey: GrokOAuthConfig::PROVIDER_KEY,
             );
         } catch (\RuntimeException $e) {
             $io->error(\sprintf('Authentication failed: %s', $e->getMessage()));
@@ -86,7 +83,7 @@ final class GrokAuthCommand
     private function handleRefresh(SymfonyStyle $io): int
     {
         try {
-            $record = $this->oauthService->refreshCredentials(GrokOAuthConfig::PROVIDER_KEY);
+            $record = $this->oauthService->refreshCredentials();
         } catch (\RuntimeException $e) {
             $io->error(\sprintf('Token refresh failed: %s', $e->getMessage()));
 

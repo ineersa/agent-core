@@ -1,4 +1,7 @@
 # yaml-language-server: $schema=../vendor/symfony/dependency-injection/Loader/schema/services.schema.json
+imports:
+  - { resource: services/codex.yaml }
+
 parameters:
     # Default HATFIELD_CAPTURE_ERRORS to enabled; overridable via env var.
     env(HATFIELD_CAPTURE_ERRORS): '1'
@@ -122,7 +125,7 @@ services:
 
   Ineersa\CodingAgent\Infrastructure\ProviderQuota\ProviderQuotaProbeService:
     arguments:
-      $codexAuthStorage: '@Ineersa\CodingAgent\Auth\CodexAuthStorage'
+      $codexAuthStorage: '@Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexAuthFileStore'
       $appConfig: '@Ineersa\CodingAgent\Config\AppConfig'
       $httpClient: '@Ineersa\CodingAgent\Infrastructure\ProviderQuota\ProviderQuotaProbeService.http_client'
       $logger: '@Psr\Log\LoggerInterface'
@@ -167,20 +170,11 @@ services:
       $propertyAccessor: '@coding_agent.settings.property_accessor'
       $filesystem: '@Symfony\Component\Filesystem\Filesystem'
 
-  # CodexAuthStorage is a service, not just a value object — it needs
-  # the home directory resolved from SettingsPathResolver and a LockFactory.
-  # Autowiring fails for the string $homeDir parameter.
-  Ineersa\CodingAgent\Auth\CodexAuthStorage:
-    arguments:
-      $homeDir: '@=service("Ineersa\\CodingAgent\\Config\\SettingsPathResolver").getHomeDir()'
-
   Ineersa\CodingAgent\Auth\GrokAuthStorage:
     arguments:
       $homeDir: '@=service("Ineersa\\CodingAgent\\Config\\SettingsPathResolver").getHomeDir()'
 
 
-  Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketConnectionCache:
-    shared: true
   Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderFactory:
     arguments:
       $builders: !tagged_iterator hatfield.symfony_ai.provider_builder

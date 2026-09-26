@@ -15,6 +15,7 @@ use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmStreamCancelledException;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\AI\Platform\Bridge\OpenAICodex\Result\CancellableRawResultInterface;
 use Symfony\AI\Platform\Bridge\OpenAICodex\ResultConverter;
 use Symfony\AI\Platform\Exception\ServerException;
 use Symfony\AI\Platform\PlatformInterface as SymfonyPlatformInterface;
@@ -103,12 +104,14 @@ final class LlmPlatformAdapterTest extends TestCase
 
     public function testProgressHookCancelDuringStreamReturnsAborted(): void
     {
+        $raw = $this->createMock(CancellableRawResultInterface::class);
+        $raw->expects($this->once())->method('abort');
         $platform = $this->createStub(SymfonyPlatformInterface::class);
-        $platform->method('invoke')->willReturnCallback(static function (): DeferredResult {
+        $platform->method('invoke')->willReturnCallback(static function () use ($raw): DeferredResult {
             return self::deferredStream(static function (): \Generator {
                 yield new TextDelta('partial');
                 throw new TransportException('LLM stream cancelled.', previous: new LlmStreamCancelledException('LLM stream cancelled.'));
-            });
+            }, $raw);
         });
 
         $result = $this->createAdapter($platform, maxRetries: 0)->invoke(new ModelInvocationRequest(
@@ -432,9 +435,9 @@ final class LlmPlatformAdapterTest extends TestCase
     /**
      * @param \Closure(): \Generator $stream
      */
-    private static function deferredStream(\Closure $stream): DeferredResult
+    private static function deferredStream(\Closure $stream, ?\Symfony\AI\Platform\Result\RawResultInterface $raw = null): DeferredResult
     {
-        $raw = new class implements \Symfony\AI\Platform\Result\RawResultInterface {
+        $raw ??= new class implements \Symfony\AI\Platform\Result\RawResultInterface {
             public function getData(): array
             {
                 return [];
