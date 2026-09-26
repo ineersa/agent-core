@@ -69,7 +69,7 @@ Model metadata typically includes display `name`, `context_window`, `max_tokens`
 owns the Codex transports, request conversion, connection cache, and optional
 OAuth login and refresh command. Hatfield registers `auth:codex` and supplies
 the credential storage adapter, file locking, and `hatfield` client identity.
-Profile keys and the `~/.hatfield/auth.json` format are unchanged.
+The `~/.hatfield/auth.json` format is unchanged.
 
 Hatfield supplies model configuration and the session prompt-cache key. The
 dependency container owns one WebSocket cache per process. The LLM worker's
