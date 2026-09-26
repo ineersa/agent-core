@@ -25,6 +25,8 @@ final readonly class OpenCodeSessionHttpClient implements HttpClientInterface
         }
 
         $options['headers']['x-opencode-session'] = $runId;
+        $options['headers']['x-opencode-client'] = 'hatfield';
+        $options['headers']['User-Agent'] = 'hatfield';
 
         return $this->inner->request($method, $url, $options);
     }

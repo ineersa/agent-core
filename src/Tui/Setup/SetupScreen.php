@@ -1233,6 +1233,10 @@ final class SetupScreen
 
     private function suggestedEnvVar(string $providerId): string
     {
+        if ('opencode-go' === $providerId) {
+            return 'OPENCODE_API_KEY';
+        }
+
         return strtoupper(str_replace('-', '_', $providerId)).'_API_KEY';
     }
 }

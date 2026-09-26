@@ -10,10 +10,12 @@ use Ineersa\CodingAgent\Config\Ai\AiCatalog;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\AiHttpConfig;
 use Ineersa\CodingAgent\Config\Ai\AiModelDefinition;
+use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
+use Ineersa\CodingAgent\Config\ReasoningOptionsResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\OpenCodeGo\OpenCodeGoSymfonyAiProviderBuilder;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ProjectedSymfonyModelCatalog;
@@ -105,11 +107,16 @@ final class SymfonyAiProviderFactoryTest extends TestCase
     public function testBundledOpenCodeGoRoutesToSubscriptionEndpointWithApiKey(): void
     {
         $home = TestDirectoryIsolation::createProjectTempDir('opencode-go-catalog');
+        $originalEnv = getenv('OPENCODE_API_KEY');
+        $originalPhpEnv = $_ENV['OPENCODE_API_KEY'] ?? null;
+        $originalServerEnv = $_SERVER['OPENCODE_API_KEY'] ?? null;
         try {
+            putenv('OPENCODE_API_KEY=test-go-key');
+            $_ENV['OPENCODE_API_KEY'] = 'test-go-key';
+            $_SERVER['OPENCODE_API_KEY'] = 'test-go-key';
             $catalog = new AiCatalog(\dirname(__DIR__, 4).'/config/ai-catalog.yaml', $home);
             $settings = $catalog->loadProviders()['ai'];
             $settings['providers']['opencode-go']['enabled'] = true;
-            $settings['providers']['opencode-go']['api_key'] = 'test-go-key';
             $ai = AiConfig::fromArray($settings);
             $urls = [];
             $http = new MockHttpClient(static function (string $method, string $url, array $options) use (&$urls): MockResponse {
@@ -121,11 +128,13 @@ final class SymfonyAiProviderFactoryTest extends TestCase
                 if (str_ends_with($url, '/chat/completions')) {
                     self::assertSame('deepseek-v4.1-flash', $body['model']);
                     self::assertSame('Hi', $body['messages'][0]['content']);
+                    self::assertSame('low', $body['reasoning_effort']);
 
                     return new MockResponse('{"choices":[{"message":{"role":"assistant","content":"Hello"},"finish_reason":"stop"}]}');
                 }
                 self::assertSame('https://opencode.ai/zen/go/v1/responses', $url);
                 self::assertSame('muse-spark-1.3-contributor', $body['model']);
+                self::assertSame(['effort' => 'high', 'summary' => 'auto'], $body['reasoning']);
 
                 return new MockResponse('{"id":"resp_go","object":"response","status":"completed","output":[{"id":"msg_go","type":"message","role":"assistant","content":[{"type":"output_text","text":"Muse"}]}]}');
             });
@@ -147,10 +156,13 @@ final class SymfonyAiProviderFactoryTest extends TestCase
             $this->assertInstanceOf(ResponsesModel::class, $provider->getModelCatalog()->getModel('opencode-go/muse-spark-1.3-contributor'));
             $this->assertInstanceOf(CompletionsModel::class, $provider->getModelCatalog()->getModel('opencode-go/space-bunny-free'));
             $this->assertInstanceOf(CompletionsModel::class, $provider->getModelCatalog()->getModel('opencode-go/longcat-2.5-preview-free'));
+            $reasoning = new ReasoningOptionsResolver(new HatfieldModelCatalog($ai));
+            $deepseekOptions = $reasoning->resolve(new AiModelReference('opencode-go', 'deepseek-v4.1-flash'), 'low');
+            $museOptions = $reasoning->resolve(new AiModelReference('opencode-go', 'muse-spark-1.3-contributor'), 'high');
             LlmInvocationCancelScope::enter($this->createStub(CancellationTokenInterface::class), 'run-go-1');
             try {
-                $this->assertSame('Hello', $provider->invoke('opencode-go/deepseek-v4.1-flash', new MessageBag(Message::ofUser('Hi')))->getResult()->getContent());
-                $provider->invoke('opencode-go/muse-spark-1.3-contributor', new MessageBag(Message::ofUser('Hi')))->getResult();
+                $provider->invoke('opencode-go/deepseek-v4.1-flash', new MessageBag(Message::ofUser('Hi')), $deepseekOptions)->getResult();
+                $provider->invoke('opencode-go/muse-spark-1.3-contributor', new MessageBag(Message::ofUser('Hi')), $museOptions)->getResult();
                 $this->assertSame([
                     'https://opencode.ai/zen/go/v1/chat/completions',
                     'https://opencode.ai/zen/go/v1/responses',
@@ -159,6 +171,17 @@ final class SymfonyAiProviderFactoryTest extends TestCase
                 LlmInvocationCancelScope::leave();
             }
         } finally {
+            false === $originalEnv ? putenv('OPENCODE_API_KEY') : putenv('OPENCODE_API_KEY='.$originalEnv);
+            if (null === $originalPhpEnv) {
+                unset($_ENV['OPENCODE_API_KEY']);
+            } else {
+                $_ENV['OPENCODE_API_KEY'] = $originalPhpEnv;
+            }
+            if (null === $originalServerEnv) {
+                unset($_SERVER['OPENCODE_API_KEY']);
+            } else {
+                $_SERVER['OPENCODE_API_KEY'] = $originalServerEnv;
+            }
             TestDirectoryIsolation::removeDirectory($home);
         }
     }

@@ -18,6 +18,8 @@ final class OpenCodeSessionHttpClientTest extends TestCase
         $headers = [];
         $client = new OpenCodeSessionHttpClient(new MockHttpClient(static function (string $method, string $url, array $options) use (&$headers): MockResponse {
             $headers[] = $options['normalized_headers']['x-opencode-session'][0];
+            self::assertSame('x-opencode-client: hatfield', $options['normalized_headers']['x-opencode-client'][0]);
+            self::assertSame('User-Agent: hatfield', $options['normalized_headers']['user-agent'][0]);
 
             return new MockResponse('{}');
         }));

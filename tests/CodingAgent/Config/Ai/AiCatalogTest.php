@@ -162,15 +162,19 @@ YAML);
         $this->assertFalse($go->enabled);
         $this->assertSame('opencode-go', $go->type);
         $this->assertSame('https://opencode.ai/zen/go/v1', $go->baseUrl);
+        $this->assertSame('env:OPENCODE_API_KEY', $go->apiKey);
         $this->assertSame('/chat/completions', $go->completionsPath);
-        $this->assertFalse($go->supportsThinkingLevels);
-        $this->assertFalse($go->compatibility?->supportsReasoningEffort);
+        $this->assertTrue($go->supportsThinkingLevels);
+        $this->assertTrue($go->compatibility?->supportsReasoningEffort);
         $this->assertSame(
             ['deepseek-v4.1-flash', 'muse-spark-1.3-contributor', 'space-bunny-free', 'longcat-2.5-preview-free'],
             array_keys($go->models),
         );
         $this->assertTrue($go->models['deepseek-v4.1-flash']->toolCalling);
         $this->assertSame(1000000, $go->models['deepseek-v4.1-flash']->contextWindow);
+        $this->assertSame(['low' => 'low', 'high' => 'high', 'max' => 'max'], $go->models['deepseek-v4.1-flash']->thinkingLevelMap);
+        $this->assertSame('codex', $go->models['muse-spark-1.3-contributor']->compatibility?->thinkingFormat);
+        $this->assertSame([], $go->models['longcat-2.5-preview-free']->thinkingLevelMap);
     }
 
     public function testCorruptUserCopyFallsBackToBundled(): void

@@ -36,18 +36,13 @@ For catalog providers, settings may stay sparse — scalars such as `enabled` / 
 wholesale. Unknown provider ids (custom llama.cpp, RunPod, …) remain full definitions
 in settings and pass through unchanged.
 
-OpenCode Go uses an API key, not OAuth. Copy the key from your OpenCode Go
-account, then run `hatfield providers:update` to add the provider to an existing
-user catalog. Enable it with `hatfield providers:setup`, or set
-`ai.providers.opencode-go: { enabled: true, api_key: env:OPENCODE_API_KEY }`
-in your user settings and export `OPENCODE_API_KEY`. Select a model such as
-`opencode-go/deepseek-v4.1-flash`. The bundled list also includes
-`muse-spark-1.3-contributor`, `space-bunny-free`, and
-`longcat-2.5-preview-free`. Muse uses Go's Responses endpoint; the others use
-chat completions. Hatfield sends the stable run ID in `x-opencode-session` on
-each request. OpenCode restricts Muse availability by region and permits
-training on Contributor prompts and completions. The free models may change
-or disappear. `/usage` does not report Go subscription limits because the
+OpenCode Go uses `OPENCODE_API_KEY` by default. Run `hatfield providers:update`
+and enable the provider with `hatfield providers:setup`. An explicit `api_key`
+setting overrides the default, including `env:` references.
+
+Muse uses the Responses endpoint; the other bundled models use chat completions.
+OpenCode restricts Muse by region and permits training on Contributor prompts
+and completions. `/usage` does not report Go subscription limits because the
 console endpoint requires separate browser-session credentials.
 
 Common fields:
