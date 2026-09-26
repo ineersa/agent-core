@@ -8,7 +8,7 @@ description: AI providers, model selection, reasoning levels, HTTP and retry set
 Model configuration lives under the top-level `ai:` section in Hatfield settings.
 Secrets (API keys) belong in `~/.hatfield/settings.yaml` using `env:VAR` syntax, not plain text in project files when avoidable.
 
-Known providers (`zai`, `deepseek`, `openai-codex`, `grok-cli`) ship as the bundled
+Known providers (`zai`, `deepseek`, `opencode-go`, `openai-codex`, `grok-cli`) ship as the bundled
 `config/ai-catalog.yaml` (definitions present, `enabled: false`) and are copied to
 `~/.hatfield/ai-catalog.yaml` on first run. That user catalog is the source of
 provider/model defaults; enablement is manual (`providers:setup` or sparse settings).
@@ -35,6 +35,16 @@ For catalog providers, settings may stay sparse — scalars such as `enabled` / 
 `base_url` override the catalog; an explicit `models:` map replaces the catalog models
 wholesale. Unknown provider ids (custom llama.cpp, RunPod, …) remain full definitions
 in settings and pass through unchanged.
+
+OpenCode Go uses an API key, not OAuth. Copy the key from your OpenCode Go
+account, then run `hatfield providers:update` to add the provider to an existing
+user catalog. Enable it with `hatfield providers:setup`, or set
+`ai.providers.opencode-go: { enabled: true, api_key: env:OPENCODE_API_KEY }`
+in your user settings and export `OPENCODE_API_KEY`. Select a model such as
+`opencode-go/glm-5.3-flash`. The bundled models use the Go chat-completions
+endpoint; models that require the Responses or Anthropic Messages endpoint are
+not in this list. `/usage` does not report Go subscription limits because the
+console endpoint requires separate browser-session credentials.
 
 Common fields:
 

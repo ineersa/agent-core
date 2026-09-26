@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Infrastructure\SymfonyAi;
 
+use Ineersa\CodingAgent\Config\Ai\AiCatalog;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\AiHttpConfig;
 use Ineersa\CodingAgent\Config\Ai\AiModelDefinition;
@@ -18,6 +19,8 @@ use Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderFactory;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Bridge\Generic\CompletionsModel;
+use Symfony\AI\Platform\Message\Message;
+use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\AI\Platform\Provider;
 use Symfony\AI\Platform\ProviderInterface;
 use Symfony\Component\HttpClient\MockHttpClient;
@@ -92,6 +95,40 @@ final class SymfonyAiProviderFactoryTest extends TestCase
         $providers = $factory->createProviders();
 
         $this->assertArrayNotHasKey('openai-codex', $providers);
+    }
+
+    public function testBundledOpenCodeGoRoutesToSubscriptionEndpointWithApiKey(): void
+    {
+        $home = TestDirectoryIsolation::createProjectTempDir('opencode-go-catalog');
+        try {
+            $catalog = new AiCatalog(\dirname(__DIR__, 4).'/config/ai-catalog.yaml', $home);
+            $settings = $catalog->loadProviders()['ai'];
+            $settings['providers']['opencode-go']['enabled'] = true;
+            $settings['providers']['opencode-go']['api_key'] = 'test-go-key';
+            $ai = AiConfig::fromArray($settings);
+            $http = new MockHttpClient(static function (string $method, string $url, array $options): MockResponse {
+                self::assertSame('POST', $method);
+                self::assertSame('https://opencode.ai/zen/go/v1/chat/completions', $url);
+                self::assertSame('Authorization: Bearer test-go-key', $options['normalized_headers']['authorization'][0]);
+                $body = json_decode($options['body'], true, flags: \JSON_THROW_ON_ERROR);
+                self::assertSame('glm-5.3-flash', $body['model']);
+                self::assertSame('Hi', $body['messages'][0]['content']);
+
+                return new MockResponse('{"choices":[{"message":{"role":"assistant","content":"Hello"},"finish_reason":"stop"}]}');
+            });
+            $appConfig = new AppConfig(
+                tui: new TuiConfig(theme: 'default'),
+                logging: new LoggingConfig(),
+                catalog: new HatfieldModelCatalog($ai),
+            );
+            $factory = new SymfonyAiProviderFactory($appConfig, $this->createStub(EventDispatcherInterface::class), httpClient: $http);
+            $provider = $factory->createProvider('opencode-go', 10);
+
+            $this->assertInstanceOf(CompletionsModel::class, $provider->getModelCatalog()->getModel('opencode-go/glm-5.3-flash'));
+            $this->assertSame('Hello', $provider->invoke('opencode-go/glm-5.3-flash', new MessageBag(Message::ofUser('Hi')))->getResult()->getContent());
+        } finally {
+            TestDirectoryIsolation::removeDirectory($home);
+        }
     }
 
     public function testCustomHttpConfigIsAcceptedByFactory(): void
