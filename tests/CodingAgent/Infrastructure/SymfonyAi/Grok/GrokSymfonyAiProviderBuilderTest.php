@@ -6,7 +6,6 @@ namespace Ineersa\CodingAgent\Tests\Infrastructure\SymfonyAi\Grok;
 
 use Ineersa\CodingAgent\Auth\GrokAuthRecord;
 use Ineersa\CodingAgent\Auth\GrokAuthStorage;
-use Ineersa\CodingAgent\Auth\GrokOAuthConfig;
 use Ineersa\CodingAgent\Auth\GrokOAuthService;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\AiModelDefinition;
@@ -103,7 +102,7 @@ final class GrokSymfonyAiProviderBuilderTest extends TestCase
             ],
         );
 
-        $this->authStorage->saveCredentials(GrokOAuthConfig::PROVIDER_KEY, new GrokAuthRecord(
+        $this->authStorage->saveCredentials(new GrokAuthRecord(
             access: 'stored-access-token',
             refresh: 'stored-refresh-token',
             expires: time() + 3600,
@@ -127,7 +126,7 @@ final class GrokSymfonyAiProviderBuilderTest extends TestCase
             ],
         );
 
-        $this->authStorage->saveCredentials(GrokOAuthConfig::PROVIDER_KEY, new GrokAuthRecord(
+        $this->authStorage->saveCredentials(new GrokAuthRecord(
             access: 'stored-access-token',
             refresh: 'stored-refresh-token',
             expires: time() + 3600,

@@ -29,7 +29,7 @@ Every selectable model must be listed under its provider. Unknown model names ar
 
 ## Provider entries (`ai.providers`)
 
-Each provider key is a logical account/name (for example `deepseek`, `openai-codex`, `openai-codex-work`).
+Each provider key names a configured provider, such as `deepseek`, `openai-codex`, or `llama-local`. Codex and Grok always load their respective default OAuth entry. Provider IDs do not select accounts.
 
 For catalog providers, settings may stay sparse — scalars such as `enabled` / `api_key` /
 `base_url` override the catalog; an explicit `models:` map replaces the catalog models

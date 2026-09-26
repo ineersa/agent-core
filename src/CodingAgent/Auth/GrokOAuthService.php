@@ -5,6 +5,11 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Auth;
 
 use League\OAuth2\Client\Provider\Exception\IdentityProviderException;
+use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\BrowserLauncher;
+use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexOAuthProvider;
+use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexOAuthService;
+use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\LocalCallbackServer;
+use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\ManualCodeParser;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
 /**
@@ -32,7 +37,6 @@ final class GrokOAuthService
         bool $noBrowser = false,
         int $timeout = GrokOAuthConfig::DEFAULT_TIMEOUT,
         int $port = GrokOAuthConfig::DEFAULT_PORT,
-        string $providerKey = GrokOAuthConfig::PROVIDER_KEY,
     ): GrokAuthRecord {
         $provider = $this->createProvider($port);
         $authUrl = $provider->getAuthorizationUrl([
@@ -111,40 +115,34 @@ final class GrokOAuthService
             expires: $expires,
         );
 
-        $this->storage->saveCredentials($providerKey, $record);
+        $this->storage->saveCredentials($record);
 
         return $record;
     }
 
     /**
-     * Refresh stored credentials for the given provider key.
+     * Refresh stored credentials.
      *
      * @throws \RuntimeException when no stored credentials or refresh fails
      */
-    public function refreshCredentials(string $providerKey = GrokOAuthConfig::PROVIDER_KEY): GrokAuthRecord
+    public function refreshCredentials(): GrokAuthRecord
     {
         if (null === $this->tokenRefresher) {
             throw new \RuntimeException('Token refresh is not available (no refresher configured).');
         }
 
-        $stored = $this->storage->loadCredentialsRaw($providerKey);
-
-        if (null === $stored) {
+        if (null === $this->storage->loadCredentialsRaw()) {
             $hint = GrokOAuthConfig::authCommandHint();
             throw new \RuntimeException(\sprintf('No stored Grok credentials found. Run %s first.', $hint));
         }
 
         try {
-            $fresh = $this->tokenRefresher->refresh($stored->refresh);
+            return $this->storage->refreshWithLock($this->tokenRefresher);
         } catch (\Throwable $e) {
             $hint = GrokOAuthConfig::authCommandHint();
 
             throw new \RuntimeException("Token refresh failed for stored Grok credentials. Run {$hint} to re-authenticate.", previous: $e);
         }
-
-        $this->storage->saveCredentials($providerKey, $fresh);
-
-        return $fresh;
     }
 
     /**
