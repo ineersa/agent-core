@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Infrastructure\SymfonyAi;
 
+use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmInvocationCancelScope;
 use Ineersa\CodingAgent\Config\Ai\AiCatalog;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\AiHttpConfig;
@@ -13,12 +15,15 @@ use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Infrastructure\SymfonyAi\OpenCodeGo\OpenCodeGoSymfonyAiProviderBuilder;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ProjectedSymfonyModelCatalog;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderBuilderInterface;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderFactory;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
 use Symfony\AI\Platform\Bridge\Generic\CompletionsModel;
+use Symfony\AI\Platform\Bridge\OpenResponses\ResponsesModel;
 use Symfony\AI\Platform\Message\Message;
 use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\AI\Platform\Provider;
@@ -106,26 +111,53 @@ final class SymfonyAiProviderFactoryTest extends TestCase
             $settings['providers']['opencode-go']['enabled'] = true;
             $settings['providers']['opencode-go']['api_key'] = 'test-go-key';
             $ai = AiConfig::fromArray($settings);
-            $http = new MockHttpClient(static function (string $method, string $url, array $options): MockResponse {
+            $urls = [];
+            $http = new MockHttpClient(static function (string $method, string $url, array $options) use (&$urls): MockResponse {
+                $urls[] = $url;
                 self::assertSame('POST', $method);
-                self::assertSame('https://opencode.ai/zen/go/v1/chat/completions', $url);
                 self::assertSame('Authorization: Bearer test-go-key', $options['normalized_headers']['authorization'][0]);
+                self::assertSame('x-opencode-session: run-go-1', $options['normalized_headers']['x-opencode-session'][0]);
                 $body = json_decode($options['body'], true, flags: \JSON_THROW_ON_ERROR);
-                self::assertSame('glm-5.3-flash', $body['model']);
-                self::assertSame('Hi', $body['messages'][0]['content']);
+                if (str_ends_with($url, '/chat/completions')) {
+                    self::assertSame('deepseek-v4.1-flash', $body['model']);
+                    self::assertSame('Hi', $body['messages'][0]['content']);
 
-                return new MockResponse('{"choices":[{"message":{"role":"assistant","content":"Hello"},"finish_reason":"stop"}]}');
+                    return new MockResponse('{"choices":[{"message":{"role":"assistant","content":"Hello"},"finish_reason":"stop"}]}');
+                }
+                self::assertSame('https://opencode.ai/zen/go/v1/responses', $url);
+                self::assertSame('muse-spark-1.3-contributor', $body['model']);
+
+                return new MockResponse('{"id":"resp_go","object":"response","status":"completed","output":[{"id":"msg_go","type":"message","role":"assistant","content":[{"type":"output_text","text":"Muse"}]}]}');
             });
             $appConfig = new AppConfig(
                 tui: new TuiConfig(theme: 'default'),
                 logging: new LoggingConfig(),
                 catalog: new HatfieldModelCatalog($ai),
             );
-            $factory = new SymfonyAiProviderFactory($appConfig, $this->createStub(EventDispatcherInterface::class), httpClient: $http);
+            $eventDispatcher = $this->createStub(EventDispatcherInterface::class);
+            $factory = new SymfonyAiProviderFactory(
+                $appConfig,
+                $eventDispatcher,
+                [new OpenCodeGoSymfonyAiProviderBuilder($eventDispatcher, $this->createStub(LoggerInterface::class))],
+                httpClient: $http,
+            );
             $provider = $factory->createProvider('opencode-go', 10);
 
-            $this->assertInstanceOf(CompletionsModel::class, $provider->getModelCatalog()->getModel('opencode-go/glm-5.3-flash'));
-            $this->assertSame('Hello', $provider->invoke('opencode-go/glm-5.3-flash', new MessageBag(Message::ofUser('Hi')))->getResult()->getContent());
+            $this->assertInstanceOf(CompletionsModel::class, $provider->getModelCatalog()->getModel('opencode-go/deepseek-v4.1-flash'));
+            $this->assertInstanceOf(ResponsesModel::class, $provider->getModelCatalog()->getModel('opencode-go/muse-spark-1.3-contributor'));
+            $this->assertInstanceOf(CompletionsModel::class, $provider->getModelCatalog()->getModel('opencode-go/space-bunny-free'));
+            $this->assertInstanceOf(CompletionsModel::class, $provider->getModelCatalog()->getModel('opencode-go/longcat-2.5-preview-free'));
+            LlmInvocationCancelScope::enter($this->createStub(CancellationTokenInterface::class), 'run-go-1');
+            try {
+                $this->assertSame('Hello', $provider->invoke('opencode-go/deepseek-v4.1-flash', new MessageBag(Message::ofUser('Hi')))->getResult()->getContent());
+                $provider->invoke('opencode-go/muse-spark-1.3-contributor', new MessageBag(Message::ofUser('Hi')))->getResult();
+                $this->assertSame([
+                    'https://opencode.ai/zen/go/v1/chat/completions',
+                    'https://opencode.ai/zen/go/v1/responses',
+                ], $urls);
+            } finally {
+                LlmInvocationCancelScope::leave();
+            }
         } finally {
             TestDirectoryIsolation::removeDirectory($home);
         }

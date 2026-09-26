@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmInvocationCancelScope;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmStreamCancelledException;
@@ -34,9 +35,11 @@ final class LlmPlatformAdapterTest extends TestCase
     public function testSynchronousUnknownExceptionUsesDefaultRetryWithoutMessageMatching(): void
     {
         $platform = $this->createStub(SymfonyPlatformInterface::class);
-        $platform->method('invoke')->willThrowException(
-            new \RuntimeException('Codex WebSocket request frame could not be sent.'),
-        );
+        $platform->method('invoke')->willReturnCallback(static function (): never {
+            self::assertSame('run-sync-ws-send-failure', LlmInvocationCancelScope::currentRunId());
+
+            throw new \RuntimeException('Codex WebSocket request frame could not be sent.');
+        });
 
         $adapter = $this->createAdapter($platform, maxRetries: 0);
 
@@ -65,6 +68,7 @@ final class LlmPlatformAdapterTest extends TestCase
             $result->error['message'] ?? null,
         );
         $this->assertSame('openai-codex/gpt-5.6-sol', $result->error['request_model'] ?? null);
+        $this->assertNull(LlmInvocationCancelScope::currentRunId());
     }
 
     public function testTypedStreamServerFailureExhaustsApplicationRetryBudget(): void

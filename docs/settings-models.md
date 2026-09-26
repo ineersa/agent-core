@@ -41,9 +41,13 @@ account, then run `hatfield providers:update` to add the provider to an existing
 user catalog. Enable it with `hatfield providers:setup`, or set
 `ai.providers.opencode-go: { enabled: true, api_key: env:OPENCODE_API_KEY }`
 in your user settings and export `OPENCODE_API_KEY`. Select a model such as
-`opencode-go/glm-5.3-flash`. The bundled models use the Go chat-completions
-endpoint; models that require the Responses or Anthropic Messages endpoint are
-not in this list. `/usage` does not report Go subscription limits because the
+`opencode-go/deepseek-v4.1-flash`. The bundled list also includes
+`muse-spark-1.3-contributor`, `space-bunny-free`, and
+`longcat-2.5-preview-free`. Muse uses Go's Responses endpoint; the others use
+chat completions. Hatfield sends the stable run ID in `x-opencode-session` on
+each request. OpenCode restricts Muse availability by region and permits
+training on Contributor prompts and completions. The free models may change
+or disappear. `/usage` does not report Go subscription limits because the
 console endpoint requires separate browser-session credentials.
 
 Common fields:
