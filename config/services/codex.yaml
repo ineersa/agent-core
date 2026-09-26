@@ -1,0 +1,22 @@
+services:
+  _defaults:
+    autowire: true
+    autoconfigure: true
+
+  # Resolve the scalar home directory through Hatfield's settings paths.
+  Ineersa\CodingAgent\Auth\CodexAuthStorage:
+    arguments:
+      $homeDir: '@=service("Ineersa\\CodingAgent\\Config\\SettingsPathResolver").getHomeDir()'
+
+  Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexAuthStorageInterface: '@Ineersa\CodingAgent\Auth\CodexAuthStorage'
+
+  Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexOAuthConfig:
+    arguments:
+      $originator: 'hatfield'
+
+  Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexTokenRefresher: ~
+  Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexOAuthService: ~
+  Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexAuthCommand: ~
+
+  Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketConnectionCache:
+    shared: true

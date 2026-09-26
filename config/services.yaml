@@ -1,4 +1,7 @@
 # yaml-language-server: $schema=../vendor/symfony/dependency-injection/Loader/schema/services.schema.json
+imports:
+  - { resource: services/codex.yaml }
+
 parameters:
     # Default HATFIELD_CAPTURE_ERRORS to enabled; overridable via env var.
     env(HATFIELD_CAPTURE_ERRORS): '1'
@@ -85,6 +88,8 @@ services:
     resource: '%kernel.project_dir%/src/CodingAgent/**/*.php'
     exclude:
       - '%kernel.project_dir%/src/CodingAgent/Tool/CodeMode/Resources/'
+      # Keep the imported scalar argument configuration instead of rediscovering it.
+      - '%kernel.project_dir%/src/CodingAgent/Auth/CodexAuthStorage.php'
 
   Ineersa\CodingAgent\Agent\Diagnostics\PromptCacheDiagnosticsInvocationSubscriber:
     arguments:
@@ -167,30 +172,11 @@ services:
       $propertyAccessor: '@coding_agent.settings.property_accessor'
       $filesystem: '@Symfony\Component\Filesystem\Filesystem'
 
-  # CodexAuthStorage is a service, not just a value object — it needs
-  # the home directory resolved from SettingsPathResolver and a LockFactory.
-  # Autowiring fails for the string $homeDir parameter.
-  Ineersa\CodingAgent\Auth\CodexAuthStorage:
-    arguments:
-      $homeDir: '@=service("Ineersa\\CodingAgent\\Config\\SettingsPathResolver").getHomeDir()'
-
-  Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexAuthStorageInterface: '@Ineersa\CodingAgent\Auth\CodexAuthStorage'
-
-  Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexOAuthConfig:
-    arguments:
-      $originator: 'hatfield'
-
-  Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexTokenRefresher: ~
-  Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexOAuthService: ~
-  Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexAuthCommand: ~
-
   Ineersa\CodingAgent\Auth\GrokAuthStorage:
     arguments:
       $homeDir: '@=service("Ineersa\\CodingAgent\\Config\\SettingsPathResolver").getHomeDir()'
 
 
-  Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketConnectionCache:
-    shared: true
   Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderFactory:
     arguments:
       $builders: !tagged_iterator hatfield.symfony_ai.provider_builder
