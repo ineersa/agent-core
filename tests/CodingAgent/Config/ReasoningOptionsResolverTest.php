@@ -26,9 +26,9 @@ class ReasoningOptionsResolverTest extends TestCase
             $settings['providers']['opencode-go']['enabled'] = true;
             $resolver = new ReasoningOptionsResolver(new HatfieldModelCatalog(AiConfig::fromArray($settings)));
 
-            $this->assertSame(['reasoning_effort' => 'low'], $resolver->resolve($this->modelRef('opencode-go', 'deepseek-v4.1-flash'), 'low'));
+            $this->assertSame(['thinking' => ['type' => 'enabled'], 'reasoning_effort' => 'low'], $resolver->resolve($this->modelRef('opencode-go', 'deepseek-v4.1-flash'), 'low'));
             $this->assertSame([], $resolver->resolve($this->modelRef('opencode-go', 'deepseek-v4.1-flash'), 'medium'));
-            $this->assertSame(['reasoning_effort' => 'max'], $resolver->resolve($this->modelRef('opencode-go', 'deepseek-v4.1-flash'), 'max'));
+            $this->assertSame(['thinking' => ['type' => 'enabled'], 'reasoning_effort' => 'max'], $resolver->resolve($this->modelRef('opencode-go', 'deepseek-v4.1-flash'), 'max'));
             $this->assertSame(['reasoning' => ['effort' => 'high', 'summary' => 'auto']], $resolver->resolve($this->modelRef('opencode-go', 'muse-spark-1.3-contributor'), 'high'));
             $this->assertSame(['reasoning_effort' => 'xhigh'], $resolver->resolve($this->modelRef('opencode-go', 'space-bunny-free'), 'xhigh'));
             $this->assertSame([], $resolver->resolve($this->modelRef('opencode-go', 'longcat-2.5-preview-free'), 'high'));

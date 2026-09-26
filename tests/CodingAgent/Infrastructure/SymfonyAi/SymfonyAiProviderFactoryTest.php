@@ -128,6 +128,7 @@ final class SymfonyAiProviderFactoryTest extends TestCase
                 if (str_ends_with($url, '/chat/completions')) {
                     self::assertSame('deepseek-v4.1-flash', $body['model']);
                     self::assertSame('Hi', $body['messages'][0]['content']);
+                    self::assertSame(['type' => 'enabled'], $body['thinking']);
                     self::assertSame('low', $body['reasoning_effort']);
 
                     return new MockResponse('{"choices":[{"message":{"role":"assistant","content":"Hello"},"finish_reason":"stop"}]}');

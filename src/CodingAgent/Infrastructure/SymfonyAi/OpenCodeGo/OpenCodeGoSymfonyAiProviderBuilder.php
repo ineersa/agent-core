@@ -38,12 +38,15 @@ final readonly class OpenCodeGoSymfonyAiProviderBuilder implements SymfonyAiProv
     public function build(AiProviderConfig $provider, HttpClientInterface $httpClient): ProviderInterface
     {
         $apiKey = $provider->apiKey;
+        $missingKeyEnv = null;
         if (null !== $apiKey && str_starts_with($apiKey, 'env:')) {
-            $resolved = getenv(substr($apiKey, 4));
-            $apiKey = false === $resolved ? null : $resolved;
+            $envName = substr($apiKey, 4);
+            $resolved = getenv($envName);
+            $apiKey = false === $resolved || '' === $resolved ? null : $resolved;
+            $missingKeyEnv = null === $apiKey ? $envName : null;
         }
 
-        $httpClient = new OpenCodeSessionHttpClient($httpClient);
+        $httpClient = new OpenCodeSessionHttpClient($httpClient, $missingKeyEnv);
         $completionsModels = $provider->models;
         $responsesModels = [];
         if (isset($completionsModels[self::RESPONSES_MODEL])) {

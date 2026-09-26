@@ -7,7 +7,7 @@ description: Bundled AI provider catalog, user copy, providers:update, and setti
 
 Hatfield ships a curated AI provider catalog: connection settings plus a small
 model list per known provider (`zai`, `deepseek`, `opencode-go`, `openai-codex`, `grok-cli`).
-The bundled file is frozen in the install (`version: 10` at this writing; the
+The bundled file is frozen in the install (`version: 11` at this writing; the
 integer bumps when the bundled catalog changes). Known providers ship **with
 definitions present and `enabled: false`**. Enabling a provider is a settings /
 setup step, not an automatic first-run action. Runtime never downloads

@@ -12,13 +12,17 @@ use Symfony\Contracts\HttpClient\ResponseStreamInterface;
 /** Adds the stable conversation ID required by OpenCode Go to each provider request. */
 final readonly class OpenCodeSessionHttpClient implements HttpClientInterface
 {
-    public function __construct(private HttpClientInterface $inner)
+    public function __construct(private HttpClientInterface $inner, private ?string $missingKeyEnv = null)
     {
     }
 
     /** @param array<array-key, mixed> $options */
     public function request(string $method, string $url, array $options = []): ResponseInterface
     {
+        if (null !== $this->missingKeyEnv) {
+            throw new \RuntimeException(\sprintf('OpenCode Go API key environment variable %s is not set. Export it or correct ai.providers.opencode-go.api_key.', $this->missingKeyEnv));
+        }
+
         $runId = LlmInvocationCancelScope::currentRunId();
         if (null === $runId || '' === $runId) {
             throw new \RuntimeException('OpenCode Go requires an active run ID for its session header.');
@@ -39,6 +43,6 @@ final readonly class OpenCodeSessionHttpClient implements HttpClientInterface
     /** @param array<array-key, mixed> $options */
     public function withOptions(array $options): static
     {
-        return new self($this->inner->withOptions($options));
+        return new self($this->inner->withOptions($options), $this->missingKeyEnv);
     }
 }

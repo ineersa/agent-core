@@ -47,4 +47,16 @@ final class OpenCodeSessionHttpClientTest extends TestCase
         $this->expectExceptionMessage('OpenCode Go requires an active run ID');
         $client->request('POST', 'https://opencode.ai/zen/go/v1/chat/completions');
     }
+
+    public function testUnresolvedKeyReferenceFailsOnRequestBeforeNetwork(): void
+    {
+        $client = new OpenCodeSessionHttpClient(new MockHttpClient(static function (): MockResponse {
+            self::fail('OpenCode Go request must not be sent without the configured API key.');
+        }), 'OPENCODE_GO_API_KEY');
+        $client = $client->withOptions(['timeout' => 5]);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('OPENCODE_GO_API_KEY is not set');
+        $client->request('POST', 'https://opencode.ai/zen/go/v1/chat/completions');
+    }
 }

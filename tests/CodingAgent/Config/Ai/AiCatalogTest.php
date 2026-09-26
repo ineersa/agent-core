@@ -173,6 +173,8 @@ YAML);
         $this->assertTrue($go->models['deepseek-v4.1-flash']->toolCalling);
         $this->assertSame(1000000, $go->models['deepseek-v4.1-flash']->contextWindow);
         $this->assertSame(['low' => 'low', 'high' => 'high', 'max' => 'max'], $go->models['deepseek-v4.1-flash']->thinkingLevelMap);
+        $this->assertSame('deepseek', $go->models['deepseek-v4.1-flash']->compatibility?->thinkingFormat);
+        $this->assertTrue($go->models['deepseek-v4.1-flash']->compatibility?->requiresReasoningContentOnAssistantMessages);
         $this->assertSame('codex', $go->models['muse-spark-1.3-contributor']->compatibility?->thinkingFormat);
         $this->assertSame([], $go->models['longcat-2.5-preview-free']->thinkingLevelMap);
     }
