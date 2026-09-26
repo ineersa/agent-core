@@ -9,7 +9,6 @@ use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ProjectedSymfonyModelCatalog;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderBuilderInterface;
 use Psr\Log\LoggerInterface;
-use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexOAuthConfig;
 use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexOAuthService;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexModel;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexTransportEnum;
@@ -46,12 +45,9 @@ final class CodexSymfonyAiProviderBuilder implements SymfonyAiProviderBuilderInt
             providerId: $provider->id,
         );
 
-        $authKey = $this->resolveCodexAuthKey($provider);
-
-        $record = $this->codexAuth->loadCredentials($authKey);
+        $record = $this->codexAuth->loadCredentials();
         if (null === $record) {
-            $hint = CodexOAuthConfig::authCommandHintForProviderKey($authKey);
-            throw new \RuntimeException(\sprintf('OpenAI Codex provider "%s" requires stored OAuth credentials. Run: %s', $provider->id, $hint));
+            throw new \RuntimeException(\sprintf('OpenAI Codex provider "%s" requires stored OAuth credentials. Run: bin/console auth:codex', $provider->id));
         }
 
         // Use the configured baseUrl falling back to the OpenAICodex factory default,
@@ -59,8 +55,8 @@ final class CodexSymfonyAiProviderBuilder implements SymfonyAiProviderBuilderInt
         $baseUrl = '' !== $provider->baseUrl ? $provider->baseUrl : 'https://chatgpt.com/backend-api';
 
         $oAuth = $this->codexOAuth;
-        $accessTokenRefresher = static function () use ($oAuth, $authKey): string {
-            return $oAuth->refreshCredentials($authKey)->access;
+        $accessTokenRefresher = static function () use ($oAuth): string {
+            return $oAuth->refreshCredentials()->access;
         };
 
         $cacheSettings = new CodexWebSocketCacheSettings(
@@ -88,41 +84,5 @@ final class CodexSymfonyAiProviderBuilder implements SymfonyAiProviderBuilderInt
             userAgent: 'hatfield',
             internalOptions: ['hatfield_run_id', 'hatfield_model_ref'],
         );
-    }
-
-    /**
-     * Resolve the auth storage key for a Codex provider config.
-     *
-     * Returns the default PROVIDER_KEY when authKey is null/empty/whitespace,
-     * returns valid profile keys as-is, and throws for malformed keys
-     * that cannot be created through auth:codex --auth-profile=<name>.
-     *
-     * @return non-empty-string
-     *
-     * @throws \RuntimeException when authKey is invalid
-     */
-    private function resolveCodexAuthKey(AiProviderConfig $provider): string
-    {
-        $authKey = $provider->authKey;
-
-        // Default: null/empty/whitespace uses the default provider key
-        if (null === $authKey || '' === trim($authKey)) {
-            return CodexOAuthConfig::PROVIDER_KEY;
-        }
-
-        // Explicit default key is always valid
-        if (CodexOAuthConfig::PROVIDER_KEY === $authKey) {
-            return $authKey;
-        }
-
-        // Profile-generated keys like 'openai-codex-work' must have a valid profile suffix
-        $profile = CodexOAuthConfig::profileFromProviderKey($authKey);
-        if (null !== $profile) {
-            // Valid profile-generated key
-            return $authKey;
-        }
-
-        // Anything else is invalid: openai-codex- with no suffix, my-custom-key, weird chars
-        throw new \RuntimeException(\sprintf('OpenAI Codex provider "%s" has an invalid auth_key "%s". Use "openai-codex" for the default account or run bin/console auth:codex --auth-profile=<name> to create an account under "openai-codex-<name>".', $provider->id, $authKey));
     }
 }

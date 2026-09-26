@@ -18,7 +18,6 @@ final readonly class AiProviderConfig
      * @param bool                             $enabled                      Whether this provider is active
      * @param string                           $baseUrl                      Base URL for the provider's API
      * @param string|null                      $apiKey                       API key (plain or env:VAR format; resolved by SecretResolver)
-     * @param string|null                      $authKey                      Auth storage key for Codex OAuth credentials (defaults to 'openai-codex' when null)
      * @param string|null                      $completionsPath              Chat completions endpoint path (e.g. /chat/completions)
      * @param string|null                      $embeddingsPath               Embeddings endpoint path (e.g. /embeddings)
      * @param bool                             $supportsCompletions          Whether chat completions are supported
@@ -36,7 +35,6 @@ final readonly class AiProviderConfig
         public bool $enabled = true,
         public string $baseUrl = '',
         public ?string $apiKey = null,
-        public ?string $authKey = null,
         public ?string $completionsPath = null,
         public ?string $embeddingsPath = null,
         public bool $supportsCompletions = true,
@@ -72,7 +70,6 @@ final readonly class AiProviderConfig
             enabled: (bool) ($data['enabled'] ?? true),
             baseUrl: (string) ($data['base_url'] ?? ''),
             apiKey: isset($data['api_key']) ? (string) $data['api_key'] : null,
-            authKey: isset($data['auth_key']) ? (string) $data['auth_key'] : null,
             completionsPath: isset($data['completions_path']) ? (string) $data['completions_path'] : null,
             embeddingsPath: isset($data['embeddings_path']) ? (string) $data['embeddings_path'] : null,
             supportsCompletions: (bool) ($data['supports_completions'] ?? true),

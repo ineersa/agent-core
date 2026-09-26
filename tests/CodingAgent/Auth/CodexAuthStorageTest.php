@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Auth;
 
 use Ineersa\CodingAgent\Auth\CodexAuthStorage;
+use Ineersa\CodingAgent\Auth\GrokAuthRecord;
+use Ineersa\CodingAgent\Auth\GrokAuthStorage;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexAuthRecord;
@@ -43,14 +45,14 @@ final class CodexAuthStorageTest extends TestCase
             accountId: 'chat-abc123',
         );
 
-        $this->storage->saveCredentials('openai-codex', $record);
+        $this->storage->saveCredentials($record);
 
         $path = $this->tmpDir.'/'.CodexAuthStorage::AUTH_FILE;
         $this->assertFileExists($path);
         $this->assertSame(0600, fileperms($path) & 0777, 'auth.json must be published with mode 0600');
         $this->assertSame([], glob($this->tmpDir.'/.hatfield/*.tmp.*') ?: [], 'No temp files should remain after save');
 
-        $loaded = $this->storage->loadCredentials('openai-codex');
+        $loaded = $this->storage->loadCredentials();
 
         $this->assertNotNull($loaded);
         $this->assertSame('test-access-token', $loaded->access);
@@ -61,7 +63,7 @@ final class CodexAuthStorageTest extends TestCase
 
     public function testMissingFileReturnsNull(): void
     {
-        $loaded = $this->storage->loadCredentials('openai-codex');
+        $loaded = $this->storage->loadCredentials();
         $this->assertNull($loaded);
     }
 
@@ -76,9 +78,9 @@ final class CodexAuthStorageTest extends TestCase
             accountId: 'chat-old',
         );
 
-        $this->storage->saveCredentials('openai-codex', $expiredRecord);
+        $this->storage->saveCredentials($expiredRecord);
 
-        $loaded = $this->storage->loadCredentials('openai-codex');
+        $loaded = $this->storage->loadCredentials();
 
         $this->assertNotNull($loaded);
         $this->assertTrue($loaded->isExpired());
@@ -97,12 +99,12 @@ final class CodexAuthStorageTest extends TestCase
             accountId: 'chat-old',
         );
 
-        $storageWithRefresh->saveCredentials('openai-codex', $expiredRecord);
+        $storageWithRefresh->saveCredentials($expiredRecord);
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('expired and could not be refreshed');
 
-        $storageWithRefresh->loadCredentials('openai-codex');
+        $storageWithRefresh->loadCredentials();
     }
 
     public function testLoadCredentialsRawReturnsExpiredWithoutRefresh(): void
@@ -115,29 +117,25 @@ final class CodexAuthStorageTest extends TestCase
         );
 
         $storageWithRefresh = new CodexAuthStorage($this->tmpDir, new LockFactory(new FlockStore($this->tmpDir)), $this->refresher);
-        $storageWithRefresh->saveCredentials('openai-codex', $expiredRecord);
+        $storageWithRefresh->saveCredentials($expiredRecord);
 
         // loadCredentialsRaw should return the raw record without attempting refresh
-        $raw = $storageWithRefresh->loadCredentialsRaw('openai-codex');
+        $raw = $storageWithRefresh->loadCredentialsRaw();
 
         $this->assertNotNull($raw);
         $this->assertSame('expired-access-raw', $raw->access);
         $this->assertTrue($raw->isExpired());
     }
 
-    public function testMultipleProviderKeysCoexist(): void
+    public function testCodexSavePreservesGrokCredentials(): void
     {
-        $record1 = new CodexAuthRecord('tok1', 'ref1', time() + 3600, 'acct1');
-        $record2 = new CodexAuthRecord('tok2', 'ref2', time() + 3600, 'acct2');
+        $lockFactory = new LockFactory(new FlockStore($this->tmpDir));
+        $grok = new GrokAuthStorage($this->tmpDir, $lockFactory);
+        $grok->saveCredentials(new GrokAuthRecord('grok-access', 'grok-refresh', time() + 3600));
+        $this->storage->saveCredentials(new CodexAuthRecord('codex-access', 'codex-refresh', time() + 3600, 'account'));
 
-        $this->storage->saveCredentials('openai-codex', $record1);
-        $this->storage->saveCredentials('other-provider', $record2);
-
-        $loaded1 = $this->storage->loadCredentials('openai-codex');
-        $loaded2 = $this->storage->loadCredentials('other-provider');
-
-        $this->assertSame('tok1', $loaded1?->access);
-        $this->assertSame('tok2', $loaded2?->access);
+        $this->assertSame('grok-access', $grok->loadCredentialsRaw()?->access);
+        $this->assertSame('codex-access', $this->storage->loadCredentialsRaw()?->access);
     }
 
     public function testCorruptJsonThrowsRuntimeException(): void
@@ -148,48 +146,16 @@ final class CodexAuthStorageTest extends TestCase
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Corrupt auth.json');
-        $this->storage->loadCredentials('openai-codex');
+        $this->storage->loadCredentials();
     }
 
     public function testLoadCredentialsRawReturnsNullOnMissingFile(): void
     {
-        $raw = $this->storage->loadCredentialsRaw('nonexistent');
+        $raw = $this->storage->loadCredentialsRaw();
         $this->assertNull($raw);
     }
 
-    public function testExpiredProfileRecordWithFailingRefresherShowsProfileHint(): void
-    {
-        // Create a refresher that always throws so we can assert the error message
-        // without depending on the network.
-        $failingRefresher = new class extends CodexTokenRefresher {
-            public function refresh(string $refreshToken, string $expectedAccountId): CodexAuthRecord
-            {
-                throw new \RuntimeException('Simulated refresh failure.');
-            }
-        };
-
-        $storageWithRefresh = new CodexAuthStorage(
-            $this->tmpDir,
-            new LockFactory(new FlockStore($this->tmpDir)),
-            $failingRefresher,
-        );
-
-        $expiredRecord = new CodexAuthRecord(
-            access: 'expired-access',
-            refresh: 'invalid-refresh-token',
-            expires: time() - 3600,
-            accountId: 'chat-old',
-        );
-
-        $storageWithRefresh->saveCredentials('openai-codex-work', $expiredRecord);
-
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('--auth-profile=work');
-
-        $storageWithRefresh->loadCredentials('openai-codex-work');
-    }
-
-    public function testExpiredDefaultRecordWithFailingRefresherShowsNoProfileHint(): void
+    public function testExpiredRecordWithFailingRefresherShowsLoginHint(): void
     {
         $failingRefresher = new class extends CodexTokenRefresher {
             public function refresh(string $refreshToken, string $expectedAccountId): CodexAuthRecord
@@ -211,16 +177,10 @@ final class CodexAuthStorageTest extends TestCase
             accountId: 'chat-old',
         );
 
-        $storageWithRefresh->saveCredentials('openai-codex', $expiredRecord);
+        $storageWithRefresh->saveCredentials($expiredRecord);
 
         $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('expired and could not be refreshed');
-
-        try {
-            $storageWithRefresh->loadCredentials('openai-codex');
-        } catch (\RuntimeException $e) {
-            $this->assertStringNotContainsString('--auth-profile=', $e->getMessage());
-            throw $e;
-        }
+        $this->expectExceptionMessage('bin/console auth:codex');
+        $storageWithRefresh->loadCredentials();
     }
 }

@@ -50,7 +50,7 @@ final class ProviderQuotaProbeServiceTest extends TestCase
     #[Test]
     public function testProbeConfiguredProvidersSuccess(): void
     {
-        $this->authStorage->saveCredentials('openai-codex', new CodexAuthRecord(
+        $this->authStorage->saveCredentials(new CodexAuthRecord(
             access: 'test-access-token',
             refresh: 'test-refresh',
             expires: time() + 3600,
@@ -134,7 +134,7 @@ final class ProviderQuotaProbeServiceTest extends TestCase
     #[Test]
     public function testDegradedOpenAiDoesNotSuppressZaiOrLeakSecrets(): void
     {
-        $this->authStorage->saveCredentials('openai-codex', new CodexAuthRecord(
+        $this->authStorage->saveCredentials(new CodexAuthRecord(
             access: 'secret-access-token',
             refresh: 'secret-refresh',
             expires: time() + 3600,

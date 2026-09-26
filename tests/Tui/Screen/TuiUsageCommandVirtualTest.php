@@ -66,7 +66,7 @@ final class TuiUsageCommandVirtualTest extends TestCase
     #[Test]
     public function testUsageRoutesAndRendersProviderAndSessionSections(): void
     {
-        $this->authStorage->saveCredentials('openai-codex', new CodexAuthRecord(
+        $this->authStorage->saveCredentials(new CodexAuthRecord(
             access: 'test-access-token',
             refresh: 'test-refresh',
             expires: time() + 3600,
@@ -211,7 +211,7 @@ final class TuiUsageCommandVirtualTest extends TestCase
         $tui = $harness->tui();
 
         $workingDuringProbe = null;
-        $this->authStorage->saveCredentials('openai-codex', new CodexAuthRecord(
+        $this->authStorage->saveCredentials(new CodexAuthRecord(
             access: 'test-access-token',
             refresh: 'test-refresh',
             expires: time() + 3600,
@@ -252,7 +252,7 @@ final class TuiUsageCommandVirtualTest extends TestCase
     #[Test]
     public function testUsageKeepsSessionTotalsWhenProviderProbeThrows(): void
     {
-        $this->authStorage->saveCredentials('openai-codex', new CodexAuthRecord(
+        $this->authStorage->saveCredentials(new CodexAuthRecord(
             access: 'test-access-token',
             refresh: 'test-refresh',
             expires: time() + 3600,

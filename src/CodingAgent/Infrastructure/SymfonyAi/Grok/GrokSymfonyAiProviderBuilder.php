@@ -43,9 +43,7 @@ final class GrokSymfonyAiProviderBuilder implements SymfonyAiProviderBuilderInte
             providerId: $provider->id,
         );
 
-        $authKey = $this->resolveAuthKey($provider);
-
-        $record = $this->grokAuth->loadCredentials($authKey);
+        $record = $this->grokAuth->loadCredentials();
         if (null === $record) {
             $hint = GrokOAuthConfig::authCommandHint();
             throw new \RuntimeException(\sprintf('Grok CLI provider "%s" requires stored OAuth credentials. Run: %s', $provider->id, $hint));
@@ -56,8 +54,8 @@ final class GrokSymfonyAiProviderBuilder implements SymfonyAiProviderBuilderInte
         $path = $provider->completionsPath ?? '/v1/responses';
 
         $oAuth = $this->grokOAuth;
-        $accessTokenRefresher = static function () use ($oAuth, $authKey): string {
-            return $oAuth->refreshCredentials($authKey)->access;
+        $accessTokenRefresher = static function () use ($oAuth): string {
+            return $oAuth->refreshCredentials()->access;
         };
 
         $modelClient = new GrokModelClient(
@@ -77,19 +75,5 @@ final class GrokSymfonyAiProviderBuilder implements SymfonyAiProviderBuilderInte
             OpenResponsesContract::create(),
             $this->eventDispatcher,
         );
-    }
-
-    /**
-     * @return non-empty-string
-     */
-    private function resolveAuthKey(AiProviderConfig $provider): string
-    {
-        $authKey = $provider->authKey;
-
-        if (null === $authKey || '' === trim($authKey)) {
-            return GrokOAuthConfig::PROVIDER_KEY;
-        }
-
-        return trim($authKey);
     }
 }

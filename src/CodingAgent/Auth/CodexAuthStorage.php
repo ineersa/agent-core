@@ -6,7 +6,7 @@ namespace Ineersa\CodingAgent\Auth;
 
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexAuthRecord;
-use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexAuthStorageInterface;
+use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexAuthRefreshStorageInterface;
 use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexOAuthConfig;
 use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexOAuthService;
 use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexTokenRefresher;
@@ -20,7 +20,7 @@ use Symfony\Component\Lock\LockFactory;
  *
  * @see CodexAuthRecord
  */
-final class CodexAuthStorage implements CodexAuthStorageInterface
+final class CodexAuthStorage implements CodexAuthRefreshStorageInterface
 {
     public const string AUTH_FILE = '.hatfield/auth.json';
 
@@ -39,7 +39,7 @@ final class CodexAuthStorage implements CodexAuthStorageInterface
     }
 
     /**
-     * Load credentials for the given provider key.
+     * Load Codex credentials.
      *
      * If the stored record is expired and a {@see CodexTokenRefresher}
      * is configured, the refresh is performed under the file lock and
@@ -49,10 +49,10 @@ final class CodexAuthStorage implements CodexAuthStorageInterface
      *
      * @throws \RuntimeException when refresh is needed but fails
      */
-    public function loadCredentials(string $providerKey = CodexOAuthConfig::PROVIDER_KEY): ?CodexAuthRecord
+    public function loadCredentials(): ?CodexAuthRecord
     {
-        return $this->store->withLock(function () use ($providerKey): ?CodexAuthRecord {
-            $entry = $this->store->get($providerKey);
+        return $this->store->withLock(function (): ?CodexAuthRecord {
+            $entry = $this->store->get(CodexOAuthConfig::PROVIDER_KEY);
 
             if (null === $entry) {
                 return null;
@@ -65,21 +65,19 @@ final class CodexAuthStorage implements CodexAuthStorageInterface
             if ($record->isExpired() && null !== $this->tokenRefresher) {
                 try {
                     $fresh = $this->tokenRefresher->refresh($record->refresh, $record->accountId);
-                    $this->store->set($providerKey, $fresh->toArray());
+                    $this->store->set(CodexOAuthConfig::PROVIDER_KEY, $fresh->toArray());
 
                     return $fresh;
                 } catch (\Throwable $e) {
                     if (null !== $this->logger) {
                         $this->logger->warning('Codex token refresh failed for expired record', [
-                            'provider_key' => $providerKey,
+                            'provider_key' => CodexOAuthConfig::PROVIDER_KEY,
                             'component' => 'codex_auth_storage',
                             'event_type' => 'codex_token_refresh_failed',
                         ]);
                     }
 
-                    $hint = CodexOAuthConfig::authCommandHintForProviderKey($providerKey);
-
-                    throw new \RuntimeException("Stored Codex credentials have expired and could not be refreshed. Run {$hint} to re-authenticate.", previous: $e);
+                    throw new \RuntimeException('Stored Codex credentials have expired and could not be refreshed. Run bin/console auth:codex to re-authenticate.', previous: $e);
                 }
             }
 
@@ -94,9 +92,9 @@ final class CodexAuthStorage implements CodexAuthStorageInterface
      * e.g. in {@see CodexOAuthService::refreshCredentials()} which wants
      * to call the refresher explicitly.
      */
-    public function loadCredentialsRaw(string $providerKey = CodexOAuthConfig::PROVIDER_KEY): ?CodexAuthRecord
+    public function loadCredentialsRaw(): ?CodexAuthRecord
     {
-        $entry = $this->store->get($providerKey);
+        $entry = $this->store->get(CodexOAuthConfig::PROVIDER_KEY);
 
         if (null === $entry) {
             return null;
@@ -108,10 +106,26 @@ final class CodexAuthStorage implements CodexAuthStorageInterface
     /**
      * Persist a credential record atomically.
      */
-    public function saveCredentials(string $providerKey, CodexAuthRecord $record): void
+    public function saveCredentials(CodexAuthRecord $record): void
     {
-        $this->store->withLock(function () use ($providerKey, $record): void {
-            $this->store->set($providerKey, $record->toArray());
+        $this->store->withLock(function () use ($record): void {
+            $this->store->set(CodexOAuthConfig::PROVIDER_KEY, $record->toArray());
+        });
+    }
+
+    public function refreshWithLock(CodexTokenRefresher $refresher): CodexAuthRecord
+    {
+        return $this->store->withLock(function () use ($refresher): CodexAuthRecord {
+            $entry = $this->store->get(CodexOAuthConfig::PROVIDER_KEY);
+            if (null === $entry) {
+                throw new \RuntimeException('No stored Codex credentials found.');
+            }
+
+            $record = CodexAuthRecord::fromArray($entry);
+            $fresh = $refresher->refresh($record->refresh, $record->accountId);
+            $this->store->set(CodexOAuthConfig::PROVIDER_KEY, $fresh->toArray());
+
+            return $fresh;
         });
     }
 }
