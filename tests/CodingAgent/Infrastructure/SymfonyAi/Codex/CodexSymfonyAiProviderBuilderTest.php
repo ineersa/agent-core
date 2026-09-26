@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Infrastructure\SymfonyAi\Codex;
 
-use Ineersa\CodingAgent\Auth\CodexAuthStorage;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\AiModelDefinition;
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
@@ -16,6 +15,7 @@ use Ineersa\CodingAgent\Infrastructure\SymfonyAi\Codex\CodexSymfonyAiProviderBui
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderFactory;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
+use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexAuthFileStore;
 use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexAuthRecord;
 use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexOAuthService;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexModel;
@@ -30,7 +30,7 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 final class CodexSymfonyAiProviderBuilderTest extends TestCase
 {
-    private CodexAuthStorage $authStorage;
+    private CodexAuthFileStore $authStorage;
     private string $tmpDir;
 
     protected function setUp(): void
@@ -42,14 +42,14 @@ final class CodexSymfonyAiProviderBuilderTest extends TestCase
 
         $store = new FlockStore($this->tmpDir);
         $lockFactory = new LockFactory($store);
-        $this->authStorage = new CodexAuthStorage($this->tmpDir, $lockFactory);
+        $this->authStorage = new CodexAuthFileStore($this->tmpDir.'/.hatfield/auth.json', $lockFactory);
     }
 
     protected function tearDown(): void
     {
         parent::tearDown();
 
-        $path = $this->tmpDir.'/'.CodexAuthStorage::AUTH_FILE;
+        $path = $this->tmpDir.'/.hatfield/auth.json';
         if (file_exists($path)) {
             @unlink($path);
         }
@@ -305,7 +305,7 @@ final class CodexSymfonyAiProviderBuilderTest extends TestCase
      */
     private function createFactory(
         array $providers,
-        ?CodexAuthStorage $codexAuth = null,
+        ?CodexAuthFileStore $codexAuth = null,
         ?CodexOAuthService $codexOAuth = null,
     ): SymfonyAiProviderFactory {
         $aiConfig = new AiConfig(

@@ -10,6 +10,8 @@ use Ineersa\CodingAgent\Auth\GrokOAuthConfig;
 use Ineersa\CodingAgent\Auth\GrokTokenRefresher;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
+use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexAuthFileStore;
+use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexAuthRecord;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 
@@ -59,6 +61,18 @@ final class GrokAuthStorageTest extends TestCase
     public function testMissingFileReturnsNull(): void
     {
         $this->assertNull($this->storage->loadCredentials());
+    }
+
+    public function testCodexAndGrokWritesPreserveEachOther(): void
+    {
+        $lockFactory = new LockFactory(new FlockStore($this->tmpDir));
+        $codex = new CodexAuthFileStore($this->tmpDir.'/'.GrokOAuthConfig::AUTH_FILE, $lockFactory);
+        $codex->saveCredentials(new CodexAuthRecord('codex-one', 'codex-refresh', time() + 3600, 'account'));
+        $this->storage->saveCredentials(new GrokAuthRecord('grok-one', 'grok-refresh', time() + 3600));
+        $codex->saveCredentials(new CodexAuthRecord('codex-two', 'codex-refresh', time() + 3600, 'account'));
+
+        $this->assertSame('codex-two', $codex->loadCredentialsRaw()?->access);
+        $this->assertSame('grok-one', $this->storage->loadCredentialsRaw()?->access);
     }
 
     public function testExpiredRecordWithoutRefresherReturnsExpired(): void

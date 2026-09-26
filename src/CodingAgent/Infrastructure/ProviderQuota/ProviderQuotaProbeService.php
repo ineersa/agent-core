@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Infrastructure\ProviderQuota;
 
-use Ineersa\CodingAgent\Auth\CodexAuthStorage;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Runtime\Contract\ProviderQuotaReportDTO;
 use Ineersa\CodingAgent\Runtime\Contract\ProviderQuotaSectionDTO;
 use Psr\Log\LoggerInterface;
+use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexAuthFileStore;
 use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexOAuthConfig;
 use Symfony\Contracts\HttpClient\Exception\TransportExceptionInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
@@ -21,7 +21,7 @@ final class ProviderQuotaProbeService
     private const string ZAI_QUOTA = 'https://api.z.ai/api/monitor/usage/quota/limit';
 
     public function __construct(
-        private readonly CodexAuthStorage $codexAuthStorage,
+        private readonly CodexAuthFileStore $codexAuthStorage,
         private readonly AppConfig $appConfig,
         private readonly HttpClientInterface $httpClient,
         private readonly LoggerInterface $logger,

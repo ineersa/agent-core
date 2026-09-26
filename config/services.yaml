@@ -88,8 +88,6 @@ services:
     resource: '%kernel.project_dir%/src/CodingAgent/**/*.php'
     exclude:
       - '%kernel.project_dir%/src/CodingAgent/Tool/CodeMode/Resources/'
-      # Keep the imported scalar argument configuration instead of rediscovering it.
-      - '%kernel.project_dir%/src/CodingAgent/Auth/CodexAuthStorage.php'
 
   Ineersa\CodingAgent\Agent\Diagnostics\PromptCacheDiagnosticsInvocationSubscriber:
     arguments:
@@ -127,7 +125,7 @@ services:
 
   Ineersa\CodingAgent\Infrastructure\ProviderQuota\ProviderQuotaProbeService:
     arguments:
-      $codexAuthStorage: '@Ineersa\CodingAgent\Auth\CodexAuthStorage'
+      $codexAuthStorage: '@Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexAuthFileStore'
       $appConfig: '@Ineersa\CodingAgent\Config\AppConfig'
       $httpClient: '@Ineersa\CodingAgent\Infrastructure\ProviderQuota\ProviderQuotaProbeService.http_client'
       $logger: '@Psr\Log\LoggerInterface'
