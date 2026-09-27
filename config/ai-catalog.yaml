@@ -8,7 +8,7 @@
 # Refresh: hatfield providers:update
 # Interactive setup: bin/console providers:setup (see providers-setup-command task)
 
-version: 8
+version: 11
 
 providers:
     deepseek:
@@ -37,6 +37,61 @@ providers:
                 # Peak USD/1M tokens; off-peak rates are half. models.dev has no entry yet.
                 # https://api-docs.deepseek.com/quick_start/pricing
                 cost: { input: 0.30, output: 1.20, cache_read: 0.006, cache_write: 0 }
+
+    opencode-go:
+        label: 'OpenCode Go'
+        kind: apikey
+        type: opencode-go
+        enabled: false
+        base_url: https://opencode.ai/zen/go/v1
+        api_key: env:OPENCODE_API_KEY
+        # Default route for three models; Muse uses /responses in the Go builder.
+        api: openai-completions
+        completions_path: /chat/completions
+        supports_completions: true
+        supports_embeddings: false
+        supports_thinking_levels: true
+        compatibility:
+            supports_reasoning_effort: true
+        auth_command: null
+        models:
+            deepseek-v4.1-flash:
+                name: DeepSeek V4.1 Flash
+                context_window: 1000000
+                max_tokens: 384000
+                input: [text, image]
+                tool_calling: true
+                reasoning: true
+                thinking_level_map: { low: low, high: high, max: max }
+                compatibility: { thinking_format: deepseek, requires_reasoning_content_on_assistant_messages: true }
+                cost: { input: 0.15, output: 0.60, cache_read: 0.003 }
+            muse-spark-1.3-contributor:
+                name: Muse Spark 1.3 Contributor
+                context_window: 1048576
+                max_tokens: 131072
+                input: [text, image, video, pdf, audio]
+                tool_calling: true
+                reasoning: true
+                thinking_level_map: { minimal: minimal, low: low, medium: medium, high: high, xhigh: xhigh }
+                compatibility: { thinking_format: codex }
+                cost: { input: 0.10, output: 0.20, cache_read: 0.002 }
+            space-bunny-free:
+                name: Space Bunny Free
+                context_window: 1048576
+                max_tokens: 524288
+                input: [text, image, video]
+                tool_calling: true
+                reasoning: true
+                thinking_level_map: { low: low, medium: medium, high: high, xhigh: xhigh, max: max }
+                cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 }
+            longcat-2.5-preview-free:
+                name: LongCat 2.5 Preview Free
+                context_window: 1000000
+                max_tokens: 131072
+                input: [text, image]
+                tool_calling: true
+                reasoning: true
+                cost: { input: 0, output: 0, cache_read: 0 }
 
     zai:
         label: 'Z.ai (GLM)'

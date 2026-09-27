@@ -7,7 +7,7 @@ namespace Ineersa\AgentCore\Infrastructure\SymfonyAi;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 
 /**
- * Per-fiber scope for the cancel token of the in-flight LLM HTTP invocation.
+ * Per-fiber scope for the cancel token and run ID of an in-flight LLM invocation.
  *
  * Distinct from {@see \Ineersa\AgentCore\Infrastructure\RunLogContext}: this is
  * not logging correlation and must never be merged into log records.
@@ -19,17 +19,17 @@ use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 final class LlmInvocationCancelScope
 {
     /**
-     * @var \WeakMap<\Fiber<mixed, mixed, mixed, mixed>, list<CancellationTokenInterface>>|null
+     * @var \WeakMap<\Fiber<mixed, mixed, mixed, mixed>, list<LlmInvocationScopeEntry>>|null
      */
     private static ?\WeakMap $fiberStacks = null;
 
-    /** @var list<CancellationTokenInterface> */
+    /** @var list<LlmInvocationScopeEntry> */
     private static array $defaultStack = [];
 
-    public static function enter(CancellationTokenInterface $token): void
+    public static function enter(CancellationTokenInterface $token, ?string $runId = null): void
     {
         $stack = self::readStack();
-        $stack[] = $token;
+        $stack[] = new LlmInvocationScopeEntry($token, $runId);
         self::writeStack($stack);
     }
 
@@ -49,11 +49,18 @@ final class LlmInvocationCancelScope
             return null;
         }
 
-        return $stack[array_key_last($stack)];
+        return $stack[array_key_last($stack)]->token;
+    }
+
+    public static function currentRunId(): ?string
+    {
+        $stack = self::readStack();
+
+        return [] === $stack ? null : $stack[array_key_last($stack)]->runId;
     }
 
     /**
-     * @return list<CancellationTokenInterface>
+     * @return list<LlmInvocationScopeEntry>
      */
     private static function readStack(): array
     {
@@ -68,7 +75,7 @@ final class LlmInvocationCancelScope
     }
 
     /**
-     * @param list<CancellationTokenInterface> $stack
+     * @param list<LlmInvocationScopeEntry> $stack
      */
     private static function writeStack(array $stack): void
     {

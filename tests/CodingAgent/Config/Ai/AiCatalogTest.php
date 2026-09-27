@@ -149,6 +149,36 @@ YAML);
         $this->assertSame(0.125, $luna->cost?->cacheWrite);
     }
 
+    public function testBundledOpenCodeGoUsesApiKeyAndSelectedModels(): void
+    {
+        $catalog = new AiCatalog(\dirname(__DIR__, 4).'/config/ai-catalog.yaml', $this->homeDir);
+        $source = $catalog->readBundledCatalog();
+        $this->assertNotNull($source);
+        $this->assertSame('apikey', $source['providers']['opencode-go']['kind']);
+        $this->assertSame('openai-completions', $source['providers']['opencode-go']['api']);
+
+        $ai = AiConfig::fromArray($catalog->loadProviders()['ai']);
+        $go = $ai->providers['opencode-go'];
+        $this->assertFalse($go->enabled);
+        $this->assertSame('opencode-go', $go->type);
+        $this->assertSame('https://opencode.ai/zen/go/v1', $go->baseUrl);
+        $this->assertSame('env:OPENCODE_API_KEY', $go->apiKey);
+        $this->assertSame('/chat/completions', $go->completionsPath);
+        $this->assertTrue($go->supportsThinkingLevels);
+        $this->assertTrue($go->compatibility?->supportsReasoningEffort);
+        $this->assertSame(
+            ['deepseek-v4.1-flash', 'muse-spark-1.3-contributor', 'space-bunny-free', 'longcat-2.5-preview-free'],
+            array_keys($go->models),
+        );
+        $this->assertTrue($go->models['deepseek-v4.1-flash']->toolCalling);
+        $this->assertSame(1000000, $go->models['deepseek-v4.1-flash']->contextWindow);
+        $this->assertSame(['low' => 'low', 'high' => 'high', 'max' => 'max'], $go->models['deepseek-v4.1-flash']->thinkingLevelMap);
+        $this->assertSame('deepseek', $go->models['deepseek-v4.1-flash']->compatibility?->thinkingFormat);
+        $this->assertTrue($go->models['deepseek-v4.1-flash']->compatibility?->requiresReasoningContentOnAssistantMessages);
+        $this->assertSame('codex', $go->models['muse-spark-1.3-contributor']->compatibility?->thinkingFormat);
+        $this->assertSame([], $go->models['longcat-2.5-preview-free']->thinkingLevelMap);
+    }
+
     public function testCorruptUserCopyFallsBackToBundled(): void
     {
         TestDirectoryIsolation::ensureDirectory($this->homeDir.'/.hatfield');
