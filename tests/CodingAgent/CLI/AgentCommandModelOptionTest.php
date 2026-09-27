@@ -121,6 +121,34 @@ final class AgentCommandModelOptionTest extends IsolatedKernelTestCase
     }
 
     #[Test]
+    public function publicStartupCreatesProjectGitignoreWhenMissing(): void
+    {
+        $path = $this->isolatedCwd().'/.hatfield/.gitignore';
+        unlink($path);
+        $this->armInteractiveModeAbortBeforeSessionLoop();
+
+        try {
+            $this->invokePublicAgentCommand([
+                'command' => 'agent',
+                '--resume' => $this->sessionId,
+                '--transport' => 'in-process',
+            ]);
+            $this->fail('Armed InteractiveMode abort must surface after startup');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('is not registered', $e->getMessage());
+        } finally {
+            $this->restoreArmedSharedState();
+        }
+
+        $rules = file_get_contents($path);
+        $this->assertIsString($rules);
+        $this->assertStringContainsString("sessions/\n", $rules);
+        $this->assertStringContainsString("cache-*/\n", $rules);
+        $this->assertStringContainsString("state.sqlite*\n", $rules);
+        $this->assertStringNotContainsString("\nsettings.yaml\n", $rules);
+    }
+
+    #[Test]
     public function publicStartupResumeAppliesExplicitOverridesBeforeInteractiveMode(): void
     {
         $this->armInteractiveModeAbortBeforeSessionLoop();

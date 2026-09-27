@@ -62,6 +62,7 @@ final class AgentCommand
         private PromptTemplatesRuntimeConfig $promptTemplatesConfig,
         private ToolFilterRuntimeConfig $toolFilterConfig,
         private LoggerInterface $logger,
+        private readonly ProjectGitignoreInitializer $projectGitignoreInitializer,
         private readonly ?StartupDatabaseMigrator $startupDatabaseMigrator = null,
         private ?HeadlessController $controller = null,
         private readonly ?ToolRegistryInterface $toolRegistry = null,
@@ -142,6 +143,12 @@ final class AgentCommand
                 $_ENV['HATFIELD_CWD'] = $cwd;
                 putenv('HATFIELD_CWD='.$cwd);
             }
+
+            $projectCwd = getcwd();
+            if (false === $projectCwd) {
+                throw new \RuntimeException('Unable to determine project working directory.');
+            }
+            ($this->projectGitignoreInitializer)($projectCwd);
 
             // Populate skills config from CLI options before any session starts.
             // SkillDiscovery reads this config lazily on first discover() call.
