@@ -25,7 +25,7 @@ use Symfony\AI\Agent\Toolbox\Event\ToolCallFailed;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallRequested;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallSucceeded;
 use Symfony\AI\Agent\Toolbox\EventListener\ValidateToolCallArgumentsListener;
-use Symfony\AI\Agent\Toolbox\Exception\ToolException;
+use Symfony\AI\Agent\Toolbox\Exception\InvalidToolCallArgumentsException;
 use Symfony\AI\Agent\Toolbox\Exception\ToolNotFoundException;
 use Symfony\AI\Agent\Toolbox\FaultTolerantToolbox;
 use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver;
@@ -698,9 +698,10 @@ final class RegistryBackedToolboxTest extends TestCase
             promptLine: 'fragile',
         );
 
-        // Resolver/denormalizer failure before handler invoke: Symfony AI's
-        // ToolException is translated into a non-retryable ToolCallException
-        // while retaining the actionable serializer failure in the chain.
+        // Resolver/denormalizer failure before handler invoke: Symfony AI 0.14
+        // surfaces it as InvalidToolCallArgumentsException, translated into a
+        // non-retryable ToolCallException while retaining the actionable
+        // serializer failure in the chain.
         $toolbox = new FaultTolerantToolbox($this->createToolbox($registry));
 
         try {
@@ -709,7 +710,7 @@ final class RegistryBackedToolboxTest extends TestCase
         } catch (ToolCallException $e) {
             $this->assertStringContainsString('The type of the "count" attribute for class "Ineersa\CodingAgent\Tests\Tool\FragileCountArgumentsDTO" must be one of "int" ("string" given).', $e->getMessage());
             $this->assertFalse($e->retryable());
-            $this->assertInstanceOf(ToolException::class, $e->getPrevious());
+            $this->assertInstanceOf(InvalidToolCallArgumentsException::class, $e->getPrevious());
             $this->assertInstanceOf(NotNormalizableValueException::class, $e->getPrevious()?->getPrevious());
         }
     }

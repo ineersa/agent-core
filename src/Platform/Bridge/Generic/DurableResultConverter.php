@@ -203,9 +203,19 @@ final class DurableResultConverter extends ResultConverter
                 }
 
                 if ([] !== $blocks && $this->isToolCallsStreamFinished($data)) {
-                    $delta = new ToolCallComplete($this->buildDurableFinalToolCalls($blocks));
-                    $this->emit('converted_delta', $chunkOrdinal, $this->deltaContext($delta));
-                    yield $delta;
+                    // Symfony AI 0.14 widened isToolCallsStreamFinished() from
+                    // finish_reason "tool_calls" only to any finish reason, so
+                    // the flush now also fires on "stop". $blocks also contains
+                    // phantom empty-id blocks that buildDurableFinalToolCalls()
+                    // filters out; only flush when at least one real tool call
+                    // accumulated, mirroring the upstream converter's
+                    // non-empty check instead of counting phantom blocks.
+                    $finalToolCalls = $this->buildDurableFinalToolCalls($blocks);
+                    if ([] !== $finalToolCalls) {
+                        $delta = new ToolCallComplete($finalToolCalls);
+                        $this->emit('converted_delta', $chunkOrdinal, $this->deltaContext($delta));
+                        yield $delta;
+                    }
                 }
 
                 $reasoningContent = $data['choices'][0]['delta']['reasoning_content']
