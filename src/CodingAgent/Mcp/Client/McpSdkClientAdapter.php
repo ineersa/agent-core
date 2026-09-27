@@ -56,16 +56,31 @@ final class McpSdkClientAdapter implements McpClientInterface
      */
     public function listTools(): array
     {
-        $result = $this->client->listTools();
-
         $tools = [];
-        foreach ($result->tools as $tool) {
-            $tools[] = [
-                'name' => $tool->name,
-                'description' => $tool->description,
-                'inputSchema' => $tool->inputSchema,
-            ];
-        }
+        $seenCursors = [];
+        $cursor = null;
+
+        do {
+            $result = $this->client->listTools($cursor);
+
+            foreach ($result->tools as $tool) {
+                $tools[] = [
+                    'name' => $tool->name,
+                    'description' => $tool->description,
+                    'inputSchema' => $tool->inputSchema,
+                ];
+            }
+
+            $cursor = $result->nextCursor;
+            if (null !== $cursor) {
+                // Fail discovery instead of returning a partial catalog from a looping server.
+                if (isset($seenCursors[$cursor])) {
+                    throw new \RuntimeException('MCP tools/list repeated cursor.');
+                }
+
+                $seenCursors[$cursor] = true;
+            }
+        } while (null !== $cursor);
 
         // Return type matches McpClientInterface::listTools(): list<array{name, description, inputSchema}>
         // The array shapes are derived from SDK Tool properties — inputSchema is a JSON Schema shape.
