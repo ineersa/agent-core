@@ -104,7 +104,7 @@ final class ConsumerSupervisorTest extends TestCase
             $this->assertContains('--memory-limit=256M', $argv);
             $this->assertNotContains('--keepalive=5', $argv);
             $this->assertNotContains('--keepalive', $argv);
-            $this->assertContains('--sleep=0.01', $argv);
+            $this->assertContains('--sleep=0.05', $argv);
             $this->assertNotContains('--time-limit=3600', $argv);
             $this->assertContains('messenger:consume', $argv);
             $this->assertContains('test_transport', $argv);

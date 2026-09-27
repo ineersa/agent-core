@@ -26,8 +26,8 @@ use Psr\Log\LoggerInterface;
  */
 final class RuntimeEventPoller
 {
-    /** Polling interval in seconds (50ms). */
-    private const float POLL_INTERVAL = 0.05;
+    /** Polling interval in seconds (15ms). */
+    private const float POLL_INTERVAL = 0.015;
 
     /**
      * Events already consumed from the process pipe but not yet successfully

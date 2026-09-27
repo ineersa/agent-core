@@ -16,6 +16,12 @@ For user-facing editor and command reference, see [terminal usage](terminal-usag
 
 `ChatScreen` mounts the widget tree and owns focus among the editor, overlays, and extension widgets. `InteractiveMode` creates each session's screen and services through `TuiSessionCompositionFactory`, then registers listeners.
 
+## Tool elapsed labels
+
+Live tool headers show whole seconds, starting at `0s`, and update once per second. Completed, failed, and cancelled calls retain millisecond precision below one second. Longer durations use seconds or minutes and seconds.
+
+The ordinary tool timer measures elapsed time from the canonical tool-start event through the terminal event, including admission and queue wait. It does not measure worker execution alone. Terminal labels freeze from recorded timestamps and remain unchanged on replay. Deferred subagent progress keeps its existing child lifecycle timing.
+
 ## Startup
 
 `AgentCommand` resolves an `AgentSessionClient`. `InteractiveMode::run(...)` mounts `ChatScreen`, creates the per-session service scope, rebuilds the transcript, and binds session commands, compaction, hotkeys, and extensions.

@@ -4,6 +4,22 @@
 # as services_{environment}.yaml when APP_ENV=test.
 
 services:
+  test.sqlite_polling_null_handler:
+    class: Monolog\Handler\NullHandler
+
+  test.sqlite_polling_query_logger:
+    class: Monolog\Logger
+    public: true
+    arguments: ['sqlite-polling-test', ['@test.sqlite_polling_null_handler']]
+
+  # SQL capture is opt-in in the isolated polling-test subprocess. Other test
+  # kernels discard these records without retaining SQL or message payloads.
+  test.sqlite_polling_logging_middleware:
+    class: Doctrine\DBAL\Logging\Middleware
+    arguments: ['@test.sqlite_polling_query_logger']
+    tags:
+      - { name: doctrine.middleware, connection: messenger_transport, priority: 200 }
+
   # BackgroundProcessManager in test env: do NOT register a PHP shutdown
   # handler. In production the handler terminates running background
   # processes on process exit. In tests, IsolatedKernelTestCase closes
