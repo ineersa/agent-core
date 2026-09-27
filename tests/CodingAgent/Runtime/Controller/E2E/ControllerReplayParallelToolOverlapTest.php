@@ -281,7 +281,7 @@ YAML;
             usleep(10_000);
         }
 
-        $this->fail(sprintf(
+        $this->fail(\sprintf(
             'Both bash workers did not enter barriers with live children before timeout. a=%s b=%s live=%d',
             is_file($this->enteredMarkerA) ? trim((string) file_get_contents($this->enteredMarkerA)) : 'missing',
             is_file($this->enteredMarkerB) ? trim((string) file_get_contents($this->enteredMarkerB)) : 'missing',
