@@ -62,10 +62,10 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
     private const string CONSUMER_MEMORY_LIMIT = '256M';
 
     /**
-     * Idle poll delay passed to messenger:consume in seconds (10ms).
+     * Idle poll delay passed to messenger:consume in seconds (50ms).
      * Symfony converts this CLI value to microseconds for Worker::run().
      */
-    private const float CONSUMER_SLEEP_SECONDS = 0.01;
+    private const float CONSUMER_SLEEP_SECONDS = 0.05;
 
     /** Max bytes of stderr tail retained per consumer for crash diagnostics. */
     private const int STDERR_TAIL_MAX_BYTES = 16_384;

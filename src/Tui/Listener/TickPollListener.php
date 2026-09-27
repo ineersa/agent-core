@@ -276,8 +276,8 @@ final class TickPollListener implements TuiListenerRegistrar
     /**
      * Hint Symfony TUI to tick at active cadence (~10ms) while runtime work is in flight.
      *
-     * RuntimeEventPoller/SubagentLiveChildViewPoller still cap their own poll work at 50ms;
-     * this only affects how often the TUI event loop invokes tick handlers so stdout JSONL
+     * RuntimeEventPoller caps its poll work at 15ms, SubagentLiveChildViewPoller at 50ms.
+     * This only affects how often the TUI event loop invokes tick handlers so stdout JSONL
      * can be drained promptly during streaming. Idle/terminal states return null so the
      * adaptive ticker falls back to the slow idle rate (CPU fix from prior work).
      */
