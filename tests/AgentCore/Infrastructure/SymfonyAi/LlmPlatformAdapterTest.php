@@ -9,12 +9,14 @@ use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmInvocationCancelScope;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmStreamCancelledException;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\AI\Platform\Bridge\OpenAICodex\Result\CancellableRawResultInterface;
 use Symfony\AI\Platform\Bridge\OpenAICodex\ResultConverter;
 use Symfony\AI\Platform\Exception\ServerException;
 use Symfony\AI\Platform\PlatformInterface as SymfonyPlatformInterface;
@@ -34,9 +36,11 @@ final class LlmPlatformAdapterTest extends TestCase
     public function testSynchronousUnknownExceptionUsesDefaultRetryWithoutMessageMatching(): void
     {
         $platform = $this->createStub(SymfonyPlatformInterface::class);
-        $platform->method('invoke')->willThrowException(
-            new \RuntimeException('Codex WebSocket request frame could not be sent.'),
-        );
+        $platform->method('invoke')->willReturnCallback(static function (): never {
+            self::assertSame('run-sync-ws-send-failure', LlmInvocationCancelScope::currentRunId());
+
+            throw new \RuntimeException('Codex WebSocket request frame could not be sent.');
+        });
 
         $adapter = $this->createAdapter($platform, maxRetries: 0);
 
@@ -65,6 +69,7 @@ final class LlmPlatformAdapterTest extends TestCase
             $result->error['message'] ?? null,
         );
         $this->assertSame('openai-codex/gpt-5.6-sol', $result->error['request_model'] ?? null);
+        $this->assertNull(LlmInvocationCancelScope::currentRunId());
     }
 
     public function testTypedStreamServerFailureExhaustsApplicationRetryBudget(): void
@@ -103,12 +108,14 @@ final class LlmPlatformAdapterTest extends TestCase
 
     public function testProgressHookCancelDuringStreamReturnsAborted(): void
     {
+        $raw = $this->createMock(CancellableRawResultInterface::class);
+        $raw->expects($this->once())->method('abort');
         $platform = $this->createStub(SymfonyPlatformInterface::class);
-        $platform->method('invoke')->willReturnCallback(static function (): DeferredResult {
+        $platform->method('invoke')->willReturnCallback(static function () use ($raw): DeferredResult {
             return self::deferredStream(static function (): \Generator {
                 yield new TextDelta('partial');
                 throw new TransportException('LLM stream cancelled.', previous: new LlmStreamCancelledException('LLM stream cancelled.'));
-            });
+            }, $raw);
         });
 
         $result = $this->createAdapter($platform, maxRetries: 0)->invoke(new ModelInvocationRequest(
@@ -432,9 +439,9 @@ final class LlmPlatformAdapterTest extends TestCase
     /**
      * @param \Closure(): \Generator $stream
      */
-    private static function deferredStream(\Closure $stream): DeferredResult
+    private static function deferredStream(\Closure $stream, ?\Symfony\AI\Platform\Result\RawResultInterface $raw = null): DeferredResult
     {
-        $raw = new class implements \Symfony\AI\Platform\Result\RawResultInterface {
+        $raw ??= new class implements \Symfony\AI\Platform\Result\RawResultInterface {
             public function getData(): array
             {
                 return [];

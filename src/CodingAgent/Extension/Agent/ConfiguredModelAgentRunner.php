@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Model\ModelResolverInterface;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelResolutionOptions;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmInvocationCancelScope;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\PreparedInvocationPlatform;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderRequestPreparer;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
@@ -143,6 +144,7 @@ final readonly class ConfiguredModelAgentRunner implements AgentRunnerInterface
             'thinking_level' => $request->thinkingLevel,
         ]);
 
+        LlmInvocationCancelScope::enter($cancelToken, $request->sessionId);
         try {
             $agent->call($messages, $options)->getResult();
         } catch (\Throwable $e) {
@@ -159,6 +161,8 @@ final readonly class ConfiguredModelAgentRunner implements AgentRunnerInterface
             ]);
 
             throw $e;
+        } finally {
+            LlmInvocationCancelScope::leave();
         }
 
         $this->logger->info('extension.agent.run.completed', [
@@ -182,7 +186,7 @@ final readonly class ConfiguredModelAgentRunner implements AgentRunnerInterface
     /**
      * Provider options for an explicit AgentCallRequestDTO thinkingLevel=off.
      *
-     * z.ai disable already flows through SessionAwareModelResolver + ReasoningOptionsFeatureShaper.
+     * z.ai and DeepSeek disable already flow through SessionAwareModelResolver + ReasoningOptionsFeatureShaper.
      * llama.cpp requires an explicit catalog thinking_format=llama_cpp; without it this returns [].
      *
      * @return array<string, mixed>

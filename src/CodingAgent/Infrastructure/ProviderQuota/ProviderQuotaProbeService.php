@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Infrastructure\ProviderQuota;
 
-use Ineersa\CodingAgent\Auth\CodexAuthStorage;
-use Ineersa\CodingAgent\Auth\CodexOAuthConfig;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Runtime\Contract\ProviderQuotaReportDTO;
 use Ineersa\CodingAgent\Runtime\Contract\ProviderQuotaSectionDTO;
 use Psr\Log\LoggerInterface;
+use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexAuthFileStore;
+use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexOAuthConfig;
 use Symfony\Contracts\HttpClient\Exception\TransportExceptionInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 use Symfony\Contracts\HttpClient\ResponseInterface;
@@ -21,7 +21,7 @@ final class ProviderQuotaProbeService
     private const string ZAI_QUOTA = 'https://api.z.ai/api/monitor/usage/quota/limit';
 
     public function __construct(
-        private readonly CodexAuthStorage $codexAuthStorage,
+        private readonly CodexAuthFileStore $codexAuthStorage,
         private readonly AppConfig $appConfig,
         private readonly HttpClientInterface $httpClient,
         private readonly LoggerInterface $logger,
@@ -38,13 +38,10 @@ final class ProviderQuotaProbeService
 
         // Dispatch configured requests first so Symfony HttpClient can run them concurrently.
         $openAiResponse = null;
-        $openAiAuthKey = CodexOAuthConfig::PROVIDER_KEY;
         $openAiEarly = null;
         if (null !== $openAi) {
-            $openAiAuthKey = (null !== $openAi->authKey && '' !== trim($openAi->authKey))
-                ? trim($openAi->authKey) : CodexOAuthConfig::PROVIDER_KEY;
             try {
-                $record = $this->codexAuthStorage->loadCredentials($openAiAuthKey);
+                $record = $this->codexAuthStorage->loadCredentials();
             } catch (\Throwable $e) {
                 $this->logger->warning('Provider quota probe degraded', [
                     'component' => 'provider_quota_probe', 'event_type' => 'credential_load_failed',
@@ -55,7 +52,7 @@ final class ProviderQuotaProbeService
             if (null === $record || '' === trim($record->access)) {
                 $openAiEarly = new ProviderQuotaSectionDTO('OpenAI Codex', ['- Error: '.\sprintf(
                     'Auth token unavailable/expired (run: %s).',
-                    CodexOAuthConfig::authCommandHintForProviderKey($openAiAuthKey),
+                    'bin/console auth:codex',
                 )]);
             } else {
                 $headers = ['Authorization' => 'Bearer '.trim($record->access), 'Accept' => 'application/json'];
@@ -97,7 +94,7 @@ final class ProviderQuotaProbeService
         if (null !== $openAiEarly) {
             $sections[] = $openAiEarly;
         } elseif (null !== $openAiResponse) {
-            $sections[] = $this->openAi($openAiResponse, $openAiAuthKey);
+            $sections[] = $this->openAi($openAiResponse);
         }
 
         if (null !== $zaiEarly) {
@@ -109,7 +106,7 @@ final class ProviderQuotaProbeService
         return new ProviderQuotaReportDTO($sections);
     }
 
-    private function openAi(ResponseInterface $response, string $authKey): ProviderQuotaSectionDTO
+    private function openAi(ResponseInterface $response): ProviderQuotaSectionDTO
     {
         [$status, $payload] = $this->read($response, 'openai');
         if (null === $status) {
@@ -118,7 +115,7 @@ final class ProviderQuotaProbeService
         if (401 === $status) {
             return new ProviderQuotaSectionDTO('OpenAI Codex', ['- Error: '.\sprintf(
                 'OpenAI auth token expired — run %s.',
-                CodexOAuthConfig::authCommandHintForProviderKey($authKey),
+                'bin/console auth:codex',
             )]);
         }
         if ($status < 200 || $status >= 300 || null === $payload) {

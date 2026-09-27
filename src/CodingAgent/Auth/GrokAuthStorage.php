@@ -30,16 +30,16 @@ final class GrokAuthStorage
     }
 
     /**
-     * Load credentials for the given provider key.
+     * Load Grok credentials.
      *
      * @return GrokAuthRecord|null Null when no credentials exist
      *
      * @throws \RuntimeException when refresh is needed but fails
      */
-    public function loadCredentials(string $providerKey = GrokOAuthConfig::PROVIDER_KEY): ?GrokAuthRecord
+    public function loadCredentials(): ?GrokAuthRecord
     {
-        return $this->store->withLock(function () use ($providerKey): ?GrokAuthRecord {
-            $entry = $this->store->get($providerKey);
+        return $this->store->withLock(function (): ?GrokAuthRecord {
+            $entry = $this->store->get(GrokOAuthConfig::PROVIDER_KEY);
 
             if (null === $entry) {
                 return null;
@@ -50,13 +50,13 @@ final class GrokAuthStorage
             if ($record->isExpired() && null !== $this->tokenRefresher) {
                 try {
                     $fresh = $this->tokenRefresher->refresh($record->refresh);
-                    $this->store->set($providerKey, $fresh->toArray());
+                    $this->store->set(GrokOAuthConfig::PROVIDER_KEY, $fresh->toArray());
 
                     return $fresh;
                 } catch (\Throwable $e) {
                     if (null !== $this->logger) {
                         $this->logger->warning('Grok token refresh failed for expired record', [
-                            'provider_key' => $providerKey,
+                            'provider_key' => GrokOAuthConfig::PROVIDER_KEY,
                             'component' => 'grok_auth_storage',
                             'event_type' => 'grok_token_refresh_failed',
                         ]);
@@ -75,9 +75,9 @@ final class GrokAuthStorage
     /**
      * Load credentials from disk WITHOUT auto-refresh.
      */
-    public function loadCredentialsRaw(string $providerKey = GrokOAuthConfig::PROVIDER_KEY): ?GrokAuthRecord
+    public function loadCredentialsRaw(): ?GrokAuthRecord
     {
-        $entry = $this->store->get($providerKey);
+        $entry = $this->store->get(GrokOAuthConfig::PROVIDER_KEY);
 
         if (null === $entry) {
             return null;
@@ -86,10 +86,26 @@ final class GrokAuthStorage
         return GrokAuthRecord::fromArray($entry);
     }
 
-    public function saveCredentials(string $providerKey, GrokAuthRecord $record): void
+    public function saveCredentials(GrokAuthRecord $record): void
     {
-        $this->store->withLock(function () use ($providerKey, $record): void {
-            $this->store->set($providerKey, $record->toArray());
+        $this->store->withLock(function () use ($record): void {
+            $this->store->set(GrokOAuthConfig::PROVIDER_KEY, $record->toArray());
+        });
+    }
+
+    public function refreshWithLock(GrokTokenRefresher $refresher): GrokAuthRecord
+    {
+        return $this->store->withLock(function () use ($refresher): GrokAuthRecord {
+            $entry = $this->store->get(GrokOAuthConfig::PROVIDER_KEY);
+            if (null === $entry) {
+                throw new \RuntimeException('No stored Grok credentials found.');
+            }
+
+            $record = GrokAuthRecord::fromArray($entry);
+            $fresh = $refresher->refresh($record->refresh);
+            $this->store->set(GrokOAuthConfig::PROVIDER_KEY, $fresh->toArray());
+
+            return $fresh;
         });
     }
 }

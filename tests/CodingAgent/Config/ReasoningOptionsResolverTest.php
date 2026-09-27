@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Config;
 
+use Ineersa\CodingAgent\Config\Ai\AiCatalog;
 use Ineersa\CodingAgent\Config\Ai\AiCompatibility;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\AiModelDefinition;
@@ -11,10 +12,32 @@ use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\ReasoningOptionsResolver;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 
 class ReasoningOptionsResolverTest extends TestCase
 {
+    public function testBundledOpenCodeGoMapsOnlyAdvertisedEffortLevels(): void
+    {
+        $home = TestDirectoryIsolation::createProjectTempDir('go-reasoning-catalog');
+        try {
+            $catalog = new AiCatalog(\dirname(__DIR__, 3).'/config/ai-catalog.yaml', $home);
+            $settings = $catalog->loadProviders()['ai'];
+            $settings['providers']['opencode-go']['enabled'] = true;
+            $resolver = new ReasoningOptionsResolver(new HatfieldModelCatalog(AiConfig::fromArray($settings)));
+
+            $this->assertSame(['thinking' => ['type' => 'enabled'], 'reasoning_effort' => 'low'], $resolver->resolve($this->modelRef('opencode-go', 'deepseek-v4.1-flash'), 'low'));
+            $this->assertSame(['thinking' => ['type' => 'disabled']], $resolver->resolve($this->modelRef('opencode-go', 'deepseek-v4.1-flash'), 'off'));
+            $this->assertSame([], $resolver->resolve($this->modelRef('opencode-go', 'deepseek-v4.1-flash'), 'medium'));
+            $this->assertSame(['thinking' => ['type' => 'enabled'], 'reasoning_effort' => 'max'], $resolver->resolve($this->modelRef('opencode-go', 'deepseek-v4.1-flash'), 'max'));
+            $this->assertSame(['reasoning' => ['effort' => 'high', 'summary' => 'auto']], $resolver->resolve($this->modelRef('opencode-go', 'muse-spark-1.3-contributor'), 'high'));
+            $this->assertSame(['reasoning_effort' => 'xhigh'], $resolver->resolve($this->modelRef('opencode-go', 'space-bunny-free'), 'xhigh'));
+            $this->assertSame([], $resolver->resolve($this->modelRef('opencode-go', 'longcat-2.5-preview-free'), 'high'));
+        } finally {
+            TestDirectoryIsolation::removeDirectory($home);
+        }
+    }
+
     // ── Off / invalid levels ──────────────────────────────────────────────
 
     public function testOffLevelReturnsEmpty(): void
@@ -383,7 +406,7 @@ class ReasoningOptionsResolverTest extends TestCase
         );
     }
 
-    public function testDeepseekOffLevelReturnsEmpty(): void
+    public function testDeepseekOffLevelDisablesThinking(): void
     {
         $provider = $this->provider(
             'deepseek',
@@ -401,7 +424,7 @@ class ReasoningOptionsResolverTest extends TestCase
         $resolver = $this->resolverForProviders(['deepseek' => $provider]);
         $result = $resolver->resolve($this->modelRef('deepseek', 'deepseek-v4-pro'), 'off');
 
-        $this->assertSame([], $result);
+        $this->assertSame(['thinking' => ['type' => 'disabled']], $result);
     }
 
     // ── Codex: reasoning.effort (Responses API) ─────────────────────────

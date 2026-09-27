@@ -41,8 +41,8 @@ extensions:
         safe_guard:
             allow_write_outside_cwd: [/home/ineersa/projects/agent-core-worktrees, /tmp, /home/ineersa/projects/symfony, /home/ineersa/projects/ai]
 forks:
-    model: grok-cli/grok-composer-2.5-fast
-    thinking_level: medium
+    model: opencode-go/deepseek-v4.1-flash
+    thinking_level: high
     extensions:
         enabled: {}
         always_on: {}

@@ -48,9 +48,9 @@ final readonly class ReasoningOptionsResolver
                 return [];
             }
 
-            if ('zai' === $this->thinkingFormat($ref, $model)) {
-                // z.ai keeps reasoning enabled unless we send thinking.type=disabled;
-                // omitting options would leave prior thinking state on the provider side.
+            if (\in_array($this->thinkingFormat($ref, $model), ['zai', 'deepseek'], true)) {
+                // z.ai and DeepSeek may reason by default; omitting options does
+                // not honor an explicit off selection.
                 return ['thinking' => ['type' => 'disabled']];
             }
 

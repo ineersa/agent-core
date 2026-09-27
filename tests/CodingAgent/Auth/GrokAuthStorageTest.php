@@ -10,6 +10,8 @@ use Ineersa\CodingAgent\Auth\GrokOAuthConfig;
 use Ineersa\CodingAgent\Auth\GrokTokenRefresher;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
+use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexAuthFileStore;
+use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexAuthRecord;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 
@@ -41,14 +43,14 @@ final class GrokAuthStorageTest extends TestCase
             expires: time() + 3600,
         );
 
-        $this->storage->saveCredentials('grok-cli', $record);
+        $this->storage->saveCredentials($record);
 
         $path = $this->tmpDir.'/'.GrokOAuthConfig::AUTH_FILE;
         $this->assertFileExists($path);
         $this->assertSame(0600, fileperms($path) & 0777, 'auth.json must be published with mode 0600');
         $this->assertSame([], glob($this->tmpDir.'/.hatfield/*.tmp.*') ?: [], 'No temp files should remain after save');
 
-        $loaded = $this->storage->loadCredentials('grok-cli');
+        $loaded = $this->storage->loadCredentials();
 
         $this->assertNotNull($loaded);
         $this->assertSame('test-access-token', $loaded->access);
@@ -58,7 +60,19 @@ final class GrokAuthStorageTest extends TestCase
 
     public function testMissingFileReturnsNull(): void
     {
-        $this->assertNull($this->storage->loadCredentials('grok-cli'));
+        $this->assertNull($this->storage->loadCredentials());
+    }
+
+    public function testCodexAndGrokWritesPreserveEachOther(): void
+    {
+        $lockFactory = new LockFactory(new FlockStore($this->tmpDir));
+        $codex = new CodexAuthFileStore($this->tmpDir.'/'.GrokOAuthConfig::AUTH_FILE, $lockFactory);
+        $codex->saveCredentials(new CodexAuthRecord('codex-one', 'codex-refresh', time() + 3600, 'account'));
+        $this->storage->saveCredentials(new GrokAuthRecord('grok-one', 'grok-refresh', time() + 3600));
+        $codex->saveCredentials(new CodexAuthRecord('codex-two', 'codex-refresh', time() + 3600, 'account'));
+
+        $this->assertSame('codex-two', $codex->loadCredentialsRaw()?->access);
+        $this->assertSame('grok-one', $this->storage->loadCredentialsRaw()?->access);
     }
 
     public function testExpiredRecordWithoutRefresherReturnsExpired(): void
@@ -69,9 +83,9 @@ final class GrokAuthStorageTest extends TestCase
             expires: time() - 3600,
         );
 
-        $this->storage->saveCredentials('grok-cli', $expiredRecord);
+        $this->storage->saveCredentials($expiredRecord);
 
-        $loaded = $this->storage->loadCredentials('grok-cli');
+        $loaded = $this->storage->loadCredentials();
 
         $this->assertNotNull($loaded);
         $this->assertTrue($loaded->isExpired());
@@ -95,12 +109,12 @@ final class GrokAuthStorageTest extends TestCase
             expires: time() - 3600,
         );
 
-        $storageWithRefresh->saveCredentials('grok-cli', $expiredRecord);
+        $storageWithRefresh->saveCredentials($expiredRecord);
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('expired and could not be refreshed');
 
-        $storageWithRefresh->loadCredentials('grok-cli');
+        $storageWithRefresh->loadCredentials();
     }
 
     public function testExpiredRecordWithRefresherReturnsRefreshedRecord(): void
@@ -135,9 +149,9 @@ final class GrokAuthStorageTest extends TestCase
             expires: time() - 3600,
         );
 
-        $storageWithRefresh->saveCredentials('grok-cli', $expiredRecord);
+        $storageWithRefresh->saveCredentials($expiredRecord);
 
-        $loaded = $storageWithRefresh->loadCredentials('grok-cli');
+        $loaded = $storageWithRefresh->loadCredentials();
 
         $this->assertSame('i-will-be-refreshed', $succeedingRefresher->seenRefresh);
         $this->assertNotNull($loaded);
@@ -146,7 +160,7 @@ final class GrokAuthStorageTest extends TestCase
         $this->assertFalse($loaded->isExpired());
 
         // Persisted under the lock — subsequent raw load must see the refreshed record.
-        $raw = $storageWithRefresh->loadCredentialsRaw('grok-cli');
+        $raw = $storageWithRefresh->loadCredentialsRaw();
         $this->assertNotNull($raw);
         $this->assertSame('fresh-access', $raw->access);
     }
@@ -167,9 +181,9 @@ final class GrokAuthStorageTest extends TestCase
         };
 
         $storageWithRefresh = new GrokAuthStorage($this->tmpDir, new LockFactory(new FlockStore($this->tmpDir)), $failingRefresher);
-        $storageWithRefresh->saveCredentials('grok-cli', $expiredRecord);
+        $storageWithRefresh->saveCredentials($expiredRecord);
 
-        $raw = $storageWithRefresh->loadCredentialsRaw('grok-cli');
+        $raw = $storageWithRefresh->loadCredentialsRaw();
         $this->assertNotNull($raw);
         $this->assertTrue($raw->isExpired());
         $this->assertSame('expired-access-raw', $raw->access);
@@ -189,7 +203,7 @@ final class GrokAuthStorageTest extends TestCase
         ], \JSON_THROW_ON_ERROR));
         chmod($path, 0600);
 
-        $this->storage->saveCredentials('grok-cli', new GrokAuthRecord(
+        $this->storage->saveCredentials(new GrokAuthRecord(
             access: 'grok-a',
             refresh: 'grok-r',
             expires: time() + 100,
