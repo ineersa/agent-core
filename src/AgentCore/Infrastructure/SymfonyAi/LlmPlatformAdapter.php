@@ -162,7 +162,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         // Provider transport can fail synchronously during invoke (e.g. Codex WS
         // send_failure before asStream()). Classify here so bounded LLM retry sees
         // a retryable PlatformInvocationResult instead of a generic worker exception.
-        LlmInvocationCancelScope::enter($cancelToken);
+        LlmInvocationCancelScope::enter($cancelToken, $request->input->runId);
         try {
             $platform = new PreparedInvocationPlatform(
                 $this->platform,
