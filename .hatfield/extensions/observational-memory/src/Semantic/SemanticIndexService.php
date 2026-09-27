@@ -12,6 +12,7 @@ use Symfony\AI\Store\Bridge\Vektor\Store as VectorStore;
 use Symfony\AI\Store\CombinedStore;
 use Symfony\AI\Store\Document\Metadata;
 use Symfony\AI\Store\Document\VectorDocument;
+use Symfony\AI\Store\Document\VectorDocumentInterface;
 use Symfony\AI\Store\Query\HybridQuery;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Lock\LockFactory;
@@ -158,7 +159,7 @@ final readonly class SemanticIndexService
             $hasDates = \count($filtered) !== \count($memories);
             $chunkIds = [];
             $chunker = new MemoryChunker($this->settings);
-            $filter = ($hasDates || $partial) ? static function (VectorDocument $document) use ($filtered, $memories, $hasDates, $partial, $chunker, &$chunkIds): bool {
+            $filter = ($hasDates || $partial) ? static function (VectorDocumentInterface $document) use ($filtered, $memories, $hasDates, $partial, $chunker, &$chunkIds): bool {
                 $parent = (string) $document->getMetadata()->getParentId();
                 if (!isset($memories[$parent]) || ($hasDates && !isset($filtered[$parent]))) {
                     return false;
@@ -200,8 +201,8 @@ final readonly class SemanticIndexService
             $checkpoint();
             $candidateLimitReached = \count($hits) >= self::FUSED_CANDIDATE_LIMIT;
             if (null !== $this->settings->rerankerUrl && [] !== $hits) {
-                $order = $this->client->rerank($query, array_map(static fn (VectorDocument $hit): string => $hit->getMetadata()->getText() ?? '', $hits), $checkpoint);
-                $hits = array_map(static fn (int $index): VectorDocument => $hits[$index], $order);
+                $order = $this->client->rerank($query, array_map(static fn (VectorDocumentInterface $hit): string => $hit->getMetadata()->getText() ?? '', $hits), $checkpoint);
+                $hits = array_map(static fn (int $index): VectorDocumentInterface => $hits[$index], $order);
             }
             $results = [];
             foreach ($hits as $hit) {

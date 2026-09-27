@@ -86,6 +86,46 @@ final class DurableResultConverterTest extends TestCase
     // ── Parallel tool calls (interleaved by index) ────────────────────────────
 
     #[Test]
+    public function flushesFinalToolCallsOnStopFinishReason(): void
+    {
+        // Symfony AI 0.14 treats any finish_reason as tool-call stream end
+        // (was "tool_calls" only in 0.13), so providers that end a tool-call
+        // stream with a plain "stop" chunk still get their final
+        // ToolCallComplete. Real tool calls must flush; only phantom
+        // empty-id blocks stay suppressed.
+        $deltas = $this->collectStream($this->streamResult([
+            $this->chunk(['choices' => [[
+                'delta' => ['tool_calls' => [[
+                    'index' => 0,
+                    'id' => 'call_stop',
+                    'function' => ['name' => 'bash'],
+                ]]],
+            ]]]),
+            $this->chunk(['choices' => [[
+                'delta' => ['tool_calls' => [[
+                    'index' => 0,
+                    'function' => ['arguments' => '{"command":"ls"}'],
+                ]]],
+            ]]]),
+            $this->chunk(['choices' => [['finish_reason' => 'stop']]]),
+        ]));
+
+        $complete = null;
+        foreach ($deltas as $delta) {
+            if ($delta instanceof ToolCallComplete) {
+                $complete = $delta;
+            }
+        }
+
+        $this->assertNotNull($complete, 'Expected ToolCallComplete flushed on finish_reason "stop"');
+        $toolCalls = $complete->getToolCalls();
+        $this->assertCount(1, $toolCalls);
+        $this->assertSame('call_stop', $toolCalls[0]->getId());
+        $this->assertSame('bash', $toolCalls[0]->getName());
+        $this->assertSame(['command' => 'ls'], $toolCalls[0]->getArguments());
+    }
+
+    #[Test]
     public function convertsInterleavedParallelToolCalls(): void
     {
         $deltas = $this->collectStream($this->streamResult([

@@ -58,7 +58,7 @@ use Symfony\AI\Platform\TokenUsage\TokenUsage;
  *     receiving an id, are excluded from the canonical tool‑call list.
  *
  * Non-stream conversion, HTTP status handling, token usage extraction,
- * and finish-reason metadata follow Symfony AI Generic v0.11.
+ * and finish-reason metadata follow Symfony AI Generic v0.14.
  *
  * @internal
  *
@@ -84,7 +84,7 @@ final class DurableResultConverter extends ResultConverter
     }
 
     /**
-     * Route streaming through the durable converter; delegate non-stream paths to Generic v0.11.
+     * Route streaming through the durable converter; delegate non-stream paths to Generic v0.14.
      */
     public function convert(RawResultInterface|RawHttpResult $result, array $options = []): ResultInterface
     {
@@ -203,9 +203,19 @@ final class DurableResultConverter extends ResultConverter
                 }
 
                 if ([] !== $blocks && $this->isToolCallsStreamFinished($data)) {
-                    $delta = new ToolCallComplete($this->buildDurableFinalToolCalls($blocks));
-                    $this->emit('converted_delta', $chunkOrdinal, $this->deltaContext($delta));
-                    yield $delta;
+                    // Symfony AI 0.14 widened isToolCallsStreamFinished() from
+                    // finish_reason "tool_calls" only to any finish reason, so
+                    // the flush now also fires on "stop". $blocks also contains
+                    // phantom empty-id blocks that buildDurableFinalToolCalls()
+                    // filters out; only flush when at least one real tool call
+                    // accumulated, mirroring the upstream converter's
+                    // non-empty check instead of counting phantom blocks.
+                    $finalToolCalls = $this->buildDurableFinalToolCalls($blocks);
+                    if ([] !== $finalToolCalls) {
+                        $delta = new ToolCallComplete($finalToolCalls);
+                        $this->emit('converted_delta', $chunkOrdinal, $this->deltaContext($delta));
+                        yield $delta;
+                    }
                 }
 
                 $reasoningContent = $data['choices'][0]['delta']['reasoning_content']

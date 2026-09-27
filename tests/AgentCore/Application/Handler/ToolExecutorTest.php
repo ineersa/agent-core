@@ -17,20 +17,26 @@ use Ineersa\CodingAgent\Tool\Arguments\ReadFileArgumentsDTO;
 use Ineersa\CodingAgent\Tool\RawAwareToolCallArgumentResolver;
 use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
 use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
+use Symfony\AI\Agent\Toolbox\Event\ToolCallArgumentsResolved;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallRequested;
+use Symfony\AI\Agent\Toolbox\EventListener\ValidateToolCallArgumentsListener;
+use Symfony\AI\Agent\Toolbox\Exception\InvalidToolCallArgumentsException;
 use Symfony\AI\Agent\Toolbox\Exception\ToolNotFoundException;
 use Symfony\AI\Agent\Toolbox\MapToolArgumentsDescriber;
 use Symfony\AI\Agent\Toolbox\Toolbox;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver;
 use Symfony\AI\Agent\Toolbox\ToolResult as SymfonyToolResult;
+use Symfony\AI\Platform\Contract\JsonSchema\Attribute\Schema;
 use Symfony\AI\Platform\Contract\JsonSchema\Factory;
 use Symfony\AI\Platform\Result\ToolCall as SymfonyToolCall;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Validator\ValidatorBuilder;
 
 final class ToolExecutorTest extends TestCase
 {
@@ -562,11 +568,11 @@ final class ToolExecutorTest extends TestCase
         $this->assertSame('./x.txt', $seen);
     }
 
-    public function testDenormalizationFailureBecomesActionableNonRetryableErrorResult(): void
+    /** @param array<string, mixed> $arguments */
+    #[DataProvider('invalidDtoArguments')]
+    public function testArgumentResolutionFailureBecomesActionableNonRetryableErrorResult(array $arguments, string $message): void
     {
-        // A wrong-typed DTO field fails during denormalization; the wrapped
-        // NotNormalizableValueException must reach the model as an actionable
-        // non-retryable ToolCallException message, not a generic fault.
+        // Native resolver failures must remain actionable failed results.
         $handler = new class {
             public function __invoke(
                 #[MapToolArguments]
@@ -590,18 +596,55 @@ final class ToolExecutorTest extends TestCase
             resultStore: new ToolExecutionResultStore(),
         );
 
-        // DTO field has the wrong type.
         $result = $executor->execute(ToolCallBuilder::create('call-denorm')
             ->withToolName('read')
-            ->withArguments(['path' => 123])
+            ->withArguments($arguments)
             ->withOrderIndex(0)
             ->build());
 
         $this->assertTrue($result->isError);
         $this->assertIsArray($result->details);
-        $this->assertSame(ToolCallException::class, $result->details['error_type']);
+        $this->assertSame(InvalidToolCallArgumentsException::class, $result->details['error_type']);
         $this->assertFalse($result->details['retryable']);
-        $this->assertStringContainsString('The type of the "path" attribute', $result->content[0]['text']);
+        $this->assertStringContainsString($message, $result->content[0]['text']);
+    }
+
+    /** @return iterable<string, array{array<string, mixed>, string}> */
+    public static function invalidDtoArguments(): iterable
+    {
+        yield 'wrong type' => [['path' => 123], 'The type of the "path" attribute'];
+        yield 'missing required field' => [[], '$path'];
+    }
+
+    public function testConstraintViolationBecomesActionableNonRetryableErrorResult(): void
+    {
+        $registry = new ToolRegistry();
+        $registry->registerTool(name: 'label', description: 'Label', handler: new class {
+            public function __invoke(#[Schema(minLength: 1)] string $label): string
+            {
+                return 'unreachable';
+            }
+        }, promptLine: 'label');
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addListener(ToolCallArgumentsResolved::class, new ValidateToolCallArgumentsListener((new ValidatorBuilder())->getValidator()));
+        $toolbox = new RegistryBackedToolbox(
+            registry: $registry,
+            argumentResolver: new RawAwareToolCallArgumentResolver(new ToolCallArgumentResolver()),
+            schemaFactory: new Factory(new MapToolArgumentsDescriber()),
+            eventDispatcher: $dispatcher,
+        );
+        $executor = new ToolExecutor('parallel', 4, new ToolExecutionResultStore(), $toolbox);
+
+        $result = $executor->execute(ToolCallBuilder::create('call-invalid-label')
+            ->withToolName('label')
+            ->withArguments(['label' => ''])
+            ->build());
+
+        $this->assertTrue($result->isError);
+        $this->assertSame(InvalidToolCallArgumentsException::class, $result->details['error_type']);
+        $this->assertFalse($result->details['retryable']);
+        $this->assertStringContainsString('label', $result->content[0]['text']);
+        $this->assertStringContainsString('too short', $result->content[0]['text']);
     }
 
     public function testRegistryHandlerRuntimeExceptionSurfacesSanitizedCauseInErrorResult(): void

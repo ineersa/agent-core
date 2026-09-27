@@ -6,6 +6,7 @@ namespace Ineersa\HatfieldExt\ObservationalMemory\Semantic;
 
 use Symfony\AI\Platform\Vector\Vector;
 use Symfony\AI\Store\Document\VectorDocument;
+use Symfony\AI\Store\Document\VectorDocumentInterface;
 use Symfony\AI\Store\Query\QueryInterface;
 use Symfony\AI\Store\Query\TextQuery;
 use Symfony\AI\Store\StoreInterface;
@@ -15,17 +16,17 @@ final class MemoryStoreAdapter implements StoreInterface
 {
     private bool $truncated = false;
 
-    /** @param (\Closure(VectorDocument): bool)|null $filter */
+    /** @param (\Closure(VectorDocumentInterface): bool)|null $filter */
     public function __construct(private readonly StoreInterface $store, private readonly bool $text, private readonly int $chunkCount, private readonly ?\Closure $filter = null)
     {
     }
 
-    /** @param VectorDocument|array<VectorDocument> $documents */
-    public function add(VectorDocument|array $documents): void
+    /** @param VectorDocumentInterface|array<VectorDocumentInterface> $documents */
+    public function add(VectorDocumentInterface|array $documents): void
     {
-        $documents = $documents instanceof VectorDocument ? [$documents] : $documents;
+        $documents = \is_array($documents) ? $documents : [$documents];
         if ($this->text) {
-            $documents = array_map(static fn (VectorDocument $document): VectorDocument => new VectorDocument($document->getId(), new Vector([1.0]), $document->getMetadata()), $documents);
+            $documents = array_map(static fn (VectorDocumentInterface $document): VectorDocument => new VectorDocument($document->getId(), new Vector([1.0]), $document->getMetadata()), $documents);
         }
         $this->store->add($documents);
     }
@@ -44,8 +45,13 @@ final class MemoryStoreAdapter implements StoreInterface
         $this->store->clear($options);
     }
 
+    public function count(): int
+    {
+        return $this->store->count();
+    }
+
     /** @param array<string, mixed> $options
-     * @return iterable<VectorDocument>
+     * @return iterable<VectorDocumentInterface>
      */
     public function query(QueryInterface $query, array $options = []): iterable
     {

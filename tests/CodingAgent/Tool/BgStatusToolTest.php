@@ -6,7 +6,6 @@ namespace Ineersa\CodingAgent\Tests\Tool;
 
 use HelgeSverre\Toon\Toon;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
-use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
@@ -308,12 +307,10 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
 
     /* ── Error: missing action ── */
 
-    public function testMissingActionThrowsException(): void
+    public function testMissingActionBecomesActionableFaultTolerantResult(): void
     {
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('action');
-
-        $this->validationToolbox()->execute(new ToolCall('call-bg', 'bg_status', []));
+        $result = $this->validationToolbox()->execute(new ToolCall('call-bg', 'bg_status', []));
+        $this->assertStringContainsString('action', (string) $result->getResult());
     }
 
     /**
