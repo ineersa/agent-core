@@ -13,6 +13,8 @@ use Mcp\Schema\Content\EmbeddedResource;
 use Mcp\Schema\Content\ImageContent;
 use Mcp\Schema\Content\TextContent;
 use Mcp\Schema\Result\CallToolResult;
+use Mcp\Schema\Result\ListToolsResult;
+use Mcp\Schema\Tool;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -20,6 +22,53 @@ use PHPUnit\Framework\TestCase;
  */
 class McpSdkClientAdapterTest extends TestCase
 {
+    public function testListToolsCollectsEveryPage(): void
+    {
+        $schema = ['type' => 'object', 'properties' => ['value' => ['type' => 'string']], 'required' => []];
+        $pages = [
+            new ListToolsResult([Tool::fromArray(['name' => 'first', 'description' => 'First tool', 'inputSchema' => $schema])], 'page-2'),
+            new ListToolsResult([], 'page-3'),
+            new ListToolsResult([Tool::fromArray(['name' => 'last', 'inputSchema' => $schema])]),
+        ];
+        $expectedCursors = [null, 'page-2', 'page-3'];
+
+        $sdkClient = $this->createMock(SdkClient::class);
+        $sdkClient->expects($this->exactly(3))->method('listTools')
+            ->willReturnCallback(function (?string $cursor) use (&$pages, &$expectedCursors): ListToolsResult {
+                $this->assertSame(array_shift($expectedCursors), $cursor);
+
+                return array_shift($pages);
+            });
+
+        $adapter = new McpSdkClientAdapter($sdkClient, $this->createStub(TransportInterface::class));
+
+        $this->assertSame([
+            ['name' => 'first', 'description' => 'First tool', 'inputSchema' => $schema],
+            ['name' => 'last', 'description' => null, 'inputSchema' => $schema],
+        ], $adapter->listTools());
+    }
+
+    public function testListToolsRejectsRepeatedCursor(): void
+    {
+        $sdkClient = $this->createMock(SdkClient::class);
+        $sdkClient->expects($this->exactly(3))->method('listTools')
+            ->willReturnCallback(static function (?string $cursor): ListToolsResult {
+                return match ($cursor) {
+                    null => new ListToolsResult([], 'page-2'),
+                    'page-2' => new ListToolsResult([], 'page-3'),
+                    'page-3' => new ListToolsResult([], 'page-2'),
+                    default => throw new \LogicException('Unexpected cursor'),
+                };
+            });
+
+        $adapter = new McpSdkClientAdapter($sdkClient, $this->createStub(TransportInterface::class));
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('MCP tools/list repeated cursor');
+
+        $adapter->listTools();
+    }
+
     public function testCallToolReturnsIsErrorTrue(): void
     {
         $sdkClient = $this->createStub(SdkClient::class);
