@@ -13,7 +13,6 @@ use Ineersa\CodingAgent\Tool\Event\ToolCallFailedEvent;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallContextDTO;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
-use Symfony\AI\Agent\Toolbox\Exception\InvalidToolCallArgumentsException;
 use Symfony\AI\Agent\Toolbox\Exception\ToolExecutionException;
 use Symfony\AI\Agent\Toolbox\Exception\ToolExecutionExceptionInterface;
 use Symfony\AI\Agent\Toolbox\Exception\ToolNotFoundException;
@@ -25,7 +24,6 @@ use Symfony\AI\Platform\Contract\JsonSchema\Factory;
 use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\AI\Platform\Tool\ExecutionReference;
 use Symfony\AI\Platform\Tool\Tool;
-use Symfony\Component\Validator\ConstraintViolationList;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 /**
@@ -136,23 +134,6 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
                 toolCall: $rewrittenCall,
                 exception: $e instanceof ToolExecutionException && null !== $e->getPrevious() ? $e->getPrevious() : $e,
             ));
-
-            // Symfony AI 0.14 (#2365): the native resolver surfaces argument
-            // resolution failures as InvalidToolCallArgumentsException and
-            // AbstractToolbox rethrows it unwrapped. Translate those the way
-            // the former resolver ToolException path was translated so
-            // ToolExecutor keeps the actionable native message ("parameter X
-            // is mandatory for tool Y") and the non-retryable classification.
-            // ValidateToolCallArgumentsListener raises the same exception with
-            // a ConstraintViolationList as its tool call result; those must
-            // pass through raw so FaultTolerantToolbox/ToolExecutor convert
-            // them into a violation-bearing model-visible result. The
-            // violation list is the only reliable distinguisher:
-            // getToolCallResult() falls back to the message string for
-            // resolver-origin instances, so null checks cannot separate them.
-            if ($e instanceof InvalidToolCallArgumentsException && !$e->getToolCallResult() instanceof ConstraintViolationList) {
-                throw new ToolCallException($e->getMessage(), retryable: false, previous: $e);
-            }
 
             if (!$e instanceof ToolExecutionException) {
                 throw $e;

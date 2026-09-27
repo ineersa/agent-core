@@ -20,6 +20,7 @@ use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionPolicy;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
+use Symfony\AI\Agent\Toolbox\Exception\InvalidToolCallArgumentsException;
 use Symfony\AI\Agent\Toolbox\Exception\ToolExecutionExceptionInterface;
 use Symfony\AI\Agent\Toolbox\Exception\ToolNotFoundException;
 use Symfony\AI\Agent\Toolbox\Source\SourceCollection;
@@ -170,11 +171,16 @@ final class ToolExecutor implements ToolExecutorInterface
                 $message = null !== $previous && '' !== trim($previous->getMessage())
                     ? DiagnosticMessageSanitizer::sanitize($previous->getMessage())
                     : DiagnosticMessageSanitizer::sanitize($this->normalizeResultText($exception->getToolCallResult()));
+                $details = ['error_type' => $exception::class];
+                // Both resolution and validation failures require corrected arguments.
+                if ($exception instanceof InvalidToolCallArgumentsException) {
+                    $details['retryable'] = false;
+                }
                 $result = $this->errorResult(
                     toolCallId: $toolCall->toolCallId,
                     toolName: $toolCall->toolName,
                     message: $message,
-                    details: ['error_type' => $exception::class],
+                    details: $details,
                 );
             } elseif ($exception instanceof ToolNotFoundException) {
                 $names = array_map(static fn (Tool $tool): string => $tool->getName(), $this->toolbox?->getTools() ?? []);

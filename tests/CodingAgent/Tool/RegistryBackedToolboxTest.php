@@ -624,7 +624,7 @@ final class RegistryBackedToolboxTest extends TestCase
 
     /* ───────── Fault tolerance for invalid arguments ───────── */
 
-    public function testMissingMandatoryArgumentBecomesActionableToolCallException(): void
+    public function testMissingMandatoryArgumentPreservesNativeFailure(): void
     {
         $registry = new ToolRegistry();
         $handler = new class {
@@ -639,13 +639,12 @@ final class RegistryBackedToolboxTest extends TestCase
 
         // A required constructor parameter is missing before DTO validation
         // can run. The resolver preserves the field name in the error.
-        $toolbox = new FaultTolerantToolbox($this->createToolbox($registry));
+        $toolbox = $this->createToolbox($registry);
         try {
             $toolbox->execute(new ToolCall('call-missing', 'view_image', []));
-            $this->fail('Expected ToolCallException for the missing path.');
-        } catch (ToolCallException $e) {
+            $this->fail('Expected native argument failure for the missing path.');
+        } catch (InvalidToolCallArgumentsException $e) {
             $this->assertStringContainsString('path', $e->getMessage());
-            $this->assertFalse($e->retryable());
         }
     }
 
@@ -681,7 +680,7 @@ final class RegistryBackedToolboxTest extends TestCase
         $this->assertStringContainsString('The "path" argument is required and must be a non-empty string.', $message);
     }
 
-    public function testDenormalizerFailureBecomesActionableToolCallException(): void
+    public function testDenormalizerFailurePreservesNativeExceptionChain(): void
     {
         $registry = new ToolRegistry();
         $registry->registerTool(
@@ -698,20 +697,15 @@ final class RegistryBackedToolboxTest extends TestCase
             promptLine: 'fragile',
         );
 
-        // Resolver/denormalizer failure before handler invoke: Symfony AI 0.14
-        // surfaces it as InvalidToolCallArgumentsException, translated into a
-        // non-retryable ToolCallException while retaining the actionable
-        // serializer failure in the chain.
-        $toolbox = new FaultTolerantToolbox($this->createToolbox($registry));
+        // Native failures retain the serializer cause for executor diagnostics.
+        $toolbox = $this->createToolbox($registry);
 
         try {
             $toolbox->execute(new ToolCall('call-fragile', 'fragile', ['count' => 'abc']));
-            $this->fail('Expected ToolCallException with the denormalization message.');
-        } catch (ToolCallException $e) {
+            $this->fail('Expected native argument failure with the denormalization message.');
+        } catch (InvalidToolCallArgumentsException $e) {
             $this->assertStringContainsString('The type of the "count" attribute for class "Ineersa\CodingAgent\Tests\Tool\FragileCountArgumentsDTO" must be one of "int" ("string" given).', $e->getMessage());
-            $this->assertFalse($e->retryable());
-            $this->assertInstanceOf(InvalidToolCallArgumentsException::class, $e->getPrevious());
-            $this->assertInstanceOf(NotNormalizableValueException::class, $e->getPrevious()?->getPrevious());
+            $this->assertInstanceOf(NotNormalizableValueException::class, $e->getPrevious());
         }
     }
 
@@ -1075,11 +1069,11 @@ final class RegistryBackedToolboxTest extends TestCase
         // Legacy {arguments: {...}} payloads are treated as ordinary flat input:
         // the unknown `arguments` key is ignored, so the required path is
         // missing when the native resolver constructs the DTO.
-        $toolbox = new FaultTolerantToolbox($this->createToolbox($registry));
+        $toolbox = $this->createToolbox($registry);
         try {
             $toolbox->execute(new ToolCall('call-legacy', 'view_image', ['arguments' => ['path' => 'img.png']]));
-            $this->fail('Expected ToolCallException for the missing path.');
-        } catch (ToolCallException $e) {
+            $this->fail('Expected native argument failure for the missing path.');
+        } catch (InvalidToolCallArgumentsException $e) {
             $this->assertStringContainsString('path', $e->getMessage());
         }
     }
