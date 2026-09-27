@@ -1,8 +1,8 @@
 ---
 name: scout
 description: 'Fast codebase recon that returns compressed context for handoff'
-model: openai-codex/gpt-5.6-luna
-thinking: medium
+model: openai-codex/gpt-6-luna
+thinking: high
 systemPromptMode: append
 tools:
   - read
