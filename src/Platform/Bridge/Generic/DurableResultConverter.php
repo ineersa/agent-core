@@ -80,6 +80,7 @@ final class DurableResultConverter extends ResultConverter
     public function __construct(
         private readonly ?\Closure $onStreamEvent = null,
         private readonly ?LoggerInterface $logger = null,
+        private readonly bool $cumulativeUsage = false,
     ) {
     }
 
@@ -152,6 +153,7 @@ final class DurableResultConverter extends ResultConverter
         $finishReason = null;
         $chunkOrdinal = 0;
         $alreadyEmittedEnd = false;
+        $latestUsage = null;
 
         $this->emit('capture_start', -1, []);
 
@@ -187,13 +189,13 @@ final class DurableResultConverter extends ResultConverter
 
                 if (isset($data['usage'])) {
                     $usage = $this->convertStreamUsage($data['usage']);
-                    $this->emit('converted_delta', $chunkOrdinal, [
-                        'type' => 'TokenUsage',
-                        'input_tokens' => $usage->getPromptTokens(),
-                        'output_tokens' => $usage->getCompletionTokens(),
-                        'total_tokens' => $usage->getTotalTokens(),
-                    ]);
-                    yield $usage;
+                    if ($this->cumulativeUsage) {
+                        // These are whole-request snapshots, not deltas. Symfony sums every
+                        // yielded usage, so emit only the last snapshot of a completed stream.
+                        $latestUsage = $usage;
+                    } else {
+                        yield from $this->yieldUsage($usage, $chunkOrdinal);
+                    }
                 }
 
                 $toolCallDeltas = $data['choices'][0]['delta']['tool_calls'] ?? null;
@@ -262,6 +264,10 @@ final class DurableResultConverter extends ResultConverter
                 throw new IncompleteStreamException('Completions stream ended before a finish reason was received.');
             }
 
+            if (null !== $latestUsage) {
+                yield from $this->yieldUsage($latestUsage, $chunkOrdinal);
+            }
+
             if (null !== $finishReason) {
                 $delta = new MetadataDelta('finish_reason', $finishReason);
                 $this->emit('converted_delta', $chunkOrdinal, ['type' => 'MetadataDelta', 'key' => 'finish_reason']);
@@ -275,6 +281,18 @@ final class DurableResultConverter extends ResultConverter
             }
             throw $e;
         }
+    }
+
+    /** @return \Generator<TokenUsage> */
+    private function yieldUsage(TokenUsage $usage, int $chunkOrdinal): \Generator
+    {
+        $this->emit('converted_delta', $chunkOrdinal, [
+            'type' => 'TokenUsage',
+            'input_tokens' => $usage->getPromptTokens(),
+            'output_tokens' => $usage->getCompletionTokens(),
+            'total_tokens' => $usage->getTotalTokens(),
+        ]);
+        yield $usage;
     }
 
     /**

@@ -22,6 +22,7 @@ use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ProjectedSymfonyModelCatalog;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderBuilderInterface;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderFactory;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Platform\Bridge\Generic\CompletionsModel;
@@ -30,6 +31,8 @@ use Symfony\AI\Platform\Message\Message;
 use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\AI\Platform\Provider;
 use Symfony\AI\Platform\ProviderInterface;
+use Symfony\AI\Platform\TokenUsage\TokenUsageAggregation;
+use Symfony\AI\Platform\TokenUsage\TokenUsageInterface;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
@@ -185,6 +188,78 @@ final class SymfonyAiProviderFactoryTest extends TestCase
             }
             TestDirectoryIsolation::removeDirectory($home);
         }
+    }
+
+    /** @param list<array<string, mixed>|null> $reports */
+    #[DataProvider('streamUsageCases')]
+    public function testStreamingUsageIsNormalizedAtProviderBoundary(string $type, array $reports, ?int $expectedInput, ?int $expectedOutput): void
+    {
+        $chunks = [];
+        foreach ($reports as $report) {
+            $chunks[] = ['choices' => [['delta' => ['content' => 'x'], 'finish_reason' => null]], 'usage' => $report];
+        }
+        if ([] === $reports) {
+            $chunks[] = ['choices' => [['delta' => [], 'finish_reason' => 'stop']]];
+        } else {
+            // Reproduce OpenCode's duplicate final; use the same bytes on the generic path as a scoping guard.
+            $chunks[array_key_last($chunks)]['choices'][0]['finish_reason'] = 'stop';
+            $chunks[] = ['choices' => [], 'usage' => $reports[array_key_last($reports)]];
+        }
+        $body = implode('', array_map(static fn (array $chunk): string => 'data: '.json_encode($chunk, \JSON_THROW_ON_ERROR)."\n\n", $chunks))."data: [DONE]\n\n";
+        $nextBody = "data: {\"choices\":[{\"delta\":{\"content\":\"y\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":7,\"completion_tokens\":2,\"total_tokens\":9}}\n\ndata: [DONE]\n\n";
+        $http = new MockHttpClient([
+            new MockResponse($body, ['response_headers' => ['content-type: text/event-stream']]),
+            new MockResponse($nextBody, ['response_headers' => ['content-type: text/event-stream']]),
+        ]);
+        $config = new AiProviderConfig(
+            id: 'test', type: $type, enabled: true, baseUrl: 'https://example.test', apiKey: 'test-key',
+            models: ['model' => new AiModelDefinition(id: 'model')],
+        );
+        $dispatcher = $this->createStub(EventDispatcherInterface::class);
+        $factory = new SymfonyAiProviderFactory(
+            new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig(), catalog: new HatfieldModelCatalog(new AiConfig(providers: ['test' => $config]))),
+            $dispatcher,
+            [new OpenCodeGoSymfonyAiProviderBuilder($dispatcher, $this->createStub(LoggerInterface::class))],
+            httpClient: $http,
+        );
+        $provider = $factory->createProvider('test', 10);
+        LlmInvocationCancelScope::enter($this->createStub(CancellationTokenInterface::class), 'usage-test');
+        try {
+            $result = $provider->invoke('test/model', new MessageBag(Message::ofUser('Hi')), ['stream' => true]);
+            iterator_to_array($result->asStream());
+            $usage = $result->getMetadata()->get('token_usage');
+            if (null === $expectedInput) {
+                $this->assertNull($usage);
+            } else {
+                $this->assertInstanceOf(TokenUsageInterface::class, $usage);
+                $this->assertSame($expectedInput, $usage->getPromptTokens());
+                $this->assertSame($expectedOutput, $usage->getCompletionTokens());
+                $this->assertSame(intdiv($expectedOutput, 2), $usage->getThinkingTokens());
+                $this->assertSame($expectedInput + $expectedOutput, $usage->getTotalTokens());
+                $this->assertSame($expectedInput, $usage->getCacheReadTokens());
+            }
+
+            $next = $provider->invoke('test/model', new MessageBag(Message::ofUser('Next')), ['stream' => true]);
+            iterator_to_array($next->asStream());
+            $nextUsage = $next->getMetadata()->get('token_usage');
+            $this->assertInstanceOf(TokenUsageInterface::class, $nextUsage);
+            $this->assertSame(7, $nextUsage->getPromptTokens());
+            $this->assertSame(2, $nextUsage->getCompletionTokens());
+            $total = new TokenUsageAggregation(null === $usage ? [$nextUsage] : [$usage, $nextUsage]);
+            $this->assertSame(($expectedInput ?? 0) + 7, $total->getPromptTokens());
+        } finally {
+            LlmInvocationCancelScope::leave();
+        }
+    }
+
+    /** @return iterable<string, array{string, list<array<string, mixed>|null>, ?int, ?int}> */
+    public static function streamUsageCases(): iterable
+    {
+        $usage = static fn (int $output): array => ['prompt_tokens' => 100000, 'completion_tokens' => $output, 'total_tokens' => 100000 + $output, 'prompt_cache_hit_tokens' => 100000, 'completion_tokens_details' => ['reasoning_tokens' => intdiv($output, 2)]];
+        yield 'OpenCode duplicate final' => ['opencode-go', [null, $usage(30)], 100000, 30];
+        yield 'OpenCode increasing snapshots' => ['opencode-go', [$usage(10), $usage(20), $usage(30)], 100000, 30];
+        yield 'OpenCode no usage' => ['opencode-go', [], null, null];
+        yield 'generic same reports still sum' => ['generic', [$usage(10), $usage(20)], 300000, 50];
     }
 
     public function testCustomHttpConfigIsAcceptedByFactory(): void

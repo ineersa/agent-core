@@ -62,7 +62,8 @@ final readonly class OpenCodeGoSymfonyAiProviderBuilder implements SymfonyAiProv
                 $apiKey,
                 $provider->completionsPath ?? '/chat/completions',
             )],
-            [new DurableResultConverter(logger: $this->logger)],
+            // Go reports whole-request usage, including duplicate terminal reports.
+            [new DurableResultConverter(logger: $this->logger, cumulativeUsage: true)],
             new ProjectedSymfonyModelCatalog($completionsModels, CompletionsModel::class, $provider->id),
             null,
             $this->eventDispatcher,
