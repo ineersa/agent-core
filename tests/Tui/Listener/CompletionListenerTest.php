@@ -448,32 +448,35 @@ final class CompletionListenerTest extends TestCase
         $tui->processRender();
         $buffer->write($output->consumeOutput());
 
-        $clearLineCounts = [];
+        // Upstream may repaint the viewport on shrink, but must preserve native history.
         foreach (str_split('/task-done') as $key) {
             $tui->handleInput($key);
             $tui->processRender();
             $delta = $output->consumeOutput();
             $buffer->write($delta);
             $this->assertStringNotContainsString("\x1b[2J", $delta, 'Autocomplete refinement must not clear the whole screen.');
-            $clearLineCounts[] = substr_count($delta, "\x1b[2K");
+            $this->assertStringNotContainsString("\x1b[3J", $delta, 'Autocomplete refinement must not clear scrollback.');
+            $this->assertSame(1, substr_count($buffer->getScreen(), 'session autocomplete-viewport'));
         }
 
         $tui->handleInput("\t");
         $tui->processRender();
-        $buffer->write($output->consumeOutput());
+        $tabDelta = $output->consumeOutput();
+        $buffer->write($tabDelta);
+        $this->assertStringNotContainsString("\x1b[2J", $tabDelta);
+        $this->assertStringNotContainsString("\x1b[3J", $tabDelta);
 
         $tui->handleInput("\n");
         $tui->processRender();
         $newlineDelta = $output->consumeOutput();
         $buffer->write($newlineDelta);
         $this->assertStringNotContainsString("\x1b[2J", $newlineDelta, 'Submitting after the menu closes must not clear the whole screen.');
+        $this->assertStringNotContainsString("\x1b[3J", $newlineDelta, 'Submitting after the menu closes must not clear scrollback.');
 
         $plain = $buffer->getScreen();
         $this->assertSame(1, substr_count($plain, '/task-done'));
         $this->assertSame(1, substr_count($plain, '◆ test-model'));
         $this->assertSame(1, substr_count($plain, 'session autocomplete-viewport'));
-        $this->assertLessThanOrEqual(16, max($clearLineCounts), 'Autocomplete refinement must repaint only its changed suffix.');
-        $this->assertLessThanOrEqual(10, substr_count($newlineDelta, "\x1b[2K"), 'Submitting after the menu closes must not repaint the entire 60-row viewport.');
     }
 
     #[Test]
