@@ -667,6 +667,25 @@ final class DurableResultConverterTest extends TestCase
     // ── Token usage with cache fields ─────────────────────────────────────────
 
     #[Test]
+    public function incompleteStreamDoesNotPublishCumulativeUsage(): void
+    {
+        $converter = new DurableResultConverter(cumulativeUsage: true);
+        $result = $converter->convert($this->streamResult([
+            ['choices' => [['delta' => ['content' => 'partial'], 'finish_reason' => null]],
+                'usage' => ['prompt_tokens' => 100, 'completion_tokens' => 10]],
+        ]), ['stream' => true]);
+        $this->assertInstanceOf(StreamResult::class, $result);
+        $result->addListener(new \Symfony\AI\Platform\TokenUsage\StreamListener());
+
+        $this->expectException(IncompleteStreamException::class);
+        try {
+            iterator_to_array($result->getContent());
+        } finally {
+            $this->assertNull($result->getMetadata()->get('token_usage'));
+        }
+    }
+
+    #[Test]
     public function extractsOpenAiPromptTokensDetailsCachedTokens(): void
     {
         // OpenAI / z.ai Chat Completions format:
