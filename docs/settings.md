@@ -104,6 +104,10 @@ Full compaction behavior: [compaction.md](compaction.md).
 |---|---|
 | `context_budget_reminders.early_input_tokens` | Early wrap-up advisory threshold |
 | `context_budget_reminders.urgent_remaining_tokens` | Urgent remaining-token reserve |
+| `context_budget_reminders.disable_for_forks` | Suppress early and urgent reminders in forks. Default `false`. |
+| `context_budget_reminders.disable_for_subagents` | Suppress early and urgent reminders in named subagents. Default `false`. |
+
+Child reminder flags do not affect parent reminders or context-limit enforcement.
 
 ### Tool execution
 

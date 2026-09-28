@@ -49,7 +49,12 @@ final readonly class ContextBudgetReminderHookSubscriber implements HookSubscrib
             return $context;
         }
 
-        $contextWindow = $this->resolveContextWindow($context);
+        $runStarted = $this->eventStore->firstFor($context->runId);
+        if ($this->remindersDisabledForChild($runStarted)) {
+            return $context;
+        }
+
+        $contextWindow = $this->resolveContextWindow($context, $runStarted);
         if (null === $contextWindow) {
             return $context;
         }
@@ -188,9 +193,22 @@ final readonly class ContextBudgetReminderHookSubscriber implements HookSubscrib
         return implode('', $parts);
     }
 
-    private function resolveContextWindow(AfterTurnCommitHookContext $context): ?int
+    private function remindersDisabledForChild(?RunEvent $event): bool
     {
-        $fromRun = $this->contextWindowFromRunStarted($this->eventStore->firstFor($context->runId));
+        $session = $event?->payload['payload']['metadata']['session'] ?? [];
+        if ('agent_child' !== ($session['kind'] ?? null)) {
+            return false;
+        }
+
+        // Fork launches set child_kind; named subagent launches omit it.
+        return 'fork' === ($session['child_kind'] ?? null)
+            ? $this->config->disableForForks
+            : $this->config->disableForSubagents;
+    }
+
+    private function resolveContextWindow(AfterTurnCommitHookContext $context, ?RunEvent $runStarted): ?int
+    {
+        $fromRun = $this->contextWindowFromRunStarted($runStarted);
         if (null !== $fromRun) {
             return $fromRun;
         }
