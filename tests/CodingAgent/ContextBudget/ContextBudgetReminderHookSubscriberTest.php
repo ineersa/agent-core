@@ -23,6 +23,7 @@ use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\ContextBudget\ContextBudgetReminderHookSubscriber;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Constraint\Callback;
 use PHPUnit\Framework\TestCase;
 
@@ -267,6 +268,49 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
         ]));
     }
 
+    /** @param array<string, mixed> $session */
+    #[DataProvider('childReminderCases')]
+    public function testChildReminderSettings(array $session, bool $disableForks, bool $disableSubagents, int $inputTokens, bool $suppressed): void
+    {
+        $subscriber = new ContextBudgetReminderHookSubscriber(
+            $this->eventStore,
+            $this->agentRunner,
+            new ContextBudgetReminderConfig(disableForForks: $disableForks, disableForSubagents: $disableSubagents),
+            $this->appConfigWithCatalogWindow(272000),
+        );
+        $this->mockEvents([$this->runStarted(1, 272000, $session)]);
+        $expectation = $this->agentRunner->expects($suppressed ? $this->never() : $this->once())
+            ->method('appendMessage');
+        if (!$suppressed) {
+            $text = 200000 === $inputTokens
+                ? ContextBudgetReminderHookSubscriber::EARLY_TEXT
+                : ContextBudgetReminderHookSubscriber::URGENT_TEXT;
+            $expectation->with('run-1', new Callback(static fn (AgentMessage $message): bool => ContextBudgetReminderHookSubscriber::wrapSystemReminder($text) === ($message->content[0]['text'] ?? null)));
+        }
+
+        $subscriber->handleAfterTurnCommit($this->hookContext([
+            $this->summary(2, RunEventTypeEnum::LlmStepCompleted->value, [
+                'usage' => ['input_tokens' => $inputTokens],
+            ]),
+        ]));
+    }
+
+    /** @return iterable<string, array{array<string, mixed>, bool, bool, int, bool}> */
+    public static function childReminderCases(): iterable
+    {
+        $fork = ['kind' => 'agent_child', 'child_kind' => 'fork'];
+        $subagent = ['kind' => 'agent_child'];
+        foreach (['early' => 200000, 'urgent' => 260000] as $level => $tokens) {
+            yield 'fork defaults '.$level => [$fork, false, false, $tokens, false];
+            yield 'subagent defaults '.$level => [$subagent, false, false, $tokens, false];
+            yield 'fork disabled '.$level => [$fork, true, false, $tokens, true];
+            yield 'subagent disabled '.$level => [$subagent, false, true, $tokens, true];
+            yield 'fork ignores subagent flag '.$level => [$fork, false, true, $tokens, false];
+            yield 'subagent ignores fork flag '.$level => [$subagent, true, false, $tokens, false];
+            yield 'parent ignores both flags '.$level => [[], true, true, $tokens, false];
+        }
+    }
+
     /** @param list<RunEvent> $events */
     private function mockEvents(array $events): void
     {
@@ -303,9 +347,10 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
         );
     }
 
-    private function runStarted(int $seq, ?int $contextWindow): RunEvent
+    /** @param array<string, mixed> $session */
+    private function runStarted(int $seq, ?int $contextWindow, array $session = []): RunEvent
     {
-        $metadata = [];
+        $metadata = ['session' => $session];
         if (null !== $contextWindow) {
             $metadata['context_window'] = $contextWindow;
         }

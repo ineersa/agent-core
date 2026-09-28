@@ -28,7 +28,7 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
  *  - ai         AiConfig (provider and model configuration)
  *  - prompts    PromptsConfig (custom system/user prompt overrides)
  *  - compaction CompactionConfig (auto_enabled, compact_after_tokens, keep_recent_tokens, model, thinking_level, provider_overrides, model_overrides)
- *  - context_budget_reminders ContextBudgetReminderConfig (early_input_tokens, urgent_remaining_tokens)
+ *  - context_budget_reminders ContextBudgetReminderConfig (early_input_tokens, urgent_remaining_tokens, disable_for_forks, disable_for_subagents)
  *  - agents     AgentsConfig (enabled, paths)
  *  - forks      ForksConfigDTO (model, thinking_level)
  *  - runtime    RuntimeConfig (llm_worker_count)
