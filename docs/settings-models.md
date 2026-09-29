@@ -86,11 +86,16 @@ requests insert the selected effort as a `configuration_update` before new input
 This applies to plain WebSocket, cached WebSocket, and SSE. Resume or a model
 change starts a new baseline from the current selection. Explicit compaction
 overrides remain separate. The flag defaults to false and is enabled for the
-GPT-6 Codex models (`gpt-6-astra`, `gpt-6-sol`, `gpt-6-luna`) in the bundled
-catalog. A settings-level `models` map replaces the catalog models, so
-definitions for these models must include the flag to enable it. For Codex
-models without the flag, a mid-session effort change starts a fresh cached
-WebSocket continuation instead of reusing the prior response.
+GPT-6 and GPT-6.1 Codex models (`gpt-6.1-sol`, `gpt-6-astra`, `gpt-6-sol`,
+and `gpt-6-luna`) in the bundled catalog. A settings-level `models` map replaces
+the catalog models, so definitions for these models must include the flag to
+enable it. For Codex models without the flag, a mid-session effort change
+starts a fresh cached WebSocket continuation instead of reusing the prior
+response.
+
+`gpt-6.1-sol` supports `low`, `medium`, `high`, `xhigh`, and `max` reasoning
+efforts. Selecting `off` or `minimal` sends no effort value; neither disables
+reasoning.
 
 ## HTTP client (`ai.http`)
 

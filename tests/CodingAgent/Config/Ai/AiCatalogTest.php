@@ -117,6 +117,23 @@ YAML);
         $this->assertTrue($astra->compatibility?->supportsReasoningConfigurationUpdates);
         $this->assertTrue($astra->compatibility?->pinContextWindow);
 
+        $sol61 = $ai->providers['openai-codex']->models['gpt-6.1-sol'];
+        $this->assertSame(272000, $sol61->contextWindow);
+        $this->assertSame(128000, $sol61->maxTokens);
+        $this->assertSame(['text', 'image'], $sol61->input);
+        $this->assertSame(
+            ['minimal' => null, 'low' => 'low', 'medium' => 'medium', 'high' => 'high', 'xhigh' => 'xhigh', 'max' => 'max'],
+            $sol61->thinkingLevelMap,
+        );
+        $this->assertTrue($sol61->compatibility?->supportsReasoningConfigurationUpdates);
+        $this->assertTrue($sol61->compatibility?->pinContextWindow);
+        $this->assertTrue($sol61->toolCalling);
+        $this->assertTrue($sol61->reasoning);
+        $this->assertSame(2.0, $sol61->cost?->input);
+        $this->assertSame(10.0, $sol61->cost?->output);
+        $this->assertSame(0.1, $sol61->cost?->cacheRead);
+        $this->assertSame(2.5, $sol61->cost?->cacheWrite);
+
         $sol = $ai->providers['openai-codex']->models['gpt-6-sol'];
         $this->assertSame(272000, $sol->contextWindow);
         $this->assertSame(128000, $sol->maxTokens);
