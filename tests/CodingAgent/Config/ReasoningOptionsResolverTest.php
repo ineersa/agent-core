@@ -38,6 +38,25 @@ class ReasoningOptionsResolverTest extends TestCase
         }
     }
 
+    public function testBundledGpt61SolUsesSupportedCodexEfforts(): void
+    {
+        $home = TestDirectoryIsolation::createProjectTempDir('codex-reasoning-catalog');
+        try {
+            $catalog = new AiCatalog(\dirname(__DIR__, 3).'/config/ai-catalog.yaml', $home);
+            $settings = $catalog->loadProviders()['ai'];
+            $settings['providers']['openai-codex']['enabled'] = true;
+            $resolver = new ReasoningOptionsResolver(new HatfieldModelCatalog(AiConfig::fromArray($settings)));
+            $model = $this->modelRef('openai-codex', 'gpt-6.1-sol');
+
+            $this->assertSame([], $resolver->resolve($model, 'off'));
+            $this->assertSame([], $resolver->resolve($model, 'minimal'));
+            $this->assertSame(['reasoning' => ['effort' => 'low', 'summary' => 'auto']], $resolver->resolve($model, 'low'));
+            $this->assertSame(['reasoning' => ['effort' => 'max', 'summary' => 'auto']], $resolver->resolve($model, 'max'));
+        } finally {
+            TestDirectoryIsolation::removeDirectory($home);
+        }
+    }
+
     // ── Off / invalid levels ──────────────────────────────────────────────
 
     public function testOffLevelReturnsEmpty(): void
