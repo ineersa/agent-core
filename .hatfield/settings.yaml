@@ -43,7 +43,7 @@ extensions:
         safe_guard:
             allow_write_outside_cwd: [/home/ineersa/projects/agent-core-worktrees, /tmp, /home/ineersa/projects/symfony, /home/ineersa/projects/ai]
 forks:
-    model: opencode-go/muse-spark-1.3-contributor
+    model: grok-cli/grok-composer-2.5-fast
     thinking_level: xhigh
     extensions:
         enabled: {}
