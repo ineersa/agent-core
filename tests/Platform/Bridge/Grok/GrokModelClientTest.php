@@ -30,11 +30,11 @@ final class GrokModelClientTest extends TestCase
                 self::assertSame('Authorization: Bearer test-access', $options['normalized_headers']['authorization'][0]);
                 self::assertSame('Accept: text/event-stream', $options['normalized_headers']['accept'][0]);
                 self::assertSame(
-                    'User-Agent: grok-pager/0.2.91 grok-shell/0.2.91 (macos; aarch64)',
+                    'User-Agent: grok-pager/1.0.13 grok-shell/1.0.13 (macos; aarch64)',
                     $options['normalized_headers']['user-agent'][0],
                 );
                 self::assertSame('x-grok-client-identifier: grok-pager', $options['normalized_headers']['x-grok-client-identifier'][0]);
-                self::assertSame('x-grok-client-version: 0.2.91', $options['normalized_headers']['x-grok-client-version'][0]);
+                self::assertSame('x-grok-client-version: 1.0.13', $options['normalized_headers']['x-grok-client-version'][0]);
                 self::assertSame('x-xai-token-auth: xai-grok-cli', $options['normalized_headers']['x-xai-token-auth'][0]);
                 self::assertSame('x-grok-model-override: grok-composer-2.5-fast', $options['normalized_headers']['x-grok-model-override'][0]);
                 self::assertSame('x-grok-conv-id: run-abc', $options['normalized_headers']['x-grok-conv-id'][0]);
@@ -178,7 +178,7 @@ final class GrokModelClientTest extends TestCase
             static function (string $method, string $url, array $options) use (&$requestCount): HttpResponse {
                 ++$requestCount;
                 self::assertSame('Authorization: Bearer new-token', $options['normalized_headers']['authorization'][0]);
-                self::assertSame('x-grok-client-version: 0.2.91', $options['normalized_headers']['x-grok-client-version'][0]);
+                self::assertSame('x-grok-client-version: 1.0.13', $options['normalized_headers']['x-grok-client-version'][0]);
 
                 return self::sseResponse();
             },

@@ -40,7 +40,7 @@ class GrokModelClient extends ModelClient
      * (HTTP 426). Bump this to match the current official grok CLI when
      * requests start failing (see pi-grok-cli src/provider/stream.ts).
      */
-    public const string GROK_CLI_VERSION = '0.2.91';
+    public const string GROK_CLI_VERSION = '1.0.13';
 
     private readonly HttpClientInterface $httpClient;
     private readonly string $baseUrl;
