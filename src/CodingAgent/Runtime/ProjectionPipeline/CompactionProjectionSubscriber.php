@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\ProjectionPipeline;
 
+use Ineersa\CodingAgent\Logging\ProcessMemorySnapshotLogger;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
@@ -25,6 +26,11 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 final readonly class CompactionProjectionSubscriber implements EventSubscriberInterface
 {
     private const string LIFECYCLE_COMPACTION_COMPLETED = 'compaction_completed';
+
+    public function __construct(
+        private ?ProcessMemorySnapshotLogger $memorySnapshotLogger = null,
+    ) {
+    }
 
     public static function getSubscribedEvents(): array
     {
@@ -63,12 +69,15 @@ final readonly class CompactionProjectionSubscriber implements EventSubscriberIn
         $eventSeq = $event->runtimeEvent->seq;
 
         $previousCompletedId = $this->findLatestCompactionCompletedBlockId($state);
+        $blocksBefore = \count($state->blocks());
 
         // Duplicate positive-seq delivery is a pure no-op: do not prune again and
         // do not append another completed marker.
         if (!$state->advanceCompactionRetention($eventSeq, $previousCompletedId)) {
             return;
         }
+
+        $blocksAfterPrune = \count($state->blocks());
 
         // Remove the "Compacting conversation..." streaming placeholder
         // (blocks with streaming=true for this runId).
@@ -94,6 +103,23 @@ final readonly class CompactionProjectionSubscriber implements EventSubscriberIn
                 'messages_after' => $p['messages_after'] ?? null,
             ],
         ));
+
+        $this->memorySnapshotLogger?->checkpoint(
+            eventType: 'compaction.retention.applied',
+            component: 'transcript_projection',
+            fields: [
+                'run_id' => $runId,
+                'seq' => $eventSeq,
+                'retention_floor_block_id' => $previousCompletedId,
+                'transcript_blocks_before' => $blocksBefore,
+                'transcript_blocks_after_prune' => $blocksAfterPrune,
+                'transcript_blocks_after' => \count($state->blocks()),
+                'messages_before' => \is_int($p['messages_before'] ?? null) ? $p['messages_before'] : null,
+                'messages_after' => \is_int($p['messages_after'] ?? null) ? $p['messages_after'] : null,
+                'estimated_tokens_before' => \is_int($before) || \is_float($before) ? $before : null,
+                'estimated_tokens_after' => \is_int($after) || \is_float($after) ? $after : null,
+            ] + ProcessMemorySnapshotLogger::transcriptScalars($state->blocks()),
+        );
     }
 
     public function onCompactionFailed(TranscriptProjectionEvent $event): void

@@ -7,6 +7,7 @@ namespace Ineersa\Tui\Tests\E2E;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Yaml\Yaml;
 
 /**
  * Minimal real-terminal proof that a prebuilt/installed Hatfield artifact
@@ -82,6 +83,17 @@ final class TuiArtifactBootE2eTest extends TestCase
             $this->tmux->paneExists($pane),
             'Packaged artifact TUI pane still alive after Ctrl+D; expected clean process exit',
         );
+
+        $shutdown = $this->findMemoryCheckpoint('tui.session.shutdown');
+        $this->assertNotNull(
+            $shutdown,
+            'Natural Ctrl+D quit must persist process.memory.checkpoint with event_type=tui.session.shutdown',
+        );
+        $this->assertSame('quit', $shutdown['context']['exit_reason'] ?? null);
+        $this->assertSame('parent', $shutdown['context']['transcript_scope'] ?? null);
+        $this->assertSame('tui', $shutdown['context']['component'] ?? null);
+        $this->assertArrayHasKey('sampler_pid', $shutdown['extra'] ?? []);
+        $this->assertIsInt($shutdown['extra']['sampler_pid']);
     }
 
     private function artifactAgentCommand(string $resolved): string
@@ -159,11 +171,62 @@ final class TuiArtifactBootE2eTest extends TestCase
         $dir = TestDirectoryIsolation::createProjectTempDir('tui-artifact', 0o777);
         TestDirectoryIsolation::createHatfieldTree($dir, withSessions: true);
         TestDirectoryIsolation::ensureDirectory($dir.'/home/.hatfield');
-        file_put_contents(
-            $dir.'/home/.hatfield/settings.yaml',
-            "ai:\n  default_model: null\n",
-        );
+
+        // Keep the isolation catalog from createHatfieldTree; only add logging.level.
+        $settingsPath = $dir.'/.hatfield/settings.yaml';
+        $settings = Yaml::parseFile($settingsPath);
+        if (!\is_array($settings)) {
+            $settings = [];
+        }
+        $logging = $settings['logging'] ?? [];
+        if (!\is_array($logging)) {
+            $logging = [];
+        }
+        $logging['level'] = 'info';
+        $settings['logging'] = $logging;
+        TuiE2eDatabaseEnv::writeReplaySettings($dir, $settings);
 
         return $dir;
+    }
+
+    /**
+     * @return array{message?: string, context?: array<string, mixed>, extra?: array<string, mixed>}|null
+     */
+    private function findMemoryCheckpoint(string $eventType): ?array
+    {
+        $logDir = $this->testProjectDir.'/.hatfield/logs';
+        if (!is_dir($logDir)) {
+            return null;
+        }
+
+        $files = glob($logDir.'/agent-*.log') ?: [];
+        rsort($files);
+        foreach ($files as $file) {
+            $handle = fopen($file, 'rb');
+            if (false === $handle) {
+                continue;
+            }
+            try {
+                while (false !== ($line = fgets($handle))) {
+                    $decoded = json_decode($line, true);
+                    if (!\is_array($decoded)) {
+                        continue;
+                    }
+                    if (($decoded['message'] ?? null) !== 'process.memory.checkpoint') {
+                        continue;
+                    }
+                    $context = $decoded['context'] ?? null;
+                    if (!\is_array($context) || ($context['event_type'] ?? null) !== $eventType) {
+                        continue;
+                    }
+
+                    return $decoded;
+                }
+            } finally {
+                fclose($handle);
+            }
+        }
+
+        return null;
     }
 }
