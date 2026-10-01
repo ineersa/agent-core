@@ -31,6 +31,7 @@ final readonly class SubagentResultRenderer
         private TranscriptDisplayConfig $displayConfig = new TranscriptDisplayConfig(),
         private TranscriptDisplayState $displayState = new TranscriptDisplayState(),
         private TranscriptLinePreviewService $linePreviewService = new TranscriptLinePreviewService(),
+        private MarkdownRenderSupport $markdown = new MarkdownRenderSupport(),
     ) {
     }
 
@@ -135,7 +136,7 @@ final readonly class SubagentResultRenderer
             displayState: $this->displayState,
         );
 
-        $mdWidget = new MarkdownWidget("### Handoff\n\n".implode("\n", $preview['lines']));
+        $mdWidget = $this->markdown->create("### Handoff\n\n".implode("\n", $preview['lines']));
         $handoffPadding = Padding::from([0, 0, 0, 2]);
         $colorSpec = $theme->getPalette()->get(ThemeColorEnum::ToolOutput);
         $mdWidget->setStyle(
