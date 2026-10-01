@@ -4,14 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Artifact;
 
-use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
-use Ineersa\AgentCore\Contract\EventStoreInterface;
-use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
-use Ineersa\AgentCore\Domain\Event\RunEvent;
-use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\CodingAgent\Session\History\HistoryProjectionStoreInterface;
+use Ineersa\CodingAgent\Session\RunState\RunStateStoreInterface;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -97,10 +94,9 @@ MD;
     public function __construct(
         private readonly AgentArtifactRegistry $artifactRegistry,
         private readonly AgentChildRunDirectory $childRunDirectory,
-        private readonly RunStateRebuilderInterface $runStateRebuilder,
-        private readonly EventStoreInterface $eventStore,
+        private readonly RunStateStoreInterface $runStateStore,
+        private readonly HistoryProjectionStoreInterface $historyProjectionStore,
         private readonly LoggerInterface $logger,
-        private readonly ToolExecutionEndPayloadCodec $toolExecutionEndPayloadCodec,
     ) {
     }
 
@@ -233,11 +229,10 @@ MD;
             ])."\n";
         }
 
-        $events = $this->eventStore->allFor($entry->agentRunId);
         $vars['event_log_section'] = implode("\n", [
             '',
             '## Event log',
-            '- event_count: '.\sprintf('%d', \count($events)),
+            '- event_count: '.\sprintf('%d', $this->requireEventInspection($entry)->eventCount),
         ]);
 
         return rtrim($this->renderTemplate(self::TEMPLATE_METADATA, $vars));
@@ -245,13 +240,14 @@ MD;
 
     private function renderEvents(AgentArtifactEntryDTO $entry, int $limit): string
     {
-        $events = $this->eventStore->allFor($entry->agentRunId);
-        usort($events, static fn (RunEvent $a, RunEvent $b): int => $a->seq <=> $b->seq);
-        $slice = \array_slice($events, -$limit);
+        $inspection = $this->requireEventInspection($entry);
+        $total = $inspection->eventCount;
+        $tail = $inspection->sanitizedEventTail;
+        $slice = \array_slice($tail, -$limit);
 
         $summaryLine = [] === $slice
             ? ''
-            : \sprintf('Showing last %d of %d events (sanitized summaries only).', \count($slice), \count($events))."\n";
+            : \sprintf('Showing last %d of %d events (sanitized summaries only).', \count($slice), $total)."\n";
 
         $lines = [rtrim($this->renderTemplate(self::TEMPLATE_EVENTS_HEADER, $this->identityVars($entry) + [
             'summary_line' => $summaryLine,
@@ -260,11 +256,11 @@ MD;
         foreach ($slice as $event) {
             $lines[] = \sprintf(
                 '- seq=%d turn=%d type=%s at=%s — %s',
-                $event->seq,
-                $event->turnNo,
-                $event->type,
-                $event->createdAt->format(\DateTimeInterface::ATOM),
-                $this->summarizeEvent($event),
+                $event['seq'],
+                $event['turn_no'],
+                $event['type'],
+                $event['created_at'],
+                $event['summary'],
             );
         }
 
@@ -398,9 +394,7 @@ MD;
     private function loadChildState(AgentArtifactEntryDTO $entry): ?RunState
     {
         try {
-            return $this->runStateRebuilder
-                ->rebuildIfStale(RunState::queued($entry->agentRunId), $entry->agentRunId)
-                ->rebuiltState;
+            return $this->runStateStore->get($entry->agentRunId);
         } catch (\Throwable $e) {
             $this->logger->debug('agent_retrieve.child_state_unavailable', [
                 'component' => 'agent.retrieve',
@@ -411,6 +405,30 @@ MD;
             ]);
 
             return null;
+        }
+    }
+
+    /**
+     * @return object{eventCount: int, sanitizedEventTail: list<array{seq: int, turn_no: int, type: string, created_at: string, summary: string}>}
+     */
+    private function requireEventInspection(AgentArtifactEntryDTO $entry): object
+    {
+        try {
+            $snapshot = $this->historyProjectionStore->get($entry->agentRunId);
+
+            return (object) [
+                'eventCount' => $snapshot->eventCount,
+                'sanitizedEventTail' => $snapshot->sanitizedEventTail,
+            ];
+        } catch (\Throwable $e) {
+            $this->logger->debug('agent_retrieve.event_inspection_unavailable', [
+                'component' => 'agent.retrieve',
+                'parent_run_id' => $entry->parentRunId,
+                'agent_run_id' => $entry->agentRunId,
+                'artifact_id' => $entry->artifactId,
+                'error' => $e->getMessage(),
+            ]);
+            throw new ToolCallException(\sprintf('Event inspection projection missing for child run "%s"; initialize via startup/recovery before agent_retrieve metadata/events.', $entry->agentRunId), retryable: false, hint: 'Resume or recover the child run so shared history projections are published, then retry agent_retrieve.');
         }
     }
 
@@ -435,67 +453,6 @@ MD;
         $text = trim(implode(' ', $parts));
 
         return $this->truncateLine('' === $text ? '(non-text content omitted)' : $text, self::HISTORY_SUMMARY_CHARS);
-    }
-
-    private function summarizeEvent(RunEvent $event): string
-    {
-        $payload = $event->payload;
-
-        return match ($event->type) {
-            RunEventTypeEnum::ToolExecutionStart->value => $this->summarizeToolStart($payload),
-            RunEventTypeEnum::ToolExecutionEnd->value => $this->summarizeToolEnd($payload),
-            RunEventTypeEnum::ToolExecutionUpdate->value => 'tool progress update (payload omitted)',
-            RunEventTypeEnum::LlmStepCompleted->value => $this->summarizeLlmCompleted($payload),
-            RunEventTypeEnum::LlmStepFailed->value => 'llm step failed (details omitted)',
-            RunEventTypeEnum::WaitingHuman->value => 'waiting for human input (unsupported for child runs)',
-            RunEventTypeEnum::RunStarted->value => 'run started',
-            RunEventTypeEnum::AgentEnd->value => 'agent ended',
-            default => 'event (payload omitted)',
-        };
-    }
-
-    /**
-     * @param array<string, mixed> $payload
-     */
-    private function summarizeToolStart(array $payload): string
-    {
-        $name = $payload['tool_name'] ?? $payload['toolName'] ?? 'unknown';
-
-        return \is_string($name)
-            ? 'tool start: '.$name
-            : 'tool start';
-    }
-
-    /**
-     * @param array<string, mixed> $payload
-     */
-    private function summarizeToolEnd(array $payload): string
-    {
-        $typedResult = $this->toolExecutionEndPayloadCodec->fromEventPayload($payload);
-        $name = $typedResult->result['tool_name'] ?? 'unknown';
-        $exit = $payload['exit_code'] ?? $payload['exitCode'] ?? null;
-        $base = \is_string($name) ? 'tool end: '.$name : 'tool end';
-        if (\is_int($exit)) {
-            return $base.' exit='.$exit;
-        }
-
-        return $base.' (output omitted)';
-    }
-
-    /**
-     * @param array<string, mixed> $payload
-     */
-    private function summarizeLlmCompleted(array $payload): string
-    {
-        $inner = $payload['payload'] ?? $payload;
-        if (!\is_array($inner)) {
-            return 'llm step completed';
-        }
-
-        $toolCalls = $inner['tool_calls'] ?? $inner['toolCalls'] ?? [];
-        $count = \is_array($toolCalls) ? \count($toolCalls) : 0;
-
-        return \sprintf('llm step completed (tool_calls=%d, text omitted)', $count);
     }
 
     private function truncateLine(string $text, int $max): string

@@ -69,8 +69,8 @@ final class StartRunProjectionFailureRedeliveryTest extends TestCase
             $this->assertSame('simulated projection lock', $exception->getMessage());
         }
 
-        $this->assertCount(1, $eventStore->allFor('run-start-projection-fail'));
-        $this->assertSame('run_started', $eventStore->allFor('run-start-projection-fail')[0]->type);
+        $this->assertCount(1, iterator_to_array($eventStore->rangeFor('run-start-projection-fail', 1, \PHP_INT_MAX), false));
+        $this->assertSame('run_started', iterator_to_array($eventStore->rangeFor('run-start-projection-fail', 1, \PHP_INT_MAX), false)[0]->type);
         $this->assertSame([], $commandBus->messages, 'Failed commit must not dispatch the initial AdvanceRun.');
 
         // Messenger retry observes the already-committed RunStarted model via replay.
@@ -85,7 +85,7 @@ final class StartRunProjectionFailureRedeliveryTest extends TestCase
 
         $processor->process('command.start', $message);
 
-        $this->assertCount(1, $eventStore->allFor('run-start-projection-fail'), 'Redelivery must not append a second run_started.');
+        $this->assertCount(1, iterator_to_array($eventStore->rangeFor('run-start-projection-fail', 1, \PHP_INT_MAX), false), 'Redelivery must not append a second run_started.');
         $this->assertCount(1, $commandBus->messages);
         $this->assertInstanceOf(AdvanceRun::class, $commandBus->messages[0]);
         $this->assertSame('run-start-projection-fail', $commandBus->messages[0]->runId());
@@ -117,9 +117,31 @@ final class FailOnceProjectionActiveRunContext implements ActiveRunContextInterf
         $this->states[$state->runId] = $state;
     }
 
+    public function initializeQueued(string $runId): RunState
+    {
+        return RunState::queued($runId);
+    }
+
+    public function initialize(RunState $state): void
+    {
+    }
+
+    /**
+     * @param list<\Ineersa\AgentCore\Domain\Event\RunEvent> $events
+     */
+    public function applyCommittedSuffix(string $runId, array $events, callable $advance): RunState
+    {
+        return $advance($this->stateFor($runId), $events);
+    }
+
     public function invalidate(string $runId): void
     {
         unset($this->states[$runId]);
+    }
+
+    public function withdrawForCommit(string $runId): void
+    {
+        $this->invalidate($runId);
     }
 
     public function clear(): void

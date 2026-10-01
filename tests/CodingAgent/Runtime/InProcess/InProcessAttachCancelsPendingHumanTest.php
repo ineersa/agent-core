@@ -94,8 +94,30 @@ final class InProcessAttachCancelsPendingHumanTest extends IsolatedKernelTestCas
             {
             }
 
+            public function initializeQueued(string $runId): RunState
+            {
+                return RunState::queued($runId);
+            }
+
+            public function initialize(RunState $state): void
+            {
+            }
+
+            /**
+             * @param list<\Ineersa\AgentCore\Domain\Event\RunEvent> $events
+             */
+            public function applyCommittedSuffix(string $runId, array $events, callable $advance): RunState
+            {
+                return $advance($this->stateFor($runId), $events);
+            }
+
             public function invalidate(string $runId): void
             {
+            }
+
+            public function withdrawForCommit(string $runId): void
+            {
+                $this->invalidate($runId);
             }
 
             public function clear(): void
@@ -121,6 +143,7 @@ final class InProcessAttachCancelsPendingHumanTest extends IsolatedKernelTestCas
             commandBus: $bus,
             sessionRepairService: $this->createStub(SessionRepairServiceInterface::class),
             activeRunContext: $active,
+            runStateRebuilder: $this->createStub(\Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface::class),
         );
 
         $this->assertSame($runId, $client->attach($runId)->runId);
@@ -181,8 +204,30 @@ final class InProcessAttachCancelsPendingHumanTest extends IsolatedKernelTestCas
             {
             }
 
+            public function initializeQueued(string $runId): RunState
+            {
+                return RunState::queued($runId);
+            }
+
+            public function initialize(RunState $state): void
+            {
+            }
+
+            /**
+             * @param list<\Ineersa\AgentCore\Domain\Event\RunEvent> $events
+             */
+            public function applyCommittedSuffix(string $runId, array $events, callable $advance): RunState
+            {
+                return $advance($this->stateFor($runId), $events);
+            }
+
             public function invalidate(string $runId): void
             {
+            }
+
+            public function withdrawForCommit(string $runId): void
+            {
+                $this->invalidate($runId);
             }
 
             public function clear(): void
@@ -208,6 +253,7 @@ final class InProcessAttachCancelsPendingHumanTest extends IsolatedKernelTestCas
             commandBus: $bus,
             sessionRepairService: $this->createStub(SessionRepairServiceInterface::class),
             activeRunContext: $active,
+            runStateRebuilder: $this->createStub(\Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface::class),
         );
 
         $client->attach($runId);

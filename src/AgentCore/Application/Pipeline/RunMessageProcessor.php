@@ -12,9 +12,9 @@ use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
 
 /**
- * The run_control owner serializes transitions under RunLockManager. A run's
- * full state lives in its process-local active context; canonical events are
- * replayed only when that context has been invalidated or is first needed.
+ * The run_control owner serializes transitions under RunLockManager. Ordinary
+ * lookups use the shared disposable current RunState projection; archive
+ * reconstruction remains an explicit startup/recovery path.
  */
 final readonly class RunMessageProcessor
 {

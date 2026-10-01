@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Tests\Runtime;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotDTO;
+use Ineersa\CodingAgent\Runtime\Contract\SessionResumeProjectionDTO;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
@@ -49,26 +50,8 @@ final class SubagentLiveChildViewPollerReplayTest extends TestCase
                     text: 'Approve scout plan?',
                 ),
             ],
-            replayEvents: [
-                new RuntimeEvent(
-                    type: RuntimeEventTypeEnum::HumanInputRequested->value,
-                    runId: self::CHILD_RUN_ID,
-                    seq: 1,
-                    payload: [
-                        'question_id' => 'q_resolved',
-                        'prompt' => 'old',
-                        'schema' => ['type' => 'string'],
-                    ],
-                ),
-                new RuntimeEvent(
-                    type: RuntimeEventTypeEnum::HumanInputAnswered->value,
-                    runId: self::CHILD_RUN_ID,
-                    seq: 2,
-                    payload: [
-                        'question_id' => 'q_resolved',
-                        'answer' => 'done',
-                    ],
-                ),
+            resume: new SessionResumeProjectionDTO(activity: 'waiting_human'),
+            pendingHumanInputEvents: [
                 new RuntimeEvent(
                     type: RuntimeEventTypeEnum::HumanInputRequested->value,
                     runId: self::CHILD_RUN_ID,
@@ -80,6 +63,7 @@ final class SubagentLiveChildViewPollerReplayTest extends TestCase
                     ],
                 ),
             ],
+            pendingToolQuestionEvents: [],
             maxSeq: 3,
         );
 
@@ -112,7 +96,7 @@ final class SubagentLiveChildViewPollerReplayTest extends TestCase
 
         $poller->replaySnapshot(
             $live,
-            new ChildRunTranscriptSnapshotDTO([], [new RuntimeEvent('tool_question.requested', self::CHILD_RUN_ID, 0, ['request_id' => 'bg_open'])], 0),
+            new ChildRunTranscriptSnapshotDTO([], new SessionResumeProjectionDTO(), [], [new RuntimeEvent('tool_question.requested', self::CHILD_RUN_ID, 0, ['request_id' => 'bg_open'])], 0),
             onToolQuestionRequested: static function (RuntimeEvent $event) use (&$hit): void {
                 $hit[] = (string) ($event->payload['request_id'] ?? '');
             },
@@ -131,21 +115,19 @@ final class SubagentLiveChildViewPollerReplayTest extends TestCase
         $poller->replaySnapshot(
             $live,
             new ChildRunTranscriptSnapshotDTO(
-                transcriptBlocks: [],
-                replayEvents: [
-                    new RuntimeEvent(
-                        RuntimeEventTypeEnum::AssistantThinkingStarted->value,
-                        self::CHILD_RUN_ID,
-                        0,
-                        ['block_id' => 'thinking-1'],
-                    ),
-                    new RuntimeEvent(
-                        RuntimeEventTypeEnum::AssistantThinkingDelta->value,
-                        self::CHILD_RUN_ID,
-                        0,
-                        ['block_id' => 'thinking-1', 'thinking' => 'A long reasoning prefix. '],
+                transcriptBlocks: [
+                    new TranscriptBlock(
+                        id: 'thinking-1',
+                        kind: TranscriptBlockKindEnum::AssistantThinking,
+                        runId: self::CHILD_RUN_ID,
+                        seq: 0,
+                        text: 'A long reasoning prefix. ',
+                        streaming: true,
                     ),
                 ],
+                resume: new SessionResumeProjectionDTO(activity: 'running'),
+                pendingHumanInputEvents: [],
+                pendingToolQuestionEvents: [],
                 maxSeq: 1,
             ),
         );
@@ -216,7 +198,7 @@ final class SubagentLiveChildViewPollerReplayTest extends TestCase
     #[Test]
     public function pollSkipsEventsAtOrBelowChildLastSeqAfterReplay(): void
     {
-        $projector = new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState());
+        $projector = $this->childLiveProjector();
         $poller = new SubagentLiveChildViewPoller($projector, new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer());
 
         $live = $this->liveState();
@@ -226,6 +208,8 @@ final class SubagentLiveChildViewPollerReplayTest extends TestCase
                 [
                     new TranscriptBlock('b1', TranscriptBlockKindEnum::AssistantMessage, self::CHILD_RUN_ID, 5, 'replayed'),
                 ],
+                new SessionResumeProjectionDTO(activity: 'running'),
+                [],
                 [],
                 5,
             ),
@@ -240,7 +224,12 @@ final class SubagentLiveChildViewPollerReplayTest extends TestCase
                     new RuntimeEvent(RuntimeEventTypeEnum::AssistantMessageCompleted->value, self::CHILD_RUN_ID, 3, ['text' => 'stale']),
                 ],
                 [
-                    new RuntimeEvent(RuntimeEventTypeEnum::AssistantMessageCompleted->value, self::CHILD_RUN_ID, 6, ['text' => 'live tail']),
+                    new RuntimeEvent(
+                        RuntimeEventTypeEnum::AssistantMessageCompleted->value,
+                        self::CHILD_RUN_ID,
+                        6,
+                        ['message_id' => 'live-6', 'text' => 'live tail'],
+                    ),
                 ],
             );
 
@@ -250,7 +239,9 @@ final class SubagentLiveChildViewPollerReplayTest extends TestCase
         $live->childLastPoll = 0.0;
         $changes = $poller->poll($live, $client);
         $this->assertNotNull($changes);
-        $this->assertSame(['b1'], $changes->removals, 'mounted snapshot fallbacks must be removed when live projection replaces them');
+        $this->assertSame([], $changes->removals, 'Hydrated projector-owned snapshot blocks are not mounted fallbacks.');
+        $this->assertNotSame([], $changes->upserts);
+        $this->assertSame('live tail', $changes->upserts[0]->text);
         $this->assertSame(6, $live->childLastSeq);
     }
 

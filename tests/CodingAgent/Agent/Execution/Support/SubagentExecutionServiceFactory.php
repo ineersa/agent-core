@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Execution\Support;
 
-use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
+use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\CodingAgent\Agent\ChildExtensionSelectionService;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
 use Ineersa\CodingAgent\Agent\Execution\AgentDepthGuard;
@@ -37,7 +37,7 @@ final class SubagentExecutionServiceFactory
             'skillsContextBuilder' => null,
             'artifactRegistry' => null,
             'agentRunner' => null,
-            'runStateRebuilder' => null,
+            'activeRunContext' => null,
             'metadataReader' => null,
             'relationshipReader' => null,
             'childRunDirectory' => null,
@@ -58,14 +58,14 @@ final class SubagentExecutionServiceFactory
 
         $args = array_merge($defaults, $overrides);
 
-        foreach (['policyResolver', 'promptBuilder', 'skillsContextBuilder', 'artifactRegistry', 'agentRunner', 'runStateRebuilder', 'metadataReader', 'relationshipReader', 'childRunDirectory', 'contextAccessor', 'logger', 'appConfig', 'modelResolver', 'batchRepository', 'lifecycleListener', 'forkLaunchInputBuilder', 'forkToolPolicyResolver', 'childExtensionSelection', 'toolRegistry'] as $required) {
+        foreach (['policyResolver', 'promptBuilder', 'skillsContextBuilder', 'artifactRegistry', 'agentRunner', 'activeRunContext', 'metadataReader', 'relationshipReader', 'childRunDirectory', 'contextAccessor', 'logger', 'appConfig', 'modelResolver', 'batchRepository', 'lifecycleListener', 'forkLaunchInputBuilder', 'forkToolPolicyResolver', 'childExtensionSelection', 'toolRegistry'] as $required) {
             if (null === $args[$required]) {
                 throw new \InvalidArgumentException(\sprintf('SubagentExecutionServiceFactory requires override "%s".', $required));
             }
         }
 
-        if (!$args['runStateRebuilder'] instanceof RunStateRebuilderInterface) {
-            throw new \InvalidArgumentException('SubagentExecutionServiceFactory requires runStateRebuilder to be a RunStateRebuilderInterface instance.');
+        if (!$args['activeRunContext'] instanceof ActiveRunContextInterface) {
+            throw new \InvalidArgumentException('SubagentExecutionServiceFactory requires activeRunContext to be an ActiveRunContextInterface instance.');
         }
         if (!$args['childExtensionSelection'] instanceof ChildExtensionSelectionService) {
             throw new \InvalidArgumentException('SubagentExecutionServiceFactory requires childExtensionSelection to be a ChildExtensionSelectionService instance.');
@@ -82,7 +82,7 @@ final class SubagentExecutionServiceFactory
             : new SubagentChildLaunchInputFactory(
                 $args['promptBuilder'],
                 $args['skillsContextBuilder'],
-                $args['runStateRebuilder'],
+                $args['activeRunContext'],
                 $args['appConfig'],
                 $args['childExtensionSelection'],
                 $args['toolRegistry'],

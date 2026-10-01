@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
+use Ineersa\CodingAgent\Extension\ChildRunExtensionAllowlistReaderInterface;
 use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\CodingAgent\Extension\ExtensionToolHookEventSubscriber;
 use Ineersa\CodingAgent\Tool\Event\ToolCallFailedEvent;
@@ -467,6 +468,67 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
         $this->assertSame('extension.tool_result_hook_failed', $logger->records[0]['context']['event_type']);
         $this->assertSame('call-hook-fail', $logger->records[0]['context']['tool_call_id']);
         $this->assertSame('RuntimeException', $logger->records[0]['context']['error_type']);
+    }
+
+    public function testUnavailablePolicyDoesNotSkipApprovalHooksOnToolRequest(): void
+    {
+        $approvalSeen = false;
+        $hook = new class($approvalSeen) implements ToolCallHookInterface {
+            public function __construct(private bool &$approvalSeen)
+            {
+            }
+
+            public function onToolCall(ToolCallContextDTO $context): ToolCallDecisionDTO
+            {
+                $this->approvalSeen = true;
+
+                return ToolCallDecisionDTO::requireApproval(
+                    prompt: 'Allow?',
+                    questionId: 'q-policy',
+                    schema: ['type' => 'string', 'enum' => ['✅ Allow']],
+                    details: [],
+                );
+            }
+        };
+
+        $allowlist = new class implements ChildRunExtensionAllowlistReaderInterface {
+            public function readAllowedExtensions(string $runId): ?array
+            {
+                throw new \RuntimeException(\sprintf('History projection for run %s is not ready; recovery required.', $runId));
+            }
+        };
+
+        $registry = new ExtensionHookRegistry();
+        $registry->addToolCallHook($hook);
+        $accessor = new StackToolExecutionContextAccessor();
+        $subscriber = new ExtensionToolHookEventSubscriber(
+            hookRegistry: $registry,
+            cwd: '/tmp',
+            contextAccessor: $accessor,
+            extensionAllowlistReader: $allowlist,
+        );
+
+        $toolCall = new ToolCall('call-policy', 'bash', ['command' => 'true']);
+        $event = $this->requested($toolCall);
+
+        try {
+            $accessor->with(new ToolContext(
+                runId: 'run-policy',
+                turnNo: 1,
+                toolCallId: 'call-policy',
+                toolName: 'bash',
+                cancellationToken: new NullCancellationToken(),
+                timeoutSeconds: 30,
+            ), static function () use ($subscriber, $event): void {
+                $subscriber->onToolCallRequested($event);
+            });
+            $this->fail('Unavailable launch policy must fail closed before approval hooks run');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('History projection for run run-policy is not ready; recovery required.', $exception->getMessage());
+        }
+
+        $this->assertFalse($approvalSeen, 'Approval hooks must not run under fabricated empty allowlist');
+        $this->assertNull($event->getResult(), 'Tool request must not continue with a fabricated policy decision');
     }
 
     private function requested(ToolCall $toolCall): ToolCallRequested

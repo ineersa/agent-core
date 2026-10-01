@@ -24,7 +24,8 @@ use Symfony\Component\Lock\LockFactory;
  * primitives are delegated to {@see JsonlRunEventLog}; this class owns the
  * session path resolution and read diagnostics.
  *
- * allFor() always returns the complete canonical stream from disk. There is no
+ * Canonical full-stream reads use rangeFor(); newest-tail access stays private
+ * behind latestSequenceFor()/readAfterSeq(). There is no
  * process-local decoded snapshot cache: compaction and other writers can mutate
  * the file outside this process, and retaining every decoded body after resume
  * kept obsolete pre-compaction payloads hot for the TUI lifetime.
@@ -73,33 +74,11 @@ final class SessionRunEventStore implements EventStoreInterface
 
     public function latestSequenceFor(string $runId): ?int
     {
-        foreach ($this->reverseFor($runId) as $event) {
+        foreach ($this->reverseEvents($runId) as $event) {
             return $event->seq;
         }
 
         return null;
-    }
-
-    public function firstFor(string $runId): ?RunEvent
-    {
-        $path = $this->eventsPath($runId);
-        $handle = @fopen($path, 'rb');
-        if (false === $handle) {
-            return null;
-        }
-
-        try {
-            while (false !== ($line = fgets($handle))) {
-                $event = $this->eventFromLine($runId, $line);
-                if (null !== $event) {
-                    return $event;
-                }
-            }
-
-            return null;
-        } finally {
-            fclose($handle);
-        }
     }
 
     /**
@@ -107,7 +86,7 @@ final class SessionRunEventStore implements EventStoreInterface
      *
      * Events are physically appended under the per-run sequence lock, so durable file order
      * is canonical sequence order (with possible sequence holes). The scan stops at the first
-     * sequence above endSeq; allFor() remains responsible for full-log validation.
+     * sequence above endSeq.
      *
      * @return \Generator<int, RunEvent>
      */
@@ -143,9 +122,25 @@ final class SessionRunEventStore implements EventStoreInterface
     }
 
     /**
+     * @return list<RunEvent>
+     */
+    public function readAfterSeq(string $runId, int $cursor): array
+    {
+        $events = [];
+        foreach ($this->reverseEvents($runId) as $event) {
+            if ($event->seq <= $cursor) {
+                break;
+            }
+            $events[] = $event;
+        }
+
+        return array_reverse($events);
+    }
+
+    /**
      * @return \Generator<int, RunEvent>
      */
-    public function reverseFor(string $runId): iterable
+    private function reverseEvents(string $runId): iterable
     {
         foreach ($this->eventLog->reverseLines($this->eventsPath($runId)) as $line) {
             $event = $this->eventFromLine($runId, $line);
@@ -153,29 +148,6 @@ final class SessionRunEventStore implements EventStoreInterface
                 yield $event;
             }
         }
-    }
-
-    /**
-     * @return list<RunEvent>
-     */
-    public function allFor(string $runId): array
-    {
-        $path = $this->eventsPath($runId);
-        $contents = @file_get_contents($path);
-        if (false === $contents) {
-            return [];
-        }
-
-        $events = [];
-
-        foreach (explode("\n", $contents) as $line) {
-            $event = $this->eventFromLine($runId, $line);
-            if (null !== $event) {
-                $events[] = $event;
-            }
-        }
-
-        return $this->eventLog->sortBySeq($events);
     }
 
     private function eventFromLine(string $runId, string $line): ?RunEvent

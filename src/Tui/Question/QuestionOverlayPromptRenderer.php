@@ -18,6 +18,8 @@ final class QuestionOverlayPromptRenderer
 {
     public function buildPromptWidget(string $prompt, TuiTheme $theme): MarkdownWidget
     {
+        // Overlay creates one MarkdownWidget per question; transcript resume sharing
+        // lives under Transcript/MarkdownRenderSupport (TuiQuestion must not depend on TuiTranscript).
         $mdWidget = new MarkdownWidget($prompt);
         // Prompt body uses the theme-owned Prompt color so it differs from answer rows.
         // Accent stays reserved for the compact header line.

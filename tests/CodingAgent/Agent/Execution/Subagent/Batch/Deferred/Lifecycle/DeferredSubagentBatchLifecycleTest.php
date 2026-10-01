@@ -4,10 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Execution\Subagent\Batch\Deferred\Lifecycle;
 
-use Ineersa\AgentCore\Application\Dto\RunStateReplayResult;
 use Ineersa\AgentCore\Application\Handler\CompleteDeferredToolCallHandler;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
-use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Domain\Event\DeferredToolCompletionRegisteredEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -56,6 +54,8 @@ use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Session\CommittedRunEventAppender;
+use Ineersa\CodingAgent\Session\RunState\RunStateStoreInterface;
+use Ineersa\CodingAgent\Tests\Session\RunState\InMemoryRunStateStore;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -176,7 +176,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
 
         // Observer delivers running progress
         $appendedSp = [];
-        $spyProgressAppender = $this->createSpyProgressAppender($appendedSp);
+        $spyProgressAppender = $this->createSpyProgressAppender($parent, $appendedSp);
 
         $progressService = new DeferredSubagentBatchProgressDeliveryService(
             $repo,
@@ -212,6 +212,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $repo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
         $factory = new DeferredSubagentBatchIdentityFactory();
         $parent = 'parent-batch-term-'.$scenario;
+        self::getContainer()->get(\Ineersa\AgentCore\Contract\ActiveRunContextInterface::class)->initializeQueued($parent);
         $tool = 'tool-batch-term-'.$scenario;
         $lifecycle = $factory->batchLifecycleId($parent, $tool);
         $c1 = $factory->childIdentity($parent, $tool, 1);
@@ -355,7 +356,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
 
         // Deliver initial running progress BEFORE registration so aggregate==delivered
         $appendedProgress = [];
-        $spyAppender = $this->createSpyProgressAppender($appendedProgress);
+        $spyAppender = $this->createSpyProgressAppender($parent, $appendedProgress);
         $progressDelivery = new DeferredSubagentBatchProgressDeliveryService(
             $repo,
             $this->createSnapshotFactory(),
@@ -759,7 +760,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         }
 
         $appended = [];
-        $spy = $this->createSpyProgressAppender($appended);
+        $spy = $this->createSpyProgressAppender($parent, $appended);
         $commandBus = new TestMessageBus();
         $delivery = $this->buildLifecycleDelivery($commandBus, $spy);
         $batch = $repo->findByLifecycleId($lifecycle);
@@ -896,7 +897,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         }
 
         $appended = [];
-        $spy = $this->createSpyProgressAppender($appended);
+        $spy = $this->createSpyProgressAppender($parent, $appended);
         $commandBus = new TestMessageBus();
         $lifecycleDelivery = $this->buildLifecycleDelivery($commandBus, $spy);
         $batch = $repo->findByLifecycleId($lifecycle);
@@ -1157,6 +1158,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $repo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
         $factory = new DeferredSubagentBatchIdentityFactory();
         $parent = 'parent-batch-reserved-pc';
+        self::getContainer()->get(\Ineersa\AgentCore\Contract\ActiveRunContextInterface::class)->initializeQueued($parent);
         $tool = 'tool-batch-reserved-pc';
         $lifecycle = $factory->batchLifecycleId($parent, $tool);
         $c1 = $factory->childIdentity($parent, $tool, 1);
@@ -1282,6 +1284,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $repo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
         $factory = new DeferredSubagentBatchIdentityFactory();
         $parent = 'parent-batch-fork-once';
+        self::getContainer()->get(\Ineersa\AgentCore\Contract\ActiveRunContextInterface::class)->initializeQueued($parent);
         $tool = 'tool-batch-fork-once';
         $lifecycle = $factory->batchLifecycleId($parent, $tool);
         $c1 = $factory->childIdentity($parent, $tool, 1);
@@ -1348,6 +1351,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $repo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
         $factory = new DeferredSubagentBatchIdentityFactory();
         $parent = 'parent-batch-agent-resume-once';
+        self::getContainer()->get(\Ineersa\AgentCore\Contract\ActiveRunContextInterface::class)->initializeQueued($parent);
         $tool = 'tool-batch-agent-resume-once';
         $lifecycle = $factory->batchLifecycleId($parent, $tool);
         $c1 = $factory->childIdentity($parent, $tool, 1);
@@ -1434,16 +1438,10 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             batchIndex: 1,
         );
         $state = new RunState(runId: $identity->childRunId, status: RunStatus::Failed, messages: [new AgentMessage('assistant', [['type' => 'text', 'text' => 'partial']])]);
-        $rebuilder = $this->createMock(RunStateRebuilderInterface::class);
-        $rebuilder->expects($this->once())
-            ->method('rebuildIfStale')
-            ->with(
-                $this->callback(static fn (RunState $queued): bool => $queued->runId === $identity->childRunId && RunStatus::Queued === $queued->status),
-                $identity->childRunId,
-            )
-            ->willReturn(RunStateReplayResult::rebuilt($state));
+        $store = new InMemoryRunStateStore();
+        $store->initialize($state);
 
-        $outcome = $this->createOutcomeFactory($rebuilder)->buildNaturalArtifactOutcome(
+        $outcome = $this->createOutcomeFactory($store)->buildNaturalArtifactOutcome(
             $identity,
             new DeferredChildRunLifecycleProjectionDTO(
                 childStatus: RunStatus::Failed,
@@ -1470,13 +1468,14 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             artifactKind: AgentArtifactKindEnum::Subagent,
             batchIndex: 1,
         );
-        $rebuilder = $this->createMock(RunStateRebuilderInterface::class);
-        $rebuilder->expects($this->once())
-            ->method('rebuildIfStale')
-            ->willThrowException(new \RuntimeException('canonical child replay failed'));
+        $store = $this->createMock(RunStateStoreInterface::class);
+        $store->expects($this->once())
+            ->method('get')
+            ->with($identity->childRunId)
+            ->willThrowException(new \RuntimeException('canonical child projection missing'));
         $logger = new TestLogger();
 
-        $outcome = $this->createOutcomeFactory($rebuilder, $logger)->buildNaturalArtifactOutcome(
+        $outcome = $this->createOutcomeFactory($store, $logger)->buildNaturalArtifactOutcome(
             $identity,
             new DeferredChildRunLifecycleProjectionDTO(
                 childStatus: RunStatus::Cancelled,
@@ -1496,8 +1495,9 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
     /**
      * @param array<int, array<string, mixed>> $appended
      */
-    private function createSpyProgressAppender(array &$appended): SubagentProgressEventAppender
+    private function createSpyProgressAppender(string $parentRunId, array &$appended): SubagentProgressEventAppender
     {
+        self::getContainer()->get(\Ineersa\AgentCore\Contract\ActiveRunContextInterface::class)->initializeQueued($parentRunId);
         $inner = self::getContainer()->get(CommittedRunEventAppender::class);
         $sink = self::getContainer()->get(RuntimeEventSinkInterface::class);
         $mapper = self::getContainer()->get(RuntimeEventMapper::class);
@@ -1544,10 +1544,10 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         );
     }
 
-    private function createOutcomeFactory(?RunStateRebuilderInterface $runStateRebuilder = null, ?TestLogger $logger = null): DeferredSubagentBatchChildOutcomeFactory
+    private function createOutcomeFactory(?RunStateStoreInterface $runStateStore = null, ?TestLogger $logger = null): DeferredSubagentBatchChildOutcomeFactory
     {
         return new DeferredSubagentBatchChildOutcomeFactory(
-            $runStateRebuilder ?? self::getContainer()->get(RunStateRebuilderInterface::class),
+            $runStateStore ?? self::getContainer()->get(RunStateStoreInterface::class),
             $logger ?? new TestLogger(),
         );
     }

@@ -32,9 +32,9 @@ final readonly class RunStateReducer
     }
 
     /**
-     * @param list<RunEvent> $events
+     * @param iterable<RunEvent> $events
      */
-    public function replay(RunState $existingState, array $events): RunState
+    public function replay(RunState $existingState, iterable $events): RunState
     {
         $state = new RunState(
             runId: $existingState->runId,
@@ -69,6 +69,63 @@ final readonly class RunStateReducer
             'pendingToolCalls' => $pendingToolCalls,
             'messages' => $messages,
         ]);
+    }
+
+    /**
+     * Advance an already-published current state by already-committed events.
+     * Does not reset to Queued; preserves fields for no-mutation suffixes.
+     *
+     * @param list<RunEvent> $events
+     */
+    public function applyCommittedSuffix(RunState $state, array $events): RunState
+    {
+        $messages = $state->messages;
+        $pendingToolCalls = $state->pendingToolCalls;
+        /** @var array<string, ToolCallResult> $completedToolResultsByCallId */
+        $completedToolResultsByCallId = [];
+
+        $next = $state;
+        foreach ($events as $event) {
+            if ($event->seq <= $state->lastSeq) {
+                continue;
+            }
+
+            $next = $this->applyEvent($next, $event, $messages, $pendingToolCalls, $completedToolResultsByCallId);
+            $next = $next->with(['lastSeq' => $event->seq]);
+        }
+
+        return $next->with([
+            'pendingToolCalls' => $pendingToolCalls,
+            'messages' => $messages,
+        ]);
+    }
+
+    /**
+     * Start an incremental cold/recovery application that keeps tool-batch
+     * completion maps across individual event applications.
+     */
+    public function startIncremental(RunState $existingState): RunStateIncrementalApplication
+    {
+        return new RunStateIncrementalApplication($this, $existingState);
+    }
+
+    /**
+     * @internal used by {@see RunStateIncrementalApplication}
+     *
+     * @param list<AgentMessage>            $messages
+     * @param array<string, bool>           $pendingToolCalls
+     * @param array<string, ToolCallResult> $completedToolResultsByCallId
+     */
+    public function applyEventForIncremental(
+        RunState $state,
+        RunEvent $event,
+        array &$messages,
+        array &$pendingToolCalls,
+        array &$completedToolResultsByCallId,
+    ): RunState {
+        $next = $this->applyEvent($state, $event, $messages, $pendingToolCalls, $completedToolResultsByCallId);
+
+        return $next->with(['lastSeq' => $event->seq]);
     }
 
     /**
@@ -894,5 +951,82 @@ final readonly class RunStateReducer
         }
 
         return $metadata;
+    }
+}
+
+/**
+ * Mutable single-pass RunState application with stable tool-batch accumulators.
+ */
+final class RunStateIncrementalApplication
+{
+    /** @var list<AgentMessage> */
+    private array $messages = [];
+
+    /** @var array<string, bool> */
+    private array $pendingToolCalls = [];
+
+    /** @var array<string, ToolCallResult> */
+    private array $completedToolResultsByCallId = [];
+
+    private RunState $state;
+
+    public function __construct(
+        private readonly RunStateReducer $reducer,
+        RunState $existingState,
+    ) {
+        $this->state = new RunState(
+            runId: $existingState->runId,
+            status: RunStatus::Queued,
+            version: $existingState->version,
+            turnNo: 0,
+            lastSeq: 0,
+            pendingHumanInputRequests: $existingState->pendingHumanInputRequests,
+            currentToolCalls: [],
+            model: $existingState->model,
+            parentRunId: $existingState->parentRunId,
+        );
+    }
+
+    public function apply(RunEvent $event): void
+    {
+        $this->state = $this->reducer->applyEventForIncremental(
+            $this->state,
+            $event,
+            $this->messages,
+            $this->pendingToolCalls,
+            $this->completedToolResultsByCallId,
+        );
+    }
+
+    public function snapshot(): RunState
+    {
+        return $this->state->with([
+            'isStreaming' => false,
+            'streamingMessage' => null,
+            'pendingToolCalls' => $this->pendingToolCalls,
+            'messages' => $this->messages,
+        ]);
+    }
+
+    /**
+     * @return array<string, ToolCallResult>
+     */
+    public function completedToolResultsByCallId(): array
+    {
+        return $this->completedToolResultsByCallId;
+    }
+
+    /**
+     * @param array<string, ToolCallResult> $completedToolResultsByCallId
+     */
+    public function restore(RunState $state, array $completedToolResultsByCallId = []): void
+    {
+        $this->state = $state->with([
+            'isStreaming' => false,
+            'streamingMessage' => null,
+        ]);
+        $this->messages = $state->messages;
+        $this->pendingToolCalls = $state->pendingToolCalls;
+        $this->completedToolResultsByCallId = $completedToolResultsByCallId;
     }
 }

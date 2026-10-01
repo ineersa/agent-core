@@ -168,6 +168,7 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
             type: \Ineersa\AgentCore\Domain\Event\RunEventTypeEnum::TurnAdvanced->value,
             payload: ['turn_no' => $turnNo, 'step_id' => 'parent-step'],
         ));
+        self::getContainer()->get(\Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface::class)->rebuildIfStale(RunState::queued($runId), $runId);
     }
 
     /**

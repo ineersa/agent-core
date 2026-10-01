@@ -5,11 +5,12 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Domain\Message;
 
 /**
- * Cross-process cache-invalidation command for canonical events appended
- * outside run_control. Messenger routes it to the sole run_control consumer;
- * RunOrchestrator removes this run from ActiveRunContext, and the next state
- * transition rebuilds it from events.jsonl. It carries no event payload or
- * transition data because the canonical log is the recovery source.
+ * Cross-process hot-cache invalidation for canonical events appended outside
+ * run_control. Side-writers publish the shared disposable RunState projection
+ * before dispatching this command. Messenger routes it to the sole run_control
+ * consumer; RunOrchestrator drops only the process-local hot cache so the next
+ * transition reloads the already-published shared state. It carries no event
+ * payload because the shared projection is the ordinary source.
  */
 final readonly class InvalidateRunContext
 {

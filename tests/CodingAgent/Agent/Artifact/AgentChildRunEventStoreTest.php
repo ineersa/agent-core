@@ -78,7 +78,7 @@ final class AgentChildRunEventStoreTest extends TestCase
 
         $store->append($event);
 
-        $events = $store->allFor($agentRunId);
+        $events = iterator_to_array($store->rangeFor($agentRunId, 1, \PHP_INT_MAX), false);
         $this->assertCount(1, $events);
         $this->assertSame($agentRunId, $events[0]->runId);
         $this->assertSame(1, $events[0]->seq);
@@ -118,7 +118,7 @@ final class AgentChildRunEventStoreTest extends TestCase
         $this->assertSame([1], array_map(static fn (RunEvent $event): int => $event->seq, $events));
     }
 
-    public function testLatestAndReverseReadNewestTailBeforeMalformedPrefix(): void
+    public function testLatestAndReadAfterSeqReadNewestTailBeforeMalformedPrefix(): void
     {
         $parentRunId = 'parent-reverse';
         $agentRunId = 'child-reverse';
@@ -138,17 +138,13 @@ final class AgentChildRunEventStoreTest extends TestCase
 
         $this->assertSame(8, $store->latestSequenceFor($agentRunId));
 
-        $events = [];
-        foreach ($store->reverseFor($agentRunId) as $event) {
-            $events[] = $event->seq;
-            if (2 === \count($events)) {
-                break;
-            }
-        }
-        $this->assertSame([8, 7], $events);
+        // Cursor 7 stops reverse scanning after the tip event, before the
+        // corrupt prefix line is decoded. That preserves the physical
+        // reverse-cursor contract without requiring a full reverse stream API.
+        $this->assertSame([8], array_map(static fn ($event): int => $event->seq, $store->readAfterSeq($agentRunId, 7)));
 
         $this->assertNull($store->latestSequenceFor('other-child'));
-        $this->assertSame([], iterator_to_array($store->reverseFor('other-child')));
+        $this->assertSame([], $store->readAfterSeq('other-child', 0));
     }
 
     public function testLatestSequenceSkipsTrailingIncompatibleRecord(): void
@@ -225,7 +221,7 @@ final class AgentChildRunEventStoreTest extends TestCase
         ));
 
         // Different runId returns empty
-        $events = $store->allFor('different-run');
+        $events = iterator_to_array($store->rangeFor('different-run', 1, \PHP_INT_MAX), false);
         $this->assertCount(0, $events);
     }
 
@@ -251,7 +247,7 @@ final class AgentChildRunEventStoreTest extends TestCase
     public function testAllForReturnsEmptyForMissingEvents(): void
     {
         $store = $this->createStore('parent-x', 'child-x', 'artifact-x');
-        $this->assertCount(0, $store->allFor('child-x'));
+        $this->assertCount(0, iterator_to_array($store->rangeFor('child-x', 1, \PHP_INT_MAX), false));
     }
 
     public function testAppendManyAndRetrieveSorted(): void
@@ -270,7 +266,7 @@ final class AgentChildRunEventStoreTest extends TestCase
 
         $store->appendMany($events);
 
-        $retrieved = $store->allFor($agentRunId);
+        $retrieved = iterator_to_array($store->rangeFor($agentRunId, 1, \PHP_INT_MAX), false);
         $this->assertCount(3, $retrieved);
 
         // Events are sorted by seq
@@ -298,7 +294,7 @@ final class AgentChildRunEventStoreTest extends TestCase
             $this->assertStringContainsString('does not match bound agentRunId', $exception->getMessage());
         }
 
-        $this->assertCount(0, $store->allFor($agentRunId));
+        $this->assertCount(0, iterator_to_array($store->rangeFor($agentRunId, 1, \PHP_INT_MAX), false));
     }
 
     public function testMultipleChildrenDoNotInterfere(): void
@@ -312,10 +308,10 @@ final class AgentChildRunEventStoreTest extends TestCase
         $storeB->append(new RunEvent(runId: 'child-b', seq: 1, turnNo: 0, type: 'run_started'));
 
         // Each store only returns its own events
-        $this->assertCount(1, $storeA->allFor('child-a'));
-        $this->assertCount(0, $storeA->allFor('child-b'));
-        $this->assertCount(1, $storeB->allFor('child-b'));
-        $this->assertCount(0, $storeB->allFor('child-a'));
+        $this->assertCount(1, iterator_to_array($storeA->rangeFor('child-a', 1, \PHP_INT_MAX), false));
+        $this->assertCount(0, iterator_to_array($storeA->rangeFor('child-b', 1, \PHP_INT_MAX), false));
+        $this->assertCount(1, iterator_to_array($storeB->rangeFor('child-b', 1, \PHP_INT_MAX), false));
+        $this->assertCount(0, iterator_to_array($storeB->rangeFor('child-a', 1, \PHP_INT_MAX), false));
     }
 
     // ── Constructor path validation ──────────────────────────────────────
@@ -371,7 +367,7 @@ final class AgentChildRunEventStoreTest extends TestCase
 ', \FILE_APPEND);
         }
 
-        $tail = $store->readAfterSeq(1);
+        $tail = $store->readAfterSeq($agentRunId, 1);
         $this->assertCount(1, $tail);
         $this->assertSame(3, $tail[0]->seq);
         $this->assertSame('turn_advanced', $tail[0]->type);
@@ -396,7 +392,7 @@ final class AgentChildRunEventStoreTest extends TestCase
             file_put_contents($path, json_encode($line, \JSON_THROW_ON_ERROR)."\n", \FILE_APPEND);
         }
 
-        $tail = $store->readAfterSeq(1);
+        $tail = $store->readAfterSeq($agentRunId, 1);
 
         $this->assertSame([4, 9], array_map(static fn (RunEvent $event): int => $event->seq, $tail));
     }
@@ -432,7 +428,7 @@ final class AgentChildRunEventStoreTest extends TestCase
         $this->assertGreaterThan(256 * 1024, $malformedOffset);
         $this->assertLessThanOrEqual(8192, \strlen($content) - $boundaryOffset);
 
-        $tail = $store->readAfterSeq(1997);
+        $tail = $store->readAfterSeq($agentRunId, 1997);
 
         $this->assertSame([1998, 1999, 2000], array_map(static fn (RunEvent $event): int => $event->seq, $tail));
     }
@@ -457,12 +453,12 @@ final class AgentChildRunEventStoreTest extends TestCase
         ], \JSON_THROW_ON_ERROR)."\n", \FILE_APPEND);
         file_put_contents($path, json_encode($normalizer->normalize($agentRunId, 3, 1, 'turn_advanced', ['turn_no' => 1]), \JSON_THROW_ON_ERROR)."\n", \FILE_APPEND);
 
-        $this->assertSame([3], array_map(static fn (RunEvent $event): int => $event->seq, $store->readAfterSeq(1)));
+        $this->assertSame([3], array_map(static fn (RunEvent $event): int => $event->seq, $store->readAfterSeq($agentRunId, 1)));
 
         file_put_contents($path, "{malformed unseen tail}\n", \FILE_APPEND);
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Corrupt event JSONL line');
-        $store->readAfterSeq(1);
+        $store->readAfterSeq($agentRunId, 1);
     }
 
     public function testReadAfterSeqRejectsRunIdMismatch(): void
@@ -481,7 +477,7 @@ final class AgentChildRunEventStoreTest extends TestCase
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('integrity error');
-        $store->readAfterSeq(0);
+        $store->readAfterSeq($agentRunId, 0);
     }
 
     public function testAppendBootstrapsSeqFromExistingEventsJsonl(): void
@@ -499,7 +495,7 @@ final class AgentChildRunEventStoreTest extends TestCase
         $persisted = $store->append(new RunEvent(runId: $agentRunId, seq: 0, turnNo: 1, type: 'agent_end'));
         $this->assertSame(100, $persisted->seq);
 
-        $events = $store->allFor($agentRunId);
+        $events = iterator_to_array($store->rangeFor($agentRunId, 1, \PHP_INT_MAX), false);
         $this->assertSame([99, 100], array_map(static fn (RunEvent $e): int => $e->seq, $events));
     }
 

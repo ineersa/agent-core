@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Pipeline;
 
-use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\History\AppliedShellCommandLookupInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\ApplyShellCommand;
@@ -28,7 +28,7 @@ final readonly class ApplyShellCommandHandler implements RunMessageHandler
 {
     public function __construct(
         private EventFactory $eventFactory,
-        private EventStoreInterface $eventStore,
+        private AppliedShellCommandLookupInterface $appliedShellCommandLookup,
         private NormalizerInterface $normalizer,
     ) {
     }
@@ -45,15 +45,10 @@ final readonly class ApplyShellCommandHandler implements RunMessageHandler
         }
 
         // A committed shell command is a completed command transition even
-        // after its tool lifecycle has ended. Stream newest-first so this
-        // stays bounded in the storage implementations and does not turn
-        // RunState into shell-command history.
-        foreach ($this->eventStore->reverseFor($state->runId) as $event) {
-            if (RunEventTypeEnum::AgentCommandApplied->value === $event->type
-                && 'shell_command' === ($event->payload['kind'] ?? null)
-                && $message->idempotencyKey() === ($event->payload['idempotency_key'] ?? null)) {
-                return new HandlerResult();
-            }
+        // after its tool lifecycle has ended. Shared history projections keep
+        // applied shell idempotency keys so ordinary redelivery stays archive-free.
+        if ($this->appliedShellCommandLookup->hasAppliedShellCommand($state->runId, $message->idempotencyKey())) {
+            return new HandlerResult();
         }
 
         // Direct shells can attach to an active LLM, so currentOperation cannot

@@ -4,13 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Application;
 
-use Ineersa\AgentCore\Domain\Event\RunEvent;
-use Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface;
-use Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Ineersa\CodingAgent\Session\SessionRunEventStore;
+use Ineersa\CodingAgent\Session\Replay\SessionColdReconstructionService;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
 use Ineersa\Tui\Runtime\TuiSessionState;
@@ -38,11 +35,9 @@ final readonly class SessionInitializer
 {
     public function __construct(
         private HatfieldSessionStore $sessionStore,
-        private SessionRunEventStore $eventStore,
         private TranscriptBlockFactory $blockFactory,
         private LoggerInterface $logger,
-        private HistoryProviderInterface $historyProvider,
-        private SessionTranscriptProviderInterface $sessionTranscriptProvider,
+        private SessionColdReconstructionService $coldReconstruction,
     ) {
     }
 
@@ -159,7 +154,11 @@ final readonly class SessionInitializer
         $runId = $state->sessionId;
 
         try {
-            $runEvents = $this->eventStore->allFor($runId);
+            $result = $this->coldReconstruction->reconstruct(
+                runId: $runId,
+                publishSharedState: true,
+                publishHistory: true,
+            );
         } catch (\Throwable $e) {
             // Intentional local degradation: events.jsonl is unreadable.
             // Log the error with sanitised correlation fields so operators
@@ -179,7 +178,7 @@ final readonly class SessionInitializer
             )];
         }
 
-        if ([] === $runEvents) {
+        if (0 === $result->lastSeq) {
             return [$this->blockFactory->system(
                 runId: $runId,
                 text: 'Session '.$runId.' — no messages yet.',
@@ -187,36 +186,15 @@ final readonly class SessionInitializer
             )];
         }
 
-        $maxSourceSeq = 0;
+        $historyAwareBlocks = $result->transcript->transcriptBlocks;
 
-        // Compute the full-stream maximum seq first (for lastSeq correctness).
-        foreach ($runEvents as $runEvent) {
-            if ($runEvent->seq > $maxSourceSeq) {
-                $maxSourceSeq = $runEvent->seq;
-            }
-        }
-
-        // Fail-closed retained-history resume: always use provider + transcript at the
-        // explicit int position (0 = before first / empty). Never fall back to replaying
-        // the full canonical stream — that can resurrect discarded tail content.
-        // Projection/provider failures propagate to outer error handling.
-        $history = $this->historyProvider->forSession($runId);
-        $positionTurnNo = $history->positionTurnNo;
-        $snapshot = $this->sessionTranscriptProvider->transcriptAtPosition(
-            $runId,
-            $positionTurnNo,
-        );
-        $historyAwareBlocks = $snapshot->transcriptBlocks;
-
-        foreach ($snapshot->replayEvents as $runtimeEvent) {
-            $eventApplier->apply($state, $runtimeEvent, replayMode: true);
-        }
+        $this->applyResumeProjection($state, $eventApplier, $result->transcript->resume, $historyAwareBlocks);
 
         // Set lastSeq so the live poller does not re-process replayed events.
         // Always derived from the full canonical stream max, never regressed.
-        $state->lastSeq = $maxSourceSeq;
+        $state->lastSeq = $result->lastSeq;
 
-        if ($state->isShellRun = $this->inferShellOnlySessionFromCanonicalEvents($runEvents)) {
+        if ($state->isShellRun = $result->isShellOnlySession) {
             // Restored for SubmitListener: next normal prompt must start() not follow_up.
         }
 
@@ -232,9 +210,9 @@ final readonly class SessionInitializer
         // When the canonical stream already ended (agent_end) or failed, align
         // replayed activity with the terminal outcome even if retained-history
         // replay stopped before the final agent_end (history position / discard filter).
-        $terminalActivity = $this->inferTerminalActivityFromCanonicalEvents($runEvents);
+        $terminalActivity = $this->terminalActivityFromReason($result->terminalActivityReason);
         if (null !== $terminalActivity
-            && !$this->shouldSuppressTerminalActivityForInProgressCompaction($runEvents)) {
+            && !$result->suppressTerminalActivityForInProgressCompaction) {
             $state->activity = $terminalActivity;
             $state->isCompacting = false;
         }
@@ -251,109 +229,44 @@ final readonly class SessionInitializer
     }
 
     /**
-     * Infer terminal TUI activity from the latest canonical agent_end on the full stream.
-     *
-     * Retained-history replay may omit the terminal agent_end from the position prefix while
-     * the hot RunState (and user expectation) is already cancelled/completed/failed.
-     * Without this, passive resume can leave activity=Idle while SubmitListener later
-     * sets Starting on follow_up, producing a stuck ◐ Working... with no live work.
-     *
-     * @param list<RunEvent> $runEvents
+     * @param list<TranscriptBlock> $transcriptBlocks
      */
-    private function inferTerminalActivityFromCanonicalEvents(array $runEvents): ?RunActivityStateEnum
-    {
-        for ($index = \count($runEvents) - 1; $index >= 0; --$index) {
-            $runEvent = $runEvents[$index];
-            if ('agent_end' !== $runEvent->type) {
-                continue;
-            }
+    private function applyResumeProjection(
+        TuiSessionState $state,
+        TuiRuntimeEventApplier $eventApplier,
+        \Ineersa\CodingAgent\Runtime\Contract\SessionResumeProjectionDTO $resume,
+        array $transcriptBlocks,
+    ): void {
+        $state->usage->inputTokens = $resume->usageInputTokens;
+        $state->usage->outputTokens = $resume->usageOutputTokens;
+        $state->usage->totalCost = $resume->usageTotalCost;
+        $state->usage->latestInputTokens = $resume->usageLatestInputTokens;
+        $state->usage->cacheReadTokens = $resume->usageCacheReadTokens;
+        $state->usage->cacheCreationTokens = $resume->usageCacheCreationTokens;
+        $state->usage->hasCacheTelemetry = $resume->usageHasCacheTelemetry;
+        $state->usage->resetTurnForReplay();
+        $state->queuedUserMessages = $resume->queuedUserMessages;
+        $state->llmRetryWorkingMessage = $resume->llmRetryWorkingMessage;
+        $state->activity = RunActivityStateEnum::tryFrom($resume->activity) ?? RunActivityStateEnum::Idle;
+        $state->isCompacting = $resume->isCompacting;
 
-            $reason = \is_string($runEvent->payload['reason'] ?? null)
-                ? $runEvent->payload['reason']
-                : 'completed';
-
-            return match ($reason) {
-                'cancelled' => RunActivityStateEnum::Cancelled,
-                'failed' => RunActivityStateEnum::Failed,
-                default => RunActivityStateEnum::Completed,
-            };
+        foreach ($resume->subagentProgressSnapshots as $snapshot) {
+            $state->subagentLiveCatalog->ingestSnapshot($snapshot);
         }
 
-        return null;
+        $eventApplier->hydrateProjectedTranscript($transcriptBlocks);
     }
 
-    /**
-     * Passive resume after a turn's agent_end may still have an in-flight compaction
-     * (context_compaction_started without compacted/failed). Inferring terminal
-     * activity from the earlier agent_end would show Completed while attach does not
-     * continue compaction — the passive Compacting→Idle normalization must win.
-     *
-     * @param list<RunEvent> $runEvents
-     */
-    private function shouldSuppressTerminalActivityForInProgressCompaction(array $runEvents): bool
+    private function terminalActivityFromReason(?string $reason): ?RunActivityStateEnum
     {
-        $lastCompactionStartedSeq = null;
-        $lastCompactionTerminalSeq = null;
-        $lastAgentEndSeq = null;
-
-        foreach ($runEvents as $runEvent) {
-            $seq = $runEvent->seq;
-
-            if ('context_compaction_started' === $runEvent->type) {
-                $lastCompactionStartedSeq = $seq;
-            }
-
-            if (\in_array($runEvent->type, ['context_compacted', 'context_compaction_failed'], true)) {
-                $lastCompactionTerminalSeq = null === $lastCompactionTerminalSeq
-                    ? $seq
-                    : max($lastCompactionTerminalSeq, $seq);
-            }
-
-            if ('agent_end' === $runEvent->type) {
-                $lastAgentEndSeq = $seq;
-            }
+        if (null === $reason) {
+            return null;
         }
 
-        if (null === $lastCompactionStartedSeq) {
-            return false;
-        }
-
-        if (null !== $lastCompactionTerminalSeq
-            && $lastCompactionTerminalSeq >= $lastCompactionStartedSeq) {
-            return false;
-        }
-
-        return $lastCompactionStartedSeq >= ($lastAgentEndSeq ?? 0);
-    }
-
-    /**
-     * Detect first-input shell-only sessions from canonical events (no run_started / LLM steps).
-     *
-     * @param list<RunEvent> $runEvents
-     */
-    private function inferShellOnlySessionFromCanonicalEvents(array $runEvents): bool
-    {
-        $hasBashTool = false;
-        $hasLlmConversation = false;
-        $terminalCompleted = false;
-
-        foreach ($runEvents as $runEvent) {
-            $type = $runEvent->type;
-            $payload = $runEvent->payload;
-
-            if ('run_started' === $type || 'llm_step_completed' === $type) {
-                $hasLlmConversation = true;
-            }
-
-            if ('tool_execution_start' === $type && 'bash' === (string) ($payload['tool_name'] ?? '')) {
-                $hasBashTool = true;
-            }
-
-            if ('agent_end' === $type && 'completed' === (string) ($payload['reason'] ?? '')) {
-                $terminalCompleted = true;
-            }
-        }
-
-        return $hasBashTool && !$hasLlmConversation && $terminalCompleted;
+        return match ($reason) {
+            'cancelled' => RunActivityStateEnum::Cancelled,
+            'failed' => RunActivityStateEnum::Failed,
+            default => RunActivityStateEnum::Completed,
+        };
     }
 }

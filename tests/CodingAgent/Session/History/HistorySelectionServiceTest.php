@@ -5,9 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Session\History;
 
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
-use Ineersa\AgentCore\Application\Handler\RunStateDuplicateSequenceReplayException;
-use Ineersa\AgentCore\Application\Handler\RunStateReplayException;
-use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
@@ -17,7 +14,6 @@ use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
-use Ineersa\CodingAgent\Session\History\HistoryProjector;
 use Ineersa\CodingAgent\Session\History\HistorySelectionService;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -63,16 +59,9 @@ final class HistorySelectionServiceTest extends TestCase
 
             public function latestSequenceFor(string $runId): ?int
             {
-                $events = $this->allFor($runId);
+                $events = iterator_to_array($this->rangeFor($runId, 1, \PHP_INT_MAX), false);
 
                 return [] === $events ? null : $events[array_key_last($events)]->seq;
-            }
-
-            public function firstFor(string $runId): ?RunEvent
-            {
-                $events = $this->allFor($runId);
-
-                return $events[0] ?? null;
             }
 
             public function rangeFor(string $runId, int $startSeq, int $endSeq): iterable
@@ -84,14 +73,16 @@ final class HistorySelectionServiceTest extends TestCase
                 }
             }
 
-            public function reverseFor(string $runId): iterable
+            public function readAfterSeq(string $runId, int $cursor): array
             {
-                return [];
-            }
+                $events = [];
+                foreach ($this->rangeFor($runId, 1, \PHP_INT_MAX) as $event) {
+                    if ($event->seq > $cursor) {
+                        $events[] = $event;
+                    }
+                }
 
-            public function allFor(string $runId): array
-            {
-                return $this->events;
+                return $events;
             }
 
             public function append(RunEvent $event): RunEvent
@@ -118,8 +109,58 @@ final class HistorySelectionServiceTest extends TestCase
             }
         };
 
-        $activeRunContext = new TestActiveRunContext();
-        $activeRunContext->remember(new RunState(runId: $runId, status: RunStatus::Running, version: 1, turnNo: 2, lastSeq: 6, model: 'test-model'));
+        $order = [];
+        $innerActive = new TestActiveRunContext();
+        $innerActive->remember(new RunState(runId: $runId, status: RunStatus::Running, version: 1, turnNo: 2, lastSeq: 6, model: 'test-model'));
+        $activeRunContext = new class($innerActive, $order) implements \Ineersa\AgentCore\Contract\ActiveRunContextInterface {
+            /** @param list<string> $order */
+            public function __construct(
+                private TestActiveRunContext $inner,
+                private array &$order,
+            ) {
+            }
+
+            public function stateFor(string $runId): RunState
+            {
+                return $this->inner->stateFor($runId);
+            }
+
+            public function remember(RunState $state): void
+            {
+                $this->inner->remember($state);
+            }
+
+            public function initializeQueued(string $runId): RunState
+            {
+                return $this->inner->initializeQueued($runId);
+            }
+
+            public function initialize(RunState $state): void
+            {
+                $this->inner->initialize($state);
+            }
+
+            public function applyCommittedSuffix(string $runId, array $events, callable $advance): RunState
+            {
+                return $this->inner->applyCommittedSuffix($runId, $events, $advance);
+            }
+
+            public function invalidate(string $runId): void
+            {
+                $this->inner->invalidate($runId);
+            }
+
+            public function withdrawForCommit(string $runId): void
+            {
+                $this->order[] = 'withdraw';
+                $this->inner->withdrawForCommit($runId);
+            }
+
+            public function clear(): void
+            {
+                $this->inner->clear();
+            }
+        };
         $commandBus = new TestMessageBus();
 
         $rebuilder = $this->createMock(RunStateRebuilderInterface::class);
@@ -128,14 +169,15 @@ final class HistorySelectionServiceTest extends TestCase
             ->with($this->anything(), $runId, 0)
             ->willReturn(\Ineersa\AgentCore\Application\Dto\RunStateReplayResult::rebuilt(new RunState(runId: $runId, status: RunStatus::Running)));
 
+        $projectionStore = new InMemoryHistoryProjectionStore();
+        $projectionStore->seedFromEvents($runId, $events);
         $service = new HistorySelectionService(
             eventStore: $eventStore,
             runStateRebuilder: $rebuilder,
             activeRunContext: $activeRunContext,
             lockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
             logger: new NullLogger(),
-            historyProjector: new HistoryProjector(),
-            replayEventPreparer: new ReplayEventPreparer(),
+            historyProjectionStore: $projectionStore,
             commandBus: $commandBus,
         );
 
@@ -143,6 +185,8 @@ final class HistorySelectionServiceTest extends TestCase
         $this->assertSame(0, $result['rebuiltState']->turnNo);
         $this->assertSame(1, $result['selectedPromptTurnNo']);
         $this->assertSame('First prompt', $result['editorPromptText']);
+        $this->assertSame(['withdraw'], $order); // append happens after withdraw under the same lock
+        $this->assertTrue($projectionStore->get($runId)->ready);
         $this->assertCount(1, $appended);
         $this->assertSame(RunEventTypeEnum::HistoryPositionSet->value, $appended[0]->type);
         $this->assertSame(0, $appended[0]->payload['position_turn_no']);
@@ -200,16 +244,9 @@ final class HistorySelectionServiceTest extends TestCase
 
             public function latestSequenceFor(string $runId): ?int
             {
-                $events = $this->allFor($runId);
+                $events = iterator_to_array($this->rangeFor($runId, 1, \PHP_INT_MAX), false);
 
                 return [] === $events ? null : $events[array_key_last($events)]->seq;
-            }
-
-            public function firstFor(string $runId): ?RunEvent
-            {
-                $events = $this->allFor($runId);
-
-                return $events[0] ?? null;
             }
 
             public function rangeFor(string $runId, int $startSeq, int $endSeq): iterable
@@ -221,14 +258,16 @@ final class HistorySelectionServiceTest extends TestCase
                 }
             }
 
-            public function reverseFor(string $runId): iterable
+            public function readAfterSeq(string $runId, int $cursor): array
             {
-                return [];
-            }
+                $events = [];
+                foreach ($this->rangeFor($runId, 1, \PHP_INT_MAX) as $event) {
+                    if ($event->seq > $cursor) {
+                        $events[] = $event;
+                    }
+                }
 
-            public function allFor(string $runId): array
-            {
-                return $this->events;
+                return $events;
             }
 
             public function append(RunEvent $event): RunEvent
@@ -265,14 +304,15 @@ final class HistorySelectionServiceTest extends TestCase
             ->with($this->anything(), $runId, 1)
             ->willReturn(\Ineersa\AgentCore\Application\Dto\RunStateReplayResult::rebuilt(new RunState(runId: $runId, status: RunStatus::Running)));
 
+        $projectionStore = new InMemoryHistoryProjectionStore();
+        $projectionStore->seedFromEvents($runId, $events);
         $service = new HistorySelectionService(
             eventStore: $eventStore,
             runStateRebuilder: $rebuilder,
             activeRunContext: $activeRunContext,
             lockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
             logger: new NullLogger(),
-            historyProjector: new HistoryProjector(),
-            replayEventPreparer: new ReplayEventPreparer(),
+            historyProjectionStore: $projectionStore,
             commandBus: $commandBus,
         );
 
@@ -320,16 +360,9 @@ final class HistorySelectionServiceTest extends TestCase
 
             public function latestSequenceFor(string $runId): ?int
             {
-                $events = $this->allFor($runId);
+                $events = iterator_to_array($this->rangeFor($runId, 1, \PHP_INT_MAX), false);
 
                 return [] === $events ? null : $events[array_key_last($events)]->seq;
-            }
-
-            public function firstFor(string $runId): ?RunEvent
-            {
-                $events = $this->allFor($runId);
-
-                return $events[0] ?? null;
             }
 
             public function rangeFor(string $runId, int $startSeq, int $endSeq): iterable
@@ -341,14 +374,16 @@ final class HistorySelectionServiceTest extends TestCase
                 }
             }
 
-            public function reverseFor(string $runId): iterable
+            public function readAfterSeq(string $runId, int $cursor): array
             {
-                return [];
-            }
+                $events = [];
+                foreach ($this->rangeFor($runId, 1, \PHP_INT_MAX) as $event) {
+                    if ($event->seq > $cursor) {
+                        $events[] = $event;
+                    }
+                }
 
-            public function allFor(string $runId): array
-            {
-                return $this->events;
+                return $events;
             }
 
             public function append(RunEvent $event): RunEvent
@@ -365,14 +400,18 @@ final class HistorySelectionServiceTest extends TestCase
         $activeRunContext = new TestActiveRunContext();
         $activeRunContext->remember(new RunState(runId: $runId, status: RunStatus::Running, version: 1, turnNo: 3, lastSeq: 5, model: 'test-model'));
 
+        $rebuilder = $this->createMock(RunStateRebuilderInterface::class);
+        $rebuilder->expects($this->never())->method('rebuildAtPosition');
+
+        $projectionStore = new InMemoryHistoryProjectionStore();
+        $projectionStore->seedFromEvents($runId, $events);
         $service = new HistorySelectionService(
             eventStore: $eventStore,
-            runStateRebuilder: $this->createStub(RunStateRebuilderInterface::class),
+            runStateRebuilder: $rebuilder,
             activeRunContext: $activeRunContext,
             lockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
             logger: new NullLogger(),
-            historyProjector: new HistoryProjector(),
-            replayEventPreparer: new ReplayEventPreparer(),
+            historyProjectionStore: $projectionStore,
             commandBus: new TestMessageBus(),
         );
 
@@ -398,78 +437,10 @@ final class HistorySelectionServiceTest extends TestCase
             ]),
         ];
 
-        $eventStore = new class($events) implements EventStoreInterface {
-            /** @param list<RunEvent> $events */
-            public function __construct(private array $events)
-            {
-            }
-
-            public function latestSequenceFor(string $runId): ?int
-            {
-                $events = $this->allFor($runId);
-
-                return [] === $events ? null : $events[array_key_last($events)]->seq;
-            }
-
-            public function firstFor(string $runId): ?RunEvent
-            {
-                $events = $this->allFor($runId);
-
-                return $events[0] ?? null;
-            }
-
-            public function rangeFor(string $runId, int $startSeq, int $endSeq): iterable
-            {
-                foreach ($this->events as $event) {
-                    if ($event->seq >= $startSeq && $event->seq <= $endSeq) {
-                        yield $event;
-                    }
-                }
-            }
-
-            public function reverseFor(string $runId): iterable
-            {
-                return [];
-            }
-
-            public function allFor(string $runId): array
-            {
-                return $this->events;
-            }
-
-            public function append(RunEvent $event): RunEvent
-            {
-                throw new \LogicException('not expected');
-            }
-
-            public function appendMany(array $events): array
-            {
-                throw new \LogicException('not expected');
-            }
-        };
-
-        $activeRunContext = new TestActiveRunContext();
-        $activeRunContext->remember(new RunState(runId: $runId, status: RunStatus::Running, version: 1, turnNo: 1, lastSeq: 2, model: 'test-model'));
-
-        $rebuilder = $this->createMock(RunStateRebuilderInterface::class);
-        $rebuilder->expects($this->never())->method('rebuildAtPosition');
-
-        $service = new HistorySelectionService(
-            eventStore: $eventStore,
-            runStateRebuilder: $rebuilder,
-            activeRunContext: $activeRunContext,
-            lockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
-            logger: new NullLogger(),
-            historyProjector: new HistoryProjector(),
-            replayEventPreparer: new ReplayEventPreparer(),
-            commandBus: new TestMessageBus(),
-        );
-
-        try {
-            $service->selectPrompt($runId, 1);
-            $this->fail('Expected RunStateReplayException');
-        } catch (RunStateReplayException $exception) {
-            $this->assertInstanceOf(RunStateDuplicateSequenceReplayException::class, $exception);
-        }
+        $projectionStore = new InMemoryHistoryProjectionStore();
+        // Duplicate detection belongs to cold reconstruction (no append / no selectPrompt).
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('duplicate sequence 2');
+        $projectionStore->initializeFromEvents($runId, $events);
     }
 }

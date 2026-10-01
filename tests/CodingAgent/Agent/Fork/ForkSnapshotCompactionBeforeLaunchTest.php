@@ -4,14 +4,13 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Fork;
 
-use Ineersa\AgentCore\Application\Dto\RunStateReplayResult;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
+use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
 use Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
-use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -44,6 +43,8 @@ final class ForkSnapshotCompactionBeforeLaunchTest extends PerMethodIsolatedKern
     public function testSanitizedSnapshotIsCompactedBeforeLaunchParentUnchangedAndHandoffUsesCompactedMessages(): void
     {
         $parentRunId = 'parent-fork-snapshot-order-1';
+        self::getContainer()->get(\Ineersa\CodingAgent\Session\History\HistoryProjectionStoreInterface::class)
+            ->initializeFromEvents($parentRunId, []);
         $toolCallId = 'call-fork-snapshot-order-1';
         $marker = 'FORK_SNAPSHOT_COMPACTED_SUMMARY_MARKER';
 
@@ -68,11 +69,11 @@ final class ForkSnapshotCompactionBeforeLaunchTest extends PerMethodIsolatedKern
         );
         $parentHashBefore = $this->hashMessages($parentState->messages);
 
-        $runStateRebuilder = $this->createMock(RunStateRebuilderInterface::class);
-        $runStateRebuilder->expects($this->once())
-            ->method('rebuildIfStale')
-            ->with(RunState::queued($parentRunId), $parentRunId)
-            ->willReturn(RunStateReplayResult::rebuilt($parentState));
+        $activeRunContext = $this->createMock(ActiveRunContextInterface::class);
+        $activeRunContext->expects($this->once())
+            ->method('stateFor')
+            ->with($parentRunId)
+            ->willReturn($parentState);
 
         $compactCalls = 0;
         $compactedMessages = [
@@ -143,12 +144,11 @@ final class ForkSnapshotCompactionBeforeLaunchTest extends PerMethodIsolatedKern
         $container->set(CompactionServiceInterface::class, $compaction);
         $container->set(AgentRunnerInterface::class, $agentRunner);
 
-        // Pass the canonical replay result explicitly so this boundary cannot
-        // accidentally fall back to a stale secondary snapshot.
+        // Parent state comes from ActiveRunContext; no archive rebuild on fork launch.
         $forkExecution = new ForkExecutionService(
             $container->get(DeferredSubagentBatchLaunchService::class),
             $container->get(RunRelationshipReader::class),
-            $runStateRebuilder,
+            $activeRunContext,
             $container->get(ForkSnapshotSanitizer::class),
             $compaction,
         );
@@ -160,7 +160,7 @@ final class ForkSnapshotCompactionBeforeLaunchTest extends PerMethodIsolatedKern
 
         $this->assertInstanceOf(DeferredToolCompletionOutcome::class, $outcome);
         $this->assertSame(1, $compactCalls);
-        // The replay mock assertion above proves the fork uses the canonical boundary once.
+        // The ActiveRunContext mock assertion above proves fork uses maintained parent state.
 
         $this->assertSame($parentHashBefore, $this->hashMessages($parentState->messages), 'Canonical replay state must be byte-stable');
         $this->assertSame(RunStatus::Running, $parentState->status);
@@ -272,6 +272,7 @@ final class ForkSnapshotCompactionBeforeLaunchTest extends PerMethodIsolatedKern
                 ],
             ],
         ));
+        self::getContainer()->get(\Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface::class)->rebuildIfStale(RunState::queued($runId), $runId);
     }
 
     /**

@@ -16,6 +16,34 @@ metrics defined in Datadog.
 - Never log raw prompts, tool output, env secrets, API keys, or full session content.
 - Logging and application work never depend on Datadog. No Datadog client, transport, or buffer runs in the application.
 
+### Process memory samples
+
+`LogContextProcessor` adds sampler fields on every record:
+
+- `sampler_pid`: process that produced the memory sample
+- `pid`: process identity field with historical ambient merge rules
+- `memory_usage`: live PHP bytes (`memory_get_usage(false)`)
+- `memory_allocated`: allocator-reserved bytes (`memory_get_usage(true)`)
+- `memory_peak`: peak allocator-reserved bytes
+- `memory_limit`: current `memory_limit` ini value
+
+Use `sampler_pid` for heap attribution. Ambient `pid` can still name a foreign
+worker or controller identity after the historical merge rules run. Treat
+`memory_peak` as a lifetime high-water mark, not a steady-growth signal.
+
+Lifecycle checkpoints use message `process.memory.checkpoint` with
+`event_type` values such as `session_cold_reconstruction.completed`,
+`tui.resume.mounted`, `compaction.retention.applied`, `tui.activity.terminal`,
+`tui.compaction.settled`, `tui.memory.idle`, and `tui.session.shutdown`. Those
+records carry scalar counts only (block/kind/text-byte totals, seq, retention
+floor id). TUI checkpoints label retained parent transcript counts with
+`transcript_scope: parent`, plus `visible_run_id` and `live_child_view`. Boundary
+samples use `checkpoint_phase: pre_next_frame`. The one-shot idle sample uses
+`checkpoint_phase: next_tick_after_boundary` after a live terminal or compaction
+boundary, or `checkpoint_phase: next_tick_after_resume_mount` when an already
+idle or terminal resume never crosses a live boundary.
+They need `logging.level: info`.
+
 ## Castor helpers
 
 ```bash

@@ -7,7 +7,6 @@ namespace Ineersa\CodingAgent\Tests\Compaction;
 use Ineersa\AgentCore\Contract\Compaction\CompactionPrepareResult;
 use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
 use Ineersa\AgentCore\Contract\Compaction\CompactResult;
-use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Model\RunModelResolverInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -21,6 +20,7 @@ use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Compaction\AutoCompactionHookSubscriber;
 use Ineersa\CodingAgent\Compaction\ProviderContextUsageResolver;
 use Ineersa\CodingAgent\Config\CompactionConfig;
+use Ineersa\CodingAgent\Tests\Session\History\InMemoryHistoryProjectionStore;
 use Ineersa\CodingAgent\Tests\Support\StubRunRelationshipReader;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\TestCase;
@@ -37,8 +37,8 @@ use PHPUnit\Framework\TestCase;
 final class AutoCompactionHookSubscriberTest extends TestCase
 {
     private AutoCompactionHookSubscriber $subscriber;
-    /** @var EventStoreInterface&\PHPUnit\Framework\MockObject\MockObject */
-    private $eventStore;
+    private InMemoryHistoryProjectionStore $historyStore;
+
     private ProviderContextUsageResolver $providerUsageResolver;
     private RunState $committedRunState;
     private CompactionConfig $compactionConfig;
@@ -51,9 +51,9 @@ final class AutoCompactionHookSubscriberTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->eventStore = $this->createMock(EventStoreInterface::class);
         $this->committedRunState = $this->createRunState();
-        $this->providerUsageResolver = new ProviderContextUsageResolver($this->eventStore);
+        $this->historyStore = new InMemoryHistoryProjectionStore();
+        $this->providerUsageResolver = new ProviderContextUsageResolver($this->historyStore);
         $this->compactionConfig = new CompactionConfig(
             autoEnabled: true,
             compactAfterTokens: 11000,
@@ -81,7 +81,6 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             ));
         $this->commandBus = new TestMessageBus();
         // Parent by default: known top-level operational relationship.
-        // Provider usage stays on the separate $this->eventStore mock.
         $this->metadataReader = StubRunRelationshipReader::topLevel('run-1');
 
         $this->subscriber = new AutoCompactionHookSubscriber(
@@ -1054,34 +1053,6 @@ final class AutoCompactionHookSubscriberTest extends TestCase
     public function testSkipsDispatchForAgentChildRunAboveThreshold(): void
     {
         $this->modelResolver->method('resolveActiveModel')->willReturn(null);
-
-        // Metadata reader uses its own event store with RunStarted child shape.
-        // Provider usage resolver keeps the shared eventStore mock for threshold.
-        $childEventStore = $this->createMock(EventStoreInterface::class);
-        $childEventStore->method('firstFor')->willReturn(new RunEvent(
-            runId: 'run-1',
-            seq: 1,
-            turnNo: 0,
-            type: RunEventTypeEnum::RunStarted->value,
-            payload: [
-                'step_id' => 'start-1',
-                'payload' => [
-                    'system_prompt' => 'child',
-                    'messages' => [],
-                    'metadata' => [
-                        'session' => [
-                            'kind' => 'agent_child',
-                            'parent_run_id' => 'parent-1',
-                            'agent_name' => 'scout',
-                            'artifact_id' => 'agent_child1',
-                        ],
-                        'model' => 'deepseek/deepseek-v4-flash',
-                        'reasoning' => 'medium',
-                        'tools_scope' => ['allowed_tools' => []],
-                    ],
-                ],
-            ],
-        ));
         // createHookContext() defaults to run-1; classify that run as a child.
         $childReader = StubRunRelationshipReader::child('run-1', 'parent-1');
 
@@ -1115,7 +1086,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
      */
     private function stubChronologicalEvents(array $events): void
     {
-        $this->eventStore->method('reverseFor')->willReturn(array_reverse($events));
+        $this->historyStore->initializeFromEvents('run-1', $events);
     }
 
     private function createRunState(

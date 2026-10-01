@@ -72,7 +72,7 @@ final readonly class DeferredSubagentBatchRecoveryService
 
             $cursor = $childEntity->childEventCursor;
             $childStore = $this->childEventStoreFactory->create($batch->parentRunId, $child->childRunId, $child->artifactId);
-            $tailEvents = $childStore->readAfterSeq($cursor);
+            $tailEvents = $childStore->readAfterSeq($child->childRunId, $cursor);
 
             if ([] === $tailEvents) {
                 continue;

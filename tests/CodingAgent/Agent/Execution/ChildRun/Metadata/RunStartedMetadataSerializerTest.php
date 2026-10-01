@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\CodingAgent\Agent\Execution\RunStartedMetadataReader;
 use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedMetadataDTO;
+use Ineersa\CodingAgent\Tests\Support\RunStartedMetadataReaderTestFactory;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Serializer\Exception\ExceptionInterface as SerializerExceptionInterface;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
@@ -241,7 +242,7 @@ final class RunStartedMetadataSerializerTest extends TestCase
             createdAt: new \DateTimeImmutable(),
         ));
 
-        $reader = new RunStartedMetadataReader($store, $this->denormalizer);
+        $reader = RunStartedMetadataReaderTestFactory::fromEventStore($store, $runId);
         $this->assertSame(['bash'], $reader->readAllowedTools($runId));
         $this->assertSame([], $reader->readAllowedExtensions($runId));
 
@@ -255,7 +256,9 @@ final class RunStartedMetadataSerializerTest extends TestCase
 
     public function testMissingRunStartedReturnsNullLaunchMetadata(): void
     {
-        $reader = new RunStartedMetadataReader(new InMemoryEventStore(), $this->denormalizer);
+        $history = new \Ineersa\CodingAgent\Tests\Session\History\InMemoryHistoryProjectionStore();
+        $history->initializeFromEvents('missing', []);
+        $reader = new RunStartedMetadataReader($history);
         $this->assertNull($reader->readRunStartedMetadata('missing'));
         $this->assertNull($reader->readAllowedTools('missing'));
         $this->assertNull($reader->readAllowedExtensions('missing'));

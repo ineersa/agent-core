@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Session\History;
 
+use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\History\HistoryTailDiscardInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
@@ -24,6 +26,9 @@ use Psr\Log\LoggerInterface;
  * Shared choke point used by RunMessageProcessor before handlers run.
  * An actual discard also clears Astra reasoning_baseline so transitions
  * anchored on discarded forward history cannot suppress the selected effort.
+ *
+ * Ordinary runtime uses the shared history projection; it does not scan the
+ * archive on every AdvanceRun.
  */
 final readonly class HistoryTailDiscardService implements HistoryTailDiscardInterface
 {
@@ -36,9 +41,11 @@ final readonly class HistoryTailDiscardService implements HistoryTailDiscardInte
 
     public function __construct(
         private EventStoreInterface $eventStore,
-        private HistoryProjector $projector,
+        private HistoryProjectionStoreInterface $historyProjectionStore,
         private HatfieldSessionStore $sessionMetadataStore,
         private LoggerInterface $logger,
+        private ActiveRunContextInterface $activeRunContext,
+        private RunLockManager $runLockManager,
     ) {
     }
 
@@ -63,55 +70,104 @@ final readonly class HistoryTailDiscardService implements HistoryTailDiscardInte
      */
     public function discardForwardTailIfNeeded(string $runId, RunState $state): array
     {
-        // ponytail: full event-log rebuild O(n) per mutate-behind-tip; cache tip/active if discard checks become hot.
-        $events = $this->eventStore->allFor($runId);
-        if ([] === $events) {
-            return ['discarded' => false, 'lastSeq' => $state->lastSeq];
-        }
+        return $this->runLockManager->synchronized($runId, function () use ($runId, $state): array {
+            $snapshot = $this->historyProjectionStore->get($runId);
+            $active = $snapshot->history->retainedTurnNos;
+            if ([] === $active) {
+                return ['discarded' => false, 'lastSeq' => $state->lastSeq];
+            }
 
-        $history = $this->projector->build($events);
-        $active = $history->retainedTurnNos;
-        if ([] === $active) {
-            return ['discarded' => false, 'lastSeq' => $state->lastSeq];
-        }
+            // Invalid / non-retained current state must not fabricate a discard.
+            $tip = $state->turnNo;
+            if (0 !== $tip && !\in_array($tip, $active, true)) {
+                return ['discarded' => false, 'lastSeq' => $state->lastSeq];
+            }
 
-        // Invalid / non-retained current state must not fabricate a discard.
-        $tip = $state->turnNo;
-        if (0 !== $tip && !\in_array($tip, $active, true)) {
-            return ['discarded' => false, 'lastSeq' => $state->lastSeq];
-        }
+            $orderedTip = $active[array_key_last($active)];
+            if ($tip >= $orderedTip) {
+                return ['discarded' => false, 'lastSeq' => $state->lastSeq];
+            }
 
-        $orderedTip = $active[array_key_last($active)];
-        if ($tip >= $orderedTip) {
-            return ['discarded' => false, 'lastSeq' => $state->lastSeq];
-        }
+            $discardEvent = new RunEvent(
+                runId: $runId,
+                seq: 0,
+                turnNo: max(0, $tip),
+                type: RunEventTypeEnum::HistoryTailDiscarded->value,
+                payload: [
+                    'after_turn_no' => $tip,
+                    'reason' => 'mutate_behind_tip',
+                ],
+                createdAt: new \DateTimeImmutable(),
+            );
 
-        $discardEvent = new RunEvent(
-            runId: $runId,
-            seq: 0,
-            turnNo: max(0, $tip),
-            type: RunEventTypeEnum::HistoryTailDiscarded->value,
-            payload: [
+            // Withdraw readiness before the durable append so a crash cannot leave
+            // jointly stale projections marked ready past the unread event.
+            $this->activeRunContext->withdrawForCommit($runId);
+            $persisted = $this->eventStore->append($discardEvent);
+
+            $updatedHistory = $this->applyDiscardToHistory($snapshot->history, $tip);
+            $inspectionBuilder = HistoryStreamBuilder::fromSnapshot($snapshot);
+            $inspectionBuilder->apply($persisted);
+            $inspectionSnapshot = $inspectionBuilder->finishSnapshot($persisted->seq);
+            $this->historyProjectionStore->remember(
+                $runId,
+                new HistoryProjectionSnapshot(
+                    history: $updatedHistory,
+                    lastSeq: $persisted->seq,
+                    initialPrompt: null,
+                    pendingHumanPrompt: null,
+                    ready: true,
+                    eventCount: $inspectionSnapshot->eventCount,
+                    sanitizedEventTail: $inspectionSnapshot->sanitizedEventTail,
+                    eligibleAutoCompactionInputTokens: $inspectionSnapshot->eligibleAutoCompactionInputTokens,
+                    issuedReminderKeys: $inspectionSnapshot->issuedReminderKeys,
+                    appliedShellIdempotencyKeys: $inspectionSnapshot->appliedShellIdempotencyKeys,
+                    runStartedLaunch: $inspectionSnapshot->runStartedLaunch,
+                ),
+            );
+
+            // Drop transitions keyed to the discarded forward tail so the next
+            // request re-establishes the still-selected effort as baseline.
+            $this->sessionMetadataStore->resetReasoningBaseline($runId);
+
+            $this->logger->info('history_tail_discarded.appended', [
+                'run_id' => $runId,
                 'after_turn_no' => $tip,
-                'reason' => 'mutate_behind_tip',
-            ],
-            createdAt: new \DateTimeImmutable(),
+                'discard_seq' => $persisted->seq,
+                'component' => 'history',
+                'event_type' => 'history_tail_discarded',
+            ]);
+
+            return ['discarded' => true, 'lastSeq' => $persisted->seq];
+        });
+    }
+
+    private function applyDiscardToHistory(HistoryDTO $history, int $afterTurnNo): HistoryDTO
+    {
+        $retainedTurnNos = array_values(array_filter(
+            $history->retainedTurnNos,
+            static fn (int $t): bool => $t <= $afterTurnNo,
+        ));
+        $promptsByTurnNo = [];
+        foreach ($history->promptsByTurnNo as $promptTurn => $text) {
+            if (\in_array($promptTurn, $retainedTurnNos, true)) {
+                $promptsByTurnNo[$promptTurn] = $text;
+            }
+        }
+
+        $positionTurnNo = $history->positionTurnNo;
+        if (0 === $afterTurnNo || [] === $retainedTurnNos) {
+            $positionTurnNo = 0;
+        } elseif (\in_array($afterTurnNo, $retainedTurnNos, true)) {
+            $positionTurnNo = $afterTurnNo;
+        } elseif ($positionTurnNo > $afterTurnNo) {
+            $positionTurnNo = $retainedTurnNos[array_key_last($retainedTurnNos)];
+        }
+
+        return new HistoryDTO(
+            retainedTurnNos: $retainedTurnNos,
+            promptsByTurnNo: $promptsByTurnNo,
+            positionTurnNo: $positionTurnNo,
         );
-
-        $persisted = $this->eventStore->append($discardEvent);
-
-        // Drop transitions keyed to the discarded forward tail so the next
-        // request re-establishes the still-selected effort as baseline.
-        $this->sessionMetadataStore->resetReasoningBaseline($runId);
-
-        $this->logger->info('history_tail_discarded.appended', [
-            'run_id' => $runId,
-            'after_turn_no' => $tip,
-            'discard_seq' => $persisted->seq,
-            'component' => 'history',
-            'event_type' => 'history_tail_discarded',
-        ]);
-
-        return ['discarded' => true, 'lastSeq' => $persisted->seq];
     }
 }

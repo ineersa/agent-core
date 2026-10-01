@@ -68,7 +68,8 @@ final class InProcessAgentSessionClientEventsTest extends IsolatedKernelTestCase
         $this->assertSame([0, 4], array_map(static fn (RuntimeEvent $event): int => $event->seq, $events));
         $this->assertSame(RuntimeEventTypeEnum::AssistantTextDelta->value, $events[0]->type);
         $this->assertSame(RuntimeEventTypeEnum::TurnStarted->value, $events[1]->type);
-        $this->assertSame(1, self::$eventStore->reverseForCalls);
+        $this->assertSame(1, self::$eventStore->readAfterSeqCalls);
+        // Physical suffix reads stop once the cursor is reached.
         $this->assertSame(0, self::$eventStore->allForCalls);
     }
 
@@ -108,7 +109,7 @@ final class InProcessAgentSessionClientEventsTest extends IsolatedKernelTestCase
         $unseen = iterator_to_array($this->client()->events(self::RUN_ID, 1997));
 
         $this->assertSame([1998, 1999, 2000], array_map(static fn (RuntimeEvent $event): int => $event->seq, $unseen));
-        $this->assertSame(4, self::$eventStore->reverseForYieldedEvents);
+        $this->assertSame(1, self::$eventStore->readAfterSeqCalls);
         $this->assertSame(0, self::$eventStore->allForCalls);
     }
 
@@ -189,14 +190,37 @@ final class InProcessAgentSessionClientEventsTest extends IsolatedKernelTestCase
                 {
                 }
 
+                public function initializeQueued(string $runId): RunState
+                {
+                    return RunState::queued($runId);
+                }
+
+                public function initialize(RunState $state): void
+                {
+                }
+
+                /**
+                 * @param list<RunEvent> $events
+                 */
+                public function applyCommittedSuffix(string $runId, array $events, callable $advance): RunState
+                {
+                    return $advance($this->stateFor($runId), $events);
+                }
+
                 public function invalidate(string $runId): void
                 {
+                }
+
+                public function withdrawForCommit(string $runId): void
+                {
+                    $this->invalidate($runId);
                 }
 
                 public function clear(): void
                 {
                 }
             },
+            runStateRebuilder: $this->createStub(\Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface::class),
         );
     }
 }
@@ -208,9 +232,7 @@ final class ReverseOnlyEventStore implements EventStoreInterface
 {
     public int $allForCalls = 0;
 
-    public int $reverseForCalls = 0;
-
-    public int $reverseForYieldedEvents = 0;
+    public int $readAfterSeqCalls = 0;
 
     /** @var list<RunEvent> */
     private array $events = [];
@@ -220,8 +242,7 @@ final class ReverseOnlyEventStore implements EventStoreInterface
     {
         $this->events = $events;
         $this->allForCalls = 0;
-        $this->reverseForCalls = 0;
-        $this->reverseForYieldedEvents = 0;
+        $this->readAfterSeqCalls = 0;
     }
 
     public function append(RunEvent $event): RunEvent
@@ -242,22 +263,12 @@ final class ReverseOnlyEventStore implements EventStoreInterface
 
     public function latestSequenceFor(string $runId): ?int
     {
-        foreach ($this->reverseFor($runId) as $event) {
-            return $event->seq;
+        $latest = null;
+        foreach ($this->rangeFor($runId, 1, \PHP_INT_MAX) as $event) {
+            $latest = $event->seq;
         }
 
-        return null;
-    }
-
-    public function firstFor(string $runId): ?RunEvent
-    {
-        foreach ($this->events as $event) {
-            if ($event->runId === $runId) {
-                return $event;
-            }
-        }
-
-        return null;
+        return $latest;
     }
 
     public function rangeFor(string $runId, int $startSeq, int $endSeq): iterable
@@ -269,21 +280,16 @@ final class ReverseOnlyEventStore implements EventStoreInterface
         }
     }
 
-    public function reverseFor(string $runId): iterable
+    public function readAfterSeq(string $runId, int $cursor): array
     {
-        ++$this->reverseForCalls;
-        for ($index = \count($this->events) - 1; $index >= 0; --$index) {
-            if ($this->events[$index]->runId === $runId) {
-                ++$this->reverseForYieldedEvents;
-                yield $this->events[$index];
+        ++$this->readAfterSeqCalls;
+        $events = [];
+        foreach ($this->rangeFor($runId, 1, \PHP_INT_MAX) as $event) {
+            if ($event->seq > $cursor) {
+                $events[] = $event;
             }
         }
-    }
 
-    public function allFor(string $runId): array
-    {
-        ++$this->allForCalls;
-
-        throw new \LogicException('InProcessAgentSessionClient must use reverseFor().');
+        return $events;
     }
 }

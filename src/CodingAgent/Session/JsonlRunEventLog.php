@@ -17,10 +17,9 @@ use Symfony\Component\Lock\LockFactory;
  * {@see AgentChildRunEventStore}: per-run Symfony lock acquisition/release,
  * sequence allocation with bootstrap, persisted RunEvent reconstruction,
  * canonical normalize+encode+append, JSON line decoding, denormalization,
- * the schema-major compatibility check, and seq sorting.
+ * and the schema-major compatibility check.
  *
- * Callers keep their own read/cache/logging/validation policies (whole-file
- * vs streaming reads, size+mtime caching, per-store exception/log messages).
+ * Callers keep their streaming read, validation, and diagnostic policies.
  * The only policy hook is the optional successful-write callback used by
  * SessionRunEventStore for cache invalidation.
  *
@@ -155,18 +154,6 @@ final class JsonlRunEventLog
         $candidateMajor = explode('.', $schemaVersion, 2)[0];
 
         return '' !== $candidateMajor && $candidateMajor !== $expectedMajor;
-    }
-
-    /**
-     * @param list<RunEvent> $events
-     *
-     * @return list<RunEvent>
-     */
-    public function sortBySeq(array $events): array
-    {
-        usort($events, static fn (RunEvent $left, RunEvent $right): int => $left->seq <=> $right->seq);
-
-        return $events;
     }
 
     private function withSeq(RunEvent $event, int $seq): RunEvent

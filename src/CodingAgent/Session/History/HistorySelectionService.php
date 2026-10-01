@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Session\History;
 
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
-use Ineersa\AgentCore\Application\Handler\RunStateDuplicateSequenceReplayException;
-use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\History\HistorySelectionServiceInterface;
@@ -38,8 +36,7 @@ final readonly class HistorySelectionService implements HistorySelectionServiceI
         private ActiveRunContextInterface $activeRunContext,
         private RunLockManager $lockManager,
         private LoggerInterface $logger,
-        private HistoryProjector $historyProjector,
-        private ReplayEventPreparer $replayEventPreparer,
+        private HistoryProjectionStoreInterface $historyProjectionStore,
         private MessageBusInterface $commandBus,
     ) {
     }
@@ -47,29 +44,22 @@ final readonly class HistorySelectionService implements HistorySelectionServiceI
     /**
      * @return array{rebuiltState: RunState, positionEventSeq: int, selectedPromptTurnNo: int, editorPromptText: string}
      *
-     * @throws RunStateDuplicateSequenceReplayException
      * @throws \RuntimeException
      */
     public function selectPrompt(string $runId, int $targetPromptTurnNo): array
     {
         return $this->lockManager->synchronized($runId, function () use ($runId, $targetPromptTurnNo): array {
-            $events = $this->eventStore->allFor($runId);
-
-            if ([] === $events) {
+            $snapshot = $this->historyProjectionStore->get($runId);
+            $history = $snapshot->history;
+            if (0 === $snapshot->lastSeq) {
                 throw new \RuntimeException(\sprintf('Cannot select history for run %s: no events found.', $runId));
             }
 
-            $history = $this->historyProjector->build($events);
             if (!\array_key_exists($targetPromptTurnNo, $history->promptsByTurnNo)) {
                 throw new \RuntimeException(\sprintf('Cannot select history for run %s: target turn %d is not a selectable human prompt.', $runId, $targetPromptTurnNo));
             }
 
             $state = $this->activeRunContext->stateFor($runId);
-
-            $duplicateSeqs = $this->replayEventPreparer->duplicateSequences($events);
-            if ([] !== $duplicateSeqs) {
-                throw new RunStateDuplicateSequenceReplayException(\sprintf('Cannot select history for run %s: event history contains %d duplicate sequence number(s): %s.', $runId, \count($duplicateSeqs), implode(', ', array_map('strval', \array_slice($duplicateSeqs, 0, 10)))));
-            }
 
             $previousPosition = $history->positionTurnNo;
             $positionTurnNo = $history->predecessorTurnNo($targetPromptTurnNo);
@@ -89,8 +79,37 @@ final readonly class HistorySelectionService implements HistorySelectionServiceI
                 createdAt: new \DateTimeImmutable(),
             );
 
+            // Withdraw readiness before the durable append so a crash cannot leave
+            // jointly stale projections marked ready past the unread event.
+            $this->activeRunContext->withdrawForCommit($runId);
             $persisted = $this->eventStore->append($positionEvent);
             $newSeq = $persisted->seq;
+
+            $updatedHistory = new HistoryDTO(
+                retainedTurnNos: $history->retainedTurnNos,
+                promptsByTurnNo: $history->promptsByTurnNo,
+                positionTurnNo: $positionTurnNo,
+            );
+            // The position event is already durable; advance inspection without a second archive scan.
+            $inspectionBuilder = HistoryStreamBuilder::fromSnapshot($snapshot);
+            $inspectionBuilder->apply($persisted);
+            $inspectionSnapshot = $inspectionBuilder->finishSnapshot($newSeq);
+            $this->historyProjectionStore->remember(
+                $runId,
+                new HistoryProjectionSnapshot(
+                    history: $updatedHistory,
+                    lastSeq: $newSeq,
+                    initialPrompt: $snapshot->initialPrompt,
+                    pendingHumanPrompt: $snapshot->pendingHumanPrompt,
+                    ready: true,
+                    eventCount: $inspectionSnapshot->eventCount,
+                    sanitizedEventTail: $inspectionSnapshot->sanitizedEventTail,
+                    eligibleAutoCompactionInputTokens: $inspectionSnapshot->eligibleAutoCompactionInputTokens,
+                    issuedReminderKeys: $inspectionSnapshot->issuedReminderKeys,
+                    appliedShellIdempotencyKeys: $inspectionSnapshot->appliedShellIdempotencyKeys,
+                    runStartedLaunch: $inspectionSnapshot->runStartedLaunch,
+                ),
+            );
 
             $replayResult = $this->runStateRebuilder->rebuildAtPosition($state, $runId, $positionTurnNo);
             if (null === $replayResult->rebuiltState) {

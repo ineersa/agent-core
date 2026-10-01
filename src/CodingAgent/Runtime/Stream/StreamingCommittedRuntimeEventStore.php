@@ -42,24 +42,14 @@ final class StreamingCommittedRuntimeEventStore implements EventStoreInterface
         return $this->inner->latestSequenceFor($runId);
     }
 
-    public function firstFor(string $runId): ?RunEvent
-    {
-        return $this->inner->firstFor($runId);
-    }
-
     public function rangeFor(string $runId, int $startSeq, int $endSeq): iterable
     {
         return $this->inner->rangeFor($runId, $startSeq, $endSeq);
     }
 
-    public function reverseFor(string $runId): iterable
+    public function readAfterSeq(string $runId, int $cursor): array
     {
-        return $this->inner->reverseFor($runId);
-    }
-
-    public function allFor(string $runId): array
-    {
-        return $this->inner->allFor($runId);
+        return $this->inner->readAfterSeq($runId, $cursor);
     }
 
     private function emitMapped(RunEvent $runEvent): void

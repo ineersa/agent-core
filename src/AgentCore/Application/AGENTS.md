@@ -17,7 +17,7 @@ Topology map for AgentCore application handlers. Authoritative routing: `config/
 | `CompactRun` | `agent.command.bus` (transport `run_control`) | `Ineersa\CodingAgent\Application\Pipeline\CompactRunHandler` (App layer; depends on compaction services) |
 | `CompactionStepResult` | `agent.command.bus` (transport `run_control`) | `Ineersa\CodingAgent\Application\Pipeline\CompactionStepResultHandler` |
 | `CompleteDeferredToolCall` | `agent.command.bus` (transport `run_control`) | `CompleteDeferredToolCallHandler` |
-| `InvalidateRunContext` | `agent.command.bus` (transport `run_control`) | `RunOrchestrator::onInvalidateRunContext()` clears active context only |
+| `InvalidateRunContext` | `agent.command.bus` (transport `run_control`) | `RunOrchestrator::onInvalidateRunContext()` clears local sequence markers; side-writers publish shared RunState first |
 | `RefreshRunContext` | `agent.command.bus` (transport `run_control`) | `RefreshRunContextHandler` replaces generated messages and commits `context_refreshed` without advancing a turn |
 
 ## Async workers (`agent.execution.bus`)
@@ -40,13 +40,13 @@ Workers post results (`LlmStepResult`, `ToolCallResult`, `CompactionStepResult`)
 - `AdvanceRun` / `CompactRun` — state-transition effects through `RunMessageProcessor` / `RunCommit` → `agent.command.bus` → `run_control`
 - `ExecuteLlmStep` / `ExecuteToolCall` / `ExecuteCompactionStep` — external-I/O effects through `RunMessageProcessor` / `RunCommit` → `agent.execution.bus`
 - `CompactRun` — auto-compaction hooks, manual `/compact`, pre-LLM compaction guard / overflow recovery paths
-- `InvalidateRunContext` — canonical event side writers after persistence; it only clears the receiving run_control process-local context
+- `InvalidateRunContext` — canonical side writers after append and shared projection publication under `RunLockManager`. It clears local sequence markers, not shared state. The next lookup checks shared state without archive replay.
 
 There is **no** `CollectToolBatch` message type in `src/` (stale historical name — do not reintroduce docs for it).
 
 ## Events and commit
 
-- `RunCommit::commit()` appends canonical `RunEvent` via `EventStoreInterface` (`append` / `appendMany`), then persists the narrow projection and active context before effect dispatch via `StepDispatcher` and after-turn hooks via `HookDispatcher`
+- `RunCommit::commit()` withdraws ready shared projections, appends canonical `RunEvent` via `EventStoreInterface` (`append` / `appendMany`), then republishes ready shared RunState/history before effect dispatch via `StepDispatcher` and after-turn hooks via `HookDispatcher`
 - `StartRunHandler` re-arms the initial `AdvanceRun` post-commit callback when Messenger redelivers after `run_started` already committed but before any AdvanceRun token was applied (`lastAppliedAdvanceKey` / `currentOperation` still null)
 - `StartRunHandler` no-ops when status is already `Cancelled`/`Cancelling` and `model` is still null, so reserved child run ids cancelled before `StartRun` cannot revive
 - `ToolCallResultFactory::fromExecuteToolCallAndToolResult()` maps envelope `error` only for cancelled tool results (`details.cancelled`); other tool errors keep `error: null` and rely on `isError` / `details`
@@ -57,6 +57,7 @@ There is **no** `CollectToolBatch` message type in `src/` (stale historical name
 Ordered retained-history projection lives in **CodingAgent** (`CodingAgent\Session\History`). AgentCore emits canonical history events (`turn_advanced`, `history_position_set`, `history_tail_discarded`) and depends on:
 
 - `RunStateRebuilderInterface` → App `SessionRunStateReplayService` (filter retained history before reducing `RunState`)
+- `HistoryProjectionMaintainerInterface` → App `CacheHistoryProjectionStore`, updated from committed events before effects dispatch
 - `HistorySelectionServiceInterface` / `HistoryTailDiscardInterface` → App history services; `HistoryTailDiscardInterface` is the mutate-behind-tip choke point used by `RunMessageProcessor`
 
 See `docs/session-storage.md` (linear history model).

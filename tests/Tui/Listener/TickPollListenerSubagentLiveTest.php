@@ -257,7 +257,7 @@ final class TickPollListenerSubagentLiveTest extends TestCase
             new class implements \Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInterface {
                 public function snapshot(string $childRunId): \Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotDTO
                 {
-                    return new \Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotDTO([], [], 0);
+                    return new \Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotDTO([], new \Ineersa\CodingAgent\Runtime\Contract\SessionResumeProjectionDTO(activity: 'running'), [], [], 0);
                 }
             },
             $this->createStub(\Ineersa\CodingAgent\Runtime\Contract\ChildAgentEventsPathResolverInterface::class),

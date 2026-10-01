@@ -1220,7 +1220,7 @@ final class SessionRepairServiceTest extends TestCase
             sequenceAllocator: new FileRunSequenceAllocator(),
         );
 
-        $events = $eventStore->allFor($runId);
+        $events = iterator_to_array($eventStore->rangeFor($runId, 1, \PHP_INT_MAX), false);
         $replayed = (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())))->replay(RunState::queued($runId), $events);
 
         return $replayed->messages;
@@ -1248,7 +1248,7 @@ final class SessionRepairServiceTest extends TestCase
             sequenceAllocator: new FileRunSequenceAllocator(),
         );
 
-        $events = $eventStore->allFor($runId);
+        $events = iterator_to_array($eventStore->rangeFor($runId, 1, \PHP_INT_MAX), false);
         $replayed = (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())))->replay(RunState::queued($runId), $events);
         $this->assertSame($expected, $replayed->status);
     }

@@ -627,12 +627,12 @@ final class SubagentResultRendererTest extends TestCase
         $displayConfig = new TranscriptDisplayConfig(toolResultPreviewLines: $previewLines);
         $displayState = new TranscriptDisplayState(previewableBlocksExpanded: $expanded);
         $factory = new TranscriptBlockWidgetFactory(
+            displayConfig: $displayConfig,
+            displayState: $displayState,
             subagentRenderer: new SubagentResultRenderer(
                 displayConfig: $displayConfig,
                 displayState: $displayState,
             ),
-            displayConfig: $displayConfig,
-            displayState: $displayState,
         );
         $theme = $this->theme();
         $root = new ContainerWidget();

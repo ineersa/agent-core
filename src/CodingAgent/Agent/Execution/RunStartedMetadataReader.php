@@ -4,32 +4,27 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Execution;
 
-use Ineersa\AgentCore\Contract\EventStoreInterface;
-use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedMetadataDTO;
+use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedSessionMetadataDTO;
+use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedToolsScopeDTO;
 use Ineersa\CodingAgent\Extension\ChildRunExtensionAllowlistReaderInterface;
-use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
+use Ineersa\CodingAgent\Extension\NoninteractiveChildRunProbeInterface;
+use Ineersa\CodingAgent\Session\History\HistoryProjectionStoreInterface;
+use Ineersa\CodingAgent\Session\History\RunStartedLaunchProjection;
 
 /**
- * Reads immutable RunStarted launch metadata from canonical events.
+ * Reads immutable RunStarted launch metadata from the shared history projection.
  *
  * Hot child/parent classification belongs on {@see \Ineersa\CodingAgent\Repository\RunRelationshipReader}.
  * This reader keeps only launch policy details that are not in the operational projection:
  * allowed tools/extensions and child model/reasoning.
  *
- * Successfully decoded metadata is immutable, so this reader keeps a process-local
- * bounded positive-only cache keyed by run ID. Missing metadata is never cached.
+ * Ordinary lookups never scan the event archive. Missing/not-ready projections fail closed.
  */
-final class RunStartedMetadataReader implements ChildRunExtensionAllowlistReaderInterface
+final class RunStartedMetadataReader implements ChildRunExtensionAllowlistReaderInterface, NoninteractiveChildRunProbeInterface
 {
-    private const int CACHE_LIMIT = 64;
-
-    /** @var array<string, RunStartedMetadataDTO> */
-    private array $resolved = [];
-
     public function __construct(
-        private EventStoreInterface $eventStore,
-        private DenormalizerInterface $denormalizer,
+        private readonly HistoryProjectionStoreInterface $historyProjectionStore,
     ) {
     }
 
@@ -59,29 +54,50 @@ final class RunStartedMetadataReader implements ChildRunExtensionAllowlistReader
         return $metadata->allowedExtensionsForChild();
     }
 
-    public function readRunStartedMetadata(string $runId): ?RunStartedMetadataDTO
+    public function isNoninteractiveChildRun(?string $runId): bool
     {
-        if (isset($this->resolved[$runId])) {
-            return $this->resolved[$runId];
+        if (null === $runId || '' === $runId) {
+            return false;
         }
 
-        $event = $this->eventStore->firstFor($runId);
-        if (null === $event || RunEventTypeEnum::RunStarted->value !== $event->type) {
+        $metadata = $this->readRunStartedMetadata($runId);
+
+        return true === $metadata?->isAgentChild() && false === $metadata->session->interactive;
+    }
+
+    public function readRunStartedMetadata(string $runId): ?RunStartedMetadataDTO
+    {
+        $launch = $this->historyProjectionStore->get($runId)->runStartedLaunch;
+        if (null === $launch) {
             return null;
         }
 
-        $metadata = $this->denormalizer->denormalize($event->payload, RunStartedMetadataDTO::class);
-        $this->remember($runId, $metadata);
-
-        return $metadata;
+        return $this->toDto($launch);
     }
 
-    private function remember(string $runId, RunStartedMetadataDTO $metadata): void
+    private function toDto(RunStartedLaunchProjection $launch): RunStartedMetadataDTO
     {
-        if (\count($this->resolved) >= self::CACHE_LIMIT) {
-            array_shift($this->resolved);
+        $session = new RunStartedSessionMetadataDTO(
+            kind: $launch->sessionKind,
+            parentRunId: $launch->parentRunId,
+            agentName: $launch->agentName,
+            artifactId: $launch->artifactId,
+            childKind: $launch->childKind,
+            interactive: $launch->interactive,
+        );
+
+        $toolsScope = null;
+        if (null !== $launch->allowedTools) {
+            $toolsScope = new RunStartedToolsScopeDTO(allowedTools: $launch->allowedTools);
         }
 
-        $this->resolved[$runId] = $metadata;
+        return new RunStartedMetadataDTO(
+            session: $session,
+            model: $launch->model,
+            reasoning: $launch->reasoning,
+            toolsScope: $toolsScope,
+            contextWindow: $launch->contextWindow,
+            extensions: $launch->allowedExtensions,
+        );
     }
 }

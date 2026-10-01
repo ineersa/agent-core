@@ -9,10 +9,8 @@ use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
-use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
-use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
@@ -22,7 +20,6 @@ use Ineersa\CodingAgent\Agent\Execution\AgentDepthGuard;
 use Ineersa\CodingAgent\Agent\Execution\AgentMcpToolsResolver;
 use Ineersa\CodingAgent\Agent\Execution\AgentPromptBuilder;
 use Ineersa\CodingAgent\Agent\Execution\AgentToolPolicyResolver;
-use Ineersa\CodingAgent\Agent\Execution\RunStartedMetadataReader;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Progress\SubagentProgressEventAppender;
 use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummaryBuilder;
 use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
@@ -33,6 +30,7 @@ use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
 use Ineersa\CodingAgent\Tests\Agent\Execution\Support\SubagentExecutionServiceFactory;
 use Ineersa\CodingAgent\Tests\Support\Mcp\TestMcpConfigLoaderFactory;
+use Ineersa\CodingAgent\Tests\Support\RunStartedMetadataReaderTestFactory;
 use Ineersa\CodingAgent\Tests\Support\StubRunRelationshipReader;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
@@ -58,9 +56,8 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         $agentRunner = $this->createStub(AgentRunnerInterface::class);
 
         // Depth gate is operational-relationship based; EventStore must not be consulted.
-        $eventStore = $this->createMock(EventStoreInterface::class);
-        $eventStore->expects($this->never())->method('firstFor');
-        $metadataReader = new RunStartedMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer());
+        $eventStore = $this->createStub(EventStoreInterface::class);
+        $metadataReader = RunStartedMetadataReaderTestFactory::empty();
 
         $service = $this->makeService([
             'catalog' => $catalog,
@@ -107,7 +104,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             'agentRunner' => $this->createStub(AgentRunnerInterface::class),
             'eventStore' => $eventStore,
             'committedRunEventAppender' => self::getContainer()->get(SubagentProgressEventAppender::class),
-            'metadataReader' => new RunStartedMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer()),
+            'metadataReader' => RunStartedMetadataReaderTestFactory::empty(),
             'relationshipReader' => StubRunRelationshipReader::topLevel('parent-4'),
             'childRunDirectory' => $directory,
             'contextAccessor' => self::getContainer()->get(StackToolExecutionContextAccessor::class),
@@ -174,10 +171,10 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             'skillsContextBuilder' => self::getContainer()->get(SkillsContextBuilder::class),
             'artifactRegistry' => self::getContainer()->get(AgentArtifactRegistry::class),
             'agentRunner' => $this->createStub(AgentRunnerInterface::class),
-            'runStateRebuilder' => self::getContainer()->get(RunStateRebuilderInterface::class),
+            'activeRunContext' => self::getContainer()->get(\Ineersa\AgentCore\Contract\ActiveRunContextInterface::class),
             'eventStore' => $this->createStub(EventStoreInterface::class),
             'committedRunEventAppender' => self::getContainer()->get(SubagentProgressEventAppender::class),
-            'metadataReader' => new RunStartedMetadataReader($this->createStub(EventStoreInterface::class), AttributeSerializerValidatorTestFactory::denormalizer()),
+            'metadataReader' => RunStartedMetadataReaderTestFactory::empty(),
             'relationshipReader' => StubRunRelationshipReader::empty(),
             'childRunDirectory' => self::getContainer()->get(AgentChildRunDirectory::class),
             'contextAccessor' => self::getContainer()->get(StackToolExecutionContextAccessor::class),
@@ -227,16 +224,9 @@ final class ProgressAppendInputRecordingEventStore implements EventStoreInterfac
 
     public function latestSequenceFor(string $runId): ?int
     {
-        $events = $this->allFor($runId);
+        $events = iterator_to_array($this->rangeFor($runId, 1, \PHP_INT_MAX), false);
 
         return [] === $events ? null : $events[array_key_last($events)]->seq;
-    }
-
-    public function firstFor(string $runId): ?RunEvent
-    {
-        $events = $this->allFor($runId);
-
-        return $events[0] ?? null;
     }
 
     public function rangeFor(string $runId, int $startSeq, int $endSeq): iterable
@@ -244,13 +234,15 @@ final class ProgressAppendInputRecordingEventStore implements EventStoreInterfac
         return $this->inner->rangeFor($runId, $startSeq, $endSeq);
     }
 
-    public function reverseFor(string $runId): iterable
+    public function readAfterSeq(string $runId, int $cursor): array
     {
-        return [];
-    }
+        $events = [];
+        foreach ($this->rangeFor($runId, 1, \PHP_INT_MAX) as $event) {
+            if ($event->seq > $cursor) {
+                $events[] = $event;
+            }
+        }
 
-    public function allFor(string $runId): array
-    {
-        return $this->inner->allFor($runId);
+        return $events;
     }
 }

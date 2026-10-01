@@ -59,6 +59,7 @@ final class SubagentChildExtensionMetadataTest extends IsolatedKernelTestCase
 
     public function testSubagentMetadataPersistsAlwaysOnOnlyWhenFrontmatterOmitsExtensions(): void
     {
+        self::getContainer()->get(\Ineersa\AgentCore\Contract\ActiveRunContextInterface::class)->initializeQueued('parent-ext-1');
         $factory = self::getContainer()->get(SubagentChildLaunchInputFactory::class);
         \assert($factory instanceof SubagentChildLaunchInputFactory);
 
@@ -96,6 +97,8 @@ final class SubagentChildExtensionMetadataTest extends IsolatedKernelTestCase
         // selection tests and project settings files, not this kernel cwd.
         $builder = self::getContainer()->get(ForkChildLaunchInputBuilder::class);
         \assert($builder instanceof ForkChildLaunchInputBuilder);
+        self::getContainer()->get(\Ineersa\CodingAgent\Session\History\HistoryProjectionStoreInterface::class)
+            ->initializeFromEvents('parent-fork-ext-1', []);
 
         $prepared = $builder->buildPrepared(
             identity: new ChildRunIdentityDTO(

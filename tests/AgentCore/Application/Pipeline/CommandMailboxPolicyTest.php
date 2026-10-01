@@ -89,7 +89,7 @@ final class CommandMailboxPolicyTest extends TestCase
         $this->assertSame('first steer', $userMessages[1]->content[0]['text']);
         $this->assertSame('second steer', $userMessages[2]->content[0]['text']);
 
-        $events = $fixture->eventStore->allFor($runId);
+        $events = iterator_to_array($fixture->eventStore->rangeFor($runId, 1, \PHP_INT_MAX), false);
 
         $appliedSteerKeys = [];
         foreach ($events as $event) {
@@ -135,7 +135,7 @@ final class CommandMailboxPolicyTest extends TestCase
         ));
 
         $rejections = array_values(array_filter(
-            $fixture->eventStore->allFor($runId),
+            iterator_to_array($fixture->eventStore->rangeFor($runId, 1, \PHP_INT_MAX), false),
             static fn (\Ineersa\AgentCore\Domain\Event\RunEvent $event): bool => 'agent_command_rejected' === $event->type
                 && 'cap-follow-up-1' === ($event->payload['idempotency_key'] ?? null),
         ));
@@ -192,7 +192,7 @@ final class CommandMailboxPolicyTest extends TestCase
         // shouldContinue=true keeps the run Running
         $this->assertSame(RunStatus::Running, $state->status);
 
-        $events = $fixture->eventStore->allFor($runId);
+        $events = iterator_to_array($fixture->eventStore->rangeFor($runId, 1, \PHP_INT_MAX), false);
         $appliedFollowUp = array_values(array_filter(
             $events,
             static fn (\Ineersa\AgentCore\Domain\Event\RunEvent $event): bool => 'agent_command_applied' === $event->type
@@ -254,7 +254,7 @@ final class CommandMailboxPolicyTest extends TestCase
         $this->assertSame('first stop steer', $userMessages[1]->content[0]['text']);
         $this->assertSame('second stop steer', $userMessages[2]->content[0]['text']);
 
-        $events = $fixture->eventStore->allFor($runId);
+        $events = iterator_to_array($fixture->eventStore->rangeFor($runId, 1, \PHP_INT_MAX), false);
         $appliedSteerKeys = [];
         foreach ($events as $event) {
             if ('agent_command_applied' !== $event->type) {

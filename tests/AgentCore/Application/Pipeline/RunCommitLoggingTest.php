@@ -100,32 +100,38 @@ final class RecordingEventStore implements EventStoreInterface
 
     public function latestSequenceFor(string $runId): ?int
     {
-        $events = $this->allFor($runId);
+        $events = array_values(array_filter(
+            $this->appended,
+            static fn (RunEvent $event): bool => $event->runId === $runId,
+        ));
 
         return [] === $events ? null : $events[array_key_last($events)]->seq;
     }
 
-    public function firstFor(string $runId): ?RunEvent
-    {
-        return $this->allFor($runId)[0] ?? null;
-    }
-
     public function rangeFor(string $runId, int $startSeq, int $endSeq): iterable
     {
-        foreach ($this->allFor($runId) as $event) {
+        foreach ($this->appended as $event) {
+            if ($event->runId !== $runId) {
+                continue;
+            }
             if ($event->seq >= $startSeq && $event->seq <= $endSeq) {
                 yield $event;
             }
         }
     }
 
-    public function reverseFor(string $runId): iterable
+    public function readAfterSeq(string $runId, int $cursor): array
     {
-        return array_reverse($this->allFor($runId));
-    }
+        $events = [];
+        foreach ($this->appended as $event) {
+            if ($event->runId !== $runId) {
+                continue;
+            }
+            if ($event->seq > $cursor) {
+                $events[] = $event;
+            }
+        }
 
-    public function allFor(string $runId): array
-    {
-        return array_values(array_filter($this->appended, static fn (RunEvent $event): bool => $event->runId === $runId));
+        return $events;
     }
 }

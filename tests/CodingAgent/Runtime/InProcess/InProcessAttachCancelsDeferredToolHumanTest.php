@@ -107,7 +107,7 @@ final class InProcessAttachCancelsDeferredToolHumanTest extends IsolatedKernelTe
             ])),
         ]);
 
-        $runner = new AgentRunner($messenger, self::getContainer()->get(SerializerInterface::class));
+        $runner = new AgentRunner($messenger, self::getContainer()->get(SerializerInterface::class), $active);
 
         $assistant = new AgentMessage(
             role: 'assistant',
@@ -158,6 +158,7 @@ final class InProcessAttachCancelsDeferredToolHumanTest extends IsolatedKernelTe
             commandBus: $commandBus,
             sessionRepairService: $this->createStub(SessionRepairServiceInterface::class),
             activeRunContext: $active,
+            runStateRebuilder: $this->createStub(\Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface::class),
         );
 
         $this->assertSame($runId, $client->attach($runId)->runId);
@@ -167,7 +168,7 @@ final class InProcessAttachCancelsDeferredToolHumanTest extends IsolatedKernelTe
         $this->assertSame([], $state->pendingToolCalls);
         $this->assertSame([], $state->pendingHumanInputRequests);
 
-        $types = array_map(static fn (RunEvent $event): string => $event->type, $eventStore->allFor($runId));
+        $types = array_map(static fn (RunEvent $event): string => $event->type, iterator_to_array($eventStore->rangeFor($runId, 1, \PHP_INT_MAX), false));
         $this->assertContains(RunEventTypeEnum::AgentCommandApplied->value, $types);
         $this->assertContains(RunEventTypeEnum::ToolExecutionEnd->value, $types);
         $this->assertContains(RunEventTypeEnum::AgentEnd->value, $types);

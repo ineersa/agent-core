@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Completion;
 
-use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
@@ -14,6 +13,7 @@ use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunTerminalOutcom
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
+use Ineersa\CodingAgent\Session\RunState\RunStateStoreInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 
@@ -24,7 +24,7 @@ use Psr\Log\NullLogger;
 final readonly class DeferredSubagentBatchChildOutcomeFactory
 {
     public function __construct(
-        private RunStateRebuilderInterface $runStateRebuilder,
+        private RunStateStoreInterface $runStateStore,
         private LoggerInterface $logger = new NullLogger(),
     ) {
     }
@@ -51,7 +51,7 @@ final readonly class DeferredSubagentBatchChildOutcomeFactory
         DeferredChildRunLifecycleProjectionDTO $projection,
     ): ChildRunTerminalOutcomeDTO {
         // Failed/cancelled children replay canonical child events so handoff can
-        // include bounded partial context without another persistence path.
+        // include bounded partial context from the ready shared projection.
         $childState = match ($projection->childStatus) {
             RunStatus::Failed, RunStatus::Cancelled, RunStatus::Cancelling => $this->loadDurableChildStateForFailedOrCancelled($identity),
             default => null,
@@ -91,18 +91,16 @@ final readonly class DeferredSubagentBatchChildOutcomeFactory
     }
 
     /**
-     * Rebuild canonical child events for failed/cancelled handoffs.
+     * Load ready shared child state for failed/cancelled handoffs.
      * Shared by natural terminal completion and interruption paths.
      */
     public function loadDurableChildStateForFailedOrCancelled(ChildRunIdentityDTO $identity): ?RunState
     {
         try {
-            return $this->runStateRebuilder
-                ->rebuildIfStale(RunState::queued($identity->childRunId), $identity->childRunId)
-                ->rebuiltState;
+            return $this->runStateStore->get($identity->childRunId);
         } catch (\Throwable $e) {
             // Intentional local degradation: handoff still writes failure/cancel summary;
-            // partial context is best-effort from canonical child events.
+            // partial context is best-effort from the ready shared projection.
             $this->logger->warning('deferred_subagent.child_state_load_failed', [
                 'event_type' => 'deferred_subagent.child_state_load_failed',
                 'component' => 'deferred_subagent_batch_child_outcome_factory',

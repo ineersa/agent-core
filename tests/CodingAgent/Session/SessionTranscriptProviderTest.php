@@ -4,25 +4,14 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Session;
 
-use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
-use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
-use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
+use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
-use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
-use Ineersa\CodingAgent\Runtime\ProjectionPipeline\AssistantStreamProjectionSubscriber;
-use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
-use Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
-use Ineersa\CodingAgent\Session\History\HistoryProjector;
-use Ineersa\CodingAgent\Session\History\HistoryReplayFilter;
 use Ineersa\CodingAgent\Session\SessionTranscriptProvider;
+use Ineersa\CodingAgent\Tests\Support\SessionColdReconstructionTestFactory;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\EventDispatcher\EventDispatcher;
-use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 
 #[CoversClass(SessionTranscriptProvider::class)]
 final class SessionTranscriptProviderTest extends TestCase
@@ -35,15 +24,15 @@ final class SessionTranscriptProviderTest extends TestCase
             $this->runEvent('run_started', 1, 0, ['payload' => ['messages' => []]]),
             $this->turnAdvanced(2, 1),
             $this->historyPositionSetEvent(3, 1, null, 'continue'),
-            $this->runEvent('llm_step_completed', 4, 1, $this->assistantPayload('Answer A')),
+            $this->runEvent('llm_step_completed', 4, 1, $this->assistantPayload('Answer A', 'step-a')),
             $this->turnAdvanced(5, 2),
             $this->historyPositionSetEvent(6, 2, 1, 'continue'),
-            $this->runEvent('llm_step_completed', 7, 2, $this->assistantPayload('Answer B discarded')),
+            $this->runEvent('llm_step_completed', 7, 2, $this->assistantPayload('Answer B discarded', 'step-b')),
             $this->historyPositionSetEvent(8, 1, 2, 'history_select'),
             $this->runEvent(RunEventTypeEnum::HistoryTailDiscarded->value, 9, 1, ['after_turn_no' => 1]),
             $this->turnAdvanced(10, 3),
             $this->historyPositionSetEvent(11, 3, 1, 'continue'),
-            $this->runEvent('llm_step_completed', 12, 3, $this->assistantPayload('Answer C active')),
+            $this->runEvent('llm_step_completed', 12, 3, $this->assistantPayload('Answer C active', 'step-c')),
         ];
 
         $provider = $this->createProvider($events);
@@ -54,17 +43,16 @@ final class SessionTranscriptProviderTest extends TestCase
 
         $this->assertNotEmpty($blocks, 'Retained tip should project transcript blocks');
         $joined = implode("\n", $texts);
-        $this->assertTrue(
-            str_contains($joined, 'Answer A') || str_contains($joined, 'Answer C active'),
-            'Active history projection should include retained assistant text',
-        );
+        $this->assertStringContainsString('Answer A', $joined);
+        $this->assertStringContainsString('Answer C active', $joined);
         $this->assertStringNotContainsString('Answer B discarded', $joined);
     }
 
     /** @return array<string, mixed> */
-    private function assistantPayload(string $text): array
+    private function assistantPayload(string $text, string $stepId): array
     {
         return [
+            'step_id' => $stepId,
             'assistant_message' => [
                 'role' => 'assistant',
                 'content' => [['type' => 'text', 'text' => $text]],
@@ -75,22 +63,12 @@ final class SessionTranscriptProviderTest extends TestCase
     /** @param list<RunEvent> $events */
     private function createProvider(array $events): SessionTranscriptProvider
     {
-        $store = $this->createStub(EventStoreInterface::class);
-        $store->method('allFor')->willReturn($events);
+        $store = new InMemoryEventStore();
+        foreach ($events as $event) {
+            $store->seed($event);
+        }
 
-        $projector = new HistoryProjector();
-        $replayFilter = new HistoryReplayFilter($projector);
-        $eventDispatcher = $this->createStub(EventDispatcherInterface::class);
-        $translator = new RuntimeEventTranslator($eventDispatcher, new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()));
-        $eventMapper = new RuntimeEventMapper($translator);
-
-        $dispatcher = new EventDispatcher();
-        $projectionState = new TranscriptProjectionState();
-        $dispatcher->addSubscriber(new UserMessageProjectionSubscriber());
-        $dispatcher->addSubscriber(new AssistantStreamProjectionSubscriber());
-        $transcriptProjector = new TranscriptProjector($dispatcher, $projectionState);
-
-        return new SessionTranscriptProvider($store, $replayFilter, $eventMapper, $transcriptProjector);
+        return new SessionTranscriptProvider(SessionColdReconstructionTestFactory::create($store));
     }
 
     /** @param array<string, mixed> $payload */

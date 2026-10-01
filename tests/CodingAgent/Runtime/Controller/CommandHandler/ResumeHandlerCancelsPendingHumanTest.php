@@ -111,8 +111,30 @@ final class ResumeHandlerCancelsPendingHumanTest extends IsolatedKernelTestCase
             {
             }
 
+            public function initializeQueued(string $runId): RunState
+            {
+                return RunState::queued($runId);
+            }
+
+            public function initialize(RunState $state): void
+            {
+            }
+
+            /**
+             * @param list<\Ineersa\AgentCore\Domain\Event\RunEvent> $events
+             */
+            public function applyCommittedSuffix(string $runId, array $events, callable $advance): RunState
+            {
+                return $advance($this->stateFor($runId), $events);
+            }
+
             public function invalidate(string $runId): void
             {
+            }
+
+            public function withdrawForCommit(string $runId): void
+            {
+                $this->invalidate($runId);
             }
 
             public function clear(): void
@@ -137,6 +159,7 @@ final class ResumeHandlerCancelsPendingHumanTest extends IsolatedKernelTestCase
             commandBus: new TestMessageBus(),
             sessionRepairService: $this->createStub(SessionRepairServiceInterface::class),
             activeRunContext: $active,
+            runStateRebuilder: $this->createStub(\Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface::class),
         );
 
         $emitted = [];

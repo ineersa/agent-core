@@ -111,4 +111,30 @@ final class SessionRunEventStoreSequencingTest extends TestCase
         $this->assertSame([3, 4, 5], array_map(static fn (RunEvent $e): int => $e->seq, $persisted));
         $this->assertSame("5\n", file_get_contents(FileRunSequenceAllocator::counterPathForEventsLog($eventsPath)));
     }
+
+    public function testAllForStreamsLinesWithoutLoadingWholeFileContents(): void
+    {
+        $runId = 'run-'.bin2hex(random_bytes(4));
+        $eventsPath = $this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl';
+        TestDirectoryIsolation::ensureDirectory(\dirname($eventsPath));
+
+        $lines = [];
+        for ($seq = 1; $seq <= 5; ++$seq) {
+            $lines[] = json_encode([
+                'schema_version' => '1.0',
+                'run_id' => $runId,
+                'seq' => $seq,
+                'turn_no' => $seq,
+                'type' => 1 === $seq ? 'run_started' : 'turn_advanced',
+                'payload' => [],
+            ], \JSON_THROW_ON_ERROR);
+        }
+        file_put_contents($eventsPath, implode("\n", $lines)."\n");
+
+        $events = iterator_to_array($this->store->rangeFor($runId, 1, \PHP_INT_MAX), false);
+
+        $this->assertCount(5, $events);
+        $this->assertSame([1, 2, 3, 4, 5], array_map(static fn (RunEvent $event): int => $event->seq, $events));
+        $this->assertSame($runId, $events[0]->runId);
+    }
 }

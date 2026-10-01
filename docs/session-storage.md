@@ -130,7 +130,12 @@ an exactly-once guarantee. A retried operation can repeat external effects.
 
 `/repair` is explicit recovery, never automatic. Inspect its diagnosis before using
 `/repair --apply` to redispatch stranded work. Restarting a session does not by itself
-make abandoned claimed queue messages available again.
+make abandoned claimed queue messages available again. If the sole supervised
+`run_control` worker exits, Hatfield clears that session's claimed `run_control`
+rows before relaunch. Recovery holds the exclusive worker ownership lock through
+the queue update and refuses to reclaim from a live owner. Other transports and
+reclaim failures still need `/repair` then `/repair --apply` after confirming no
+live controller owns that session.
 
 Repair reuses the current operation identity. It does not mark unfinished work as
 completed, roll back side effects, or clear abandoned claimed messages. Check whether

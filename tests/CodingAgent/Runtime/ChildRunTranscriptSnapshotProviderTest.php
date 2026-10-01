@@ -4,13 +4,18 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime;
 
+use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
+use Ineersa\CodingAgent\Runtime\ChildRunPhysicalSuffixReaderInterface;
 use Ineersa\CodingAgent\Runtime\ChildRunTranscriptSnapshotProvider;
+use Ineersa\CodingAgent\Runtime\ChildRunTranscriptSnapshotStoreInterface;
 use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
@@ -21,11 +26,16 @@ use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
+use Ineersa\CodingAgent\Session\RunState\RunStateStoreInterface;
+use Ineersa\CodingAgent\Tests\Session\RunState\InMemoryRunStateStore;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\InMemoryStore;
 
 #[CoversClass(ChildRunTranscriptSnapshotProvider::class)]
 final class ChildRunTranscriptSnapshotProviderTest extends TestCase
@@ -43,9 +53,9 @@ final class ChildRunTranscriptSnapshotProviderTest extends TestCase
         $provider = $this->createProvider($events);
         $snapshot = $provider->snapshot($this->childRunId);
 
-        $this->assertSame(5, $snapshot->maxSeq);
-        $this->assertCount(2, $snapshot->replayEvents);
-        $this->assertSame(5, $snapshot->replayEvents[1]->seq);
+        $this->assertSame(6, $snapshot->maxSeq);
+        $this->assertSame([], $snapshot->pendingHumanInputEvents);
+        $this->assertSame([], $snapshot->pendingToolQuestionEvents);
 
         $joined = implode("\n", array_map(static fn (TranscriptBlock $b): string => $b->text, $snapshot->transcriptBlocks));
         $this->assertStringContainsString('Child scout answer', $joined);
@@ -61,10 +71,15 @@ final class ChildRunTranscriptSnapshotProviderTest extends TestCase
         ];
 
         $store = $this->createStub(EventStoreInterface::class);
-        $store->method('allFor')->willReturnMap([
-            ['child-a', $eventsRunA],
-            ['child-b', $eventsRunB],
-        ]);
+        $store->method('rangeFor')->willReturnCallback(
+            static function (string $runId) use ($eventsRunA, $eventsRunB): array {
+                return match ($runId) {
+                    'child-a' => $eventsRunA,
+                    'child-b' => $eventsRunB,
+                    default => [],
+                };
+            },
+        );
 
         $provider = $this->createProviderWithStore($store);
 
@@ -126,7 +141,7 @@ final class ChildRunTranscriptSnapshotProviderTest extends TestCase
     public function testEmptyTranscriptStillRestoresPendingLocalToolQuestion(): void
     {
         $events = $this->createStub(EventStoreInterface::class);
-        $events->method('allFor')->willReturn([]);
+        $events->method('rangeFor')->willReturn([]);
         $questions = $this->createMock(\Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface::class);
         $questions->expects($this->once())->method('findPendingQuestionsForRun')->with($this->childRunId)->willReturn([
             \Ineersa\CodingAgent\Entity\ToolQuestion::create(
@@ -139,22 +154,195 @@ final class ChildRunTranscriptSnapshotProviderTest extends TestCase
 
         $this->assertSame([], $snapshot->transcriptBlocks);
         $this->assertSame(0, $snapshot->maxSeq);
-        $this->assertCount(1, $snapshot->replayEvents);
-        $this->assertSame('tool_question.requested', $snapshot->replayEvents[0]->type);
-        $this->assertSame('pending', $snapshot->replayEvents[0]->payload['request_id']);
+        $this->assertCount(1, $snapshot->pendingToolQuestionEvents);
+        $this->assertSame('tool_question.requested', $snapshot->pendingToolQuestionEvents[0]->type);
+        $this->assertSame('pending', $snapshot->pendingToolQuestionEvents[0]->payload['request_id']);
+    }
+
+    public function testSnapshotDoesNotCallAllFor(): void
+    {
+        $store = $this->createMock(EventStoreInterface::class);
+        $store->expects($this->once())->method('rangeFor')->willReturn([
+            $this->runEvent(RunEventTypeEnum::LlmStepCompleted->value, 1, 1, $this->assistantPayload('ok')),
+        ]);
+
+        $snapshot = $this->createProviderWithStore($store)->snapshot($this->childRunId);
+        $this->assertSame(1, $snapshot->maxSeq);
+    }
+
+    public function testRepeatedEnterReusesSharedSnapshotWithoutArchiveRead(): void
+    {
+        $store = $this->createMock(EventStoreInterface::class);
+        $store->expects($this->once())->method('rangeFor')->willReturn([
+            $this->runEvent(RunEventTypeEnum::LlmStepCompleted->value, 2, 1, $this->assistantPayload('cached answer')),
+        ]);
+
+        $runStateStore = new InMemoryRunStateStore();
+        $runStateStore->initialize(new RunState(
+            runId: $this->childRunId,
+            status: RunStatus::Running,
+            turnNo: 1,
+            lastSeq: 2,
+            model: 'test-model',
+        ));
+        $snapshotStore = new InMemoryChildRunTranscriptSnapshotStore();
+        $provider = $this->createProviderWithStore(
+            $store,
+            snapshotStore: $snapshotStore,
+            runStateStore: $runStateStore,
+        );
+
+        $first = $provider->snapshot($this->childRunId);
+        $second = $provider->snapshot($this->childRunId);
+
+        $this->assertSame(2, $first->maxSeq);
+        $this->assertSame(2, $second->maxSeq);
+        $this->assertSame(1, $snapshotStore->rememberCalls);
+        $joined = implode("\n", array_map(static fn (TranscriptBlock $b): string => $b->text, $second->transcriptBlocks));
+        $this->assertStringContainsString('cached answer', $joined);
+    }
+
+    public function testSuffixAdvanceUsesPhysicalReaderWithoutRangeFor(): void
+    {
+        $store = $this->createMock(EventStoreInterface::class);
+        $store->expects($this->never())->method('rangeFor');
+        $store->expects($this->never())->method('latestSequenceFor');
+
+        $suffixReader = $this->createMock(ChildRunPhysicalSuffixReaderInterface::class);
+        $suffixReader->expects($this->once())
+            ->method('readAfterSeq')
+            ->with($this->childRunId, 2)
+            ->willReturn([
+                $this->runEvent(RunEventTypeEnum::LlmStepCompleted->value, 5, 1, $this->assistantPayload('suffix answer')),
+            ]);
+
+        $runStateStore = new InMemoryRunStateStore();
+        $runStateStore->initialize(new RunState(
+            runId: $this->childRunId,
+            status: RunStatus::Running,
+            turnNo: 1,
+            lastSeq: 5,
+            model: 'test-model',
+        ));
+
+        $snapshotStore = new InMemoryChildRunTranscriptSnapshotStore();
+        $snapshotStore->remember($this->childRunId, new \Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotDTO(
+            transcriptBlocks: [],
+            resume: \Ineersa\CodingAgent\Runtime\Contract\SessionResumeProjectionDTO::empty(),
+            pendingHumanInputEvents: [],
+            pendingToolQuestionEvents: [],
+            maxSeq: 2,
+        ));
+
+        $provider = $this->createProviderWithStore(
+            $store,
+            snapshotStore: $snapshotStore,
+            runStateStore: $runStateStore,
+            physicalSuffixReader: $suffixReader,
+        );
+
+        $snapshot = $provider->snapshot($this->childRunId);
+        $this->assertSame(5, $snapshot->maxSeq);
+        $joined = implode("\n", array_map(static fn (TranscriptBlock $b): string => $b->text, $snapshot->transcriptBlocks));
+        $this->assertStringContainsString('suffix answer', $joined);
+        $this->assertSame(2, $snapshotStore->rememberCalls);
+    }
+
+    public function testReuseFailsClosedWhenSharedStateMissing(): void
+    {
+        $store = $this->createMock(EventStoreInterface::class);
+        $store->expects($this->never())->method('rangeFor');
+
+        $snapshotStore = new InMemoryChildRunTranscriptSnapshotStore();
+        $snapshotStore->remember($this->childRunId, new \Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotDTO(
+            transcriptBlocks: [],
+            resume: \Ineersa\CodingAgent\Runtime\Contract\SessionResumeProjectionDTO::empty(),
+            pendingHumanInputEvents: [],
+            pendingToolQuestionEvents: [],
+            maxSeq: 2,
+        ));
+
+        $provider = $this->createProviderWithStore($store, snapshotStore: $snapshotStore, runStateStore: new InMemoryRunStateStore());
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('initialize via startup/new-run/recovery before ordinary lookups');
+        $provider->snapshot($this->childRunId);
+    }
+
+    public function testReuseFailsClosedWhenSharedStateNotReady(): void
+    {
+        $store = $this->createMock(EventStoreInterface::class);
+        $store->expects($this->never())->method('rangeFor');
+
+        $runStateStore = new InMemoryRunStateStore();
+        $runStateStore->initialize(new RunState(
+            runId: $this->childRunId,
+            status: RunStatus::Running,
+            turnNo: 1,
+            lastSeq: 2,
+            model: 'test-model',
+        ));
+        $runStateStore->withdrawForCommit($this->childRunId);
+
+        $snapshotStore = new InMemoryChildRunTranscriptSnapshotStore();
+        $snapshotStore->remember($this->childRunId, new \Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotDTO(
+            transcriptBlocks: [],
+            resume: \Ineersa\CodingAgent\Runtime\Contract\SessionResumeProjectionDTO::empty(),
+            pendingHumanInputEvents: [],
+            pendingToolQuestionEvents: [],
+            maxSeq: 2,
+        ));
+
+        $provider = $this->createProviderWithStore($store, snapshotStore: $snapshotStore, runStateStore: $runStateStore);
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('not ready');
+        $provider->snapshot($this->childRunId);
+    }
+
+    public function testSnapshotAheadOfSharedStateFailsClosed(): void
+    {
+        $store = $this->createMock(EventStoreInterface::class);
+        $store->expects($this->never())->method('rangeFor');
+
+        $runStateStore = new InMemoryRunStateStore();
+        $runStateStore->initialize(new RunState(
+            runId: $this->childRunId,
+            status: RunStatus::Running,
+            turnNo: 1,
+            lastSeq: 2,
+            model: 'test-model',
+        ));
+        $snapshotStore = new InMemoryChildRunTranscriptSnapshotStore();
+        $snapshotStore->remember($this->childRunId, new \Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotDTO(
+            transcriptBlocks: [],
+            resume: \Ineersa\CodingAgent\Runtime\Contract\SessionResumeProjectionDTO::empty(),
+            pendingHumanInputEvents: [],
+            pendingToolQuestionEvents: [],
+            maxSeq: 5,
+        ));
+
+        $provider = $this->createProviderWithStore($store, snapshotStore: $snapshotStore, runStateStore: $runStateStore);
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('ahead of shared state');
+        $provider->snapshot($this->childRunId);
     }
 
     /** @param list<RunEvent> $events */
     private function createProvider(array $events): ChildRunTranscriptSnapshotProvider
     {
         $store = $this->createStub(EventStoreInterface::class);
-        $store->method('allFor')->willReturn($events);
+        $store->method('rangeFor')->willReturn($events);
 
         return $this->createProviderWithStore($store);
     }
 
-    private function createProviderWithStore(EventStoreInterface $store, ?\Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface $questions = null): ChildRunTranscriptSnapshotProvider
-    {
+    private function createProviderWithStore(
+        EventStoreInterface $store,
+        ?\Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface $questions = null,
+        ?ChildRunTranscriptSnapshotStoreInterface $snapshotStore = null,
+        ?RunStateStoreInterface $runStateStore = null,
+        ?ChildRunPhysicalSuffixReaderInterface $physicalSuffixReader = null,
+    ): ChildRunTranscriptSnapshotProvider {
         $eventDispatcher = $this->createStub(EventDispatcherInterface::class);
         $translator = new RuntimeEventTranslator($eventDispatcher, new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()));
         $eventMapper = new RuntimeEventMapper($translator);
@@ -166,7 +354,17 @@ final class ChildRunTranscriptSnapshotProviderTest extends TestCase
         $dispatcher->addSubscriber(new ToolProjectionSubscriber(new SubagentProgressDisplayFormatter(), SubagentProgressSerializerTestSupport::denormalizer()));
         $transcriptProjector = new TranscriptProjector($dispatcher, $projectionState);
 
-        return new ChildRunTranscriptSnapshotProvider($store, $eventMapper, $transcriptProjector, $questions ?? $this->createStub(\Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface::class));
+        return new ChildRunTranscriptSnapshotProvider(
+            $store,
+            $eventMapper,
+            $transcriptProjector,
+            $questions ?? $this->createStub(\Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface::class),
+            $snapshotStore ?? new InMemoryChildRunTranscriptSnapshotStore(),
+            $runStateStore ?? new InMemoryRunStateStore(),
+            $physicalSuffixReader ?? $this->createStub(ChildRunPhysicalSuffixReaderInterface::class),
+            new RunLockManager(new LockFactory(new InMemoryStore())),
+            new NullLogger(),
+        );
     }
 
     /** @return array<string, mixed> */

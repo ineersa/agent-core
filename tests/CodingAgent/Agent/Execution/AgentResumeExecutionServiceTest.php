@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Execution;
 
-use Ineersa\AgentCore\Application\Dto\RunStateReplayResult;
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Pipeline\AgentRunner;
 use Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler;
@@ -13,7 +12,6 @@ use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
-use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
@@ -42,6 +40,8 @@ use Ineersa\CodingAgent\Entity\DeferredSubagentChild;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Session\RunState\RunStateStoreInterface;
+use Ineersa\CodingAgent\Tests\Session\RunState\InMemoryRunStateStore;
 use Ineersa\CodingAgent\Tests\Support\StubRunRelationshipReader;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -96,7 +96,11 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         $firstHandoffId = $this->registry()->listHandoffHistory($parent, $artifactId)[0]['id'];
 
         $commandBus = new TestMessageBus();
-        $agentRunner = new AgentRunner($commandBus, self::getContainer()->get(SerializerInterface::class));
+        $agentRunner = new AgentRunner(
+            $commandBus,
+            self::getContainer()->get(SerializerInterface::class),
+            self::getContainer()->get(\Ineersa\AgentCore\Contract\ActiveRunContextInterface::class),
+        );
 
         $this->resume(
             parentRunId: $parent,
@@ -232,11 +236,8 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         $artifactId = 'agent-mid-cancel';
         $childRunId = 'child-mid-cancel';
         $this->seedTerminalChild($parent, $artifactId, $childRunId, latestInputTokens: 10, contextWindow: 200_000);
-        $runStateRebuilder = $this->createMock(RunStateRebuilderInterface::class);
-        $runStateRebuilder->expects($this->once())
-            ->method('rebuildIfStale')
-            ->with($this->isInstanceOf(RunState::class), $childRunId)
-            ->willReturn(RunStateReplayResult::rebuilt(new RunState(runId: $childRunId, status: RunStatus::Cancelling)));
+        $runStateStore = new InMemoryRunStateStore();
+        $runStateStore->initialize(new RunState(runId: $childRunId, status: RunStatus::Cancelling));
 
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('mid-cancel and cannot be resumed yet');
@@ -245,7 +246,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
             parentRunId: $parent,
             tasks: [new AgentResumeTaskDTO(artifact_id: $artifactId, task: 'continue')],
             childRunId: $childRunId,
-            runStateRebuilder: $runStateRebuilder,
+            runStateStore: $runStateStore,
         );
     }
 
@@ -526,14 +527,8 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
 
         $agentRunner = $this->createMock(AgentRunnerInterface::class);
         $agentRunner->expects($this->never())->method('followUp');
-        $runStateRebuilder = $this->createMock(RunStateRebuilderInterface::class);
-        $runStateRebuilder->expects($this->once())
-            ->method('rebuildIfStale')
-            ->with(
-                $this->callback(static fn (RunState $state): bool => $childRunId === $state->runId),
-                $childRunId,
-            )
-            ->willReturn(RunStateReplayResult::rebuilt(new RunState(runId: $childRunId, status: RunStatus::Completed)));
+        $runStateStore = new InMemoryRunStateStore();
+        $runStateStore->initialize(new RunState(runId: $childRunId, status: RunStatus::Completed));
 
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage(\sprintf('Duplicate artifact_id "%s" in one agent_resume call.', $artifactId));
@@ -547,7 +542,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
             childRunId: $childRunId,
             agentRunner: $agentRunner,
             executionMode: ChildRunBatchExecutionModeEnum::Parallel,
-            runStateRebuilder: $runStateRebuilder,
+            runStateStore: $runStateStore,
         );
     }
 
@@ -563,17 +558,29 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         string $toolCallId = 'tc-resume-1',
         ChildRunBatchExecutionModeEnum $executionMode = ChildRunBatchExecutionModeEnum::Single,
         ?TestLogger $logger = null,
-        ?RunStateRebuilderInterface $runStateRebuilder = null,
+        ?RunStateStoreInterface $runStateStore = null,
         ?\Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface $relationshipReader = null,
     ): \Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome {
         $contextAccessor = new StackToolExecutionContextAccessor();
-        if (null === $runStateRebuilder) {
-            $runStateRebuilder = $this->createStub(RunStateRebuilderInterface::class);
-            $runStateRebuilder->method('rebuildIfStale')->willReturnCallback(
-                static function (RunState $state, string $runId) use ($runStatus): RunStateReplayResult {
-                    return RunStateReplayResult::rebuilt(new RunState(runId: $runId, status: $runStatus));
-                },
-            );
+        if (null === $runStateStore) {
+            $runStateStore = new InMemoryRunStateStore();
+            $targets = [];
+            foreach ($tasks as $task) {
+                if (null !== $task->artifact_id) {
+                    $entry = $this->registry()->get($parentRunId, $task->artifact_id);
+                    if (null !== $entry) {
+                        $targets[] = $entry->agentRunId;
+                    }
+                } elseif (null !== $task->agent_run_id) {
+                    $targets[] = $task->agent_run_id;
+                }
+            }
+            if (null !== $childRunId) {
+                $targets[] = $childRunId;
+            }
+            foreach (array_unique($targets) as $targetRunId) {
+                $runStateStore->initialize(new RunState(runId: $targetRunId, status: $runStatus));
+            }
         }
 
         $service = new AgentResumeExecutionService(
@@ -582,7 +589,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
             childRepository: self::getContainer()->get(DeferredSubagentChildRepository::class),
             identityFactory: new DeferredSubagentBatchIdentityFactory(),
             agentRunner: $agentRunner ?? $this->createStub(AgentRunnerInterface::class),
-            runStateRebuilder: $runStateRebuilder,
+            runStateStore: $runStateStore,
             relationshipReader: $relationshipReader ?? StubRunRelationshipReader::topLevel($parentRunId),
             depthGuard: new AgentDepthGuard(),
             contextAccessor: $contextAccessor,

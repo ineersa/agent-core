@@ -647,7 +647,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         $this->assertSame('q2', $afterFail->pendingHumanInputRequests[0]->questionId);
         $this->assertFalse($commandStore->has('run-fifo', 'human-q1'));
 
-        $eventsBeforeRetry = \count($eventStore->allFor('run-fifo'));
+        $eventsBeforeRetry = \count(iterator_to_array($eventStore->rangeFor('run-fifo', 1, \PHP_INT_MAX), false));
 
         // Redelivery of q1 while active FIFO head is q2 must redrive q1 without re-answering q2.
         $processor->process('command', $command);
@@ -657,7 +657,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         $this->assertSame(RunStatus::WaitingHuman, $afterRetry->status);
         $this->assertCount(1, $afterRetry->pendingHumanInputRequests);
         $this->assertSame('q2', $afterRetry->pendingHumanInputRequests[0]->questionId);
-        $this->assertSame($eventsBeforeRetry, \count($eventStore->allFor('run-fifo')), 'redrive must not emit duplicate state events');
+        $this->assertSame($eventsBeforeRetry, \count(iterator_to_array($eventStore->rangeFor('run-fifo', 1, \PHP_INT_MAX), false)), 'redrive must not emit duplicate state events');
         $this->assertTrue($commandStore->has('run-fifo', 'human-q1'));
         $this->assertCount(1, $executionBus->dispatched);
         $this->assertInstanceOf(ExecuteToolCall::class, $executionBus->dispatched[0]);

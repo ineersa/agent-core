@@ -609,6 +609,14 @@ services:
       # Project-scoped factory only — not the global default LockFactory.
       $sessionOwnerLockFactory: '@hatfield.controller.session_owner.lock_factory'
 
+  Ineersa\CodingAgent\Runtime\Controller\ConsumerSupervisor:
+    arguments:
+      $sessionId: '%env(HATFIELD_SESSION_ID)%'
+      $runControlClaimRecovery: '@Ineersa\CodingAgent\Runtime\Messenger\RunControlClaimRecoveryInterface'
+
+  Ineersa\CodingAgent\Runtime\Messenger\RunControlClaimRecoveryInterface:
+    alias: Ineersa\CodingAgent\Runtime\Messenger\RunControlClaimRecovery
+
   Ineersa\CodingAgent\Config\RuntimeConfig:
     factory: ['Ineersa\CodingAgent\Config\RuntimeConfig', 'fromAppConfig']
     arguments:
@@ -664,8 +672,7 @@ services:
       $state: '@session.transcript.projection_state'
 
   Ineersa\CodingAgent\Session\SessionTranscriptProvider:
-    arguments:
-      $transcriptProjector: '@session.transcript.transcript_projector'
+    # Cold reconstruction owns the isolated transcript projector instance.
 
   Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface:
     alias: Ineersa\CodingAgent\Session\SessionTranscriptProvider
@@ -682,9 +689,13 @@ services:
   Ineersa\CodingAgent\Runtime\ChildRunTranscriptSnapshotProvider:
     arguments:
       $transcriptProjector: '@child_run.transcript.transcript_projector'
+      $physicalSuffixReader: '@Ineersa\CodingAgent\Agent\Artifact\ChildAwareEventStore'
 
   Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInterface:
     alias: Ineersa\CodingAgent\Runtime\ChildRunTranscriptSnapshotProvider
+
+  Ineersa\CodingAgent\Runtime\ChildRunTranscriptSnapshotStoreInterface:
+    alias: Ineersa\CodingAgent\Runtime\CacheChildRunTranscriptSnapshotStore
 
   Ineersa\CodingAgent\Runtime\Contract\ChildAgentEventsPathResolverInterface:
     alias: Ineersa\CodingAgent\Session\ChildAgentEventsPathResolver
@@ -695,8 +706,15 @@ services:
   Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface:
     alias: Ineersa\CodingAgent\Session\Replay\SessionRunStateReplayService
 
+  Ineersa\CodingAgent\Session\Replay\SessionColdReconstructionService:
+    arguments:
+      $transcriptProjector: '@session.transcript.transcript_projector'
+
   Ineersa\AgentCore\Contract\ActiveRunContextInterface:
     alias: Ineersa\CodingAgent\Agent\Artifact\ActiveRunContext
+
+  Ineersa\CodingAgent\Session\RunState\RunStateStoreInterface:
+    alias: Ineersa\CodingAgent\Session\RunState\CacheRunStateStore
 
 
   Ineersa\AgentCore\Contract\History\HistorySelectionServiceInterface:
@@ -704,6 +722,19 @@ services:
 
   Ineersa\AgentCore\Contract\History\HistoryTailDiscardInterface:
     alias: Ineersa\CodingAgent\Session\History\HistoryTailDiscardService
+
+  Ineersa\CodingAgent\Session\History\HistoryProjectionStoreInterface:
+    alias: Ineersa\CodingAgent\Session\History\CacheHistoryProjectionStore
+
+  Ineersa\AgentCore\Contract\History\HistoryProjectionMaintainerInterface:
+    alias: Ineersa\CodingAgent\Session\History\CacheHistoryProjectionStore
+
+  Ineersa\AgentCore\Contract\History\AppliedShellCommandLookupInterface:
+    alias: Ineersa\CodingAgent\Session\History\CacheHistoryProjectionStore
+
+  Ineersa\CodingAgent\Session\History\EventInspectionSummarizer:
+    arguments:
+      $toolExecutionEndPayloadCodec: '@Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec'
 
   # ─── Symfony AI Platform wiring ───
   # PlatformInterface reads Hatfield config from autowired AppConfig,
@@ -882,9 +913,12 @@ services:
   # Immutable RunStarted launch metadata (tools/extensions/model/reasoning).
   Ineersa\CodingAgent\Agent\Execution\RunStartedMetadataReader:
     arguments:
-      $eventStore: '@Ineersa\AgentCore\Contract\EventStoreInterface'
+      $historyProjectionStore: '@Ineersa\CodingAgent\Session\History\HistoryProjectionStoreInterface'
 
   Ineersa\CodingAgent\Extension\ChildRunExtensionAllowlistReaderInterface:
+    alias: Ineersa\CodingAgent\Agent\Execution\RunStartedMetadataReader
+
+  Ineersa\CodingAgent\Extension\NoninteractiveChildRunProbeInterface:
     alias: Ineersa\CodingAgent\Agent\Execution\RunStartedMetadataReader
 
   Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface:
@@ -1194,12 +1228,12 @@ services:
 
   # ─── AGENT-05 Subagent execution service ──────────────────────────
 
-  # Subagent child-run stack: parent prompt context is rebuilt from canonical
-  # events at the explicit child-launch boundary. Parent progress events append via
+  # Subagent child-run stack: parent prompt context comes from ActiveRunContext
+  # at the explicit child-launch boundary. Parent progress events append via
   # CommittedRunEventAppender only (seq 0 input; committed store allocates persisted seq).
   Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Preparation\SubagentChildLaunchInputFactory:
     arguments:
-      $runStateRebuilder: '@Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface'
+      $activeRunContext: '@Ineersa\AgentCore\Contract\ActiveRunContextInterface'
 
   # ─── AGENT-05 Subagent tool storage routing ─────────────────────────
 

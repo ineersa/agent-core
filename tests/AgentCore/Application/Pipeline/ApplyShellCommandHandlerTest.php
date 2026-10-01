@@ -18,7 +18,7 @@ use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Run\ToolBatchIdentity;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
-use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
+use Ineersa\CodingAgent\Tests\Session\History\InMemoryHistoryProjectionStore;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -98,7 +98,7 @@ final class ApplyShellCommandHandlerTest extends TestCase
         array $expectedEventTypes,
         RunStatus $expectedStatus,
     ): void {
-        $handler = new ApplyShellCommandHandler(new EventFactory(), new InMemoryEventStore(), AttributeSerializerValidatorTestFactory::create()[0]);
+        $handler = $this->handlerFor('run-shell-1');
         $rawInput = '!printf BANG_OWNERSHIP';
         $message = new ApplyShellCommand(
             runId: 'run-shell-1',
@@ -186,7 +186,7 @@ final class ApplyShellCommandHandlerTest extends TestCase
 
     public function testCommittedStandaloneShellRedeliveryIsANoOp(): void
     {
-        $handler = new ApplyShellCommandHandler(new EventFactory(), new InMemoryEventStore(), AttributeSerializerValidatorTestFactory::create()[0]);
+        $handler = $this->handlerFor('run-shell-duplicate');
         $message = new ApplyShellCommand(
             runId: 'run-shell-duplicate',
             turnNo: 0,
@@ -210,7 +210,7 @@ final class ApplyShellCommandHandlerTest extends TestCase
 
     public function testCommittedAttachedShellRedeliveryIsANoOpWithoutReplacingActiveLlm(): void
     {
-        $handler = new ApplyShellCommandHandler(new EventFactory(), new InMemoryEventStore(), AttributeSerializerValidatorTestFactory::create()[0]);
+        $handler = $this->handlerFor('run-attached-shell-duplicate');
         $message = new ApplyShellCommand(
             runId: 'run-attached-shell-duplicate',
             turnNo: 4,
@@ -254,15 +254,15 @@ final class ApplyShellCommandHandlerTest extends TestCase
 
     public function testCompletedShellRedeliveryIsANoOpAfterLifecycleEnds(): void
     {
-        $events = new InMemoryEventStore();
-        $events->seed(new RunEvent(
+        $history = new InMemoryHistoryProjectionStore();
+        $history->initializeFromEvents('run-completed-shell', [new RunEvent(
             runId: 'run-completed-shell',
             seq: 7,
             turnNo: 4,
             type: RunEventTypeEnum::AgentCommandApplied->value,
             payload: ['kind' => 'shell_command', 'idempotency_key' => 'completed-shell-key', 'text' => '!printf once'],
-        ));
-        $handler = new ApplyShellCommandHandler(new EventFactory(), $events, AttributeSerializerValidatorTestFactory::create()[0]);
+        )]);
+        $handler = new ApplyShellCommandHandler(new EventFactory(), $history, AttributeSerializerValidatorTestFactory::create()[0]);
         $message = new ApplyShellCommand('run-completed-shell', 4, 'shell-step', 1, 'completed-shell-key', '!printf once');
         $state = new RunState(runId: 'run-completed-shell', status: RunStatus::Running, turnNo: 4, lastSeq: 9, activeStepId: 'llm-step');
 
@@ -294,7 +294,7 @@ final class ApplyShellCommandHandlerTest extends TestCase
 
     public function testRejectsInvalidRawInput(): void
     {
-        $handler = new ApplyShellCommandHandler(new EventFactory(), new InMemoryEventStore(), AttributeSerializerValidatorTestFactory::create()[0]);
+        $handler = $this->handlerFor('run-shell-2');
         $state = new RunState(runId: 'run-shell-2', status: RunStatus::Queued, turnNo: 0, lastSeq: 0, model: 'test-model');
 
         $this->expectException(\InvalidArgumentException::class);
@@ -306,5 +306,13 @@ final class ApplyShellCommandHandlerTest extends TestCase
             idempotencyKey: 'bad',
             rawInput: 'ls',
         ), $state);
+    }
+
+    private function handlerFor(string $runId): ApplyShellCommandHandler
+    {
+        $history = new InMemoryHistoryProjectionStore();
+        $history->initializeFromEvents($runId, []);
+
+        return new ApplyShellCommandHandler(new EventFactory(), $history, AttributeSerializerValidatorTestFactory::create()[0]);
     }
 }

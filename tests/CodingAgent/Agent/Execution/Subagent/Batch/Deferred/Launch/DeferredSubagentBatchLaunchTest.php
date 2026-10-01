@@ -4,12 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Execution\Subagent\Batch\Deferred\Launch;
 
-use Ineersa\AgentCore\Application\Dto\RunStateReplayResult;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
+use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
-use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
@@ -385,15 +384,15 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
     {
         $parentRunId = 'parent-batch-prep';
         $toolCallId = 'call-batch-prep';
-        $runStateRebuilder = $this->createStub(RunStateRebuilderInterface::class);
-        $runStateRebuilder->method('rebuildIfStale')->willReturnCallback(static function (RunState $state, string $runId): RunStateReplayResult {
+        $activeRunContext = $this->createStub(ActiveRunContextInterface::class);
+        $activeRunContext->method('stateFor')->willReturnCallback(static function (string $runId): RunState {
             static $calls = 0;
             ++$calls;
             if ($calls > 1) {
                 throw new \RuntimeException('second child context blew up');
             }
 
-            return RunStateReplayResult::rebuilt(new RunState(runId: $runId, status: RunStatus::Running, version: 1, messages: [], model: 'test-model'));
+            return new RunState(runId: $runId, status: RunStatus::Running, version: 1, messages: [], model: 'test-model');
         });
 
         $agentRunner = $this->createMock(AgentRunnerInterface::class);
@@ -413,7 +412,7 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         $batchLaunch = $this->buildBatchLaunchService(
             $agentRunner,
             [$def('first-agent'), $def('second-agent'), $def('third-agent')],
-            runStateRebuilder: $runStateRebuilder,
+            activeRunContext: $activeRunContext,
         );
         $execution = new SubagentExecutionService($batchLaunch);
 
@@ -609,7 +608,7 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         array $definitions,
         ?TestLogger $logger = null,
         ?AgentsConfig $agentsConfig = null,
-        ?RunStateRebuilderInterface $runStateRebuilder = null,
+        ?ActiveRunContextInterface $activeRunContext = null,
     ): DeferredSubagentBatchLaunchService {
         $logger ??= new TestLogger();
         $artifactLifecycle = self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunArtifactLifecycleService::class);
@@ -623,7 +622,7 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         $launchInputFactory = new \Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Preparation\SubagentChildLaunchInputFactory(
             self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\AgentPromptBuilder::class),
             self::getContainer()->get(\Ineersa\CodingAgent\Skills\SkillsContextBuilder::class),
-            $runStateRebuilder ?? self::getContainer()->get(RunStateRebuilderInterface::class),
+            $activeRunContext ?? self::getContainer()->get(ActiveRunContextInterface::class),
             $appConfig,
             self::getContainer()->get(\Ineersa\CodingAgent\Agent\ChildExtensionSelectionService::class),
             self::getContainer()->get(\Ineersa\CodingAgent\Tool\ToolRegistryInterface::class),
@@ -690,6 +689,7 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
      */
     private function withToolContext(string $parentRunId, string $toolCallId, callable $callback): mixed
     {
+        self::getContainer()->get(ActiveRunContextInterface::class)->initializeQueued($parentRunId);
         self::getContainer()->get(\Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository::class)->replace(
             new RunState($parentRunId, RunStatus::Running),
         );

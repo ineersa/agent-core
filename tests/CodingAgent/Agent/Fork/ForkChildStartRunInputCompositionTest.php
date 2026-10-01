@@ -12,6 +12,7 @@ use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Fork\ForkChildLaunchInputBuilder;
 use Ineersa\CodingAgent\Agent\Fork\ForkLaunchTaskDTO;
 use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
+use Ineersa\CodingAgent\Session\History\HistoryProjectionStoreInterface;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\Group;
 
@@ -21,6 +22,7 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
     public function testStartRunInputPreservesOrderSanitizesForkCallAndExcludesChildLaunchTools(): void
     {
         $parentRunId = 'parent-fork-compose-1';
+        self::getContainer()->get(HistoryProjectionStoreInterface::class)->initializeFromEvents($parentRunId, []);
         $parentMessages = [
             new AgentMessage(role: 'user-context', content: [['type' => 'text', 'text' => 'compact summary']], metadata: ['source' => 'compact_summary']),
             new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'prior user']]),
@@ -83,6 +85,7 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
     public function testStartRunInputSystemPromptMatchesCanonicalFirstMessage(): void
     {
         $parentRunId = 'parent-fork-sys-1';
+        self::getContainer()->get(HistoryProjectionStoreInterface::class)->initializeFromEvents($parentRunId, []);
         $builder = self::getContainer()->get(ForkChildLaunchInputBuilder::class);
         $identity = new ChildRunIdentityDTO(
             parentRunId: $parentRunId,
@@ -110,6 +113,7 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
     public function testCanonicalCompactSummaryUserMessageIsPreservedInInheritedSegment(): void
     {
         $parentRunId = 'parent-fork-compact-1';
+        self::getContainer()->get(HistoryProjectionStoreInterface::class)->initializeFromEvents($parentRunId, []);
         $summaryText = 'COMPACT_SUMMARY_MARKER_XYZ';
         $summaryMessage = new AgentMessage(
             role: 'user',
@@ -158,6 +162,7 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
     public function testPreparedForkChildMessagesExcludeAgentsDefinitionsContext(): void
     {
         $parentRunId = 'parent-fork-no-agent-defs';
+        self::getContainer()->get(HistoryProjectionStoreInterface::class)->initializeFromEvents($parentRunId, []);
         $parentMessages = [
             new AgentMessage(
                 role: 'user-context',
@@ -202,6 +207,7 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
     public function testPreparedForkChildSystemPromptOmitsForkAndSubagentToolGuidance(): void
     {
         $parentRunId = 'parent-fork-sys-tools';
+        self::getContainer()->get(HistoryProjectionStoreInterface::class)->initializeFromEvents($parentRunId, []);
         $builder = self::getContainer()->get(ForkChildLaunchInputBuilder::class);
         $identity = new ChildRunIdentityDTO(
             parentRunId: $parentRunId,
@@ -259,6 +265,10 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
             status: RunStatus::Running,
             parentRunId: $parentRunId,
         ));
+        self::getContainer()->get(HistoryProjectionStoreInterface::class)->initializeFromEvents(
+            $identity->childRunId,
+            $eventStore->rangeFor($identity->childRunId, 1, \PHP_INT_MAX),
+        );
         $active = $toolSetResolver->resolve('default', runId: $identity->childRunId);
         $this->assertNotContains('fork', $active->toolNames);
         $this->assertNotContains('subagent', $active->toolNames);
@@ -267,6 +277,7 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
     public function testForkChildOmitsAgentChildContractAndKeepsFinalityPlusCompactHandoffContract(): void
     {
         $parentRunId = 'parent-fork-no-contract';
+        self::getContainer()->get(HistoryProjectionStoreInterface::class)->initializeFromEvents($parentRunId, []);
         $builder = self::getContainer()->get(ForkChildLaunchInputBuilder::class);
         $identity = new ChildRunIdentityDTO(
             parentRunId: $parentRunId,
