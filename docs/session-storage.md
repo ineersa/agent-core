@@ -59,6 +59,10 @@ Sessions may be renamed via `/rename`. Display names are metadata only — they 
 ## Events and operational state
 
 - `events.jsonl` is the canonical conversation history used for resume.
+- Parent and child event stores stream JSONL line-by-line. They record scalar
+  physical-read diagnostics (`archive_bytes_read`, decoded count, early-exit vs
+  EOF). `allFor()` still returns the full decoded event list for current callers,
+  but it no longer duplicates the whole file text in memory first.
 - The runtime rebuilds its working state and disposable database projections from
   canonical events. Those projections do not contain a second copy of prompt history.
 - New and resumed runs do not read or write `state.json`. Older event schemas are
