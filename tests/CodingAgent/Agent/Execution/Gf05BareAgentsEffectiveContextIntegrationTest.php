@@ -4,23 +4,20 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Execution;
 
-use Ineersa\AgentCore\Application\Dto\RunStateReplayResult;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
+use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
-use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Execution\AgentMcpToolsResolver;
 use Ineersa\CodingAgent\Agent\Execution\AgentPromptBuilder;
 use Ineersa\CodingAgent\Agent\Execution\AgentToolPolicyResolver;
-use Ineersa\CodingAgent\Agent\Execution\RunStartedMetadataReader;
 use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummaryBuilder;
 use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
 use Ineersa\CodingAgent\Config\AgentsConfig;
@@ -33,6 +30,7 @@ use Ineersa\CodingAgent\Tests\Agent\Execution\Support\PipelineCapturingAgentRunn
 use Ineersa\CodingAgent\Tests\Agent\Execution\Support\PromptContractTestSupport;
 use Ineersa\CodingAgent\Tests\Agent\Execution\Support\ProviderBoundaryCaptureSupport;
 use Ineersa\CodingAgent\Tests\Support\Mcp\TestMcpConfigLoaderFactory;
+use Ineersa\CodingAgent\Tests\Support\RunStartedMetadataReaderTestFactory;
 use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use PHPUnit\Framework\Attributes\Group;
@@ -144,10 +142,10 @@ final class Gf05BareAgentsEffectiveContextIntegrationTest extends PerMethodIsola
             'skillsContextBuilder' => self::getContainer()->get(\Ineersa\CodingAgent\Skills\SkillsContextBuilder::class),
             'artifactRegistry' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry::class),
             'agentRunner' => $childRunner,
-            'runStateRebuilder' => $this->rebuildParentState($parentState),
+            'activeRunContext' => $this->parentActiveRunContext($parentState),
             'eventStore' => $childEventStore,
             'committedRunEventAppender' => self::getContainer()->get(CommittedRunEventAppender::class),
-            'metadataReader' => new RunStartedMetadataReader($childEventStore, AttributeSerializerValidatorTestFactory::denormalizer()),
+            'metadataReader' => RunStartedMetadataReaderTestFactory::fromEventStore($childEventStore, $parentState->runId),
             'relationshipReader' => \Ineersa\CodingAgent\Tests\Support\StubRunRelationshipReader::topLevel($parentState->runId),
             'childRunDirectory' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory::class),
             'contextAccessor' => self::getContainer()->get(StackToolExecutionContextAccessor::class),
@@ -183,14 +181,12 @@ final class Gf05BareAgentsEffectiveContextIntegrationTest extends PerMethodIsola
         );
     }
 
-    private function rebuildParentState(RunState $parentState): RunStateRebuilderInterface
+    private function parentActiveRunContext(RunState $parentState): ActiveRunContextInterface
     {
-        $rebuilder = $this->createStub(RunStateRebuilderInterface::class);
-        $rebuilder->method('rebuildIfStale')->willReturn(
-            RunStateReplayResult::rebuilt($parentState),
-        );
+        $context = $this->createStub(ActiveRunContextInterface::class);
+        $context->method('stateFor')->willReturn($parentState);
 
-        return $rebuilder;
+        return $context;
     }
 
     private function emptyMcpToolsResolver(): AgentMcpToolsResolver

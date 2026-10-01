@@ -18,13 +18,27 @@ The TUI talks to the controller through `AgentSessionClient` (`Runtime/Contract`
 
 1. User submits a message. The TUI writes a runtime command through the client.
 2. The controller has launched consumers before announcing readiness. It ACKs the command before handler dispatch. Acceptance does not mean execution completed, and dispatch can still fail. Durable transitions land on the `run_control` transport.
-3. `run_control` handlers append canonical `RunEvent` values to `events.jsonl` and keep the current `RunState` in the single run-control process memory (plus the payload-free operational projection).
+3. `run_control` handlers withdraw ready shared projections, append canonical `RunEvent` values to `events.jsonl`, then publish ready shared `RunState` / history projections (plus the payload-free operational projection).
 4. LLM and tool workers return result messages to `run_control`. Tool routing also covers subagent and MCP calls. MCP lifecycle commands and extension agent jobs have separate handlers, not a universal `ToolCallResult` return path.
 5. `RuntimeEventTranslator` / `RuntimeEventMapper` consume committed `RunEvent` values and produce runtime protocol DTOs. They do **not** read `RunState`.
 6. Live observers receive these mapped events on controller stdout. Transient stream deltas use sequence `0` and stay separate from durable replay.
 7. `RuntimeEventPoller` (TUI) applies projected events to the screen.
 
 Canonical replay source is the session event log, not transient deltas. See [session-storage.md](session-storage.md).
+
+## Shared projections and reconstruction
+
+`SessionColdReconstructionService` streams the canonical archive once per cold
+reconstruction. It builds retained history, `RunState`, transcript blocks, and
+resume activity without collecting raw events. Controller and worker startup
+reuse ready `cache.app` projections instead of repeating that archive read.
+
+`ActiveRunContext` reads shared state under `RunLockManager` and checks its
+committed sequence and selected turn against the history projection. Commits
+withdraw readiness before appending events and publish both projections before
+dispatching effects. Missing, withdrawn, or mismatched projections require
+explicit startup or recovery. The 30-minute cache TTL bounds cleanup, not
+freshness. Ordinary consumers do not rebuild history from disk.
 
 ## Messenger routing (execution bus)
 
@@ -53,10 +67,10 @@ Those tasks are generated/in-memory schedule work for the live controller proces
 
 Controller-owned messenger consumers use these invariants:
 
-- Doctrine claim semantics: session Doctrine DSNs set `redeliver_timeout=315360000` (~ten 365-day years) and consumers launch without `--keepalive`. Claimed rows stay unavailable until that finite horizon; rows older than the horizon can reclaim. Restarting the same session reuses the same queue and does not reset `delivered_at` age. Explicit `/repair` redrives current effects as fresh unclaimed envelopes; it does not clear the abandoned claimed row.
+- Doctrine claim semantics: session Doctrine DSNs set `redeliver_timeout=315360000` (~ten 365-day years) and consumers launch without `--keepalive`. Claimed rows stay unavailable until that finite horizon; rows older than the horizon can reclaim. Restarting the same session reuses the same queue and does not reset `delivered_at` age. When the sole supervised `run_control` worker exits, the controller clears that session's claimed `run_control` rows before relaunch. Other transports still need explicit `/repair`, which redrives current effects as fresh unclaimed envelopes and does not clear abandoned claimed rows.
 - Restart budget: max **3** restarts per consumer key within a **60s** window, initial restart delay **1s**; beyond budget the consumer is abandoned and the controller can surface a diagnostic.
 - Shared consumer graceful shutdown grace defaults to **5s**; partial stdout line buffer max **65_536** bytes; stderr tail retained for crash diagnostics (**16_384** bytes).
-- Consumer memory recycle threshold **256M** via Messenger worker options.
+- Consumer Messenger soft recycle threshold **128M**. Do not raise PHP/Messenger limits to hide archive-read regressions.
 
 Other notes:
 

@@ -6,7 +6,6 @@ namespace Ineersa\CodingAgent\Tests\Runtime\InProcess;
 
 use Ineersa\AgentCore\Application\Dto\RunStateReplayResult;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
-use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\History\HistorySelectionServiceInterface;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
@@ -27,12 +26,12 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Ineersa\CodingAgent\Session\History\HistoryProjector;
 use Ineersa\CodingAgent\Session\History\HistorySelectionService;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextDiscovery;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextRenderer;
 use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
+use Ineersa\CodingAgent\Tests\Session\History\InMemoryHistoryProjectionStore;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\Attributes\Test;
@@ -82,14 +81,15 @@ final class InProcessSelectHistoryTurnEmitsRunHistoryPositionChangedTest extends
             ->with($this->isInstanceOf(RunState::class), self::RUN_ID, 0)
             ->willReturn(RunStateReplayResult::rebuilt($rebuiltState));
 
+        $projectionStore = new InMemoryHistoryProjectionStore();
+        $projectionStore->seedFromEvents(self::RUN_ID, $this->sessionEvents());
         $historySelectionService = new HistorySelectionService(
             eventStore: $eventStore,
             runStateRebuilder: $rebuilder,
             activeRunContext: $activeRunContext,
             lockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
             logger: new NullLogger(),
-            historyProjector: new HistoryProjector(),
-            replayEventPreparer: new ReplayEventPreparer(),
+            historyProjectionStore: $projectionStore,
             commandBus: new TestMessageBus(),
         );
         $sink = new InMemoryRuntimeEventSink();
@@ -99,7 +99,7 @@ final class InProcessSelectHistoryTurnEmitsRunHistoryPositionChangedTest extends
             payload: ['turn_no' => 1],
         ));
 
-        $canonical = $eventStore->allFor(self::RUN_ID);
+        $canonical = iterator_to_array($eventStore->rangeFor(self::RUN_ID, 1, \PHP_INT_MAX), false);
         $this->assertCount(4, $canonical);
         $this->assertSame(RunEventTypeEnum::HistoryPositionSet->value, $canonical[3]->type);
         $this->assertSame(0, $canonical[3]->payload['position_turn_no']);
@@ -163,6 +163,7 @@ final class InProcessSelectHistoryTurnEmitsRunHistoryPositionChangedTest extends
             sessionRepairService: $this->createStub(\Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface::class),
             transientSink: $sink,
             activeRunContext: $activeRunContext,
+            runStateRebuilder: $this->createStub(RunStateRebuilderInterface::class),
         );
     }
 }

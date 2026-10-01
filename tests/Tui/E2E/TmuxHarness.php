@@ -301,6 +301,30 @@ final class TmuxHarness
     }
 
     /**
+     * True when the pane still exists and tmux reports pane_dead=0.
+     *
+     * Prefer this over posix_kill(pane_pid): a shared tmux server can live outside
+     * the local PID namespace, so /proc absence is not authoritative for liveness.
+     */
+    public function isPaneLive(TmuxPane $pane): bool
+    {
+        if (!$this->paneExists($pane)) {
+            return false;
+        }
+
+        $output = $this->runTmux(
+            \sprintf(
+                'tmux display-message -p -t %s "#{pane_dead}" 2>/dev/null',
+                escapeshellarg($pane->paneId),
+            ),
+            2.0,
+            throwOnTimeout: false,
+        );
+
+        return '0' === trim($output);
+    }
+
+    /**
      * Poll until the pane command exits (pane/session gone) or timeout.
      *
      * Used after Ctrl+D so clean natural process exit is proven before

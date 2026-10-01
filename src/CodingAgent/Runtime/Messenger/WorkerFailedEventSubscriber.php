@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Runtime\Messenger;
 use Ineersa\AgentCore\Application\Handler\RunStateDuplicateSequenceReplayException;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\History\HistoryProjectionMaintainerInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
@@ -47,6 +48,7 @@ final readonly class WorkerFailedEventSubscriber implements EventSubscriberInter
         private ActiveRunContextInterface $activeRunContext,
         private EventStoreInterface $eventStore,
         private LoggerInterface $logger,
+        private ?HistoryProjectionMaintainerInterface $historyProjectionMaintainer = null,
     ) {
     }
 
@@ -134,6 +136,8 @@ final readonly class WorkerFailedEventSubscriber implements EventSubscriberInter
             );
 
             $persisted = $this->eventStore->append($agentEndEvent);
+
+            $this->historyProjectionMaintainer?->applyCommitted($runId, [$persisted]);
 
             $failedState = $current->with([
                 'status' => RunStatus::Failed,

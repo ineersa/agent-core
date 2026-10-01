@@ -6,7 +6,6 @@ namespace Ineersa\CodingAgent\Agent\Execution;
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
-use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -25,6 +24,7 @@ use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
 use Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface;
+use Ineersa\CodingAgent\Session\RunState\RunStateStoreInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Clock\Clock;
 
@@ -41,7 +41,7 @@ final class AgentResumeExecutionService
         private readonly DeferredSubagentChildRepository $childRepository,
         private readonly DeferredSubagentBatchIdentityFactory $identityFactory,
         private readonly AgentRunnerInterface $agentRunner,
-        private readonly RunStateRebuilderInterface $runStateRebuilder,
+        private readonly RunStateStoreInterface $runStateStore,
         private readonly RunRelationshipReaderInterface $relationshipReader,
         private readonly AgentDepthGuard $depthGuard,
         private readonly StackToolExecutionContextAccessor $contextAccessor,
@@ -375,19 +375,12 @@ final class AgentResumeExecutionService
     }
 
     /**
-     * Resume is an explicit cross-process lifecycle boundary. It must rebuild
-     * canonical child events once rather than trusting the legacy state snapshot.
+     * Resume uses the ready shared child RunState projection. Missing/not-ready
+     * projections fail closed; callers must initialize via startup/recovery.
      */
     private function rebuildChildState(string $childRunId): RunState
     {
-        $state = $this->runStateRebuilder
-            ->rebuildIfStale(RunState::queued($childRunId), $childRunId)
-            ->rebuiltState;
-        if (null === $state) {
-            throw new \RuntimeException('Canonical child run state is unavailable.');
-        }
-
-        return $state;
+        return $this->runStateStore->get($childRunId);
     }
 
     private function assertContextBudgetAllowsResume(AgentArtifactEntryDTO $entry): void

@@ -10,11 +10,13 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 use Ineersa\CodingAgent\Repository\RunRelationshipReader;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 
 /**
  * Thesis: hot child/parent classification reads only operational projection rows,
- * never EventStore firstFor(), and unknown identity fails closed.
+ * never EventStore archive scans, and unknown identity fails closed.
  */
+#[AllowMockObjectsWithoutExpectations]
 final class RunRelationshipReaderTest extends IsolatedKernelTestCase
 {
     public function testHotClassificationUsesProjectionOnlyAndNeverTouchesEventStore(): void
@@ -27,8 +29,6 @@ final class RunRelationshipReaderTest extends IsolatedKernelTestCase
         $projection->replace(new RunState('child', RunStatus::Running, parentRunId: 'parent'));
 
         $eventStore = $this->createMock(EventStoreInterface::class);
-        $eventStore->expects($this->never())->method('firstFor');
-        $eventStore->expects($this->never())->method('allFor');
         $container->set(EventStoreInterface::class, $eventStore);
 
         $this->assertFalse($reader->isAgentChild('parent'));

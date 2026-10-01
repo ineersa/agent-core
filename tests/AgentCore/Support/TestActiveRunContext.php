@@ -25,9 +25,31 @@ final class TestActiveRunContext implements ActiveRunContextInterface
         $this->states[$state->runId] = $state;
     }
 
+    public function initializeQueued(string $runId): RunState
+    {
+        return RunState::queued($runId);
+    }
+
+    public function initialize(RunState $state): void
+    {
+    }
+
+    /**
+     * @param list<\Ineersa\AgentCore\Domain\Event\RunEvent> $events
+     */
+    public function applyCommittedSuffix(string $runId, array $events, callable $advance): RunState
+    {
+        return $advance($this->stateFor($runId), $events);
+    }
+
     public function invalidate(string $runId): void
     {
         unset($this->states[$runId]);
+    }
+
+    public function withdrawForCommit(string $runId): void
+    {
+        $this->invalidate($runId);
     }
 
     public function clear(): void

@@ -11,8 +11,6 @@ final class InMemoryEventStore implements EventStoreInterface
 {
     public int $allForCalls = 0;
 
-    public int $firstForCalls = 0;
-
     public int $latestSequenceForCalls = 0;
 
     public int $rangeForCalls = 0;
@@ -68,15 +66,6 @@ final class InMemoryEventStore implements EventStoreInterface
         return $this->highWaterByRun[$runId] ?? null;
     }
 
-    public function firstFor(string $runId): ?RunEvent
-    {
-        ++$this->firstForCalls;
-        $events = $this->eventsByRun[$runId] ?? [];
-        usort($events, static fn (RunEvent $l, RunEvent $r): int => $l->seq <=> $r->seq);
-
-        return $events[0] ?? null;
-    }
-
     public function rangeFor(string $runId, int $startSeq, int $endSeq): iterable
     {
         ++$this->rangeForCalls;
@@ -90,19 +79,14 @@ final class InMemoryEventStore implements EventStoreInterface
         }
     }
 
-    public function reverseFor(string $runId): iterable
+    public function readAfterSeq(string $runId, int $cursor): array
     {
-        $events = $this->allFor($runId);
-        for ($index = \count($events) - 1; $index >= 0; --$index) {
-            yield $events[$index];
+        $events = [];
+        foreach ($this->rangeFor($runId, 1, \PHP_INT_MAX) as $event) {
+            if ($event->seq > $cursor) {
+                $events[] = $event;
+            }
         }
-    }
-
-    public function allFor(string $runId): array
-    {
-        ++$this->allForCalls;
-        $events = $this->eventsByRun[$runId] ?? [];
-        usort($events, static fn (RunEvent $l, RunEvent $r): int => $l->seq <=> $r->seq);
 
         return $events;
     }

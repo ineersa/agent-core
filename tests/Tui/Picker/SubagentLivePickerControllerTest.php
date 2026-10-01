@@ -13,6 +13,7 @@ use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\ChildAgentEventsPathResolverInterface;
 use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInterface;
+use Ineersa\CodingAgent\Runtime\Contract\SessionResumeProjectionDTO;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
@@ -384,7 +385,7 @@ final class SubagentLivePickerControllerTest extends TestCase
         $snapshotProvider->expects($this->exactly(2))
             ->method('snapshot')
             ->with('child-run-snap')
-            ->willReturn(new ChildRunTranscriptSnapshotDTO([$block], [], 4));
+            ->willReturn(new ChildRunTranscriptSnapshotDTO([$block], new SessionResumeProjectionDTO(), [], [], 4));
 
         $picker = new SubagentLivePickerController(
             $harness->tui(),

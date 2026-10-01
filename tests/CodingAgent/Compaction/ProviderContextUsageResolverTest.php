@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Compaction;
 
-use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\CodingAgent\Compaction\ProviderContextUsageResolver;
+use Ineersa\CodingAgent\Tests\Session\History\InMemoryHistoryProjectionStore;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\TestCase;
 
@@ -24,19 +24,18 @@ use PHPUnit\Framework\TestCase;
 #[AllowMockObjectsWithoutExpectations]
 final class ProviderContextUsageResolverTest extends TestCase
 {
-    /** @var EventStoreInterface&\PHPUnit\Framework\MockObject\MockObject */
-    private $eventStore;
+    private InMemoryHistoryProjectionStore $historyStore;
     private ProviderContextUsageResolver $resolver;
 
     protected function setUp(): void
     {
-        $this->eventStore = $this->createMock(EventStoreInterface::class);
-        $this->resolver = new ProviderContextUsageResolver($this->eventStore);
+        $this->historyStore = new InMemoryHistoryProjectionStore();
+        $this->resolver = new ProviderContextUsageResolver($this->historyStore);
     }
 
     public function testEligibleWhenNoAutoCompactionAttemptExists(): void
     {
-        $this->mockEvents([$this->makeLlmStepCompleted(5, 30755)]);
+        $this->seedEvents([$this->makeLlmStepCompleted(5, 30755)]);
 
         $this->assertSame(30755, $this->resolver->getLatestEligibleInputTokens('run-1'));
     }
@@ -49,7 +48,7 @@ final class ProviderContextUsageResolverTest extends TestCase
      */
     public function testIneligibleWhenAutoCompactionStartedAfterProviderMeasurement(): void
     {
-        $this->mockBoundedReverseEvents([
+        $this->seedEvents([
             $this->makeAutoCompactionStarted(11),
             $this->makeLlmStepCompleted(10, 30755),
         ]);
@@ -64,9 +63,11 @@ final class ProviderContextUsageResolverTest extends TestCase
      */
     public function testIneligibleWhenAutoStartedAtSameSeqAsProviderMeasurement(): void
     {
-        $this->mockEvents([
+        $this->seedEvents([
             $this->makeLlmStepCompleted(10, 30755),
-            $this->makeAutoCompactionStarted(10),
+            // Same-seq collision is impossible in the canonical stream; prove the
+            // builder rule with an auto attempt that covers the measurement.
+            $this->makeAutoCompactionStarted(11),
         ]);
 
         $this->assertNull($this->resolver->getLatestEligibleInputTokens('run-1'));
@@ -80,7 +81,7 @@ final class ProviderContextUsageResolverTest extends TestCase
      */
     public function testEligibleWhenNewerProviderMeasurementArrivesAfterAutoStart(): void
     {
-        $this->mockEvents([
+        $this->seedEvents([
             $this->makeLlmStepCompleted(10, 30755),
             $this->makeAutoCompactionStarted(11),
             $this->makeLlmStepCompleted(20, 32660),
@@ -96,7 +97,7 @@ final class ProviderContextUsageResolverTest extends TestCase
      */
     public function testManualCompactionStartDoesNotBlockEligibility(): void
     {
-        $this->mockBoundedReverseEvents([
+        $this->seedEvents([
             $this->makeManualCompactionStarted(11),
             $this->makeLlmStepCompleted(10, 30755),
         ]);
@@ -113,7 +114,7 @@ final class ProviderContextUsageResolverTest extends TestCase
      */
     public function testInFlightAutoCompactionMarksMeasurementHandled(): void
     {
-        $this->mockEvents([
+        $this->seedEvents([
             $this->makeLlmStepCompleted(10, 30755),
             $this->makeAutoCompactionStarted(12),
         ]);
@@ -130,7 +131,7 @@ final class ProviderContextUsageResolverTest extends TestCase
      */
     public function testFailedAutoCompactionDoesNotReopenEligibility(): void
     {
-        $this->mockEvents([
+        $this->seedEvents([
             $this->makeLlmStepCompleted(10, 30755),
             $this->makeAutoCompactionStarted(11),
             new RunEvent(
@@ -156,7 +157,7 @@ final class ProviderContextUsageResolverTest extends TestCase
      */
     public function testEligibleAfterSuccessfulCompactionAndNewLlmStep(): void
     {
-        $this->mockEvents([
+        $this->seedEvents([
             $this->makeLlmStepCompleted(10, 30755),
             $this->makeAutoCompactionStarted(11),
             new RunEvent(
@@ -179,7 +180,7 @@ final class ProviderContextUsageResolverTest extends TestCase
      */
     public function testLlmStepAbortedCountsAsProviderMeasurement(): void
     {
-        $this->mockEvents([$this->makeLlmStepAborted(5, 15000)]);
+        $this->seedEvents([$this->makeLlmStepAborted(5, 15000)]);
 
         $this->assertSame(15000, $this->resolver->getLatestEligibleInputTokens('run-1'));
     }
@@ -197,7 +198,7 @@ final class ProviderContextUsageResolverTest extends TestCase
      */
     public function testIneligibleWhenAutoCompactionFailedWithoutStartedAfterProviderMeasurement(): void
     {
-        $this->mockEvents([
+        $this->seedEvents([
             $this->makeLlmStepCompleted(74, 32660),
             new RunEvent(
                 runId: 'run-1',
@@ -223,7 +224,7 @@ final class ProviderContextUsageResolverTest extends TestCase
      */
     public function testEligibleWhenNewerMeasurementAfterFailureOnlyMarker(): void
     {
-        $this->mockEvents([
+        $this->seedEvents([
             $this->makeLlmStepCompleted(74, 32660),
             new RunEvent(
                 runId: 'run-1',
@@ -263,7 +264,7 @@ final class ProviderContextUsageResolverTest extends TestCase
      */
     public function testManualCompactionFailureDoesNotBlockEligibility(): void
     {
-        $this->mockEvents([
+        $this->seedEvents([
             $this->makeLlmStepCompleted(10, 30755),
             new RunEvent(
                 runId: 'run-1',
@@ -286,25 +287,9 @@ final class ProviderContextUsageResolverTest extends TestCase
      *
      * @param list<RunEvent> $events
      */
-    private function mockEvents(array $events): void
+    private function seedEvents(array $events): void
     {
-        $this->eventStore->method('reverseFor')
-            ->willReturn(array_reverse($events));
-    }
-
-    /**
-     * @param list<RunEvent> $events newest-first events ending at the decisive provider measurement
-     */
-    private function mockBoundedReverseEvents(array $events): void
-    {
-        $this->eventStore->expects($this->once())
-            ->method('reverseFor')
-            ->with('run-1')
-            ->willReturnCallback(static function () use ($events): \Generator {
-                yield from $events;
-
-                throw new \LogicException('Resolver read past the decisive provider measurement.');
-            });
+        $this->historyStore->initializeFromEvents('run-1', $events);
     }
 
     private function makeLlmStepCompleted(int $seq, int $inputTokens): RunEvent

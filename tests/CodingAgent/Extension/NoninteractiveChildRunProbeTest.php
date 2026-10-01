@@ -4,100 +4,73 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Extension;
 
-use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
-use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
-use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
-use Ineersa\CodingAgent\Extension\NoninteractiveChildRunProbe;
+use Ineersa\CodingAgent\Agent\Execution\RunStartedMetadataReader;
+use Ineersa\CodingAgent\Tests\Session\History\InMemoryHistoryProjectionStore;
 use PHPUnit\Framework\TestCase;
 
 final class NoninteractiveChildRunProbeTest extends TestCase
 {
-    public function testDetectsNoninteractiveChildFromFirstEventWithoutReadingFullHistory(): void
+    public function testEmptyRunIdIsNotChild(): void
     {
-        $runId = 'child-run-1';
-        $store = $this->createMock(EventStoreInterface::class);
-        $store->expects($this->once())
-            ->method('firstFor')
-            ->with($runId)
-            ->willReturn($this->runStarted($runId, 'agent_child', false));
-        $store->expects($this->never())->method('allFor');
-
-        $probe = new NoninteractiveChildRunProbe($store, AttributeSerializerValidatorTestFactory::denormalizer());
-
-        $this->assertTrue($probe->isNoninteractiveChildRun($runId));
-    }
-
-    public function testReturnsFalseForMissingOrEmptyRunIds(): void
-    {
-        $store = new InMemoryEventStore();
-        $probe = new NoninteractiveChildRunProbe($store, AttributeSerializerValidatorTestFactory::denormalizer());
-
+        $probe = new RunStartedMetadataReader(new InMemoryHistoryProjectionStore());
         $this->assertFalse($probe->isNoninteractiveChildRun(null));
         $this->assertFalse($probe->isNoninteractiveChildRun(''));
-        $this->assertFalse($probe->isNoninteractiveChildRun('missing-run'));
-        $this->assertSame(1, $store->firstForCalls);
-        $this->assertSame(0, $store->allForCalls);
     }
 
-    public function testReturnsFalseForParentAndInteractiveChild(): void
+    public function testNoninteractiveChildIsDetected(): void
     {
-        $store = new InMemoryEventStore();
-        $store->seed($this->runStarted('parent-run', 'parent', true));
-        $store->seed($this->runStarted('interactive-child-run', 'agent_child', true));
-        $probe = new NoninteractiveChildRunProbe($store, AttributeSerializerValidatorTestFactory::denormalizer());
+        $store = new InMemoryHistoryProjectionStore();
+        $store->initializeFromEvents('child-1', [$this->runStarted('child-1', interactive: false)]);
+        $probe = new RunStartedMetadataReader($store);
 
-        $this->assertFalse($probe->isNoninteractiveChildRun('parent-run'));
-        $this->assertFalse($probe->isNoninteractiveChildRun('interactive-child-run'));
-        $this->assertSame(2, $store->firstForCalls);
-        $this->assertSame(0, $store->allForCalls);
+        $this->assertTrue($probe->isNoninteractiveChildRun('child-1'));
+        $this->assertSame(1, $store->getCalls);
+        $this->assertTrue($probe->isNoninteractiveChildRun('child-1'));
+        $this->assertSame(2, $store->getCalls);
     }
 
-    public function testReturnsFalseWhenFirstEventIsNotRunStarted(): void
+    public function testInteractiveChildIsNotDetected(): void
     {
-        $runId = 'wrong-first-event';
-        $store = new InMemoryEventStore();
-        $store->seed(new RunEvent(
-            runId: $runId,
-            seq: 1,
-            turnNo: 0,
-            type: RunEventTypeEnum::AgentEnd->value,
-            payload: [],
-            createdAt: new \DateTimeImmutable(),
-        ));
-        $store->seed($this->runStarted($runId, 'agent_child', false, 2));
-        $probe = new NoninteractiveChildRunProbe($store, AttributeSerializerValidatorTestFactory::denormalizer());
+        $store = new InMemoryHistoryProjectionStore();
+        $store->initializeFromEvents('child-2', [$this->runStarted('child-2', interactive: true)]);
+        $probe = new RunStartedMetadataReader($store);
 
-        $this->assertFalse($probe->isNoninteractiveChildRun($runId));
-        $this->assertSame(1, $store->firstForCalls);
-        $this->assertSame(0, $store->allForCalls);
+        $this->assertFalse($probe->isNoninteractiveChildRun('child-2'));
     }
 
-    private function runStarted(string $runId, string $kind, bool $interactive, int $seq = 1): RunEvent
+    public function testMissingProjectionFailsClosed(): void
+    {
+        $probe = new RunStartedMetadataReader(new InMemoryHistoryProjectionStore());
+        $this->expectException(\RuntimeException::class);
+        $probe->isNoninteractiveChildRun('missing');
+    }
+
+    private function runStarted(string $runId, bool $interactive): RunEvent
     {
         return new RunEvent(
             runId: $runId,
-            seq: $seq,
+            seq: 1,
             turnNo: 0,
             type: RunEventTypeEnum::RunStarted->value,
             payload: [
                 'payload' => [
                     'metadata' => [
                         'session' => [
-                            'kind' => $kind,
-                            'interactive' => $interactive,
+                            'kind' => 'agent_child',
                             'parent_run_id' => 'parent-1',
                             'agent_name' => 'scout',
-                            'artifact_id' => 'agent_child1',
+                            'artifact_id' => 'agent_abc',
+                            'interactive' => $interactive,
                         ],
                         'model' => 'deepseek/deepseek-v4-flash',
                         'reasoning' => 'medium',
-                        'tools_scope' => ['allowed_tools' => []],
+                        'tools_scope' => ['allowed_tools' => ['bash']],
+                        'extensions' => [],
                     ],
                 ],
             ],
-            createdAt: new \DateTimeImmutable(),
         );
     }
 }

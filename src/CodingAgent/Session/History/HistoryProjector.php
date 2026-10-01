@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Session\History;
 
 use Ineersa\AgentCore\Domain\Event\RunEvent;
-use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 
 /**
  * Builds flat retained history from the canonical run event stream.
@@ -21,6 +20,11 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
  */
 final class HistoryProjector
 {
+    public function __construct(
+        private readonly EventInspectionSummarizer $eventInspectionSummarizer = new EventInspectionSummarizer(),
+    ) {
+    }
+
     /**
      * @param list<RunEvent> $events
      */
@@ -33,119 +37,28 @@ final class HistoryProjector
         $sorted = $events;
         usort($sorted, static fn (RunEvent $left, RunEvent $right): int => $left->seq <=> $right->seq);
 
-        /** @var list<int> $retainedTurnNos */
-        $retainedTurnNos = [];
-        /** @var array<int, string> $promptsByTurnNo */
-        $promptsByTurnNo = [];
-        $positionTurnNo = 0;
-        $initialPrompt = null;
-        $pendingHumanPrompt = null;
-
+        $builder = $this->createStreamBuilder();
         foreach ($sorted as $event) {
-            if (RunEventTypeEnum::RunStarted->value === $event->type) {
-                $text = self::extractInitialUserText($event);
-                if ('' !== $text) {
-                    $initialPrompt = $text;
-                }
-                continue;
-            }
-
-            if (RunEventTypeEnum::AgentCommandApplied->value === $event->type) {
-                $kind = \is_string($event->payload['kind'] ?? null) ? $event->payload['kind'] : null;
-                // Only honest human input seeds a selectable prompt.
-                // append_message is generated (context budget / completion) — not user history.
-                if (!\in_array($kind, ['follow_up', 'steer'], true)) {
-                    continue;
-                }
-                $text = \is_string($event->payload['text'] ?? null) ? $event->payload['text'] : '';
-                if ('' === $text) {
-                    $message = $event->payload['message'] ?? null;
-                    if (\is_array($message)) {
-                        $text = self::extractTextFromContent($message['content'] ?? []);
-                    }
-                }
-                if ('' !== $text) {
-                    // Latest applied human prompt wins when multiple precede one anchor.
-                    $pendingHumanPrompt = $text;
-                }
-                continue;
-            }
-
-            if (RunEventTypeEnum::TurnAdvanced->value === $event->type) {
-                $turnNo = (int) ($event->payload['turn_no'] ?? $event->turnNo);
-                if ($turnNo <= 0) {
-                    continue;
-                }
-
-                if (!\in_array($turnNo, $retainedTurnNos, true)) {
-                    $retainedTurnNos[] = $turnNo;
-                }
-
-                // Attach pending human prompt (or initial RunStarted prompt for first anchor).
-                if (null !== $pendingHumanPrompt) {
-                    $promptsByTurnNo[$turnNo] = $pendingHumanPrompt;
-                    $pendingHumanPrompt = null;
-                } elseif (null !== $initialPrompt) {
-                    // First retained anchor receives the session-start human prompt once.
-                    $promptsByTurnNo[$turnNo] = $initialPrompt;
-                }
-                // Never re-attach the session-start prompt to later internal anchors.
-                $initialPrompt = null;
-
-                $positionTurnNo = $turnNo;
-                continue;
-            }
-
-            if (RunEventTypeEnum::HistoryPositionSet->value === $event->type) {
-                $turnNo = (int) ($event->payload['position_turn_no'] ?? $event->turnNo);
-                if (0 === $turnNo) {
-                    $positionTurnNo = 0;
-                    continue;
-                }
-                if (\in_array($turnNo, $retainedTurnNos, true)) {
-                    $positionTurnNo = $turnNo;
-                }
-                continue;
-            }
-
-            if (RunEventTypeEnum::HistoryTailDiscarded->value === $event->type) {
-                $after = (int) ($event->payload['after_turn_no'] ?? 0);
-                $retainedTurnNos = array_values(array_filter(
-                    $retainedTurnNos,
-                    static fn (int $t): bool => $t <= $after,
-                ));
-                foreach (array_keys($promptsByTurnNo) as $promptTurn) {
-                    if (!\in_array($promptTurn, $retainedTurnNos, true)) {
-                        unset($promptsByTurnNo[$promptTurn]);
-                    }
-                }
-                $pendingHumanPrompt = null;
-                if (0 === $after || [] === $retainedTurnNos) {
-                    $positionTurnNo = 0;
-                } elseif (\in_array($after, $retainedTurnNos, true)) {
-                    $positionTurnNo = $after;
-                } elseif ($positionTurnNo > $after) {
-                    $positionTurnNo = $retainedTurnNos[array_key_last($retainedTurnNos)];
-                }
-                // Compaction events leave pending human prompt intact (not handled here).
-            }
+            $builder->apply($event);
         }
 
-        // Drop invalid position if it failed to materialize as a retained anchor.
-        if (0 !== $positionTurnNo && !\in_array($positionTurnNo, $retainedTurnNos, true)) {
-            $positionTurnNo = [] !== $retainedTurnNos
-                ? $retainedTurnNos[array_key_last($retainedTurnNos)]
-                : 0;
-        }
-
-        return new HistoryDTO(
-            retainedTurnNos: $retainedTurnNos,
-            promptsByTurnNo: $promptsByTurnNo,
-            positionTurnNo: $positionTurnNo,
-        );
+        return $builder->finish();
     }
 
-    private static function extractInitialUserText(RunEvent $event): string
+    public function createStreamBuilder(): HistoryStreamBuilder
+    {
+        return new HistoryStreamBuilder($this->eventInspectionSummarizer);
+    }
+
+    public function eventInspectionSummarizer(): EventInspectionSummarizer
+    {
+        return $this->eventInspectionSummarizer;
+    }
+
+    /**
+     * @internal used by {@see HistoryStreamBuilder}
+     */
+    public static function extractInitialUserText(RunEvent $event): string
     {
         $innerPayload = \is_array($event->payload['payload'] ?? null) ? $event->payload['payload'] : [];
         $nested = \is_array($innerPayload['messages'] ?? null) ? $innerPayload['messages'] : [];
@@ -166,7 +79,10 @@ final class HistoryProjector
         return '';
     }
 
-    private static function extractTextFromContent(mixed $content): string
+    /**
+     * @internal used by {@see HistoryStreamBuilder}
+     */
+    public static function extractTextFromContent(mixed $content): string
     {
         if (!\is_array($content) || [] === $content) {
             return '';

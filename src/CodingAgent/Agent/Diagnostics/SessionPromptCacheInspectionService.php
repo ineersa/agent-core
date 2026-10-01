@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Diagnostics;
 
+use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactEntryDTO;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
@@ -52,7 +53,7 @@ final class SessionPromptCacheInspectionService
             $families,
             $sessionId,
             'parent',
-            $this->parentEventStore->allFor($sessionId),
+            $this->streamInspectionEvents($this->parentEventStore, $sessionId),
             $this->diagnosticsStore->readForRun($sessionId),
         );
         foreach ($this->artifactRegistry->list($sessionId) as $entry) {
@@ -68,7 +69,8 @@ final class SessionPromptCacheInspectionService
         try {
             $events = $this->childEventStoreFactory
                 ->create($parentRunId, $entry->agentRunId, $entry->artifactId)
-                ->allFor($entry->agentRunId);
+                ->rangeFor($entry->agentRunId, 1, \PHP_INT_MAX);
+            $events = $this->retainInspectionEvents($events);
         } catch (\Throwable $e) {
             $this->logger->warning('session.cache_inspect.child_events_unavailable', [
                 'component' => 'session_prompt_cache_inspection',
@@ -226,6 +228,33 @@ final class SessionPromptCacheInspectionService
         }
 
         return null;
+    }
+
+    /**
+     * @return list<RunEvent>
+     */
+    private function streamInspectionEvents(EventStoreInterface $store, string $runId): array
+    {
+        return $this->retainInspectionEvents($store->rangeFor($runId, 1, \PHP_INT_MAX));
+    }
+
+    /**
+     * Keep only the fields needed for prompt-cache family analysis.
+     *
+     * @param iterable<RunEvent> $events
+     *
+     * @return list<RunEvent>
+     */
+    private function retainInspectionEvents(iterable $events): array
+    {
+        $kept = [];
+        foreach ($events as $event) {
+            if ('run_started' === $event->type || \in_array($event->type, self::LLM_STEP_TYPES, true)) {
+                $kept[] = $event;
+            }
+        }
+
+        return $kept;
     }
 
     /**

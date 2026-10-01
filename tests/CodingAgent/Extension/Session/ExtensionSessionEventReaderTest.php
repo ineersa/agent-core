@@ -52,24 +52,21 @@ final class ExtensionSessionEventReaderTest extends TestCase
                 throw new \LogicException('not used');
             }
 
-            public function firstFor(string $runId): ?RunEvent
-            {
-                throw new \LogicException('not used');
-            }
-
             public function rangeFor(string $runId, int $startSeq, int $endSeq): iterable
             {
                 throw new \RuntimeException('store failure');
             }
 
-            public function reverseFor(string $runId): iterable
+            public function readAfterSeq(string $runId, int $cursor): array
             {
-                return [];
-            }
+                $events = [];
+                foreach ($this->rangeFor($runId, 1, \PHP_INT_MAX) as $event) {
+                    if ($event->seq > $cursor) {
+                        $events[] = $event;
+                    }
+                }
 
-            public function allFor(string $runId): array
-            {
-                throw new \LogicException('allFor must not be used');
+                return $events;
             }
         }, new TestLogger());
 

@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Agent\Artifact;
 
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\CodingAgent\Runtime\ChildRunPhysicalSuffixReaderInterface;
 
 /**
  * Child-aware decorator for EventStoreInterface that delegates between parent-scoped and
@@ -17,7 +18,7 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
  *
  * Child run location uses AgentChildRunDirectory.
  */
-final class ChildAwareEventStore implements EventStoreInterface
+final class ChildAwareEventStore implements EventStoreInterface, ChildRunPhysicalSuffixReaderInterface
 {
     /** @var array<string, AgentChildRunEventStore> agentRunId → store */
     private array $childStores = [];
@@ -70,16 +71,6 @@ final class ChildAwareEventStore implements EventStoreInterface
         return $this->parentStore->latestSequenceFor($runId);
     }
 
-    public function firstFor(string $runId): ?RunEvent
-    {
-        $childStore = $this->resolveChildStore($runId);
-        if (null !== $childStore) {
-            return $childStore->firstFor($runId);
-        }
-
-        return $this->parentStore->firstFor($runId);
-    }
-
     public function rangeFor(string $runId, int $startSeq, int $endSeq): iterable
     {
         $childStore = $this->resolveChildStore($runId);
@@ -90,24 +81,20 @@ final class ChildAwareEventStore implements EventStoreInterface
         return $this->parentStore->rangeFor($runId, $startSeq, $endSeq);
     }
 
-    public function reverseFor(string $runId): iterable
+    /**
+     * Physical reverse-cursor suffix read. Child runs use the child store cursor;
+     * parent runs use the parent store reverse scan and stop at $cursor.
+     *
+     * @return list<RunEvent>
+     */
+    public function readAfterSeq(string $runId, int $cursor): array
     {
         $childStore = $this->resolveChildStore($runId);
         if (null !== $childStore) {
-            return $childStore->reverseFor($runId);
+            return $childStore->readAfterSeq($runId, $cursor);
         }
 
-        return $this->parentStore->reverseFor($runId);
-    }
-
-    public function allFor(string $runId): array
-    {
-        $childStore = $this->resolveChildStore($runId);
-        if (null !== $childStore) {
-            return $childStore->allFor($runId);
-        }
-
-        return $this->parentStore->allFor($runId);
+        return $this->parentStore->readAfterSeq($runId, $cursor);
     }
 
     /**

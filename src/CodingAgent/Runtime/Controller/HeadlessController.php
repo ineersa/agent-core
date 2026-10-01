@@ -143,24 +143,7 @@ final class HeadlessController
             throw $exception;
         }
 
-        // Wire the consumer abandonment callback so the TUI sees a
-        // protocol error when a consumer is permanently lost instead of
-        // sitting on "Working..." indefinitely.
-        $this->consumerSupervisor->onConsumerAbandoned(function (string $key, string $transportName): void {
-            $this->emitter->emit(new RuntimeEvent(
-                type: RuntimeEventTypeEnum::ProtocolError->value,
-                runId: '',
-                seq: 0,
-                payload: [
-                    'error' => \sprintf(
-                        'Consumer abandoned after restart limit: transport=%s key=%s. Some agent capabilities may be unavailable.',
-                        $transportName,
-                        $key,
-                    ),
-                    'transport' => $transportName,
-                ],
-            ));
-        });
+        $this->wireConsumerDiagnostics();
 
         // Launch messenger consumers before advertising readiness. Clients that
         // send start_run immediately after runtime.ready must not race empty
@@ -283,6 +266,62 @@ final class HeadlessController
         EventLoop::run();
 
         return Command::SUCCESS;
+    }
+
+    private function wireConsumerDiagnostics(): void
+    {
+        // Wire the consumer abandonment callback so the TUI sees a
+        // protocol error when a consumer is permanently lost instead of
+        // sitting on "Working..." indefinitely.
+        $this->consumerSupervisor->onConsumerAbandoned(function (string $key, string $transportName): void {
+            $this->emitter->emit(new RuntimeEvent(
+                type: RuntimeEventTypeEnum::ProtocolError->value,
+                runId: '',
+                seq: 0,
+                payload: [
+                    'error' => \sprintf(
+                        'Consumer abandoned after restart limit: transport=%s key=%s. Some agent capabilities may be unavailable.',
+                        $transportName,
+                        $key,
+                    ),
+                    'transport' => $transportName,
+                ],
+            ));
+        });
+
+        // Abnormal run_control death leaves the Doctrine claim held under the
+        // long lease. ConsumerSupervisor clears the session run_control claim
+        // after the tracked worker exits. Surface an actionable failure only
+        // when that reclaim cannot complete.
+        $this->consumerSupervisor->onRunControlClaimRecoveryFailed(function (string $sessionId, int $exitCode, string $stderr, string $failure): void {
+            $guidance = 'live_owner_present' === $failure
+                ? \sprintf(
+                    'run_control worker exited (exit=%d) but another live owner still holds exclusive claim ownership (%s). Session %s was not reclaimed; wait for that owner to exit or use `/repair` only after confirming no live controller/worker owns the session.',
+                    $exitCode,
+                    $failure,
+                    $sessionId,
+                )
+                : \sprintf(
+                    'run_control worker exited (exit=%d) and claim recovery failed (%s). Session %s may stay stuck until `/repair` then `/repair --apply` after confirming no live controller owns that session.',
+                    $exitCode,
+                    $failure,
+                    $sessionId,
+                );
+
+            $this->emitter->emit(new RuntimeEvent(
+                type: RuntimeEventTypeEnum::ProtocolError->value,
+                runId: $sessionId,
+                seq: 0,
+                payload: [
+                    'error' => $guidance,
+                    'transport' => 'run_control',
+                    'session_id' => $sessionId,
+                    'exit_code' => $exitCode,
+                    'failure' => $failure,
+                    'recovery' => 'repair_required',
+                ],
+            ));
+        });
     }
 
     // ── Command handling ─────────────────────────────────────────────────
@@ -532,12 +571,7 @@ final class HeadlessController
 
     private function sessionOwnerLockResource(): string
     {
-        $canonicalCwd = realpath($this->runtimeCwd);
-        if (false === $canonicalCwd) {
-            $canonicalCwd = $this->runtimeCwd;
-        }
-
-        return 'hatfield.controller.session.'.hash('sha256', $canonicalCwd."\0".$this->sessionId);
+        return SessionScopedLockResource::controllerOwner($this->runtimeCwd, $this->sessionId);
     }
 
     /**

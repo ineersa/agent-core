@@ -10,14 +10,13 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
-use Ineersa\CodingAgent\Agent\Execution\RunStartedMetadataReader;
 use Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobMessage;
 use Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobRegistry;
 use Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobWorker;
 use Ineersa\CodingAgent\Extension\ExtensionAfterTurnCommitHookSubscriber;
 use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\CodingAgent\Extension\ExtensionRegistrationContext;
+use Ineersa\CodingAgent\Tests\Support\RunStartedMetadataReaderTestFactory;
 use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookContextDTO;
@@ -52,7 +51,7 @@ final class ChildExtensionOmIsolationTest extends TestCase
         });
 
         $eventStore = $this->createStub(EventStoreInterface::class);
-        $eventStore->method('firstFor')->willReturn(new RunEvent(
+        $eventStore->method('rangeFor')->willReturn([new RunEvent(
             runId: 'child-om-1',
             seq: 1,
             turnNo: 0,
@@ -77,12 +76,12 @@ final class ChildExtensionOmIsolationTest extends TestCase
                     ],
                 ],
             ],
-        ));
+        )]);
 
         $subscriber = new ExtensionAfterTurnCommitHookSubscriber(
             $registry,
             new NullLogger(),
-            new RunStartedMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer()),
+            RunStartedMetadataReaderTestFactory::fromEventStore($eventStore, 'child-om-1'),
         );
 
         $subscriber->handleAfterTurnCommit(new AfterTurnCommitHookContext(
@@ -116,7 +115,7 @@ final class ChildExtensionOmIsolationTest extends TestCase
         });
 
         $eventStore = $this->createStub(EventStoreInterface::class);
-        $eventStore->method('firstFor')->willReturn(new RunEvent(
+        $eventStore->method('rangeFor')->willReturn([new RunEvent(
             runId: 'child-om-2',
             seq: 1,
             turnNo: 0,
@@ -140,13 +139,13 @@ final class ChildExtensionOmIsolationTest extends TestCase
                     ],
                 ],
             ],
-        ));
+        )]);
 
         $worker = new ExtensionAgentJobWorker(
             $jobs,
             $this->createStub(ExtensionApiInterface::class),
             new NullLogger(),
-            new RunStartedMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer()),
+            RunStartedMetadataReaderTestFactory::fromEventStore($eventStore, 'child-om-2'),
         );
 
         $worker(new ExtensionAgentJobMessage(

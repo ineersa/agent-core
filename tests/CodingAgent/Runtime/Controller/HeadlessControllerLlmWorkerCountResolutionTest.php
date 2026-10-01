@@ -40,7 +40,13 @@ final class HeadlessControllerLlmWorkerCountResolutionTest extends TestCase
         $locator->method('path')->willReturn('/bin/true');
         $locator->method('command')->willReturn(['/bin/true']);
         $config = new RuntimeProcessConfig($locator, sys_get_temp_dir());
-        $supervisor = new ConsumerSupervisor($logger, $config);
+        $noopRecovery = new class implements \Ineersa\CodingAgent\Runtime\Messenger\RunControlClaimRecoveryInterface {
+            public function releaseAbandonedClaims(string $sessionId): array
+            {
+                return ['released' => 0, 'failure' => null];
+            }
+        };
+        $supervisor = new ConsumerSupervisor($logger, $config, runControlClaimRecovery: $noopRecovery);
         $boundary = new RuntimeExceptionBoundary(new EventDispatcher());
         $emitter = new RuntimeEventEmitter($logger);
 

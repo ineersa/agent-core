@@ -26,7 +26,7 @@ final class ChildAwareEventStoreTest extends IsolatedKernelTestCase
         // Should not throw.
         $store->append($event);
 
-        $events = $store->allFor('parent-ev-router');
+        $events = iterator_to_array($store->rangeFor('parent-ev-router', 1, \PHP_INT_MAX), false);
         $this->assertNotEmpty($events);
         $this->assertSame('parent-ev-router', $events[0]->runId);
     }
@@ -35,7 +35,7 @@ final class ChildAwareEventStoreTest extends IsolatedKernelTestCase
     {
         $store = self::getContainer()->get(ChildAwareEventStore::class);
 
-        $events = $store->allFor('nonexistent-ev-id');
+        $events = iterator_to_array($store->rangeFor('nonexistent-ev-id', 1, \PHP_INT_MAX), false);
         $this->assertSame([], $events);
     }
 
@@ -85,7 +85,7 @@ final class ChildAwareEventStoreTest extends IsolatedKernelTestCase
 
         $store->appendMany($events);
 
-        $results = $store->allFor('parent-ev-many');
+        $results = iterator_to_array($store->rangeFor('parent-ev-many', 1, \PHP_INT_MAX), false);
         $this->assertCount(2, $results);
     }
 }

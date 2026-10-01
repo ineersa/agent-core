@@ -10,9 +10,9 @@ use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
-use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Agent\Execution\RunStartedMetadataReader;
 use Ineersa\CodingAgent\Agent\Execution\SubagentToolSetResolver;
+use Ineersa\CodingAgent\Tests\Session\History\InMemoryHistoryProjectionStore;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
@@ -29,9 +29,7 @@ final class SubagentToolSetResolverTest extends TestCase
             ->with('ref', null, null)
             ->willReturn(new ActiveToolSet(toolNames: ['read', 'write']));
 
-        $eventStore = $this->createStub(EventStoreInterface::class);
-
-        $resolver = new SubagentToolSetResolver($inner, new RunStartedMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer()), new ToolRegistry());
+        $resolver = new SubagentToolSetResolver($inner, new RunStartedMetadataReader(new InMemoryHistoryProjectionStore()), new ToolRegistry());
         $result = $resolver->resolve('ref');
 
         $this->assertSame(['read', 'write'], $result->toolNames);
@@ -46,11 +44,11 @@ final class SubagentToolSetResolverTest extends TestCase
 
         $eventStore = $this->createMock(EventStoreInterface::class);
         $eventStore->expects($this->atLeastOnce())
-            ->method('firstFor')
-            ->with('parent-run')
-            ->willReturn(null); // No RunStarted event at all
+            ->method('rangeFor')
+            ->with('parent-run', 1, \PHP_INT_MAX)
+            ->willReturn([]); // No RunStarted event at all
 
-        $resolver = new SubagentToolSetResolver($inner, new RunStartedMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer()), new ToolRegistry());
+        $resolver = new SubagentToolSetResolver($inner, $this->metadataReaderFromEventStore($eventStore, 'parent-run'), new ToolRegistry());
         $result = $resolver->resolve('ref', runId: 'parent-run');
 
         $this->assertSame(['read', 'write'], $result->toolNames);
@@ -74,17 +72,17 @@ final class SubagentToolSetResolverTest extends TestCase
 
         $eventStore = $this->createMock(EventStoreInterface::class);
         $eventStore->expects($this->atLeastOnce())
-            ->method('firstFor')
-            ->with('child-run')
-            ->willReturn(new RunEvent(
+            ->method('rangeFor')
+            ->with('child-run', 1, \PHP_INT_MAX)
+            ->willReturn([new RunEvent(
                 runId: 'child-run',
                 seq: 1,
                 turnNo: 0,
                 type: RunEventTypeEnum::RunStarted->value,
                 payload: $this->childRunStartedPayload(['read', 'bash']),
-            ));
+            )]);
 
-        $resolver = new SubagentToolSetResolver($inner, new RunStartedMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer()), new ToolRegistry());
+        $resolver = new SubagentToolSetResolver($inner, $this->metadataReaderFromEventStore($eventStore, 'child-run'), new ToolRegistry());
         $result = $resolver->resolve('ref', runId: 'child-run');
 
         $this->assertSame(['read', 'bash'], $result->toolNames);
@@ -109,17 +107,17 @@ final class SubagentToolSetResolverTest extends TestCase
 
         $eventStore = $this->createMock(EventStoreInterface::class);
         $eventStore->expects($this->atLeastOnce())
-            ->method('firstFor')
-            ->with('child-run')
-            ->willReturn(new RunEvent(
+            ->method('rangeFor')
+            ->with('child-run', 1, \PHP_INT_MAX)
+            ->willReturn([new RunEvent(
                 runId: 'child-run',
                 seq: 1,
                 turnNo: 0,
                 type: RunEventTypeEnum::RunStarted->value,
                 payload: $this->childRunStartedPayload(['bash_only']),
-            ));
+            )]);
 
-        $resolver = new SubagentToolSetResolver($inner, new RunStartedMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer()), new ToolRegistry());
+        $resolver = new SubagentToolSetResolver($inner, $this->metadataReaderFromEventStore($eventStore, 'child-run'), new ToolRegistry());
         $result = $resolver->resolve('ref', runId: 'child-run');
 
         $this->assertSame([], $result->toolNames);
@@ -139,17 +137,17 @@ final class SubagentToolSetResolverTest extends TestCase
 
         $eventStore = $this->createMock(EventStoreInterface::class);
         $eventStore->expects($this->atLeastOnce())
-            ->method('firstFor')
-            ->with('child-run')
-            ->willReturn(new RunEvent(
+            ->method('rangeFor')
+            ->with('child-run', 1, \PHP_INT_MAX)
+            ->willReturn([new RunEvent(
                 runId: 'child-run',
                 seq: 1,
                 turnNo: 0,
                 type: RunEventTypeEnum::RunStarted->value,
                 payload: $this->childRunStartedPayload(['read', 'write']),
-            ));
+            )]);
 
-        $resolver = new SubagentToolSetResolver($inner, new RunStartedMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer()), new ToolRegistry());
+        $resolver = new SubagentToolSetResolver($inner, $this->metadataReaderFromEventStore($eventStore, 'child-run'), new ToolRegistry());
         $result = $resolver->resolve('ref', runId: 'child-run');
 
         $this->assertNotContains('subagent', $result->toolNames);
@@ -190,5 +188,18 @@ final class SubagentToolSetResolverTest extends TestCase
                 ],
             ],
         ];
+    }
+
+    private function metadataReaderFromEventStore(EventStoreInterface $eventStore, string $runId): RunStartedMetadataReader
+    {
+        $history = new InMemoryHistoryProjectionStore();
+        $event = null;
+        foreach ($eventStore->rangeFor($runId, 1, \PHP_INT_MAX) as $candidate) {
+            $event = $candidate;
+            break;
+        }
+        $history->initializeFromEvents($runId, null === $event ? [] : [$event]);
+
+        return new RunStartedMetadataReader($history);
     }
 }

@@ -172,16 +172,9 @@ final class CleanupHookSubscriberNoOpEventStore implements EventStoreInterface
 
     public function latestSequenceFor(string $runId): ?int
     {
-        $events = $this->allFor($runId);
+        $events = iterator_to_array($this->rangeFor($runId, 1, \PHP_INT_MAX), false);
 
         return [] === $events ? null : $events[array_key_last($events)]->seq;
-    }
-
-    public function firstFor(string $runId): ?RunEvent
-    {
-        $events = $this->allFor($runId);
-
-        return $events[0] ?? null;
     }
 
     public function rangeFor(string $runId, int $startSeq, int $endSeq): iterable
@@ -189,13 +182,15 @@ final class CleanupHookSubscriberNoOpEventStore implements EventStoreInterface
         return [];
     }
 
-    public function reverseFor(string $runId): iterable
+    public function readAfterSeq(string $runId, int $cursor): array
     {
-        return [];
-    }
+        $events = [];
+        foreach ($this->rangeFor($runId, 1, \PHP_INT_MAX) as $event) {
+            if ($event->seq > $cursor) {
+                $events[] = $event;
+            }
+        }
 
-    public function allFor(string $runId): array
-    {
-        return [];
+        return $events;
     }
 }

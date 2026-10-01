@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Tests\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Pipeline\AgentRunner;
+use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Run\RunMetadata;
+use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use PHPUnit\Framework\TestCase;
@@ -22,7 +24,11 @@ final class AgentRunnerStartIdempotencyTest extends TestCase
     public function testExplicitRunIdUsesStableStartStepAndIdempotencyKeyOnRepeat(): void
     {
         $bus = new TestMessageBus();
-        $runner = new AgentRunner($bus, new Serializer([new ObjectNormalizer(classMetadataFactory: ($cmf = new ClassMetadataFactory(new AttributeLoader())), nameConverter: new MetadataAwareNameConverter($cmf, new CamelCaseToSnakeCaseNameConverter()))]));
+        $runner = new AgentRunner(
+            $bus,
+            new Serializer([new ObjectNormalizer(classMetadataFactory: ($cmf = new ClassMetadataFactory(new AttributeLoader())), nameConverter: new MetadataAwareNameConverter($cmf, new CamelCaseToSnakeCaseNameConverter()))]),
+            $this->activeRunContext(),
+        );
 
         $runId = '11111111-1111-4111-8111-111111111111';
         $input = new StartRunInput(
@@ -50,7 +56,11 @@ final class AgentRunnerStartIdempotencyTest extends TestCase
     public function testGeneratedRunIdUsesDistinctHrtimeSteps(): void
     {
         $bus = new TestMessageBus();
-        $runner = new AgentRunner($bus, new Serializer([new ObjectNormalizer(classMetadataFactory: ($cmf = new ClassMetadataFactory(new AttributeLoader())), nameConverter: new MetadataAwareNameConverter($cmf, new CamelCaseToSnakeCaseNameConverter()))]));
+        $runner = new AgentRunner(
+            $bus,
+            new Serializer([new ObjectNormalizer(classMetadataFactory: ($cmf = new ClassMetadataFactory(new AttributeLoader())), nameConverter: new MetadataAwareNameConverter($cmf, new CamelCaseToSnakeCaseNameConverter()))]),
+            $this->activeRunContext(),
+        );
 
         $input = new StartRunInput(systemPrompt: 'sys', messages: [], metadata: new RunMetadata(model: 'test-model'));
         $runner->start($input);
@@ -62,5 +72,15 @@ final class AgentRunnerStartIdempotencyTest extends TestCase
         /** @var StartRun $second */
         $second = $bus->messages[1];
         $this->assertNotSame($first->stepId(), $second->stepId());
+    }
+
+    private function activeRunContext(): ActiveRunContextInterface
+    {
+        $active = $this->createStub(ActiveRunContextInterface::class);
+        $active->method('initializeQueued')->willReturnCallback(
+            static fn (string $runId): RunState => RunState::queued($runId),
+        );
+
+        return $active;
     }
 }

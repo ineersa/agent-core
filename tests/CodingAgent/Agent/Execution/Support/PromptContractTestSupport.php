@@ -138,7 +138,7 @@ final class PromptContractTestSupport
 
     public static function findRunStartedEvent(EventStoreInterface $eventStore, string $runId): ?RunEvent
     {
-        foreach ($eventStore->allFor($runId) as $event) {
+        foreach (iterator_to_array($eventStore->rangeFor($runId, 1, \PHP_INT_MAX), false) as $event) {
             if ('run_started' === $event->type) {
                 return $event;
             }

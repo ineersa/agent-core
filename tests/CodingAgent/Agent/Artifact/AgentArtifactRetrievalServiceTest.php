@@ -4,10 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Artifact;
 
-use Ineersa\AgentCore\Application\Dto\RunStateReplayResult;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
-use Ineersa\AgentCore\Contract\EventStoreInterface;
-use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -22,7 +19,14 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
 use Ineersa\CodingAgent\Agent\Artifact\AgentRetrieveArgumentsDTO;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Session\History\EventInspectionSummarizer;
+use Ineersa\CodingAgent\Session\History\HistoryDTO;
+use Ineersa\CodingAgent\Session\History\HistoryProjectionSnapshot;
+use Ineersa\CodingAgent\Session\History\HistoryProjectionStoreInterface;
+use Ineersa\CodingAgent\Session\RunState\RunStateStoreInterface;
 use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
+use Ineersa\CodingAgent\Tests\Session\History\InMemoryHistoryProjectionStore;
+use Ineersa\CodingAgent\Tests\Session\RunState\InMemoryRunStateStore;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\CoversClass;
 use Symfony\Component\Lock\LockFactory;
@@ -108,7 +112,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
             failureReason: 'Child attempted unsupported human interaction.',
         );
 
-        $service = $this->makeService();
+        $service = $this->makeService(historyProjectionStore: $this->seedEventInspection($childRun, 0));
         $out = $service->retrieve($parent, $this->args(['artifact_id' => $artifactId, 'mode' => 'metadata']));
 
         $this->assertStringContainsString('status: failed', $out);
@@ -128,7 +132,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
             needsClarification: 'Reserved future interactive mode note.',
         );
 
-        $service = $this->makeService();
+        $service = $this->makeService(historyProjectionStore: $this->seedEventInspection($childRun, 0));
         $out = $service->retrieve($parent, $this->args(['artifact_id' => $artifactId, 'mode' => 'metadata']));
 
         $this->assertStringContainsString('status: needs_clarification', $out);
@@ -232,9 +236,10 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $secret = 'RAW_TOOL_OUTPUT_SECRET_12345';
         /** @var ToolExecutionEndPayloadCodec $toolExecutionEndPayloadCodec */
         $toolExecutionEndPayloadCodec = self::getContainer()->get(ToolExecutionEndPayloadCodec::class);
-        $events = [];
+        $summarizer = new EventInspectionSummarizer($toolExecutionEndPayloadCodec);
+        $tail = [];
         for ($i = 1; $i <= 25; ++$i) {
-            $events[] = new RunEvent(
+            $event = new RunEvent(
                 runId: $childRun,
                 seq: $i,
                 turnNo: 0,
@@ -249,18 +254,63 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
                     orderIndex: $i,
                     result: ['tool_name' => 'bash', 'output' => $secret.'-'.$i],
                 )),
+                createdAt: new \DateTimeImmutable('@'.(1_700_000_000 + $i)),
             );
+            $tail[] = $summarizer->summarize($event);
         }
 
-        $eventStore = $this->createMock(EventStoreInterface::class);
-        $eventStore->expects($this->once())->method('allFor')->with($this->identicalTo($childRun))->willReturn($events);
-        $service = $this->makeService(eventStore: $eventStore);
+        $historyStore = new InMemoryHistoryProjectionStore();
+        $historyStore->remember($childRun, new HistoryProjectionSnapshot(
+            history: new HistoryDTO([], [], 0),
+            lastSeq: 25,
+            eventCount: 25,
+            sanitizedEventTail: $tail,
+        ));
+        $service = $this->makeService(historyProjectionStore: $historyStore);
         $out = $service->retrieve($parent, $this->args(['artifact_id' => $artifactId, 'mode' => 'events', 'limit' => 5]));
 
         $this->assertStringContainsString('Showing last 5 of 25 events', $out);
         $this->assertStringNotContainsString($secret, $out);
         $this->assertStringNotContainsString($secret.'-1', $out);
         $this->assertStringContainsString('tool end: bash', $out);
+    }
+
+    public function testMetadataAndEventsUseMaintainedProjectionWithoutArchiveReads(): void
+    {
+        $parent = 'parent-projection';
+        $artifactId = 'agent_projection';
+        $childRun = 'child-projection';
+        $this->registry->create($parent, $artifactId, $childRun, 'scout', AgentArtifactKindEnum::Subagent);
+
+        $historyStore = new InMemoryHistoryProjectionStore();
+        $historyStore->initializeFromEvents($childRun, [
+            new RunEvent(
+                runId: $childRun,
+                seq: 1,
+                turnNo: 0,
+                type: RunEventTypeEnum::RunStarted->value,
+                payload: ['step_id' => 's1', 'payload' => ['messages' => []]],
+                createdAt: new \DateTimeImmutable('@1700000001'),
+            ),
+            new RunEvent(
+                runId: $childRun,
+                seq: 5,
+                turnNo: 1,
+                type: RunEventTypeEnum::LlmStepCompleted->value,
+                payload: ['payload' => ['tool_calls' => []]],
+                createdAt: new \DateTimeImmutable('@1700000005'),
+            ),
+        ]);
+
+        $service = $this->makeService(historyProjectionStore: $historyStore);
+        $meta = $service->retrieve($parent, $this->args(['artifact_id' => $artifactId, 'mode' => 'metadata']));
+        $events = $service->retrieve($parent, $this->args(['artifact_id' => $artifactId, 'mode' => 'events', 'limit' => 10]));
+
+        $this->assertStringContainsString('event_count: 2', $meta);
+        $this->assertStringContainsString('Showing last 2 of 2 events', $events);
+        $this->assertStringContainsString('type=llm_step_completed', $events);
+        $this->assertSame(1, $historyStore->initializeFromEventsCalls);
+        $this->assertSame(2, $historyStore->getCalls);
     }
 
     public function testBoundedHistorySkipsSystemAndOmitsRawText(): void
@@ -282,17 +332,9 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         }
 
         $state = new RunState(runId: $childRun, status: RunStatus::Completed, messages: $messages, model: 'test-model');
-        $rebuilder = $this->createMock(RunStateRebuilderInterface::class);
-        $rebuilder->expects($this->once())
-            ->method('rebuildIfStale')
-            ->with(
-                $this->callback(static fn (RunState $queued): bool => $queued->runId === $childRun && 0 === $queued->lastSeq),
-                $this->identicalTo($childRun),
-            )
-            ->willReturn(RunStateReplayResult::rebuilt($state));
-        $eventStore = $this->createStub(EventStoreInterface::class);
-
-        $service = $this->makeService(rebuilder: $rebuilder, eventStore: $eventStore);
+        $store = new InMemoryRunStateStore();
+        $store->initialize($state);
+        $service = $this->makeService(runStateStore: $store);
         $out = $service->retrieve($parent, $this->args(['artifact_id' => $artifactId, 'mode' => 'history', 'limit' => 3]));
 
         $this->assertStringContainsString('Showing last 3 of', $out);
@@ -359,16 +401,13 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
             lastSeq: 18,
             messages: [],
             model: 'test-model');
-        $rebuilder = $this->createMock(RunStateRebuilderInterface::class);
-        $rebuilder->expects($this->once())
-            ->method('rebuildIfStale')
-            ->with(
-                $this->callback(static fn (RunState $queued): bool => $queued->runId === $childRun && 0 === $queued->lastSeq),
-                $this->identicalTo($childRun),
-            )
-            ->willReturn(RunStateReplayResult::rebuilt($state));
+        $store = new InMemoryRunStateStore();
+        $store->initialize($state);
 
-        $service = $this->makeService(rebuilder: $rebuilder);
+        $service = $this->makeService(
+            runStateStore: $store,
+            historyProjectionStore: $this->seedEventInspection($childRun, 18),
+        );
         $out = $service->retrieve($parent, $this->args(['artifact_id' => $artifactId, 'mode' => 'metadata']));
 
         $this->assertStringContainsString('status: cancelled', $out);
@@ -425,22 +464,32 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
     }
 
     private function makeService(
-        ?RunStateRebuilderInterface $rebuilder = null,
-        ?EventStoreInterface $eventStore = null,
+        ?RunStateStoreInterface $runStateStore = null,
+        ?HistoryProjectionStoreInterface $historyProjectionStore = null,
     ): AgentArtifactRetrievalService {
-        if (null === $rebuilder) {
-            $rebuilder = $this->createStub(RunStateRebuilderInterface::class);
-            $rebuilder->method('rebuildIfStale')->willReturn(RunStateReplayResult::noEvents());
-        }
-
         return new AgentArtifactRetrievalService(
             artifactRegistry: $this->registry,
             childRunDirectory: $this->directory,
-            runStateRebuilder: $rebuilder,
-            eventStore: $eventStore ?? $this->createStub(EventStoreInterface::class),
+            runStateStore: $runStateStore ?? new InMemoryRunStateStore(),
+            historyProjectionStore: $historyProjectionStore ?? new InMemoryHistoryProjectionStore(),
             logger: self::getContainer()->get('logger'),
-            toolExecutionEndPayloadCodec: self::getContainer()->get(ToolExecutionEndPayloadCodec::class),
         );
+    }
+
+    /**
+     * @param list<array{seq: int, turn_no: int, type: string, created_at: string, summary: string}> $tail
+     */
+    private function seedEventInspection(string $runId, int $eventCount, array $tail = []): InMemoryHistoryProjectionStore
+    {
+        $store = new InMemoryHistoryProjectionStore();
+        $store->remember($runId, new HistoryProjectionSnapshot(
+            history: new HistoryDTO([], [], 0),
+            lastSeq: max(0, $eventCount),
+            eventCount: $eventCount,
+            sanitizedEventTail: $tail,
+        ));
+
+        return $store;
     }
 
     /**

@@ -25,11 +25,7 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
 use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Ineersa\CodingAgent\Session\History\HistoryProjector;
-use Ineersa\CodingAgent\Session\History\HistoryReplayFilter;
-use Ineersa\CodingAgent\Session\SessionHistoryProvider;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
-use Ineersa\CodingAgent\Session\SessionTranscriptProvider;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Application\SessionInitializer;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
@@ -37,6 +33,7 @@ use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\EventDispatcher\EventDispatcher;
@@ -108,23 +105,16 @@ final class SessionInitializerReplayTest extends TestCase
             sequenceAllocator: new FileRunSequenceAllocator()
         );
 
-        $historyProvider = new SessionHistoryProvider($this->eventStore, new HistoryProjector());
-
         $this->eventApplier = new TuiRuntimeEventApplier($this->projector, SubagentProgressSerializerTestSupport::denormalizer());
 
         $this->sessionInit = new SessionInitializer(
             sessionStore: $hatfieldSessionStore,
-            eventStore: $this->eventStore,
             blockFactory: new TranscriptBlockFactory(),
             logger: new NullLogger(),
-
-            historyProvider: $historyProvider,
-            sessionTranscriptProvider: new SessionTranscriptProvider(
+            coldReconstruction: \Ineersa\CodingAgent\Tests\Support\SessionColdReconstructionTestFactory::create(
                 eventStore: $this->eventStore,
-                replayFilter: new HistoryReplayFilter(new HistoryProjector()),
-                eventMapper: $mapper,
-                transcriptProjector: $this->projector
-            )
+                transcriptProjector: $this->projector,
+            ),
         );
     }
 
@@ -461,7 +451,7 @@ final class SessionInitializerReplayTest extends TestCase
         );
 
         // Re-read events and feed only the new one (simulating poller dedup)
-        $allEvents = $this->eventStore->allFor($runId);
+        $allEvents = iterator_to_array($this->eventStore->rangeFor($runId, 1, \PHP_INT_MAX), false);
         $newBlocks = 0;
         foreach ($allEvents as $runEvent) {
             if ($runEvent->seq <= $state->lastSeq) {
@@ -699,6 +689,185 @@ final class SessionInitializerReplayTest extends TestCase
 
         $this->assertSame(RunActivityStateEnum::Idle, $state->activity);
         $this->assertFalse($state->isCompacting);
+    }
+
+    /**
+     * Thesis: resume must decode the canonical stream once and stay under the
+     * 128MiB worker/UI memory ceiling for a large multi-compaction-shaped log.
+     * Incident session 2 was ~13MB / ~4800 events with large compaction bodies;
+     * this fixture mirrors that volume without copying live project content.
+     *
+     * The timeout is a safety cap, not a sync strategy. Lower layers cannot prove
+     * peak memory across SessionInitializer + history/transcript providers.
+     */
+    #[RunInSeparateProcess]
+    public function testLargeSessionResumeStaysUnder128MiBWithSingleDecode(): void
+    {
+        $runId = 'run-mem-'.bin2hex(random_bytes(4));
+        $this->ensureSessionDir($runId);
+
+        $path = $this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl';
+        $handle = fopen($path, 'wb');
+        $this->assertNotFalse($handle);
+
+        $write = static function (array $payload) use ($handle): void {
+            fwrite($handle, json_encode($payload, \JSON_THROW_ON_ERROR)."\n");
+        };
+
+        $write([
+            'schema_version' => '1.0',
+            'run_id' => $runId,
+            'seq' => 1,
+            'turn_no' => 0,
+            'type' => 'run_started',
+            'payload' => [
+                'step_id' => 'step-1',
+                'payload' => [
+                    'messages' => [
+                        ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'start']]],
+                    ],
+                ],
+            ],
+        ]);
+
+        $seq = 1;
+        $blob = str_repeat('x', 8_192);
+        for ($turn = 1; $turn <= 900; ++$turn) {
+            ++$seq;
+            $write([
+                'schema_version' => '1.0',
+                'run_id' => $runId,
+                'seq' => $seq,
+                'turn_no' => $turn,
+                'type' => 'turn_advanced',
+                'payload' => ['turn_no' => $turn, 'step_id' => 'step-'.$turn],
+            ]);
+            ++$seq;
+            $write([
+                'schema_version' => '1.0',
+                'run_id' => $runId,
+                'seq' => $seq,
+                'turn_no' => $turn,
+                'type' => 'llm_step_completed',
+                'payload' => [
+                    'step_id' => 'llm-'.$turn,
+                    'assistant_message' => [
+                        'role' => 'assistant',
+                        'content' => [['type' => 'text', 'text' => 'answer '.$turn.' '.$blob]],
+                    ],
+                    'usage' => ['input_tokens' => 10, 'output_tokens' => 5],
+                ],
+            ]);
+            if (0 === $turn % 30) {
+                ++$seq;
+                $write([
+                    'schema_version' => '1.0',
+                    'run_id' => $runId,
+                    'seq' => $seq,
+                    'turn_no' => $turn,
+                    'type' => 'context_compacted',
+                    'payload' => [
+                        'summary' => str_repeat('compact-summary-'.$turn.'-', 6_000),
+                        'removed_tokens' => 1000,
+                    ],
+                ]);
+            }
+        }
+
+        ++$seq;
+        $write([
+            'schema_version' => '1.0',
+            'run_id' => $runId,
+            'seq' => $seq,
+            'turn_no' => 900,
+            'type' => 'agent_end',
+            'payload' => ['reason' => 'completed'],
+        ]);
+        fclose($handle);
+        file_put_contents(FileRunSequenceAllocator::counterPathForEventsLog($path), $seq."\n");
+
+        $this->assertGreaterThan(10_000_000, filesize($path), 'Fixture must approximate multi-MB incident volume.');
+
+        $countingStore = new class($this->eventStore) implements \Ineersa\AgentCore\Contract\EventStoreInterface {
+            public int $allForCalls = 0;
+            public int $rangeForCalls = 0;
+
+            public function __construct(private \Ineersa\AgentCore\Contract\EventStoreInterface $inner)
+            {
+            }
+
+            public function append(RunEvent $event): RunEvent
+            {
+                return $this->inner->append($event);
+            }
+
+            /** @param list<RunEvent> $events */
+            public function appendMany(array $events): array
+            {
+                return $this->inner->appendMany($events);
+            }
+
+            public function latestSequenceFor(string $runId): ?int
+            {
+                return $this->inner->latestSequenceFor($runId);
+            }
+
+            public function rangeFor(string $runId, int $startSeq, int $endSeq): iterable
+            {
+                ++$this->rangeForCalls;
+
+                yield from $this->inner->rangeFor($runId, $startSeq, $endSeq);
+            }
+
+            public function readAfterSeq(string $runId, int $cursor): array
+            {
+                throw new \RuntimeException('readAfterSeq not supported');
+            }
+        };
+
+        $appConfig = new AppConfig(
+            tui: new TuiConfig(theme: 'default'),
+            logging: new LoggingConfig(),
+            cwd: $this->projectDir,
+        );
+        $hatfieldSessionStore = new HatfieldSessionStore(
+            appConfig: $appConfig,
+            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+            dispatcher: new EventDispatcher(),
+        );
+        $sessionInit = new SessionInitializer(
+            sessionStore: $hatfieldSessionStore,
+            blockFactory: new TranscriptBlockFactory(),
+            logger: new NullLogger(),
+            coldReconstruction: \Ineersa\CodingAgent\Tests\Support\SessionColdReconstructionTestFactory::create(
+                eventStore: $countingStore,
+                transcriptProjector: $this->projector,
+            ),
+        );
+
+        ini_set('memory_limit', '128M');
+        gc_collect_cycles();
+        $before = memory_get_usage(true);
+
+        $state = new TuiSessionState($runId, true);
+        $blocks = $sessionInit->buildInitialTranscript($state, $this->eventApplier);
+
+        $after = memory_get_peak_usage(true);
+        $this->assertSame(0, $countingStore->allForCalls, 'Resume must not materialize a full event array.');
+        $this->assertSame(1, $countingStore->rangeForCalls, 'Resume streams one ordered archive traversal.');
+        $this->assertSame($seq, $state->lastSeq);
+        $this->assertSame(RunActivityStateEnum::Completed, $state->activity);
+        $this->assertNotEmpty($blocks);
+        $this->assertLessThan(
+            128 * 1024 * 1024,
+            $after,
+            \sprintf('Peak memory %d exceeded 128MiB during large-session resume.', $after),
+        );
+        $this->assertLessThan(
+            110 * 1024 * 1024,
+            max(0, $after - $before),
+            \sprintf('Resume growth %d was too large for a single-decode path.', max(0, $after - $before)),
+        );
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────

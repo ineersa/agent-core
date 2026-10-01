@@ -5,9 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Support;
 
 use Doctrine\ORM\EntityManagerInterface;
-use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
-use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SessionsConfig;
@@ -21,15 +19,10 @@ use Ineersa\CodingAgent\Runtime\ProjectionPipeline\RunLifecycleProjectionSubscri
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
 use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Ineersa\CodingAgent\Session\History\HistoryProjector;
-use Ineersa\CodingAgent\Session\History\HistoryReplayFilter;
-use Ineersa\CodingAgent\Session\SessionHistoryProvider;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
-use Ineersa\CodingAgent\Session\SessionTranscriptProvider;
+use Ineersa\CodingAgent\Tests\Support\SessionColdReconstructionTestFactory;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Application\SessionInitializer;
 use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
@@ -49,10 +42,6 @@ final class ResumeSessionInitializerTestFactory
     }
 
     /**
-     * Create the session initializer plus the session-scoped parent event
-     * applier (same projector) so callers can pass the applier into
-     * {@see SessionInitializer::buildInitialTranscript()}.
-     *
      * @return array{SessionInitializer, TuiRuntimeEventApplier}
      */
     public static function createWithApplier(EntityManagerInterface $entityManager, string $projectDir): array
@@ -76,10 +65,6 @@ final class ResumeSessionInitializerTestFactory
             sequenceAllocator: new FileRunSequenceAllocator()
         );
 
-        $mapper = new RuntimeEventMapper(
-            new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()))
-        );
-
         $dispatcher = new EventDispatcher();
         $projectionState = new TranscriptProjectionState();
         $dispatcher->addSubscriber(new UserMessageProjectionSubscriber());
@@ -90,23 +75,18 @@ final class ResumeSessionInitializerTestFactory
         $dispatcher->addSubscriber(new RunLifecycleProjectionSubscriber());
         $projector = new TranscriptProjector($dispatcher, $projectionState);
 
-        $historyProvider = new SessionHistoryProvider($eventStore, new HistoryProjector());
+        $coldReconstruction = SessionColdReconstructionTestFactory::create(
+            eventStore: $eventStore,
+            transcriptProjector: $projector,
+        );
 
         $eventApplier = new TuiRuntimeEventApplier($projector, SubagentProgressSerializerTestSupport::denormalizer());
 
         return [new SessionInitializer(
             sessionStore: $sessionStore,
-            eventStore: $eventStore,
             blockFactory: new TranscriptBlockFactory(),
             logger: new NullLogger(),
-
-            historyProvider: $historyProvider,
-            sessionTranscriptProvider: new SessionTranscriptProvider(
-                eventStore: $eventStore,
-                replayFilter: new HistoryReplayFilter(new HistoryProjector()),
-                eventMapper: $mapper,
-                transcriptProjector: $projector
-            )
+            coldReconstruction: $coldReconstruction,
         ), $eventApplier];
     }
 }

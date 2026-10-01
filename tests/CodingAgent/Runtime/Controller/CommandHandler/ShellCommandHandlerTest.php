@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller\CommandHandler;
 
+use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Domain\Message\ApplyShellCommand;
+use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\CodingAgent\Runtime\Controller\CommandHandler\ShellCommandHandler;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
@@ -24,15 +26,18 @@ use Symfony\Component\Messenger\MessageBusInterface;
 final class ShellCommandHandlerTest extends TestCase
 {
     private ShellCommandSpyBus $spyBus;
+    private ActiveRunContextInterface $activeRunContext;
 
     protected function setUp(): void
     {
         $this->spyBus = new ShellCommandSpyBus();
+        $this->activeRunContext = $this->createMock(ActiveRunContextInterface::class);
     }
 
     public function testDispatchesApplyShellCommandOnCommandBus(): void
     {
-        $handler = new ShellCommandHandler($this->spyBus);
+        $this->activeRunContext->expects($this->once())->method('initializeQueued')->with('run-123')->willReturn(RunState::queued('run-123'));
+        $handler = new ShellCommandHandler($this->spyBus, $this->activeRunContext);
         $emitted = [];
 
         $command = new RuntimeCommand(
@@ -60,7 +65,8 @@ final class ShellCommandHandlerTest extends TestCase
 
     public function testEmitsProtocolErrorWhenRunIdMissing(): void
     {
-        $handler = new ShellCommandHandler($this->spyBus);
+        $this->activeRunContext->expects($this->never())->method('initializeQueued');
+        $handler = new ShellCommandHandler($this->spyBus, $this->activeRunContext);
         $emitted = [];
 
         $handler(new ControllerCommandEvent(new RuntimeCommand(
@@ -79,7 +85,8 @@ final class ShellCommandHandlerTest extends TestCase
 
     public function testRejectsMissingBangPrefixAndEmptyCommand(): void
     {
-        $handler = new ShellCommandHandler($this->spyBus);
+        $this->activeRunContext->expects($this->never())->method('initializeQueued');
+        $handler = new ShellCommandHandler($this->spyBus, $this->activeRunContext);
 
         $missingBang = [];
         $handler(new ControllerCommandEvent(new RuntimeCommand(
@@ -108,7 +115,8 @@ final class ShellCommandHandlerTest extends TestCase
 
     public function testIgnoresNonShellCommands(): void
     {
-        $handler = new ShellCommandHandler($this->spyBus);
+        $this->activeRunContext->expects($this->never())->method('initializeQueued');
+        $handler = new ShellCommandHandler($this->spyBus, $this->activeRunContext);
 
         $handler(new ControllerCommandEvent(new RuntimeCommand(
             id: 'cmd_complete',

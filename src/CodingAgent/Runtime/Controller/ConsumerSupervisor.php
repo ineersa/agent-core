@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Controller;
 
+use Ineersa\CodingAgent\Runtime\Messenger\RunControlClaimRecoveryInterface;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Psr\Log\LoggerInterface;
 use Revolt\EventLoop;
@@ -32,7 +33,13 @@ use Symfony\Component\Process\Process;
  *   Symfony Messenger --memory-limit for graceful worker recycling
  * - Consumers launch without --keepalive; session Doctrine DSNs use a ~10-year
  *   redeliver_timeout so short-lived claims are not age-reclaimed. Abandoned
- *   deliveries still need explicit `/repair` redrive of current effects
+ *   deliveries on non-run_control transports still need explicit `/repair`
+ *   redrive of current effects. When the sole supervised run_control worker
+ *   exits (graceful memory recycle or abnormal crash), claimed rows for that
+ *   session queue are cleared before relaunch only when exclusive worker
+ *   ownership is free, so the replacement consumer can receive the same
+ *   envelope again. A live owner or reclaim failure surfaces an actionable
+ *   protocol error and blocks unsafe restart.
  * - Supervision: polls isRunning() every 5s; exit code 0 is treated as
  *   normal memory-limit (or other graceful) recycle with immediate relaunch;
  *   non-zero exits use crash restart policy with exponential backoff
@@ -58,8 +65,12 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
     private const int RESTART_WINDOW_SECONDS = 60;
     private const int INITIAL_RESTART_DELAY_MS = 1000;
 
-    /** Symfony Messenger graceful worker recycle threshold for controller consumers. */
-    private const string CONSUMER_MEMORY_LIMIT = '256M';
+    /**
+     * Symfony Messenger soft recycle threshold for controller consumers.
+     * Strict validation target for large-session proof; do not raise to hide
+     * projection/archive-read regressions.
+     */
+    private const string CONSUMER_MEMORY_LIMIT = '128M';
 
     /**
      * Idle poll delay passed to messenger:consume in seconds (50ms).
@@ -85,6 +96,9 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
     /** Set by shutdown() to prevent pending delay callbacks from launching new consumers. */
     private bool $shuttingDown = false;
 
+    /** Set when run_control claim recovery fails; blocks relaunches until controller stops. */
+    private bool $blockFurtherLaunches = false;
+
     /**
      * Optional callback invoked when a consumer is abandoned after the restart
      * limit is reached. Receives the consumer key and transport name so the
@@ -94,11 +108,26 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
      */
     private $onConsumerAbandoned;
 
+    /**
+     * Optional callback when run_control claim recovery cannot clear a claimed
+     * delivery after the supervised worker exits. Receives session id, exit
+     * code, stderr tail, and failure code.
+     *
+     * @var (callable(string, int, string, string): void)|null
+     */
+    private $onRunControlClaimRecoveryFailed;
+
+    private readonly string $sessionId;
+
     public function __construct(
         private readonly LoggerInterface $logger,
         private readonly RuntimeProcessConfig $runtimeConfig,
+        private readonly RunControlClaimRecoveryInterface $runControlClaimRecovery,
         private readonly int $shutdownGraceSeconds = 5,
+        string $sessionId = 'unknown',
     ) {
+        $trimmed = trim($sessionId);
+        $this->sessionId = '' !== $trimmed ? $trimmed : 'unknown';
     }
 
     /**
@@ -109,23 +138,28 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
      */
     public function launch(string $transportName, int $instanceId = 0): void
     {
+        if ($this->shuttingDown || $this->blockFurtherLaunches) {
+            $this->logger->warning('Skipping messenger consumer launch', [
+                'component' => 'ConsumerSupervisor',
+                'event_type' => 'consumer.launch_skipped',
+                'transport' => $transportName,
+                'instance' => $instanceId,
+                'shutting_down' => $this->shuttingDown,
+                'block_further_launches' => $this->blockFurtherLaunches,
+            ]);
+
+            return;
+        }
+
         $cwd = $this->runtimeConfig->runtimeCwd();
-        $appCommand = $this->runtimeConfig->executableCommand();
 
         try {
             $env = $_ENV;
             $env['HATFIELD_CONSUMER_STDOUT_EVENTS'] = '1';
 
+            $command = $this->consumerCommand($transportName);
             $process = new Process(
-                [
-                    ...$appCommand,
-                    'messenger:consume',
-                    $transportName,
-                    '--no-interaction',
-                    '--memory-limit='.self::CONSUMER_MEMORY_LIMIT,
-                    // Explicit values avoid Symfony's one-second default idle sleep.
-                    '--sleep='.self::CONSUMER_SLEEP_SECONDS,
-                ],
+                $command,
                 cwd: $cwd,
                 env: $env,
                 timeout: null,
@@ -222,7 +256,11 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
 
                 unset($this->restartCounts[$key], $this->restartWindows[$key]);
 
-                if (!$this->shuttingDown) {
+                if ('run_control' === $transportName) {
+                    $this->recoverRunControlClaimsAfterExit(0, $stderr);
+                }
+
+                if (!$this->shuttingDown && !$this->blockFurtherLaunches) {
                     $this->launch($transportName, $instanceId);
                 }
 
@@ -238,6 +276,10 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
                 'exit_code' => $exitCode,
                 'stderr' => '' !== $stderr ? $stderr : null,
             ]);
+
+            if ('run_control' === $transportName) {
+                $this->recoverRunControlClaimsAfterExit($exitCode ?? -1, $stderr);
+            }
 
             $this->attemptRestart($key);
         }
@@ -348,6 +390,59 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
         $this->onConsumerAbandoned = $callback;
     }
 
+    /**
+     * @param callable(string, int, string, string): void $callback
+     */
+    public function onRunControlClaimRecoveryFailed(callable $callback): void
+    {
+        $this->onRunControlClaimRecoveryFailed = $callback;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function consumerCommand(string $transportName): array
+    {
+        $appCommand = $this->runtimeConfig->executableCommand();
+
+        return [
+            ...$appCommand,
+            'messenger:consume',
+            $transportName,
+            '--no-interaction',
+            '--memory-limit='.self::CONSUMER_MEMORY_LIMIT,
+            // Explicit values avoid Symfony's one-second default idle sleep.
+            '--sleep='.self::CONSUMER_SLEEP_SECONDS,
+        ];
+    }
+
+    private function recoverRunControlClaimsAfterExit(int $exitCode, string $stderr): void
+    {
+        $result = $this->runControlClaimRecovery->releaseAbandonedClaims($this->sessionId);
+        if (null === $result['failure']) {
+            return;
+        }
+
+        $this->logger->error('run_control.claim_recovery_failed_after_worker_exit', [
+            'component' => 'ConsumerSupervisor',
+            'event_type' => 'run_control.claim_recovery_failed_after_worker_exit',
+            'session_id' => $this->sessionId,
+            'transport' => 'run_control',
+            'exit_code' => $exitCode,
+            'stderr' => '' !== $stderr ? $stderr : null,
+            'failure' => $result['failure'],
+        ]);
+
+        if (null !== $this->onRunControlClaimRecoveryFailed) {
+            ($this->onRunControlClaimRecoveryFailed)($this->sessionId, $exitCode, $stderr, $result['failure']);
+        }
+
+        // Live ownership or reclaim failure must not relaunch another consumer
+        // against a still-owned claim. Mark shutting down for this supervisor
+        // instance's further launches via attemptRestart/graceful recycle.
+        $this->blockFurtherLaunches = true;
+    }
+
     private function drainAndClearStderr(string $key, Process $process): void
     {
         $chunk = $process->getIncrementalErrorOutput();
@@ -438,7 +533,7 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
         // Non-blocking delay: schedule the launch after backoff without
         // blocking the event loop.
         EventLoop::delay($delayMs / 1000, function () use ($transportName, $instanceId): void {
-            if ($this->shuttingDown) {
+            if ($this->shuttingDown || $this->blockFurtherLaunches) {
                 return;
             }
 

@@ -28,7 +28,7 @@ final class ConsumerSupervisorTest extends TestCase
         $this->logger = new TestLogger();
         $locator = $this->createStub(AppExecutableLocator::class);
         $config = new RuntimeProcessConfig($locator, __DIR__);
-        $supervisor = new ConsumerSupervisor($this->logger, $config, shutdownGraceSeconds: 0);
+        $supervisor = new ConsumerSupervisor($this->logger, $config, shutdownGraceSeconds: 0, runControlClaimRecovery: $this->noopRecovery());
         $calls = new ShutdownProcessCallLog();
         $hang = new RecordingShutdownProcess('hang', $calls, exitsOnTerm: false);
         $exit = new RecordingShutdownProcess('exit', $calls, exitsOnTerm: true);
@@ -63,7 +63,7 @@ final class ConsumerSupervisorTest extends TestCase
         $this->logger = new TestLogger();
         $locator = $this->createStub(AppExecutableLocator::class);
         $config = new RuntimeProcessConfig($locator, __DIR__);
-        $supervisor = new ConsumerSupervisor($this->logger, $config);
+        $supervisor = new ConsumerSupervisor($this->logger, $config, runControlClaimRecovery: $this->noopRecovery());
 
         $method = new \ReflectionMethod(ConsumerSupervisor::class, 'appendStderrTail');
         $maxBytes = (new \ReflectionClass(ConsumerSupervisor::class))->getConstant('STDERR_TAIL_MAX_BYTES');
@@ -97,11 +97,13 @@ final class ConsumerSupervisorTest extends TestCase
             $supervisor->launch('test_transport', 0);
 
             $process = $this->getConsumerProcess($supervisor, 'test_transport#0');
+            $commandLine = $process->getCommandLine();
+            $this->assertStringContainsString('--memory-limit=128M', $commandLine);
             $process->wait();
 
             $argv = json_decode((string) file_get_contents($argvFile), true, 512, \JSON_THROW_ON_ERROR);
             $this->assertIsArray($argv);
-            $this->assertContains('--memory-limit=256M', $argv);
+            $this->assertContains('--memory-limit=128M', $argv);
             $this->assertNotContains('--keepalive=5', $argv);
             $this->assertNotContains('--keepalive', $argv);
             $this->assertContains('--sleep=0.05', $argv);
@@ -161,6 +163,34 @@ final class ConsumerSupervisorTest extends TestCase
         }
     }
 
+    public function testGracefulRunControlExitClearsClaimsBeforeRelaunch(): void
+    {
+        $argvFile = tempnam(sys_get_temp_dir(), 'hatfield-consumer-argv-');
+        $this->assertNotFalse($argvFile);
+
+        try {
+            $released = new \ArrayObject();
+            $recovery = $this->recordingRecovery($released);
+            $supervisor = $this->createSupervisor($argvFile, exitCode: 0, sessionId: 'session-42', recovery: $recovery);
+            $failures = [];
+            $supervisor->onRunControlClaimRecoveryFailed(static function () use (&$failures): void {
+                $failures[] = \func_get_args();
+            });
+
+            $supervisor->launch('run_control', 0);
+            $first = $this->getConsumerProcess($supervisor, 'run_control#0');
+            $first->wait();
+
+            $supervisor->supervise();
+
+            $this->assertSame(['session-42'], $released->getArrayCopy());
+            $this->assertSame([], $failures);
+            $this->assertArrayHasKey('run_control#0', $this->consumerKeysRunning($supervisor));
+        } finally {
+            @unlink($argvFile);
+        }
+    }
+
     public function testAbnormalExitUsesCrashRestartPath(): void
     {
         $argvFile = tempnam(sys_get_temp_dir(), 'hatfield-consumer-argv-');
@@ -193,6 +223,95 @@ final class ConsumerSupervisorTest extends TestCase
         }
     }
 
+    public function testAbnormalRunControlExitClearsClaimsBeforeRestart(): void
+    {
+        $argvFile = tempnam(sys_get_temp_dir(), 'hatfield-consumer-argv-');
+        $this->assertNotFalse($argvFile);
+
+        try {
+            $released = new \ArrayObject();
+            $recovery = $this->recordingRecovery($released);
+            $failures = [];
+            $supervisor = $this->createSupervisor($argvFile, exitCode: 255, sessionId: 'session-42', recovery: $recovery);
+            $supervisor->onRunControlClaimRecoveryFailed(static function () use (&$failures): void {
+                $failures[] = \func_get_args();
+            });
+            $supervisor->launch('run_control', 0);
+            $process = $this->getConsumerProcess($supervisor, 'run_control#0');
+            $process->wait();
+
+            $supervisor->supervise();
+
+            $this->assertSame(['session-42'], $released->getArrayCopy());
+            $this->assertSame([], $failures);
+
+            $restartLogs = array_values(array_filter(
+                $this->logger->records,
+                static fn (array $record): bool => 'info' === $record['level']
+                    && 'Restarting consumer with backoff' === $record['message'],
+            ));
+            $this->assertCount(1, $restartLogs);
+        } finally {
+            @unlink($argvFile);
+        }
+    }
+
+    public function testAbnormalNonRunControlExitDoesNotSurfaceRunControlCrash(): void
+    {
+        $argvFile = tempnam(sys_get_temp_dir(), 'hatfield-consumer-argv-');
+        $this->assertNotFalse($argvFile);
+
+        try {
+            $released = new \ArrayObject();
+            $recovery = $this->recordingRecovery($released);
+            $failures = [];
+            $supervisor = $this->createSupervisor($argvFile, exitCode: 255, sessionId: 'session-42', recovery: $recovery);
+            $supervisor->onRunControlClaimRecoveryFailed(static function () use (&$failures): void {
+                $failures[] = \func_get_args();
+            });
+            $supervisor->launch('llm', 0);
+            $process = $this->getConsumerProcess($supervisor, 'llm#0');
+            $process->wait();
+
+            $supervisor->supervise();
+
+            $this->assertSame([], $released->getArrayCopy());
+            $this->assertSame([], $failures);
+        } finally {
+            @unlink($argvFile);
+        }
+    }
+
+    public function testRunControlRecoveryFailureSurfacesCallback(): void
+    {
+        $argvFile = tempnam(sys_get_temp_dir(), 'hatfield-consumer-argv-');
+        $this->assertNotFalse($argvFile);
+
+        try {
+            $recovery = new class implements \Ineersa\CodingAgent\Runtime\Messenger\RunControlClaimRecoveryInterface {
+                public function releaseAbandonedClaims(string $sessionId): array
+                {
+                    return ['released' => 0, 'failure' => 'db_update_failed'];
+                }
+            };
+
+            $failures = [];
+            $supervisor = $this->createSupervisor($argvFile, exitCode: 255, sessionId: 'session-42', recovery: $recovery);
+            $supervisor->onRunControlClaimRecoveryFailed(static function (string $sessionId, int $exitCode, string $stderr, string $failure) use (&$failures): void {
+                $failures[] = [$sessionId, $exitCode, $failure];
+            });
+            $supervisor->launch('run_control', 0);
+            $process = $this->getConsumerProcess($supervisor, 'run_control#0');
+            $process->wait();
+
+            $supervisor->supervise();
+
+            $this->assertSame([['session-42', 255, 'db_update_failed']], $failures);
+        } finally {
+            @unlink($argvFile);
+        }
+    }
+
     public function testLaunchMultipleCreatesIndependentLlmInstances(): void
     {
         $argvFile = tempnam(sys_get_temp_dir(), 'hatfield-consumer-llm-pool-');
@@ -218,8 +337,12 @@ final class ConsumerSupervisorTest extends TestCase
         }
     }
 
-    private function createSupervisor(string $argvCaptureFile, int $exitCode = 0): ConsumerSupervisor
-    {
+    private function createSupervisor(
+        string $argvCaptureFile,
+        int $exitCode = 0,
+        string $sessionId = 'unknown',
+        ?\Ineersa\CodingAgent\Runtime\Messenger\RunControlClaimRecoveryInterface $recovery = null,
+    ): ConsumerSupervisor {
         $this->logger = new TestLogger();
         $locator = $this->createStub(AppExecutableLocator::class);
         $script = $this->createArgvCaptureScript($argvCaptureFile, $exitCode);
@@ -227,7 +350,38 @@ final class ConsumerSupervisorTest extends TestCase
         $locator->method('command')->willReturn(['php', $script]);
         $config = new RuntimeProcessConfig($locator, sys_get_temp_dir());
 
-        return new ConsumerSupervisor($this->logger, $config);
+        return new ConsumerSupervisor(
+            $this->logger,
+            $config,
+            runControlClaimRecovery: $recovery ?? $this->noopRecovery(),
+            sessionId: $sessionId,
+        );
+    }
+
+    private function noopRecovery(): \Ineersa\CodingAgent\Runtime\Messenger\RunControlClaimRecoveryInterface
+    {
+        return new class implements \Ineersa\CodingAgent\Runtime\Messenger\RunControlClaimRecoveryInterface {
+            public function releaseAbandonedClaims(string $sessionId): array
+            {
+                return ['released' => 0, 'failure' => null];
+            }
+        };
+    }
+
+    private function recordingRecovery(\ArrayObject $released): \Ineersa\CodingAgent\Runtime\Messenger\RunControlClaimRecoveryInterface
+    {
+        return new class($released) implements \Ineersa\CodingAgent\Runtime\Messenger\RunControlClaimRecoveryInterface {
+            public function __construct(private \ArrayObject $released)
+            {
+            }
+
+            public function releaseAbandonedClaims(string $sessionId): array
+            {
+                $this->released[] = $sessionId;
+
+                return ['released' => 1, 'failure' => null];
+            }
+        };
     }
 
     private function createArgvCaptureScript(string $argvCaptureFile, int $exitCode): string

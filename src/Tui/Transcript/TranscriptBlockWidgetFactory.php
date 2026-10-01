@@ -29,16 +29,31 @@ final readonly class TranscriptBlockWidgetFactory
 
     private readonly TranscriptToolResultFacts $toolResultFacts;
 
+    private readonly SubagentResultRenderer $subagentRenderer;
+
+    private readonly WriteToolCallContentRenderer $writeContentRenderer;
+
     public function __construct(
-        private readonly SubagentResultRenderer $subagentRenderer = new SubagentResultRenderer(),
         private readonly TranscriptDisplayConfig $displayConfig = new TranscriptDisplayConfig(),
         private readonly TranscriptDisplayState $displayState = new TranscriptDisplayState(),
         private readonly EditToolCallDiffRenderer $editDiffRenderer = new EditToolCallDiffRenderer(),
-        private readonly WriteToolCallContentRenderer $writeContentRenderer = new WriteToolCallContentRenderer(),
         private readonly TranscriptLinePreviewService $linePreviewService = new TranscriptLinePreviewService(),
         private readonly ToolArgumentColoredFormatter $toolArgumentColoredFormatter = new ToolArgumentColoredFormatter(),
         private readonly ViewImageTranscriptFormatter $viewImageFormatter = new ViewImageTranscriptFormatter(),
+        private readonly MarkdownRenderSupport $markdown = new MarkdownRenderSupport(),
+        ?SubagentResultRenderer $subagentRenderer = null,
+        ?WriteToolCallContentRenderer $writeContentRenderer = null,
     ) {
+        $this->subagentRenderer = $subagentRenderer ?? new SubagentResultRenderer(
+            displayConfig: $this->displayConfig,
+            displayState: $this->displayState,
+            linePreviewService: $this->linePreviewService,
+            markdown: $this->markdown,
+        );
+        $this->writeContentRenderer = $writeContentRenderer ?? new WriteToolCallContentRenderer(
+            linePreview: $this->linePreviewService,
+            markdown: $this->markdown,
+        );
         $this->toolResultFacts = new TranscriptToolResultFacts();
         $this->toolPresentationPolicy = new TranscriptToolPresentationPolicy($this->subagentRenderer, $this->toolResultFacts);
         $this->toolRenderer = new TranscriptToolRenderer(
@@ -51,7 +66,7 @@ final readonly class TranscriptBlockWidgetFactory
             $this->viewImageFormatter,
             $this->toolResultFacts,
         );
-        $this->blockRenderer = new TranscriptBlockRenderer($this->displayConfig);
+        $this->blockRenderer = new TranscriptBlockRenderer($this->displayConfig, $this->markdown);
     }
 
     public function displayState(): TranscriptDisplayState

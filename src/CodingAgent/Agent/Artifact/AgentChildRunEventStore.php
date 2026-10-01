@@ -30,8 +30,8 @@ use Symfony\Component\Lock\LockFactory;
  * directories — child events are entirely parent-scoped.
  *
  * Validates that embedded runId in each event matches the bound
- * agentRunId. Mismatches throw on append.  allFor() only returns
- * events for the bound agentRunId; other run IDs return an empty list.
+ * agentRunId. Mismatches throw on append. rangeFor()/readAfterSeq() only return
+ * events for the bound agentRunId; other run IDs return an empty result.
  *
  * Path resolution and validation are delegated to
  * {@see SessionAgentArtifactPathResolver}.
@@ -102,8 +102,15 @@ final class AgentChildRunEventStore implements EventStoreInterface
      *
      * @return list<RunEvent> Events with seq > $cursor, sorted ascending. Sequence holes are preserved.
      */
-    public function readAfterSeq(int $cursor): array
+    /**
+     * @return list<RunEvent>
+     */
+    public function readAfterSeq(string $runId, int $cursor): array
     {
+        if ($runId !== $this->agentRunId) {
+            return [];
+        }
+
         $path = $this->eventsPath();
         $lock = $this->lockFactory->createLock("hatfield-run-{$this->agentRunId}");
         $lock->acquire(true);
@@ -131,21 +138,8 @@ final class AgentChildRunEventStore implements EventStoreInterface
 
     public function latestSequenceFor(string $runId): ?int
     {
-        foreach ($this->reverseFor($runId) as $event) {
+        foreach ($this->reverseEvents($runId) as $event) {
             return $event->seq;
-        }
-
-        return null;
-    }
-
-    public function firstFor(string $runId): ?RunEvent
-    {
-        if ($runId !== $this->agentRunId) {
-            return null;
-        }
-
-        foreach ($this->streamRunEventsFromPath($this->eventsPath()) as $event) {
-            return $event;
         }
 
         return null;
@@ -174,7 +168,7 @@ final class AgentChildRunEventStore implements EventStoreInterface
     /**
      * @return \Generator<int, RunEvent>
      */
-    public function reverseFor(string $runId): iterable
+    private function reverseEvents(string $runId): iterable
     {
         if ($runId !== $this->agentRunId) {
             return;
@@ -186,25 +180,6 @@ final class AgentChildRunEventStore implements EventStoreInterface
                 yield $event;
             }
         }
-    }
-
-    /**
-     * @return list<RunEvent>
-     */
-    public function allFor(string $runId): array
-    {
-        if ($runId !== $this->agentRunId) {
-            return [];
-        }
-
-        $path = $this->eventsPath();
-        if (!is_readable($path)) {
-            return [];
-        }
-
-        $events = iterator_to_array($this->streamRunEventsFromPath($path));
-
-        return $this->eventLog->sortBySeq($events);
     }
 
     /**

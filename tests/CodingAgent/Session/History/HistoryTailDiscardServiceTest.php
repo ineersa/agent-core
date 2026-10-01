@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Session\History;
 
+use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -11,16 +12,18 @@ use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Ineersa\CodingAgent\Session\History\HistoryProjector;
 use Ineersa\CodingAgent\Session\History\HistoryTailDiscardService;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\InMemoryStore;
 
 #[CoversClass(HistoryTailDiscardService::class)]
 final class HistoryTailDiscardServiceTest extends TestCase
@@ -44,11 +47,12 @@ final class HistoryTailDiscardServiceTest extends TestCase
         ];
 
         $appended = null;
+        $order = [];
         $store = $this->createMock(EventStoreInterface::class);
-        $store->method('allFor')->willReturn($events);
         $store->expects($this->once())
             ->method('append')
-            ->willReturnCallback(static function (RunEvent $event) use (&$appended): RunEvent {
+            ->willReturnCallback(static function (RunEvent $event) use (&$appended, &$order): RunEvent {
+                $order[] = 'append';
                 $appended = $event;
 
                 return new RunEvent(
@@ -61,11 +65,65 @@ final class HistoryTailDiscardServiceTest extends TestCase
                 );
             });
 
+        $projectionStore = new InMemoryHistoryProjectionStore();
+        $projectionStore->seedFromEvents($runId, $events);
+        $innerActive = new TestActiveRunContext();
+        $active = new class($innerActive, $order) implements \Ineersa\AgentCore\Contract\ActiveRunContextInterface {
+            /** @param list<string> $order */
+            public function __construct(
+                private TestActiveRunContext $inner,
+                private array &$order,
+            ) {
+            }
+
+            public function stateFor(string $runId): RunState
+            {
+                return $this->inner->stateFor($runId);
+            }
+
+            public function remember(RunState $state): void
+            {
+                $this->inner->remember($state);
+            }
+
+            public function initializeQueued(string $runId): RunState
+            {
+                return $this->inner->initializeQueued($runId);
+            }
+
+            public function initialize(RunState $state): void
+            {
+                $this->inner->initialize($state);
+            }
+
+            public function applyCommittedSuffix(string $runId, array $events, callable $advance): RunState
+            {
+                return $this->inner->applyCommittedSuffix($runId, $events, $advance);
+            }
+
+            public function invalidate(string $runId): void
+            {
+                $this->inner->invalidate($runId);
+            }
+
+            public function withdrawForCommit(string $runId): void
+            {
+                $this->order[] = 'withdraw';
+                $this->inner->withdrawForCommit($runId);
+            }
+
+            public function clear(): void
+            {
+                $this->inner->clear();
+            }
+        };
         $service = new HistoryTailDiscardService(
             $store,
-            new HistoryProjector(),
+            $projectionStore,
             $this->sessionStore(),
             new NullLogger(),
+            $active,
+            new RunLockManager(new LockFactory(new InMemoryStore())),
         );
         $state = new RunState(
             runId: $runId,
@@ -79,6 +137,8 @@ final class HistoryTailDiscardServiceTest extends TestCase
 
         $this->assertTrue($result['discarded']);
         $this->assertSame(6, $result['lastSeq']);
+        $this->assertSame(['withdraw', 'append'], $order);
+        $this->assertTrue($projectionStore->get($runId)->ready);
         $this->assertInstanceOf(RunEvent::class, $appended);
         $this->assertSame(RunEventTypeEnum::HistoryTailDiscarded->value, $appended->type);
         $this->assertSame(1, $appended->payload['after_turn_no']);
@@ -93,14 +153,17 @@ final class HistoryTailDiscardServiceTest extends TestCase
         ];
 
         $store = $this->createMock(EventStoreInterface::class);
-        $store->method('allFor')->willReturn($events);
         $store->expects($this->never())->method('append');
 
+        $projectionStore = new InMemoryHistoryProjectionStore();
+        $projectionStore->seedFromEvents($runId, $events);
         $service = new HistoryTailDiscardService(
             $store,
-            new HistoryProjector(),
+            $projectionStore,
             $this->sessionStore(),
             new NullLogger(),
+            new TestActiveRunContext(),
+            new RunLockManager(new LockFactory(new InMemoryStore())),
         );
         $state = new RunState(
             runId: $runId,
@@ -119,9 +182,11 @@ final class HistoryTailDiscardServiceTest extends TestCase
     {
         $service = new HistoryTailDiscardService(
             $this->createStub(EventStoreInterface::class),
-            new HistoryProjector(),
+            new InMemoryHistoryProjectionStore(),
             $this->sessionStore(),
             new NullLogger(),
+            new TestActiveRunContext(),
+            new RunLockManager(new LockFactory(new InMemoryStore())),
         );
 
         $this->assertTrue($service->isContextMutatingMessage(new AdvanceRun(

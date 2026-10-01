@@ -4,16 +4,14 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Execution;
 
-use Ineersa\AgentCore\Application\Dto\RunStateReplayResult;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
+use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
-use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
@@ -21,7 +19,6 @@ use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Execution\AgentMcpToolsResolver;
 use Ineersa\CodingAgent\Agent\Execution\AgentPromptBuilder;
 use Ineersa\CodingAgent\Agent\Execution\AgentToolPolicyResolver;
-use Ineersa\CodingAgent\Agent\Execution\RunStartedMetadataReader;
 use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummaryBuilder;
 use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
 use Ineersa\CodingAgent\Agent\Execution\SubagentToolSetResolver;
@@ -34,6 +31,7 @@ use Ineersa\CodingAgent\Tests\Agent\Execution\Support\PipelineCapturingAgentRunn
 use Ineersa\CodingAgent\Tests\Agent\Execution\Support\PromptContractTestSupport;
 use Ineersa\CodingAgent\Tests\Agent\Execution\Support\ProviderBoundaryCaptureSupport;
 use Ineersa\CodingAgent\Tests\Support\Mcp\TestMcpConfigLoaderFactory;
+use Ineersa\CodingAgent\Tests\Support\RunStartedMetadataReaderTestFactory;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
@@ -222,7 +220,7 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
 
         $resolver = new SubagentToolSetResolver(
             $this->innerToolboxResolver($registry, ['read', 'browser__search', 'fork']),
-            new RunStartedMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer()),
+            RunStartedMetadataReaderTestFactory::fromEventStore($eventStore, $childRunId),
             $registry,
         );
         $capture = ProviderBoundaryCaptureSupport::create(
@@ -317,10 +315,10 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
             'skillsContextBuilder' => self::getContainer()->get(SkillsContextBuilder::class),
             'artifactRegistry' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry::class),
             'agentRunner' => $agentRunner,
-            'runStateRebuilder' => $this->rebuildParentState($parentState),
+            'activeRunContext' => $this->parentActiveRunContext($parentState),
             'eventStore' => $eventStore,
             'committedRunEventAppender' => self::getContainer()->get(CommittedRunEventAppender::class),
-            'metadataReader' => new RunStartedMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer()),
+            'metadataReader' => RunStartedMetadataReaderTestFactory::fromEventStore($eventStore, $parentState->runId),
             'relationshipReader' => \Ineersa\CodingAgent\Tests\Support\StubRunRelationshipReader::topLevel($parentState->runId),
             'childRunDirectory' => self::getContainer()->get(AgentChildRunDirectory::class),
             'contextAccessor' => self::getContainer()->get(StackToolExecutionContextAccessor::class),
@@ -338,14 +336,12 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
         ]);
     }
 
-    private function rebuildParentState(RunState $parentState): RunStateRebuilderInterface
+    private function parentActiveRunContext(RunState $parentState): ActiveRunContextInterface
     {
-        $rebuilder = $this->createStub(RunStateRebuilderInterface::class);
-        $rebuilder->method('rebuildIfStale')->willReturn(
-            RunStateReplayResult::rebuilt($parentState),
-        );
+        $context = $this->createStub(ActiveRunContextInterface::class);
+        $context->method('stateFor')->willReturn($parentState);
 
-        return $rebuilder;
+        return $context;
     }
 
     private function emptyMcpToolsResolver(): AgentMcpToolsResolver

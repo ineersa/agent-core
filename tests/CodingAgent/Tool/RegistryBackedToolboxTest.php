@@ -4,8 +4,13 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool;
 
+use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
+use Ineersa\AgentCore\Application\Tool\ToolContext;
+use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Agent\Artifact\AgentRetrieveArgumentsDTO;
+use Ineersa\CodingAgent\Extension\ChildRunExtensionAllowlistReaderInterface;
 use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\CodingAgent\Extension\ExtensionToolHookEventSubscriber;
 use Ineersa\CodingAgent\Tests\Tool\Support\NativeToolSchemaProbe;
@@ -1053,6 +1058,104 @@ final class RegistryBackedToolboxTest extends TestCase
         $this->assertSame('rejected at runtime', $seen->details['message']);
     }
 
+    public function testFailureHookPolicyReadCannotMaskOriginalToolCallException(): void
+    {
+        $allowlistReads = 0;
+        $allowlist = new class($allowlistReads) implements ChildRunExtensionAllowlistReaderInterface {
+            public function __construct(private int &$allowlistReads)
+            {
+            }
+
+            public function readAllowedExtensions(string $runId): ?array
+            {
+                ++$this->allowlistReads;
+                if ($this->allowlistReads > 1) {
+                    throw new \RuntimeException(\sprintf('History projection for run %s is not ready; recovery required.', $runId));
+                }
+
+                // First lookup happens on ToolCallRequested / rewrite path and must
+                // succeed so the real handler executes before the failure-hook race.
+                return null;
+            }
+        };
+
+        $resultHook = new class implements ToolResultHookInterface {
+            public function onToolResult(ToolResultContextDTO $context): ToolResultDecisionDTO
+            {
+                return ToolResultDecisionDTO::keep();
+            }
+        };
+
+        $hookRegistry = new ExtensionHookRegistry();
+        $hookRegistry->addToolResultHook($resultHook);
+
+        $accessor = new StackToolExecutionContextAccessor();
+        $logger = new TestLogger();
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber(
+            hookRegistry: $hookRegistry,
+            cwd: '/tmp',
+            contextAccessor: $accessor,
+            logger: $logger,
+            extensionAllowlistReader: $allowlist,
+        ));
+
+        $registry = new ToolRegistry();
+        $registry->registerTool(
+            name: 'bash',
+            description: 'Run shell',
+            parametersJsonSchema: [
+                'type' => 'object',
+                'properties' => ['command' => ['type' => 'string']],
+                'required' => ['command'],
+            ],
+            handler: new class {
+                /** @param array<string, mixed> $arguments */
+                public function __invoke(array $arguments): string
+                {
+                    throw new ToolCallException('Command failed with exit code 1.', retryable: false, hint: 'Inspect the command output before retrying.');
+                }
+            },
+            promptLine: 'bash: Run shell',
+        );
+
+        $toolbox = $this->createToolbox(
+            registry: $registry,
+            dispatcher: $dispatcher,
+            contextAccessor: $accessor,
+            extensionAllowlistReader: $allowlist,
+        );
+
+        try {
+            $accessor->with(new ToolContext(
+                runId: 'run-mask',
+                turnNo: 4,
+                toolCallId: 'call-bash-mask',
+                toolName: 'bash',
+                cancellationToken: new NullCancellationToken(),
+                timeoutSeconds: 30,
+            ), static function () use ($toolbox): void {
+                $toolbox->execute(new ToolCall('call-bash-mask', 'bash', ['command' => 'false']));
+            });
+            $this->fail('Expected original ToolCallException to surface');
+        } catch (ToolCallException $caught) {
+            $this->assertSame('Command failed with exit code 1.', $caught->getMessage());
+            $this->assertFalse($caught->retryable());
+            $this->assertSame('Inspect the command output before retrying.', $caught->hint());
+        }
+
+        $this->assertGreaterThanOrEqual(2, $allowlistReads, 'Failure-path policy lookup must actually run');
+        $aborted = array_values(array_filter(
+            $logger->records,
+            static fn (array $row): bool => ($row['context']['event_type'] ?? null) === 'extension.tool_failed_hooks_aborted',
+        ));
+        $this->assertCount(1, $aborted);
+        $this->assertSame('bash', $aborted[0]['context']['tool_name']);
+        $this->assertSame('call-bash-mask', $aborted[0]['context']['tool_call_id']);
+        $this->assertSame('run-mask', $aborted[0]['context']['run_id']);
+        $this->assertSame('RuntimeException', $aborted[0]['context']['error_type']);
+    }
+
     public function testNestedLegacyEnvelopeInputIsRejectedWithoutCompatibilityShim(): void
     {
         $registry = new ToolRegistry();
@@ -1287,6 +1390,8 @@ final class RegistryBackedToolboxTest extends TestCase
         ?EventDispatcher $dispatcher = null,
         ?ExtensionHookRegistry $rewriteHookProvider = null,
         ?\Symfony\AI\Agent\Toolbox\ToolCallArgumentResolverInterface $resolver = null,
+        ?StackToolExecutionContextAccessor $contextAccessor = null,
+        ?ChildRunExtensionAllowlistReaderInterface $extensionAllowlistReader = null,
     ): RegistryBackedToolbox {
         return new RegistryBackedToolbox(
             registry: $registry,
@@ -1294,6 +1399,8 @@ final class RegistryBackedToolboxTest extends TestCase
             schemaFactory: NativeToolSchemaProbe::schemaFactory(),
             eventDispatcher: $dispatcher,
             rewriteHookProvider: $rewriteHookProvider,
+            contextAccessor: $contextAccessor,
+            extensionAllowlistReader: $extensionAllowlistReader,
         );
     }
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Controller\CommandHandler;
 
+use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Domain\Message\ApplyShellCommand;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
@@ -24,6 +25,7 @@ final readonly class ShellCommandHandler
 {
     public function __construct(
         private MessageBusInterface $commandBus,
+        private ActiveRunContextInterface $activeRunContext,
     ) {
     }
 
@@ -60,6 +62,7 @@ final readonly class ShellCommandHandler
         ));
 
         try {
+            $this->activeRunContext->initializeQueued($runId);
             $this->commandBus->dispatch(new ApplyShellCommand(
                 runId: $runId,
                 turnNo: 0,

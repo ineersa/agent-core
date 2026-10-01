@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\ContextBudget;
 
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
-use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
@@ -22,6 +21,7 @@ use Ineersa\CodingAgent\Config\ContextBudgetReminderConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\ContextBudget\ContextBudgetReminderHookSubscriber;
+use Ineersa\CodingAgent\Tests\Session\History\InMemoryHistoryProjectionStore;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Constraint\Callback;
@@ -37,19 +37,18 @@ use PHPUnit\Framework\TestCase;
 #[AllowMockObjectsWithoutExpectations]
 final class ContextBudgetReminderHookSubscriberTest extends TestCase
 {
-    /** @var EventStoreInterface&\PHPUnit\Framework\MockObject\MockObject */
-    private $eventStore;
+    private InMemoryHistoryProjectionStore $historyStore;
     /** @var AgentRunnerInterface&\PHPUnit\Framework\MockObject\MockObject */
     private $agentRunner;
     private ContextBudgetReminderHookSubscriber $subscriber;
 
     protected function setUp(): void
     {
-        $this->eventStore = $this->createMock(EventStoreInterface::class);
+        $this->historyStore = new InMemoryHistoryProjectionStore();
         $this->agentRunner = $this->createMock(AgentRunnerInterface::class);
 
         $this->subscriber = new ContextBudgetReminderHookSubscriber(
-            $this->eventStore,
+            $this->historyStore,
             $this->agentRunner,
             new ContextBudgetReminderConfig(
                 earlyInputTokens: 200000,
@@ -178,8 +177,7 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
 
     public function testBelowBothThresholdsSkipsReminderHistoryScan(): void
     {
-        $this->eventStore->method('firstFor')->willReturn($this->runStarted(1, 272000));
-        $this->eventStore->expects($this->never())->method('reverseFor');
+        $this->historyStore->initializeFromEvents('run-1', [$this->runStarted(1, 272000)]);
         $this->agentRunner->expects($this->never())->method('appendMessage');
 
         $this->subscriber->handleAfterTurnCommit($this->hookContext([
@@ -273,7 +271,7 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
     public function testChildReminderSettings(array $session, bool $disableForks, bool $disableSubagents, int $inputTokens, bool $suppressed): void
     {
         $subscriber = new ContextBudgetReminderHookSubscriber(
-            $this->eventStore,
+            $this->historyStore,
             $this->agentRunner,
             new ContextBudgetReminderConfig(disableForForks: $disableForks, disableForSubagents: $disableSubagents),
             $this->appConfigWithCatalogWindow(272000),
@@ -314,8 +312,7 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
     /** @param list<RunEvent> $events */
     private function mockEvents(array $events): void
     {
-        $this->eventStore->method('firstFor')->willReturn($events[0] ?? null);
-        $this->eventStore->method('reverseFor')->willReturn(array_reverse($events));
+        $this->historyStore->initializeFromEvents('run-1', $events);
     }
 
     /**
@@ -350,7 +347,14 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
     /** @param array<string, mixed> $session */
     private function runStarted(int $seq, ?int $contextWindow, array $session = []): RunEvent
     {
-        $metadata = ['session' => $session];
+        $metadata = [
+            'model' => 'test/model',
+            'session' => $session,
+        ];
+        if (('agent_child' === ($session['kind'] ?? null)) && !isset($metadata['reasoning'])) {
+            $metadata['reasoning'] = 'medium';
+            $metadata['tools_scope'] = ['allowed_tools' => []];
+        }
         if (null !== $contextWindow) {
             $metadata['context_window'] = $contextWindow;
         }

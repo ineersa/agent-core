@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Listener;
 
+use Ineersa\CodingAgent\Logging\ProcessMemorySnapshotLogger;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\SubagentLiveAttention;
@@ -30,6 +31,7 @@ final class TickPollListener implements TuiListenerRegistrar
 {
     public function __construct(
         private readonly RuntimeQuestionEventHandler $runtimeQuestionEventHandler,
+        private readonly ?ProcessMemorySnapshotLogger $memorySnapshotLogger = null,
     ) {
     }
 
@@ -45,8 +47,25 @@ final class TickPollListener implements TuiListenerRegistrar
         $subagentLiveChildPoller = $services->childPoller;
         $runtimeQuestionEventHandler = $this->runtimeQuestionEventHandler;
         $subagentLivePickerController = $services->subagentLivePicker;
+        $memorySnapshotLogger = $this->memorySnapshotLogger;
 
-        $context->ticks->add(static function () use ($poller, $state, $client, $screen, $questionCoordinator, $questionController, $subagentLiveChildPoller, $runtimeQuestionEventHandler, $subagentLivePickerController): ?bool {
+        // One-shot idle memory sample after a terminal/compaction boundary.
+        // Symfony TUI renders before onTick, so boundary samples in this tick
+        // are pre-next-frame. The idle sample waits for the following tick.
+        $pendingIdleMemoryCheckpoint = false;
+        $idleMemoryCheckpointEmitted = false;
+        // Passive resume of an already-idle/terminal session never crosses a
+        // live boundary; schedule one idle sample on the first stable tick.
+        $pendingIdleMemoryCheckpoint = RunActivityStateEnum::Idle === $state->activity
+            || $state->activity->isTerminal();
+        $idleCheckpointPhase = $pendingIdleMemoryCheckpoint
+            ? 'next_tick_after_resume_mount'
+            : 'next_tick_after_boundary';
+
+        $context->ticks->add(static function () use ($poller, $state, $client, $screen, $questionCoordinator, $questionController, $subagentLiveChildPoller, $runtimeQuestionEventHandler, $subagentLivePickerController, $memorySnapshotLogger, &$pendingIdleMemoryCheckpoint, &$idleMemoryCheckpointEmitted, &$idleCheckpointPhase): ?bool {
+            $activityBefore = $state->activity;
+            $compactingBefore = $state->isCompacting;
+            $lastSeqBefore = $state->lastSeq;
             $onHitl = static function (RuntimeEvent $event) use ($client, $questionCoordinator, $runtimeQuestionEventHandler): void {
                 $runtimeQuestionEventHandler->handleHumanInputRequested($event, $client, $questionCoordinator);
             };
@@ -131,6 +150,69 @@ final class TickPollListener implements TuiListenerRegistrar
                 // Incremental projector delta (or explicit full after history-position replace).
                 // State already applied inside RuntimeEventPoller; screen merges the same set.
                 $screen->applyTranscriptChangeSet($transcriptChanges);
+            }
+
+            if (null !== $memorySnapshotLogger) {
+                $becameTerminal = !$activityBefore->isTerminal() && $state->activity->isTerminal();
+                $compactionFinished = $compactingBefore && !$state->isCompacting;
+                $retentionFloor = null !== $transcriptChanges ? $transcriptChanges->retentionFloorBlockId : null;
+                $workArrived = ($activityBefore->isTerminal() || RunActivityStateEnum::Idle === $activityBefore)
+                    && $state->activity->isActive();
+                if ($workArrived || $state->isCompacting) {
+                    $pendingIdleMemoryCheckpoint = false;
+                    $idleMemoryCheckpointEmitted = false;
+                }
+
+                if ($becameTerminal || $compactionFinished || null !== $retentionFloor) {
+                    $eventType = $becameTerminal
+                        ? 'tui.activity.terminal'
+                        : 'tui.compaction.settled';
+                    $memorySnapshotLogger->checkpoint(
+                        eventType: $eventType,
+                        component: 'tui',
+                        fields: [
+                            'session_id' => $state->sessionId,
+                            'run_id' => $state->sessionId,
+                            'activity' => $state->activity->value,
+                            'activity_before' => $activityBefore->value,
+                            'last_seq' => $state->lastSeq,
+                            'last_seq_before' => $lastSeqBefore,
+                            'retention_floor_block_id' => $retentionFloor,
+                            'is_compacting' => $state->isCompacting,
+                            'checkpoint_phase' => 'pre_next_frame',
+                        ] + ProcessMemorySnapshotLogger::parentTranscriptScope(
+                            $state->visibleQuestionOwnerRunId(),
+                            $state->subagentLiveView->active,
+                        ) + ProcessMemorySnapshotLogger::transcriptScalars($state->transcript),
+                    );
+                    $pendingIdleMemoryCheckpoint = true;
+                    $idleMemoryCheckpointEmitted = false;
+                    $idleCheckpointPhase = 'next_tick_after_boundary';
+                } elseif ($pendingIdleMemoryCheckpoint && !$idleMemoryCheckpointEmitted) {
+                    $stableIdle = !$state->isCompacting
+                        && (RunActivityStateEnum::Idle === $state->activity || $state->activity->isTerminal())
+                        && !($state->subagentLiveView->active && $state->subagentLiveView->childActivity->isActive())
+                        && null === $transcriptChanges;
+                    if ($stableIdle) {
+                        $memorySnapshotLogger->checkpoint(
+                            eventType: 'tui.memory.idle',
+                            component: 'tui',
+                            fields: [
+                                'session_id' => $state->sessionId,
+                                'run_id' => $state->sessionId,
+                                'activity' => $state->activity->value,
+                                'last_seq' => $state->lastSeq,
+                                'is_compacting' => $state->isCompacting,
+                                'checkpoint_phase' => $idleCheckpointPhase,
+                            ] + ProcessMemorySnapshotLogger::parentTranscriptScope(
+                                $state->visibleQuestionOwnerRunId(),
+                                $state->subagentLiveView->active,
+                            ) + ProcessMemorySnapshotLogger::transcriptScalars($state->transcript),
+                        );
+                        $idleMemoryCheckpointEmitted = true;
+                        $pendingIdleMemoryCheckpoint = false;
+                    }
+                }
             }
 
             // /history selection: populate editor with the selected user prompt once.

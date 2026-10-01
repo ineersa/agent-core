@@ -54,7 +54,7 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
         private string $cwd,
         private ?StackToolExecutionContextAccessor $contextAccessor = null,
         private ?LoggerInterface $logger = null,
-        private ?NoninteractiveChildRunProbe $noninteractiveChildProbe = null,
+        private ?NoninteractiveChildRunProbeInterface $noninteractiveChildProbe = null,
         private ?ChildRunExtensionAllowlistReaderInterface $extensionAllowlistReader = null,
     ) {
     }
@@ -223,15 +223,29 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
         // The app-owned event carries the exact rewritten flat provider
         // ToolCall and the effective original failure; result hooks must
         // never see the internal resolved parameter map.
-        $this->runResultHooks(
-            toolCall: $event->toolCall,
-            isError: true,
-            rawResult: $event->exception->getMessage(),
-            details: [
-                'error_type' => $event->exception::class,
-                'message' => $event->exception->getMessage(),
-            ],
-        );
+        try {
+            $this->runResultHooks(
+                toolCall: $event->toolCall,
+                isError: true,
+                rawResult: $event->exception->getMessage(),
+                details: [
+                    'error_type' => $event->exception::class,
+                    'message' => $event->exception->getMessage(),
+                ],
+            );
+        } catch (\Throwable $exception) {
+            // Policy/metadata reads for result hooks are best-effort on the
+            // failure path. They must never replace the original tool exception
+            // that RegistryBackedToolbox still needs to rethrow.
+            $this->logger?->error('extension.tool_failed_hooks_aborted', [
+                'component' => 'extension.tool_hook_subscriber',
+                'event_type' => 'extension.tool_failed_hooks_aborted',
+                'tool_name' => $event->toolCall->getName(),
+                'tool_call_id' => $event->toolCall->getId(),
+                'run_id' => $this->contextAccessor?->current()?->runId() ?? '',
+                'error_type' => $exception::class,
+            ]);
+        }
     }
 
     /**

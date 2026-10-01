@@ -24,6 +24,15 @@ final class SqliteImmediateTransactionKernelTestKernel extends KernelTestCase
         return self::getContainer();
     }
 
+    public static function getKernelForSqliteWorker(): \Symfony\Component\HttpKernel\KernelInterface
+    {
+        if (null === self::$kernel) {
+            throw new \LogicException('Sqlite worker kernel is not booted.');
+        }
+
+        return self::$kernel;
+    }
+
     protected static function createKernel(array $options = []): Kernel
     {
         $env = $options['environment'] ?? 'test';

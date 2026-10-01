@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Pipeline;
 
+use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
@@ -24,6 +25,7 @@ final readonly class AgentRunner implements AgentRunnerInterface
     public function __construct(
         private MessageBusInterface $commandBus,
         private NormalizerInterface $normalizer,
+        private ActiveRunContextInterface $activeRunContext,
     ) {
     }
 
@@ -35,6 +37,8 @@ final readonly class AgentRunner implements AgentRunnerInterface
         $runId = $input->runId ?? UuidV7::v7()->toRfc4122();
         $stepId = $this->resolveStartStepId($runId, $input->runId);
         $idempotencyKey = $this->idempotencyKey($runId, $stepId);
+
+        $this->activeRunContext->initializeQueued($runId);
 
         try {
             $this->commandBus->dispatch(new StartRun(
@@ -59,6 +63,8 @@ final readonly class AgentRunner implements AgentRunnerInterface
     public function shell(string $runId, string $rawInput): void
     {
         $stepId = $this->nextStepId('shell');
+
+        $this->activeRunContext->initializeQueued($runId);
 
         try {
             $this->commandBus->dispatch(new ApplyShellCommand(

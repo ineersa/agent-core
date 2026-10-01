@@ -8,9 +8,11 @@ use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\History\HistorySelectionServiceInterface;
+use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\RefreshRunContext;
 use Ineersa\AgentCore\Domain\Run\RunMetadata;
+use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
@@ -66,6 +68,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         private readonly MessageBusInterface $commandBus,
         private readonly SessionRepairServiceInterface $sessionRepairService,
         private readonly ActiveRunContextInterface $activeRunContext,
+        private readonly RunStateRebuilderInterface $runStateRebuilder,
         private readonly ?RuntimeEventSinkInterface $transientSink = null,
         private readonly ?ToolQuestionStoreInterface $toolQuestionStore = null,
         private readonly ToolQuestionAnswerResolver $answerResolver = new ToolQuestionAnswerResolver(),
@@ -91,6 +94,8 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         if (!$this->sessionMetaStore->exists($runId)) {
             throw new \RuntimeException(\sprintf('Session "%s" not found.', $runId));
         }
+
+        $this->ensureSharedRunState($runId);
 
         // Resume / relaunch / reload attach must cancel outstanding human waits
         // before the passive context refresh. Ordinary RefreshRunContext alone
@@ -185,16 +190,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
             }
         }
 
-        $unseenEvents = [];
-        foreach ($this->eventStore->reverseFor($runId) as $runEvent) {
-            if ($runEvent->seq <= $afterSeq) {
-                break;
-            }
-
-            $unseenEvents[] = $runEvent;
-        }
-
-        foreach (array_reverse($unseenEvents) as $runEvent) {
+        foreach ($this->eventStore->readAfterSeq($runId, $afterSeq) as $runEvent) {
             $runtimeEvent = $this->mapper->toRuntimeEvent($runEvent);
             if (null !== $runtimeEvent) {
                 yield $runtimeEvent;
@@ -270,6 +266,33 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         }
 
         $this->runner->cancel($runId, 'Outstanding human questions cancelled on session attach.');
+    }
+
+    private function ensureSharedRunState(string $runId): void
+    {
+        try {
+            $state = $this->activeRunContext->stateFor($runId);
+            // Controller attach clears the operational DB row while keeping ready
+            // shared projections. Republish through the owning context so the
+            // operational row matches the ready shared state.
+            $this->activeRunContext->remember($state);
+
+            return;
+        } catch (\RuntimeException) {
+            // Controller startup clears disposable projections under the owner
+            // lock. Attach/resume must republish shared current state once.
+        }
+
+        $replay = $this->runStateRebuilder->rebuildIfStale(RunState::queued($runId), $runId);
+        if (null === $replay->rebuiltState) {
+            $this->activeRunContext->initialize(RunState::queued($runId));
+
+            return;
+        }
+
+        // Ready reuse returns shared state without touching the operational row.
+        // remember() is the owning publish path for both shared state and the row.
+        $this->activeRunContext->remember($replay->rebuiltState);
     }
 
     /** @return list<AgentMessage> */

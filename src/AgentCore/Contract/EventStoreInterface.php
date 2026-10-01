@@ -23,11 +23,6 @@ interface EventStoreInterface
     public function latestSequenceFor(string $runId): ?int;
 
     /**
-     * First canonical event, or null when the run has no events.
-     */
-    public function firstFor(string $runId): ?RunEvent;
-
-    /**
      * Streams canonical events with sequence in the inclusive [startSeq, endSeq] range,
      * in durable append order. Invalid or empty ranges and unknown runs yield no events.
      *
@@ -36,16 +31,10 @@ interface EventStoreInterface
     public function rangeFor(string $runId, int $startSeq, int $endSeq): iterable;
 
     /**
-     * Streams canonical events newest-first. Implementations may stop reading when the consumer stops.
-     *
-     * @return iterable<RunEvent>
-     */
-    public function reverseFor(string $runId): iterable;
-
-    /**
-     * Retrieves all events associated with a specific run ID.
+     * Returns events with sequence strictly greater than $cursor in ascending order,
+     * using a physical reverse-cursor scan that stops once the cursor is reached.
      *
      * @return list<RunEvent>
      */
-    public function allFor(string $runId): array;
+    public function readAfterSeq(string $runId, int $cursor): array;
 }

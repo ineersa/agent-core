@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Compaction;
 
-use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Model\RunModelResolverInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -12,6 +11,7 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\CodingAgent\Compaction\CodingAgentPreLlmCompactionGuard;
 use Ineersa\CodingAgent\Compaction\ProviderContextUsageResolver;
 use Ineersa\CodingAgent\Config\CompactionConfig;
+use Ineersa\CodingAgent\Tests\Session\History\InMemoryHistoryProjectionStore;
 use Ineersa\CodingAgent\Tests\Support\StubRunRelationshipReader;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\TestCase;
@@ -28,8 +28,8 @@ use PHPUnit\Framework\TestCase;
 final class CodingAgentPreLlmCompactionGuardTest extends TestCase
 {
     private CodingAgentPreLlmCompactionGuard $guard;
-    /** @var EventStoreInterface&\PHPUnit\Framework\MockObject\MockObject */
-    private $eventStore;
+    private InMemoryHistoryProjectionStore $historyStore;
+
     private ProviderContextUsageResolver $providerUsageResolver;
     private CompactionConfig $compactionConfig;
     /** @var RunModelResolverInterface&\PHPUnit\Framework\MockObject\MockObject */
@@ -38,8 +38,8 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->eventStore = $this->createMock(EventStoreInterface::class);
-        $this->providerUsageResolver = new ProviderContextUsageResolver($this->eventStore);
+        $this->historyStore = new InMemoryHistoryProjectionStore();
+        $this->providerUsageResolver = new ProviderContextUsageResolver($this->historyStore);
         $this->compactionConfig = new CompactionConfig(
             autoEnabled: true,
             compactAfterTokens: 11000,
@@ -396,7 +396,7 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
      */
     private function stubChronologicalEvents(array $events): void
     {
-        $this->eventStore->method('reverseFor')->willReturn(array_reverse($events));
+        $this->historyStore->initializeFromEvents('run-1', $events);
     }
 
     private function makeTextMessage(string $role, string $text): AgentMessage

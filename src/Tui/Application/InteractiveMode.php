@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Application;
 
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Logging\ProcessMemorySnapshotLogger;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\ProcessReloadState;
@@ -80,6 +81,7 @@ final readonly class InteractiveMode
         private SlashCommandCatalog $commandCatalog,
         private iterable $catalogRegistrars,
         private TuiSessionCompositionFactory $compositionFactory,
+        private ProcessMemorySnapshotLogger $memorySnapshotLogger,
     ) {
     }
 
@@ -216,6 +218,20 @@ final readonly class InteractiveMode
 
             // Set initial transcript
             $screen->setTranscriptBlocks($state->transcript);
+            $this->memorySnapshotLogger->checkpoint(
+                eventType: 'tui.resume.mounted',
+                component: 'tui',
+                fields: [
+                    'session_id' => $state->sessionId,
+                    'run_id' => $state->sessionId,
+                    'resuming' => $state->resuming,
+                    'last_seq' => $state->lastSeq,
+                    'activity' => $state->activity->value,
+                ] + ProcessMemorySnapshotLogger::parentTranscriptScope(
+                    $state->visibleQuestionOwnerRunId(),
+                    $state->subagentLiveView->active,
+                ) + ProcessMemorySnapshotLogger::transcriptScalars($state->transcript),
+            );
 
             // ── Force a full-screen clear on session switches ──
             //
@@ -274,7 +290,7 @@ final readonly class InteractiveMode
             // ── Consume exit intent and dispatch session ended ──
             $reloadIntent = $services->switch->consumePendingReload();
             $switchTarget = $services->switch->consumePendingSwitch();
-            $lifecycle->dispatch(TuiSessionLifecycleEventTypeEnum::SessionEnded);
+            $this->finalizeSessionExit($lifecycle, $state, $reloadIntent, $switchTarget);
 
             // ── Full-process settings reload (/reload) ──
             //
@@ -386,6 +402,37 @@ final readonly class InteractiveMode
                 : TuiSessionLifecycleEventTypeEnum::SessionStarted);
 
         $lifecycle->dispatch($eventType);
+    }
+
+    /**
+     * Persist the shutdown memory checkpoint before SessionEnded teardown.
+     *
+     * SessionEnded subscribers may cancel in-flight work or exit the process.
+     * Logging first keeps a durable quit record on the graceful Ctrl+D path.
+     */
+    private function finalizeSessionExit(
+        TuiSessionLifecycleDispatcher $lifecycle,
+        TuiSessionState $state,
+        ?\Ineersa\CodingAgent\Runtime\Contract\ProcessReloadIntentDTO $reloadIntent,
+        ?TuiSessionSwitchTargetDTO $switchTarget,
+    ): void {
+        $this->memorySnapshotLogger->checkpoint(
+            eventType: 'tui.session.shutdown',
+            component: 'tui',
+            fields: [
+                'session_id' => $state->sessionId,
+                'run_id' => $state->sessionId,
+                'last_seq' => $state->lastSeq,
+                'activity' => $state->activity->value,
+                'exit_reason' => null !== $reloadIntent
+                    ? 'reload'
+                    : (null !== $switchTarget ? 'session_switch' : 'quit'),
+            ] + ProcessMemorySnapshotLogger::parentTranscriptScope(
+                $state->visibleQuestionOwnerRunId(),
+                $state->subagentLiveView->active,
+            ) + ProcessMemorySnapshotLogger::transcriptScalars($state->transcript),
+        );
+        $lifecycle->dispatch(TuiSessionLifecycleEventTypeEnum::SessionEnded);
     }
 
     /**

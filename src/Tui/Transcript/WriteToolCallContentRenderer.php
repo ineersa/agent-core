@@ -19,6 +19,7 @@ final readonly class WriteToolCallContentRenderer
 {
     public function __construct(
         private TranscriptLinePreviewService $linePreview = new TranscriptLinePreviewService(),
+        private MarkdownRenderSupport $markdown = new MarkdownRenderSupport(),
     ) {
     }
 
@@ -83,7 +84,7 @@ final readonly class WriteToolCallContentRenderer
 
     private function buildMarkdownPreviewWidget(string $previewText, TuiTheme $theme): MarkdownWidget
     {
-        $mdWidget = new MarkdownWidget($previewText);
+        $mdWidget = $this->markdown->create($previewText);
         $colorSpec = $theme->getPalette()->get(ThemeColorEnum::ToolOutput);
         $style = '' !== $colorSpec
             ? new Style(color: $colorSpec, padding: Padding::from([0, 0, 0, 4]))

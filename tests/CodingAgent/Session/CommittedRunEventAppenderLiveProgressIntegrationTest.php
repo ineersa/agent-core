@@ -38,8 +38,8 @@ final class CommittedRunEventAppenderLiveProgressIntegrationTest extends PerMeth
             'EventStoreInterface must resolve to the streaming decorator in the live progress path',
         );
 
-        // A parent run is represented only by canonical evidence; no snapshot
-        // state is seeded for this side-event append path.
+        // Reconstruct the parent once at startup. Side-event appends must use
+        // the shared projection rather than silently replaying the archive.
         $eventStore->append(new RunEvent(
             runId: $runId,
             seq: 0,
@@ -47,6 +47,7 @@ final class CommittedRunEventAppenderLiveProgressIntegrationTest extends PerMeth
             type: RunEventTypeEnum::RunStarted->value,
             payload: ['payload' => ['messages' => []]],
         ));
+        self::getContainer()->get(\Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface::class)->rebuildIfStale(\Ineersa\AgentCore\Domain\Run\RunState::queued($runId), $runId);
         $this->recordingSink->emitted = [];
 
         /** @var CommittedRunEventAppender $appender */
@@ -80,7 +81,7 @@ final class CommittedRunEventAppenderLiveProgressIntegrationTest extends PerMeth
         $this->assertSame($runId, $persisted->runId);
         $this->assertSame(RunEventTypeEnum::ToolExecutionUpdate->value, $persisted->type);
 
-        $canonical = $eventStore->allFor($runId);
+        $canonical = iterator_to_array($eventStore->rangeFor($runId, 1, \PHP_INT_MAX), false);
         $this->assertCount(2, $canonical);
         $this->assertSame($persisted->seq, $canonical[1]->seq);
         $this->assertSame($progress, $canonical[1]->payload['subagent_progress']);

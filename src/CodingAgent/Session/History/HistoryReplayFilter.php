@@ -45,18 +45,6 @@ final class HistoryReplayFilter
     }
 
     /**
-     * @param list<RunEvent> $events
-     *
-     * @return list<RunEvent>
-     */
-    public function filterAtPosition(array $events, int $positionTurnNo): array
-    {
-        $history = $this->projector->build($events);
-
-        return $this->filterSortedAtPosition($events, $history, $positionTurnNo);
-    }
-
-    /**
      * One projection + one sort per public call. Both issue #183 suppressions apply:
      * mapped discarded-turn seeding commands, and unmatched post-completion pending launches.
      *

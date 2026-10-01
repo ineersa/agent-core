@@ -51,7 +51,7 @@ final class SessionRunEventStoreTest extends TestCase
 
     public function testAllForReturnsEmptyForMissingRun(): void
     {
-        $events = $this->store->allFor('nonexistent');
+        $events = iterator_to_array($this->store->rangeFor('nonexistent', 1, \PHP_INT_MAX), false);
         $this->assertCount(0, $events);
     }
 
@@ -65,7 +65,7 @@ final class SessionRunEventStoreTest extends TestCase
             payload: ['prompt' => 'hello'],
         ));
 
-        $events = $this->store->allFor($runId);
+        $events = iterator_to_array($this->store->rangeFor($runId, 1, \PHP_INT_MAX), false);
         $this->assertCount(1, $events);
         $this->assertSame($runId, $events[0]->runId);
         $this->assertSame($persisted->seq, $events[0]->seq);
@@ -87,7 +87,7 @@ final class SessionRunEventStoreTest extends TestCase
             RunEvent::forAppend(runId: $runId, turnNo: 1, type: 'tool_execution_start'),
         ]);
 
-        $events = $this->store->allFor($runId);
+        $events = iterator_to_array($this->store->rangeFor($runId, 1, \PHP_INT_MAX), false);
         $this->assertCount(3, $events);
 
         $this->assertSame([1, 2, 3], array_map(static fn (RunEvent $e): int => $e->seq, $events));
@@ -105,7 +105,7 @@ final class SessionRunEventStoreTest extends TestCase
         $runId = 'run-'.bin2hex(random_bytes(4));
         $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started'));
         $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 1, type: 'turn_advanced'));
-        $this->store->allFor($runId);
+        iterator_to_array($this->store->rangeFor($runId, 1, \PHP_INT_MAX), false);
 
         $eventsPath = $this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl';
         file_put_contents($eventsPath, json_encode([
@@ -147,14 +147,20 @@ final class SessionRunEventStoreTest extends TestCase
         $this->assertSame([], iterator_to_array($this->store->rangeFor('missing', 2, 1)));
     }
 
-    public function testFirstAndLatestReadCanonicalHeadAndTail(): void
+    public function testLatestAndRangeReadCanonicalHeadAndTail(): void
     {
         $runId = 'run-'.bin2hex(random_bytes(4));
         $first = $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started'));
         $last = $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 1, type: 'turn_advanced'));
 
-        $this->assertSame($first->seq, $this->store->firstFor($runId)?->seq);
+        $head = null;
+        foreach ($this->store->rangeFor($runId, 1, \PHP_INT_MAX) as $event) {
+            $head = $event;
+            break;
+        }
+        $this->assertSame($first->seq, $head?->seq);
         $this->assertSame($last->seq, $this->store->latestSequenceFor($runId));
+        $this->assertSame([$last->seq], array_map(static fn (RunEvent $event): int => $event->seq, $this->store->readAfterSeq($runId, $first->seq)));
     }
 
     public function testLatestSequenceSkipsTrailingIncompatibleRecord(): void
@@ -173,26 +179,28 @@ final class SessionRunEventStoreTest extends TestCase
         $this->assertSame($last->seq, $this->store->latestSequenceFor($runId));
     }
 
-    public function testReverseForReadsNewestRelevantTailBeforeLargePrefix(): void
+    public function testReadAfterSeqReturnsOnlyEventsAfterCursorBeforeLargePrefix(): void
     {
         $runId = 'run-'.bin2hex(random_bytes(4));
         $path = $this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl';
         mkdir(\dirname($path), 0777, true);
-        file_put_contents($path, str_repeat("{\"ignored\":true}\n", 20000));
-        file_put_contents($path, json_encode([
-            'schema_version' => SchemaVersion::CURRENT,
-            'run_id' => $runId,
-            'seq' => 7,
-            'turn_no' => 1,
-            'type' => 'turn_advanced',
-            'payload' => [],
-            'ts' => '2026-01-01T00:00:00+00:00',
-        ], \JSON_THROW_ON_ERROR)."\n", \FILE_APPEND);
-
-        foreach ($this->store->reverseFor($runId) as $event) {
-            $this->assertSame(7, $event->seq);
-            break;
+        $handle = fopen($path, 'wb');
+        $this->assertNotFalse($handle);
+        for ($seq = 1; $seq <= 20001; ++$seq) {
+            fwrite($handle, json_encode([
+                'schema_version' => SchemaVersion::CURRENT,
+                'run_id' => $runId,
+                'seq' => $seq,
+                'turn_no' => 20001 === $seq ? 1 : 0,
+                'type' => 20001 === $seq ? 'turn_advanced' : 'run_started',
+                'payload' => [],
+                'ts' => '2026-01-01T00:00:00+00:00',
+            ], \JSON_THROW_ON_ERROR)."\n");
         }
+        fclose($handle);
+
+        $this->assertSame(20001, $this->store->latestSequenceFor($runId));
+        $this->assertSame([20001], array_map(static fn (RunEvent $event): int => $event->seq, $this->store->readAfterSeq($runId, 20000)));
     }
 
     public function testLatestSequenceRejectsTrailingPartialRecordLikeAllFor(): void
@@ -220,7 +228,7 @@ final class SessionRunEventStoreTest extends TestCase
         // New store instance (simulates recreating services after restart)
         $newStore = $this->createStore();
 
-        $events = $newStore->allFor($runId);
+        $events = iterator_to_array($newStore->rangeFor($runId, 1, \PHP_INT_MAX), false);
         $this->assertCount(1, $events, 'Events must survive store recreation');
         $this->assertSame('agent_end', $events[0]->type);
     }
@@ -237,7 +245,7 @@ final class SessionRunEventStoreTest extends TestCase
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('integrity error');
-        $this->store->allFor($runId);
+        iterator_to_array($this->store->rangeFor($runId, 1, \PHP_INT_MAX), false);
     }
 
     public function testRunIsolation(): void
@@ -249,8 +257,8 @@ final class SessionRunEventStoreTest extends TestCase
         $this->store->append(RunEvent::forAppend(runId: $runA, turnNo: 0, type: 'run_started'));
         $this->store->append(RunEvent::forAppend(runId: $runB, turnNo: 0, type: 'agent_end'));
 
-        $eventsA = $this->store->allFor($runA);
-        $eventsB = $this->store->allFor($runB);
+        $eventsA = iterator_to_array($this->store->rangeFor($runA, 1, \PHP_INT_MAX), false);
+        $eventsB = iterator_to_array($this->store->rangeFor($runB, 1, \PHP_INT_MAX), false);
 
         $this->assertCount(1, $eventsA);
         $this->assertSame('run_started', $eventsA[0]->type);
@@ -274,7 +282,7 @@ final class SessionRunEventStoreTest extends TestCase
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Corrupt event JSONL for run');
-        $this->store->allFor($runId);
+        iterator_to_array($this->store->rangeFor($runId, 1, \PHP_INT_MAX), false);
     }
 
     public function testCorruptJsonLineWithCompatibleSchemaAndMissingRequiredFieldsThrows(): void
@@ -287,7 +295,7 @@ final class SessionRunEventStoreTest extends TestCase
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Corrupt event JSONL for run');
-        $this->store->allFor($runId);
+        iterator_to_array($this->store->rangeFor($runId, 1, \PHP_INT_MAX), false);
     }
 
     public function testIncompatibleSchemaVersionIsSkippedWithDiagnosticPolicy(): void
@@ -301,7 +309,7 @@ final class SessionRunEventStoreTest extends TestCase
 
         // Should succeed — incompatible schema follows the documented
         // compatibility policy and the original event is returned.
-        $events = $this->store->allFor($runId);
+        $events = iterator_to_array($this->store->rangeFor($runId, 1, \PHP_INT_MAX), false);
         $this->assertCount(1, $events);
         $this->assertSame(1, $events[0]->seq);
         $this->assertSame('run_started', $events[0]->type);
@@ -321,8 +329,8 @@ final class SessionRunEventStoreTest extends TestCase
             \FILE_APPEND,
         );
 
-        $first = $store->allFor($runId);
-        $second = $store->allFor($runId);
+        $first = iterator_to_array($store->rangeFor($runId, 1, \PHP_INT_MAX), false);
+        $second = iterator_to_array($store->rangeFor($runId, 1, \PHP_INT_MAX), false);
 
         $this->assertCount(1, $first);
         $this->assertCount(1, $second);
@@ -337,7 +345,7 @@ final class SessionRunEventStoreTest extends TestCase
         $this->assertCount(
             2,
             $skipped,
-            'allFor must re-read and re-decode from disk on every call',
+            'rangeFor must re-read and re-decode from disk on every call',
         );
     }
 
@@ -346,7 +354,7 @@ final class SessionRunEventStoreTest extends TestCase
         $runId = 'run-'.bin2hex(random_bytes(4));
         $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started', payload: []));
 
-        $first = $this->store->allFor($runId);
+        $first = iterator_to_array($this->store->rangeFor($runId, 1, \PHP_INT_MAX), false);
         $this->assertCount(1, $first);
 
         $eventsPath = $this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl';
@@ -367,7 +375,7 @@ final class SessionRunEventStoreTest extends TestCase
         // Size change must invalidate even when mtime is forced equal (same-second append).
         touch($eventsPath, $mtime);
 
-        $second = $this->store->allFor($runId);
+        $second = iterator_to_array($this->store->rangeFor($runId, 1, \PHP_INT_MAX), false);
         $this->assertCount(2, $second);
         $this->assertSame(['run_started', 'agent_end'], array_map(static fn (RunEvent $e): string => $e->type, $second));
         $this->assertSame('external', $second[1]->payload['source']);
@@ -378,12 +386,12 @@ final class SessionRunEventStoreTest extends TestCase
         $runId = 'run-'.bin2hex(random_bytes(4));
         $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started', payload: []));
 
-        $first = $this->store->allFor($runId);
+        $first = iterator_to_array($this->store->rangeFor($runId, 1, \PHP_INT_MAX), false);
         $this->assertCount(1, $first);
 
         $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 1, type: 'agent_end', payload: ['via' => 'store']));
 
-        $second = $this->store->allFor($runId);
+        $second = iterator_to_array($this->store->rangeFor($runId, 1, \PHP_INT_MAX), false);
         $this->assertCount(2, $second);
         $this->assertSame(['run_started', 'agent_end'], array_map(static fn (RunEvent $e): string => $e->type, $second));
         $this->assertSame('store', $second[1]->payload['via']);

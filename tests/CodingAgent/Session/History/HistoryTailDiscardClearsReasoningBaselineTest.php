@@ -14,7 +14,6 @@ use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Ineersa\CodingAgent\Session\History\HistoryProjector;
 use Ineersa\CodingAgent\Session\History\HistoryTailDiscardService;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
@@ -94,7 +93,6 @@ final class HistoryTailDiscardClearsReasoningBaselineTest extends IsolatedKernel
         ];
 
         $eventStore = $this->createMock(EventStoreInterface::class);
-        $eventStore->method('allFor')->willReturn($events);
         $eventStore->expects($this->once())
             ->method('append')
             ->willReturnCallback(static function (RunEvent $event): RunEvent {
@@ -108,11 +106,15 @@ final class HistoryTailDiscardClearsReasoningBaselineTest extends IsolatedKernel
                 );
             });
 
+        $projectionStore = new InMemoryHistoryProjectionStore();
+        $projectionStore->seedFromEvents($events[0]->runId, $events);
         $service = new HistoryTailDiscardService(
             $eventStore,
-            new HistoryProjector(),
+            $projectionStore,
             $sessionStore,
             new NullLogger(),
+            new \Ineersa\AgentCore\Tests\Support\TestActiveRunContext(),
+            new \Ineersa\AgentCore\Application\Handler\RunLockManager(new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\InMemoryStore())),
         );
 
         $result = $service->discardForwardTailIfNeeded(
@@ -180,14 +182,17 @@ final class HistoryTailDiscardClearsReasoningBaselineTest extends IsolatedKernel
         ];
 
         $eventStore = $this->createMock(EventStoreInterface::class);
-        $eventStore->method('allFor')->willReturn($events);
         $eventStore->expects($this->never())->method('append');
 
+        $projectionStore = new InMemoryHistoryProjectionStore();
+        $projectionStore->seedFromEvents($events[0]->runId, $events);
         $service = new HistoryTailDiscardService(
             $eventStore,
-            new HistoryProjector(),
+            $projectionStore,
             $sessionStore,
             new NullLogger(),
+            new \Ineersa\AgentCore\Tests\Support\TestActiveRunContext(),
+            new \Ineersa\AgentCore\Application\Handler\RunLockManager(new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\InMemoryStore())),
         );
 
         $result = $service->discardForwardTailIfNeeded(

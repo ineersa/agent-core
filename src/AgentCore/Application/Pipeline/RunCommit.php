@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\History\HistoryProjectionMaintainerInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -23,12 +24,13 @@ final readonly class RunCommit
         private LoggerInterface $logger,
         private ?HookDispatcher $hookDispatcher = null,
         private ?RunTracer $tracer = null,
+        private ?HistoryProjectionMaintainerInterface $historyProjectionMaintainer = null,
     ) {
     }
 
     /**
-     * Canonical events are authoritative. The projection and process-local
-     * context are replaced only after their append has completed, before any
+     * Canonical events are authoritative. Shared projections are withdrawn
+     * before append, then republished after the append completes, before any
      * effect or extension hook can observe the transition.
      *
      * @param list<RunEvent> $events
@@ -40,6 +42,7 @@ final readonly class RunCommit
             /** @var list<RunEvent> $persistedEvents */
             $persistedEvents = [];
             if ([] !== $events) {
+                $this->activeRunContext->withdrawForCommit($nextState->runId);
                 $persistedEvents = 1 === \count($events)
                     ? [$this->eventStore->append($events[0])]
                     : $this->eventStore->appendMany($events);
@@ -59,6 +62,13 @@ final readonly class RunCommit
             // remember() persists the narrow projection before publishing the
             // full state in memory and invalidates memory if persistence fails.
             $this->activeRunContext->remember($committedState);
+
+            if ([] !== $persistedEvents) {
+                $this->historyProjectionMaintainer?->applyCommitted(
+                    $committedState->runId,
+                    $persistedEvents,
+                );
+            }
 
             $this->logCommittedEvents($committedState, $persistedEvents);
 

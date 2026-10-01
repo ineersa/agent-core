@@ -8,7 +8,6 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelResolutionOptions;
-use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\CodingAgent\Agent\Execution\RunStartedMetadataReader;
 use Ineersa\CodingAgent\Agent\Execution\SessionAwareModelResolver;
@@ -24,6 +23,7 @@ use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Tests\Support\RunStartedMetadataReaderTestFactory;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Symfony\Component\Filesystem\Filesystem;
@@ -336,7 +336,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
             ],
             createdAt: new \DateTimeImmutable(),
         ));
-        $reader = new RunStartedMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer());
+        $reader = RunStartedMetadataReaderTestFactory::fromEventStore($eventStore, $childRunId);
 
         // Child runs keep their RunStarted definition model/reasoning instead
         // of the defaults (deepseek-v4-pro/medium) and have no session row, so

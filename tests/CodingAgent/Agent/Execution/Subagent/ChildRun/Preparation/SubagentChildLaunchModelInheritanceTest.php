@@ -140,6 +140,8 @@ final class SubagentChildLaunchModelInheritanceTest extends IsolatedKernelTestCa
             payload: ['payload' => ['metadata' => $metadata, 'messages' => $messages]],
             createdAt: new \DateTimeImmutable(),
         ));
+        // Reconstruct once at fixture startup; launch reads the maintained projection.
+        self::getContainer()->get(\Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface::class)->rebuildIfStale(\Ineersa\AgentCore\Domain\Run\RunState::queued($parentRunId), $parentRunId);
     }
 
     private function identity(string $parentRunId, ?string $model): ChildRunIdentityDTO

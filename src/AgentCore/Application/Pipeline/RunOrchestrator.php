@@ -156,8 +156,9 @@ final readonly class RunOrchestrator
 
     /**
      * Handles a canonical-event side-channel notification without replaying,
-     * processing, or persisting run state. The next run-control transition
-     * rebuilds the invalidated process-local context from canonical events.
+     * processing, or persisting run state. Side-writers already published the
+     * shared disposable RunState; this only drops the process-local hot cache
+     * so the next transition reloads that shared projection.
      */
     #[AsMessageHandler(bus: 'agent.command.bus')]
     public function onInvalidateRunContext(InvalidateRunContext $message): void

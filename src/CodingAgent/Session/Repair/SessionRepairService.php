@@ -68,7 +68,10 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
 
     private function doRepair(string $runId, bool $apply): RepairResult
     {
-        $events = $this->eventStore->allFor($runId);
+        $events = [];
+        foreach ($this->eventStore->rangeFor($runId, 1, \PHP_INT_MAX) as $event) {
+            $events[] = $event;
+        }
         if ([] === $events) {
             return $this->refusalResult(
                 runId: $runId,

@@ -4,10 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Fork;
 
+use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
-use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
-use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Preparation\DeferredSubagentSingleChildLaunchProfileDTO;
@@ -23,7 +22,7 @@ final class ForkExecutionService implements ForkExecutionServiceInterface
     public function __construct(
         private readonly DeferredSubagentBatchLaunchService $deferredBatchLaunch,
         private readonly RunRelationshipReaderInterface $relationshipReader,
-        private readonly RunStateRebuilderInterface $runStateRebuilder,
+        private readonly ActiveRunContextInterface $activeRunContext,
         private readonly ForkSnapshotSanitizer $snapshotSanitizer,
         private readonly CompactionServiceInterface $compactionService,
     ) {
@@ -41,15 +40,9 @@ final class ForkExecutionService implements ForkExecutionServiceInterface
             throw new ToolCallException($e->getMessage(), retryable: false);
         }
 
-        // 1) Rebuild an immutable parent snapshot from canonical events. Fork
-        // compaction must use the canonical parent execution model; never
-        // re-resolve session/default or trust the legacy state snapshot.
-        $parentState = $this->runStateRebuilder
-            ->rebuildIfStale(RunState::queued($parentRunId), $parentRunId)
-            ->rebuiltState;
-        if (null === $parentState) {
-            throw new ToolCallException(\sprintf('Fork requires canonical parent run state for run_id=%s before compaction.', $parentRunId), retryable: false);
-        }
+        // 1) Use the maintained parent RunState projection. Fork compaction must
+        // use the canonical parent execution model; never re-resolve session/default.
+        $parentState = $this->activeRunContext->stateFor($parentRunId);
         $parentModel = null !== $parentState->model ? trim($parentState->model) : '';
         if ('' === $parentModel) {
             throw new ToolCallException(\sprintf('Fork requires canonical parent run model for run_id=%s before compaction.', $parentRunId), retryable: false);

@@ -58,7 +58,7 @@ final class SubagentProgressEventAppenderTest extends TestCase
             ->append($runId, 2, 'call-1', 0, 'subagent', $this->progress(RunStatus::Completed));
 
         $this->assertSame(1, $persisted->seq);
-        $this->assertSame('completed', $eventStore->allFor($runId)[0]->payload['subagent_progress']['status']);
+        $this->assertSame('completed', iterator_to_array($eventStore->rangeFor($runId, 1, \PHP_INT_MAX), false)[0]->payload['subagent_progress']['status']);
     }
 
     public function testInProcessModeKeepsNonTerminalProgressCanonical(): void
@@ -78,8 +78,27 @@ final class SubagentProgressEventAppenderTest extends TestCase
 
     private function appender(EventStoreInterface $eventStore, RuntimeEventSinkInterface $sink, bool $streamCommittedEventsToStdout): SubagentProgressEventAppender
     {
+        $active = $this->createStub(\Ineersa\AgentCore\Contract\ActiveRunContextInterface::class);
+        $active->method('applyCommittedSuffix')->willReturnCallback(
+            static fn (string $runId, array $events, callable $advance): \Ineersa\AgentCore\Domain\Run\RunState => $advance(
+                \Ineersa\AgentCore\Domain\Run\RunState::queued($runId),
+                $events,
+            ),
+        );
+
         return new SubagentProgressEventAppender(
-            new CommittedRunEventAppender($eventStore, new TestMessageBus()),
+            new CommittedRunEventAppender(
+                $eventStore,
+                new TestMessageBus(),
+                $active,
+                new \Ineersa\AgentCore\Application\Replay\RunStateReducer(
+                    AttributeSerializerValidatorTestFactory::denormalizer(),
+                    new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()),
+                ),
+                new \Ineersa\AgentCore\Application\Handler\RunLockManager(
+                    new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\InMemoryStore()),
+                ),
+            ),
             SubagentProgressSerializerTestSupport::normalizer(),
             SubagentProgressSerializerTestSupport::validator(),
             $sink,

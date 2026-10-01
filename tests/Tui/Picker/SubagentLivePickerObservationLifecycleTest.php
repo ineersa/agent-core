@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Runtime\Contract\ChildAgentEventsPathResolverInterface;
 use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
+use Ineersa\CodingAgent\Runtime\Contract\SessionResumeProjectionDTO;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
@@ -62,7 +63,7 @@ final class SubagentLivePickerObservationLifecycleTest extends TestCase
 
         $spy = new ObservingSpyClient();
         $snapshotProvider = new FixedChildRunTranscriptSnapshotProvider(
-            new ChildRunTranscriptSnapshotDTO([], [], 0),
+            new ChildRunTranscriptSnapshotDTO([], new SessionResumeProjectionDTO(), [], [], 0),
         );
 
         $picker = new SubagentLivePickerController(
@@ -145,7 +146,9 @@ final class SubagentLivePickerObservationLifecycleTest extends TestCase
                     'Which path should the scout inspect?',
                 ),
             ],
-            replayEvents: [$hitlEvent],
+            resume: new SessionResumeProjectionDTO(activity: 'waiting_human'),
+            pendingHumanInputEvents: [$hitlEvent],
+            pendingToolQuestionEvents: [],
             maxSeq: 5,
         );
 
@@ -182,7 +185,7 @@ final class SubagentLivePickerObservationLifecycleTest extends TestCase
         $this->assertSame($childRunId, $coordinator->activeRequest()?->runId);
         $this->assertTrue($coordinator->hasRequest($requestId));
 
-        // Production leave: silent remove + exit (cache keeps transcript + lastSeq + replayEvents).
+        // Production leave: silent remove + exit (cache keeps transcript + lastSeq + resume overlays).
         $onLeaving($childRunId);
         $state->subagentLiveView->exit();
         $this->assertFalse($state->subagentLiveView->active);

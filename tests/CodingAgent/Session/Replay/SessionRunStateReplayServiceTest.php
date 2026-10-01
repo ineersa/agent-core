@@ -4,11 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Session\Replay;
 
+use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\RunStateDuplicateSequenceReplayException;
 use Ineersa\AgentCore\Application\Handler\RunStateReplayException;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
-use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
-use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
@@ -18,31 +17,40 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Run\ToolBatchIdentity;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
-use Ineersa\CodingAgent\Session\History\HistoryProjector;
 use Ineersa\CodingAgent\Session\History\HistoryReplayFilter;
 use Ineersa\CodingAgent\Session\Replay\SessionRunStateReplayService;
+use Ineersa\CodingAgent\Tests\Session\History\InMemoryHistoryProjectionStore;
+use Ineersa\CodingAgent\Tests\Session\RunState\InMemoryRunStateStore;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\InMemoryStore;
 
 final class SessionRunStateReplayServiceTest extends TestCase
 {
     private InMemoryEventStore $eventStore;
     private SessionRunStateReplayService $service;
-    private RunStateReducer $reducer;
-    private HistoryReplayFilter $historyFilter;
     private string $runId = 'run-replay-test';
+    private InMemoryHistoryProjectionStore $historyStore;
+    private InMemoryRunStateStore $runStateStore;
 
     protected function setUp(): void
     {
         $this->eventStore = new InMemoryEventStore();
-        $this->historyFilter = new HistoryReplayFilter(new HistoryProjector());
-        $this->reducer = new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()));
+        $this->historyStore = new InMemoryHistoryProjectionStore();
+        $this->runStateStore = new InMemoryRunStateStore();
+        $cold = \Ineersa\CodingAgent\Tests\Support\SessionColdReconstructionTestFactory::create(
+            eventStore: $this->eventStore,
+            historyStore: $this->historyStore,
+            runStateStore: $this->runStateStore,
+        );
         $this->service = new SessionRunStateReplayService(
             $this->eventStore,
             new NullLogger(),
-            $this->reducer,
-            new ReplayEventPreparer(),
-            $this->historyFilter,
+            $cold,
+            $this->historyStore,
+            $this->runStateStore,
+            new RunLockManager(new LockFactory(new InMemoryStore())),
         );
     }
 
@@ -65,10 +73,41 @@ final class SessionRunStateReplayServiceTest extends TestCase
             model: 'test-model',
         );
 
+        // Ready shared projections matching the caller cursor must not tip-probe.
+        $this->historyStore->remember($this->runId, new \Ineersa\CodingAgent\Session\History\HistoryProjectionSnapshot(
+            history: new \Ineersa\CodingAgent\Session\History\HistoryDTO([], [], 0),
+            lastSeq: 1,
+            eventCount: 1,
+        ));
+        $this->runStateStore->initialize($state);
+
         $result = $this->service->rebuildIfStale($state, $this->runId);
         $this->assertNull($result->rebuiltState);
+        $this->assertSame(0, $this->eventStore->latestSequenceForCalls);
+        $this->assertSame(0, $this->eventStore->allForCalls);
+        $this->assertSame(0, $this->eventStore->rangeForCalls);
+    }
+
+    public function testMissingSharedProjectionAtCurrentCursorRepublishesViaExplicitRecovery(): void
+    {
+        $this->appendEvent('run_started', 1, ['step_id' => 's1', 'payload' => ['messages' => []]]);
+        $state = new RunState(
+            runId: $this->runId,
+            status: RunStatus::Running,
+            version: 1,
+            turnNo: 0,
+            lastSeq: 1,
+            model: 'test-model',
+        );
+
+        $result = $this->service->rebuildIfStale($state, $this->runId);
+        $this->assertNotNull($result->rebuiltState);
+        $this->assertSame(1, $result->rebuiltState->lastSeq);
         $this->assertSame(1, $this->eventStore->latestSequenceForCalls);
         $this->assertSame(0, $this->eventStore->allForCalls);
+        $this->assertSame(1, $this->eventStore->rangeForCalls);
+        $this->assertTrue($this->runStateStore->isReady($this->runId));
+        $this->assertSame(1, $this->historyStore->get($this->runId)->lastSeq);
     }
 
     public function testStaleStateIsRebuilt(): void
@@ -88,7 +127,9 @@ final class SessionRunStateReplayServiceTest extends TestCase
         $this->assertSame(RunStatus::Running, $result->rebuiltState->status);
         $this->assertSame(1, $result->rebuiltState->lastSeq);
         $this->assertSame(1, $this->eventStore->latestSequenceForCalls);
-        $this->assertSame(1, $this->eventStore->allForCalls);
+        $this->assertSame(0, $this->eventStore->allForCalls);
+        // Cold reconstruction: one ordered archive traversal.
+        $this->assertSame(1, $this->eventStore->rangeForCalls);
     }
 
     public function testMissingStateWithEventsIsRebuilt(): void
@@ -1981,6 +2022,10 @@ final class SessionRunStateReplayServiceTest extends TestCase
      */
     private function appendEvent(string $type, int $seq, array $payload): void
     {
+        // Raw fixture seeding is not a production commit. Withdraw readiness so a
+        // previously published shared projection cannot be reused past unread events.
+        $this->runStateStore->withdrawForCommit($this->runId);
+        $this->historyStore->withdrawForCommit($this->runId);
         $this->eventStore->seed(new RunEvent(
             runId: $this->runId,
             seq: $seq,
@@ -1998,6 +2043,8 @@ final class SessionRunStateReplayServiceTest extends TestCase
      */
     private function appendEventWithTurn(string $type, int $seq, int $turnNo, array $payload): void
     {
+        $this->runStateStore->withdrawForCommit($this->runId);
+        $this->historyStore->withdrawForCommit($this->runId);
         $this->eventStore->seed(new RunEvent(
             runId: $this->runId,
             seq: $seq,

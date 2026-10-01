@@ -10,7 +10,6 @@ use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
@@ -77,30 +76,18 @@ final class SubagentLiveChildViewPoller
         $this->resetProjection();
 
         $scratch = new TuiSessionState($live->selected->agentRunId);
-        $scratch->activity = $live->childActivity;
-        $scratch->queuedUserMessages = $live->childQueuedUserMessages;
-        $scratch->llmRetryWorkingMessage = $live->llmRetryWorkingMessage;
+        $scratch->activity = RunActivityStateEnum::tryFrom($snapshot->resume->activity) ?? $live->childActivity;
+        $scratch->queuedUserMessages = $snapshot->resume->queuedUserMessages;
+        $scratch->llmRetryWorkingMessage = $snapshot->resume->llmRetryWorkingMessage;
 
-        $pendingQuestions = [];
-        foreach ($snapshot->replayEvents as $event) {
-            $this->eventApplier->apply($scratch, $event, replayMode: true);
-            $questionId = $event->payload['question_id'] ?? '';
-            if (RuntimeEventTypeEnum::HumanInputRequested->value === $event->type) {
-                $pendingQuestions[$questionId] = $event;
-            } elseif (RuntimeEventTypeEnum::HumanInputAnswered->value === $event->type
-                || RuntimeEventTypeEnum::HumanInputRejected->value === $event->type
-            ) {
-                unset($pendingQuestions[$questionId]);
-            }
-        }
-        foreach ($pendingQuestions as $event) {
+        $this->eventApplier->hydrateProjectedTranscript($snapshot->transcriptBlocks);
+
+        foreach ($snapshot->pendingHumanInputEvents as $event) {
             $callbacks->dispatch($event, $live->selected->agentRunId);
         }
 
-        foreach ($snapshot->replayEvents as $event) {
-            if (RuntimeEventTypeEnum::ToolQuestionRequested->value === $event->type) {
-                $callbacks->dispatch($event, $live->selected->agentRunId);
-            }
+        foreach ($snapshot->pendingToolQuestionEvents as $event) {
+            $callbacks->dispatch($event, $live->selected->agentRunId);
         }
 
         $live->childActivity = $scratch->activity;
