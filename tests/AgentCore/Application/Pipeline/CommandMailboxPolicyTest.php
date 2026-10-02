@@ -419,6 +419,7 @@ final class CommandMailboxPolicyTest extends TestCase
             eventStore: $eventStore,
             stepDispatcher: $stepDispatcher,
             logger: new NullLogger(),
+            toolBatchCollector: $toolBatchCollector,
             hookDispatcher: null,
         );
 

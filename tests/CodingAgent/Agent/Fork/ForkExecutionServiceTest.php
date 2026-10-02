@@ -16,6 +16,7 @@ use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
+use Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO;
 use Ineersa\CodingAgent\Agent\Fork\ForkExecutionService;
 use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
@@ -64,9 +65,11 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
 
         $forkExecution = $container->get(ForkExecutionService::class);
 
+        $launchContext = $this->forkLaunchContext($parentRunId);
         $outcome = $this->withToolContext($parentRunId, $toolCallId, static fn () => $forkExecution->execute(
             $parentRunId,
             'Delegated integration task',
+            $launchContext,
         ));
 
         $this->assertInstanceOf(DeferredToolCompletionOutcome::class, $outcome);
@@ -74,6 +77,7 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
         $retry = $this->withToolContext($parentRunId, $toolCallId, static fn () => $forkExecution->execute(
             $parentRunId,
             'Delegated integration task',
+            $launchContext,
         ));
         $this->assertSame($outcome->deferredId, $retry->deferredId);
     }
@@ -89,9 +93,11 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
         $forkExecution = self::getContainer()->get(ForkExecutionService::class);
 
         try {
+            $missingLaunchContext = $this->forkLaunchContext($parentRunId);
             $this->withToolContext($parentRunId, 'call-missing-state', static fn () => $forkExecution->execute(
                 $parentRunId,
                 'Delegated integration task',
+                $missingLaunchContext,
             ));
             $this->fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
@@ -140,7 +146,12 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
         $forkExecution = self::getContainer()->get(ForkExecutionService::class);
 
         try {
-            $this->withToolContext($childRunId, 'call-nested', static fn () => $forkExecution->execute($childRunId, 'nested'));
+            $nestedLaunchContext = $this->forkLaunchContext($childRunId);
+            $this->withToolContext($childRunId, 'call-nested', static fn () => $forkExecution->execute(
+                $childRunId,
+                'nested',
+                $nestedLaunchContext,
+            ));
             $this->fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
             $this->assertStringContainsString('is an agent child; nested launches are not supported', $e->getMessage());
@@ -180,6 +191,7 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
     private function withToolContext(string $parentRunId, string $toolCallId, callable $callback): mixed
     {
         $accessor = self::getContainer()->get(StackToolExecutionContextAccessor::class);
+        $launchContext = $this->forkLaunchContext($parentRunId);
         $context = new ToolContext(
             runId: $parentRunId,
             turnNo: 2,
@@ -189,8 +201,19 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
             timeoutSeconds: 120,
             orderIndex: 0,
             parentModel: 'deepseek/deepseek-v4-flash',
+            launchContext: $launchContext,
         );
 
         return $accessor->with($context, $callback);
+    }
+
+    private function forkLaunchContext(string $parentRunId): ToolLaunchContextDTO
+    {
+        return new ToolLaunchContextDTO(
+            kind: ToolLaunchContextDTO::KIND_FORK,
+            producingRunId: $parentRunId,
+            producingTurnNo: 2,
+            producingModel: 'deepseek/deepseek-v4-flash',
+        );
     }
 }

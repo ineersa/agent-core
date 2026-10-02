@@ -186,6 +186,7 @@ final class ParentRegressionCapturingRunner implements AgentRunnerInterface
             eventStore: $eventStore,
             stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
             logger: new NullLogger(),
+            toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(),
             hookDispatcher: null,
         );
         $processor = new RunMessageProcessor(

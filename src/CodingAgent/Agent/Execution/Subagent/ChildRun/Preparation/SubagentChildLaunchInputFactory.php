@@ -4,10 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Preparation;
 
-use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Domain\Run\RunMetadata;
-use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
+use Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO;
 use Ineersa\CodingAgent\Agent\ChildExtensionSelectionService;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Execution\AgentPromptBuilder;
@@ -26,7 +25,6 @@ final class SubagentChildLaunchInputFactory
     public function __construct(
         private readonly AgentPromptBuilder $promptBuilder,
         private readonly SkillsContextBuilder $skillsContextBuilder,
-        private readonly RunStateRebuilderInterface $runStateRebuilder,
         private readonly AppConfig $appConfig,
         private readonly ChildExtensionSelectionService $childExtensionSelection,
         private readonly ToolRegistryInterface $toolRegistry,
@@ -61,6 +59,7 @@ final class SubagentChildLaunchInputFactory
         array $allowedTools,
         array $mcp,
         ?string $parentModel = null,
+        ?ToolLaunchContextDTO $launchContext = null,
     ): PreparedAgentChildRunDTO {
         $effectiveExtensions = $this->childExtensionSelection->resolveForSubagent($definition);
         $this->childExtensionSelection->assertSelectedAvailable(
@@ -69,14 +68,14 @@ final class SubagentChildLaunchInputFactory
         );
         $allowedTools = $this->filterToolsByExtensions($allowedTools, $effectiveExtensions);
 
-        $launchContext = $this->resolveChildLaunchContext($identity->parentRunId, $definition);
+        $resolvedLaunchContext = $this->resolveChildLaunchContext($identity, $definition, $launchContext);
         $prompt = $this->promptBuilder->build(
             definition: $definition,
             task: $identity->taskSummary,
             artifactId: $identity->artifactId,
             allowedTools: $allowedTools,
-            agentsMd: $launchContext->agentsMd,
-            skillsContext: $launchContext->skillsContext,
+            agentsMd: $resolvedLaunchContext->agentsMd,
+            skillsContext: $resolvedLaunchContext->skillsContext,
             allowedExtensions: $effectiveExtensions,
         );
 
@@ -220,11 +219,21 @@ final class SubagentChildLaunchInputFactory
         return null !== $definition ? ($definition->contextWindow ?? 0) : 0;
     }
 
-    private function resolveChildLaunchContext(string $parentRunId, AgentDefinitionDTO $definition): AgentChildLaunchContextDTO
-    {
-        $agentsMd = $definition->inheritProjectContext
-            ? $this->extractUserContextBySource($parentRunId, 'agents_context')
-            : '';
+    private function resolveChildLaunchContext(
+        ChildRunIdentityDTO $identity,
+        AgentDefinitionDTO $definition,
+        ?ToolLaunchContextDTO $launchContext,
+    ): AgentChildLaunchContextDTO {
+        $agentsMd = '';
+        if ($definition->inheritProjectContext) {
+            if (null === $launchContext || !$launchContext->isSubagent()) {
+                throw new \RuntimeException('Cannot launch subagent with inherited project context: owner-prepared immutable launch context is required.');
+            }
+            if ($launchContext->producingRunId !== $identity->parentRunId) {
+                throw new \RuntimeException(\sprintf('Cannot launch subagent: launch context producing run %s does not match parent run %s.', $launchContext->producingRunId, $identity->parentRunId));
+            }
+            $agentsMd = $launchContext->agentsContext;
+        }
 
         return new AgentChildLaunchContextDTO(
             agentsMd: $agentsMd,
@@ -263,31 +272,5 @@ final class SubagentChildLaunchInputFactory
                 return null === $owner || isset($allowed[$owner]);
             },
         ));
-    }
-
-    private function extractUserContextBySource(string $parentRunId, string $source): string
-    {
-        $state = $this->runStateRebuilder
-            ->rebuildIfStale(RunState::queued($parentRunId), $parentRunId)
-            ->rebuiltState;
-        if (null === $state) {
-            return '';
-        }
-
-        foreach ($state->messages as $message) {
-            if ('user-context' !== $message->role) {
-                continue;
-            }
-            if ($source !== ($message->metadata['source'] ?? null)) {
-                continue;
-            }
-            foreach ($message->content as $block) {
-                if ('text' === ($block['type'] ?? '') && isset($block['text'])) {
-                    return (string) $block['text'];
-                }
-            }
-        }
-
-        return '';
     }
 }

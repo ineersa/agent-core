@@ -19,6 +19,7 @@ use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionPolicy;
+use Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Symfony\AI\Agent\Toolbox\Exception\InvalidToolCallArgumentsException;
 use Symfony\AI\Agent\Toolbox\Exception\ToolExecutionExceptionInterface;
@@ -299,9 +300,25 @@ final class ToolExecutor implements ToolExecutorInterface
 
         $humanInputAnswer = $toolCall->context['human_input_answer'] ?? null;
         $stepId = $toolCall->context['step_id'] ?? null;
+        $runId = $this->runId($toolCall) ?? '';
+        $turnNo = (int) ($toolCall->context['turn_no'] ?? 0);
+        $parentModel = \is_string($toolCall->context['parent_model'] ?? null) ? $toolCall->context['parent_model'] : null;
+        $launchContext = ($toolCall->context['launch_context'] ?? null) instanceof ToolLaunchContextDTO
+            ? $toolCall->context['launch_context']
+            : null;
+        if (null !== $launchContext) {
+            $this->assertLaunchContextMatchesEnvelope(
+                toolName: $toolCall->toolName,
+                runId: $runId,
+                turnNo: $turnNo,
+                parentModel: $parentModel,
+                launchContext: $launchContext,
+            );
+        }
+
         $context = new ToolContext(
-            runId: $this->runId($toolCall) ?? '',
-            turnNo: (int) ($toolCall->context['turn_no'] ?? 0),
+            runId: $runId,
+            turnNo: $turnNo,
             toolCallId: $toolCall->toolCallId,
             toolName: $toolCall->toolName,
             cancellationToken: $this->cancellationToken($toolCall),
@@ -311,7 +328,8 @@ final class ToolExecutor implements ToolExecutorInterface
             batchToolCallCount: $batchToolCallCount,
             humanInputAnswer: $humanInputAnswer instanceof ToolCallHumanInputAnswerDTO ? $humanInputAnswer : null,
             stepId: \is_string($stepId) && '' !== $stepId ? $stepId : null,
-            parentModel: \is_string($toolCall->context['parent_model'] ?? null) ? $toolCall->context['parent_model'] : null,
+            parentModel: $parentModel,
+            launchContext: $launchContext,
         );
 
         /** @var SymfonyToolResult $result */
@@ -549,6 +567,33 @@ final class ToolExecutor implements ToolExecutorInterface
         $runId = $toolCall->context['run_id'] ?? null;
 
         return \is_string($runId) && '' !== $runId ? $runId : null;
+    }
+
+    private function assertLaunchContextMatchesEnvelope(
+        string $toolName,
+        string $runId,
+        int $turnNo,
+        ?string $parentModel,
+        ToolLaunchContextDTO $launchContext,
+    ): void {
+        $expectedKind = match ($toolName) {
+            'fork' => ToolLaunchContextDTO::KIND_FORK,
+            'subagent' => ToolLaunchContextDTO::KIND_SUBAGENT,
+            default => null,
+        };
+        if (null === $expectedKind || $launchContext->kind !== $expectedKind) {
+            throw new ToolCallException(\sprintf('Tool "%s" launch context kind %s is invalid for this invocation.', $toolName, $launchContext->kind), retryable: false);
+        }
+        if ($launchContext->producingRunId !== $runId) {
+            throw new ToolCallException(\sprintf('Launch context producing run %s does not match tool envelope run %s.', $launchContext->producingRunId, $runId), retryable: false);
+        }
+        if ($launchContext->producingTurnNo !== $turnNo) {
+            throw new ToolCallException(\sprintf('Launch context producing turn %d does not match tool envelope turn %d.', $launchContext->producingTurnNo, $turnNo), retryable: false);
+        }
+        $envelopeModel = null !== $parentModel ? trim($parentModel) : '';
+        if ('' === $envelopeModel || $launchContext->producingModel !== $envelopeModel) {
+            throw new ToolCallException(\sprintf('Launch context producing model %s does not match tool envelope parent model %s.', $launchContext->producingModel, '' !== $envelopeModel ? $envelopeModel : '(missing)'), retryable: false);
+        }
     }
 
     private function cancellationToken(ToolCall $toolCall): CancellationTokenInterface

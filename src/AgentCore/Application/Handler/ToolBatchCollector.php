@@ -6,8 +6,11 @@ namespace Ineersa\AgentCore\Application\Handler;
 
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreMutation;
+use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
@@ -27,8 +30,9 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
  *   3. {@see ToolCallResultHandler} calls {@see collect()}, which atomically mutates
  *      durable {@see ToolBatchStateDTO} state and may dispatch subsequent calls.
  *
- * In-process {@see ToolBatchStateDTO} shape is owned by that DTO; the optional
- * {@see ToolBatchStoreInterface} mirrors it for durability.
+ * Durable mode reads through the store without retaining deserialized batches.
+ * In-memory batches remain available until RunCommit publishes their canonical
+ * completion or terminal cancellation, even if collection finalized earlier.
  */
 final class ToolBatchCollector
 {
@@ -192,6 +196,34 @@ final class ToolBatchCollector
             'Cannot redrive tool-execution human input for unknown batch run=%s turn=%d step=%s.',
             fn (ToolBatchStateDTO $batch): array => $this->applyHumanInputRedriveToBatch($batch, $questionId, $answerValue),
         );
+    }
+
+    /**
+     * Release process-local coordination only after canonical persistence and
+     * state publication succeed. Durable file cleanup is an independent hook.
+     *
+     * @param list<RunEvent> $events
+     */
+    public function releaseAfterCommit(RunState $state, array $events): void
+    {
+        foreach ($events as $event) {
+            if (RunEventTypeEnum::ToolBatchCommitted->value === $event->type) {
+                $turnNo = $event->payload['turn_no'] ?? null;
+                $stepId = $event->payload['step_id'] ?? null;
+                if (\is_int($turnNo) && \is_string($stepId) && '' !== $stepId) {
+                    unset($this->batches[$this->batchKey($state->runId, $turnNo, $stepId)]);
+                }
+            }
+
+            if (RunEventTypeEnum::AgentEnd->value === $event->type && $state->status->isTerminal()) {
+                $prefix = $state->runId.'|';
+                foreach (array_keys($this->batches) as $key) {
+                    if (str_starts_with($key, $prefix)) {
+                        unset($this->batches[$key]);
+                    }
+                }
+            }
+        }
     }
 
     /**
@@ -573,20 +605,11 @@ final class ToolBatchCollector
 
     private function loadBatch(string $runId, int $turnNo, string $stepId): ?ToolBatchStateDTO
     {
-        $batchKey = $this->batchKey($runId, $turnNo, $stepId);
-
-        if (isset($this->batches[$batchKey])) {
-            return $this->batches[$batchKey];
+        if (null !== $this->store) {
+            return $this->store->load($runId, $turnNo, $stepId);
         }
 
-        $stored = $this->store?->load($runId, $turnNo, $stepId);
-        if (null !== $stored) {
-            $this->batches[$batchKey] = $stored;
-
-            return $stored;
-        }
-
-        return null;
+        return $this->batches[$this->batchKey($runId, $turnNo, $stepId)] ?? null;
     }
 
     private function saveBatch(string $runId, int $turnNo, string $stepId, ToolBatchStateDTO $batch): void

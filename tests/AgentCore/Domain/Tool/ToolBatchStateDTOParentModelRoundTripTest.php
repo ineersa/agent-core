@@ -16,7 +16,9 @@ use Symfony\Component\Serializer\SerializerInterface;
 
 /**
  * Session snapshot persistence serializes the real ToolBatchStateDTO graph:
- * nested ExecuteToolCall/ToolCallResult objects via container-like Serializer.
+ * nested ExecuteToolCall/ToolCallResult objects via AttributeSerializer.
+ * Configured Messenger + SessionToolBatchStore fork launch-context proof lives in
+ * ToolLaunchContextConfiguredBoundaryTest.
  */
 final class ToolBatchStateDTOParentModelRoundTripTest extends TestCase
 {
@@ -93,6 +95,11 @@ final class ToolBatchStateDTOParentModelRoundTripTest extends TestCase
         $this->assertSame('live-ik', $batchWire['call_data']['c1']['idempotency_key']);
         $this->assertArrayNotHasKey('pending_human_input', $batchWire['result_data']['c2']);
         $this->assertSame('deepseek/deepseek-v4-flash', $batchWire['call_data']['c1']['parent_model']);
+        $this->assertTrue(
+            !\array_key_exists('launch_context', $batchWire['call_data']['c1'])
+            || null === $batchWire['call_data']['c1']['launch_context'],
+            'Ordinary tools must not carry a launch-context graph',
+        );
         $this->assertSame('q-1', $batchWire['call_data']['c1']['human_input_answer']['question_id']);
 
         $restoredEnvelope = $serializer->deserialize(
@@ -110,6 +117,7 @@ final class ToolBatchStateDTOParentModelRoundTripTest extends TestCase
         $this->assertSame('deepseek/deepseek-v4-flash', $restored->calls['c1']->parentModel);
         $this->assertNotNull($restored->calls['c1']->humanInputAnswer);
         $this->assertSame('q-1', $restored->calls['c1']->humanInputAnswer->questionId);
+        $this->assertNull($restored->calls['c1']->launchContext);
         $this->assertSame(['stdout' => 'ok'], $restored->results['c2']->result);
         $this->assertNull($restored->results['c2']->pendingHumanInput);
         $this->assertSame('run-1', $restored->calls['c1']->runId());

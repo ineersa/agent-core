@@ -12,6 +12,7 @@ use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
@@ -142,6 +143,14 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             cancellationToken: new NullCancellationToken(),
             timeoutSeconds: 120,
             orderIndex: 0,
+            parentModel: 'test-model',
+            launchContext: new ToolLaunchContextDTO(
+                kind: ToolLaunchContextDTO::KIND_SUBAGENT,
+                producingRunId: $parentRunId,
+                producingTurnNo: 2,
+                producingModel: 'test-model',
+                agentsContext: '',
+            ),
         );
 
         return $accessor->with($context, $callback);

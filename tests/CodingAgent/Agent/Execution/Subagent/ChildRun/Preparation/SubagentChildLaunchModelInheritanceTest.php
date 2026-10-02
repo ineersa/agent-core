@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
@@ -69,24 +70,27 @@ final class SubagentChildLaunchModelInheritanceTest extends IsolatedKernelTestCa
         );
     }
 
-    public function testInheritedProjectContextComesFromCanonicalReplayNotLegacySnapshot(): void
+    public function testInheritedProjectContextComesFromOwnerPreparedLaunchContext(): void
     {
         $parentRunId = 'parent-canonical-user-context';
         $canonicalContext = 'CANONICAL_AGENTS_CONTEXT';
-        $this->seedParentRunStarted($parentRunId, reasoning: 'medium', messages: [[
-            'role' => 'user-context',
-            'content' => [['type' => 'text', 'text' => $canonicalContext]],
-            'metadata' => ['source' => 'agents_context'],
-        ]]);
+        $this->seedParentRunStarted($parentRunId, reasoning: 'medium');
 
         $factory = self::getContainer()->get(SubagentChildLaunchInputFactory::class);
         \assert($factory instanceof SubagentChildLaunchInputFactory);
         $prepared = $factory->buildPrepared(
             identity: $this->identity($parentRunId, 'deepseek/deepseek-v4-flash'),
-            definition: $this->definition('deepseek/deepseek-v4-flash'),
+            definition: $this->definition('deepseek/deepseek-v4-flash', inheritProjectContext: true),
             allowedTools: [],
             mcp: [],
             parentModel: 'deepseek/deepseek-v4-flash',
+            launchContext: new ToolLaunchContextDTO(
+                kind: ToolLaunchContextDTO::KIND_SUBAGENT,
+                producingRunId: $parentRunId,
+                producingTurnNo: 1,
+                producingModel: 'deepseek/deepseek-v4-flash',
+                agentsContext: $canonicalContext,
+            ),
         );
 
         $contexts = array_filter(
@@ -96,6 +100,31 @@ final class SubagentChildLaunchModelInheritanceTest extends IsolatedKernelTestCa
         $this->assertCount(1, $contexts);
         $context = array_values($contexts)[0];
         $this->assertSame($canonicalContext, $context->content[0]['text'] ?? null);
+    }
+
+    public function testMismatchedProducingRunIdFailsClosed(): void
+    {
+        $parentRunId = 'parent-mismatch-run';
+        $this->seedParentRunStarted($parentRunId, reasoning: 'medium');
+        $factory = self::getContainer()->get(SubagentChildLaunchInputFactory::class);
+        \assert($factory instanceof SubagentChildLaunchInputFactory);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('does not match parent run');
+        $factory->buildPrepared(
+            identity: $this->identity($parentRunId, 'deepseek/deepseek-v4-flash'),
+            definition: $this->definition('deepseek/deepseek-v4-flash', inheritProjectContext: true),
+            allowedTools: [],
+            mcp: [],
+            parentModel: 'deepseek/deepseek-v4-flash',
+            launchContext: new ToolLaunchContextDTO(
+                kind: ToolLaunchContextDTO::KIND_SUBAGENT,
+                producingRunId: 'other-parent',
+                producingTurnNo: 1,
+                producingModel: 'deepseek/deepseek-v4-flash',
+                agentsContext: 'x',
+            ),
+        );
     }
 
     public function testMissingParentRunStartedReasoningUsesCanonicalDefault(): void
@@ -154,7 +183,7 @@ final class SubagentChildLaunchModelInheritanceTest extends IsolatedKernelTestCa
         );
     }
 
-    private function definition(?string $model, ?string $thinking = null): AgentDefinitionDTO
+    private function definition(?string $model, ?string $thinking = null, bool $inheritProjectContext = false): AgentDefinitionDTO
     {
         return new AgentDefinitionDTO(
             name: 'scout',
@@ -162,6 +191,7 @@ final class SubagentChildLaunchModelInheritanceTest extends IsolatedKernelTestCa
             tools: [],
             model: $model,
             thinking: $thinking,
+            inheritProjectContext: $inheritProjectContext,
             instructions: 'do work',
         );
     }

@@ -125,7 +125,7 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
         $this->assertSame(1, $toolExecutor->calls);
         $this->assertCount(0, $commandBus->messages);
 
-        $pending = $repo->findPendingByRunAndToolCall('run-deferred-1', 'call-deferred');
+        $pending = $repo->findByRunAndToolCall('run-deferred-1', 'call-deferred');
         $this->assertNotNull($pending);
         $this->assertSame('run-deferred-1', $pending->runId);
         $this->assertSame(3, $pending->turnNo);
@@ -202,7 +202,7 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
         $message = $this->executeMessage(toolCallId: 'call-complete');
         $worker($message);
 
-        $pending = $repo->findPendingByRunAndToolCall('run-deferred-1', 'call-complete');
+        $pending = $repo->findByRunAndToolCall('run-deferred-1', 'call-complete');
         $this->assertNotNull($pending);
 
         $completionBus = new TestMessageBus();
@@ -335,6 +335,7 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
                 eventStore: $eventStore,
                 stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
                 logger: new NullLogger(),
+                toolBatchCollector: $collector,
             ),
             stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
             handlers: [
@@ -504,7 +505,7 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
 
         $worker($this->executeMessage(toolCallId: 'call-exact-id'));
 
-        $pending = $repo->findPendingByRunAndToolCall('run-deferred-1', 'call-exact-id');
+        $pending = $repo->findByRunAndToolCall('run-deferred-1', 'call-exact-id');
         $this->assertNotNull($pending);
         $this->assertSame('lifecycle-exact-1', $pending->deferredId);
         $this->assertCount(1, $events);
@@ -620,9 +621,9 @@ final class MarkCompletedFailsOnceRepository implements DeferredToolCompletionRe
         return $this->inner->registerPending($correlation);
     }
 
-    public function findPendingByRunAndToolCall(string $runId, string $toolCallId): ?DeferredToolCompletionCorrelation
+    public function findByRunAndToolCall(string $runId, string $toolCallId): ?DeferredToolCompletionCorrelation
     {
-        return $this->inner->findPendingByRunAndToolCall($runId, $toolCallId);
+        return $this->inner->findByRunAndToolCall($runId, $toolCallId);
     }
 
     public function findByDeferredId(string $deferredId): ?DeferredToolCompletionCorrelation

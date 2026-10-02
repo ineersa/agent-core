@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
+use Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO;
 use Ineersa\CodingAgent\Agent\Fork\ForkExecutionServiceInterface;
 use Ineersa\CodingAgent\Agent\Fork\ForkRuntimeConfigResolver;
 use Ineersa\CodingAgent\Agent\Tool\ForkToolDefinitionBuilder;
@@ -66,6 +67,13 @@ final class ForkToolContractTest extends TestCase
             cancellationToken: new NullCancellationToken(),
             timeoutSeconds: 30,
             orderIndex: 0,
+            parentModel: 'parent/model',
+            launchContext: new ToolLaunchContextDTO(
+                kind: ToolLaunchContextDTO::KIND_FORK,
+                producingRunId: 'parent-1',
+                producingTurnNo: 2,
+                producingModel: 'parent/model',
+            ),
         );
 
         $outcome = $accessor->with($context, static fn () => $handler->__invoke(new ForkArgumentsDTO(
@@ -78,6 +86,8 @@ final class ForkToolContractTest extends TestCase
         $this->assertSame('Do work', $fake->lastTask);
         $this->assertSame('provider/model', $fake->lastModelOverride);
         $this->assertSame('high', $fake->lastReasoningOverride);
+        $this->assertNotNull($fake->lastLaunchContext);
+        $this->assertTrue($fake->lastLaunchContext->isFork());
     }
 
     public function testInvalidThinkingThrowsToolCallException(): void
@@ -96,6 +106,13 @@ final class ForkToolContractTest extends TestCase
             cancellationToken: new NullCancellationToken(),
             timeoutSeconds: 30,
             orderIndex: 0,
+            parentModel: 'parent/model',
+            launchContext: new ToolLaunchContextDTO(
+                kind: ToolLaunchContextDTO::KIND_FORK,
+                producingRunId: 'parent-1',
+                producingTurnNo: 1,
+                producingModel: 'parent/model',
+            ),
         );
 
         // Invalid thinking is rejected by schema/Validator before the handler runs.
@@ -181,6 +198,7 @@ final class FakeForkExecutionService implements ForkExecutionServiceInterface
     public ?string $lastTask = null;
     public ?string $lastModelOverride = null;
     public ?string $lastReasoningOverride = null;
+    public ?ToolLaunchContextDTO $lastLaunchContext = null;
 
     public function __construct(private readonly DeferredToolCompletionOutcome $outcome)
     {
@@ -189,12 +207,14 @@ final class FakeForkExecutionService implements ForkExecutionServiceInterface
     public function execute(
         string $parentRunId,
         string $task,
+        ToolLaunchContextDTO $launchContext,
         ?string $modelOverride = null,
         ?string $reasoningOverride = null,
     ): DeferredToolCompletionOutcome {
         $this->lastTask = $task;
         $this->lastModelOverride = $modelOverride;
         $this->lastReasoningOverride = $reasoningOverride;
+        $this->lastLaunchContext = $launchContext;
 
         return $this->outcome;
     }

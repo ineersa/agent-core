@@ -44,9 +44,32 @@ Workers post results (`LlmStepResult`, `ToolCallResult`, `CompactionStepResult`)
 
 There is **no** `CollectToolBatch` message type in `src/` (stale historical name — do not reintroduce docs for it).
 
+## Direct shell lifecycle ownership
+
+`ApplyShellCommandHandler` commits `agent_command_applied` plus canonical
+`tool_execution_start` (with flat bash `arguments.command`) under the owner lock,
+then returns the `ExecuteShellToolCall` effect. Idempotent command redelivery
+still short-circuits before those events or the effect. The shell worker has no
+EventStore dependency: it only executes bash and posts `ToolCallResult`.
+`tool_execution_start` is lifecycle acceptance before external work, not measured
+subprocess start; duration remains on the later result metadata.
+
+## File-backed child launch input
+
+`LlmStepResultHandler` writes child input from the owner's current messages through `ToolLaunchInputStoreInterface`, one message at a time. It attaches only `ToolLaunchInputReferenceDTO` to fork/subagent `ExecuteToolCall` effects. Ordinary tools keep `launchContext=null`.
+
+- The private immutable file lives beside tool batches in `runtime/tool-launch-inputs`, using the same parent/child path resolver. It is not an output-cap or temporary-cleanup file.
+- The reference fixes producing run/turn/step/call/model, kind, SHA-256, and byte length. Neither Messenger nor mutable batch snapshots contain the body.
+- Fork files contain the producing messages and agents text. Subagent files contain agents text only.
+- `ExecuteToolCallWorker` checks durable deferred registration before reading input. Pending execution redelivery re-emits registration; completed execution redelivery is a no-op. Unregistered work validates and resolves input before external execution. Missing, corrupt, unreadable, or mismatched input posts an error `ToolCallResult` without archive replay.
+- Worker compaction and child reservation remain outside the owner lock.
+- Shared deferred completion retains input until deferred registration exists, even when child projections are terminal. Once registered, cleanup is best effort after artifact outcomes are available; a content-free warning records deletion failure without blocking completion dispatch. Single, parallel, and interrupted handoffs rebuild from child products.
+- Canonical tool-result cleanup also deletes failed synchronous launch input. Terminal parent cleanup removes remaining files, including files published before an unsuccessful transition. Pending work and approval waits retain their input. This does not add a crash-recovery journal or exactly-once guarantee.
+
 ## Events and commit
 
 - `RunCommit::commit()` appends canonical `RunEvent` via `EventStoreInterface` (`append` / `appendMany`), then persists the narrow projection and active context before effect dispatch via `StepDispatcher` and after-turn hooks via `HookDispatcher`
+- `RunCommit` releases collector-owned in-memory batches after persistence and state publication: the exact batch on `tool_batch_committed`, or all run batches on a terminal `agent_end`. Finalized collection alone does not release them. Durable collector reads do not retain deserialized batches; the App cleanup hook deletes snapshot files independently.
 - `StartRunHandler` re-arms the initial `AdvanceRun` post-commit callback when Messenger redelivers after `run_started` already committed but before any AdvanceRun token was applied (`lastAppliedAdvanceKey` / `currentOperation` still null)
 - `StartRunHandler` no-ops when status is already `Cancelled`/`Cancelling` and `model` is still null, so reserved child run ids cancelled before `StartRun` cannot revive
 - `ToolCallResultFactory::fromExecuteToolCallAndToolResult()` maps envelope `error` only for cancelled tool results (`details.cancelled`); other tool errors keep `error: null` and rely on `isError` / `details`

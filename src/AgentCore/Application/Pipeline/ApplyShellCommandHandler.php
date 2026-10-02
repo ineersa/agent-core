@@ -22,7 +22,9 @@ use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
  * every other run command.
  *
  * A shell command does not become model context. Its AgentCommandApplied event
- * is the transcript anchor; the execution effect owns the tool lifecycle.
+ * is the transcript anchor. Canonical tool_execution_start is committed with
+ * the command under the owner lock before ExecuteShellToolCall is dispatched.
+ * The execution worker runs bash and posts ToolCallResult only.
  */
 final readonly class ApplyShellCommandHandler implements RunMessageHandler
 {
@@ -147,6 +149,22 @@ final readonly class ApplyShellCommandHandler implements RunMessageHandler
             ];
         }
 
+        // Lifecycle acceptance before external work, matching ordinary
+        // LlmStepResultHandler tool starts. Arguments preserve the flat bash
+        // command shape transcript/TUI already consume. This is not subprocess
+        // start timing; duration remains on the later ToolCallResult.
+        $eventSpecs[] = [
+            'type' => RunEventTypeEnum::ToolExecutionStart->value,
+            'turn_no' => $owningTurnNo,
+            'payload' => [
+                'tool_call_id' => $toolCallId,
+                'tool_name' => 'bash',
+                'order_index' => 0,
+                'attempt' => $message->attempt(),
+                'arguments' => ['command' => $shellText],
+            ],
+        ];
+
         $events = $this->eventFactory->eventsFromSpecs(
             $state->runId,
             $commandTurnNo,
@@ -188,7 +206,7 @@ final readonly class ApplyShellCommandHandler implements RunMessageHandler
                 ToolBatchIdentity::fromTurnAndStep($owningTurnNo, $message->stepId()),
                 $toolCallId,
                 0,
-                RunOperationalToolCallStatusEnum::Pending,
+                RunOperationalToolCallStatusEnum::Running,
                 $message->attempt(),
             )],
         ]);

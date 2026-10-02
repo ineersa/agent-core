@@ -13,6 +13,7 @@ use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
@@ -85,6 +86,16 @@ final class Gf05BareAgentsEffectiveContextIntegrationTest extends PerMethodIsola
         );
 
         $accessor = self::getContainer()->get(StackToolExecutionContextAccessor::class);
+        $agentsContext = '';
+        foreach ($parentCanonical as $message) {
+            if ('user-context' === $message->role && 'agents_context' === ($message->metadata['source'] ?? null)) {
+                foreach ($message->content as $block) {
+                    if (('text' === ($block['type'] ?? '')) && isset($block['text'])) {
+                        $agentsContext = (string) $block['text'];
+                    }
+                }
+            }
+        }
         $accessor->with(new ToolContext(
             runId: $parentRunId,
             turnNo: 1,
@@ -93,6 +104,13 @@ final class Gf05BareAgentsEffectiveContextIntegrationTest extends PerMethodIsola
             cancellationToken: new NullCancellationToken(),
             timeoutSeconds: 120,
             parentModel: 'test-model',
+            launchContext: new ToolLaunchContextDTO(
+                kind: ToolLaunchContextDTO::KIND_SUBAGENT,
+                producingRunId: $parentRunId,
+                producingTurnNo: 1,
+                producingModel: 'test-model',
+                agentsContext: $agentsContext,
+            ),
         ), static fn () => $service->execute($parentRunId, 'gf05-scout', 'Verify inherited AGENTS context'));
 
         $this->assertNotNull($childRunner->lastStartInput);
