@@ -81,7 +81,9 @@ final class JsonlRunEventLog
      * scanner reached start-of-file; archive_bytes_read may still include unread prefix
      * bytes from the last fetched chunk after an early stop. Size comes from fstat() on
      * the opened handle (not pathname filesize): a failed handle stat or seek is not a
-     * successful empty or completed scan.
+     * successful empty or completed scan. fread() returning fewer bytes than requested
+     * (including an empty string) is also not a completed scan; already-yielded complete
+     * lines are kept, and an incomplete trailing prefix is not emitted.
      *
      * @return \Generator<int, string>
      */
@@ -138,7 +140,15 @@ final class JsonlRunEventLog
                     return;
                 }
 
-                $observation?->addBytes(\strlen($chunk));
+                $bytesRead = \strlen($chunk);
+                $observation?->addBytes($bytesRead);
+                if ($bytesRead !== $length) {
+                    $earlyExit = false;
+                    $observation?->finish(reachedEof: false, earlyExit: false);
+
+                    return;
+                }
+
                 $tail = $chunk.$tail;
                 $lines = explode("\n", $tail);
                 $tail = array_shift($lines);

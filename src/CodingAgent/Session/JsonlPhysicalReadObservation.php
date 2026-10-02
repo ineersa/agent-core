@@ -18,7 +18,7 @@ namespace Ineersa\CodingAgent\Session;
  * scanner reached the start of the file. {@see archiveBytesRead()} may still equal
  * the file size on an early exit when the final fread chunk already contained the
  * unread prefix bytes; full_scan remains false in that case. A failed handle fstat,
- * seek, or fread is not reached_eof and not a full scan.
+ * seek, or fread, or a short fread (including empty), is not reached_eof and not a full scan.
  *
  * @internal
  */

@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Session\Contract\RunSequenceAllocatorInterface;
 use Ineersa\CodingAgent\Session\EventLogMaxSeqBootstrapReader;
 use Ineersa\CodingAgent\Session\JsonlPhysicalReadObservation;
 use Ineersa\CodingAgent\Session\JsonlRunEventLog;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Lock\LockFactory;
@@ -18,7 +19,8 @@ use Symfony\Component\Lock\Store\InMemoryStore;
  * Proves reverseLines distinguishes handle-stat / seek / read failures from a valid empty file.
  *
  * Stream-wrapper isolation keeps pathname filesize() succeeding while handle fstat() fails,
- * so a path-based size probe cannot pass these cases by accident.
+ * so a path-based size probe cannot pass these cases by accident. Short fread results
+ * (including empty) are also treated as incomplete scans rather than successful EOF.
  */
 #[CoversClass(JsonlRunEventLog::class)]
 #[CoversClass(JsonlPhysicalReadObservation::class)]
@@ -106,6 +108,76 @@ final class JsonlRunEventLogReverseLinesFailureTest extends TestCase
         $this->assertSame(0, $observation->linesYielded());
         $this->assertGreaterThan(0, JsonlReverseLinesFailureStreamWrapper::$streamSeekCalls);
         $this->assertGreaterThan(0, JsonlReverseLinesFailureStreamWrapper::$streamReadCalls);
+    }
+
+    public function testShortReadFourOfEightIsNotSuccessfulEofOrPartialYield(): void
+    {
+        $observation = new JsonlPhysicalReadObservation();
+        $lines = iterator_to_array($this->log()->reverseLines($this->path('short4of8'), $observation), false);
+
+        $this->assertSame([], $lines);
+        $this->assertFalse($observation->reachedEof());
+        $this->assertFalse($observation->earlyExit());
+        $this->assertFalse($observation->fullScan());
+        $this->assertSame(4, $observation->archiveBytesRead());
+        $this->assertSame(0, $observation->linesYielded());
+        $this->assertGreaterThan(0, JsonlReverseLinesFailureStreamWrapper::$streamReadCalls);
+    }
+
+    public function testZeroLengthReadIsNotSuccessfulEofOrPartialYield(): void
+    {
+        $observation = new JsonlPhysicalReadObservation();
+        $lines = iterator_to_array($this->log()->reverseLines($this->path('zeroread'), $observation), false);
+
+        $this->assertSame([], $lines);
+        $this->assertFalse($observation->reachedEof());
+        $this->assertFalse($observation->earlyExit());
+        $this->assertFalse($observation->fullScan());
+        $this->assertSame(0, $observation->archiveBytesRead());
+        $this->assertSame(0, $observation->linesYielded());
+        $this->assertGreaterThan(0, JsonlReverseLinesFailureStreamWrapper::$streamReadCalls);
+    }
+
+    public function testRealFileTruncationAfterFirstYieldKeepsCompleteLinesAndRejectsIncompletePrefix(): void
+    {
+        $dir = TestDirectoryIsolation::createProjectTempDir('jsonl-reverse-short-read');
+        $path = $dir.'/events.jsonl';
+
+        try {
+            $tailLine = '{"seq":2,"marker":"tail-complete"}';
+            $prefix = str_repeat('x', 21000 - \strlen($tailLine) - 1);
+            $this->assertSame(21000, \strlen($prefix."\n".$tailLine));
+            file_put_contents($path, $prefix."\n".$tailLine);
+            $this->assertSame(21000, filesize($path));
+
+            $observation = new JsonlPhysicalReadObservation();
+            $generator = $this->log()->reverseLines($path, $observation);
+
+            $this->assertTrue($generator->valid());
+            $this->assertSame($tailLine, $generator->current());
+
+            $truncated = fopen($path, 'r+b');
+            $this->assertNotFalse($truncated);
+            try {
+                // Truncate before the next reverse seek so the following fread returns ''.
+                ftruncate($truncated, 0);
+                fflush($truncated);
+            } finally {
+                fclose($truncated);
+            }
+            $this->assertSame(0, filesize($path));
+
+            $generator->next();
+            $this->assertFalse($generator->valid());
+
+            $this->assertFalse($observation->reachedEof());
+            $this->assertFalse($observation->earlyExit());
+            $this->assertFalse($observation->fullScan());
+            $this->assertSame(8192, $observation->archiveBytesRead());
+            $this->assertSame(1, $observation->linesYielded());
+        } finally {
+            TestDirectoryIsolation::removeDirectory($dir);
+        }
     }
 
     private function log(): JsonlRunEventLog
@@ -217,6 +289,17 @@ final class JsonlReverseLinesFailureStreamWrapper
             return false;
         }
 
+        if ('zeroread' === $this->mode) {
+            return '';
+        }
+
+        if ('short4of8' === $this->mode) {
+            $chunk = substr($this->data, $this->position, min(4, $count));
+            $this->position += \strlen($chunk);
+
+            return $chunk;
+        }
+
         $chunk = substr($this->data, $this->position, $count);
         $this->position += \strlen($chunk);
 
@@ -237,6 +320,7 @@ final class JsonlReverseLinesFailureStreamWrapper
         return match ($mode) {
             'empty' => '',
             'failstat', 'failseek', 'failread' => "{\"seq\":1}\n{\"seq\":2}\n",
+            'short4of8', 'zeroread' => str_repeat('a', 8),
             default => '',
         };
     }
