@@ -534,7 +534,7 @@ final class AstraReasoningTransitionHooksTest extends IsolatedKernelTestCase
         $compactingReader = new class implements RunOperationalStatusReaderInterface {
             public function findOperationalStatus(string $runId): ?RunOperationalStatusDTO
             {
-                return new RunOperationalStatusDTO(RunStatus::Compacting);
+                return new RunOperationalStatusDTO(RunStatus::Compacting, 1);
             }
         };
         $compactingHook = $this->createTransformHook($store, $compactingReader);

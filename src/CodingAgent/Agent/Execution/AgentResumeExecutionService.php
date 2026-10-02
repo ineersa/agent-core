@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Execution;
 
+use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
-use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
+use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\RunOperationalStatusDTO;
+use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
-use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactEntryDTO;
@@ -41,7 +43,9 @@ final class AgentResumeExecutionService
         private readonly DeferredSubagentChildRepository $childRepository,
         private readonly DeferredSubagentBatchIdentityFactory $identityFactory,
         private readonly AgentRunnerInterface $agentRunner,
-        private readonly RunStateRebuilderInterface $runStateRebuilder,
+        private readonly RunOperationalStatusReaderInterface $operationalStatusReader,
+        private readonly EventStoreInterface $eventStore,
+        private readonly RunLockManager $runLockManager,
         private readonly RunRelationshipReaderInterface $relationshipReader,
         private readonly AgentDepthGuard $depthGuard,
         private readonly StackToolExecutionContextAccessor $contextAccessor,
@@ -72,10 +76,8 @@ final class AgentResumeExecutionService
 
         $resolved = [];
         $seenArtifactIds = [];
-        /** @var array<string, RunState> $replayedChildStates */
-        $replayedChildStates = [];
         foreach ($tasks as $index => $task) {
-            $entry = $this->resolveAndValidateTarget($parentRunId, $task, $replayedChildStates);
+            $entry = $this->resolveAndValidateTarget($parentRunId, $task);
             // DTO uniqueness cannot cover agent_run_id→artifact aliases; dedupe after registry resolve.
             if (isset($seenArtifactIds[$entry->artifactId])) {
                 throw new ToolCallException(\sprintf('Duplicate artifact_id "%s" in one agent_resume call.', $entry->artifactId), retryable: false);
@@ -292,10 +294,7 @@ final class AgentResumeExecutionService
         return new DeferredToolCompletionOutcome($lifecycleId);
     }
 
-    /**
-     * @param array<string, RunState> $replayedChildStates
-     */
-    private function resolveAndValidateTarget(string $parentRunId, AgentResumeTaskDTO $task, array &$replayedChildStates): AgentArtifactEntryDTO
+    private function resolveAndValidateTarget(string $parentRunId, AgentResumeTaskDTO $task): AgentArtifactEntryDTO
     {
         $artifactId = $task->artifact_id;
         $agentRunId = $task->agent_run_id;
@@ -352,11 +351,24 @@ final class AgentResumeExecutionService
         }
 
         try {
-            $state = $replayedChildStates[$entry->agentRunId] ?? null;
-            if (null === $state) {
-                $state = $this->rebuildChildState($entry->agentRunId);
-                $replayedChildStates[$entry->agentRunId] = $state;
-            }
+            $state = $this->runLockManager->synchronized($entry->agentRunId, function () use ($entry): RunOperationalStatusDTO {
+                $status = $this->operationalStatusReader->findOperationalStatus($entry->agentRunId);
+                if (null === $status) {
+                    throw new \RuntimeException('Operational child status is unavailable; recovery required.');
+                }
+                // Resume is an explicit lifecycle boundary, not a status poll.
+                // A failed post-append projection write can leave a terminal row
+                // behind newer canonical work. Read only the actual archive tail,
+                // under owner serialization, never the sequence allocation cursor.
+                if ($status->status->isTerminal()) {
+                    $latest = $this->eventStore->latestSequenceFor($entry->agentRunId);
+                    if (null === $latest || $latest !== $status->lastEventSequence) {
+                        throw new \RuntimeException('Operational child status is not current; recovery required.');
+                    }
+                }
+
+                return $status;
+            });
         } catch (\Throwable $e) {
             throw new ToolCallException(\sprintf('Child run "%s" is unusable for resume.', $entry->agentRunId), retryable: false, previous: $e);
         }
@@ -372,22 +384,6 @@ final class AgentResumeExecutionService
         $this->assertContextBudgetAllowsResume($entry);
 
         return $entry;
-    }
-
-    /**
-     * Resume is an explicit cross-process lifecycle boundary. It must rebuild
-     * canonical child events once rather than trusting the legacy state snapshot.
-     */
-    private function rebuildChildState(string $childRunId): RunState
-    {
-        $state = $this->runStateRebuilder
-            ->rebuildIfStale(RunState::queued($childRunId), $childRunId)
-            ->rebuiltState;
-        if (null === $state) {
-            throw new \RuntimeException('Canonical child run state is unavailable.');
-        }
-
-        return $state;
     }
 
     private function assertContextBudgetAllowsResume(AgentArtifactEntryDTO $entry): void
