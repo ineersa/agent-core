@@ -37,7 +37,7 @@ final class InMemoryDeferredToolCompletionRepository implements DeferredToolComp
         return $correlation;
     }
 
-    public function findPendingByRunAndToolCall(string $runId, string $toolCallId): ?DeferredToolCompletionCorrelation
+    public function findByRunAndToolCall(string $runId, string $toolCallId): ?DeferredToolCompletionCorrelation
     {
         $deferredId = $this->byRunToolCall[$runId.'|'.$toolCallId] ?? null;
         if (null === $deferredId) {
@@ -45,7 +45,7 @@ final class InMemoryDeferredToolCompletionRepository implements DeferredToolComp
         }
 
         $row = $this->byDeferredId[$deferredId] ?? null;
-        if (null === $row || 'completed' === $row['status']) {
+        if (null === $row) {
             return null;
         }
 

@@ -53,7 +53,10 @@ final class ApplyShellCommandHandlerTest extends TestCase
             'expectedOwningTurn' => 0,
             'expectedCommandTurn' => 0,
             'expectedStandalone' => true,
-            'expectedEventTypes' => [RunEventTypeEnum::AgentCommandApplied->value],
+            'expectedEventTypes' => [
+                RunEventTypeEnum::AgentCommandApplied->value,
+                RunEventTypeEnum::ToolExecutionStart->value,
+            ],
             'expectedStatus' => RunStatus::Running,
         ];
 
@@ -64,7 +67,10 @@ final class ApplyShellCommandHandlerTest extends TestCase
             'expectedOwningTurn' => 2,
             'expectedCommandTurn' => 2,
             'expectedStandalone' => false,
-            'expectedEventTypes' => [RunEventTypeEnum::AgentCommandApplied->value],
+            'expectedEventTypes' => [
+                RunEventTypeEnum::AgentCommandApplied->value,
+                RunEventTypeEnum::ToolExecutionStart->value,
+            ],
             'expectedStatus' => RunStatus::Running,
         ];
 
@@ -79,6 +85,7 @@ final class ApplyShellCommandHandlerTest extends TestCase
                 RunEventTypeEnum::AgentCommandApplied->value,
                 RunEventTypeEnum::TurnAdvanced->value,
                 RunEventTypeEnum::HistoryPositionSet->value,
+                RunEventTypeEnum::ToolExecutionStart->value,
             ],
             'expectedStatus' => RunStatus::Running,
         ];
@@ -129,7 +136,7 @@ final class ApplyShellCommandHandlerTest extends TestCase
         $liveToolCall = $result->nextState->currentToolCalls[0];
         $this->assertSame(ToolBatchIdentity::fromTurnAndStep($expectedOwningTurn, 'shell-step-1'), $liveToolCall->batchId);
         $this->assertSame('sh_'.hash('sha256', 'shell-idem-1'), $liveToolCall->toolCallId);
-        $this->assertSame(RunOperationalToolCallStatusEnum::Pending, $liveToolCall->status);
+        $this->assertSame(RunOperationalToolCallStatusEnum::Running, $liveToolCall->status);
         $this->assertSame(1, $liveToolCall->attempt);
 
         $this->assertCount(\count($expectedEventTypes), $result->events);
@@ -150,7 +157,16 @@ final class ApplyShellCommandHandlerTest extends TestCase
             'idempotency_key' => 'shell-idem-1',
         ], $commandEvent->payload['current_operation'] ?? null);
 
-        if (\count($expectedEventTypes) > 1) {
+        $startEvent = $result->events[array_key_last($result->events)];
+        $this->assertSame(RunEventTypeEnum::ToolExecutionStart->value, $startEvent->type);
+        $this->assertSame($expectedOwningTurn, $startEvent->turnNo);
+        $this->assertSame('sh_'.hash('sha256', 'shell-idem-1'), $startEvent->payload['tool_call_id'] ?? null);
+        $this->assertSame('bash', $startEvent->payload['tool_name'] ?? null);
+        $this->assertSame(0, $startEvent->payload['order_index'] ?? null);
+        $this->assertSame(1, $startEvent->payload['attempt'] ?? null);
+        $this->assertSame(['command' => 'printf BANG_OWNERSHIP'], $startEvent->payload['arguments'] ?? null);
+
+        if (\count($expectedEventTypes) > 2) {
             $this->assertSame($expectedOwningTurn, $result->events[1]->payload['turn_no'] ?? null);
             $this->assertSame(1, $result->events[1]->payload['operation_attempt'] ?? null);
             $this->assertSame('shell-idem-1', $result->events[1]->payload['operation_idempotency_key'] ?? null);
@@ -182,6 +198,72 @@ final class ApplyShellCommandHandlerTest extends TestCase
                 'shell-idem-1',
             ));
         }
+    }
+
+    /** @return iterable<string, array{bool}> */
+    public static function shellPendingMapCases(): iterable
+    {
+        yield 'standalone shell' => [false];
+        yield 'shell attached to ordinary batch' => [true];
+    }
+
+    #[DataProvider('shellPendingMapCases')]
+    public function testShellLifecycleReplayPreservesOrdinaryPendingMap(bool $attached): void
+    {
+        $runId = 'run-shell-pending-parity';
+        $ordinaryPending = $attached ? ['ordinary-pending' => false, 'ordinary-done' => true] : [];
+        $codec = new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer());
+        $reducer = new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), $codec);
+        $prefix = [];
+        if ($attached) {
+            $ordinaryResult = \Ineersa\AgentCore\Tests\Support\Builder\ToolCallResultBuilder::success($runId)
+                ->withTurnNo(1)->withStepId('ordinary-step')->withToolCallId('ordinary-done')->build();
+            $prefix = [
+                new RunEvent($runId, 1, 1, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 1, 'step_id' => 'ordinary-step']),
+                new RunEvent($runId, 2, 1, RunEventTypeEnum::LlmStepCompleted->value, [
+                    'step_id' => 'ordinary-step', 'assistant_message' => ['role' => 'assistant', 'content' => [], 'tool_calls' => [
+                        ['id' => 'ordinary-pending', 'name' => 'read', 'arguments' => [], 'order_index' => 0],
+                        ['id' => 'ordinary-done', 'name' => 'read', 'arguments' => [], 'order_index' => 1],
+                    ]],
+                ]),
+                new RunEvent($runId, 3, 1, RunEventTypeEnum::ToolExecutionEnd->value, $codec->toEventPayload($ordinaryResult)),
+            ];
+        }
+        $state = $reducer->replay(new RunState(runId: $runId, status: RunStatus::Queued, model: 'test-model'), $prefix);
+        $this->assertSame($ordinaryPending, $state->pendingToolCalls);
+        $ordinaryTools = $state->currentToolCalls;
+        $handler = new ApplyShellCommandHandler(new EventFactory(), new InMemoryEventStore(), AttributeSerializerValidatorTestFactory::create()[0]);
+        $start = $handler->handle(new ApplyShellCommand(
+            runId: $runId, turnNo: $state->turnNo, stepId: 'shell-step', attempt: 1,
+            idempotencyKey: 'shell-parity', rawInput: '!printf shell',
+        ), $state);
+        $this->assertNotNull($start->nextState);
+        $replayedStart = $reducer->replay($state, [...$prefix, ...$start->events]);
+        $this->assertSame($ordinaryPending, $start->nextState->pendingToolCalls);
+        $this->assertSame($start->nextState->pendingToolCalls, $replayedStart->pendingToolCalls);
+        $this->assertSame($start->nextState->pendingShellToolCalls, $replayedStart->pendingShellToolCalls);
+        $this->assertEquals($start->nextState->currentToolCalls, $replayedStart->currentToolCalls);
+        $shellId = 'sh_'.hash('sha256', 'shell-parity');
+        $completion = \Ineersa\AgentCore\Tests\Support\Builder\ToolCallResultBuilder::success($runId)
+            ->withTurnNo($start->nextState->turnNo)->withStepId('shell-step')->withToolCallId($shellId)
+            ->withResult(['tool_name' => 'bash', 'content' => [['type' => 'text', 'text' => 'shell']]])->build();
+        $resultHandler = new \Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler(
+            toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(),
+            eventFactory: new EventFactory(), toolCallExtractor: new \Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor(),
+            messageNormalizer: new \Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
+        );
+        $end = $resultHandler->handle($completion, $start->nextState);
+        $this->assertNotNull($end->nextState);
+        $this->assertSame(RunEventTypeEnum::ToolExecutionEnd->value, $end->events[0]->type);
+        $this->assertSame($shellId, $codec->fromEventPayload($end->events[0]->payload)->toolCallId);
+        $replayedEnd = $reducer->replay($state, [...$prefix, ...$start->events, ...$end->events]);
+        $this->assertSame($ordinaryPending, $end->nextState->pendingToolCalls);
+        $this->assertSame($end->nextState->pendingToolCalls, $replayedEnd->pendingToolCalls);
+        $this->assertSame([], $end->nextState->pendingShellToolCalls);
+        $this->assertSame($end->nextState->pendingShellToolCalls, $replayedEnd->pendingShellToolCalls);
+        $this->assertEquals($ordinaryTools, $end->nextState->currentToolCalls);
+        $this->assertEquals($end->nextState->currentToolCalls, $replayedEnd->currentToolCalls);
     }
 
     public function testCommittedStandaloneShellRedeliveryIsANoOp(): void

@@ -7,6 +7,7 @@ namespace Ineersa\AgentCore\Application\Tool;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
+use Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO;
 
 /**
  * Concrete execution context populated by ToolExecutor for each invocation.
@@ -26,6 +27,7 @@ final readonly class ToolContext
         private ?ToolCallHumanInputAnswerDTO $humanInputAnswer = null,
         private ?string $stepId = null,
         private ?string $parentModel = null,
+        private ?ToolLaunchContextDTO $launchContext = null,
     ) {
     }
 
@@ -97,5 +99,14 @@ final readonly class ToolContext
     public function parentModel(): ?string
     {
         return $this->parentModel;
+    }
+
+    /**
+     * Owner-prepared immutable launch input for fork/subagent tools.
+     * Null for ordinary tools so their execution context stays lean.
+     */
+    public function launchContext(): ?ToolLaunchContextDTO
+    {
+        return $this->launchContext;
     }
 }

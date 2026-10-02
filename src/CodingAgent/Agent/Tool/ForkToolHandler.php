@@ -47,9 +47,15 @@ final class ForkToolHandler
 
             $thinking = null === $arguments->thinking ? null : trim($arguments->thinking);
 
+            $launchContext = $context->launchContext();
+            if (null === $launchContext || !$launchContext->isFork()) {
+                throw new ToolCallException(\sprintf('Fork requires owner-prepared immutable fork launch context for run_id=%s.', $parentRunId), retryable: false);
+            }
+
             return $this->executionService()->execute(
                 parentRunId: $parentRunId,
                 task: trim($arguments->task),
+                launchContext: $launchContext,
                 modelOverride: $model,
                 reasoningOverride: $thinking,
             );

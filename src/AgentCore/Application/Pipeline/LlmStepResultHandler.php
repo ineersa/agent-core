@@ -11,6 +11,7 @@ use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Handler\ToolExecutionPolicyResolver;
 use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -46,6 +47,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
         private ?MessageBusInterface $commandBus = null,
         private ?ToolExecutionSettingsInterface $toolExecutionSettings = null,
         private int $maxParallelism = 1,
+        private ?ToolLaunchInputStoreInterface $launchInputStore = null,
     ) {
     }
 
@@ -248,6 +250,28 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
         $effects = [];
         foreach ($toolCalls as $toolCall) {
             $policy = $this->resolveToolPolicy($toolCall['name'], $activeSet);
+            $parentModel = $message->model;
+            $launchContext = null;
+            if ('fork' === $toolCall['name'] || 'subagent' === $toolCall['name']) {
+                $producingModel = trim($message->model);
+                if ('' === $producingModel) {
+                    throw new \RuntimeException(\sprintf('Cannot dispatch %s tool call %s: LlmStepResult model is required for immutable child launch inheritance.', $toolCall['name'], $toolCall['id']));
+                }
+                $parentModel = $producingModel;
+                if (null === $this->launchInputStore) {
+                    throw new \LogicException('Child launch input store is required.');
+                }
+                $launchContext = $this->launchInputStore->publish(
+                    kind: $toolCall['name'],
+                    runId: $runId,
+                    turnNo: $state->turnNo,
+                    stepId: $message->stepId(),
+                    toolCallId: $toolCall['id'],
+                    model: $producingModel,
+                    agentsContext: $this->extractUserContextSource($messages, 'agents_context'),
+                    messages: 'fork' === $toolCall['name'] ? $messages : [],
+                );
+            }
 
             $effects[] = new ExecuteToolCall(
                 runId: $runId,
@@ -270,7 +294,8 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
                 // be the model that actually produced this LLM result, not
                 // the historical RunState model (which may be stale after a
                 // session-level model change).
-                parentModel: $message->model,
+                parentModel: $parentModel,
+                launchContext: $launchContext,
             );
         }
 
@@ -392,10 +417,11 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
             'messages' => $messages,
         ]);
 
-        $postCommit = [function () use ($runId, $state, $message, $effects): void {
+        $turnNo = $state->turnNo;
+        $postCommit = [function () use ($runId, $turnNo, $message, $effects): void {
             $initialEffects = $this->toolBatchCollector->registerExpectedBatch(
                 $runId,
-                $state->turnNo,
+                $turnNo,
                 $message->stepId(),
                 $effects,
             );
@@ -508,5 +534,27 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
             'available_tools' => $message->availableTools,
             'available_tools_schema_tokens_estimate' => $message->availableToolsSchemaTokensEstimate,
         ];
+    }
+
+    /**
+     * @param list<\Ineersa\AgentCore\Domain\Message\AgentMessage> $messages
+     */
+    private function extractUserContextSource(array $messages, string $source): string
+    {
+        foreach ($messages as $message) {
+            if ('user-context' !== $message->role) {
+                continue;
+            }
+            if ($source !== ($message->metadata['source'] ?? null)) {
+                continue;
+            }
+            foreach ($message->content as $block) {
+                if ('text' === ($block['type'] ?? '') && isset($block['text'])) {
+                    return (string) $block['text'];
+                }
+            }
+        }
+
+        return '';
     }
 }

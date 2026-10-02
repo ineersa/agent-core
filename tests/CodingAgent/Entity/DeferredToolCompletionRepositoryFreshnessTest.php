@@ -39,7 +39,7 @@ final class DeferredToolCompletionRepositoryFreshnessTest extends IsolatedKernel
     }
 
     #[Test]
-    public function statusAndPendingLookupSeeCompletionCommittedOutsideIdentityMap(): void
+    public function statusAndLookupSeeCompletionCommittedOutsideIdentityMap(): void
     {
         $correlation = $this->repository->registerPending(new DeferredToolCompletionCorrelation(
             deferredId: '550e8400-e29b-41d4-a716-446655440100',
@@ -55,7 +55,7 @@ final class DeferredToolCompletionRepositoryFreshnessTest extends IsolatedKernel
         ));
 
         $this->assertSame('pending', $this->repository->status($correlation->deferredId));
-        $pending = $this->repository->findPendingByRunAndToolCall('run-fresh-1', 'call-fresh');
+        $pending = $this->repository->findByRunAndToolCall('run-fresh-1', 'call-fresh');
         $this->assertNotNull($pending);
 
         $managed = $this->entityManager->getRepository(DeferredToolCompletion::class)->findOneBy([
@@ -76,7 +76,7 @@ final class DeferredToolCompletionRepositoryFreshnessTest extends IsolatedKernel
         );
 
         $this->assertSame('completed', $this->repository->status($correlation->deferredId));
-        $this->assertNull($this->repository->findPendingByRunAndToolCall('run-fresh-1', 'call-fresh'));
+        $this->assertNotNull($this->repository->findByRunAndToolCall('run-fresh-1', 'call-fresh'));
         $this->assertSame('completed', $managed->status);
         $this->assertTrue($this->entityManager->contains($managed));
     }

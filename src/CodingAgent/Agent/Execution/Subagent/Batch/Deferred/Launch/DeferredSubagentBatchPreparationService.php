@@ -43,6 +43,7 @@ final class DeferredSubagentBatchPreparationService
         array $tasks,
         ChildRunBatchExecutionModeEnum $executionMode,
         ?string $parentModel = null,
+        ?\Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO $launchContext = null,
     ): DeferredSubagentBatchLaunchPlanDTO {
         $this->launchPreparation->assertDepthAllowed($parentRunId);
 
@@ -91,6 +92,7 @@ final class DeferredSubagentBatchPreparationService
             definitionsByBatchIndex: $definitionsByBatchIndex,
             identities: $identities,
             parentModel: $parentModel,
+            launchContext: $launchContext,
         );
     }
 
@@ -103,6 +105,7 @@ final class DeferredSubagentBatchPreparationService
         string $task,
         DeferredSubagentSingleChildLaunchProfileDTO $profile,
         ?string $parentModel = null,
+        ?\Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO $launchContext = null,
     ): DeferredSubagentBatchLaunchPlanDTO {
         $this->launchPreparation->assertDepthAllowed($parentRunId);
 
@@ -146,6 +149,7 @@ final class DeferredSubagentBatchPreparationService
             definitionsByBatchIndex: [1 => $profile->definition],
             identities: $identities,
             parentModel: $parentModel,
+            launchContext: $launchContext,
         );
     }
 
@@ -190,6 +194,7 @@ final class DeferredSubagentBatchPreparationService
                     skipReservation: true,
                     identityTemplate: $identity,
                     parentModel: $plan->parentModel,
+                    launchContext: $plan->launchContext,
                 );
                 $this->artifactLifecycle->ensureReservedPending($identity);
                 $preparedChildren[] = $prepared;

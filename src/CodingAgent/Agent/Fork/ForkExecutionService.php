@@ -5,25 +5,24 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Fork;
 
 use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
-use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
-use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
+use Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Preparation\DeferredSubagentSingleChildLaunchProfileDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchService;
 use Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface;
 
 /**
- * Thin fork adapter: snapshot/sanitize/sync-compact parent messages, then the
- * ordinary deferred single-child subagent launcher via an explicit profiled path.
+ * Thin fork adapter: sanitize/sync-compact the owner-prepared immutable message
+ * snapshot, then the ordinary deferred single-child subagent launcher via an
+ * explicit profiled path. No parent archive replay at this boundary.
  */
 final class ForkExecutionService implements ForkExecutionServiceInterface
 {
     public function __construct(
         private readonly DeferredSubagentBatchLaunchService $deferredBatchLaunch,
         private readonly RunRelationshipReaderInterface $relationshipReader,
-        private readonly RunStateRebuilderInterface $runStateRebuilder,
         private readonly ForkSnapshotSanitizer $snapshotSanitizer,
         private readonly CompactionServiceInterface $compactionService,
     ) {
@@ -32,6 +31,7 @@ final class ForkExecutionService implements ForkExecutionServiceInterface
     public function execute(
         string $parentRunId,
         string $task,
+        ToolLaunchContextDTO $launchContext,
         ?string $modelOverride = null,
         ?string $reasoningOverride = null,
     ): DeferredToolCompletionOutcome {
@@ -41,31 +41,28 @@ final class ForkExecutionService implements ForkExecutionServiceInterface
             throw new ToolCallException($e->getMessage(), retryable: false);
         }
 
-        // 1) Rebuild an immutable parent snapshot from canonical events. Fork
-        // compaction must use the canonical parent execution model; never
-        // re-resolve session/default or trust the legacy state snapshot.
-        $parentState = $this->runStateRebuilder
-            ->rebuildIfStale(RunState::queued($parentRunId), $parentRunId)
-            ->rebuiltState;
-        if (null === $parentState) {
-            throw new ToolCallException(\sprintf('Fork requires canonical parent run state for run_id=%s before compaction.', $parentRunId), retryable: false);
+        if (!$launchContext->isFork()) {
+            throw new ToolCallException(\sprintf('Fork requires owner-prepared immutable fork launch context for run_id=%s.', $parentRunId), retryable: false);
         }
-        $parentModel = null !== $parentState->model ? trim($parentState->model) : '';
+        if ($launchContext->producingRunId !== $parentRunId) {
+            throw new ToolCallException(\sprintf('Fork launch context producing run %s does not match parent run %s.', $launchContext->producingRunId, $parentRunId), retryable: false);
+        }
+
+        $parentModel = trim($launchContext->producingModel);
         if ('' === $parentModel) {
-            throw new ToolCallException(\sprintf('Fork requires canonical parent run model for run_id=%s before compaction.', $parentRunId), retryable: false);
+            throw new ToolCallException(\sprintf('Fork requires owner-prepared producing model for run_id=%s before compaction.', $parentRunId), retryable: false);
         }
-        $parentMessages = $parentState->messages;
-        $turnNo = $parentState->turnNo;
 
-        // 2) Sanitize in-flight fork invocation / provider-invalid tail
-        $sanitized = $this->snapshotSanitizer->sanitize($parentMessages);
+        // 1) Sanitize in-flight fork invocation / provider-invalid tail from the
+        //    immutable owner-prepared snapshot (not a live parent state lookup).
+        $sanitized = $this->snapshotSanitizer->sanitize($launchContext->forkMessages);
 
-        // 3) Synchronously compact sanitized snapshot via existing compaction service
+        // 2) Synchronously compact sanitized snapshot via existing compaction service
         //    BEFORE any deferred batch reservation. Child model/thinking overrides
         //    are intentionally applied only after this step (in preparation).
         $compactResult = $this->compactionService->compactMessages(
             runId: $parentRunId,
-            turnNo: $turnNo,
+            turnNo: $launchContext->producingTurnNo,
             messages: $sanitized,
             trigger: 'fork',
             activeModel: $parentModel,
@@ -76,7 +73,7 @@ final class ForkExecutionService implements ForkExecutionServiceInterface
             throw new ToolCallException(\sprintf('Fork compaction failed before child launch: %s', $detail), retryable: false);
         }
 
-        // 4) Explicit required single-child profiled deferred launch (no optional generic profile).
+        // 3) Explicit required single-child profiled deferred launch (no optional generic profile).
         $profile = new DeferredSubagentSingleChildLaunchProfileDTO(
             definition: ForkInternalAgentDefinition::create($modelOverride),
             artifactKind: AgentArtifactKindEnum::Fork,

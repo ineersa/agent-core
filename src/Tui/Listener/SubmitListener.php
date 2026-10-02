@@ -569,8 +569,9 @@ final class SubmitListener implements TuiListenerRegistrar
             if (null === $state->handle) {
                 // First input — execute shell without starting an LLM run.
                 // In-process transport is synchronous: ApplyShellCommand commits,
-                // then ExecuteShellToolCallWorker writes tool lifecycle (+ AgentEnd
-                // for standalone) before shellExecute() returns. Transition to
+                // tool_execution_start under the owner lock, then
+                // ExecuteShellToolCallWorker posts ToolCallResult (+ AgentEnd
+                // for standalone via run_control) before shellExecute() returns. Transition to
                 // Completed immediately so the working indicator clears without
                 // waiting for the next tick. The poller still projects tool_exec
                 // events on the next cycle.
@@ -599,8 +600,8 @@ final class SubmitListener implements TuiListenerRegistrar
                 );
 
                 // The controller must NEVER write AgentEnd for shell commands.
-                // ApplyShellCommandHandler + ExecuteShellToolCallWorker own
-                // terminalization so tool_exec ordering stays valid (issue #183).
+                // ApplyShellCommandHandler owns tool_execution_start; run_control
+                // owns completion/AgentEnd so tool_exec ordering stays valid (issue #183).
                 //
                 // Activity transitions (Running → Completed) are handled by
                 // TickPollListener from the authoritative event drain — we do

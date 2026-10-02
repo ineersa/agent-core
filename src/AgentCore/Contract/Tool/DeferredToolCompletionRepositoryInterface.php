@@ -16,7 +16,8 @@ interface DeferredToolCompletionRepositoryInterface
      */
     public function registerPending(DeferredToolCompletionCorrelation $correlation): DeferredToolCompletionCorrelation;
 
-    public function findPendingByRunAndToolCall(string $runId, string $toolCallId): ?DeferredToolCompletionCorrelation;
+    /** Returns existing registration, including completed invocations. */
+    public function findByRunAndToolCall(string $runId, string $toolCallId): ?DeferredToolCompletionCorrelation;
 
     public function findByDeferredId(string $deferredId): ?DeferredToolCompletionCorrelation;
 

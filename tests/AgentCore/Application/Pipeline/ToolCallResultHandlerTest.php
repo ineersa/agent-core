@@ -1056,6 +1056,57 @@ final class ToolCallResultHandlerTest extends TestCase
         $this->assertSame('Tool execution cancelled by user.', $result->nextState->messages[1]->content[0]['text'] ?? null);
     }
 
+    public function testDurableMixedForkCancellationDoesNotRetainDeserializedLaunchInput(): void
+    {
+        $store = new CancellationBatchReadObservationStore($this->createSessionToolBatchStore());
+        $collector = new ToolBatchCollector(store: $store);
+        $runId = 'run-cancel-fork-retention';
+        $fork = new ExecuteToolCall(
+            runId: $runId, turnNo: 1, stepId: 'tools', attempt: 1,
+            idempotencyKey: 'fork-execution', toolCallId: 'fork-call', toolName: 'fork', args: [],
+            orderIndex: 1, mode: 'parallel', maxParallelism: 2,
+            launchContext: new \Ineersa\AgentCore\Domain\Tool\ToolLaunchInputReferenceDTO(
+                kind: 'fork', producingRunId: $runId, producingTurnNo: 1, producingModel: 'test-model',
+                producingStepId: 'tools', toolCallId: 'fork-call', sha256: str_repeat('a', 64), bytes: 100,
+            ),
+        );
+        $collector->registerExpectedBatch($runId, 1, 'tools', [
+            new ExecuteToolCall(
+                runId: $runId, turnNo: 1, stepId: 'tools', attempt: 1,
+                idempotencyKey: 'read-execution', toolCallId: 'read-call', toolName: 'read',
+                args: ['path' => 'file.txt'], orderIndex: 0, mode: 'parallel', maxParallelism: 2,
+            ),
+            $fork,
+        ]);
+        $read = ToolCallResultBuilder::success($runId)->withTurnNo(1)->withStepId('tools')
+            ->withToolCallId('read-call')->withOrderIndex(0)
+            ->withResult(['tool_name' => 'read', 'content' => [['type' => 'text', 'text' => 'saved read result']]])->build();
+        $this->assertFalse($collector->collect($read)->complete);
+        $handler = new ToolCallResultHandler(
+            toolBatchCollector: $collector, eventFactory: new EventFactory(),
+            toolCallExtractor: new ToolCallExtractor(), messageNormalizer: new AgentMessageNormalizer(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
+        );
+        $state = RunStateBuilder::running($runId)->withTurnNo(1)->withActiveStepId('tools')
+            ->withPendingToolCalls(['read-call' => true, 'fork-call' => false])
+            ->withMessages([new AgentMessage(role: 'assistant', content: [], metadata: ['tool_calls' => [
+                ['id' => 'read-call', 'name' => 'read', 'arguments' => ['path' => 'file.txt'], 'order_index' => 0],
+                ['id' => 'fork-call', 'name' => 'fork', 'arguments' => [], 'order_index' => 1],
+            ]])])->build()->with(['status' => RunStatus::Cancelling]);
+        $result = $handler->handle($read, $state);
+        $this->assertNotNull($result->nextState);
+        $this->assertSame(RunStatus::Cancelled, $result->nextState->status);
+        $this->assertSame('saved read result', $result->nextState->messages[1]->content[0]['text']);
+        $this->assertNotNull($store->loadedFork);
+        $this->assertNotNull($store->loadedReference);
+        // These weak references target objects decoded by the filesystem store,
+        // not $fork above. The legitimate retained read result has no launch input.
+        $this->assertNull($store->loadedFork->get());
+        $this->assertNull($store->loadedReference->get());
+        $this->assertNotNull($fork->launchContext);
+        $this->assertSame('fork-call', $fork->launchContext->toolCallId);
+    }
+
     private function createSessionToolBatchStore(): SessionToolBatchStore
     {
         $entityManager = $this->createStub(EntityManagerInterface::class);
@@ -1075,5 +1126,47 @@ final class ToolCallResultHandlerTest extends TestCase
             $serializer,
             $validator,
         );
+    }
+}
+
+/** Observes only decoded load() graphs; mutate() does not retain its callback inputs. */
+final class CancellationBatchReadObservationStore implements \Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface
+{
+    public ?\WeakReference $loadedFork = null;
+    public ?\WeakReference $loadedReference = null;
+
+    public function __construct(private readonly SessionToolBatchStore $inner)
+    {
+    }
+
+    public function load(string $runId, int $turnNo, string $stepId): ?\Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO
+    {
+        $batch = $this->inner->load($runId, $turnNo, $stepId);
+        if (null !== $batch) {
+            $this->loadedFork = \WeakReference::create($batch->calls['fork-call']);
+            $this->loadedReference = \WeakReference::create($batch->calls['fork-call']->launchContext);
+        }
+
+        return $batch;
+    }
+
+    public function save(string $runId, int $turnNo, string $stepId, \Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO $batchState): void
+    {
+        $this->inner->save($runId, $turnNo, $stepId, $batchState);
+    }
+
+    public function delete(string $runId, int $turnNo, string $stepId): void
+    {
+        $this->inner->delete($runId, $turnNo, $stepId);
+    }
+
+    public function deleteAllForRun(string $runId): void
+    {
+        $this->inner->deleteAllForRun($runId);
+    }
+
+    public function mutate(string $runId, int $turnNo, string $stepId, callable $callback): mixed
+    {
+        return $this->inner->mutate($runId, $turnNo, $stepId, $callback);
     }
 }

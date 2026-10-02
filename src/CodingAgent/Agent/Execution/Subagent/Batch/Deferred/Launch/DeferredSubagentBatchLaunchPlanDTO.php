@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch;
 
+use Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
@@ -26,6 +27,7 @@ final readonly class DeferredSubagentBatchLaunchPlanDTO
         public array $definitionsByBatchIndex,
         public array $identities,
         public ?string $parentModel = null,
+        public ?ToolLaunchContextDTO $launchContext = null,
     ) {
     }
 

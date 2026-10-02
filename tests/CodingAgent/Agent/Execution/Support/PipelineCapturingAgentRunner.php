@@ -48,6 +48,7 @@ final class PipelineCapturingAgentRunner implements AgentRunnerInterface
             eventStore: $eventStore,
             stepDispatcher: new StepDispatcher(new TestMessageBus(), $executionBus),
             logger: new NullLogger(),
+            toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(),
             hookDispatcher: null,
         );
         $processor = new RunMessageProcessor(

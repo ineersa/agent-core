@@ -7,6 +7,7 @@ namespace Ineersa\AgentCore\Application\Handler;
 use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface;
 use Ineersa\AgentCore\Domain\Event\DeferredToolCompletionRegisteredEvent;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
@@ -32,6 +33,8 @@ final readonly class ExecuteToolCallWorker
         private RunOperationalStatusReaderInterface $statusReader,
         private ?RunTracer $tracer = null,
         private ?EventDispatcherInterface $eventDispatcher = null,
+        private ?ToolLaunchInputStoreInterface $launchInputStore = null,
+        private ?ToolBatchCollector $toolBatchCollector = null,
     ) {
     }
 
@@ -92,51 +95,85 @@ final readonly class ExecuteToolCallWorker
 
     private function execute(ExecuteToolCall $message): ?ToolCallResult
     {
-        $existing = $this->deferredToolCompletionRepository->findPendingByRunAndToolCall($message->runId(), $message->toolCallId);
+        $existing = $this->deferredToolCompletionRepository->findByRunAndToolCall($message->runId(), $message->toolCallId);
         if (null !== $existing) {
-            $this->dispatchDeferredRegistered($existing);
+            if ('pending' === $this->deferredToolCompletionRepository->status($existing->deferredId)) {
+                $this->dispatchDeferredRegistered($existing);
+            }
 
             return null;
         }
 
-        $cancelToken = new RunCancellationToken($this->statusReader, $message->runId());
-
-        $batchToolCallCount = 1;
-        if (\is_array($message->assistantMessage)) {
-            $toolCallsInStep = $message->assistantMessage['tool_calls'] ?? null;
-            if (\is_array($toolCallsInStep) && [] !== $toolCallsInStep) {
-                $batchToolCallCount = \count($toolCallsInStep);
-            }
-        }
-
-        $toolCall = new ToolCall(
-            toolCallId: $message->toolCallId,
-            toolName: $message->toolName,
-            arguments: $message->args,
-            orderIndex: $message->orderIndex,
-            runId: $message->runId(),
-            mode: ToolExecutionMode::tryFrom((string) $message->mode),
-            timeoutSeconds: $message->timeoutSeconds,
-            toolIdempotencyKey: $message->toolIdempotencyKey,
-            context: [
-                'run_id' => $message->runId(),
-                'turn_no' => $message->turnNo(),
-                'step_id' => $message->stepId(),
-                'arg_schema' => $message->argSchema,
-                'max_parallelism' => $message->maxParallelism,
-                'cancel_token' => $cancelToken,
-                'tools_ref' => $message->toolsRef,
-                'assistant_batch_tool_call_count' => $batchToolCallCount,
-                // Internal only — never model args. Used by ExtensionToolHookEventSubscriber
-                // to resume an exact approved call without re-prompting the originating hook.
-                'human_input_answer' => $message->humanInputAnswer,
-                'parent_model' => $message->parentModel,
-            ],
-        );
-
         RunLogContext::enter(['event_type' => 'tool.execute.started']);
 
         try {
+            if (null !== $message->launchContext) {
+                // A synchronous result can already be durable while siblings are
+                // pending and canonical cleanup has removed this launch input.
+                // Durable collector reads release the decoded batch on return.
+                $stored = $this->toolBatchCollector?->getStoredResult($message->runId(), $message->turnNo(), $message->stepId(), $message->toolCallId);
+                if (null !== $stored && !$stored->isHumanInputSuspension()
+                    && $stored->runId() === $message->runId()
+                    && $stored->turnNo() === $message->turnNo()
+                    && $stored->stepId() === $message->stepId()
+                    && $stored->toolCallId === $message->toolCallId) {
+                    return $stored;
+                }
+            }
+
+            $launchContext = null;
+            if (null !== $message->launchContext) {
+                $reference = $message->launchContext;
+                if ($reference->producingRunId !== $message->runId()
+                    || $reference->producingTurnNo !== $message->turnNo()
+                    || $reference->producingStepId !== $message->stepId()
+                    || $reference->toolCallId !== $message->toolCallId
+                    || $reference->producingModel !== $message->parentModel
+                    || $reference->kind !== $message->toolName) {
+                    throw new \RuntimeException('Tool launch input reference does not match execution envelope.');
+                }
+                if (null === $this->launchInputStore) {
+                    throw new \LogicException('Child launch input store is required.');
+                }
+                $launchContext = $this->launchInputStore->read($reference);
+            }
+
+            $cancelToken = new RunCancellationToken($this->statusReader, $message->runId());
+
+            $batchToolCallCount = 1;
+            if (\is_array($message->assistantMessage)) {
+                $toolCallsInStep = $message->assistantMessage['tool_calls'] ?? null;
+                if (\is_array($toolCallsInStep) && [] !== $toolCallsInStep) {
+                    $batchToolCallCount = \count($toolCallsInStep);
+                }
+            }
+
+            $toolCall = new ToolCall(
+                toolCallId: $message->toolCallId,
+                toolName: $message->toolName,
+                arguments: $message->args,
+                orderIndex: $message->orderIndex,
+                runId: $message->runId(),
+                mode: ToolExecutionMode::tryFrom((string) $message->mode),
+                timeoutSeconds: $message->timeoutSeconds,
+                toolIdempotencyKey: $message->toolIdempotencyKey,
+                context: [
+                    'run_id' => $message->runId(),
+                    'turn_no' => $message->turnNo(),
+                    'step_id' => $message->stepId(),
+                    'arg_schema' => $message->argSchema,
+                    'max_parallelism' => $message->maxParallelism,
+                    'cancel_token' => $cancelToken,
+                    'tools_ref' => $message->toolsRef,
+                    'assistant_batch_tool_call_count' => $batchToolCallCount,
+                    // Internal only — never model args. Used by ExtensionToolHookEventSubscriber
+                    // to resume an exact approved call without re-prompting the originating hook.
+                    'human_input_answer' => $message->humanInputAnswer,
+                    'parent_model' => $message->parentModel,
+                    'launch_context' => $launchContext,
+                ],
+            );
+
             $executeTool = fn () => $this->toolExecutor->execute($toolCall);
 
             $toolResult = null === $this->tracer
