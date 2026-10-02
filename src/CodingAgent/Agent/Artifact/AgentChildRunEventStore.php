@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\CodingAgent\Session\Contract\RunSequenceAllocatorInterface;
 use Ineersa\CodingAgent\Session\EventLogMaxSeqBootstrapReader;
+use Ineersa\CodingAgent\Session\JsonlPhysicalReadObservation;
 use Ineersa\CodingAgent\Session\JsonlRunEventLog;
 use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Psr\Log\LoggerInterface;
@@ -109,18 +110,26 @@ final class AgentChildRunEventStore implements EventStoreInterface
         $lock->acquire(true);
 
         try {
+            $observation = new JsonlPhysicalReadObservation();
+            $decodedEventCount = 0;
             $events = [];
-            foreach ($this->eventLog->reverseLines($path) as $line) {
-                $event = $this->eventFromLine($line);
-                if (null === $event) {
-                    continue;
-                }
 
-                if ($event->seq <= $cursor) {
-                    break;
-                }
+            try {
+                foreach ($this->eventLog->reverseLines($path, $observation) as $line) {
+                    $event = $this->eventFromLine($line);
+                    if (null === $event) {
+                        continue;
+                    }
 
-                $events[] = $event;
+                    ++$decodedEventCount;
+                    if ($event->seq <= $cursor) {
+                        break;
+                    }
+
+                    $events[] = $event;
+                }
+            } finally {
+                $this->logPhysicalRead('readAfterSeq', $observation, $decodedEventCount);
             }
 
             return array_reverse($events);
@@ -144,7 +153,7 @@ final class AgentChildRunEventStore implements EventStoreInterface
             return null;
         }
 
-        foreach ($this->streamRunEventsFromPath($this->eventsPath()) as $event) {
+        foreach ($this->streamDecodedEvents('firstFor') as $event) {
             return $event;
         }
 
@@ -160,7 +169,7 @@ final class AgentChildRunEventStore implements EventStoreInterface
             return;
         }
 
-        foreach ($this->streamRunEventsFromPath($this->eventsPath()) as $event) {
+        foreach ($this->streamDecodedEvents('rangeFor') as $event) {
             if ($event->seq > $endSeq) {
                 break;
             }
@@ -180,11 +189,22 @@ final class AgentChildRunEventStore implements EventStoreInterface
             return;
         }
 
-        foreach ($this->eventLog->reverseLines($this->eventsPath()) as $line) {
-            $event = $this->eventFromLine($line);
-            if (null !== $event) {
+        $path = $this->eventsPath();
+        $observation = new JsonlPhysicalReadObservation();
+        $decodedEventCount = 0;
+
+        try {
+            foreach ($this->eventLog->reverseLines($path, $observation) as $line) {
+                $event = $this->eventFromLine($line);
+                if (null === $event) {
+                    continue;
+                }
+
+                ++$decodedEventCount;
                 yield $event;
             }
+        } finally {
+            $this->logPhysicalRead('reverseFor', $observation, $decodedEventCount);
         }
     }
 
@@ -197,12 +217,10 @@ final class AgentChildRunEventStore implements EventStoreInterface
             return [];
         }
 
-        $path = $this->eventsPath();
-        if (!is_readable($path)) {
-            return [];
+        $events = [];
+        foreach ($this->streamDecodedEvents('allFor') as $event) {
+            $events[] = $event;
         }
-
-        $events = iterator_to_array($this->streamRunEventsFromPath($path));
 
         return $this->eventLog->sortBySeq($events);
     }
@@ -210,27 +228,49 @@ final class AgentChildRunEventStore implements EventStoreInterface
     /**
      * @return \Generator<int, RunEvent>
      */
-    private function streamRunEventsFromPath(string $path): \Generator
+    private function streamDecodedEvents(string $method): \Generator
     {
-        if (!is_readable($path)) {
-            return;
-        }
-
-        $handle = fopen($path, 'rb');
-        if (false === $handle) {
-            return;
-        }
+        $path = $this->eventsPath();
+        $observation = new JsonlPhysicalReadObservation();
+        $decodedEventCount = 0;
 
         try {
-            while (($line = fgets($handle)) !== false) {
+            foreach ($this->eventLog->forwardLines($path, $observation) as $line) {
                 $event = $this->eventFromLine($line);
-                if (null !== $event) {
-                    yield $event;
+                if (null === $event) {
+                    continue;
                 }
+
+                ++$decodedEventCount;
+                yield $event;
             }
         } finally {
-            fclose($handle);
+            $this->logPhysicalRead($method, $observation, $decodedEventCount);
         }
+    }
+
+    /**
+     * @param non-empty-string $method
+     */
+    private function logPhysicalRead(
+        string $method,
+        JsonlPhysicalReadObservation $observation,
+        int $decodedEventCount,
+    ): void {
+        $this->logger->debug('Child event store physical JSONL read', [
+            'run_id' => $this->agentRunId,
+            'parent_run_id' => $this->parentRunId,
+            'artifact_id' => $this->artifactId,
+            'component' => 'agent.artifact',
+            'event_type' => 'child_event_store.physical_read',
+            'method' => $method,
+            'archive_bytes_read' => $observation->archiveBytesRead(),
+            'lines_yielded' => $observation->linesYielded(),
+            'decoded_event_count' => $decodedEventCount,
+            'full_scan' => $observation->fullScan(),
+            'early_exit' => $observation->earlyExit(),
+            'reached_eof' => $observation->reachedEof(),
+        ]);
     }
 
     private function eventFromLine(string $line): ?RunEvent

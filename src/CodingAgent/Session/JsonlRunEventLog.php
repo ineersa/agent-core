@@ -20,7 +20,7 @@ use Symfony\Component\Lock\LockFactory;
  * the schema-major compatibility check, and seq sorting.
  *
  * Callers keep their own read/cache/logging/validation policies (whole-file
- * vs streaming reads, size+mtime caching, per-store exception/log messages).
+ * vs streaming reads, optional physical-read observations, per-store exception/log messages).
  * The only policy hook is the optional successful-write callback used by
  * SessionRunEventStore for cache invalidation.
  *
@@ -76,18 +76,48 @@ final class JsonlRunEventLog
      * Streams non-empty lines from the file tail toward its head. A partial final
      * line is yielded unchanged so callers preserve their normal corruption policy.
      *
+     * When {@see JsonlPhysicalReadObservation} is provided, records bytes returned by
+     * underlying fread calls. full_scan means the consumer did not stop early and the
+     * scanner reached start-of-file; archive_bytes_read may still include unread prefix
+     * bytes from the last fetched chunk after an early stop. Size comes from fstat() on
+     * the opened handle (not pathname filesize): a failed handle stat or seek is not a
+     * successful empty or completed scan. fread() returning fewer bytes than requested
+     * (including an empty string) is also not a completed scan; already-yielded complete
+     * lines are kept, and an incomplete trailing prefix is not emitted.
+     *
      * @return \Generator<int, string>
      */
-    public function reverseLines(string $path): iterable
+    public function reverseLines(string $path, ?JsonlPhysicalReadObservation $observation = null): iterable
     {
         $handle = @fopen($path, 'rb');
         if (false === $handle) {
+            $observation?->finish(reachedEof: false, earlyExit: false);
+
             return;
         }
 
+        $earlyExit = true;
         try {
-            $size = filesize($path);
-            if (false === $size || 0 === $size) {
+            $stat = fstat($handle);
+            if (false === $stat || !\array_key_exists('size', $stat)) {
+                $earlyExit = false;
+                $observation?->finish(reachedEof: false, earlyExit: false);
+
+                return;
+            }
+
+            $size = $stat['size'];
+            if (!\is_int($size) || $size < 0) {
+                $earlyExit = false;
+                $observation?->finish(reachedEof: false, earlyExit: false);
+
+                return;
+            }
+
+            if (0 === $size) {
+                $earlyExit = false;
+                $observation?->finish(reachedEof: true, earlyExit: false);
+
                 return;
             }
 
@@ -96,9 +126,26 @@ final class JsonlRunEventLog
             while ($position > 0) {
                 $length = min(8192, $position);
                 $position -= $length;
-                fseek($handle, $position);
+                if (-1 === fseek($handle, $position)) {
+                    $earlyExit = false;
+                    $observation?->finish(reachedEof: false, earlyExit: false);
+
+                    return;
+                }
                 $chunk = fread($handle, $length);
                 if (false === $chunk) {
+                    $earlyExit = false;
+                    $observation?->finish(reachedEof: false, earlyExit: false);
+
+                    return;
+                }
+
+                $bytesRead = \strlen($chunk);
+                $observation?->addBytes($bytesRead);
+                if ($bytesRead !== $length) {
+                    $earlyExit = false;
+                    $observation?->finish(reachedEof: false, earlyExit: false);
+
                     return;
                 }
 
@@ -108,16 +155,62 @@ final class JsonlRunEventLog
                 for ($index = \count($lines) - 1; $index >= 0; --$index) {
                     $line = rtrim($lines[$index], "\r");
                     if ('' !== trim($line)) {
+                        $observation?->addLineYielded();
                         yield $line;
                     }
                 }
             }
 
             if ('' !== trim($tail)) {
+                $observation?->addLineYielded();
                 yield $tail;
             }
+
+            $earlyExit = false;
+            // Logical end of a reverse scan is start-of-file (position 0), not feof().
+            $observation?->finish(reachedEof: true, earlyExit: false);
         } finally {
             fclose($handle);
+            if ($earlyExit) {
+                $observation?->finish(reachedEof: false, earlyExit: true);
+            }
+        }
+    }
+
+    /**
+     * Streams every physical JSONL line forward without materializing the whole file.
+     *
+     * Empty lines are yielded unchanged so callers keep their existing blank-line policy.
+     * A partial final line is also yielded unchanged. When observation is provided,
+     * records bytes returned by fgets. EOF is confirmed with feof(); a false fgets
+     * caused by a read error is not labelled as a full scan.
+     *
+     * @return \Generator<int, string>
+     */
+    public function forwardLines(string $path, ?JsonlPhysicalReadObservation $observation = null): iterable
+    {
+        $handle = @fopen($path, 'rb');
+        if (false === $handle) {
+            $observation?->finish(reachedEof: false, earlyExit: false);
+
+            return;
+        }
+
+        $earlyExit = true;
+        try {
+            while (false !== ($line = fgets($handle))) {
+                $observation?->addBytes(\strlen($line));
+                $observation?->addLineYielded();
+                yield $line;
+            }
+
+            $earlyExit = false;
+            $observation?->finish(reachedEof: feof($handle), earlyExit: false);
+        } finally {
+            fclose($handle);
+            if ($earlyExit) {
+                $observation?->finish(reachedEof: false, earlyExit: true);
+            }
         }
     }
 
