@@ -63,7 +63,7 @@ final class RunOperationalProjectionRepository extends ServiceEntityRepository i
         // first-loaded Running row for the whole message lifetime.
         $this->getEntityManager()->refresh($state);
 
-        return new RunOperationalStatusDTO($state->status);
+        return new RunOperationalStatusDTO($state->status, $state->lastEventSequence);
     }
 
     public function deleteForOwnerSession(string $ownerSessionId): int
