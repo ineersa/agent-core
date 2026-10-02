@@ -53,7 +53,10 @@ final class ApplyShellCommandHandlerTest extends TestCase
             'expectedOwningTurn' => 0,
             'expectedCommandTurn' => 0,
             'expectedStandalone' => true,
-            'expectedEventTypes' => [RunEventTypeEnum::AgentCommandApplied->value],
+            'expectedEventTypes' => [
+                RunEventTypeEnum::AgentCommandApplied->value,
+                RunEventTypeEnum::ToolExecutionStart->value,
+            ],
             'expectedStatus' => RunStatus::Running,
         ];
 
@@ -64,7 +67,10 @@ final class ApplyShellCommandHandlerTest extends TestCase
             'expectedOwningTurn' => 2,
             'expectedCommandTurn' => 2,
             'expectedStandalone' => false,
-            'expectedEventTypes' => [RunEventTypeEnum::AgentCommandApplied->value],
+            'expectedEventTypes' => [
+                RunEventTypeEnum::AgentCommandApplied->value,
+                RunEventTypeEnum::ToolExecutionStart->value,
+            ],
             'expectedStatus' => RunStatus::Running,
         ];
 
@@ -79,6 +85,7 @@ final class ApplyShellCommandHandlerTest extends TestCase
                 RunEventTypeEnum::AgentCommandApplied->value,
                 RunEventTypeEnum::TurnAdvanced->value,
                 RunEventTypeEnum::HistoryPositionSet->value,
+                RunEventTypeEnum::ToolExecutionStart->value,
             ],
             'expectedStatus' => RunStatus::Running,
         ];
@@ -129,7 +136,7 @@ final class ApplyShellCommandHandlerTest extends TestCase
         $liveToolCall = $result->nextState->currentToolCalls[0];
         $this->assertSame(ToolBatchIdentity::fromTurnAndStep($expectedOwningTurn, 'shell-step-1'), $liveToolCall->batchId);
         $this->assertSame('sh_'.hash('sha256', 'shell-idem-1'), $liveToolCall->toolCallId);
-        $this->assertSame(RunOperationalToolCallStatusEnum::Pending, $liveToolCall->status);
+        $this->assertSame(RunOperationalToolCallStatusEnum::Running, $liveToolCall->status);
         $this->assertSame(1, $liveToolCall->attempt);
 
         $this->assertCount(\count($expectedEventTypes), $result->events);
@@ -150,7 +157,16 @@ final class ApplyShellCommandHandlerTest extends TestCase
             'idempotency_key' => 'shell-idem-1',
         ], $commandEvent->payload['current_operation'] ?? null);
 
-        if (\count($expectedEventTypes) > 1) {
+        $startEvent = $result->events[array_key_last($result->events)];
+        $this->assertSame(RunEventTypeEnum::ToolExecutionStart->value, $startEvent->type);
+        $this->assertSame($expectedOwningTurn, $startEvent->turnNo);
+        $this->assertSame('sh_'.hash('sha256', 'shell-idem-1'), $startEvent->payload['tool_call_id'] ?? null);
+        $this->assertSame('bash', $startEvent->payload['tool_name'] ?? null);
+        $this->assertSame(0, $startEvent->payload['order_index'] ?? null);
+        $this->assertSame(1, $startEvent->payload['attempt'] ?? null);
+        $this->assertSame(['command' => 'printf BANG_OWNERSHIP'], $startEvent->payload['arguments'] ?? null);
+
+        if (\count($expectedEventTypes) > 2) {
             $this->assertSame($expectedOwningTurn, $result->events[1]->payload['turn_no'] ?? null);
             $this->assertSame(1, $result->events[1]->payload['operation_attempt'] ?? null);
             $this->assertSame('shell-idem-1', $result->events[1]->payload['operation_idempotency_key'] ?? null);

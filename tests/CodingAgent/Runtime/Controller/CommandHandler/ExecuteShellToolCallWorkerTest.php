@@ -4,10 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller\CommandHandler;
 
-use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
-use Ineersa\AgentCore\Domain\Event\RunEvent;
-use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
@@ -21,26 +18,16 @@ use PHPUnit\Framework\TestCase;
 final class ExecuteShellToolCallWorkerTest extends TestCase
 {
     /**
-     * @var list<RunEvent>
-     */
-    private array $appendedEvents = [];
-
-    protected function setUp(): void
-    {
-        $this->appendedEvents = [];
-    }
-
-    /**
-     * The execution worker only writes the in-flight start event. Completion
-     * is a durable ToolCallResult routed to run_control, the sole writer of
-     * completion and standalone terminal events.
+     * The execution worker has no EventStore dependency. Completion is a durable
+     * ToolCallResult routed to run_control, the sole writer of completion and
+     * standalone terminal events. Canonical tool_execution_start is owned by
+     * ApplyShellCommandHandler before this effect is dispatched.
      */
     public function testStandaloneDispatchesResultToRunControl(): void
     {
-        $eventStore = $this->createEventStore();
         $toolExecutor = $this->createToolExecutor('hello');
         $commandBus = new TestMessageBus();
-        $worker = new ExecuteShellToolCallWorker($toolExecutor, $eventStore, $commandBus);
+        $worker = new ExecuteShellToolCallWorker($toolExecutor, $commandBus);
         $worker(new ExecuteShellToolCall(
             runId: 'run-standalone',
             turnNo: 2,
@@ -50,20 +37,6 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
             commandText: 'echo hello',
             standalone: true,
         ));
-
-        $this->assertCount(1, $this->appendedEvents, 'Worker must only append the in-flight start event.');
-
-        // Seq 1: tool_execution_start
-        $this->assertSame(1, $this->appendedEvents[0]->seq);
-        $this->assertSame(RunEventTypeEnum::ToolExecutionStart->value, $this->appendedEvents[0]->type);
-        $this->assertSame(2, $this->appendedEvents[0]->turnNo);
-        $this->assertSame('sh_tc_1', $this->appendedEvents[0]->payload['tool_call_id'] ?? null);
-        $this->assertSame('bash', $this->appendedEvents[0]->payload['tool_name'] ?? null);
-        // Direct shell must carry the canonical flat bash provider arguments so TUI can
-        // render the bash card and the native resolver accepts the call.
-        $this->assertSame(['command' => 'echo hello'], $this->appendedEvents[0]->payload['arguments'] ?? null);
-        $this->assertArrayNotHasKey('timeout', $this->appendedEvents[0]->payload['arguments'] ?? []);
-        $this->assertArrayNotHasKey('timeout', $this->appendedEvents[0]->payload);
 
         $this->assertCount(1, $commandBus->messages);
         $this->assertInstanceOf(ToolCallResult::class, $commandBus->messages[0]);
@@ -86,10 +59,9 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
      */
     public function testNonStandaloneDoesNotWriteAgentEnd(): void
     {
-        $eventStore = $this->createEventStore();
         $toolExecutor = $this->createToolExecutor('result', isError: true);
         $commandBus = new TestMessageBus();
-        $worker = new ExecuteShellToolCallWorker($toolExecutor, $eventStore, $commandBus);
+        $worker = new ExecuteShellToolCallWorker($toolExecutor, $commandBus);
         $worker(new ExecuteShellToolCall(
             runId: 'run-inline',
             turnNo: 2,
@@ -100,8 +72,6 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
             standalone: false,
         ));
 
-        $this->assertCount(1, $this->appendedEvents);
-        $this->assertSame(RunEventTypeEnum::ToolExecutionStart->value, $this->appendedEvents[0]->type);
         $this->assertCount(1, $commandBus->messages);
         $this->assertInstanceOf(ToolCallResult::class, $commandBus->messages[0]);
         $result = $commandBus->messages[0];
@@ -110,83 +80,6 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
         $this->assertSame([['type' => 'text', 'text' => 'result']], $result->result['content'] ?? null);
         $this->assertFalse($result->result['standalone'] ?? true);
         $this->assertTrue($result->isError);
-    }
-
-    /**
-     * Creates an in-memory EventStore that collects appended events for assertion.
-     */
-    private function createEventStore(): EventStoreInterface
-    {
-        return new class($this->appendedEvents) implements EventStoreInterface {
-            /** @var list<RunEvent> */
-            private array $collector;
-
-            /** @param list<RunEvent> &$collector reference to the test-local collection */
-            public function __construct(array &$collector)
-            {
-                $this->collector = &$collector;
-            }
-
-            public function append(RunEvent $event): RunEvent
-            {
-                $seq = \count(array_filter($this->collector, static fn (RunEvent $e): bool => $e->runId === $event->runId)) + 1;
-                $persisted = new RunEvent($event->runId, $seq, $event->turnNo, $event->type, $event->payload, $event->createdAt);
-                $this->collector[] = $persisted;
-
-                return $persisted;
-            }
-
-            public function appendMany(array $events): array
-            {
-                $out = [];
-                foreach ($events as $event) {
-                    $out[] = $this->append($event);
-                }
-
-                return $out;
-            }
-
-            /**
-             * @return list<RunEvent>
-             */
-            public function latestSequenceFor(string $runId): ?int
-            {
-                $events = $this->allFor($runId);
-
-                return [] === $events ? null : $events[array_key_last($events)]->seq;
-            }
-
-            public function firstFor(string $runId): ?RunEvent
-            {
-                $events = $this->allFor($runId);
-
-                return $events[0] ?? null;
-            }
-
-            public function rangeFor(string $runId, int $startSeq, int $endSeq): iterable
-            {
-                foreach ($this->collector as $event) {
-                    if ($event->runId === $runId && $event->seq >= $startSeq && $event->seq <= $endSeq) {
-                        yield $event;
-                    }
-                }
-            }
-
-            public function reverseFor(string $runId): iterable
-            {
-                return [];
-            }
-
-            public function allFor(string $runId): array
-            {
-                return array_values(
-                    array_filter(
-                        $this->collector,
-                        static fn (RunEvent $e): bool => $e->runId === $runId,
-                    ),
-                );
-            }
-        };
     }
 
     /**

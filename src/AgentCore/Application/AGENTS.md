@@ -44,6 +44,16 @@ Workers post results (`LlmStepResult`, `ToolCallResult`, `CompactionStepResult`)
 
 There is **no** `CollectToolBatch` message type in `src/` (stale historical name — do not reintroduce docs for it).
 
+## Direct shell lifecycle ownership
+
+`ApplyShellCommandHandler` commits `agent_command_applied` plus canonical
+`tool_execution_start` (with flat bash `arguments.command`) under the owner lock,
+then returns the `ExecuteShellToolCall` effect. Idempotent command redelivery
+still short-circuits before those events or the effect. The shell worker has no
+EventStore dependency: it only executes bash and posts `ToolCallResult`.
+`tool_execution_start` is lifecycle acceptance before external work, not measured
+subprocess start; duration remains on the later result metadata.
+
 ## Owner-prepared child launch context
 
 `LlmStepResultHandler` attaches `ToolLaunchContextDTO` only when dispatching `fork` or `subagent` `ExecuteToolCall` effects. Ordinary tools keep `launchContext=null`.

@@ -4,10 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Controller\CommandHandler;
 
-use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
-use Ineersa\AgentCore\Domain\Event\RunEvent;
-use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
@@ -20,16 +17,15 @@ use Symfony\Component\Messenger\MessageBusInterface;
 /**
  * Executes a shell tool call on the tool consumer.
  *
- * The worker records only the start side event needed while the command is in
- * flight. Its durable result is sent to run_control, which is the sole owner
- * of completion events, operational projection, and standalone termination.
+ * Canonical tool_execution_start is committed by ApplyShellCommandHandler before
+ * this effect is dispatched. The worker only runs bash and posts ToolCallResult
+ * to run_control, which owns completion events and standalone termination.
  */
 #[AsMessageHandler(bus: 'agent.execution.bus')]
 final readonly class ExecuteShellToolCallWorker
 {
     public function __construct(
         private ToolExecutorInterface $toolExecutor,
-        private EventStoreInterface $eventStore,
         private MessageBusInterface $commandBus,
         private ?LoggerInterface $logger = null,
     ) {
@@ -60,20 +56,6 @@ final readonly class ExecuteShellToolCallWorker
         }
 
         $arguments = ['command' => $message->commandText];
-        $this->eventStore->append(new RunEvent(
-            runId: $message->runId(),
-            seq: 0,
-            turnNo: $message->turnNo(),
-            type: RunEventTypeEnum::ToolExecutionStart->value,
-            payload: [
-                'tool_call_id' => $message->toolCallId,
-                'tool_name' => 'bash',
-                'order_index' => 0,
-                'attempt' => $message->attempt(),
-                'arguments' => $arguments,
-            ],
-        ));
-
         $result = $this->toolExecutor->execute(new ToolCall(
             toolCallId: $message->toolCallId,
             toolName: 'bash',
