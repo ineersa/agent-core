@@ -82,7 +82,6 @@ final class SubagentExecutionServiceFactory
             : new SubagentChildLaunchInputFactory(
                 $args['promptBuilder'],
                 $args['skillsContextBuilder'],
-                $args['runStateRebuilder'],
                 $args['appConfig'],
                 $args['childExtensionSelection'],
                 $args['toolRegistry'],

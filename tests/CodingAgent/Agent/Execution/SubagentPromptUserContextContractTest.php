@@ -13,6 +13,7 @@ use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
@@ -104,6 +105,13 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
             cancellationToken: new NullCancellationToken(),
             timeoutSeconds: 120,
             parentModel: 'test-model',
+            launchContext: new ToolLaunchContextDTO(
+                kind: ToolLaunchContextDTO::KIND_SUBAGENT,
+                producingRunId: $parentRunId,
+                producingTurnNo: 1,
+                producingModel: 'test-model',
+                agentsContext: $agentsContext,
+            ),
         ), static fn () => $service->execute($parentRunId, 'gf05-scout', 'Inspect layout contract'));
 
         $this->assertNotNull($pipelineRunner->lastStartInput);
@@ -209,6 +217,13 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
             cancellationToken: new NullCancellationToken(),
             timeoutSeconds: 120,
             parentModel: 'test-model',
+            launchContext: new ToolLaunchContextDTO(
+                kind: ToolLaunchContextDTO::KIND_SUBAGENT,
+                producingRunId: 'parent-mcp',
+                producingTurnNo: 1,
+                producingModel: 'test-model',
+                agentsContext: '',
+            ),
         ), static fn () => $service->execute('parent-mcp', 'gf05-mcp', 'Use MCP tool'));
 
         $systemText = PromptContractTestSupport::messageText($pipelineRunner->lastStartInput->messages[0]);
@@ -289,6 +304,13 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
             cancellationToken: new NullCancellationToken(),
             timeoutSeconds: 120,
             parentModel: 'test-model',
+            launchContext: new ToolLaunchContextDTO(
+                kind: ToolLaunchContextDTO::KIND_SUBAGENT,
+                producingRunId: 'parent-no-agents-def',
+                producingTurnNo: 1,
+                producingModel: 'test-model',
+                agentsContext: '',
+            ),
         ), static fn () => $service->execute('parent-no-agents-def', 'gf05-worker', 'Task'));
 
         foreach ($pipelineRunner->lastStartInput->messages as $message) {

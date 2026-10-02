@@ -773,6 +773,178 @@ final class LlmStepResultHandlerTest extends TestCase
         }
     }
 
+    public function testChildLaunchToolsAttachImmutableLaunchContextAndOrdinaryToolsStayNull(): void
+    {
+        $executionBus = new TestMessageBus();
+        $stepDispatcher = new StepDispatcher(new TestMessageBus(), $executionBus);
+        $toolSetResolver = new class implements ToolSetResolverInterface {
+            public function resolve(string $toolsRef, ?int $turnNo = null, ?string $runId = null): ActiveToolSet
+            {
+                return new ActiveToolSet(
+                    toolNames: ['fork', 'subagent', 'bash'],
+                    allowListNames: ['fork', 'subagent', 'bash'],
+                    executionModes: [
+                        'fork' => ToolExecutionMode::Parallel->value,
+                        'subagent' => ToolExecutionMode::Parallel->value,
+                        'bash' => ToolExecutionMode::Parallel->value,
+                    ],
+                );
+            }
+        };
+        $handler = new LlmStepResultHandler(
+            toolBatchCollector: new ToolBatchCollector(),
+            commandMailboxPolicy: new CommandMailboxPolicy(
+                commandStore: new InMemoryCommandStore(),
+                commandRouter: new CommandRouter([]),
+            ),
+            eventFactory: new EventFactory(),
+            toolCallExtractor: new ToolCallExtractor(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            stepDispatcher: $stepDispatcher,
+            normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
+            toolSetResolver: $toolSetResolver,
+            maxParallelism: 3,
+        );
+
+        $agents = new \Ineersa\AgentCore\Domain\Message\AgentMessage(
+            role: 'user-context',
+            content: [['type' => 'text', 'text' => 'OWNED_AGENTS']],
+            metadata: ['source' => 'agents_context'],
+        );
+        $state = new RunState(
+            runId: 'run-launch-ctx',
+            status: RunStatus::Running,
+            version: 1,
+            turnNo: 7,
+            lastSeq: 1,
+            activeStepId: 'step-launch',
+            currentOperation: new CurrentOperationDTO(7, 'step-launch', 1, 'llm-launch'),
+            messages: [$agents],
+            model: 'stale/model',
+        );
+        $message = new LlmStepResult(
+            runId: 'run-launch-ctx',
+            turnNo: 7,
+            stepId: 'step-launch',
+            attempt: 1,
+            idempotencyKey: 'llm-launch',
+            assistantMessage: SymfonyAiTestMessages::assistantWithToolCalls([
+                ['id' => 'fork-1', 'name' => 'fork', 'arguments' => ['task' => 'a']],
+                ['id' => 'sub-1', 'name' => 'subagent', 'arguments' => ['tasks' => [['agent' => 'scout', 'prompt' => 'x']]]],
+                ['id' => 'bash-1', 'name' => 'bash', 'arguments' => ['command' => 'ls']],
+            ], 'mixed'),
+            usage: [],
+            stopReason: 'tool_call',
+            error: null,
+            toolsRef: 'default',
+            model: 'openai-codex/gpt-5.6-sol',
+        );
+
+        $result = $handler->handle($message, $state);
+        ($result->postCommit[0])();
+        $this->assertCount(3, $executionBus->messages);
+
+        $fork = $executionBus->messages[0];
+        $this->assertInstanceOf(ExecuteToolCall::class, $fork);
+        $this->assertNotNull($fork->launchContext);
+        $this->assertTrue($fork->launchContext->isFork());
+        $this->assertSame('run-launch-ctx', $fork->launchContext->producingRunId);
+        $this->assertSame(7, $fork->launchContext->producingTurnNo);
+        $this->assertSame('openai-codex/gpt-5.6-sol', $fork->launchContext->producingModel);
+        $this->assertSame('OWNED_AGENTS', $fork->launchContext->agentsContext);
+        $this->assertGreaterThanOrEqual(2, \count($fork->launchContext->forkMessages));
+        $this->assertSame($agents, $fork->launchContext->forkMessages[0]);
+        $this->assertSame('assistant', $fork->launchContext->forkMessages[1]->role);
+
+        $sub = $executionBus->messages[1];
+        $this->assertInstanceOf(ExecuteToolCall::class, $sub);
+        $this->assertNotNull($sub->launchContext);
+        $this->assertTrue($sub->launchContext->isSubagent());
+        $this->assertSame([], $sub->launchContext->forkMessages);
+        $this->assertSame('OWNED_AGENTS', $sub->launchContext->agentsContext);
+
+        $bash = $executionBus->messages[2];
+        $this->assertInstanceOf(ExecuteToolCall::class, $bash);
+        $this->assertNull($bash->launchContext);
+        $this->assertSame('openai-codex/gpt-5.6-sol', $bash->parentModel);
+    }
+
+    public function testBlankModelFailsOnlyForChildLaunchTools(): void
+    {
+        $executionBus = new TestMessageBus();
+        $stepDispatcher = new StepDispatcher(new TestMessageBus(), $executionBus);
+        $handler = new LlmStepResultHandler(
+            toolBatchCollector: new ToolBatchCollector(),
+            commandMailboxPolicy: new CommandMailboxPolicy(
+                commandStore: new InMemoryCommandStore(),
+                commandRouter: new CommandRouter([]),
+            ),
+            eventFactory: new EventFactory(),
+            toolCallExtractor: new ToolCallExtractor(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            stepDispatcher: $stepDispatcher,
+            normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
+        );
+
+        $state = new RunState(
+            runId: 'run-blank-model',
+            status: RunStatus::Running,
+            version: 1,
+            turnNo: 1,
+            lastSeq: 1,
+            activeStepId: 'step-1',
+            currentOperation: new CurrentOperationDTO(1, 'step-1', 1, 'llm-blank'),
+            model: '',
+        );
+        $ordinary = new LlmStepResult(
+            runId: 'run-blank-model',
+            turnNo: 1,
+            stepId: 'step-1',
+            attempt: 1,
+            idempotencyKey: 'llm-blank',
+            assistantMessage: SymfonyAiTestMessages::assistantWithToolCalls([
+                ['id' => 'bash-1', 'name' => 'bash', 'arguments' => ['command' => 'ls']],
+            ], 'bash'),
+            usage: [],
+            stopReason: 'tool_call',
+            error: null,
+            model: '',
+        );
+        $ordinaryResult = $handler->handle($ordinary, $state);
+        ($ordinaryResult->postCommit[0])();
+        $this->assertInstanceOf(ExecuteToolCall::class, $executionBus->messages[0]);
+        $this->assertNull($executionBus->messages[0]->launchContext);
+        $this->assertSame('', $executionBus->messages[0]->parentModel);
+
+        $forkState = new RunState(
+            runId: 'run-blank-model',
+            status: RunStatus::Running,
+            version: 1,
+            turnNo: 1,
+            lastSeq: 1,
+            activeStepId: 'step-1',
+            currentOperation: new CurrentOperationDTO(1, 'step-1', 1, 'llm-blank-fork'),
+            model: '',
+        );
+        $fork = new LlmStepResult(
+            runId: 'run-blank-model',
+            turnNo: 1,
+            stepId: 'step-1',
+            attempt: 1,
+            idempotencyKey: 'llm-blank-fork',
+            assistantMessage: SymfonyAiTestMessages::assistantWithToolCalls([
+                ['id' => 'fork-1', 'name' => 'fork', 'arguments' => ['task' => 'x']],
+            ], 'fork'),
+            usage: [],
+            stopReason: 'tool_call',
+            error: null,
+            model: '   ',
+        );
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('immutable child launch inheritance');
+        $handler->handle($fork, $forkState);
+    }
+
     public function testExecuteToolCallHasNullTimeoutWithoutPerToolOverride(): void
     {
         $executionBus = new TestMessageBus();

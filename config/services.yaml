@@ -1194,12 +1194,10 @@ services:
 
   # ─── AGENT-05 Subagent execution service ──────────────────────────
 
-  # Subagent child-run stack: parent prompt context is rebuilt from canonical
-  # events at the explicit child-launch boundary. Parent progress events append via
+  # Subagent child-run stack: inherited agents context comes from owner-prepared
+  # immutable ExecuteToolCall launch context. Parent progress events append via
   # CommittedRunEventAppender only (seq 0 input; committed store allocates persisted seq).
-  Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Preparation\SubagentChildLaunchInputFactory:
-    arguments:
-      $runStateRebuilder: '@Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface'
+  # SubagentChildLaunchInputFactory is resource-discovered / autowired.
 
   # ─── AGENT-05 Subagent tool storage routing ─────────────────────────
 

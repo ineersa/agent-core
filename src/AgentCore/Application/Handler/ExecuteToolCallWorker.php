@@ -131,6 +131,7 @@ final readonly class ExecuteToolCallWorker
                 // to resume an exact approved call without re-prompting the originating hook.
                 'human_input_answer' => $message->humanInputAnswer,
                 'parent_model' => $message->parentModel,
+                'launch_context' => $message->launchContext,
             ],
         );
 

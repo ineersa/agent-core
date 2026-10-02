@@ -4,20 +4,19 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Fork;
 
-use Ineersa\AgentCore\Application\Dto\RunStateReplayResult;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
 use Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
-use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
+use Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchService;
 use Ineersa\CodingAgent\Agent\Fork\ForkExecutionService;
 use Ineersa\CodingAgent\Agent\Fork\ForkSnapshotSanitizer;
@@ -29,10 +28,10 @@ use PHPUnit\Framework\Attributes\Group;
 /**
  * FINAL CONTROLLING PLAN theses for fork snapshot compaction:
  *
- * 1. Ordering/message handoff: sanitized snapshot is synchronously compacted
- *    before DeferredSubagentBatchLaunchService::launch(), and the compacted
- *    messages—not a second canonical replay—reach fork child preparation;
- *    canonical parent state remains unchanged.
+ * 1. Ordering/message handoff: sanitized owner-prepared snapshot is synchronously
+ *    compacted before DeferredSubagentBatchLaunchService::launch(), and the compacted
+ *    messages—not a parent archive replay—reach fork child preparation;
+ *    the immutable launch snapshot remains unchanged.
  * 2. Failure/no-op: structural no-op still launches; hard compaction failure
  *    launches/reserves nothing and surfaces immediately as ToolCallException.
  * 3. Generic compaction reuse: ForkExecutionService calls the existing
@@ -57,22 +56,7 @@ final class ForkSnapshotCompactionBeforeLaunchTest extends PerMethodIsolatedKern
                 metadata: ['tool_calls' => [['name' => 'fork', 'id' => $toolCallId, 'arguments' => '{"task":"x"}']]],
             ),
         ];
-
-        $parentState = new RunState(
-            runId: $parentRunId,
-            status: RunStatus::Running,
-            version: 0,
-            messages: $parentMessages,
-            turnNo: 3,
-            model: 'test-model',
-        );
-        $parentHashBefore = $this->hashMessages($parentState->messages);
-
-        $runStateRebuilder = $this->createMock(RunStateRebuilderInterface::class);
-        $runStateRebuilder->expects($this->once())
-            ->method('rebuildIfStale')
-            ->with(RunState::queued($parentRunId), $parentRunId)
-            ->willReturn(RunStateReplayResult::rebuilt($parentState));
+        $parentHashBefore = $this->hashMessages($parentMessages);
 
         $compactCalls = 0;
         $compactedMessages = [
@@ -112,7 +96,6 @@ final class ForkSnapshotCompactionBeforeLaunchTest extends PerMethodIsolatedKern
 
                 return MessageSnapshotCompactionResult::compacted($compactedMessages);
             });
-        // Other interface methods may be used by unrelated services; leave defaults.
 
         $agentRunner = $this->createMock(AgentRunnerInterface::class);
         $agentRunner->expects($this->once())->method('start')->willReturnCallback(
@@ -143,28 +126,31 @@ final class ForkSnapshotCompactionBeforeLaunchTest extends PerMethodIsolatedKern
         $container->set(CompactionServiceInterface::class, $compaction);
         $container->set(AgentRunnerInterface::class, $agentRunner);
 
-        // Pass the canonical replay result explicitly so this boundary cannot
-        // accidentally fall back to a stale secondary snapshot.
         $forkExecution = new ForkExecutionService(
             $container->get(DeferredSubagentBatchLaunchService::class),
             $container->get(RunRelationshipReader::class),
-            $runStateRebuilder,
             $container->get(ForkSnapshotSanitizer::class),
             $compaction,
         );
 
-        $outcome = $this->withToolContext($parentRunId, $toolCallId, static fn () => $forkExecution->execute(
+        $launchContext = new ToolLaunchContextDTO(
+            kind: ToolLaunchContextDTO::KIND_FORK,
+            producingRunId: $parentRunId,
+            producingTurnNo: 3,
+            producingModel: 'test-model',
+            agentsContext: 'AGENTS',
+            forkMessages: $parentMessages,
+        );
+
+        $outcome = $this->withToolContext($parentRunId, $toolCallId, $launchContext, static fn () => $forkExecution->execute(
             $parentRunId,
             'Delegated snapshot task',
+            $launchContext,
         ));
 
         $this->assertInstanceOf(DeferredToolCompletionOutcome::class, $outcome);
         $this->assertSame(1, $compactCalls);
-        // The replay mock assertion above proves the fork uses the canonical boundary once.
-
-        $this->assertSame($parentHashBefore, $this->hashMessages($parentState->messages), 'Canonical replay state must be byte-stable');
-        $this->assertSame(RunStatus::Running, $parentState->status);
-        $this->assertSame(3, $parentState->turnNo);
+        $this->assertSame($parentHashBefore, $this->hashMessages($launchContext->forkMessages), 'Owner-prepared launch snapshot must be byte-stable');
     }
 
     public function testHardCompactionFailureDoesNotReserveBatchAndSurfacesImmediately(): void
@@ -194,10 +180,21 @@ final class ForkSnapshotCompactionBeforeLaunchTest extends PerMethodIsolatedKern
         /** @var ForkExecutionService $forkExecution */
         $forkExecution = $container->get(ForkExecutionService::class);
 
+        $launchContext = new ToolLaunchContextDTO(
+            kind: ToolLaunchContextDTO::KIND_FORK,
+            producingRunId: $parentRunId,
+            producingTurnNo: 1,
+            producingModel: 'test-model',
+            forkMessages: [
+                new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'hello']]),
+            ],
+        );
+
         try {
-            $this->withToolContext($parentRunId, $toolCallId, static fn () => $forkExecution->execute(
+            $this->withToolContext($parentRunId, $toolCallId, $launchContext, static fn () => $forkExecution->execute(
                 $parentRunId,
                 'Should not launch',
+                $launchContext,
             ));
             $this->fail('Expected ToolCallException on hard compaction failure');
         } catch (ToolCallException $e) {
@@ -246,9 +243,20 @@ final class ForkSnapshotCompactionBeforeLaunchTest extends PerMethodIsolatedKern
         /** @var ForkExecutionService $forkExecution */
         $forkExecution = $container->get(ForkExecutionService::class);
 
-        $outcome = $this->withToolContext($parentRunId, $toolCallId, static fn () => $forkExecution->execute(
+        $launchContext = new ToolLaunchContextDTO(
+            kind: ToolLaunchContextDTO::KIND_FORK,
+            producingRunId: $parentRunId,
+            producingTurnNo: 1,
+            producingModel: 'test-model',
+            forkMessages: [
+                new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'only one']]),
+            ],
+        );
+
+        $outcome = $this->withToolContext($parentRunId, $toolCallId, $launchContext, static fn () => $forkExecution->execute(
             $parentRunId,
             'noop task',
+            $launchContext,
         ));
 
         $this->assertInstanceOf(DeferredToolCompletionOutcome::class, $outcome);
@@ -292,21 +300,26 @@ final class ForkSnapshotCompactionBeforeLaunchTest extends PerMethodIsolatedKern
      *
      * @return T
      */
-    private function withToolContext(string $parentRunId, string $toolCallId, callable $callback): mixed
-    {
+    private function withToolContext(
+        string $parentRunId,
+        string $toolCallId,
+        ToolLaunchContextDTO $launchContext,
+        callable $callback,
+    ): mixed {
         self::getContainer()->get(\Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository::class)->replace(
             new RunState($parentRunId, RunStatus::Running),
         );
         $accessor = self::getContainer()->get(StackToolExecutionContextAccessor::class);
         $context = new ToolContext(
             runId: $parentRunId,
-            turnNo: 2,
+            turnNo: $launchContext->producingTurnNo,
             toolCallId: $toolCallId,
             toolName: 'fork',
             cancellationToken: new NullCancellationToken(),
             timeoutSeconds: 120,
             orderIndex: 0,
-            parentModel: 'test-model',
+            parentModel: $launchContext->producingModel,
+            launchContext: $launchContext,
         );
 
         return $accessor->with($context, $callback);

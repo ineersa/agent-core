@@ -34,7 +34,7 @@ final class SubagentChildExtensionMetadataTest extends IsolatedKernelTestCase
             {
                 return $this->factory->buildPrepared(
                     identity: new ChildRunIdentityDTO('parent-missing', 'child-missing', 'agent_missing', 'scout', 'task', AgentArtifactKindEnum::Subagent),
-                    definition: new AgentDefinitionDTO(name: 'scout', description: 'd', tools: ['read'], model: 'llama_cpp_test/test', extensions: ['MissingExtension'], instructions: 'work'),
+                    definition: new AgentDefinitionDTO(name: 'scout', description: 'd', tools: ['read'], model: 'llama_cpp_test/test', extensions: ['MissingExtension'], inheritProjectContext: false, instructions: 'work'),
                     allowedTools: ['read'], mcp: ['mode' => 'none', 'tools' => []], parentModel: 'llama_cpp_test/test',
                 );
             }
@@ -76,6 +76,7 @@ final class SubagentChildExtensionMetadataTest extends IsolatedKernelTestCase
                 tools: ['read'],
                 model: 'llama_cpp_test/test',
                 extensions: null,
+                inheritProjectContext: false,
                 instructions: 'do work'),
             allowedTools: ['read'],
             mcp: ['mode' => 'none', 'tools' => []],

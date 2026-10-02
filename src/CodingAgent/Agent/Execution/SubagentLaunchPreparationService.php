@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Execution;
 
+use Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
@@ -61,6 +62,7 @@ final class SubagentLaunchPreparationService
         bool $skipReservation = false,
         ?ChildRunIdentityDTO $identityTemplate = null,
         ?string $parentModel = null,
+        ?ToolLaunchContextDTO $launchContext = null,
     ): PreparedAgentChildRunDTO {
         $artifactId ??= 'agent_'.bin2hex(random_bytes(8));
         $childRunId ??= Uuid::v4()->toRfc4122();
@@ -84,6 +86,7 @@ final class SubagentLaunchPreparationService
             $policy['tools'],
             $policy['mcp'],
             parentModel: $parentModel,
+            launchContext: $launchContext,
         );
 
         if (!$skipReservation) {

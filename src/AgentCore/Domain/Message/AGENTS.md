@@ -29,6 +29,16 @@ Producers/consumers and App-layer workers: `../../Application/AGENTS.md`.
 - Who dispatches/handles is Application / CodingAgent ownership, not TOON indexes
 - Do not document removed types (`CollectToolBatch` is not in the tree)
 
+## Immutable child-launch input
+
+`ExecuteToolCall` may carry an optional `ToolLaunchContextDTO` (`launchContext`):
+
+- Attach it only for `fork` and `subagent`. Ordinary tools keep `null`.
+- Fork includes producing run/turn/model, agents text, and the owner message snapshot.
+- Subagent includes producing run/turn/model and agents text only.
+- The DTO is fixed at owner dispatch. HITL `withHumanInputAnswer()` copies it unchanged.
+- Tool and durable tool-batch snapshots serialize it with `ToolBatchStateDTO::SNAPSHOT_GROUP`.
+
 ## Maintenance
 
 When a message type is added, removed, or re-routed, update this file and `../../Application/AGENTS.md` together.

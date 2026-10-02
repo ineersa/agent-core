@@ -44,6 +44,16 @@ Workers post results (`LlmStepResult`, `ToolCallResult`, `CompactionStepResult`)
 
 There is **no** `CollectToolBatch` message type in `src/` (stale historical name — do not reintroduce docs for it).
 
+## Owner-prepared child launch context
+
+`LlmStepResultHandler` attaches `ToolLaunchContextDTO` only when dispatching `fork` or `subagent` `ExecuteToolCall` effects. Ordinary tools keep `launchContext=null`.
+
+- Fork: producing run/turn/model, inherited `agents_context` text, and the owner message snapshot.
+- Subagent: producing run/turn/model and inherited `agents_context` text.
+- `ExecuteToolCallWorker` places the DTO on `ToolCall` context; `ToolExecutor` builds `ToolContext` from it and rejects kind/run/turn/model mismatches before toolbox execution.
+- Fork/subagent preparation consumes that immutable input. It does not rebuild parent `RunState` for launch context.
+- Compaction and child reservation stay on the execution worker after dispatch. They do not run under the owner lock.
+
 ## Events and commit
 
 - `RunCommit::commit()` appends canonical `RunEvent` via `EventStoreInterface` (`append` / `appendMany`), then persists the narrow projection and active context before effect dispatch via `StepDispatcher` and after-turn hooks via `HookDispatcher`

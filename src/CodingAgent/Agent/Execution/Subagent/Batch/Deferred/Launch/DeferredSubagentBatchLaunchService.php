@@ -61,7 +61,14 @@ final class DeferredSubagentBatchLaunchService
         }
 
         $toolCallId = $toolContext->toolCallId();
-        $plan = $this->batchPreparation->buildLaunchPlan($parentRunId, $toolCallId, $tasks, $executionMode, parentModel: $toolContext->parentModel());
+        $plan = $this->batchPreparation->buildLaunchPlan(
+            $parentRunId,
+            $toolCallId,
+            $tasks,
+            $executionMode,
+            parentModel: $toolContext->parentModel(),
+            launchContext: $toolContext->launchContext(),
+        );
 
         return $this->launchWithPlan(
             parentRunId: $parentRunId,
@@ -105,6 +112,7 @@ final class DeferredSubagentBatchLaunchService
             $task,
             $profile,
             parentModel: $toolContext->parentModel(),
+            launchContext: $toolContext->launchContext(),
         );
 
         return $this->launchWithPlan(
