@@ -14,8 +14,8 @@ use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapsh
 use Psr\Log\LoggerInterface;
 
 /**
- * Progress delivery side-effects for deferred batches: revision gating, append, and
- * delivered-revision CAS marker. Pure payload assembly lives in the snapshot factory.
+ * Submit canonical snapshots to the owner and deliver controller transient snapshots.
+ * Only consumed snapshots advance delivery markers; payload assembly stays separate.
  */
 final readonly class DeferredSubagentBatchProgressDeliveryService
 {
@@ -28,33 +28,35 @@ final readonly class DeferredSubagentBatchProgressDeliveryService
     }
 
     /**
-     * Emit exactly one forced interruption progress payload.
+     * Submit a forced interruption snapshot for owner-side once-only consumption.
      *
      * Parallel parent-cancel: aggregate parallel payload with status cancelled.
      * Single timeout/parent-cancel: flat single payload when child projection exists.
-     * Does not bump deliveredProgressRevision — interruption_progress_enqueued_at guards dedup.
-     *
-     * @return bool true when a progress event was appended
+     * Owner consumption either commits progress or retires a superseded destination.
      */
     public function emitForcedInterruptionProgress(
         DeferredSubagentBatchProjectionDTO $batch,
         DeferredSubagentInterruptionKindEnum $kind,
-    ): bool {
+    ): void {
         if ([] === $batch->children) {
-            return false;
+            // Launch rejects empty tasks; reserveBatch inserts the batch and every
+            // planned child in one transaction. Valid reservations cannot be empty.
+            throw new \LogicException('Forced progress requires reserved child rows.');
         }
 
         if (ChildRunBatchExecutionModeEnum::Single === $batch->executionMode) {
             $payload = $this->snapshotFactory->buildSingleForcedPayload($batch, $kind);
         } else {
             if (DeferredSubagentInterruptionKindEnum::Timeout === $kind) {
-                return false;
+                // Parallel timeout completion never calls this method: it has no
+                // forced snapshot and does not wait for an interruption marker.
+                return;
             }
 
             $payload = $this->snapshotFactory->buildForcedCancelPayload($batch);
         }
 
-        return $this->appendProgress($batch, $payload, 'deferred_subagent_batch.forced_interruption_progress_failed');
+        $this->appendProgress($batch, $payload, 'deferred_subagent_batch.forced_interruption_progress_failed', $kind);
     }
 
     public function deliverIfNeeded(DeferredSubagentBatchProjectionDTO $batch): bool
@@ -73,16 +75,19 @@ final readonly class DeferredSubagentBatchProgressDeliveryService
             && $this->markDeliveredRevision($batch);
     }
 
-    private function appendProgress(DeferredSubagentBatchProjectionDTO $batch, SubagentProgressSnapshotInterface $payload, string $failureEventType): bool
+    private function appendProgress(DeferredSubagentBatchProjectionDTO $batch, SubagentProgressSnapshotInterface $payload, string $failureEventType, ?DeferredSubagentInterruptionKindEnum $kind = null): bool
     {
         try {
-            $this->progressEventAppender->append(
+            return $this->progressEventAppender->append(
                 parentRunId: $batch->parentRunId,
                 parentTurnNo: $batch->parentTurnNo,
                 parentToolCallId: $batch->parentToolCallId,
                 parentOrderIndex: $batch->parentOrderIndex,
                 toolName: 'subagent',
                 progress: $payload,
+                lifecycleId: $batch->lifecycleId,
+                revision: $batch->aggregateProgressRevision,
+                interruptionKind: $kind?->value,
             );
         } catch (\Throwable $exception) {
             $this->logger->warning($failureEventType, [
@@ -96,17 +101,20 @@ final readonly class DeferredSubagentBatchProgressDeliveryService
 
             throw $exception;
         }
-
-        return true;
     }
 
     private function markDeliveredRevision(DeferredSubagentBatchProjectionDTO $batch): bool
     {
+        $current = $this->batchRepository->findByLifecycleId($batch->lifecycleId)
+            ?? throw new \RuntimeException('Deferred subagent batch disappeared during progress delivery.');
+        if ($current->deliveredProgressRevision >= $batch->aggregateProgressRevision) {
+            return true;
+        }
         try {
             $this->batchRepository->markDeliveredProgressRevision(
                 batchLifecycleId: $batch->lifecycleId,
                 deliveredProgressRevision: $batch->aggregateProgressRevision,
-                expectedProjectionVersion: $batch->projectionVersion,
+                expectedProjectionVersion: $current->projectionVersion,
             );
         } catch (OptimisticLockException $exception) {
             $this->logger->warning('deferred_subagent_batch.delivered_progress_revision_conflict', [

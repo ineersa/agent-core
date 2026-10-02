@@ -28,7 +28,6 @@ use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
 use Ineersa\CodingAgent\Agent\Execution\SubagentToolSetResolver;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
-use Ineersa\CodingAgent\Session\CommittedRunEventAppender;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
 use Ineersa\CodingAgent\Tests\Agent\Execution\Support\PipelineCapturingAgentRunner;
@@ -341,7 +340,6 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
             'agentRunner' => $agentRunner,
             'runStateRebuilder' => $this->rebuildParentState($parentState),
             'eventStore' => $eventStore,
-            'committedRunEventAppender' => self::getContainer()->get(CommittedRunEventAppender::class),
             'metadataReader' => new RunStartedMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer()),
             'relationshipReader' => \Ineersa\CodingAgent\Tests\Support\StubRunRelationshipReader::topLevel($parentState->runId),
             'childRunDirectory' => self::getContainer()->get(AgentChildRunDirectory::class),
