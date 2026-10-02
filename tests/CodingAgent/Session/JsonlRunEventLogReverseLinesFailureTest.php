@@ -133,8 +133,6 @@ final class JsonlReverseLinesFailureStreamWrapper
 {
     public mixed $context;
 
-    public static int $urlStatCalls = 0;
-
     public static int $streamStatCalls = 0;
 
     public static int $streamSeekCalls = 0;
@@ -149,7 +147,6 @@ final class JsonlReverseLinesFailureStreamWrapper
 
     public static function reset(): void
     {
-        self::$urlStatCalls = 0;
         self::$streamStatCalls = 0;
         self::$streamSeekCalls = 0;
         self::$streamReadCalls = 0;
@@ -170,7 +167,6 @@ final class JsonlReverseLinesFailureStreamWrapper
      */
     public function url_stat(string $path, int $flags): array
     {
-        ++self::$urlStatCalls;
         $host = parse_url($path, \PHP_URL_HOST);
         $mode = \is_string($host) && '' !== $host ? $host : 'empty';
 
