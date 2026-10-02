@@ -12,7 +12,8 @@ use Symfony\Component\Process\Process;
  *
  * Lowest correct layer: mount/render TranscriptMountedWidget under an isolated
  * PHP process with memory_limit=128M. Measured on this fixture:
- * shared create() peaks at 28 MiB; omitting shared dependencies peaks at 72 MiB.
+ * shared Environment/Highlighter peaks near 32 MiB; omitting those shared
+ * dependencies peaks at 72 MiB. Parsers remain widget-owned.
  * The peak budget below is set between those values so removing sharing fails this
  * case. This test does not prove the packaged application's total memory use
  * or reproduce the user session-2 OOM.

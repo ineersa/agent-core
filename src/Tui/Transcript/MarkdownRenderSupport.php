@@ -13,16 +13,21 @@ use Symfony\Component\Tui\Widget\MarkdownWidget;
 use Tempest\Highlight\Highlighter;
 
 /**
- * Owns one CommonMark parser and Tempest highlighter for many MarkdownWidget instances.
+ * Owns one CommonMark Environment and Tempest highlighter for many MarkdownWidget instances.
  *
  * Symfony {@see MarkdownWidget} already accepts optional shared dependencies; without
  * them each widget builds its own GFM environment and highlighter. Resume of a long
  * transcript creates hundreds of markdown widgets, so the owning transcript factory
  * keeps one support object for the screen lifetime.
+ *
+ * Parsers stay widget-owned. {@see MarkdownParser} retains the last document through
+ * closedBlockParsers until the next parse, so a shared parser would pin evicted
+ * transcript ASTs for the screen lifetime. Spec §10 allows shared parser/highlighter
+ * infrastructure, but not parsed documents for evicted blocks.
  */
 final readonly class MarkdownRenderSupport
 {
-    private MarkdownParser $parser;
+    private Environment $environment;
 
     private Highlighter $highlighter;
 
@@ -31,12 +36,12 @@ final readonly class MarkdownRenderSupport
         $environment = new Environment();
         $environment->addExtension(new CommonMarkCoreExtension());
         $environment->addExtension(new GithubFlavoredMarkdownExtension());
-        $this->parser = new MarkdownParser($environment);
+        $this->environment = $environment;
         $this->highlighter = new Highlighter(new DarkTerminalTheme());
     }
 
     public function create(string $text): MarkdownWidget
     {
-        return new MarkdownWidget($text, $this->parser, $this->highlighter);
+        return new MarkdownWidget($text, new MarkdownParser($this->environment), $this->highlighter);
     }
 }
