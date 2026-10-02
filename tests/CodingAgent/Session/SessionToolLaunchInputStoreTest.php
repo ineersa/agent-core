@@ -254,6 +254,74 @@ final class SessionToolLaunchInputStoreTest extends IsolatedKernelTestCase
         $this->assertOwnerVisibleInputFailure($bus, 'Cannot open tool launch input.');
     }
 
+    public function testFreshWorkerReusesCommittedSynchronousForkFailureWhileSiblingRemainsPending(): void
+    {
+        $runId = self::getContainer()->get(HatfieldSessionStore::class)->createSession('mixed-fork-failure');
+        $inputStore = self::getContainer()->get(ToolLaunchInputStoreInterface::class);
+        $batchStore = self::getContainer()->get(ToolBatchStoreInterface::class);
+        $reference = $inputStore->publish('fork', $runId, 1, 'step', 'fork', 'model', '', [new AgentMessage('user', [['type' => 'text', 'text' => 'input']])]);
+        $fork = new ExecuteToolCall($runId, 1, 'step', 1, 'fork-request', 'fork', 'fork', ['task' => 'work'], 0, mode: 'parallel', maxParallelism: 2, parentModel: 'model', launchContext: $reference);
+        $sibling = new ExecuteToolCall($runId, 1, 'step', 1, 'sibling-request', 'sibling', 'read', ['path' => 'x'], 1, mode: 'parallel', maxParallelism: 2);
+        $ownerCollector = new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(store: $batchStore);
+        $ownerCollector->registerExpectedBatch($runId, 1, 'step', [$fork, $sibling]);
+        $executor = $this->createMock(ToolExecutorInterface::class);
+        $executor->expects($this->once())->method('execute')->willThrowException(new \Ineersa\AgentCore\Contract\Tool\ToolCallException('Original fork preparation failure.', retryable: false, hint: 'original hint'));
+        $bus = new TestMessageBus();
+        $deferred = self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class);
+        $worker = new ExecuteToolCallWorker($executor, $bus, $deferred, new ToolExecutionResultStore(), $this->createStub(RunOperationalStatusReaderInterface::class), launchInputStore: $inputStore, toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(store: $batchStore));
+        $worker($fork);
+        $this->assertCount(1, $bus->messages);
+        $originalFailure = $bus->messages[0];
+        $this->assertTrue($originalFailure->isError);
+        $this->assertSame('Original fork preparation failure.', $originalFailure->error['message']);
+        $state = \Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder::running($runId)->withTurnNo(1)->withActiveStepId('step')->withLastSeq(0)->withPendingToolCalls(['fork' => false, 'sibling' => false])->build()->with(['model' => 'model']);
+        $handler = new \Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler(
+            toolBatchCollector: $ownerCollector,
+            eventFactory: new \Ineersa\AgentCore\Domain\Event\EventFactory(),
+            toolCallExtractor: new \Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor(),
+            messageNormalizer: new \Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer(),
+            serializer: self::getContainer()->get(SerializerInterface::class),
+        );
+        $transition = $handler->handle($originalFailure, $state);
+        $this->assertCount(1, $transition->events);
+        $this->assertSame('tool_execution_end', $transition->events[0]->type);
+        $active = new \Ineersa\AgentCore\Tests\Support\TestActiveRunContext();
+        $active->remember($state);
+        $eventStore = self::getContainer()->get(\Ineersa\AgentCore\Contract\EventStoreInterface::class);
+        $commit = new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
+            activeRunContext: $active, eventStore: $eventStore,
+            stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus()),
+            logger: new \Ineersa\AgentCore\Tests\Support\TestLogger(), toolBatchCollector: $ownerCollector,
+            hookDispatcher: new \Ineersa\AgentCore\Application\Handler\HookDispatcher([self::getContainer()->get(\Ineersa\CodingAgent\Session\ToolBatchSnapshotCleanupHookSubscriber::class)]),
+        );
+        $commit->commit($state, $transition->nextState, $transition->events, $transition->effects);
+        $this->assertFileDoesNotExist($this->payloadPath($runId, 'fork'));
+        $this->assertNull($deferred->findByRunAndToolCall($runId, 'fork'));
+        $this->assertEquals($originalFailure, $batchStore->load($runId, 1, 'step')->results['fork']);
+        $this->assertCount(1, iterator_to_array($eventStore->rangeFor($runId, 1, 1)));
+
+        $freshExecutor = $this->createMock(ToolExecutorInterface::class);
+        $freshExecutor->expects($this->never())->method('execute');
+        $unreadInput = $this->createMock(ToolLaunchInputStoreInterface::class);
+        $unreadInput->expects($this->never())->method('read');
+        $freshBus = new TestMessageBus();
+        $freshWorker = new ExecuteToolCallWorker($freshExecutor, $freshBus, $deferred, new ToolExecutionResultStore(), $this->createStub(RunOperationalStatusReaderInterface::class), launchInputStore: $unreadInput, toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(store: $batchStore));
+        $freshWorker($fork);
+        $this->assertCount(1, $freshBus->messages);
+        $this->assertEquals($originalFailure, $freshBus->messages[0]);
+        $this->assertSame('original hint', $freshBus->messages[0]->error['hint']);
+        $duplicate = $ownerCollector->collect($freshBus->messages[0]);
+        $this->assertTrue($duplicate->duplicate);
+        $this->assertFalse($duplicate->complete);
+        $unchanged = $handler->handle($freshBus->messages[0], $active->stateFor($runId));
+        $this->assertSame([], $unchanged->events);
+        $batch = $batchStore->load($runId, 1, 'step');
+        $this->assertFalse($batch->finalized);
+        $this->assertArrayHasKey('sibling', $batch->inFlight);
+        $this->assertArrayNotHasKey('sibling', $batch->results);
+        $this->assertFalse($active->stateFor($runId)->pendingToolCalls['sibling']);
+    }
+
     private function assertOwnerVisibleInputFailure(TestMessageBus $bus, string $message): void
     {
         $this->assertCount(1, $bus->messages);

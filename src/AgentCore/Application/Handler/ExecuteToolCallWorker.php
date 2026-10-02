@@ -34,6 +34,7 @@ final readonly class ExecuteToolCallWorker
         private ?RunTracer $tracer = null,
         private ?EventDispatcherInterface $eventDispatcher = null,
         private ?ToolLaunchInputStoreInterface $launchInputStore = null,
+        private ?ToolBatchCollector $toolBatchCollector = null,
     ) {
     }
 
@@ -106,6 +107,20 @@ final readonly class ExecuteToolCallWorker
         RunLogContext::enter(['event_type' => 'tool.execute.started']);
 
         try {
+            if (null !== $message->launchContext) {
+                // A synchronous result can already be durable while siblings are
+                // pending and canonical cleanup has removed this launch input.
+                // Durable collector reads release the decoded batch on return.
+                $stored = $this->toolBatchCollector?->getStoredResult($message->runId(), $message->turnNo(), $message->stepId(), $message->toolCallId);
+                if (null !== $stored && !$stored->isHumanInputSuspension()
+                    && $stored->runId() === $message->runId()
+                    && $stored->turnNo() === $message->turnNo()
+                    && $stored->stepId() === $message->stepId()
+                    && $stored->toolCallId === $message->toolCallId) {
+                    return $stored;
+                }
+            }
+
             $launchContext = null;
             if (null !== $message->launchContext) {
                 $reference = $message->launchContext;

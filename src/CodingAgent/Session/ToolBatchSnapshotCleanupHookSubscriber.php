@@ -31,10 +31,10 @@ final class ToolBatchSnapshotCleanupHookSubscriber implements HookSubscriberInte
     {
         foreach ($context->events as $event) {
             if (RunEventTypeEnum::ToolExecutionEnd->value === $event->type
-                && \is_string($event->payload['tool_call_id'] ?? null)) {
+                && \is_string($event->payload['tool_result']['tool_call_id'] ?? null)) {
                 // A canonical result resolves synchronous launch failures too.
                 // Approval suspension has no terminal tool result and retains input.
-                $this->tryDeleteLaunchInput($context->runId, $event->payload['tool_call_id']);
+                $this->tryDeleteLaunchInput($context->runId, $event->payload['tool_result']['tool_call_id']);
             }
             if (RunEventTypeEnum::ToolBatchCommitted->value !== $event->type) {
                 continue;

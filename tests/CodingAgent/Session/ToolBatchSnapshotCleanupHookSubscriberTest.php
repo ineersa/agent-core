@@ -129,7 +129,7 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
         $subscriber = new ToolBatchSnapshotCleanupHookSubscriber($this->createStore(), new TestLogger(), $inputStore);
         $subscriber->handleAfterTurnCommit(new AfterTurnCommitHookContext(
             runId: 'run-1', turnNo: 1, status: RunStatus::Running->value,
-            events: [new AfterTurnCommitEventSummary(1, RunEventTypeEnum::ToolExecutionEnd->value, ['tool_call_id' => 'fork-call'])],
+            events: [new AfterTurnCommitEventSummary(1, RunEventTypeEnum::ToolExecutionEnd->value, ['tool_result' => ['tool_call_id' => 'fork-call']])],
             effectsCount: 0, runState: new RunState('run-1', RunStatus::Running, turnNo: 1),
         ));
     }
@@ -151,7 +151,7 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
             hookDispatcher: new HookDispatcher([new ToolBatchSnapshotCleanupHookSubscriber($this->createStore(), new TestLogger(), $inputStore)]),
         );
         $this->expectExceptionMessage('append failed');
-        $commit->commit($previous, new RunState('run-1', RunStatus::Running, version: 1, turnNo: 1, model: 'test-model'), [new RunEvent('run-1', 1, 1, RunEventTypeEnum::ToolExecutionEnd->value, ['tool_call_id' => 'fork-call'])]);
+        $commit->commit($previous, new RunState('run-1', RunStatus::Running, version: 1, turnNo: 1, model: 'test-model'), [new RunEvent('run-1', 1, 1, RunEventTypeEnum::ToolExecutionEnd->value, ['tool_result' => ['tool_call_id' => 'fork-call']])]);
     }
 
     private function createStore(): SessionToolBatchStore
