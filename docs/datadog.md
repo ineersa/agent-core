@@ -16,6 +16,54 @@ metrics defined in Datadog.
 - Never log raw prompts, tool output, env secrets, API keys, or full session content.
 - Logging and application work never depend on Datadog. No Datadog client, transport, or buffer runs in the application.
 
+### Process memory samples
+
+`LogContextProcessor` adds sampler fields on every record:
+
+- `sampler_pid`: process that produced the memory sample
+- `pid`: current process id unless the call site already set `pid` in `extra` or `context`
+- `memory_usage`: live PHP bytes (`memory_get_usage(false)`)
+- `memory_allocated`: allocator-reserved bytes (`memory_get_usage(true)`)
+- `memory_peak`: peak allocator-reserved bytes
+- `memory_limit`: current `memory_limit` ini value
+
+Use `sampler_pid` for heap attribution. Ambient `pid` alone does not override
+the process sample; only an explicit call-site `pid` does. Treat `memory_peak`
+as a lifetime high-water mark, not a steady-growth signal.
+
+Lifecycle checkpoints use message `process.memory.checkpoint` with
+`event_type` values such as `tui.resume.mounted`, `compaction.retention.applied`,
+`tui.activity.terminal`, `tui.compaction.settled`, `tui.memory.idle`, and
+`tui.session.shutdown`. Those records carry scalar counts only (block/kind/text-byte
+totals, seq). Compaction projection checkpoints also include
+`retention_floor_block_id`. TUI checkpoints label retained parent transcript
+counts with `transcript_scope: parent`, plus `visible_run_id` and `live_child_view`.
+Boundary samples use `checkpoint_phase: pre_next_frame`. The one-shot idle sample
+uses `checkpoint_phase: next_tick_after_boundary` after a live terminal or
+compaction boundary, or `checkpoint_phase: next_tick_after_mount` when a fresh,
+idle, or terminal mount never crosses a live boundary before the first stable tick.
+They need `logging.level: info`.
+
+TUI terminal and compaction boundary samples come from successfully applied
+runtime events in a poll. Marks are per-event before/after activity and
+`isCompacting` transitions after a successful apply, coalesced once per poll.
+Ignored state-machine events and already-applied retries do not mark. One poll
+can emit both `tui.activity.terminal` and `tui.compaction.settled` when both
+kinds applied; repeats of the same kind in that poll coalesce to one record
+each. A boundary that immediately continues (queued follow-up, still
+compacting) still emits the boundary sample and skips the idle sample until
+the next stable idle tick. Checkpoint emission is best-effort: logger failures
+degrade to a sanitized `error_log` line and must not interrupt mount, tick,
+switch, reload, or shutdown.
+
+`tui.activity.terminal` includes `boundary_activity` for the activity value
+observed immediately after the successful terminalizing apply (for example
+`completed`, `failed`, or `cancelled`). Later queued follow-up dispatch in the
+same poll can leave the tick-end `activity` as `starting`; use
+`boundary_activity` for the terminal mark. `tui.compaction.settled` covers both
+successful compaction completion and compaction failure: settlement is the
+`isCompacting` true→false transition, not success alone.
+
 ## Castor helpers
 
 ```bash

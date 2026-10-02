@@ -275,6 +275,73 @@ final class CompactionProjectionSubscriberTest extends TestCase
         $this->assertContains('u2', $ids);
     }
 
+    #[Test]
+    public function testSuccessfulCompactionEmitsMemoryCheckpointWithRetentionScalars(): void
+    {
+        $logger = new \Ineersa\AgentCore\Tests\Support\TestLogger();
+        $snapshot = new \Ineersa\CodingAgent\Logging\ProcessMemorySnapshotLogger($logger);
+        $subscriber = new CompactionProjectionSubscriber($snapshot);
+
+        $state = new TranscriptProjectionState();
+        $state->addBlock(new TranscriptBlock(
+            id: 'u1',
+            kind: TranscriptBlockKindEnum::UserMessage,
+            runId: 'run-1',
+            seq: $state->nextSeq(),
+            text: 'conversation 1',
+        ));
+        $subscriber->onCompactionCompleted(new TranscriptProjectionEvent(
+            runtimeEvent: new RuntimeEvent(
+                type: 'compaction.completed',
+                runId: 'run-1',
+                seq: 10,
+                payload: [
+                    'estimated_tokens_before' => 100,
+                    'estimated_tokens_after' => 40,
+                    'messages_before' => 4,
+                    'messages_after' => 2,
+                ],
+            ),
+            state: $state,
+        ));
+        $firstMarker = $state->blocks()[1]->id;
+
+        $state->addBlock(new TranscriptBlock(
+            id: 'u2',
+            kind: TranscriptBlockKindEnum::UserMessage,
+            runId: 'run-1',
+            seq: $state->nextSeq(),
+            text: 'conversation 2',
+        ));
+        $subscriber->onCompactionCompleted(new TranscriptProjectionEvent(
+            runtimeEvent: new RuntimeEvent(
+                type: 'compaction.completed',
+                runId: 'run-1',
+                seq: 20,
+                payload: [
+                    'estimated_tokens_before' => 90,
+                    'estimated_tokens_after' => 35,
+                    'messages_before' => 3,
+                    'messages_after' => 1,
+                ],
+            ),
+            state: $state,
+        ));
+
+        $this->assertGreaterThanOrEqual(2, \count($logger->records));
+        $second = $logger->records[1];
+        $this->assertSame('process.memory.checkpoint', $second['message']);
+        $this->assertSame('compaction.retention.applied', $second['context']['event_type']);
+        $this->assertSame('transcript_projection', $second['context']['component']);
+        $this->assertSame('run-1', $second['context']['run_id']);
+        $this->assertSame(20, $second['context']['seq']);
+        $this->assertSame($firstMarker, $second['context']['retention_floor_block_id']);
+        $this->assertSame(2, $second['context']['transcript_blocks_after_prune']);
+        $this->assertArrayHasKey('transcript_block_count', $second['context']);
+        $this->assertArrayHasKey('kind_user_message', $second['context']);
+        $this->assertArrayNotHasKey('text', $second['context']);
+    }
+
     /**
      * @return list<string>
      */

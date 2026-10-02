@@ -38,12 +38,19 @@ final class RuntimeEventPoller
      */
     private array $pendingEvents = [];
 
+    /**
+     * Scalar boundaries from events that finished apply in the latest poll.
+     * Cleared at the start of each poll and by {@see consumeAppliedMemoryBoundaryObservation()}.
+     */
+    private AppliedMemoryBoundaryObservation $appliedMemoryBoundaries;
+
     public function __construct(
         private readonly TuiRuntimeEventApplier $eventApplier,
         private readonly LoggerInterface $logger,
         private readonly RuntimeExceptionBoundary $boundary,
         private readonly SessionTranscriptProviderInterface $sessionTranscriptProvider,
     ) {
+        $this->appliedMemoryBoundaries = new AppliedMemoryBoundaryObservation();
     }
 
     /**
@@ -73,6 +80,8 @@ final class RuntimeEventPoller
         }
         $state->lastPoll = $now;
 
+        $this->appliedMemoryBoundaries = new AppliedMemoryBoundaryObservation();
+
         try {
             if ([] !== $this->pendingEvents && $this->pendingEvents[0]->runId !== $state->handle->runId) {
                 $this->pendingEvents = [];
@@ -101,6 +110,11 @@ final class RuntimeEventPoller
             $processingRemoved = false;
             $hasRunHistoryPositionChanged = false;
             $removedProcessing = false;
+            $boundaryActivityBefore = null;
+            $boundaryLastSeqBefore = $state->lastSeq;
+            $boundaryBecameTerminal = false;
+            $boundaryCompactionSettled = false;
+            $boundaryTerminalActivity = null;
 
             $callbacks = new RuntimeEventCallbacks(
                 $this->logger,
@@ -125,7 +139,30 @@ final class RuntimeEventPoller
                 $hasNew = true;
 
                 try {
+                    $activityBeforeApply = $state->activity;
+                    $compactingBeforeApply = $state->isCompacting;
                     $this->eventApplier->apply($state, $runtimeEvent);
+                    $activityAfterApply = $state->activity;
+                    $compactingAfterApply = $state->isCompacting;
+
+                    if (null === $boundaryActivityBefore) {
+                        $boundaryActivityBefore = $activityBeforeApply->value;
+                    }
+                    // Observe real apply transitions only. Already-applied retries
+                    // skip before apply via lastSeq; ignored state-machine events
+                    // leave activity/isCompacting unchanged and must not mark.
+                    // CompactionCompleted/Failed leave Compacting for Completed on the
+                    // same event; that is settlement, not a separate terminal sample.
+                    if (!$activityBeforeApply->isTerminal()
+                        && $activityAfterApply->isTerminal()
+                        && !($compactingBeforeApply && !$compactingAfterApply)
+                    ) {
+                        $boundaryBecameTerminal = true;
+                        $boundaryTerminalActivity = $activityAfterApply->value;
+                    }
+                    if ($compactingBeforeApply && !$compactingAfterApply) {
+                        $boundaryCompactionSettled = true;
+                    }
 
                     // ── History position change: rebuild transcript wholesale ──
                     // The applier resets live projector state; projected blocks come from
@@ -258,11 +295,29 @@ final class RuntimeEventPoller
                         $state->lastSeq = $seq;
                     }
                 } catch (\Throwable $e) {
+                    // Apply may have already mutated activity/compaction; keep the
+                    // coalesced marks for this tick even when the suffix retries.
+                    $this->rememberAppliedMemoryBoundaries(
+                        $boundaryBecameTerminal,
+                        $boundaryCompactionSettled,
+                        $boundaryActivityBefore,
+                        $boundaryTerminalActivity,
+                        $boundaryLastSeqBefore,
+                        max($boundaryLastSeqBefore, $state->lastSeq),
+                    );
                     $this->pendingEvents = \array_slice($events, $index);
 
                     throw $e;
                 }
             }
+            $this->rememberAppliedMemoryBoundaries(
+                $boundaryBecameTerminal,
+                $boundaryCompactionSettled,
+                $boundaryActivityBefore,
+                $boundaryTerminalActivity,
+                $boundaryLastSeqBefore,
+                $state->lastSeq,
+            );
             $this->pendingEvents = [];
 
             if ($hasRunHistoryPositionChanged) {
@@ -353,5 +408,38 @@ final class RuntimeEventPoller
 
             return TranscriptChangeSet::incremental([$block]);
         }
+    }
+
+    /**
+     * Take and clear scalar memory boundaries from the latest successful applies.
+     */
+    public function consumeAppliedMemoryBoundaryObservation(): AppliedMemoryBoundaryObservation
+    {
+        $observation = $this->appliedMemoryBoundaries;
+        $this->appliedMemoryBoundaries = new AppliedMemoryBoundaryObservation();
+
+        return $observation;
+    }
+
+    private function rememberAppliedMemoryBoundaries(
+        bool $becameTerminal,
+        bool $compactionSettled,
+        ?string $activityBefore,
+        ?string $terminalActivity,
+        int $lastSeqBefore,
+        int $lastSeqAfter,
+    ): void {
+        if (!$becameTerminal && !$compactionSettled) {
+            return;
+        }
+
+        $this->appliedMemoryBoundaries = new AppliedMemoryBoundaryObservation(
+            activityBecameTerminal: $becameTerminal,
+            compactionSettled: $compactionSettled,
+            activityBefore: $activityBefore,
+            terminalActivity: $terminalActivity,
+            lastSeqBefore: $lastSeqBefore,
+            lastSeqAfter: $lastSeqAfter,
+        );
     }
 }
