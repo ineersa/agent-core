@@ -17,6 +17,7 @@ Topology map for AgentCore application handlers. Authoritative routing: `config/
 | `CompactRun` | `agent.command.bus` (transport `run_control`) | `Ineersa\CodingAgent\Application\Pipeline\CompactRunHandler` (App layer; depends on compaction services) |
 | `CompactionStepResult` | `agent.command.bus` (transport `run_control`) | `Ineersa\CodingAgent\Application\Pipeline\CompactionStepResultHandler` |
 | `CompleteDeferredToolCall` | `agent.command.bus` (transport `run_control`) | `CompleteDeferredToolCallHandler` |
+| `CommitSubagentProgress` | `agent.command.bus` (transport `run_control`) | `Ineersa\CodingAgent\Application\Pipeline\CommitSubagentProgressHandler` |
 | `InvalidateRunContext` | `agent.command.bus` (transport `run_control`) | `RunOrchestrator::onInvalidateRunContext()` clears active context only |
 | `RefreshRunContext` | `agent.command.bus` (transport `run_control`) | `RefreshRunContextHandler` replaces generated messages and commits `context_refreshed` without advancing a turn |
 
@@ -40,7 +41,17 @@ Workers post results (`LlmStepResult`, `ToolCallResult`, `CompactionStepResult`)
 - `AdvanceRun` / `CompactRun` — state-transition effects through `RunMessageProcessor` / `RunCommit` → `agent.command.bus` → `run_control`
 - `ExecuteLlmStep` / `ExecuteToolCall` / `ExecuteCompactionStep` — external-I/O effects through `RunMessageProcessor` / `RunCommit` → `agent.execution.bus`
 - `CompactRun` — auto-compaction hooks, manual `/compact`, pre-LLM compaction guard / overflow recovery paths
-- `InvalidateRunContext` — canonical event side writers after persistence; it only clears the receiving run_control process-local context
+- `InvalidateRunContext` — history selection and explicit repair after persistence; it only clears the receiving run_control process-local context
+
+## Subagent progress ownership
+
+`SubagentProgressEventAppender` submits `CommitSubagentProgress` for canonical progress. `RunOrchestrator` routes consumption through the locked `RunMessageProcessor` and App handler. The handler validates durable lifecycle, parent invocation, and revision identities before returning a `tool_execution_update` transition. `RunCommit` publishes the new owner sequence without invalidation or parent replay.
+
+Controller nonterminal progress remains transient at sequence zero. Terminal snapshots and in-process progress remain canonical. Queued commands do not advance `deliveredProgressRevision` or the existing `interruptionProgressEnqueuedAt` marker. Owner callbacks advance those existing consumption markers using a freshly read projection version and schedule lifecycle delivery. For a current destination, this happens after canonical commit. When a newer parent turn or resolved call supersedes the destination, consumption retires the outstanding progress obligation without appending or publishing progress. A retired normal destination consumes the current aggregate revision; a retired forced destination consumes its interruption obligation. These markers therefore mean consumed or discarded, not proof of canonical append. Natural and forced-interruption completion wait for consumption, including explicit discard. Duplicate or stale commands do not append again.
+
+Valid launch reservations always contain child rows: `DeferredSubagentBatchLaunchService` rejects empty task lists, and `DeferredSubagentBatchRepository::reserveBatch()` inserts the batch and planned children in one transaction. Missing child rows are an invariant failure, not a reason to wait for an unsubmitted command. Parallel timeout completion requires no forced snapshot and never waits for the interruption-progress marker.
+
+This ordering does not provide atomic recovery across canonical append and lifecycle-marker persistence. The later transition crash protocol remains separate work.
 
 There is **no** `CollectToolBatch` message type in `src/` (stale historical name — do not reintroduce docs for it).
 

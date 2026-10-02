@@ -509,6 +509,7 @@ services:
 
   Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Progress\SubagentProgressEventAppender:
     arguments:
+      $commandBus: '@agent.command.bus'
       $transientSink: '@Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink'
       $streamCommittedEventsToStdout: '%env(bool:HATFIELD_CONSUMER_STDOUT_EVENTS)%'
 
@@ -1198,8 +1199,8 @@ services:
   # ─── AGENT-05 Subagent execution service ──────────────────────────
 
   # Subagent child-run stack: inherited agents context comes from owner-prepared
-  # immutable ExecuteToolCall launch context. Parent progress events append via
-  # CommittedRunEventAppender only (seq 0 input; committed store allocates persisted seq).
+  # immutable ExecuteToolCall launch context. Canonical parent progress is submitted
+  # to run_control; controller nonterminal progress remains transient.
   # SubagentChildLaunchInputFactory is resource-discovered / autowired.
 
   # ─── AGENT-05 Subagent tool storage routing ─────────────────────────
@@ -1210,9 +1211,8 @@ services:
   Ineersa\CodingAgent\Session\Contract\RunSequenceAllocatorInterface:
     alias: Ineersa\CodingAgent\Session\FileRunSequenceAllocator
 
-  Ineersa\CodingAgent\Session\CommittedRunEventAppender:
+  Ineersa\CodingAgent\Application\Pipeline\CommitSubagentProgressHandler:
     arguments:
-      $eventStore: '@Ineersa\AgentCore\Contract\EventStoreInterface'
       $commandBus: '@agent.command.bus'
 
   Ineersa\CodingAgent\Session\History\HistorySelectionService:
