@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Execution;
 
-use Ineersa\AgentCore\Application\Dto\RunStateReplayResult;
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Pipeline\AgentRunner;
 use Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler;
@@ -13,7 +12,8 @@ use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
-use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
+use Ineersa\AgentCore\Contract\RunOperationalStatusDTO;
+use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
@@ -226,17 +226,17 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         );
     }
 
-    public function testRejectsChildMidCancellationFromCanonicalReplay(): void
+    public function testRejectsChildMidCancellationFromOperationalStatus(): void
     {
         $parent = 'parent-mid-cancel';
         $artifactId = 'agent-mid-cancel';
         $childRunId = 'child-mid-cancel';
         $this->seedTerminalChild($parent, $artifactId, $childRunId, latestInputTokens: 10, contextWindow: 200_000);
-        $runStateRebuilder = $this->createMock(RunStateRebuilderInterface::class);
-        $runStateRebuilder->expects($this->once())
-            ->method('rebuildIfStale')
-            ->with($this->isInstanceOf(RunState::class), $childRunId)
-            ->willReturn(RunStateReplayResult::rebuilt(new RunState(runId: $childRunId, status: RunStatus::Cancelling)));
+        $operationalStatusReader = $this->createMock(RunOperationalStatusReaderInterface::class);
+        $operationalStatusReader->expects($this->once())
+            ->method('findOperationalStatus')
+            ->with($childRunId)
+            ->willReturn(new RunOperationalStatusDTO(RunStatus::Cancelling));
 
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('mid-cancel and cannot be resumed yet');
@@ -245,7 +245,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
             parentRunId: $parent,
             tasks: [new AgentResumeTaskDTO(artifact_id: $artifactId, task: 'continue')],
             childRunId: $childRunId,
-            runStateRebuilder: $runStateRebuilder,
+            operationalStatusReader: $operationalStatusReader,
         );
     }
 
@@ -517,6 +517,53 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         );
     }
 
+    public function testMissingOperationalStatusFailsClosed(): void
+    {
+        $parent = 'parent-missing-status';
+        $child = 'child-missing-status';
+        $artifact = 'agent_missing_status';
+        $this->seedTerminalChild($parent, $artifact, $child, latestInputTokens: 10, contextWindow: 200_000);
+        $runner = $this->createMock(AgentRunnerInterface::class);
+        $runner->expects($this->never())->method('followUp');
+        $this->expectException(ToolCallException::class);
+        $this->expectExceptionMessage('is unusable for resume');
+        $this->resume($parent, [new AgentResumeTaskDTO(artifact_id: $artifact, task: 'continue')], agentRunner: $runner,
+            operationalStatusReader: self::getContainer()->get(RunOperationalStatusReaderInterface::class));
+    }
+
+    public function testUnavailableOperationalStatusFailsClosed(): void
+    {
+        $parent = 'parent-unavailable-status';
+        $this->seedTerminalChild($parent, 'agent_unavailable', 'child-unavailable', latestInputTokens: 10, contextWindow: 200_000);
+        $reader = $this->createMock(RunOperationalStatusReaderInterface::class);
+        $reader->expects($this->once())->method('findOperationalStatus')->willThrowException(new \RuntimeException('projection unavailable'));
+        $runner = $this->createMock(AgentRunnerInterface::class);
+        $runner->expects($this->never())->method('followUp');
+        $this->expectException(ToolCallException::class);
+        $this->expectExceptionMessage('is unusable for resume');
+        $this->resume($parent, [new AgentResumeTaskDTO(artifact_id: 'agent_unavailable', task: 'continue')], agentRunner: $runner, operationalStatusReader: $reader);
+    }
+
+    public function testConfiguredOperationalReaderObservesTerminalStatusThenFreshRunningStatus(): void
+    {
+        $parent = 'parent-fresh-status';
+        $child = 'child-fresh-status';
+        $artifact = 'agent_fresh_status';
+        $this->seedTerminalChild($parent, $artifact, $child, latestInputTokens: 10, contextWindow: 200_000);
+        $repository = self::getContainer()->get(\Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository::class);
+        $repository->replace(new RunState($child, RunStatus::Completed, parentRunId: $parent));
+        $reader = self::getContainer()->get(RunOperationalStatusReaderInterface::class);
+        $runner = $this->createMock(AgentRunnerInterface::class);
+        $runner->expects($this->once())->method('followUp')->with($child, $this->isInstanceOf(AgentMessage::class));
+        $this->resume($parent, [new AgentResumeTaskDTO(artifact_id: $artifact, task: 'continue')], agentRunner: $runner, operationalStatusReader: $reader);
+        $this->registry()->update(parentRunId: $parent, artifactId: $artifact, status: AgentArtifactStatusEnum::Completed);
+        self::getContainer()->get('doctrine')->getConnection()->executeStatement(
+            'UPDATE run_operational_state SET status = ? WHERE run_id = ?', [RunStatus::Running->value, $child]);
+        $this->expectException(ToolCallException::class);
+        $this->expectExceptionMessage('is not terminal (status=running)');
+        $this->resume($parent, [new AgentResumeTaskDTO(artifact_id: $artifact, task: 'continue')], agentRunner: $runner, operationalStatusReader: $reader);
+    }
+
     public function testRejectsDuplicateResolvedArtifactViaMixedIdentifiers(): void
     {
         $parent = 'parent-dup-mixed';
@@ -526,14 +573,13 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
 
         $agentRunner = $this->createMock(AgentRunnerInterface::class);
         $agentRunner->expects($this->never())->method('followUp');
-        $runStateRebuilder = $this->createMock(RunStateRebuilderInterface::class);
-        $runStateRebuilder->expects($this->once())
-            ->method('rebuildIfStale')
+        $operationalStatusReader = $this->createMock(RunOperationalStatusReaderInterface::class);
+        $operationalStatusReader->expects($this->exactly(2))
+            ->method('findOperationalStatus')
             ->with(
-                $this->callback(static fn (RunState $state): bool => $childRunId === $state->runId),
                 $childRunId,
             )
-            ->willReturn(RunStateReplayResult::rebuilt(new RunState(runId: $childRunId, status: RunStatus::Completed)));
+            ->willReturn(new RunOperationalStatusDTO(RunStatus::Completed));
 
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage(\sprintf('Duplicate artifact_id "%s" in one agent_resume call.', $artifactId));
@@ -547,7 +593,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
             childRunId: $childRunId,
             agentRunner: $agentRunner,
             executionMode: ChildRunBatchExecutionModeEnum::Parallel,
-            runStateRebuilder: $runStateRebuilder,
+            operationalStatusReader: $operationalStatusReader,
         );
     }
 
@@ -563,15 +609,15 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         string $toolCallId = 'tc-resume-1',
         ChildRunBatchExecutionModeEnum $executionMode = ChildRunBatchExecutionModeEnum::Single,
         ?TestLogger $logger = null,
-        ?RunStateRebuilderInterface $runStateRebuilder = null,
+        ?RunOperationalStatusReaderInterface $operationalStatusReader = null,
         ?\Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface $relationshipReader = null,
     ): \Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome {
         $contextAccessor = new StackToolExecutionContextAccessor();
-        if (null === $runStateRebuilder) {
-            $runStateRebuilder = $this->createStub(RunStateRebuilderInterface::class);
-            $runStateRebuilder->method('rebuildIfStale')->willReturnCallback(
-                static function (RunState $state, string $runId) use ($runStatus): RunStateReplayResult {
-                    return RunStateReplayResult::rebuilt(new RunState(runId: $runId, status: $runStatus));
+        if (null === $operationalStatusReader) {
+            $operationalStatusReader = $this->createStub(RunOperationalStatusReaderInterface::class);
+            $operationalStatusReader->method('findOperationalStatus')->willReturnCallback(
+                static function (string $runId) use ($runStatus): RunOperationalStatusDTO {
+                    return new RunOperationalStatusDTO($runStatus);
                 },
             );
         }
@@ -582,7 +628,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
             childRepository: self::getContainer()->get(DeferredSubagentChildRepository::class),
             identityFactory: new DeferredSubagentBatchIdentityFactory(),
             agentRunner: $agentRunner ?? $this->createStub(AgentRunnerInterface::class),
-            runStateRebuilder: $runStateRebuilder,
+            operationalStatusReader: $operationalStatusReader,
             relationshipReader: $relationshipReader ?? StubRunRelationshipReader::topLevel($parentRunId),
             depthGuard: new AgentDepthGuard(),
             contextAccessor: $contextAccessor,
