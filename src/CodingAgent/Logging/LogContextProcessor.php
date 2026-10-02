@@ -20,6 +20,11 @@ use Monolog\Processor\ProcessorInterface;
  * Ambient context fields are only injected when they are not already
  * present in either `extra` or `context`, allowing call sites to
  * explicitly override any ambient value for a specific log record.
+ *
+ * Heap attribution uses `sampler_pid` (always the process that produced the
+ * sample). `pid` is injected as the current process before ambient merge unless
+ * the call site already set `pid` in `extra` or `context`; ambient `pid` alone
+ * cannot override that process sample.
  */
 final class LogContextProcessor implements ProcessorInterface
 {
@@ -29,11 +34,17 @@ final class LogContextProcessor implements ProcessorInterface
 
         // Record both live PHP memory and allocator-reserved memory; Messenger
         // uses the latter for its worker memory limit.
+        // sampler_pid is always this process. pid is also this process unless the
+        // call site already set an explicit pid in extra/context.
         $pid = getmypid();
+        $memoryLimit = \ini_get('memory_limit');
         foreach ([
             'pid' => false !== $pid ? $pid : null,
+            'sampler_pid' => false !== $pid ? $pid : null,
             'memory_usage' => memory_get_usage(false),
             'memory_allocated' => memory_get_usage(true),
+            'memory_peak' => memory_get_peak_usage(true),
+            'memory_limit' => false !== $memoryLimit && '' !== $memoryLimit ? $memoryLimit : null,
         ] as $key => $value) {
             if (!\array_key_exists($key, $extra) && !\array_key_exists($key, $record->context)) {
                 $extra[$key] = $value;

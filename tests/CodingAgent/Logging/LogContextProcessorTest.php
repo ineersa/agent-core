@@ -39,12 +39,15 @@ final class LogContextProcessorTest extends TestCase
         $this->assertArrayNotHasKey('component', $result->extra);
 
         $this->assertSame(getmypid(), $result->extra['pid']);
+        $this->assertSame(getmypid(), $result->extra['sampler_pid']);
         $this->assertIsInt($result->extra['memory_usage']);
         $this->assertIsInt($result->extra['memory_allocated']);
         $this->assertGreaterThanOrEqual($result->extra['memory_usage'], $result->extra['memory_allocated']);
+        $this->assertIsInt($result->extra['memory_peak']);
+        $this->assertIsString($result->extra['memory_limit']);
 
         // Verify nothing beyond the process samples leaked in.
-        $allowedKeys = ['pid', 'memory_usage', 'memory_allocated'];
+        $allowedKeys = ['pid', 'sampler_pid', 'memory_usage', 'memory_allocated', 'memory_peak', 'memory_limit'];
         foreach ($result->extra as $key => $value) {
             $this->assertContains($key, $allowedKeys, "Unexpected extra key: \"{$key}\"");
         }
@@ -65,6 +68,50 @@ final class LogContextProcessorTest extends TestCase
 
         $this->assertSame('run-1', $result->extra['run_id']);
         $this->assertSame('runtime', $result->extra['component']);
+
+        RunLogContext::leave();
+    }
+
+    public function testSamplerPidRemainsCallerWhenAmbientPidDiffers(): void
+    {
+        RunLogContext::enter(['pid' => 424242, 'run_id' => 'run-worker']);
+
+        $record = new LogRecord(
+            datetime: new \DateTimeImmutable(),
+            channel: 'test',
+            level: Level::Info,
+            message: 'process.memory.checkpoint',
+        );
+
+        $result = ($this->processor)($record);
+
+        // Baseline injects actual process pid before ambient merge, so ambient
+        // pid alone cannot override it. sampler_pid remains the caller process.
+        $this->assertSame(getmypid(), $result->extra['sampler_pid']);
+        $this->assertSame(getmypid(), $result->extra['pid']);
+        $this->assertSame('run-worker', $result->extra['run_id']);
+
+        RunLogContext::leave();
+    }
+
+    public function testExplicitCallSitePidOverridesProcessSampleButNotSamplerPid(): void
+    {
+        RunLogContext::enter(['pid' => 424242, 'run_id' => 'run-worker']);
+
+        $record = new LogRecord(
+            datetime: new \DateTimeImmutable(),
+            channel: 'test',
+            level: Level::Info,
+            message: 'process.memory.checkpoint',
+            context: ['pid' => 999001],
+        );
+
+        $result = ($this->processor)($record);
+
+        $this->assertSame(getmypid(), $result->extra['sampler_pid']);
+        $this->assertArrayNotHasKey('pid', $result->extra);
+        $this->assertSame(999001, $result->context['pid']);
+        $this->assertSame('run-worker', $result->extra['run_id']);
 
         RunLogContext::leave();
     }

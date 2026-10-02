@@ -24,10 +24,12 @@ use Symfony\Component\Lock\LockFactory;
  * primitives are delegated to {@see JsonlRunEventLog}; this class owns the
  * session path resolution and read diagnostics.
  *
- * allFor() always returns the complete canonical stream from disk. There is no
- * process-local decoded snapshot cache: compaction and other writers can mutate
- * the file outside this process, and retaining every decoded body after resume
- * kept obsolete pre-compaction payloads hot for the TUI lifetime.
+ * Canonical reads stream physical JSONL lines. allFor() still returns the complete
+ * decoded event list required by the current API, but it no longer duplicates the
+ * whole file text via file_get_contents()+explode(). There is no process-local
+ * decoded snapshot cache: compaction and other writers can mutate the file outside
+ * this process, and retaining every decoded body after resume kept obsolete
+ * pre-compaction payloads hot for the TUI lifetime.
  */
 final class SessionRunEventStore implements EventStoreInterface
 {
@@ -82,24 +84,11 @@ final class SessionRunEventStore implements EventStoreInterface
 
     public function firstFor(string $runId): ?RunEvent
     {
-        $path = $this->eventsPath($runId);
-        $handle = @fopen($path, 'rb');
-        if (false === $handle) {
-            return null;
+        foreach ($this->streamDecodedEvents($runId, 'firstFor') as $event) {
+            return $event;
         }
 
-        try {
-            while (false !== ($line = fgets($handle))) {
-                $event = $this->eventFromLine($runId, $line);
-                if (null !== $event) {
-                    return $event;
-                }
-            }
-
-            return null;
-        } finally {
-            fclose($handle);
-        }
+        return null;
     }
 
     /**
@@ -117,28 +106,14 @@ final class SessionRunEventStore implements EventStoreInterface
             return;
         }
 
-        $handle = @fopen($this->eventsPath($runId), 'rb');
-        if (false === $handle) {
-            return;
-        }
-
-        try {
-            while (false !== ($line = fgets($handle))) {
-                $event = $this->eventFromLine($runId, $line);
-                if (null === $event) {
-                    continue;
-                }
-
-                if ($event->seq > $endSeq) {
-                    break;
-                }
-
-                if ($event->seq >= $startSeq) {
-                    yield $event;
-                }
+        foreach ($this->streamDecodedEvents($runId, 'rangeFor') as $event) {
+            if ($event->seq > $endSeq) {
+                break;
             }
-        } finally {
-            fclose($handle);
+
+            if ($event->seq >= $startSeq) {
+                yield $event;
+            }
         }
     }
 
@@ -147,11 +122,22 @@ final class SessionRunEventStore implements EventStoreInterface
      */
     public function reverseFor(string $runId): iterable
     {
-        foreach ($this->eventLog->reverseLines($this->eventsPath($runId)) as $line) {
-            $event = $this->eventFromLine($runId, $line);
-            if (null !== $event) {
+        $path = $this->eventsPath($runId);
+        $observation = new JsonlPhysicalReadObservation();
+        $decodedEventCount = 0;
+
+        try {
+            foreach ($this->eventLog->reverseLines($path, $observation) as $line) {
+                $event = $this->eventFromLine($runId, $line);
+                if (null === $event) {
+                    continue;
+                }
+
+                ++$decodedEventCount;
                 yield $event;
             }
+        } finally {
+            $this->logPhysicalRead($runId, 'reverseFor', $observation, $decodedEventCount);
         }
     }
 
@@ -160,22 +146,59 @@ final class SessionRunEventStore implements EventStoreInterface
      */
     public function allFor(string $runId): array
     {
-        $path = $this->eventsPath($runId);
-        $contents = @file_get_contents($path);
-        if (false === $contents) {
-            return [];
-        }
-
         $events = [];
-
-        foreach (explode("\n", $contents) as $line) {
-            $event = $this->eventFromLine($runId, $line);
-            if (null !== $event) {
-                $events[] = $event;
-            }
+        foreach ($this->streamDecodedEvents($runId, 'allFor') as $event) {
+            $events[] = $event;
         }
 
         return $this->eventLog->sortBySeq($events);
+    }
+
+    /**
+     * @return \Generator<int, RunEvent>
+     */
+    private function streamDecodedEvents(string $runId, string $method): \Generator
+    {
+        $path = $this->eventsPath($runId);
+        $observation = new JsonlPhysicalReadObservation();
+        $decodedEventCount = 0;
+
+        try {
+            foreach ($this->eventLog->forwardLines($path, $observation) as $line) {
+                $event = $this->eventFromLine($runId, $line);
+                if (null === $event) {
+                    continue;
+                }
+
+                ++$decodedEventCount;
+                yield $event;
+            }
+        } finally {
+            $this->logPhysicalRead($runId, $method, $observation, $decodedEventCount);
+        }
+    }
+
+    /**
+     * @param non-empty-string $method
+     */
+    private function logPhysicalRead(
+        string $runId,
+        string $method,
+        JsonlPhysicalReadObservation $observation,
+        int $decodedEventCount,
+    ): void {
+        $this->logger->debug('Session event store physical JSONL read', [
+            'run_id' => $runId,
+            'component' => 'session.event_store',
+            'event_type' => 'session.event_store.physical_read',
+            'method' => $method,
+            'archive_bytes_read' => $observation->archiveBytesRead(),
+            'lines_yielded' => $observation->linesYielded(),
+            'decoded_event_count' => $decodedEventCount,
+            'full_scan' => $observation->fullScan(),
+            'early_exit' => $observation->earlyExit(),
+            'reached_eof' => $observation->reachedEof(),
+        ]);
     }
 
     private function eventFromLine(string $runId, string $line): ?RunEvent

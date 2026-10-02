@@ -20,6 +20,7 @@ use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
+use Symfony\Component\Process\Process;
 
 final class SessionRunEventStoreTest extends TestCase
 {
@@ -387,6 +388,150 @@ final class SessionRunEventStoreTest extends TestCase
         $this->assertCount(2, $second);
         $this->assertSame(['run_started', 'agent_end'], array_map(static fn (RunEvent $e): string => $e->type, $second));
         $this->assertSame('store', $second[1]->payload['via']);
+    }
+
+    public function testPhysicalReadDiagnosticsDistinguishFullScanFromEarlyExit(): void
+    {
+        $logger = new TestLogger();
+        $store = $this->createStore($logger);
+        $runId = 'run-'.bin2hex(random_bytes(4));
+
+        $store->append(RunEvent::forAppend(runId: $runId, turnNo: 1, type: 'run_started', payload: ['n' => 1]));
+        $store->append(RunEvent::forAppend(runId: $runId, turnNo: 2, type: 'turn_advanced', payload: ['n' => 2]));
+        $store->append(RunEvent::forAppend(runId: $runId, turnNo: 3, type: 'agent_end', payload: ['n' => 3]));
+
+        $eventsPath = $this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl';
+        $archiveBytes = filesize($eventsPath);
+        $this->assertNotFalse($archiveBytes);
+
+        $all = $store->allFor($runId);
+        $this->assertSame([1, 2, 3], array_map(static fn (RunEvent $event): int => $event->seq, $all));
+
+        $range = iterator_to_array($store->rangeFor($runId, 1, 1));
+        $this->assertSame([1], array_map(static fn (RunEvent $event): int => $event->seq, $range));
+
+        $first = $store->firstFor($runId);
+        $this->assertSame(1, $first?->seq);
+
+        foreach ($store->reverseFor($runId) as $event) {
+            $this->assertSame(3, $event->seq);
+            break;
+        }
+
+        $physical = array_values(array_filter(
+            $logger->records,
+            static fn (array $record): bool => 'session.event_store.physical_read' === ($record['context']['event_type'] ?? null),
+        ));
+        $byMethod = [];
+        foreach ($physical as $record) {
+            $byMethod[$record['context']['method']] = $record['context'];
+        }
+
+        $this->assertArrayHasKey('allFor', $byMethod);
+        $this->assertTrue($byMethod['allFor']['full_scan']);
+        $this->assertFalse($byMethod['allFor']['early_exit']);
+        $this->assertTrue($byMethod['allFor']['reached_eof']);
+        $this->assertSame($archiveBytes, $byMethod['allFor']['archive_bytes_read']);
+        $this->assertSame(3, $byMethod['allFor']['decoded_event_count']);
+
+        $this->assertArrayHasKey('rangeFor', $byMethod);
+        $this->assertTrue($byMethod['rangeFor']['early_exit']);
+        $this->assertFalse($byMethod['rangeFor']['full_scan']);
+        $this->assertLessThan($archiveBytes, $byMethod['rangeFor']['archive_bytes_read']);
+        $this->assertSame(2, $byMethod['rangeFor']['decoded_event_count']);
+
+        $this->assertArrayHasKey('firstFor', $byMethod);
+        $this->assertTrue($byMethod['firstFor']['early_exit']);
+        $this->assertFalse($byMethod['firstFor']['full_scan']);
+        $this->assertSame(1, $byMethod['firstFor']['decoded_event_count']);
+
+        $this->assertArrayHasKey('reverseFor', $byMethod);
+        $this->assertTrue($byMethod['reverseFor']['early_exit']);
+        $this->assertFalse($byMethod['reverseFor']['full_scan']);
+        // Reverse early-stop may still fetch the whole small file in one chunk.
+        $this->assertSame($archiveBytes, $byMethod['reverseFor']['archive_bytes_read']);
+        $this->assertSame(1, $byMethod['reverseFor']['decoded_event_count']);
+    }
+
+    public function testAllForAvoidsWholeFileTextDuplicationUnderStrict128M(): void
+    {
+        $script = __DIR__.'/Fixtures/session-run-event-store-physical-read-memory.php';
+        $probeDir = TestDirectoryIsolation::createProjectTempDir('eventstore-physical-read');
+        TestDirectoryIsolation::createHatfieldTree($probeDir, withSessions: true);
+
+        try {
+            $prepare = $this->runPhysicalReadProbe($script, $probeDir, 'prepare');
+            $this->assertSame(1800, $prepare['event_count']);
+            $this->assertSame(60, $prepare['turn_count']);
+            $this->assertGreaterThan(2_000_000, $prepare['archive_bytes']);
+
+            $production = $this->runPhysicalReadProbe($script, $probeDir, 'allfor-production');
+            $wholeFile = $this->runPhysicalReadProbe($script, $probeDir, 'allfor-wholefile-dup');
+            $stream = $this->runPhysicalReadProbe($script, $probeDir, 'range-stream');
+
+            foreach ([$production, $wholeFile, $stream] as $payload) {
+                $this->assertSame(1800, $payload['decoded_count']);
+                $this->assertSame($prepare['archive_bytes'], $payload['archive_bytes']);
+                $this->assertSame($prepare['archive_bytes'], $payload['archive_bytes_read']);
+                $this->assertTrue($payload['full_scan']);
+                $this->assertFalse($payload['early_exit']);
+                $this->assertLessThan(134217728, $payload['peak_after_bytes']);
+            }
+
+            $this->assertSame(1, $production['retained_first_seq']);
+            $this->assertSame(1800, $production['retained_last_seq']);
+            $this->assertSame(1, $wholeFile['retained_first_seq']);
+            $this->assertSame(1800, $wholeFile['retained_last_seq']);
+            $this->assertNull($stream['retained_first_seq']);
+
+            $this->assertLessThan(
+                $wholeFile['peak_delta_bytes'],
+                $production['peak_delta_bytes'],
+                \sprintf(
+                    'production allFor must peak below whole-file text duplication counterfactual; production=%d wholefile=%d',
+                    $production['peak_delta_bytes'],
+                    $wholeFile['peak_delta_bytes'],
+                ),
+            );
+            // Streaming consumer that does not retain the RunEvent list stays at/below allFor.
+            $this->assertLessThanOrEqual(
+                $production['peak_delta_bytes'],
+                $stream['peak_delta_bytes'],
+                \sprintf(
+                    'streaming rangeFor consumer must not exceed production allFor peak; stream=%d allFor=%d',
+                    $stream['peak_delta_bytes'],
+                    $production['peak_delta_bytes'],
+                ),
+            );
+        } finally {
+            TestDirectoryIsolation::removeDirectory($probeDir);
+        }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function runPhysicalReadProbe(string $script, string $probeDir, string $mode): array
+    {
+        $process = new Process(
+            [\PHP_BINARY, '-d', 'memory_limit=128M', $script, $mode],
+            cwd: \dirname(__DIR__, 3),
+            env: [
+                'HATFIELD_EVENTSTORE_PROBE_DIR' => $probeDir,
+            ],
+            timeout: 8.0,
+        );
+        $process->run();
+        $this->assertTrue(
+            $process->isSuccessful(),
+            'mode='.$mode.' stderr='.$process->getErrorOutput().' stdout='.$process->getOutput(),
+        );
+
+        $payload = json_decode(trim($process->getOutput()), true, 512, \JSON_THROW_ON_ERROR);
+        $this->assertIsArray($payload);
+        $this->assertSame($mode, $payload['mode']);
+
+        return $payload;
     }
 
     private function createStore(?LoggerInterface $logger = null): SessionRunEventStore

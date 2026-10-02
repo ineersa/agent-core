@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Agent\Artifact;
 
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStore;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
@@ -15,6 +16,7 @@ use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
@@ -503,15 +505,56 @@ final class AgentChildRunEventStoreTest extends TestCase
         $this->assertSame([99, 100], array_map(static fn (RunEvent $e): int => $e->seq, $events));
     }
 
+    public function testPhysicalReadDiagnosticsDistinguishFullScanFromEarlyExit(): void
+    {
+        $logger = new TestLogger();
+        $store = $this->createStore('parent-phys', 'child-phys', 'scout-phys', $logger);
+        $store->append(new RunEvent(runId: 'child-phys', seq: 1, turnNo: 1, type: 'run_started', payload: ['n' => 1]));
+        $store->append(new RunEvent(runId: 'child-phys', seq: 2, turnNo: 2, type: 'turn_advanced', payload: ['n' => 2]));
+        $store->append(new RunEvent(runId: 'child-phys', seq: 3, turnNo: 3, type: 'agent_end', payload: ['n' => 3]));
+
+        $path = "{$this->projectDir}/.hatfield/sessions/parent-phys/artifacts/agents/scout-phys/events.jsonl";
+        $archiveBytes = filesize($path);
+        $this->assertNotFalse($archiveBytes);
+
+        $this->assertCount(3, $store->allFor('child-phys'));
+        $this->assertSame([1], array_map(
+            static fn (RunEvent $event): int => $event->seq,
+            iterator_to_array($store->rangeFor('child-phys', 1, 1)),
+        ));
+        $this->assertSame(1, $store->firstFor('child-phys')?->seq);
+
+        $physical = array_values(array_filter(
+            $logger->records,
+            static fn (array $record): bool => 'child_event_store.physical_read' === ($record['context']['event_type'] ?? null),
+        ));
+        $byMethod = [];
+        foreach ($physical as $record) {
+            $byMethod[$record['context']['method']] = $record['context'];
+        }
+
+        $this->assertTrue($byMethod['allFor']['full_scan']);
+        $this->assertSame($archiveBytes, $byMethod['allFor']['archive_bytes_read']);
+        $this->assertSame(3, $byMethod['allFor']['decoded_event_count']);
+        $this->assertTrue($byMethod['rangeFor']['early_exit']);
+        $this->assertLessThan($archiveBytes, $byMethod['rangeFor']['archive_bytes_read']);
+        $this->assertTrue($byMethod['firstFor']['early_exit']);
+        $this->assertSame(1, $byMethod['firstFor']['decoded_event_count']);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────
 
-    private function createStore(string $parentRunId, string $agentRunId, string $artifactId): AgentChildRunEventStore
-    {
+    private function createStore(
+        string $parentRunId,
+        string $agentRunId,
+        string $artifactId,
+        ?LoggerInterface $logger = null,
+    ): AgentChildRunEventStore {
         return new AgentChildRunEventStore(
             pathResolver: $this->pathResolver,
             eventPayloadNormalizer: new EventPayloadNormalizer(),
             lockFactory: new LockFactory(new FlockStore()),
-            logger: new NullLogger(),
+            logger: $logger ?? new NullLogger(),
             sequenceAllocator: new FileRunSequenceAllocator(),
             parentRunId: $parentRunId,
             agentRunId: $agentRunId,
