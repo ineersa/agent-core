@@ -17,7 +17,8 @@ namespace Ineersa\CodingAgent\Session;
  * Reverse scans: {@see fullScan()} means the consumer did not stop early and the
  * scanner reached the start of the file. {@see archiveBytesRead()} may still equal
  * the file size on an early exit when the final fread chunk already contained the
- * unread prefix bytes; full_scan remains false in that case.
+ * unread prefix bytes; full_scan remains false in that case. A failed handle fstat,
+ * seek, or fread is not reached_eof and not a full scan.
  *
  * @internal
  */

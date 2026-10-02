@@ -79,7 +79,9 @@ final class JsonlRunEventLog
      * When {@see JsonlPhysicalReadObservation} is provided, records bytes returned by
      * underlying fread calls. full_scan means the consumer did not stop early and the
      * scanner reached start-of-file; archive_bytes_read may still include unread prefix
-     * bytes from the last fetched chunk after an early stop.
+     * bytes from the last fetched chunk after an early stop. Size comes from fstat() on
+     * the opened handle (not pathname filesize): a failed handle stat or seek is not a
+     * successful empty or completed scan.
      *
      * @return \Generator<int, string>
      */
@@ -94,8 +96,23 @@ final class JsonlRunEventLog
 
         $earlyExit = true;
         try {
-            $size = filesize($path);
-            if (false === $size || 0 === $size) {
+            $stat = fstat($handle);
+            if (false === $stat || !\array_key_exists('size', $stat)) {
+                $earlyExit = false;
+                $observation?->finish(reachedEof: false, earlyExit: false);
+
+                return;
+            }
+
+            $size = $stat['size'];
+            if (!\is_int($size) || $size < 0) {
+                $earlyExit = false;
+                $observation?->finish(reachedEof: false, earlyExit: false);
+
+                return;
+            }
+
+            if (0 === $size) {
                 $earlyExit = false;
                 $observation?->finish(reachedEof: true, earlyExit: false);
 
@@ -107,7 +124,12 @@ final class JsonlRunEventLog
             while ($position > 0) {
                 $length = min(8192, $position);
                 $position -= $length;
-                fseek($handle, $position);
+                if (-1 === fseek($handle, $position)) {
+                    $earlyExit = false;
+                    $observation?->finish(reachedEof: false, earlyExit: false);
+
+                    return;
+                }
                 $chunk = fread($handle, $length);
                 if (false === $chunk) {
                     $earlyExit = false;
