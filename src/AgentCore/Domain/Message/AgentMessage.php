@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Domain\Message;
 
-use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
-use Symfony\Component\Serializer\Attribute\Groups;
 use Symfony\Component\Serializer\Attribute\Ignore;
 
 final readonly class AgentMessage
@@ -17,23 +15,14 @@ final readonly class AgentMessage
      * @param array<string, mixed>             $metadata
      */
     public function __construct(
-        #[Groups([ToolBatchStateDTO::SNAPSHOT_GROUP])]
         public string $role,
-        #[Groups([ToolBatchStateDTO::SNAPSHOT_GROUP])]
         public array $content,
-        #[Groups([ToolBatchStateDTO::SNAPSHOT_GROUP])]
         public ?\DateTimeImmutable $timestamp = null,
-        #[Groups([ToolBatchStateDTO::SNAPSHOT_GROUP])]
         public ?string $name = null,
-        #[Groups([ToolBatchStateDTO::SNAPSHOT_GROUP])]
         public ?string $toolCallId = null,
-        #[Groups([ToolBatchStateDTO::SNAPSHOT_GROUP])]
         public ?string $toolName = null,
-        #[Groups([ToolBatchStateDTO::SNAPSHOT_GROUP])]
         public mixed $details = null,
-        #[Groups([ToolBatchStateDTO::SNAPSHOT_GROUP])]
         public bool $isError = false,
-        #[Groups([ToolBatchStateDTO::SNAPSHOT_GROUP])]
         public array $metadata = [],
     ) {
     }

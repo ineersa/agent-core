@@ -116,7 +116,8 @@ final class SessionToolLaunchInputStoreTest extends IsolatedKernelTestCase
 
             return new ToolResult('fork-call', 'fork', [['type' => 'text', 'text' => 'launch failed']], isError: true);
         });
-        $worker = new ExecuteToolCallWorker($executor, new TestMessageBus(), $this->createStub(DeferredToolCompletionRepositoryInterface::class), new ToolExecutionResultStore(), $this->createStub(RunOperationalStatusReaderInterface::class), launchInputStore: $store);
+        $bus = new TestMessageBus();
+        $worker = new ExecuteToolCallWorker($executor, $bus, $this->createStub(DeferredToolCompletionRepositoryInterface::class), new ToolExecutionResultStore(), $this->createStub(RunOperationalStatusReaderInterface::class), launchInputStore: $store);
         $worker($call);
         $this->assertFileExists($this->payloadPath($runId, 'fork-call'));
     }
@@ -208,9 +209,10 @@ final class SessionToolLaunchInputStoreTest extends IsolatedKernelTestCase
         $inputStore->expects($this->never())->method('read');
         $reference = new ToolLaunchInputReferenceDTO('fork', 'owner', 2, 'step', 'call', 'model', str_repeat('a', 64), 1);
         $call = new ExecuteToolCall('owner', 1, 'step', 1, 'key', 'call', 'fork', [], 0, parentModel: 'model', launchContext: $reference);
-        $worker = new ExecuteToolCallWorker($executor, new TestMessageBus(), $this->createStub(DeferredToolCompletionRepositoryInterface::class), new ToolExecutionResultStore(), $this->createStub(RunOperationalStatusReaderInterface::class), launchInputStore: $inputStore);
-        $this->expectExceptionMessage('Tool launch input reference does not match execution envelope.');
+        $bus = new TestMessageBus();
+        $worker = new ExecuteToolCallWorker($executor, $bus, $this->createStub(DeferredToolCompletionRepositoryInterface::class), new ToolExecutionResultStore(), $this->createStub(RunOperationalStatusReaderInterface::class), launchInputStore: $inputStore);
         $worker($call);
+        $this->assertOwnerVisibleInputFailure($bus, 'Tool launch input reference does not match execution envelope.');
     }
 
     public function testMissingInputFailsBeforeExternalWork(): void
@@ -219,9 +221,47 @@ final class SessionToolLaunchInputStoreTest extends IsolatedKernelTestCase
         $executor->expects($this->never())->method('execute');
         $inputStore = self::getContainer()->get(ToolLaunchInputStoreInterface::class);
         $reference = new ToolLaunchInputReferenceDTO('fork', 'missing-owner', 1, 'step', 'call', 'model', str_repeat('a', 64), 1);
-        $worker = new ExecuteToolCallWorker($executor, new TestMessageBus(), $this->createStub(DeferredToolCompletionRepositoryInterface::class), new ToolExecutionResultStore(), $this->createStub(RunOperationalStatusReaderInterface::class), launchInputStore: $inputStore);
-        $this->expectExceptionMessage('Missing or corrupt tool launch input.');
+        $bus = new TestMessageBus();
+        $worker = new ExecuteToolCallWorker($executor, $bus, $this->createStub(DeferredToolCompletionRepositoryInterface::class), new ToolExecutionResultStore(), $this->createStub(RunOperationalStatusReaderInterface::class), launchInputStore: $inputStore);
         $worker($this->call($reference));
+        $this->assertOwnerVisibleInputFailure($bus, 'Missing or corrupt tool launch input.');
+    }
+
+    public function testCorruptInputProducesErrorResultWithoutExternalExecution(): void
+    {
+        $runId = self::getContainer()->get(HatfieldSessionStore::class)->createSession('corrupt-input-disposition');
+        $inputStore = self::getContainer()->get(ToolLaunchInputStoreInterface::class);
+        $reference = $inputStore->publish('fork', $runId, 1, 'step', 'call', 'model', '', []);
+        file_put_contents($this->payloadPath($runId, 'call'), 'corrupt');
+        $executor = $this->createMock(ToolExecutorInterface::class);
+        $executor->expects($this->never())->method('execute');
+        $bus = new TestMessageBus();
+        $worker = new ExecuteToolCallWorker($executor, $bus, $this->createStub(DeferredToolCompletionRepositoryInterface::class), new ToolExecutionResultStore(), $this->createStub(RunOperationalStatusReaderInterface::class), launchInputStore: $inputStore);
+        $worker($this->call($reference));
+        $this->assertOwnerVisibleInputFailure($bus, 'Missing or corrupt tool launch input.');
+    }
+
+    public function testUnreadableInputProducesErrorResultWithoutExternalExecution(): void
+    {
+        $inputStore = $this->createMock(ToolLaunchInputStoreInterface::class);
+        $inputStore->expects($this->once())->method('read')->willThrowException(new \RuntimeException('Cannot open tool launch input.'));
+        $executor = $this->createMock(ToolExecutorInterface::class);
+        $executor->expects($this->never())->method('execute');
+        $reference = new ToolLaunchInputReferenceDTO('fork', 'owner', 1, 'step', 'call', 'model', str_repeat('a', 64), 1);
+        $bus = new TestMessageBus();
+        $worker = new ExecuteToolCallWorker($executor, $bus, $this->createStub(DeferredToolCompletionRepositoryInterface::class), new ToolExecutionResultStore(), $this->createStub(RunOperationalStatusReaderInterface::class), launchInputStore: $inputStore);
+        $worker($this->call($reference));
+        $this->assertOwnerVisibleInputFailure($bus, 'Cannot open tool launch input.');
+    }
+
+    private function assertOwnerVisibleInputFailure(TestMessageBus $bus, string $message): void
+    {
+        $this->assertCount(1, $bus->messages);
+        $result = $bus->messages[0];
+        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\ToolCallResult::class, $result);
+        $this->assertTrue($result->isError);
+        $this->assertSame('call', $result->toolCallId);
+        $this->assertSame($message, $result->error['message']);
     }
 
     private function call(ToolLaunchInputReferenceDTO $reference): ExecuteToolCall

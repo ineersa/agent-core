@@ -61,9 +61,9 @@ subprocess start; duration remains on the later result metadata.
 - The private immutable file lives beside tool batches in `runtime/tool-launch-inputs`, using the same parent/child path resolver. It is not an output-cap or temporary-cleanup file.
 - The reference fixes producing run/turn/step/call/model, kind, SHA-256, and byte length. Neither Messenger nor mutable batch snapshots contain the body.
 - Fork files contain the producing messages and agents text. Subagent files contain agents text only.
-- `ExecuteToolCallWorker` validates the reference against its envelope and resolves worker-local `ToolLaunchContextDTO` before external work. Missing, corrupt, or mismatched input fails closed without archive replay.
+- `ExecuteToolCallWorker` checks durable deferred registration before reading input. Pending execution redelivery re-emits registration; completed execution redelivery is a no-op. Unregistered work validates and resolves input before external execution. Missing, corrupt, unreadable, or mismatched input posts an error `ToolCallResult` without archive replay.
 - Worker compaction and child reservation remain outside the owner lock.
-- Shared deferred completion deletes the file after terminal child projections and artifact outcomes are available. Single, parallel, and interrupted handoffs rebuild from child products, so repeated delivery does not need launch input.
+- Shared deferred completion retains input until deferred registration exists, even when child projections are terminal. Once registered, cleanup is best effort after artifact outcomes are available; a content-free warning records deletion failure without blocking completion dispatch. Single, parallel, and interrupted handoffs rebuild from child products.
 - Canonical tool-result cleanup also deletes failed synchronous launch input. Terminal parent cleanup removes remaining files, including files published before an unsuccessful transition. Pending work and approval waits retain their input. This does not add a crash-recovery journal or exactly-once guarantee.
 
 ## Events and commit

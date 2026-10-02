@@ -78,7 +78,7 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
         return $this->toCorrelation($inserted);
     }
 
-    public function findPendingByRunAndToolCall(string $runId, string $toolCallId): ?DeferredToolCompletionCorrelation
+    public function findByRunAndToolCall(string $runId, string $toolCallId): ?DeferredToolCompletionCorrelation
     {
         $entity = $this->findFreshOneBy([
             'runId' => $runId,
@@ -86,10 +86,6 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
         ]);
 
         if (!$entity instanceof DeferredToolCompletion) {
-            return null;
-        }
-
-        if ('completed' === $entity->status) {
             return null;
         }
 
