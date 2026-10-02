@@ -55,7 +55,6 @@ use Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
-use Ineersa\CodingAgent\Session\CommittedRunEventAppender;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -1572,44 +1571,139 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $this->assertSame($identity->childRunId, $logger->records[0]['context']['child_run_id']);
     }
 
+    #[DataProvider('delayedProgressCases')]
+    public function testDelayedOwnerProgressBlocksCompletionUntilConsumption(string $mode, ?string $kind, bool $superseded = false): void
+    {
+        $repo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
+        $factory = new DeferredSubagentBatchIdentityFactory();
+        $parent = 'parent-delayed-'.$mode.'-'.($kind ?? 'natural');
+        $tool = 'call';
+        $lifecycle = $factory->batchLifecycleId($parent, $tool);
+        $child = $factory->childIdentity($parent, $tool, 1);
+        $repo->reserveBatch($lifecycle, $parent, 2, $tool, 0, ChildRunBatchExecutionModeEnum::from($mode), 1, new \DateTimeImmutable('+1 hour'), [
+            ['batchIndex' => 1, 'childRunId' => $child['childRunId'], 'artifactId' => $child['artifactId'], 'agentName' => 'scout', 'task' => 'task', 'launchModel' => 'model', 'launchReasoning' => 'medium'],
+        ]);
+        $repo->applyLaunchSuccessState($parent, $tool, $lifecycle, new \DateTimeImmutable(), [1]);
+        $this->ensureArtifactReserved($parent, $child['childRunId'], $child['artifactId'], 'scout', 'task');
+        $observer = new ObserveDeferredSubagentBatchChildTurnHandler($repo,
+            self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class),
+            new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new \Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())), new TestLogger(), new TestMessageBus());
+        $observer(new ObserveDeferredSubagentBatchChildTurnMessage($lifecycle, 1, $child['childRunId'], null === $kind ? RunStatus::Completed : RunStatus::Running, 1, [
+            new AfterTurnCommitEventSummary(1, RunEventTypeEnum::LlmStepCompleted->value, ['assistant_message' => ['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'done']]]]),
+        ]));
+        if (null !== $kind) {
+            $row = $repo->findEntityByLifecycleId($lifecycle);
+            $row->interruptionKind = DeferredSubagentInterruptionKindEnum::from($kind);
+            self::getContainer()->get('doctrine.orm.entity_manager')->flush();
+        }
+        self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class)->registerPending(new DeferredToolCompletionCorrelation(
+            $lifecycle, $parent, 2, 'step', 1, 'idempotency', $tool, 'subagent', [], 0,
+        ));
+        $inputs = self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface::class);
+        $inputs->publish('subagent', $parent, 2, 'step', $tool, 'model', '', []);
+        $paths = self::getContainer()->get(\Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface::class);
+        $inputPath = \dirname($paths->resolveToolBatchesDirectory($parent)).'/tool-launch-inputs/'.hash('sha256', $tool).'.jsonl';
+        $queued = new TestMessageBus();
+        $appender = new SubagentProgressEventAppender($queued, SubagentProgressSerializerTestSupport::normalizer(), SubagentProgressSerializerTestSupport::validator(),
+            self::getContainer()->get(RuntimeEventSinkInterface::class), self::getContainer()->get(RuntimeEventMapper::class), false);
+        $completionBus = new TestMessageBus();
+        $delivery = $this->buildLifecycleDelivery($completionBus, $appender);
+        $delivery->deliver($lifecycle);
+        $this->assertCount(1, $queued->messages);
+        $this->assertSame([], $completionBus->messages);
+        $before = $repo->findByLifecycleId($lifecycle);
+        $this->assertSame(0, $before->deliveredProgressRevision);
+        $this->assertNull($before->interruptionProgressEnqueuedAt);
+        $this->assertNull($before->terminalCompletionEnqueuedAt);
+        $delivery->deliver($lifecycle);
+        $this->assertSame([], $completionBus->messages);
+        $this->assertFileExists($inputPath);
+        // A retry may queue the same command; only owner consumption commits it.
+        $active = self::getContainer()->get(\Ineersa\AgentCore\Contract\ActiveRunContextInterface::class);
+        $active->remember(\Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder::running($parent)->withTurnNo(2)->withPendingToolCalls([$tool => false])->build());
+        if ($superseded) {
+            if (null !== $kind) {
+                // Cancellation has finished; a follow-up turn owns the context
+                // before the old forced command reaches run_control.
+                $active->remember($active->stateFor($parent)->with(['status' => RunStatus::Cancelled, 'pendingToolCalls' => []]));
+                $active->remember($active->stateFor($parent)->with(['status' => RunStatus::Running, 'turnNo' => 3, 'pendingToolCalls' => ['new-call' => false]]));
+            } else {
+                $active->remember($active->stateFor($parent)->with(['pendingToolCalls' => [$tool => true, 'sibling' => false]]));
+            }
+        }
+        $bus = self::getContainer()->get('agent.command.bus');
+        $bus->dispatch($queued->messages[0], [new \Symfony\Component\Messenger\Stamp\ReceivedStamp('run_control')]);
+        $bus->dispatch($queued->messages[1], [new \Symfony\Component\Messenger\Stamp\ReceivedStamp('run_control')]);
+        $this->assertSame($superseded ? 0 : 1, $active->stateFor($parent)->lastSeq);
+        if ($superseded) {
+            $this->assertNull(self::getContainer()->get(\Ineersa\AgentCore\Contract\EventStoreInterface::class)->latestSequenceFor($parent));
+        }
+        $after = $repo->findByLifecycleId($lifecycle);
+        if (null === $kind) {
+            $this->assertSame($after->aggregateProgressRevision, $after->deliveredProgressRevision);
+        } else {
+            $this->assertNotNull($after->interruptionProgressEnqueuedAt);
+        }
+        $delivery->deliver($lifecycle);
+        $this->assertCount(1, $completionBus->messages);
+        $this->assertInstanceOf(CompleteDeferredToolCall::class, $completionBus->messages[0]);
+        $this->assertNotNull($repo->findByLifecycleId($lifecycle)->terminalCompletionEnqueuedAt);
+        $this->assertFileDoesNotExist($inputPath);
+        $delivery->deliver($lifecycle);
+        $this->assertCount(1, $completionBus->messages);
+    }
+
+    public static function delayedProgressCases(): iterable
+    {
+        yield 'single natural' => ['single', null];
+        yield 'parallel natural' => ['parallel', null];
+        yield 'single cancellation' => ['single', 'parent_cancelled'];
+        yield 'parallel cancellation' => ['parallel', 'parent_cancelled'];
+        yield 'single timeout' => ['single', 'timeout'];
+        yield 'resolved normal call retires its obligation' => ['single', null, true];
+        yield 'cancelled single followed by new turn' => ['single', 'parent_cancelled', true];
+        yield 'cancelled parallel followed by new turn' => ['parallel', 'parent_cancelled', true];
+    }
+
     /**
      * @param array<int, array<string, mixed>> $appended
      */
     private function createSpyProgressAppender(array &$appended): SubagentProgressEventAppender
     {
-        $inner = self::getContainer()->get(CommittedRunEventAppender::class);
-        $sink = self::getContainer()->get(RuntimeEventSinkInterface::class);
-        $mapper = self::getContainer()->get(RuntimeEventMapper::class);
+        $repo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
+        $store = self::getContainer()->get(\Ineersa\AgentCore\Contract\EventStoreInterface::class);
+        $lock = self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class);
 
-        return new class($inner, $sink, $mapper, $appended) extends SubagentProgressEventAppender {
+        return new class($repo, $store, $lock, $appended) extends SubagentProgressEventAppender {
             public function __construct(
-                CommittedRunEventAppender $inner,
-                RuntimeEventSinkInterface $sink,
-                RuntimeEventMapper $mapper,
+                private DeferredSubagentBatchRepository $repo,
+                private \Ineersa\AgentCore\Contract\EventStoreInterface $store,
+                private \Ineersa\AgentCore\Application\Handler\RunLockManager $lock,
                 private array &$appended,
             ) {
-                parent::__construct(
-                    $inner,
-                    SubagentProgressSerializerTestSupport::normalizer(),
-                    SubagentProgressSerializerTestSupport::validator(),
-                    $sink,
-                    $mapper,
-                    false,
-                );
             }
 
             public function append(
-                string $parentRunId,
-                int $parentTurnNo,
-                string $parentToolCallId,
-                int $parentOrderIndex,
-                string $toolName,
+                string $parentRunId, int $parentTurnNo, string $parentToolCallId,
+                int $parentOrderIndex, string $toolName,
                 \Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotInterface $progress,
-            ): \Ineersa\AgentCore\Domain\Event\RunEvent {
-                // Capture canonical payload shape asserted by lifecycle contract tests.
-                $this->appended[] = SubagentProgressSerializerTestSupport::normalizer()->normalize($progress);
+                string $lifecycleId, int $revision, ?string $interruptionKind = null,
+            ): bool {
+                $normalized = SubagentProgressSerializerTestSupport::normalizer()->normalize($progress);
+                $this->appended[] = $normalized;
+                $bus = new TestMessageBus();
+                $handler = new \Ineersa\CodingAgent\Application\Pipeline\CommitSubagentProgressHandler($this->repo, $bus);
+                $active = new \Ineersa\AgentCore\Tests\Support\TestActiveRunContext();
+                $active->remember(\Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder::running($parentRunId)
+                    ->withTurnNo($parentTurnNo)->withPendingToolCalls([$parentToolCallId => false])->build());
+                $dispatcher = new \Ineersa\AgentCore\Application\Handler\StepDispatcher($bus, $bus);
+                $commit = new \Ineersa\AgentCore\Application\Pipeline\RunCommit($active, $this->store, $dispatcher, new TestLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector());
+                $processor = new \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor($active, $this->lock, $commit, $dispatcher, [$handler]);
+                $processor->process('command.subagent_progress', new \Ineersa\AgentCore\Domain\Message\CommitSubagentProgress(
+                    $parentRunId, $parentTurnNo, $lifecycleId, $parentToolCallId, $parentOrderIndex, $revision, $normalized, $interruptionKind,
+                ));
 
-                return parent::append($parentRunId, $parentTurnNo, $parentToolCallId, $parentOrderIndex, $toolName, $progress);
+                return true;
             }
         };
     }
@@ -1634,10 +1728,11 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
     private function buildLifecycleDelivery(TestMessageBus $commandBus, ?SubagentProgressEventAppender $spyAppender = null, ?\Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface $launchInputStore = null, ?TestLogger $completionLogger = null): DeferredSubagentBatchLifecycleDeliveryService
     {
         $repo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
+        $ignoredProgress = [];
         $progress = new DeferredSubagentBatchProgressDeliveryService(
             $repo,
             $this->createSnapshotFactory(),
-            $spyAppender ?? self::getContainer()->get(SubagentProgressEventAppender::class),
+            $spyAppender ?? $this->createSpyProgressAppender($ignoredProgress),
             new TestLogger(),
         );
         $completionDispatcher = new DeferredSubagentBatchCompletionDispatcher(

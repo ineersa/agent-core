@@ -46,6 +46,11 @@ final readonly class DeferredSubagentBatchLifecycleDeliveryService
             if (null === $batch || null !== $batch->terminalCompletionEnqueuedAt) {
                 return;
             }
+            if ($batch->aggregateProgressRevision > $batch->deliveredProgressRevision) {
+                // The owner command is still queued. Consumption schedules
+                // lifecycle delivery again after canonical progress commits.
+                return;
+            }
         }
 
         $this->naturalCompletion->completeIfAllTerminal($batch);

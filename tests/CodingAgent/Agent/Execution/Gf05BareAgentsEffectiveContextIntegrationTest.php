@@ -27,7 +27,6 @@ use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
-use Ineersa\CodingAgent\Session\CommittedRunEventAppender;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
 use Ineersa\CodingAgent\Tests\Agent\Execution\Support\PipelineCapturingAgentRunner;
@@ -164,7 +163,6 @@ final class Gf05BareAgentsEffectiveContextIntegrationTest extends PerMethodIsola
             'agentRunner' => $childRunner,
             'runStateRebuilder' => $this->rebuildParentState($parentState),
             'eventStore' => $childEventStore,
-            'committedRunEventAppender' => self::getContainer()->get(CommittedRunEventAppender::class),
             'metadataReader' => new RunStartedMetadataReader($childEventStore, AttributeSerializerValidatorTestFactory::denormalizer()),
             'relationshipReader' => \Ineersa\CodingAgent\Tests\Support\StubRunRelationshipReader::topLevel($parentState->runId),
             'childRunDirectory' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory::class),

@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Message\ApplyShellCommand;
+use Ineersa\AgentCore\Domain\Message\CommitSubagentProgress;
 use Ineersa\AgentCore\Domain\Message\CompactionStepResult;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Message\InvalidateRunContext;
@@ -169,6 +170,12 @@ final readonly class RunOrchestrator
     public function onRefreshRunContext(RefreshRunContext $message): void
     {
         $this->dispatch('context.refresh', self::ScopeRefreshContext, $message);
+    }
+
+    #[AsMessageHandler(bus: 'agent.command.bus')]
+    public function onCommitSubagentProgress(CommitSubagentProgress $message): void
+    {
+        $this->dispatch('command.subagent_progress', 'command.subagent_progress', $message);
     }
 
     /**

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Interruption;
 
-use Doctrine\ORM\OptimisticLockException;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
@@ -62,34 +61,12 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
         DeferredSubagentInterruptionKindEnum $kind,
     ): void {
         if (null === $batch->interruptionProgressEnqueuedAt) {
-            $appended = $this->progressDelivery->emitForcedInterruptionProgress($batch, $kind);
-
+            $this->progressDelivery->emitForcedInterruptionProgress($batch, $kind);
             $batch = $this->batchRepository->findByLifecycleId($batch->lifecycleId);
-            if (null === $batch || null !== $batch->terminalCompletionEnqueuedAt) {
-                return;
-            }
-
-            if ($appended) {
-                try {
-                    $this->batchRepository->markInterruptionProgressEnqueued(
-                        batchLifecycleId: $batch->lifecycleId,
-                        enqueuedAt: new \DateTimeImmutable(),
-                        expectedProjectionVersion: $batch->projectionVersion,
-                    );
-                } catch (OptimisticLockException $exception) {
-                    $resolved = $this->batchRepository->findByLifecycleId($batch->lifecycleId);
-                    if (null === $resolved || null !== $resolved->terminalCompletionEnqueuedAt) {
-                        return;
-                    }
-                    if (null === $resolved->interruptionProgressEnqueuedAt) {
-                        throw $exception;
-                    }
-                    $batch = $resolved;
-                }
-            }
-
-            $batch = $this->batchRepository->findByLifecycleId($batch->lifecycleId);
-            if (null === $batch || null !== $batch->terminalCompletionEnqueuedAt) {
+            if (null === $batch || null !== $batch->terminalCompletionEnqueuedAt
+                || null === $batch->interruptionProgressEnqueuedAt) {
+                // Only owner consumption marks forced progress delivered. Its
+                // post-commit callback schedules lifecycle delivery again.
                 return;
             }
         }
@@ -143,37 +120,12 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
     ): void {
         if (DeferredSubagentInterruptionKindEnum::ParentCancelled === $kind
             && null === $batch->interruptionProgressEnqueuedAt) {
-            $appended = $this->progressDelivery->emitForcedInterruptionProgress($batch, $kind);
-
+            $this->progressDelivery->emitForcedInterruptionProgress($batch, $kind);
             $batch = $this->batchRepository->findByLifecycleId($batch->lifecycleId);
-            if (null === $batch || null !== $batch->terminalCompletionEnqueuedAt) {
-                return;
-            }
-
-            if (!$appended) {
-                return;
-            }
-
-            try {
-                $this->batchRepository->markInterruptionProgressEnqueued(
-                    batchLifecycleId: $batch->lifecycleId,
-                    enqueuedAt: new \DateTimeImmutable(),
-                    expectedProjectionVersion: $batch->projectionVersion,
-                );
-            } catch (OptimisticLockException $exception) {
-                $resolved = $this->batchRepository->findByLifecycleId($batch->lifecycleId);
-                if (null === $resolved || null !== $resolved->terminalCompletionEnqueuedAt) {
-                    return;
-                }
-                if (null !== $resolved->interruptionProgressEnqueuedAt) {
-                    $batch = $resolved;
-                } else {
-                    throw $exception;
-                }
-            }
-
-            $batch = $this->batchRepository->findByLifecycleId($batch->lifecycleId);
-            if (null === $batch || null !== $batch->terminalCompletionEnqueuedAt) {
+            if (null === $batch || null !== $batch->terminalCompletionEnqueuedAt
+                || null === $batch->interruptionProgressEnqueuedAt) {
+                // Only owner consumption marks forced progress delivered. Its
+                // post-commit callback schedules lifecycle delivery again.
                 return;
             }
         }
