@@ -93,6 +93,7 @@ final class InProcessAttachCancelsDeferredToolHumanTest extends IsolatedKernelTe
                 eventStore: $eventStore,
                 stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
                 logger: new NullLogger(),
+                toolBatchCollector: $collector,
             ),
             stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
             handlers: [$applyHandler],

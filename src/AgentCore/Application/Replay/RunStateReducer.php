@@ -441,7 +441,9 @@ final readonly class RunStateReducer
         $toolCallId = \is_string($payload['tool_call_id'] ?? null) ? $payload['tool_call_id'] : null;
 
         if (null !== $toolCallId) {
-            $pendingToolCalls[$toolCallId] = false;
+            if (!isset($state->pendingShellToolCalls[$toolCallId])) {
+                $pendingToolCalls[$toolCallId] = false;
+            }
             $attempt = \is_int($payload['attempt'] ?? null) ? $payload['attempt'] : null;
 
             return $state->with([
@@ -469,7 +471,6 @@ final readonly class RunStateReducer
     ): RunState {
         $result = $this->toolExecutionEndPayloadCodec->fromEventPayload($payload);
         $toolCallId = $result->toolCallId;
-        $pendingToolCalls[$toolCallId] = true;
 
         if (isset($state->pendingShellToolCalls[$toolCallId])) {
             $pendingShellToolCalls = $state->pendingShellToolCalls;
@@ -484,6 +485,7 @@ final readonly class RunStateReducer
             ]);
         }
 
+        $pendingToolCalls[$toolCallId] = true;
         $completedToolResultsByCallId[$toolCallId] = $result;
 
         return $state->with([

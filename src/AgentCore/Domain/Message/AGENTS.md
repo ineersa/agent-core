@@ -31,13 +31,12 @@ Producers/consumers and App-layer workers: `../../Application/AGENTS.md`.
 
 ## Immutable child-launch input
 
-`ExecuteToolCall` may carry an optional `ToolLaunchContextDTO` (`launchContext`):
+`ExecuteToolCall` may carry an optional `ToolLaunchInputReferenceDTO` in `launchContext`:
 
-- Attach it only for `fork` and `subagent`. Ordinary tools keep `null`.
-- Fork includes producing run/turn/model, agents text, and the owner message snapshot.
-- Subagent includes producing run/turn/model and agents text only.
-- The DTO is fixed at owner dispatch. HITL `withHumanInputAnswer()` copies it unchanged.
-- Tool and durable tool-batch snapshots serialize it with `ToolBatchStateDTO::SNAPSHOT_GROUP`.
+- Only fork and subagent calls carry a reference. Ordinary tools keep `null`.
+- The reference contains producing run/turn/step/call/model, kind, checksum, and byte length. It contains no path or conversation body.
+- Owner publication seals the separate file before dispatch. HITL `withHumanInputAnswer()` preserves the reference.
+- Messenger and durable tool-batch snapshots serialize only the reference. `ToolLaunchContextDTO` is resolved input used locally by the execution worker.
 
 ## Maintenance
 

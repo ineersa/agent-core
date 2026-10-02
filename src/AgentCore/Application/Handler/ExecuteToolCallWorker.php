@@ -7,6 +7,7 @@ namespace Ineersa\AgentCore\Application\Handler;
 use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface;
 use Ineersa\AgentCore\Domain\Event\DeferredToolCompletionRegisteredEvent;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
@@ -32,6 +33,7 @@ final readonly class ExecuteToolCallWorker
         private RunOperationalStatusReaderInterface $statusReader,
         private ?RunTracer $tracer = null,
         private ?EventDispatcherInterface $eventDispatcher = null,
+        private ?ToolLaunchInputStoreInterface $launchInputStore = null,
     ) {
     }
 
@@ -99,6 +101,23 @@ final readonly class ExecuteToolCallWorker
             return null;
         }
 
+        $launchContext = null;
+        if (null !== $message->launchContext) {
+            $reference = $message->launchContext;
+            if ($reference->producingRunId !== $message->runId()
+                || $reference->producingTurnNo !== $message->turnNo()
+                || $reference->producingStepId !== $message->stepId()
+                || $reference->toolCallId !== $message->toolCallId
+                || $reference->producingModel !== $message->parentModel
+                || $reference->kind !== $message->toolName) {
+                throw new \RuntimeException('Tool launch input reference does not match execution envelope.');
+            }
+            if (null === $this->launchInputStore) {
+                throw new \LogicException('Child launch input store is required.');
+            }
+            $launchContext = $this->launchInputStore->read($reference);
+        }
+
         $cancelToken = new RunCancellationToken($this->statusReader, $message->runId());
 
         $batchToolCallCount = 1;
@@ -131,7 +150,7 @@ final readonly class ExecuteToolCallWorker
                 // to resume an exact approved call without re-prompting the originating hook.
                 'human_input_answer' => $message->humanInputAnswer,
                 'parent_model' => $message->parentModel,
-                'launch_context' => $message->launchContext,
+                'launch_context' => $launchContext,
             ],
         );
 

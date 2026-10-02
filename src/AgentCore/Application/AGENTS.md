@@ -54,19 +54,22 @@ EventStore dependency: it only executes bash and posts `ToolCallResult`.
 `tool_execution_start` is lifecycle acceptance before external work, not measured
 subprocess start; duration remains on the later result metadata.
 
-## Owner-prepared child launch context
+## File-backed child launch input
 
-`LlmStepResultHandler` attaches `ToolLaunchContextDTO` only when dispatching `fork` or `subagent` `ExecuteToolCall` effects. Ordinary tools keep `launchContext=null`.
+`LlmStepResultHandler` writes child input from the owner's current messages through `ToolLaunchInputStoreInterface`, one message at a time. It attaches only `ToolLaunchInputReferenceDTO` to fork/subagent `ExecuteToolCall` effects. Ordinary tools keep `launchContext=null`.
 
-- Fork: producing run/turn/model, inherited `agents_context` text, and the owner message snapshot.
-- Subagent: producing run/turn/model and inherited `agents_context` text.
-- `ExecuteToolCallWorker` places the DTO on `ToolCall` context; `ToolExecutor` builds `ToolContext` from it and rejects kind/run/turn/model mismatches before toolbox execution.
-- Fork/subagent preparation consumes that immutable input. It does not rebuild parent `RunState` for launch context.
-- Compaction and child reservation stay on the execution worker after dispatch. They do not run under the owner lock.
+- The private immutable file lives beside tool batches in `runtime/tool-launch-inputs`, using the same parent/child path resolver. It is not an output-cap or temporary-cleanup file.
+- The reference fixes producing run/turn/step/call/model, kind, SHA-256, and byte length. Neither Messenger nor mutable batch snapshots contain the body.
+- Fork files contain the producing messages and agents text. Subagent files contain agents text only.
+- `ExecuteToolCallWorker` validates the reference against its envelope and resolves worker-local `ToolLaunchContextDTO` before external work. Missing, corrupt, or mismatched input fails closed without archive replay.
+- Worker compaction and child reservation remain outside the owner lock.
+- Shared deferred completion deletes the file after terminal child projections and artifact outcomes are available. Single, parallel, and interrupted handoffs rebuild from child products, so repeated delivery does not need launch input.
+- Canonical tool-result cleanup also deletes failed synchronous launch input. Terminal parent cleanup removes remaining files, including files published before an unsuccessful transition. Pending work and approval waits retain their input. This does not add a crash-recovery journal or exactly-once guarantee.
 
 ## Events and commit
 
 - `RunCommit::commit()` appends canonical `RunEvent` via `EventStoreInterface` (`append` / `appendMany`), then persists the narrow projection and active context before effect dispatch via `StepDispatcher` and after-turn hooks via `HookDispatcher`
+- `RunCommit` releases collector-owned in-memory batches after persistence and state publication: the exact batch on `tool_batch_committed`, or all run batches on a terminal `agent_end`. Finalized collection alone does not release them. Durable collector reads do not retain deserialized batches; the App cleanup hook deletes snapshot files independently.
 - `StartRunHandler` re-arms the initial `AdvanceRun` post-commit callback when Messenger redelivers after `run_started` already committed but before any AdvanceRun token was applied (`lastAppliedAdvanceKey` / `currentOperation` still null)
 - `StartRunHandler` no-ops when status is already `Cancelled`/`Cancelling` and `model` is still null, so reserved child run ids cancelled before `StartRun` cannot revive
 - `ToolCallResultFactory::fromExecuteToolCallAndToolResult()` maps envelope `error` only for cancelled tool results (`details.cancelled`); other tool errors keep `error: null` and rely on `isError` / `details`

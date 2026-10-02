@@ -791,6 +791,20 @@ final class LlmStepResultHandlerTest extends TestCase
                 );
             }
         };
+        $inputStore = $this->createMock(\Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface::class);
+        $inputStore->expects($this->exactly(2))->method('publish')->willReturnCallback(
+            function (string $kind, string $runId, int $turnNo, string $stepId, string $toolCallId, string $model, string $agentsContext, iterable $messages): \Ineersa\AgentCore\Domain\Tool\ToolLaunchInputReferenceDTO {
+                $this->assertSame('OWNED_AGENTS', $agentsContext);
+                if ('fork' === $kind) {
+                    $this->assertSame('user-context', $messages[0]->role);
+                    $this->assertSame('assistant', $messages[1]->role);
+                } else {
+                    $this->assertSame([], $messages);
+                }
+
+                return new \Ineersa\AgentCore\Domain\Tool\ToolLaunchInputReferenceDTO($kind, $runId, $turnNo, $stepId, $toolCallId, $model, str_repeat('a', 64), 100);
+            },
+        );
         $handler = new LlmStepResultHandler(
             toolBatchCollector: new ToolBatchCollector(),
             commandMailboxPolicy: new CommandMailboxPolicy(
@@ -804,6 +818,7 @@ final class LlmStepResultHandlerTest extends TestCase
             normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
             toolSetResolver: $toolSetResolver,
             maxParallelism: 3,
+            launchInputStore: $inputStore,
         );
 
         $agents = new \Ineersa\AgentCore\Domain\Message\AgentMessage(
@@ -843,25 +858,20 @@ final class LlmStepResultHandlerTest extends TestCase
         $result = $handler->handle($message, $state);
         ($result->postCommit[0])();
         $this->assertCount(3, $executionBus->messages);
+        $this->assertStringNotContainsString('OWNED_AGENTS', json_encode($result->events, \JSON_THROW_ON_ERROR));
 
         $fork = $executionBus->messages[0];
         $this->assertInstanceOf(ExecuteToolCall::class, $fork);
         $this->assertNotNull($fork->launchContext);
-        $this->assertTrue($fork->launchContext->isFork());
+        $this->assertSame('fork', $fork->launchContext->kind);
         $this->assertSame('run-launch-ctx', $fork->launchContext->producingRunId);
         $this->assertSame(7, $fork->launchContext->producingTurnNo);
         $this->assertSame('openai-codex/gpt-5.6-sol', $fork->launchContext->producingModel);
-        $this->assertSame('OWNED_AGENTS', $fork->launchContext->agentsContext);
-        $this->assertGreaterThanOrEqual(2, \count($fork->launchContext->forkMessages));
-        $this->assertSame($agents, $fork->launchContext->forkMessages[0]);
-        $this->assertSame('assistant', $fork->launchContext->forkMessages[1]->role);
 
         $sub = $executionBus->messages[1];
         $this->assertInstanceOf(ExecuteToolCall::class, $sub);
         $this->assertNotNull($sub->launchContext);
-        $this->assertTrue($sub->launchContext->isSubagent());
-        $this->assertSame([], $sub->launchContext->forkMessages);
-        $this->assertSame('OWNED_AGENTS', $sub->launchContext->agentsContext);
+        $this->assertSame('subagent', $sub->launchContext->kind);
 
         $bash = $executionBus->messages[2];
         $this->assertInstanceOf(ExecuteToolCall::class, $bash);

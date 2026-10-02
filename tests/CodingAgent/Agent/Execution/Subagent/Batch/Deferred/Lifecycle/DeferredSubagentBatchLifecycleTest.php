@@ -214,6 +214,11 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $parent = 'parent-batch-term-'.$scenario;
         $tool = 'tool-batch-term-'.$scenario;
         $lifecycle = $factory->batchLifecycleId($parent, $tool);
+        $inputStore = self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface::class);
+        $inputStore->publish('fork', $parent, 2, 'turn-2-tools-1', $tool, 'deepseek/deepseek-v4-flash', '', [new AgentMessage('user', [['type' => 'text', 'text' => 'frozen launch']])]);
+        $paths = self::getContainer()->get(\Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface::class);
+        $inputPath = \dirname($paths->resolveToolBatchesDirectory($parent)).'/tool-launch-inputs/'.hash('sha256', $tool).'.jsonl';
+        $this->assertFileExists($inputPath);
         $c1 = $factory->childIdentity($parent, $tool, 1);
         $c2 = $factory->childIdentity($parent, $tool, 2);
         $repo->reserveBatch(
@@ -284,6 +289,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $commandBus = new TestMessageBus();
         $delivery = $this->buildLifecycleDelivery($commandBus);
         $delivery->deliver($lifecycle);
+        $this->assertFileDoesNotExist($inputPath);
 
         $this->assertCount(1, $commandBus->messages);
         $complete = $commandBus->messages[0];
@@ -299,6 +305,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         // Idempotent repeat
         $commandBus->messages = [];
         $delivery->deliver($lifecycle);
+        $this->assertFileDoesNotExist($inputPath);
         $this->assertCount(0, $commandBus->messages);
     }
 
@@ -711,6 +718,11 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $parent = 'parent-batch-single-nat-'.$scenario;
         $tool = 'tool-batch-single-nat-'.$scenario;
         $lifecycle = $factory->batchLifecycleId($parent, $tool);
+        $inputStore = self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface::class);
+        $inputStore->publish('fork', $parent, 2, 'turn-2-tools-1', $tool, 'deepseek/deepseek-v4-flash', '', [new AgentMessage('user', [['type' => 'text', 'text' => 'frozen launch']])]);
+        $paths = self::getContainer()->get(\Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface::class);
+        $inputPath = \dirname($paths->resolveToolBatchesDirectory($parent)).'/tool-launch-inputs/'.hash('sha256', $tool).'.jsonl';
+        $this->assertFileExists($inputPath);
         $c1 = $factory->childIdentity($parent, $tool, 1);
         $repo->reserveBatch(
             lifecycleId: $lifecycle,
@@ -791,6 +803,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         if ('completed' === $scenario) {
             $commandBus->messages = [];
             $delivery->deliver($lifecycle);
+            $this->assertFileDoesNotExist($inputPath);
             $this->assertCount(0, $commandBus->messages, 'No completion before deferred registration');
         }
 
@@ -810,6 +823,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
 
         $commandBus->messages = [];
         $delivery->deliver($lifecycle);
+        $this->assertFileDoesNotExist($inputPath);
 
         $this->assertCount(1, $commandBus->messages);
         $complete = $commandBus->messages[0];
@@ -840,6 +854,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
 
         $commandBus->messages = [];
         $delivery->deliver($lifecycle);
+        $this->assertFileDoesNotExist($inputPath);
         $this->assertCount(0, $commandBus->messages);
     }
 
@@ -1566,6 +1581,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             $repo,
             $commandBus,
             new TestLogger(),
+            self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface::class),
         );
         $outcomeFactory = $this->createOutcomeFactory();
         $handoffRenderer = self::getContainer()->get(SubagentChildRunHandoffRenderer::class);

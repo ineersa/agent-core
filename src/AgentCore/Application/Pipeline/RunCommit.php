@@ -7,6 +7,7 @@ namespace Ineersa\AgentCore\Application\Pipeline;
 use Ineersa\AgentCore\Application\Handler\HookDispatcher;
 use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
+use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
@@ -21,6 +22,7 @@ final readonly class RunCommit
         private EventStoreInterface $eventStore,
         private StepDispatcher $stepDispatcher,
         private LoggerInterface $logger,
+        private ToolBatchCollector $toolBatchCollector,
         private ?HookDispatcher $hookDispatcher = null,
         private ?RunTracer $tracer = null,
     ) {
@@ -59,6 +61,8 @@ final readonly class RunCommit
             // remember() persists the narrow projection before publishing the
             // full state in memory and invalidates memory if persistence fails.
             $this->activeRunContext->remember($committedState);
+
+            $this->toolBatchCollector->releaseAfterCommit($committedState, $persistedEvents);
 
             $this->logCommittedEvents($committedState, $persistedEvents);
 

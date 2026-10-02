@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Completion
 
 use Doctrine\ORM\OptimisticLockException;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface;
 use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Psr\Log\LoggerInterface;
@@ -23,6 +24,7 @@ final readonly class DeferredSubagentBatchCompletionDispatcher
         private DeferredSubagentBatchRepository $batchRepository,
         private MessageBusInterface $commandBus,
         private LoggerInterface $logger,
+        private ToolLaunchInputStoreInterface $launchInputStore,
     ) {
     }
 
@@ -38,6 +40,10 @@ final readonly class DeferredSubagentBatchCompletionDispatcher
         bool $isError,
         ?array $errorEnvelope,
     ): void {
+        // Terminal projections and artifact outcomes have already been persisted by
+        // both natural and interrupted completion. Handoff retries use those products.
+        $this->launchInputStore->delete($parentRunId, $parentToolCallId);
+
         $deferredStatus = $this->deferredToolCompletionRepository->status($lifecycleId);
         if (null === $deferredStatus) {
             $this->logger->info('deferred_subagent_batch.completion_waiting_for_registration', [

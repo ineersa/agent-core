@@ -6,7 +6,7 @@ namespace Ineersa\AgentCore\Domain\Message;
 
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
-use Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO;
+use Ineersa\AgentCore\Domain\Tool\ToolLaunchInputReferenceDTO;
 use Symfony\Component\Serializer\Attribute\Groups;
 use Symfony\Component\Validator\Constraints as Assert;
 
@@ -54,7 +54,7 @@ final readonly class ExecuteToolCall extends AbstractAgentBusMessage
         public ?string $parentModel = null,
         #[Groups([ToolBatchStateDTO::SNAPSHOT_GROUP])]
         #[Assert\Valid]
-        public ?ToolLaunchContextDTO $launchContext = null,
+        public ?ToolLaunchInputReferenceDTO $launchContext = null,
     ) {
         parent::__construct($runId, $turnNo, $stepId, $attempt, $idempotencyKey);
     }

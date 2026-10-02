@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Session;
 
 use Ineersa\AgentCore\Contract\Extension\HookSubscriberInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
@@ -22,12 +23,19 @@ final class ToolBatchSnapshotCleanupHookSubscriber implements HookSubscriberInte
     public function __construct(
         private readonly ToolBatchStoreInterface $toolBatchStore,
         private readonly LoggerInterface $logger,
+        private readonly ToolLaunchInputStoreInterface $launchInputStore,
     ) {
     }
 
     public function handleAfterTurnCommit(AfterTurnCommitHookContext $context): AfterTurnCommitHookContext
     {
         foreach ($context->events as $event) {
+            if (RunEventTypeEnum::ToolExecutionEnd->value === $event->type
+                && \is_string($event->payload['tool_call_id'] ?? null)) {
+                // A canonical result resolves synchronous launch failures too.
+                // Approval suspension has no terminal tool result and retains input.
+                $this->tryDeleteLaunchInput($context->runId, $event->payload['tool_call_id']);
+            }
             if (RunEventTypeEnum::ToolBatchCommitted->value !== $event->type) {
                 continue;
             }
@@ -50,9 +58,29 @@ final class ToolBatchSnapshotCleanupHookSubscriber implements HookSubscriberInte
 
         if ($this->shouldDeleteAllSnapshotsAfterTerminalCommit($context)) {
             $this->tryDeleteAllForRun($context->runId);
+            try {
+                $this->launchInputStore->deleteAllForRun($context->runId);
+            } catch (\Throwable $exception) {
+                $this->logger->warning('tool_launch_input.terminal_cleanup_failed', [
+                    'run_id' => $context->runId, 'component' => 'tool_batch_snapshot_cleanup',
+                    'event_type' => 'tool_launch_input.terminal_cleanup_failed', 'exception_class' => $exception::class,
+                ]);
+            }
         }
 
         return $context;
+    }
+
+    private function tryDeleteLaunchInput(string $runId, string $toolCallId): void
+    {
+        try {
+            $this->launchInputStore->delete($runId, $toolCallId);
+        } catch (\Throwable $exception) {
+            $this->logger->warning('tool_launch_input.cleanup_failed', [
+                'run_id' => $runId, 'tool_call_id' => $toolCallId, 'component' => 'tool_batch_snapshot_cleanup',
+                'event_type' => 'tool_launch_input.cleanup_failed', 'exception_class' => $exception::class,
+            ]);
+        }
     }
 
     private function shouldDeleteAllSnapshotsAfterTerminalCommit(AfterTurnCommitHookContext $context): bool

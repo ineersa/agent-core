@@ -11,6 +11,7 @@ use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Handler\ToolExecutionPolicyResolver;
 use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -24,7 +25,6 @@ use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Run\ToolBatchIdentity;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
-use Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Platform\Message\AssistantMessage;
 use Symfony\AI\Platform\Tool\Tool;
@@ -47,6 +47,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
         private ?MessageBusInterface $commandBus = null,
         private ?ToolExecutionSettingsInterface $toolExecutionSettings = null,
         private int $maxParallelism = 1,
+        private ?ToolLaunchInputStoreInterface $launchInputStore = null,
     ) {
     }
 
@@ -257,12 +258,18 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
                     throw new \RuntimeException(\sprintf('Cannot dispatch %s tool call %s: LlmStepResult model is required for immutable child launch inheritance.', $toolCall['name'], $toolCall['id']));
                 }
                 $parentModel = $producingModel;
-                $launchContext = $this->prepareLaunchContext(
-                    toolName: $toolCall['name'],
-                    producingRunId: $runId,
-                    producingTurnNo: $state->turnNo,
-                    producingModel: $producingModel,
-                    parentMessages: $messages,
+                if (null === $this->launchInputStore) {
+                    throw new \LogicException('Child launch input store is required.');
+                }
+                $launchContext = $this->launchInputStore->publish(
+                    kind: $toolCall['name'],
+                    runId: $runId,
+                    turnNo: $state->turnNo,
+                    stepId: $message->stepId(),
+                    toolCallId: $toolCall['id'],
+                    model: $producingModel,
+                    agentsContext: $this->extractUserContextSource($messages, 'agents_context'),
+                    messages: 'fork' === $toolCall['name'] ? $messages : [],
                 );
             }
 
@@ -410,10 +417,11 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
             'messages' => $messages,
         ]);
 
-        $postCommit = [function () use ($runId, $state, $message, $effects): void {
+        $turnNo = $state->turnNo;
+        $postCommit = [function () use ($runId, $turnNo, $message, $effects): void {
             $initialEffects = $this->toolBatchCollector->registerExpectedBatch(
                 $runId,
-                $state->turnNo,
+                $turnNo,
                 $message->stepId(),
                 $effects,
             );
@@ -526,42 +534,6 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
             'available_tools' => $message->availableTools,
             'available_tools_schema_tokens_estimate' => $message->availableToolsSchemaTokensEstimate,
         ];
-    }
-
-    /**
-     * Owner-prepared immutable launch input for child-launching tools only.
-     *
-     * Ordinary tools keep null so ExecuteToolCall envelopes stay lean. Fork
-     * receives the exact producing messages/model/turn; subagent receives the
-     * producing model/turn plus inherited agents_context text only.
-     *
-     * @param list<\Ineersa\AgentCore\Domain\Message\AgentMessage> $parentMessages
-     */
-    private function prepareLaunchContext(
-        string $toolName,
-        string $producingRunId,
-        int $producingTurnNo,
-        string $producingModel,
-        array $parentMessages,
-    ): ?ToolLaunchContextDTO {
-        return match ($toolName) {
-            'fork' => new ToolLaunchContextDTO(
-                kind: ToolLaunchContextDTO::KIND_FORK,
-                producingRunId: $producingRunId,
-                producingTurnNo: $producingTurnNo,
-                producingModel: $producingModel,
-                agentsContext: $this->extractUserContextSource($parentMessages, 'agents_context'),
-                forkMessages: $parentMessages,
-            ),
-            'subagent' => new ToolLaunchContextDTO(
-                kind: ToolLaunchContextDTO::KIND_SUBAGENT,
-                producingRunId: $producingRunId,
-                producingTurnNo: $producingTurnNo,
-                producingModel: $producingModel,
-                agentsContext: $this->extractUserContextSource($parentMessages, 'agents_context'),
-            ),
-            default => null,
-        };
     }
 
     /**

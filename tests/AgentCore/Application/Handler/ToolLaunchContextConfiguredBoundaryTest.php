@@ -44,13 +44,16 @@ final class ToolLaunchContextConfiguredBoundaryTest extends IsolatedKernelTestCa
         \assert($hatfield instanceof HatfieldSessionStore);
         $runId = $hatfield->createSession('tool-launch-context-boundary');
 
-        $launchContext = new ToolLaunchContextDTO(
+        $inputStore = self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface::class);
+        $launchContext = $inputStore->publish(
             kind: ToolLaunchContextDTO::KIND_FORK,
-            producingRunId: $runId,
-            producingTurnNo: 4,
-            producingModel: 'openai-codex/gpt-5.6-sol',
+            runId: $runId,
+            turnNo: 4,
+            stepId: 'step-fork',
+            toolCallId: 'fork-1',
+            model: 'openai-codex/gpt-5.6-sol',
             agentsContext: 'AGENTS.md body',
-            forkMessages: [
+            messages: [
                 new AgentMessage(
                     role: 'user-context',
                     content: [['type' => 'text', 'text' => 'AGENTS.md body']],
@@ -117,13 +120,14 @@ final class ToolLaunchContextConfiguredBoundaryTest extends IsolatedKernelTestCa
         $decoded = $messengerSerializer->decode($encoded)->getMessage();
         $this->assertInstanceOf(ExecuteToolCall::class, $decoded);
         $this->assertNotNull($decoded->launchContext);
-        $this->assertTrue($decoded->launchContext->isFork());
+        $this->assertSame('fork', $decoded->launchContext->kind);
         $this->assertSame($runId, $decoded->launchContext->producingRunId);
         $this->assertSame(4, $decoded->launchContext->producingTurnNo);
         $this->assertSame('openai-codex/gpt-5.6-sol', $decoded->launchContext->producingModel);
-        $this->assertCount(2, $decoded->launchContext->forkMessages);
-        $this->assertSame('AGENTS.md body', $decoded->launchContext->forkMessages[0]->content[0]['text']);
-        $this->assertSame('do the work', $decoded->launchContext->forkMessages[1]->content[0]['text']);
+        $resolved = $inputStore->read($decoded->launchContext);
+        $this->assertCount(2, $resolved->forkMessages);
+        $this->assertSame('AGENTS.md body', $resolved->forkMessages[0]->content[0]['text']);
+        $this->assertSame('do the work', $resolved->forkMessages[1]->content[0]['text']);
         $this->assertSame('q-fork', $decoded->humanInputAnswer?->questionId);
 
         /** @var ToolBatchStoreInterface $store */
@@ -133,12 +137,13 @@ final class ToolLaunchContextConfiguredBoundaryTest extends IsolatedKernelTestCa
         $this->assertNotNull($loaded);
         $restoredFork = $loaded->calls['fork-1'];
         $this->assertNotNull($restoredFork->launchContext);
-        $this->assertTrue($restoredFork->launchContext->isFork());
+        $this->assertSame('fork', $restoredFork->launchContext->kind);
         $this->assertSame($runId, $restoredFork->launchContext->producingRunId);
         $this->assertSame(4, $restoredFork->launchContext->producingTurnNo);
         $this->assertSame('openai-codex/gpt-5.6-sol', $restoredFork->launchContext->producingModel);
-        $this->assertCount(2, $restoredFork->launchContext->forkMessages);
-        $this->assertSame('AGENTS.md body', $restoredFork->launchContext->forkMessages[0]->content[0]['text']);
+        $restoredInput = $inputStore->read($restoredFork->launchContext);
+        $this->assertCount(2, $restoredInput->forkMessages);
+        $this->assertSame('AGENTS.md body', $restoredInput->forkMessages[0]->content[0]['text']);
         $this->assertSame('q-fork', $restoredFork->humanInputAnswer?->questionId);
         $this->assertNull($loaded->calls['bash-1']->launchContext);
 
