@@ -38,6 +38,7 @@ final readonly class TranscriptBlockRenderer
 {
     public function __construct(
         private readonly TranscriptDisplayConfig $displayConfig,
+        private readonly MarkdownRenderSupport $markdown = new MarkdownRenderSupport(),
     ) {
     }
 
@@ -66,7 +67,7 @@ final readonly class TranscriptBlockRenderer
         // Local slash-command Markdown (e.g. /settings-show) reuses MarkdownWidget.
         // Avoid prefixFor()/colorFor() which intentionally do not handle System.
         if (TranscriptBlockKindEnum::System === $block->kind && 'markdown' === ($block->meta['style'] ?? null)) {
-            $mdWidget = new MarkdownWidget($block->text);
+            $mdWidget = $this->markdown->create($block->text);
             $colorSpec = $theme->getPalette()->get(ThemeColorEnum::SystemMessage);
             $style = '' !== $colorSpec
                 ? new Style(color: $colorSpec, padding: Padding::from([0, 0, 0, 2]))
@@ -143,7 +144,7 @@ final readonly class TranscriptBlockRenderer
      */
     private function buildQuestionMarkdownWidget(string $prompt, TuiTheme $theme, ThemeColorEnum $color): MarkdownWidget
     {
-        $mdWidget = new MarkdownWidget($prompt);
+        $mdWidget = $this->markdown->create($prompt);
         $colorSpec = $theme->getPalette()->get($color);
         $style = '' !== $colorSpec
             ? new Style(color: $colorSpec, padding: Padding::from([0, 0, 0, 2]))
@@ -358,7 +359,7 @@ final readonly class TranscriptBlockRenderer
         $displayText = $this->displayTextFor($block);
         $suffix = $block->streaming ? TranscriptGlyphs::STREAMING_SUFFIX : '';
         $text = \sprintf('%s %s%s', $prefix, $displayText, $suffix);
-        $mdWidget = new MarkdownWidget($text);
+        $mdWidget = $this->markdown->create($text);
         $colorSpec = $theme->getPalette()->get($color);
         $style = '' !== $colorSpec
             ? new Style(color: $colorSpec, padding: Padding::from([0, 0, 0, 2]))

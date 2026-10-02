@@ -59,10 +59,6 @@ final class TranscriptVisualProjector
         ?TranscriptBlockWidgetFactory $factory = null,
     ) {
         $this->factory = $factory ?? new TranscriptBlockWidgetFactory(
-            subagentRenderer: new SubagentResultRenderer(
-                displayConfig: $displayConfig,
-                displayState: $displayState,
-            ),
             displayConfig: $displayConfig,
             displayState: $displayState,
         );
