@@ -44,6 +44,26 @@ compaction boundary, or `checkpoint_phase: next_tick_after_mount` when a fresh,
 idle, or terminal mount never crosses a live boundary before the first stable tick.
 They need `logging.level: info`.
 
+TUI terminal and compaction boundary samples come from successfully applied
+runtime events in a poll. Marks are per-event before/after activity and
+`isCompacting` transitions after a successful apply, coalesced once per poll.
+Ignored state-machine events and already-applied retries do not mark. One poll
+can emit both `tui.activity.terminal` and `tui.compaction.settled` when both
+kinds applied; repeats of the same kind in that poll coalesce to one record
+each. A boundary that immediately continues (queued follow-up, still
+compacting) still emits the boundary sample and skips the idle sample until
+the next stable idle tick. Checkpoint emission is best-effort: logger failures
+degrade to a sanitized `error_log` line and must not interrupt mount, tick,
+switch, reload, or shutdown.
+
+`tui.activity.terminal` includes `boundary_activity` for the activity value
+observed immediately after the successful terminalizing apply (for example
+`completed`, `failed`, or `cancelled`). Later queued follow-up dispatch in the
+same poll can leave the tick-end `activity` as `starting`; use
+`boundary_activity` for the terminal mark. `tui.compaction.settled` covers both
+successful compaction completion and compaction failure: settlement is the
+`isCompacting` true→false transition, not success alone.
+
 ## Castor helpers
 
 ```bash

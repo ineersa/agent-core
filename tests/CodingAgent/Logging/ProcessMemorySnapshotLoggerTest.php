@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Logging\ProcessMemorySnapshotLogger;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
@@ -64,5 +65,36 @@ final class ProcessMemorySnapshotLoggerTest extends TestCase
         $this->assertSame('parent', $scope['transcript_scope']);
         $this->assertSame('child-run-9', $scope['visible_run_id']);
         $this->assertTrue($scope['live_child_view']);
+    }
+
+    public function testCheckpointLoggerFailureDegradesToErrorLogWithoutRethrow(): void
+    {
+        $logger = new class extends \Psr\Log\AbstractLogger {
+            public function log($level, \Stringable|string $message, array $context = []): void
+            {
+                throw new \RuntimeException('disk full: /secret/path and prompt text');
+            }
+        };
+        $snapshot = new ProcessMemorySnapshotLogger($logger);
+
+        $previous = \ini_get('error_log');
+        $dir = TestDirectoryIsolation::createProjectTempDir('mem-chk-');
+        $path = $dir.'/error.log';
+        try {
+            ini_set('error_log', $path);
+            $snapshot->checkpoint('tui.resume.mounted', 'tui', ['session_id' => '2']);
+            $contents = (string) file_get_contents($path);
+        } finally {
+            ini_set('error_log', false === $previous ? '' : $previous);
+            TestDirectoryIsolation::removeDirectory($dir);
+        }
+
+        $this->assertStringContainsString('process.memory.checkpoint_failed', $contents);
+        $this->assertStringContainsString('event_type=tui.resume.mounted', $contents);
+        $this->assertStringContainsString('component=tui', $contents);
+        $this->assertStringContainsString('exception_class=RuntimeException', $contents);
+        $this->assertStringNotContainsString('disk full', $contents);
+        $this->assertStringNotContainsString('/secret/path', $contents);
+        $this->assertStringNotContainsString('prompt text', $contents);
     }
 }

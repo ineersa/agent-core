@@ -64,7 +64,6 @@ final class TickPollListener implements TuiListenerRegistrar
 
         $context->ticks->add(static function () use ($poller, $state, $client, $screen, $questionCoordinator, $questionController, $subagentLiveChildPoller, $runtimeQuestionEventHandler, $subagentLivePickerController, $memorySnapshotLogger, &$pendingIdleMemoryCheckpoint, &$idleMemoryCheckpointEmitted, &$idleCheckpointPhase): ?bool {
             $activityBefore = $state->activity;
-            $compactingBefore = $state->isCompacting;
             $lastSeqBefore = $state->lastSeq;
             $onHitl = static function (RuntimeEvent $event) use ($client, $questionCoordinator, $runtimeQuestionEventHandler): void {
                 $runtimeQuestionEventHandler->handleHumanInputRequested($event, $client, $questionCoordinator);
@@ -153,8 +152,12 @@ final class TickPollListener implements TuiListenerRegistrar
             }
 
             if (null !== $memorySnapshotLogger) {
-                $becameTerminal = !$activityBefore->isTerminal() && $state->activity->isTerminal();
-                $compactionFinished = $compactingBefore && !$state->isCompacting;
+                // Boundaries come from successfully applied events, not tick endpoints.
+                // A batch can terminalize then queue a follow-up, or start and settle
+                // compaction in one poll; endpoint comparison misses those.
+                $appliedBoundaries = $poller->consumeAppliedMemoryBoundaryObservation();
+                $becameTerminal = $appliedBoundaries->activityBecameTerminal;
+                $compactionFinished = $appliedBoundaries->compactionSettled;
                 $workArrived = ($activityBefore->isTerminal() || RunActivityStateEnum::Idle === $activityBefore)
                     && $state->activity->isActive();
                 if ($workArrived || $state->isCompacting) {
@@ -163,29 +166,51 @@ final class TickPollListener implements TuiListenerRegistrar
                 }
 
                 if ($becameTerminal || $compactionFinished) {
-                    $eventType = $becameTerminal
-                        ? 'tui.activity.terminal'
-                        : 'tui.compaction.settled';
-                    $memorySnapshotLogger->checkpoint(
-                        eventType: $eventType,
-                        component: 'tui',
-                        fields: [
-                            'session_id' => $state->sessionId,
-                            'run_id' => $state->sessionId,
-                            'activity' => $state->activity->value,
-                            'activity_before' => $activityBefore->value,
-                            'last_seq' => $state->lastSeq,
-                            'last_seq_before' => $lastSeqBefore,
-                            'is_compacting' => $state->isCompacting,
-                            'checkpoint_phase' => 'pre_next_frame',
-                        ] + ProcessMemorySnapshotLogger::parentTranscriptScope(
-                            $state->visibleQuestionOwnerRunId(),
-                            $state->subagentLiveView->active,
-                        ) + ProcessMemorySnapshotLogger::transcriptScalars($state->transcript),
-                    );
+                    $scope = ProcessMemorySnapshotLogger::parentTranscriptScope(
+                        $state->visibleQuestionOwnerRunId(),
+                        $state->subagentLiveView->active,
+                    ) + ProcessMemorySnapshotLogger::transcriptScalars($state->transcript);
+                    $sharedFields = [
+                        'session_id' => $state->sessionId,
+                        'run_id' => $state->sessionId,
+                        'activity' => $state->activity->value,
+                        'activity_before' => $appliedBoundaries->activityBefore ?? $activityBefore->value,
+                        'last_seq' => $appliedBoundaries->lastSeqAfter > 0
+                            ? $appliedBoundaries->lastSeqAfter
+                            : $state->lastSeq,
+                        'last_seq_before' => $appliedBoundaries->lastSeqBefore > 0
+                            ? $appliedBoundaries->lastSeqBefore
+                            : $lastSeqBefore,
+                        'is_compacting' => $state->isCompacting,
+                        'checkpoint_phase' => 'pre_next_frame',
+                    ] + $scope;
+                    // Emit both kinds when one poll applied both; coalesce repeats.
+                    if ($becameTerminal) {
+                        $memorySnapshotLogger->checkpoint(
+                            eventType: 'tui.activity.terminal',
+                            component: 'tui',
+                            fields: $sharedFields + [
+                                'boundary_activity' => $appliedBoundaries->terminalActivity
+                                    ?? $state->activity->value,
+                            ],
+                        );
+                    }
+                    if ($compactionFinished) {
+                        $memorySnapshotLogger->checkpoint(
+                            eventType: 'tui.compaction.settled',
+                            component: 'tui',
+                            fields: $sharedFields,
+                        );
+                    }
                     $pendingIdleMemoryCheckpoint = true;
                     $idleMemoryCheckpointEmitted = false;
                     $idleCheckpointPhase = 'next_tick_after_boundary';
+                    // Immediate continuation after the observed boundary keeps the
+                    // boundary sample but skips idle until the next stable settle.
+                    if ($state->activity->isActive() || $state->isCompacting) {
+                        $pendingIdleMemoryCheckpoint = false;
+                        $idleMemoryCheckpointEmitted = false;
+                    }
                 } elseif ($pendingIdleMemoryCheckpoint && !$idleMemoryCheckpointEmitted) {
                     $stableIdle = !$state->isCompacting
                         && (RunActivityStateEnum::Idle === $state->activity || $state->activity->isTerminal())

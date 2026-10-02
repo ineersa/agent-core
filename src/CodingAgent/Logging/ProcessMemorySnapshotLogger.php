@@ -12,6 +12,8 @@ use Psr\Log\LoggerInterface;
  * Emits structured INFO memory checkpoints for lifecycle boundaries.
  *
  * Samples the calling process only. Never logs prompts, tool output, or raw arrays.
+ * Checkpoint emission is best-effort: logger failures degrade to error_log and never
+ * interrupt mount, tick, switch, reload, or shutdown control flow.
  */
 final readonly class ProcessMemorySnapshotLogger
 {
@@ -39,7 +41,21 @@ final readonly class ProcessMemorySnapshotLogger
             }
         }
 
-        $this->logger->info('process.memory.checkpoint', $context);
+        try {
+            $this->logger->info('process.memory.checkpoint', $context);
+        } catch (\Throwable $e) {
+            // Intentional local degradation: memory telemetry must not break
+            // mount/tick/switch/reload/shutdown. Do not recurse into $this->logger.
+            $safeEvent = preg_replace('/[^a-zA-Z0-9._-]/', '_', $eventType) ?? 'unknown';
+            $safeComponent = preg_replace('/[^a-zA-Z0-9._-]/', '_', $component) ?? 'unknown';
+            $safeClass = preg_replace('/[^a-zA-Z0-9_\\\\]/', '_', $e::class) ?? 'Throwable';
+            error_log(\sprintf(
+                'process.memory.checkpoint_failed event_type=%s component=%s exception_class=%s',
+                $safeEvent,
+                $safeComponent,
+                $safeClass,
+            ));
+        }
     }
 
     /**

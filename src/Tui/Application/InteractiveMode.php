@@ -417,27 +417,26 @@ final readonly class InteractiveMode
         ?ProcessReloadIntentDTO $reloadIntent,
         ?TuiSessionSwitchTargetDTO $switchTarget,
     ): void {
-        try {
-            $this->memorySnapshotLogger->checkpoint(
-                eventType: 'tui.session.shutdown',
-                component: 'tui',
-                fields: [
-                    'session_id' => $state->sessionId,
-                    'run_id' => $state->sessionId,
-                    'last_seq' => $state->lastSeq,
-                    'activity' => $state->activity->value,
-                    'exit_reason' => null !== $reloadIntent
-                        ? 'reload'
-                        : (null !== $switchTarget ? 'session_switch' : 'quit'),
-                ] + ProcessMemorySnapshotLogger::parentTranscriptScope(
-                    $state->visibleQuestionOwnerRunId(),
-                    $state->subagentLiveView->active,
-                ) + ProcessMemorySnapshotLogger::transcriptScalars($state->transcript),
-            );
-        } finally {
-            // SessionEnded must still run if checkpoint logging fails.
-            $lifecycle->dispatch(TuiSessionLifecycleEventTypeEnum::SessionEnded);
-        }
+        // Checkpoint is best-effort inside ProcessMemorySnapshotLogger; do not
+        // wrap teardown in try/finally around telemetry. Reload/switch branches
+        // after this method must still run when logging degrades.
+        $this->memorySnapshotLogger->checkpoint(
+            eventType: 'tui.session.shutdown',
+            component: 'tui',
+            fields: [
+                'session_id' => $state->sessionId,
+                'run_id' => $state->sessionId,
+                'last_seq' => $state->lastSeq,
+                'activity' => $state->activity->value,
+                'exit_reason' => null !== $reloadIntent
+                    ? 'reload'
+                    : (null !== $switchTarget ? 'session_switch' : 'quit'),
+            ] + ProcessMemorySnapshotLogger::parentTranscriptScope(
+                $state->visibleQuestionOwnerRunId(),
+                $state->subagentLiveView->active,
+            ) + ProcessMemorySnapshotLogger::transcriptScalars($state->transcript),
+        );
+        $lifecycle->dispatch(TuiSessionLifecycleEventTypeEnum::SessionEnded);
     }
 
     /**
