@@ -5,26 +5,31 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Agent\Execution;
 
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
+use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Pipeline\AgentRunner;
 use Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler;
 use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
+use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\RunOperationalStatusDTO;
 use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
+use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
+use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory;
 use Ineersa\CodingAgent\Agent\Execution\AgentDepthGuard;
 use Ineersa\CodingAgent\Agent\Execution\AgentResumeExecutionService;
 use Ineersa\CodingAgent\Agent\Execution\AgentResumeTaskDTO;
@@ -40,12 +45,17 @@ use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChild;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
+use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
+use Ineersa\CodingAgent\Session\Contract\RunSequenceAllocatorInterface;
+use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Ineersa\CodingAgent\Tests\Support\StubRunRelationshipReader;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\CoversClass;
 use Psr\Log\NullLogger;
+use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
 use Symfony\Component\Serializer\SerializerInterface;
 
@@ -236,7 +246,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         $operationalStatusReader->expects($this->once())
             ->method('findOperationalStatus')
             ->with($childRunId)
-            ->willReturn(new RunOperationalStatusDTO(RunStatus::Cancelling));
+            ->willReturn(new RunOperationalStatusDTO(RunStatus::Cancelling, 1));
 
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('mid-cancel and cannot be resumed yet');
@@ -550,8 +560,8 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         $child = 'child-fresh-status';
         $artifact = 'agent_fresh_status';
         $this->seedTerminalChild($parent, $artifact, $child, latestInputTokens: 10, contextWindow: 200_000);
-        $repository = self::getContainer()->get(\Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository::class);
-        $repository->replace(new RunState($child, RunStatus::Completed, parentRunId: $parent));
+        $repository = self::getContainer()->get(RunOperationalProjectionRepository::class);
+        $repository->replace(new RunState($child, RunStatus::Completed, parentRunId: $parent, lastSeq: 1));
         $reader = self::getContainer()->get(RunOperationalStatusReaderInterface::class);
         $runner = $this->createMock(AgentRunnerInterface::class);
         $runner->expects($this->once())->method('followUp')->with($child, $this->isInstanceOf(AgentMessage::class));
@@ -562,6 +572,83 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('is not terminal (status=running)');
         $this->resume($parent, [new AgentResumeTaskDTO(artifact_id: $artifact, task: 'continue')], agentRunner: $runner, operationalStatusReader: $reader);
+    }
+
+    public function testCanonicalAppendWithoutProjectionPublicationRejectsResume(): void
+    {
+        $parent = 'parent-behind-canonical';
+        $child = 'child-behind-canonical';
+        $artifact = 'agent_behind_canonical';
+        $this->seedTerminalChild($parent, $artifact, $child, latestInputTokens: 10, contextWindow: 200_000);
+        $readLog = new TestLogger();
+        $factory = new AgentChildRunEventStoreFactory(
+            self::getContainer()->get(SessionAgentArtifactPathResolver::class),
+            self::getContainer()->get(EventPayloadNormalizer::class),
+            self::getContainer()->get(LockFactory::class),
+            $readLog,
+            self::getContainer()->get(RunSequenceAllocatorInterface::class),
+        );
+        $store = $factory->create($parent, $child, $artifact);
+        $history = [];
+        for ($turn = 1; $turn <= 100; ++$turn) {
+            $history[] = RunEvent::forAppend($child, $turn, 'turn_advanced');
+        }
+        $store->appendMany($history);
+        $terminal = $store->append(RunEvent::forAppend($child, 101, 'agent_end', ['status' => 'completed']));
+        $repository = self::getContainer()->get(RunOperationalProjectionRepository::class);
+        $repository->replace(new RunState($child, RunStatus::Completed, parentRunId: $parent, lastSeq: $terminal->seq));
+        // Fault boundary: the next canonical append succeeds, but projection
+        // publication never happens. Artifact and narrow status remain terminal.
+        $newWork = $store->append(RunEvent::forAppend($child, 2, 'turn_advanced'));
+        $reader = self::getContainer()->get(RunOperationalStatusReaderInterface::class);
+        $this->assertSame(RunStatus::Completed, $reader->findOperationalStatus($child)?->status);
+        $this->assertGreaterThan($terminal->seq, $newWork->seq);
+        $runner = $this->createMock(AgentRunnerInterface::class);
+        $runner->expects($this->never())->method('followUp');
+        try {
+            $this->resume($parent, [new AgentResumeTaskDTO(artifact_id: $artifact, task: 'continue')],
+                agentRunner: $runner, operationalStatusReader: $reader, eventStore: $store);
+            $this->fail('A terminal projection behind canonical history must not authorize resume.');
+        } catch (ToolCallException $e) {
+            $this->assertStringContainsString('unusable for resume', $e->getMessage());
+            $this->assertStringContainsString('not current; recovery required', $e->getPrevious()?->getMessage() ?? '');
+        }
+        $this->assertNull(self::getContainer()->get(DeferredSubagentBatchRepository::class)->findByParentRunAndToolCall($parent, 'tc-resume-1'));
+        $reads = array_values(array_filter($readLog->records,
+            static fn (array $record): bool => 'child_event_store.physical_read' === ($record['context']['event_type'] ?? null)));
+        $this->assertCount(1, $reads);
+        $read = $reads[0]['context'];
+        $this->assertSame('reverseFor', $read['method']);
+        $this->assertSame(1, $read['decoded_event_count']);
+        $this->assertSame(8192, $read['archive_bytes_read']);
+        $this->assertFalse($read['full_scan']);
+        $path = self::getContainer()->get(SessionAgentArtifactPathResolver::class)->eventsPath($parent, $artifact);
+        $this->assertGreaterThan($read['archive_bytes_read'], filesize($path));
+    }
+
+    public function testActualTerminalTailAcceptsDespiteAllocationHoles(): void
+    {
+        $parent = 'parent-allocation-holes';
+        $child = 'child-allocation-holes';
+        $artifact = 'agent_allocation_holes';
+        $this->seedTerminalChild($parent, $artifact, $child, latestInputTokens: 10, contextWindow: 200_000);
+        $store = self::getContainer()->get(AgentChildRunEventStoreFactory::class)->create($parent, $child, $artifact);
+        $first = $store->append(RunEvent::forAppend($child, 1, 'run_started'));
+        $path = self::getContainer()->get(SessionAgentArtifactPathResolver::class)->eventsPath($parent, $artifact);
+        $allocator = new FileRunSequenceAllocator();
+        $allocator->allocateBlock(FileRunSequenceAllocator::counterPathForEventsLog($path), 5);
+        $terminal = $store->append(RunEvent::forAppend($child, 1, 'agent_end', ['status' => 'completed']));
+        $this->assertSame($first->seq + 6, $terminal->seq);
+        $allocated = $allocator->allocateBlock(FileRunSequenceAllocator::counterPathForEventsLog($path), 3);
+        $this->assertGreaterThan($terminal->seq, $allocated[0]);
+        $this->assertSame($terminal->seq, $store->latestSequenceFor($child));
+        self::getContainer()->get(RunOperationalProjectionRepository::class)->replace(
+            new RunState($child, RunStatus::Completed, parentRunId: $parent, lastSeq: $terminal->seq));
+        $runner = $this->createMock(AgentRunnerInterface::class);
+        $runner->expects($this->once())->method('followUp')->with($child, $this->isInstanceOf(AgentMessage::class));
+        $outcome = $this->resume($parent, [new AgentResumeTaskDTO(artifact_id: $artifact, task: 'continue')],
+            agentRunner: $runner, operationalStatusReader: self::getContainer()->get(RunOperationalStatusReaderInterface::class), eventStore: $store);
+        $this->assertNotNull(self::getContainer()->get(DeferredSubagentBatchRepository::class)->findByLifecycleId($outcome->deferredId));
     }
 
     public function testRejectsDuplicateResolvedArtifactViaMixedIdentifiers(): void
@@ -579,7 +666,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
             ->with(
                 $childRunId,
             )
-            ->willReturn(new RunOperationalStatusDTO(RunStatus::Completed));
+            ->willReturn(new RunOperationalStatusDTO(RunStatus::Completed, 1));
 
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage(\sprintf('Duplicate artifact_id "%s" in one agent_resume call.', $artifactId));
@@ -610,6 +697,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         ChildRunBatchExecutionModeEnum $executionMode = ChildRunBatchExecutionModeEnum::Single,
         ?TestLogger $logger = null,
         ?RunOperationalStatusReaderInterface $operationalStatusReader = null,
+        ?EventStoreInterface $eventStore = null,
         ?\Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface $relationshipReader = null,
     ): \Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome {
         $contextAccessor = new StackToolExecutionContextAccessor();
@@ -617,9 +705,14 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
             $operationalStatusReader = $this->createStub(RunOperationalStatusReaderInterface::class);
             $operationalStatusReader->method('findOperationalStatus')->willReturnCallback(
                 static function (string $runId) use ($runStatus): RunOperationalStatusDTO {
-                    return new RunOperationalStatusDTO($runStatus);
+                    return new RunOperationalStatusDTO($runStatus, 1);
                 },
             );
+        }
+
+        if (null === $eventStore) {
+            $eventStore = $this->createStub(EventStoreInterface::class);
+            $eventStore->method('latestSequenceFor')->willReturn(1);
         }
 
         $service = new AgentResumeExecutionService(
@@ -629,6 +722,8 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
             identityFactory: new DeferredSubagentBatchIdentityFactory(),
             agentRunner: $agentRunner ?? $this->createStub(AgentRunnerInterface::class),
             operationalStatusReader: $operationalStatusReader,
+            eventStore: $eventStore,
+            runLockManager: self::getContainer()->get(RunLockManager::class),
             relationshipReader: $relationshipReader ?? StubRunRelationshipReader::topLevel($parentRunId),
             depthGuard: new AgentDepthGuard(),
             contextAccessor: $contextAccessor,

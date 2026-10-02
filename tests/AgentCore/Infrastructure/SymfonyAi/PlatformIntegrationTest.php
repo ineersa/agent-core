@@ -1447,7 +1447,7 @@ final class MutableRunOperationalStatusReader implements RunOperationalStatusRea
             return null;
         }
 
-        return new RunOperationalStatusDTO(RunStatus::Cancelling);
+        return new RunOperationalStatusDTO(RunStatus::Cancelling, 1);
     }
 }
 

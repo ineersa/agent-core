@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Execution;
 
+use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
+use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\RunOperationalStatusDTO;
 use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
@@ -41,6 +44,8 @@ final class AgentResumeExecutionService
         private readonly DeferredSubagentBatchIdentityFactory $identityFactory,
         private readonly AgentRunnerInterface $agentRunner,
         private readonly RunOperationalStatusReaderInterface $operationalStatusReader,
+        private readonly EventStoreInterface $eventStore,
+        private readonly RunLockManager $runLockManager,
         private readonly RunRelationshipReaderInterface $relationshipReader,
         private readonly AgentDepthGuard $depthGuard,
         private readonly StackToolExecutionContextAccessor $contextAccessor,
@@ -346,10 +351,24 @@ final class AgentResumeExecutionService
         }
 
         try {
-            $state = $this->operationalStatusReader->findOperationalStatus($entry->agentRunId);
-            if (null === $state) {
-                throw new \RuntimeException('Operational child status is unavailable; recovery required.');
-            }
+            $state = $this->runLockManager->synchronized($entry->agentRunId, function () use ($entry): RunOperationalStatusDTO {
+                $status = $this->operationalStatusReader->findOperationalStatus($entry->agentRunId);
+                if (null === $status) {
+                    throw new \RuntimeException('Operational child status is unavailable; recovery required.');
+                }
+                // Resume is an explicit lifecycle boundary, not a status poll.
+                // A failed post-append projection write can leave a terminal row
+                // behind newer canonical work. Read only the actual archive tail,
+                // under owner serialization, never the sequence allocation cursor.
+                if ($status->status->isTerminal()) {
+                    $latest = $this->eventStore->latestSequenceFor($entry->agentRunId);
+                    if (null === $latest || $latest !== $status->lastEventSequence) {
+                        throw new \RuntimeException('Operational child status is not current; recovery required.');
+                    }
+                }
+
+                return $status;
+            });
         } catch (\Throwable $e) {
             throw new ToolCallException(\sprintf('Child run "%s" is unusable for resume.', $entry->agentRunId), retryable: false, previous: $e);
         }
