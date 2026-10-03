@@ -133,10 +133,8 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         $sessions->claimReasoningBaseline($run, 'test-model', 'medium');
         $handler = $this->createMock(\Ineersa\AgentCore\Application\Pipeline\RunMessageHandler::class);
         $handler->method('supports')->willReturn(true);
-        $handler->expects($this->once())->method('handle')->willReturn(new \Ineersa\AgentCore\Application\Pipeline\HandlerResult(postCommit: [function () use ($run): void {
-            $this->autoCompactionBus->dispatch(new \Ineersa\AgentCore\Domain\Message\AdvanceRun($run, 0, 'user-advance', 1, 'user-advance'));
-        }]));
-        $dispatcher = new \Ineersa\AgentCore\Application\Handler\StepDispatcher($this->autoCompactionBus, $this->autoCompactionBus);
+        $handler->expects($this->once())->method('handle')->willReturn(new \Ineersa\AgentCore\Application\Pipeline\HandlerResult(postCommitActions: [new \Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO(new \Ineersa\AgentCore\Domain\Message\AdvanceRun($run, 0, 'user-advance', 1, 'user-advance'), 'advance failed')]));
+        $dispatcher = new \Ineersa\AgentCore\Application\Handler\StepDispatcher(\Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::bus($this->autoCompactionBus), $this->autoCompactionBus);
         $processor = new \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor(
             $active,
             self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class),

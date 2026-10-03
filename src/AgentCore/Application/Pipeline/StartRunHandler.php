@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Pipeline;
 
-use Ineersa\AgentCore\Application\Handler\AdvanceRunCallbackFactory;
+use Ineersa\AgentCore\Application\Handler\AdvanceRunCoordinationFactory;
+use Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\StartRun;
@@ -47,13 +48,13 @@ final readonly class StartRunHandler implements RunMessageHandler
                 return new HandlerResult();
             }
 
-            $postCommit = [];
-            $initialAdvance = $this->initialAdvanceCallback($message->runId(), $state->turnNo, 'start-follow-up');
+            $postCommitActions = [];
+            $initialAdvance = $this->initialAdvanceAction($message->runId(), $state->turnNo, 'start-follow-up');
             if (null !== $initialAdvance) {
-                $postCommit[] = $initialAdvance;
+                $postCommitActions[] = $initialAdvance;
             }
 
-            return new HandlerResult(postCommit: $postCommit);
+            return new HandlerResult(postCommitActions: $postCommitActions);
         }
 
         // Cancel before StartRun must stick. Reserved child run ids can receive
@@ -95,26 +96,26 @@ final readonly class StartRunHandler implements RunMessageHandler
             ],
         );
 
-        $postCommit = [];
-        $initialAdvance = $this->initialAdvanceCallback($message->runId(), $nextState->turnNo, 'start-follow-up');
+        $postCommitActions = [];
+        $initialAdvance = $this->initialAdvanceAction($message->runId(), $nextState->turnNo, 'start-follow-up');
         if (null !== $initialAdvance) {
-            $postCommit[] = $initialAdvance;
+            $postCommitActions[] = $initialAdvance;
         }
 
         return new HandlerResult(
             nextState: $nextState,
             events: [$event],
-            postCommit: $postCommit,
+            postCommitActions: $postCommitActions,
         );
     }
 
-    private function initialAdvanceCallback(string $runId, int $turnNo, string $prefix): ?callable
+    private function initialAdvanceAction(string $runId, int $turnNo, string $prefix): ?DispatchCoordinationMessageDTO
     {
         if (null === $this->commandBus) {
             return null;
         }
 
-        return AdvanceRunCallbackFactory::create($this->commandBus, $runId, $turnNo, $prefix, 'Failed to dispatch initial AdvanceRun command.');
+        return AdvanceRunCoordinationFactory::create($runId, $turnNo, $prefix, 'Failed to dispatch initial AdvanceRun command.');
     }
 
     private function requireCanonicalModel(StartRun $message): string

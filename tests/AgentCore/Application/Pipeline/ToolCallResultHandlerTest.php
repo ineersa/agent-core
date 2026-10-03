@@ -267,7 +267,7 @@ final class ToolCallResultHandlerTest extends TestCase
         $this->assertCount(1, $result->postCommitEffects);
         $this->assertInstanceOf(ExecuteToolCall::class, $result->postCommitEffects[0]);
         $this->assertSame('tool-b', $result->postCommitEffects[0]->toolCallId);
-        $this->assertSame([], $result->postCommit);
+        $this->assertSame([], $result->postCommitActions);
     }
 
     public function testUntrackedCurrentTokenRedeliveryIsIdempotentNoOp(): void
@@ -298,7 +298,7 @@ final class ToolCallResultHandlerTest extends TestCase
             $this->assertSame([], $result->events);
             $this->assertSame([], $result->effects);
             $this->assertSame([], $result->postCommitEffects);
-            $this->assertSame([], $result->postCommit);
+            $this->assertSame([], $result->postCommitActions);
         }
     }
 
@@ -926,7 +926,7 @@ final class ToolCallResultHandlerTest extends TestCase
 
         $this->assertNull($redelivery->nextState);
         $this->assertSame([], $redelivery->events);
-        $this->assertSame([], $redelivery->postCommit);
+        $this->assertSame([], $redelivery->postCommitActions);
         $this->assertSame([], $redelivery->postCommitEffects);
     }
 

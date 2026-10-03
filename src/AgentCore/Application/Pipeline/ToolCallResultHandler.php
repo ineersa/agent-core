@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Pipeline;
 
-use Ineersa\AgentCore\Application\Handler\AdvanceRunCallbackFactory;
+use Ineersa\AgentCore\Application\Handler\AdvanceRunCoordinationFactory;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
+use Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
@@ -208,16 +209,16 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
                 'currentOperation' => null,
             ]);
 
-            $postCommit = [];
-            $postCancelAdvance = $this->postCancelAdvanceCallback($runId, $state->turnNo);
+            $postCommitActions = [];
+            $postCancelAdvance = $this->postCancelAdvanceAction($runId, $state->turnNo);
             if (null !== $postCancelAdvance) {
-                $postCommit[] = $postCancelAdvance;
+                $postCommitActions[] = $postCancelAdvance;
             }
 
             return new HandlerResult(
                 nextState: $nextState,
                 events: $events,
-                postCommit: $postCommit,
+                postCommitActions: $postCommitActions,
             );
         }
 
@@ -252,7 +253,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
             ? RunStatus::WaitingHuman
             : RunStatus::Running;
 
-        $postCommit = [];
+        $postCommitActions = [];
 
         if ($outcome->complete) {
             $interruptPayload = null;
@@ -295,9 +296,9 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
             }
 
             if (null === $interruptPayload) {
-                $followUpAdvance = $this->followUpAdvanceCallback($runId, $state->turnNo);
+                $followUpAdvance = $this->followUpAdvanceAction($runId, $state->turnNo);
                 if (null !== $followUpAdvance) {
-                    $postCommit[] = $followUpAdvance;
+                    $postCommitActions[] = $followUpAdvance;
                 }
             }
         } else {
@@ -326,7 +327,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
             nextState: $nextState,
             events: $events,
             postCommitEffects: $effects,
-            postCommit: $postCommit,
+            postCommitActions: $postCommitActions,
         );
     }
 
@@ -372,7 +373,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
                 'streamingMessage' => null,
             ]),
             events: $events,
-            postCommit: $standalone ? [$this->shellCompletionAdvanceCallback($message->runId(), $state->turnNo)] : [],
+            postCommitActions: $standalone ? array_values(array_filter([$this->shellCompletionAdvanceAction($message->runId(), $state->turnNo)])) : [],
         );
     }
 
@@ -596,31 +597,30 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
         );
     }
 
-    private function shellCompletionAdvanceCallback(string $runId, int $turnNo): callable
-    {
-        if (null === $this->commandBus) {
-            return static function (): void {
-            };
-        }
-
-        return AdvanceRunCallbackFactory::create($this->commandBus, $runId, $turnNo, 'shell-standalone-advance', 'Failed to dispatch AdvanceRun after standalone shell completion.');
-    }
-
-    private function postCancelAdvanceCallback(string $runId, int $turnNo): ?callable
+    private function shellCompletionAdvanceAction(string $runId, int $turnNo): ?DispatchCoordinationMessageDTO
     {
         if (null === $this->commandBus) {
             return null;
         }
 
-        return AdvanceRunCallbackFactory::create($this->commandBus, $runId, $turnNo, 'post-cancel-advance', 'Failed to dispatch AdvanceRun after cancellation terminalized.');
+        return AdvanceRunCoordinationFactory::create($runId, $turnNo, 'shell-standalone-advance', 'Failed to dispatch AdvanceRun after standalone shell completion.');
     }
 
-    private function followUpAdvanceCallback(string $runId, int $turnNo): ?callable
+    private function postCancelAdvanceAction(string $runId, int $turnNo): ?DispatchCoordinationMessageDTO
     {
         if (null === $this->commandBus) {
             return null;
         }
 
-        return AdvanceRunCallbackFactory::create($this->commandBus, $runId, $turnNo, 'advance-after-tools', 'Failed to dispatch AdvanceRun after tool batch completion.');
+        return AdvanceRunCoordinationFactory::create($runId, $turnNo, 'post-cancel-advance', 'Failed to dispatch AdvanceRun after cancellation terminalized.');
+    }
+
+    private function followUpAdvanceAction(string $runId, int $turnNo): ?DispatchCoordinationMessageDTO
+    {
+        if (null === $this->commandBus) {
+            return null;
+        }
+
+        return AdvanceRunCoordinationFactory::create($runId, $turnNo, 'advance-after-tools', 'Failed to dispatch AdvanceRun after tool batch completion.');
     }
 }

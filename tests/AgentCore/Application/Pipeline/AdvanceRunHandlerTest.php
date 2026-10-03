@@ -74,7 +74,7 @@ final class AdvanceRunHandlerTest extends TestCase
         $this->assertFalse(property_exists($result->effects[0], 'model'), 'Scheduling must not snapshot a model onto ExecuteLlmStep.');
 
         $this->assertSame([], $result->postCommitEffects);
-        $this->assertSame([], $result->postCommit);
+        $this->assertSame([], $result->postCommitActions);
     }
 
     public function testCommittedAdvanceDoesNotDrainLaterMailboxCommandAndNextAdvanceCanApplyIt(): void
@@ -356,7 +356,7 @@ final class AdvanceRunHandlerTest extends TestCase
         $this->assertNull($result->nextState, 'No state change when tool calls are still pending');
         $this->assertSame([], $result->events, 'No events when tool calls are still pending');
         $this->assertSame([], $result->effects, 'No effects when tool calls are still pending');
-        $this->assertSame([], $result->postCommit, 'No post-commit callbacks when tool calls are still pending');
+        $this->assertSame([], $result->postCommitActions, 'No post-commit callbacks when tool calls are still pending');
     }
 
     public function testAdvanceWithMixedUnresolvedPendingToolCallsIsNoOp(): void
@@ -399,7 +399,7 @@ final class AdvanceRunHandlerTest extends TestCase
         $this->assertNull($result->nextState, 'No state change when some tool calls are still pending');
         $this->assertSame([], $result->events, 'No events when some tool calls are still pending');
         $this->assertSame([], $result->effects, 'No effects when some tool calls are still pending');
-        $this->assertSame([], $result->postCommit, 'No post-commit callbacks when some tool calls are still pending');
+        $this->assertSame([], $result->postCommitActions, 'No post-commit callbacks when some tool calls are still pending');
     }
 
     public function testAdvanceWithAllResolvedPendingToolCallsProceeds(): void
@@ -644,8 +644,8 @@ final class AdvanceRunHandlerTest extends TestCase
         $this->assertNull($duplicate->nextState);
         $this->assertCount(1, $commandStore->pending('run-cancel-append-advance'), 'Committed cancellation must not drain its pending append on redelivery.');
 
-        $this->assertCount(1, $result->postCommit);
-        ($result->postCommit[0])();
+        $this->assertCount(1, $result->postCommitActions);
+        \Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::run($result->postCommitActions[0], $commandBus);
         $this->assertCount(1, $commandBus->messages);
         $this->assertInstanceOf(AdvanceRun::class, $commandBus->messages[0]);
         $this->assertStringStartsWith('post-cancel-advance-', $commandBus->messages[0]->stepId());
@@ -738,7 +738,7 @@ final class AdvanceRunHandlerTest extends TestCase
 
         $this->assertNull($result->nextState);
         $this->assertSame([], $result->events);
-        $this->assertSame([], $result->postCommit);
+        $this->assertSame([], $result->postCommitActions);
         $this->assertSame([], $commandBus->messages);
     }
 

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Pipeline;
 
-use Ineersa\AgentCore\Application\Handler\AdvanceRunCallbackFactory;
+use Ineersa\AgentCore\Application\Handler\AdvanceRunCoordinationFactory;
 use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Contract\Compaction\PreLlmCompactionGuardInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
@@ -105,15 +105,15 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                 'lastAppliedAdvanceKey' => $message->idempotencyKey(),
             ]);
 
-            $postCommit = [];
+            $postCommitActions = [];
             if (null !== $this->commandBus) {
-                $postCommit[] = AdvanceRunCallbackFactory::create($this->commandBus, $runId, $state->turnNo, 'post-cancel-advance', 'Failed to dispatch AdvanceRun after cancellation terminalized.');
+                $postCommitActions[] = AdvanceRunCoordinationFactory::create($runId, $state->turnNo, 'post-cancel-advance', 'Failed to dispatch AdvanceRun after cancellation terminalized.');
             }
 
             return new HandlerResult(
                 nextState: $nextState,
                 events: $events,
-                postCommit: $postCommit,
+                postCommitActions: $postCommitActions,
             );
         }
 
@@ -182,7 +182,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
         // Compaction replaces RunState.messages and the CompactRunHandler
         // will emit its own events.  We still commit the AgentCommandApplied
         // events from the mailbox drain, and pass the CompactRun effect
-        // through for postCommit dispatch.
+        // through for post-commit coordination dispatch.
         if ([] !== $mailboxEffects) {
             $events = $this->eventFactory->eventsFromSpecs($runId, $preparedState->turnNo, $state->lastSeq + 1, $boundaryEventSpecs);
             $nextState = $preparedState->with([
@@ -234,7 +234,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
         // AdvanceRun after compaction will proceed normally).
         //
         // GUARD: do NOT fire the pre-LLM guard on post-tool continuations.
-        // When the AdvanceRun is triggered by the postCommit callback after
+        // When the AdvanceRun is triggered by the post-commit coordination action after
         // tool_batch_committed, we are still inside the assistant/tool cycle
         // and the next LLM step is the final assistant answer.  Compaction
         // here (even with continueAfterCompaction=true) risks:

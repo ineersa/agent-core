@@ -1209,10 +1209,6 @@ services:
   Ineersa\CodingAgent\Session\Contract\RunSequenceAllocatorInterface:
     alias: Ineersa\CodingAgent\Session\FileRunSequenceAllocator
 
-  Ineersa\CodingAgent\Application\Pipeline\CommitSubagentProgressHandler:
-    arguments:
-      $commandBus: '@agent.command.bus'
-
   Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface:
     alias: Ineersa\CodingAgent\Session\Repair\SessionRepairService
 
@@ -1237,5 +1233,13 @@ services:
       $commandBus: '@agent.command.bus'
 
   Ineersa\CodingAgent\Runtime\Controller\CommandHandler\RepairHandler:
+    arguments:
+      $commandBus: '@agent.command.bus'
+
+  Ineersa\AgentCore\Application\Handler\CoordinationActionHandler:
+    arguments:
+      $commandBus: '@agent.command.bus'
+
+  Ineersa\CodingAgent\Application\Pipeline\SubagentProgressCoordinationHandler:
     arguments:
       $commandBus: '@agent.command.bus'

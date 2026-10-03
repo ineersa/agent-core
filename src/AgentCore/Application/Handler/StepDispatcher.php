@@ -33,6 +33,14 @@ final readonly class StepDispatcher
         }
     }
 
+    /** @param list<object> $actions */
+    public function dispatchCoordinationActions(array $actions): void
+    {
+        foreach ($actions as $action) {
+            $this->commandBus->dispatch($action);
+        }
+    }
+
     private function busFor(object $effect): MessageBusInterface
     {
         return $effect instanceof RunControlTransitionMessageInterface

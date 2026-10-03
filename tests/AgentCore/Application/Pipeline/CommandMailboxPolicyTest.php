@@ -411,13 +411,13 @@ final class CommandMailboxPolicyTest extends TestCase
         $commandBus = new TestMessageBus();
         $executionBus = new TestMessageBus();
 
-        $stepDispatcher = new StepDispatcher(new TestMessageBus(), $executionBus);
         $commandRouter = new CommandRouter([]);
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
         $toolBatchCollector = new ToolBatchCollector();
+        $stepDispatcher = new StepDispatcher(\Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::bus($commandBus, $commandStore, $toolBatchCollector, new StepDispatcher($commandBus, $executionBus)), $executionBus);
 
         $runCommit = new RunCommit(
             activeRunContext: $activeRunContext,
@@ -452,12 +452,10 @@ final class CommandMailboxPolicyTest extends TestCase
                     eventFactory: new \Ineersa\AgentCore\Domain\Event\EventFactory(),
                 ),
                 new LlmStepResultHandler(
-                    toolBatchCollector: $toolBatchCollector,
                     commandMailboxPolicy: $commandMailboxPolicy,
                     eventFactory: new \Ineersa\AgentCore\Domain\Event\EventFactory(),
                     toolCallExtractor: new \Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor(),
                     messageNormalizer: new \Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer(),
-                    stepDispatcher: $stepDispatcher,
                     normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
                     commandBus: $commandBus,
                 ),

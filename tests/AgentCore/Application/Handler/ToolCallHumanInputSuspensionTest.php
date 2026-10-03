@@ -278,10 +278,10 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         $this->assertInstanceOf(ExecuteToolCall::class, $result->postCommitEffects[0]);
         $this->assertSame('call-h2', $result->postCommitEffects[0]->toolCallId);
         $this->assertArrayNotHasKey('message', $result->events[0]->payload);
-        $this->assertNotEmpty($result->postCommit, 'markApplied must wait for post-commit after effects');
+        $this->assertNotEmpty($result->postCommitActions, 'markApplied must wait for post-commit after effects');
         $this->assertFalse($store->has('run-h2', 'human-q-h2'));
-        foreach ($result->postCommit as $callback) {
-            $callback();
+        foreach ($result->postCommitActions as $callback) {
+            \Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::run($callback, null, store: $store);
         }
         $this->assertTrue($store->has('run-h2', 'human-q-h2'));
 
@@ -508,11 +508,11 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
             runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
                 activeRunContext: $activeRunContext,
                 eventStore: $eventStore,
-                stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), $executionBus),
+                stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(\Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::bus(new TestMessageBus(), $commandStore, $collector), $executionBus),
                 logger: new \Psr\Log\NullLogger(),
                 toolBatchCollector: $collector,
             ),
-            stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), $executionBus),
+            stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(\Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::bus(new TestMessageBus(), $commandStore, $collector), $executionBus),
             handlers: [$handler],
         );
 
@@ -617,11 +617,11 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
             runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
                 activeRunContext: $activeRunContext,
                 eventStore: $eventStore,
-                stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), $executionBus),
+                stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(\Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::bus(new TestMessageBus(), $commandStore, $collector), $executionBus),
                 logger: new \Psr\Log\NullLogger(),
                 toolBatchCollector: $collector,
             ),
-            stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), $executionBus),
+            stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(\Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::bus(new TestMessageBus(), $commandStore, $collector), $executionBus),
             handlers: [$handler],
         );
 

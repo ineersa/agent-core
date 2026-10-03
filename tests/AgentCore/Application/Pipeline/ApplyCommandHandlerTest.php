@@ -81,8 +81,8 @@ final class ApplyCommandHandlerTest extends TestCase
         $this->assertSame(CoreCommandKind::FollowUp, $result->events[0]->payload['kind']);
 
         // FollowUp dispatches AdvanceRun to pick up the queued message
-        $this->assertCount(1, $result->postCommit);
-        ($result->postCommit[0])();
+        $this->assertCount(1, $result->postCommitActions);
+        \Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::run($result->postCommitActions[0], $commandBus);
         $this->assertCount(1, $commandBus->messages);
         $this->assertInstanceOf(AdvanceRun::class, $commandBus->messages[0]);
     }
@@ -131,8 +131,8 @@ final class ApplyCommandHandlerTest extends TestCase
         $this->assertSame(RunStatus::Cancelled, $result->nextState->status);
         $this->assertSame('agent_command_queued', $result->events[0]->type);
         $this->assertSame(CoreCommandKind::AppendMessage, $result->events[0]->payload['kind']);
-        $this->assertCount(1, $result->postCommit);
-        ($result->postCommit[0])();
+        $this->assertCount(1, $result->postCommitActions);
+        \Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::run($result->postCommitActions[0], $commandBus);
         $this->assertInstanceOf(AdvanceRun::class, $commandBus->messages[0]);
     }
 
@@ -272,7 +272,7 @@ final class ApplyCommandHandlerTest extends TestCase
         // Late human_response after cancel is a safe no-op (no state / events).
         $this->assertNull($result->nextState);
         $this->assertSame([], $result->events);
-        $this->assertSame([], $result->postCommit);
+        $this->assertSame([], $result->postCommitActions);
     }
 
     public function testSteerWhileRunningQueuesButDoesNotDispatchAdvanceRun(): void
@@ -326,7 +326,7 @@ final class ApplyCommandHandlerTest extends TestCase
         // NO postCommit AdvanceRun callback — the run is active,
         // so the queued command will be drained at the next safe
         // boundary (stop boundary or after tool batch).
-        $this->assertCount(0, $result->postCommit,
+        $this->assertCount(0, $result->postCommitActions,
             'Steer while Running must not dispatch AdvanceRun — only drain at safe boundary.',
         );
 
@@ -384,7 +384,7 @@ final class ApplyCommandHandlerTest extends TestCase
         $this->assertSame('agent_command_queued', $result->events[0]->type);
 
         // NO postCommit AdvanceRun — active run
-        $this->assertCount(0, $result->postCommit,
+        $this->assertCount(0, $result->postCommitActions,
             'FollowUp while Running must not dispatch AdvanceRun.',
         );
     }
@@ -438,11 +438,11 @@ final class ApplyCommandHandlerTest extends TestCase
         $this->assertSame('agent_command_queued', $result->events[0]->type);
 
         // FollowUp after Cancelled SHOULD dispatch AdvanceRun to resume
-        $this->assertCount(1, $result->postCommit,
+        $this->assertCount(1, $result->postCommitActions,
             'FollowUp after Cancelled must still dispatch AdvanceRun.',
         );
 
-        ($result->postCommit[0])();
+        \Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::run($result->postCommitActions[0], $commandBus);
         $this->assertCount(1, $commandBus->messages);
         $this->assertInstanceOf(AdvanceRun::class, $commandBus->messages[0]);
     }
@@ -606,8 +606,8 @@ final class ApplyCommandHandlerTest extends TestCase
         ));
         $this->assertCount(0, $appliedAppend, 'Cancel must not apply AppendMessage inline');
         $this->assertTrue($commandStore->has('run-append-cancel', 'append-1'));
-        $this->assertCount(1, $result->postCommit);
-        ($result->postCommit[0])();
+        $this->assertCount(1, $result->postCommitActions);
+        \Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::run($result->postCommitActions[0], $commandBus);
         $this->assertCount(1, $commandBus->messages);
         $this->assertInstanceOf(AdvanceRun::class, $commandBus->messages[0]);
         $this->assertStringStartsWith('post-cancel-advance-', $commandBus->messages[0]->stepId());
@@ -683,8 +683,8 @@ final class ApplyCommandHandlerTest extends TestCase
         ));
         $this->assertCount(0, $appliedAppend);
         $this->assertTrue($commandStore->has('run-second-cancel-append', 'append-between-cancels'));
-        $this->assertCount(1, $result->postCommit);
-        ($result->postCommit[0])();
+        $this->assertCount(1, $result->postCommitActions);
+        \Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::run($result->postCommitActions[0], $commandBus);
         $this->assertInstanceOf(AdvanceRun::class, $commandBus->messages[0]);
     }
 
@@ -845,10 +845,10 @@ final class ApplyCommandHandlerTest extends TestCase
         $this->assertSame('compact', $result->events[0]->payload['kind']);
 
         // CompactRun must be dispatched via post-commit callback
-        $this->assertCount(1, $result->postCommit,
+        $this->assertCount(1, $result->postCommitActions,
             'Terminal compact must include a post-commit CompactRun dispatch.',
         );
-        ($result->postCommit[0])();
+        \Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::run($result->postCommitActions[0], $commandBus);
         $this->assertCount(1, $commandBus->messages);
         $this->assertInstanceOf(CompactRun::class, $commandBus->messages[0]);
         $this->assertSame('run-terminal-compact', $commandBus->messages[0]->runId());
@@ -1302,7 +1302,7 @@ final class ApplyCommandHandlerTest extends TestCase
         $eventTypes = array_map(static fn ($e) => $e->type, $result->events);
         $this->assertContains('agent_command_applied', $eventTypes);
         $this->assertNotContains('agent_end', $eventTypes);
-        $this->assertSame([], $result->postCommit);
+        $this->assertSame([], $result->postCommitActions);
     }
 
     /**

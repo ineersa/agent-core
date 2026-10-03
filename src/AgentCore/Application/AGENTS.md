@@ -36,7 +36,7 @@ Workers post results (`LlmStepResult`, `ToolCallResult`, `CompactionStepResult`)
 - `StartRun` — `AgentRunner::start()`
 - `ApplyCommand` — `AgentRunner` steer/followUp/cancel/answerHuman via `applyCoreCommand()`
 - `ApplyShellCommand` — `AgentRunner::shell()`, controller shell path, in-process shell send
-- `AdvanceRun` — post-commit kickoffs (`StartRunHandler`, apply/LLM/shell follow-up callbacks), stale-run resume command
+- `AdvanceRun` — post-commit kickoffs (`StartRunHandler`, apply/LLM/shell follow-up actions), stale-run resume command
 - `AdvanceRun` / `CompactRun` — state-transition effects through `RunMessageProcessor` / `RunCommit` → `agent.command.bus` → `run_control`
 - `ExecuteLlmStep` / `ExecuteToolCall` / `ExecuteCompactionStep` — external-I/O effects through `RunMessageProcessor` / `RunCommit` → `agent.execution.bus`
 - `CompactRun` — auto-compaction hooks, manual `/compact`, pre-LLM compaction guard / overflow recovery paths
@@ -45,7 +45,7 @@ Workers post results (`LlmStepResult`, `ToolCallResult`, `CompactionStepResult`)
 
 `SubagentProgressEventAppender` submits `CommitSubagentProgress` for canonical progress. `RunOrchestrator` routes consumption through the locked `RunMessageProcessor` and App handler. The handler validates durable lifecycle, parent invocation, and revision identities before returning a `tool_execution_update` transition. `RunCommit` publishes the new owner sequence without invalidation or parent replay.
 
-Controller nonterminal progress remains transient at sequence zero. Terminal snapshots and in-process progress remain canonical. Queued commands do not advance `deliveredProgressRevision` or the existing `interruptionProgressEnqueuedAt` marker. Owner callbacks advance those existing consumption markers using a freshly read projection version and schedule lifecycle delivery. For a current destination, this happens after canonical commit. When a newer parent turn or resolved call supersedes the destination, consumption retires the outstanding progress obligation without appending or publishing progress. A retired normal destination consumes the current aggregate revision; a retired forced destination consumes its interruption obligation. These markers therefore mean consumed or discarded, not proof of canonical append. Natural and forced-interruption completion wait for consumption, including explicit discard. Duplicate or stale commands do not append again.
+Controller nonterminal progress remains transient at sequence zero. Terminal snapshots and in-process progress remain canonical. Queued commands do not advance `deliveredProgressRevision` or the existing `interruptionProgressEnqueuedAt` marker. Owner coordination handlers advance those existing consumption markers using a freshly read projection version and schedule lifecycle delivery. For a current destination, this happens after canonical commit. When a newer parent turn or resolved call supersedes the destination, consumption retires the outstanding progress obligation without appending or publishing progress. A retired normal destination consumes the current aggregate revision; a retired forced destination consumes its interruption obligation. These markers therefore mean consumed or discarded, not proof of canonical append. Natural and forced-interruption completion wait for consumption, including explicit discard. Duplicate or stale commands do not append again.
 
 Valid launch reservations always contain child rows: `DeferredSubagentBatchLaunchService` rejects empty task lists, and `DeferredSubagentBatchRepository::reserveBatch()` inserts the batch and planned children in one transaction. Missing child rows are an invariant failure, not a reason to wait for an unsubmitted command. Parallel timeout completion requires no forced snapshot and never waits for the interruption-progress marker.
 
@@ -80,7 +80,7 @@ subprocess start; duration remains on the later result metadata.
 - `RunCommit::commit()` appends canonical `RunEvent` via `EventStoreInterface` (`append` / `appendMany`), then persists the narrow projection and active context before effect dispatch via `StepDispatcher` and after-turn hooks via `HookDispatcher`
 - History selection, tail discard, and repair pass `dispatchAfterTurnHooks: false`. They retain commit publication and collector release without scheduling after-turn work ahead of pending user commands. Normal terminal worker-failure commits retain hooks.
 - `RunCommit` releases collector-owned in-memory batches after persistence and state publication: the exact batch on `tool_batch_committed`, or all run batches on a terminal `agent_end`. Finalized collection alone does not release them. Durable collector reads do not retain deserialized batches; the App cleanup hook deletes snapshot files independently.
-- `StartRunHandler` re-arms the initial `AdvanceRun` post-commit callback when Messenger redelivers after `run_started` already committed but before any AdvanceRun token was applied (`lastAppliedAdvanceKey` / `currentOperation` still null)
+- `StartRunHandler` re-arms the initial `AdvanceRun` post-commit action when Messenger redelivers after `run_started` already committed but before any AdvanceRun token was applied (`lastAppliedAdvanceKey` / `currentOperation` still null)
 - `StartRunHandler` no-ops when status is already `Cancelled`/`Cancelling` and `model` is still null, so reserved child run ids cancelled before `StartRun` cannot revive
 - `ToolCallResultFactory::fromExecuteToolCallAndToolResult()` maps envelope `error` only for cancelled tool results (`details.cancelled`); other tool errors keep `error: null` and rely on `isError` / `details`
 - Extension lifecycle hooks use `HookSubscriberInterface` / after-turn context from committed events, aggregated in registration order by `HookDispatcher`
@@ -121,3 +121,11 @@ First-shell controller entry reserves a real parent session before submission wh
 Repair checks canonical sequence integrity before owner hydration. Integrity refusals do not admit registry state. Maintenance handlers perform required recovery inside their response boundary, so recovery failures still emit sanitized runtime replies. The middleware holds the owner lock throughout maintenance consumption.
 
 Repair derives execution state and validates proposed messages through the retained-history filter. Sequence integrity and append watermarks still use the whole canonical archive. Automatic compaction skips Failed state while other after-turn subscribers retain failure cleanup.
+
+## Post-commit coordination
+
+`HandlerResult::postCommitActions` contains data descriptors, not callables. `RunMessageProcessor` dispatches them in order through `StepDispatcher` on the existing command bus, after `RunCommit` and `postCommitEffects`. Their unrouted Messenger handlers execute synchronously. A failure stops subsequent actions.
+
+Core actions dispatch prepared `AdvanceRun` or `CompactRun` messages, mark a command applied, or register a tool batch and dispatch its initially admitted calls. `AdvanceRunCoordinationFactory` captures the step ID and idempotency key before commit. Replaying the same descriptor preserves those values. Descriptors contain immutable messages or scalar identities, not services or `RunState`.
+
+These descriptors are serializable through the configured native PHP serializer. They are not persisted, journaled, or execution authorization records. Append, projection publication, coordination, and effect dispatch remain separate failure boundaries. Existing pre-commit mailbox and tool-batch mutations still need the pending-transition protocol.

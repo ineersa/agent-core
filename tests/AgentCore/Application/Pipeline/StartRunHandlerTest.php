@@ -72,7 +72,7 @@ final class StartRunHandlerTest extends TestCase
 
         $this->assertSame([], $result->effects);
         $this->assertSame([], $result->postCommitEffects);
-        $this->assertSame([], $result->postCommit);
+        $this->assertSame([], $result->postCommitActions);
     }
 
     public function testCompletedShellOnlyStateInitializesOnce(): void
@@ -132,7 +132,7 @@ final class StartRunHandlerTest extends TestCase
 
         $this->assertNull($result->nextState);
         $this->assertSame([], $result->events);
-        $this->assertSame([], $result->postCommit);
+        $this->assertSame([], $result->postCommitActions);
     }
 
     public function testCancellingQueuedStateDoesNotStart(): void
@@ -157,7 +157,7 @@ final class StartRunHandlerTest extends TestCase
 
         $this->assertNull($result->nextState);
         $this->assertSame([], $result->events);
-        $this->assertSame([], $result->postCommit);
+        $this->assertSame([], $result->postCommitActions);
     }
 
     public function testCommittedStartRedeliveryRearmsInitialAdvanceWhenKickoffNeverRan(): void
@@ -182,8 +182,8 @@ final class StartRunHandlerTest extends TestCase
         $this->assertNull($redelivery->nextState);
         $this->assertSame([], $redelivery->events);
         $this->assertSame([], $redelivery->effects);
-        $this->assertCount(1, $redelivery->postCommit);
-        ($redelivery->postCommit[0])();
+        $this->assertCount(1, $redelivery->postCommitActions);
+        \Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::run($redelivery->postCommitActions[0], $commandBus);
 
         $this->assertCount(1, $commandBus->messages);
         $this->assertInstanceOf(AdvanceRun::class, $commandBus->messages[0]);
@@ -207,7 +207,7 @@ final class StartRunHandlerTest extends TestCase
         $this->assertNull($redelivery->nextState);
         $this->assertSame([], $redelivery->events);
         $this->assertSame([], $redelivery->effects);
-        $this->assertSame([], $redelivery->postCommit);
+        $this->assertSame([], $redelivery->postCommitActions);
         $this->assertSame([], $commandBus->messages);
     }
 
@@ -230,8 +230,8 @@ final class StartRunHandlerTest extends TestCase
 
         $result = $handler->handle($message, $state);
 
-        $this->assertCount(1, $result->postCommit);
-        ($result->postCommit[0])();
+        $this->assertCount(1, $result->postCommitActions);
+        \Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::run($result->postCommitActions[0], $commandBus);
 
         $this->assertCount(1, $commandBus->messages);
         $this->assertInstanceOf(AdvanceRun::class, $commandBus->messages[0]);

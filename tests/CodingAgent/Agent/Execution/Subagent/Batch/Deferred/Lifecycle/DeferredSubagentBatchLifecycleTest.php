@@ -1688,11 +1688,18 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
                 $normalized = SubagentProgressSerializerTestSupport::normalizer()->normalize($progress);
                 $this->appended[] = $normalized;
                 $bus = new TestMessageBus();
-                $handler = new \Ineersa\CodingAgent\Application\Pipeline\CommitSubagentProgressHandler($this->repo, $bus);
+                $handler = new \Ineersa\CodingAgent\Application\Pipeline\CommitSubagentProgressHandler($this->repo);
                 $active = new \Ineersa\AgentCore\Tests\Support\TestActiveRunContext();
                 $active->loadRecovered(\Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder::running($parentRunId)
                     ->withTurnNo($parentTurnNo)->withPendingToolCalls([$parentToolCallId => false])->build());
-                $dispatcher = new \Ineersa\AgentCore\Application\Handler\StepDispatcher($bus, $bus);
+                $coordination = new \Ineersa\CodingAgent\Application\Pipeline\SubagentProgressCoordinationHandler($this->repo, $bus);
+                $coordinationBus = new \Symfony\Component\Messenger\MessageBus([
+                    new \Symfony\Component\Messenger\Middleware\HandleMessageMiddleware(new \Symfony\Component\Messenger\Handler\HandlersLocator([
+                        \Ineersa\CodingAgent\Application\Message\ConsumeSubagentProgressDTO::class => [$coordination(...)],
+                        DeliverDeferredSubagentBatchLifecycleMessage::class => [$bus->dispatch(...)],
+                    ])),
+                ]);
+                $dispatcher = new \Ineersa\AgentCore\Application\Handler\StepDispatcher($coordinationBus, $bus);
                 $commit = new \Ineersa\AgentCore\Application\Pipeline\RunCommit($active, $this->store, $dispatcher, new TestLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector());
                 $processor = new \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor($active, $this->lock, $commit, $dispatcher, [$handler]);
                 $processor->process('command.subagent_progress', new \Ineersa\AgentCore\Domain\Message\CommitSubagentProgress(

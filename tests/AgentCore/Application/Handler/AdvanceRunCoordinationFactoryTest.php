@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Application\Handler;
 
-use Ineersa\AgentCore\Application\Handler\AdvanceRunCallbackFactory;
+use Ineersa\AgentCore\Application\Handler\AdvanceRunCoordinationFactory;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use PHPUnit\Framework\TestCase;
@@ -17,20 +17,19 @@ use Symfony\Component\Messenger\MessageBusInterface;
  * the canonical step-id/idempotency-key mechanics and wraps Messenger
  * failures into the flow-specific RuntimeException.
  */
-final class AdvanceRunCallbackFactoryTest extends TestCase
+final class AdvanceRunCoordinationFactoryTest extends TestCase
 {
     public function testCreateDispatchesAdvanceRunWithCanonicalKeyAndAttempt(): void
     {
         $commandBus = new TestMessageBus();
 
-        $callback = AdvanceRunCallbackFactory::create(
-            $commandBus,
+        $callback = AdvanceRunCoordinationFactory::create(
             'run-advance-1',
             7,
             'follow-up',
             'Failed to dispatch follow-up AdvanceRun command.',
         );
-        $callback();
+        \Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::run($callback, $commandBus);
 
         $this->assertCount(1, $commandBus->messages);
         $advance = $commandBus->messages[0];
@@ -45,16 +44,16 @@ final class AdvanceRunCallbackFactoryTest extends TestCase
         );
     }
 
-    public function testStepIdIsEvaluatedAtInvocationTime(): void
+    public function testRepeatedDispatchPreservesPreparedIdentity(): void
     {
         $commandBus = new TestMessageBus();
-        $callback = AdvanceRunCallbackFactory::create($commandBus, 'run-advance-2', 3, 'post-cancel-advance', 'err');
+        $callback = AdvanceRunCoordinationFactory::create('run-advance-2', 3, 'post-cancel-advance', 'err');
 
-        $callback();
-        $callback();
+        \Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::run($callback, $commandBus);
+        \Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::run($callback, $commandBus);
 
         $this->assertCount(2, $commandBus->messages);
-        $this->assertNotSame($commandBus->messages[0]->stepId(), $commandBus->messages[1]->stepId());
+        $this->assertSame($commandBus->messages[0]->stepId(), $commandBus->messages[1]->stepId());
         $this->assertStringStartsWith('post-cancel-advance-', $commandBus->messages[0]->stepId());
     }
 
@@ -67,8 +66,7 @@ final class AdvanceRunCallbackFactoryTest extends TestCase
             }
         };
 
-        $callback = AdvanceRunCallbackFactory::create(
-            $throwingBus,
+        $callback = AdvanceRunCoordinationFactory::create(
             'run-advance-3',
             2,
             'advance-after-tools',
@@ -76,7 +74,7 @@ final class AdvanceRunCallbackFactoryTest extends TestCase
         );
 
         try {
-            $callback();
+            \Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::run($callback, $throwingBus);
             $this->fail('Expected RuntimeException from the callback.');
         } catch (\RuntimeException $exception) {
             $this->assertSame('Failed to dispatch AdvanceRun after tool batch completion.', $exception->getMessage());

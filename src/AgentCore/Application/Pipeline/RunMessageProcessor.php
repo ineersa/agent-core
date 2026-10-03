@@ -90,9 +90,7 @@ final readonly class RunMessageProcessor
         if ([] !== $result->postCommitEffects) {
             $this->stepDispatcher->dispatchEffects($result->postCommitEffects);
         }
-        foreach ($result->postCommit as $callback) {
-            $callback();
-        }
+        $this->stepDispatcher->dispatchCoordinationActions($result->postCommitActions);
     }
 
     private function resolveHandler(object $message): RunMessageHandler
