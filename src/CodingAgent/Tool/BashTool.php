@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tool;
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
+use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Config\BashToolConfig;
@@ -375,17 +376,18 @@ final class BashTool implements HatfieldToolProviderInterface
                 "[Bash output truncated: %d bytes > %d-byte read bound]\n".
                 "Full output remains at the background log:\n%s\n".
                 "\n".
-                "Next: inspect the log with a bound, e.g.\n".
-                "- bash(command: \"tail -c %d %s\")\n".
-                "- bash(command: \"grep -n -- 'PATTERN' %s | head -50\")\n".
+                "Next: inspect a bounded byte window as hexadecimal, e.g.\n".
+                "- bash(command: \"od -An -tx1 -N %d %s\")\n".
+                "Use od -j OFFSET for a later window. Do not cut UTF-8 text with tail -c.\n".
                 'Do not rerun the original command or load the full log unbound.',
                 $result->totalBytes,
                 $this->config->logTailChars,
                 $result->logPath,
                 $this->config->logTailChars,
                 escapeshellarg($result->logPath),
-                escapeshellarg($result->logPath),
             );
+        } catch (MalformedToolResultException $e) {
+            throw $e;
         } catch (\RuntimeException $e) {
             $this->logger->warning('bash_tool.read_output_failed', [
                 'component' => 'tool.bash',

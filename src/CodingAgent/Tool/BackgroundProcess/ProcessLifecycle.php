@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool\BackgroundProcess;
 
+use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Psr\Log\LoggerInterface;
 
@@ -278,7 +279,7 @@ final class ProcessLifecycle
 
             return new LogTailResult(
                 logPath: $logPath,
-                content: \is_string($content) ? $content : '(failed to read log)',
+                content: \is_string($content) ? $this->displayLogText($content) : '(failed to read log)',
                 truncated: false,
                 totalBytes: $totalBytes,
             );
@@ -299,7 +300,7 @@ final class ProcessLifecycle
 
         return new LogTailResult(
             logPath: $logPath,
-            content: \is_string($content) ? $content : '(failed to read log)',
+            content: \is_string($content) ? $this->displayLogText($content) : '(failed to read log)',
             truncated: true,
             totalBytes: $totalBytes,
         );
@@ -381,5 +382,16 @@ final class ProcessLifecycle
         }
 
         return true;
+    }
+
+    private function displayLogText(string $content): string
+    {
+        if (mb_check_encoding($content, 'UTF-8')) {
+            return $content;
+        }
+
+        // Do not turn an invalid result into a successful, altered text view.
+        // The process artifact and its recorded exit status remain untouched.
+        throw new MalformedToolResultException();
     }
 }

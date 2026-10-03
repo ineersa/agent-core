@@ -55,6 +55,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
             throw new \InvalidArgumentException('ToolCallResultHandler can only handle ToolCallResult messages.');
         }
 
+        $message = $message->finalized();
         $runId = $message->runId();
 
         if (isset($state->pendingShellToolCalls[$message->toolCallId])) {

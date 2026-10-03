@@ -28,6 +28,7 @@ final readonly class ToolExecutionEndPayloadCodec
      */
     public function toEventPayload(ToolCallResult $result): array
     {
+        $result = $result->finalized();
         $normalized = $this->serializer->normalize($result);
         if (!\is_array($normalized)) {
             throw new \UnexpectedValueException('ToolExecutionEnd tool_result normalization must produce an array.');

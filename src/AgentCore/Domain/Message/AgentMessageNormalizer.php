@@ -96,6 +96,11 @@ final readonly class AgentMessageNormalizer
      */
     public function toolMessage(ToolCallResult $result, array $modelNotifications = []): AgentMessage
     {
+        $finalized = $result->finalized();
+        if ($finalized !== $result) {
+            $modelNotifications = [];
+        }
+        $result = $finalized;
         // When a typed notification with delivery=tool_result_replace is present,
         // the model-facing tool content is that notification text — not the raw/full
         // output and not a JSON envelope. First matching typed row wins; DTO guarantees
