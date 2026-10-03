@@ -132,6 +132,30 @@ final class ProcessLifecycleTest extends TestCase
         }
     }
 
+    #[Test]
+    #[DataProvider('invalidLogReadBudgets')]
+    public function malformedLogBytesAreDisplaySafeWithoutChangingArtifact(int $budget): void
+    {
+        $path = $this->tmpDir.'/malformed.log';
+        $raw = str_repeat('prefix', 20)."\n\xD0\nпосле\n";
+        file_put_contents($path, $raw);
+
+        $result = $this->lifecycle->readLogTail($path, $budget);
+
+        $this->assertTrue(mb_check_encoding($result->content, 'UTF-8'));
+        $this->assertStringContainsString('Invalid UTF-8 replaced', $result->content);
+        $this->assertStringEndsWith("\nпосле\n", $result->content);
+        $this->assertSame(\strlen($raw) > $budget, $result->truncated);
+        $this->assertSame(\strlen($raw), $result->totalBytes);
+        $this->assertSame($raw, file_get_contents($path));
+    }
+
+    public static function invalidLogReadBudgets(): iterable
+    {
+        yield 'whole log' => [512];
+        yield 'bounded tail with invalid interior byte' => [32];
+    }
+
     /** @return iterable<string, array{bool}> */
     public static function exitedChildren(): iterable
     {

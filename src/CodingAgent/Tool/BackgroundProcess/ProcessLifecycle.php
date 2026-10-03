@@ -278,7 +278,7 @@ final class ProcessLifecycle
 
             return new LogTailResult(
                 logPath: $logPath,
-                content: \is_string($content) ? $content : '(failed to read log)',
+                content: \is_string($content) ? $this->displayLogText($content) : '(failed to read log)',
                 truncated: false,
                 totalBytes: $totalBytes,
             );
@@ -299,7 +299,7 @@ final class ProcessLifecycle
 
         return new LogTailResult(
             logPath: $logPath,
-            content: \is_string($content) ? $content : '(failed to read log)',
+            content: \is_string($content) ? $this->displayLogText($content) : '(failed to read log)',
             truncated: true,
             totalBytes: $totalBytes,
         );
@@ -381,5 +381,17 @@ final class ProcessLifecycle
         }
 
         return true;
+    }
+
+    private function displayLogText(string $content): string
+    {
+        if (mb_check_encoding($content, 'UTF-8')) {
+            return $content;
+        }
+
+        // Command logs contain arbitrary bytes. Only the text view is normalized;
+        // the original artifact remains intact for binary-safe inspection.
+        return "[Invalid UTF-8 replaced; original bytes kept in process log.]\n"
+            .mb_scrub($content, 'UTF-8');
     }
 }

@@ -14,7 +14,9 @@ use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
+use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
+use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Tests\Support\Builder\ToolCallBuilder;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
@@ -27,6 +29,7 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
+use Ineersa\CodingAgent\Session\SessionToolBatchStore;
 use Ineersa\CodingAgent\Tests\Support\StubRunRelationshipReader;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
@@ -142,6 +145,53 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->assertStringContainsString('line1', $result);
         $this->assertStringContainsString('line2', $result);
         $this->assertStringContainsString('line3', $result);
+    }
+
+    #[DataProvider('malformedOutputExitCodes')]
+    public function testMalformedOutputCanBePersistedWithoutRepeatingCommand(int $exitCode): void
+    {
+        $this->createManager();
+        $command = "printf 'before\\n\\320\\nпосле\\n'; exit ".$exitCode;
+        $message = new ExecuteToolCall(self::TEST_SESSION, 1, 'utf8-output', 1, 'execute-utf8', 'utf8-call', 'bash', ['command' => $command], 0);
+        try {
+            $text = $this->withContext(self::TEST_SESSION, fn (): string => ($this->makeBashTool())(new BashArgumentsDTO(command: $command)));
+            $result = ToolCallResultFactory::fromExecuteToolCallAndToolResult($message, new ToolResult(
+                toolCallId: 'utf8-call', toolName: 'bash', content: [['type' => 'text', 'text' => $text]],
+            ));
+        } catch (ToolCallException $exception) {
+            $result = ToolCallResultFactory::fromExecuteToolCallAndThrowable($message, $exception);
+        }
+
+        $this->assertSame(0 !== $exitCode, $result->isError);
+        $this->assertStringContainsString('Invalid UTF-8 replaced', $result->result['content'][0]['text']);
+        $this->assertStringContainsString('после', $result->result['content'][0]['text']);
+        if (0 !== $exitCode) {
+            $this->assertStringContainsString('Command failed with exit code 2.', $result->error['message']);
+        }
+        $records = $this->recordsForSession(self::TEST_SESSION);
+        $this->assertCount(1, $records);
+        $this->assertSame($exitCode, $records[0]->exitCode);
+        $this->assertSame("before\n\xD0\nпосле\n", file_get_contents($records[0]->logPath));
+
+        // Exercise the same configured JSON snapshot boundary that failed in session 74.
+        $store = self::getContainer()->get(SessionToolBatchStore::class);
+        $batch = new ToolBatchStateDTO(['utf8-call' => 0], ['utf8-call' => $message], [], [], ['utf8-call' => $result], false, 1);
+        try {
+            $store->save(self::TEST_SESSION, 1, 'utf8-output', $batch);
+            $loaded = $store->load(self::TEST_SESSION, 1, 'utf8-output');
+            $this->assertNotNull($loaded);
+            $this->assertSame($result->result, $loaded->results['utf8-call']->result);
+            $this->assertSame($result->error, $loaded->results['utf8-call']->error);
+            $this->assertSame($result->isError, $loaded->results['utf8-call']->isError);
+        } finally {
+            $store->delete(self::TEST_SESSION, 1, 'utf8-output');
+        }
+    }
+
+    public static function malformedOutputExitCodes(): iterable
+    {
+        yield 'success' => [0];
+        yield 'failure' => [2];
     }
 
     /* ── Non-zero exit code ── */
