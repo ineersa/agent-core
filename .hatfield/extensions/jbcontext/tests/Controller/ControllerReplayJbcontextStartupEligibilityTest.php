@@ -32,6 +32,7 @@ final class ControllerReplayJbcontextStartupEligibilityTest extends ControllerRe
     private const string QUERY = 'How does Hatfield prevent two processes from running the same session concurrently?';
 
     private string $binDir = '';
+    private string $reservationDatabaseScope = '';
 
     public function testControllerStartupDisablesEligibilityWithoutIdeaBeforeAnyTurn(): void
     {
@@ -58,6 +59,7 @@ final class ControllerReplayJbcontextStartupEligibilityTest extends ControllerRe
     {
         $this->installStubJbcontext();
         mkdir($this->tempDir.'/.idea', 0o777, true);
+        $this->reserveSessionThroughShellEntry();
 
         $paths = JbcontextPaths::fromProjectRoot($this->tempDir);
         StatusFixtures::replace(JbcontextStatusStore::forSession($paths, $this->sessionId), new JbcontextSessionState(
@@ -98,9 +100,8 @@ final class ControllerReplayJbcontextStartupEligibilityTest extends ControllerRe
             'v' => 1,
             'id' => $startCmdId,
             'type' => 'start_run',
-            // Bind the run to the controller session id so tool ambient runId
-            // resolves the same jbcontext status file that session-start wrote.
-            // Opaque HATFIELD_SESSION_ID labels are not auto-promoted to run ids.
+            // Reuse the durably reserved parent identity for startup eligibility
+            // and tool ambient context, never the opaque process-scoping label.
             'runId' => $this->sessionId,
             'payload' => [
                 'prompt' => 'Call the tool named code_search exactly once with text '
@@ -179,9 +180,17 @@ YAML;
 
         $path = $this->binDir.\PATH_SEPARATOR.(getenv('PATH') ?: '/usr/bin:/bin');
 
-        return [
+        $env = [
             'PATH' => $path,
         ];
+        if ('' !== $this->reservationDatabaseScope) {
+            // Changing the public session identity must not change the isolated
+            // database containing its reservation between controller lifetimes.
+            $env['HATFIELD_TEST_DATABASE_PATH'] = 'app_test-replay-'.$this->reservationDatabaseScope.'.sqlite';
+            $env['HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH'] = 'messenger_transport_test-replay-'.$this->reservationDatabaseScope.'.sqlite';
+        }
+
+        return $env;
     }
 
     /**
@@ -249,6 +258,31 @@ YAML;
                 'expected_text' => 'done',
             ],
         ];
+    }
+
+    private function reserveSessionThroughShellEntry(): void
+    {
+        $this->reservationDatabaseScope = $this->sessionId;
+        $this->spawnController();
+        $this->waitForEvent('runtime.ready', $this->liveControllerReadyTimeout());
+        $this->writeCommand([
+            'v' => 1,
+            'id' => 'reserve-parent',
+            'type' => 'shell_command',
+            'runId' => $this->sessionId,
+            'payload' => ['text' => '!printf reserved'],
+        ]);
+        $events = $this->collectEventsUntil('run.completed', 8.0);
+        $byType = $this->indexByType($events);
+        $this->assertTrue($this->foundAck($events, 'reserve-parent'), $this->collectDiagnostics($events));
+        $this->assertArrayHasKey('run.completed', $byType, $this->collectDiagnostics($events));
+        $this->assertArrayNotHasKey('tool_execution.failed', $byType, $this->collectDiagnostics($events));
+        $this->assertArrayHasKey('run.started', $byType, $this->collectDiagnostics($events));
+        $reserved = (string) $byType['run.started'][0]['runId'];
+        $this->assertTrue(ctype_digit($reserved), 'First-shell entry must reserve a real parent session.');
+        $this->stopProcess();
+        $this->sessionId = $reserved;
+        $this->runId = $reserved;
     }
 
     /**

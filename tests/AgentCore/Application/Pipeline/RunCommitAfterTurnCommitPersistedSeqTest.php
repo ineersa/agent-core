@@ -41,7 +41,7 @@ final class RunCommitAfterTurnCommitPersistedSeqTest extends TestCase
 
         $activeRunContext = new TestActiveRunContext();
         $previous = RunState::queued('child-run-1');
-        $activeRunContext->remember($previous);
+        $activeRunContext->loadRecovered($previous);
         $eventStore = new InMemoryEventStore();
 
         $commit = new RunCommit(
@@ -77,6 +77,6 @@ final class RunCommitAfterTurnCommitPersistedSeqTest extends TestCase
         $this->assertSame(2, $captured->runState->lastSeq);
 
         // The assigned-sequence bump (input seq 0 -> persisted seq 2) must
-        $persisted = $activeRunContext->stateFor('child-run-1');
+        $persisted = $activeRunContext->requireLoaded('child-run-1');
     }
 }

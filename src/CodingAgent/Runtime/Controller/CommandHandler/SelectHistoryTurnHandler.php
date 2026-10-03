@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Controller\CommandHandler;
 
-use Ineersa\AgentCore\Contract\History\HistorySelectionServiceInterface;
+use Ineersa\AgentCore\Domain\Message\SelectHistoryPrompt;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
-use Ineersa\CodingAgent\Runtime\Protocol\RunHistoryPositionChangedEventFactory;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
+use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
  * Handles select_history_turn JSONL commands from the parent TUI process.
@@ -19,7 +19,7 @@ use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 final readonly class SelectHistoryTurnHandler
 {
     public function __construct(
-        private HistorySelectionServiceInterface $historySelectionService,
+        private MessageBusInterface $commandBus,
         private LoggerInterface $logger,
     ) {
     }
@@ -58,28 +58,7 @@ final readonly class SelectHistoryTurnHandler
         }
 
         try {
-            $result = $this->historySelectionService->selectPrompt($runId, $targetTurnNo);
-
-            /** @var \Ineersa\AgentCore\Domain\Run\RunState $rebuiltState */
-            $rebuiltState = $result['rebuiltState'];
-            $positionEventSeq = $result['positionEventSeq'];
-            $selectedPromptTurnNo = (int) $result['selectedPromptTurnNo'];
-            $editorPromptText = (string) $result['editorPromptText'];
-
-            $event->emit(RunHistoryPositionChangedEventFactory::create(
-                $runId,
-                $positionEventSeq,
-                $rebuiltState->turnNo,
-                $selectedPromptTurnNo,
-                $editorPromptText,
-            ));
-
-            $this->logger->info('select_history_turn_handler.completed', [
-                'run_id' => $runId,
-                'selected_prompt_turn_no' => $selectedPromptTurnNo,
-                'position_turn_no' => $rebuiltState->turnNo,
-                'position_event_seq' => $positionEventSeq,
-            ]);
+            $this->commandBus->dispatch(new SelectHistoryPrompt($runId, $targetTurnNo));
         } catch (\Throwable $e) {
             $this->logger->error('select_history_turn_handler.failed', [
                 'run_id' => $runId,

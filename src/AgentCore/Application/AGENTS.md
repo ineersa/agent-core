@@ -18,7 +18,7 @@ Topology map for AgentCore application handlers. Authoritative routing: `config/
 | `CompactionStepResult` | `agent.command.bus` (transport `run_control`) | `Ineersa\CodingAgent\Application\Pipeline\CompactionStepResultHandler` |
 | `CompleteDeferredToolCall` | `agent.command.bus` (transport `run_control`) | `CompleteDeferredToolCallHandler` |
 | `CommitSubagentProgress` | `agent.command.bus` (transport `run_control`) | `Ineersa\CodingAgent\Application\Pipeline\CommitSubagentProgressHandler` |
-| `InvalidateRunContext` | `agent.command.bus` (transport `run_control`) | `RunOrchestrator::onInvalidateRunContext()` clears active context only |
+| `SelectHistoryPrompt` / `RepairSession` | `agent.command.bus` (transport `run_control`) | App `SessionMaintenanceHandler` invokes locked history/repair services and emits narrow runtime replies |
 | `RefreshRunContext` | `agent.command.bus` (transport `run_control`) | `RefreshRunContextHandler` replaces generated messages and commits `context_refreshed` without advancing a turn |
 
 ## Async workers (`agent.execution.bus`)
@@ -41,7 +41,7 @@ Workers post results (`LlmStepResult`, `ToolCallResult`, `CompactionStepResult`)
 - `AdvanceRun` / `CompactRun` — state-transition effects through `RunMessageProcessor` / `RunCommit` → `agent.command.bus` → `run_control`
 - `ExecuteLlmStep` / `ExecuteToolCall` / `ExecuteCompactionStep` — external-I/O effects through `RunMessageProcessor` / `RunCommit` → `agent.execution.bus`
 - `CompactRun` — auto-compaction hooks, manual `/compact`, pre-LLM compaction guard / overflow recovery paths
-- `InvalidateRunContext` — history selection and explicit repair after persistence; it only clears the receiving run_control process-local context
+- `SelectHistoryPrompt` / `RepairSession` — controller submission and synchronous in-process owner commands. Services commit through `RunCommit` under `RunLockManager`; the controller does not reconstruct or write canonical history.
 
 ## Subagent progress ownership
 
@@ -80,6 +80,7 @@ subprocess start; duration remains on the later result metadata.
 ## Events and commit
 
 - `RunCommit::commit()` appends canonical `RunEvent` via `EventStoreInterface` (`append` / `appendMany`), then persists the narrow projection and active context before effect dispatch via `StepDispatcher` and after-turn hooks via `HookDispatcher`
+- History selection, tail discard, and repair pass `dispatchAfterTurnHooks: false`. They retain commit publication and collector release without scheduling after-turn work ahead of pending user commands. Normal terminal worker-failure commits retain hooks.
 - `RunCommit` releases collector-owned in-memory batches after persistence and state publication: the exact batch on `tool_batch_committed`, or all run batches on a terminal `agent_end`. Finalized collection alone does not release them. Durable collector reads do not retain deserialized batches; the App cleanup hook deletes snapshot files independently.
 - `StartRunHandler` re-arms the initial `AdvanceRun` post-commit callback when Messenger redelivers after `run_started` already committed but before any AdvanceRun token was applied (`lastAppliedAdvanceKey` / `currentOperation` still null)
 - `StartRunHandler` no-ops when status is already `Cancelled`/`Cancelling` and `model` is still null, so reserved child run ids cancelled before `StartRun` cannot revive
@@ -93,6 +94,12 @@ Ordered retained-history projection lives in **CodingAgent** (`CodingAgent\Sessi
 - `RunStateRebuilderInterface` → App `SessionRunStateReplayService` (filter retained history before reducing `RunState`)
 - `HistorySelectionServiceInterface` / `HistoryTailDiscardInterface` → App history services; `HistoryTailDiscardInterface` is the mutate-behind-tip choke point used by `RunMessageProcessor`
 
+`HistoryTailDiscardService` prepares an unsequenced discard event. `RunMessageProcessor` commits it separately before the normal handler, including no-op handlers, then clears the reasoning baseline after publication. Preparation cannot append or change metadata.
+
+History selection validates its explicit rebuild before committing `history_position_set`. Repair retains preview/refusal/redrive rules and validates hypothetical repair before committing proposed events. Owner maintenance replies use existing `run.history_position_changed` and correlated `session.repair.completed` runtime events. In-process repair reads the narrow `RepairResult` from Messenger's `HandledStamp`.
+
+Historical presentation preserves execution replay's accumulator behavior: terminal events do not clear its by-reference pending calls or staged completed results. A later batch commit can include results staged before termination. Do not change only presentation counts to hide this inherited behavior.
+
 See `docs/session-storage.md` (linear history model).
 
 ## Observability (wiring only)
@@ -102,3 +109,13 @@ See `docs/session-storage.md` (linear history model).
 ## Maintenance
 
 When routing, handlers, projector flow, or subscriber contracts change, update this file in the same change.
+
+## Explicit owner registry initialization
+
+`OwnerRunInitializationMiddleware` runs only on received `run_control` envelopes, including synchronous transport consumption. It validates actual envelope identity against durable parent sessions or child reservations, then explicitly creates a reserved-new state or loads canonical recovery. Registry lookup is memory-only. Publication failure releases local state and requires recovery at the next owner entry.
+
+Only `StartRun`, first-shell `ApplyShellCommand`, and cancellation of a reserved child before start can create new state. Creation rejects prior operational sequence/status or non-pending child artifact evidence when canonical history is missing. It preserves child parent/owner identity. Ordinary follow-up and attach require canonical recovery, not queued-on-miss. Maintenance may return its existing empty-history refusal without admitting state. Recovery rejects absent products, zero-sequence products, and mismatched run identities.
+
+First-shell controller entry reserves a real parent session before submission when the supplied identity is an opaque process label. It reports the resulting numeric identity in the existing `run.started` event. Registered children and numeric parent identities are not replaced.
+
+`AttachRun` moves pending-question cancellation and context refresh to the owner. Controller attach never reconstructs execution state. Transcript bootstrap remains separate work.

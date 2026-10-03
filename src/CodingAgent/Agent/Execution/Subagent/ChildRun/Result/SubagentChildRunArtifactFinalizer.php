@@ -41,7 +41,7 @@ final class SubagentChildRunArtifactFinalizer
             artifactId: $identity->artifactId,
             agentName: $identity->displayName,
             agentRunId: $identity->childRunId,
-            childState: $outcome->childState,
+            childPresentation: $outcome->childPresentation,
         );
 
         // Append immutable handoff with the status/summary known at this finalize.

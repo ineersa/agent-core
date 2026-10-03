@@ -13,7 +13,6 @@ use Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler;
 use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor;
-use Ineersa\AgentCore\Contract\History\HistorySelectionServiceInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -37,7 +36,6 @@ use Ineersa\CodingAgent\PromptTemplate\PromptTemplateService;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextDiscovery;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextRenderer;
@@ -140,14 +138,13 @@ final class InProcessAttachCancelsDeferredToolHumanTest extends IsolatedKernelTe
                 RunOperationalToolCallStatusEnum::WaitingHuman,
                 1,
             )]]);
-        $active->remember($waiting);
+        $active->loadRecovered($waiting);
 
         $container = self::getContainer();
         $client = new InProcessAgentSessionClient(
             runner: $runner,
             eventStore: $eventStore,
             mapper: $container->get(RuntimeEventMapper::class),
-            historySelectionService: $this->createStub(HistorySelectionServiceInterface::class),
             systemPromptBuilder: $container->get(SystemPromptBuilder::class),
             agentsContextDiscovery: $container->get(AgentsContextDiscovery::class),
             agentsContextRenderer: $container->get(AgentsContextRenderer::class),
@@ -157,13 +154,20 @@ final class InProcessAttachCancelsDeferredToolHumanTest extends IsolatedKernelTe
             sessionMetaStore: $container->get(HatfieldSessionStore::class),
             modelResolver: $container->get(ModelResolver::class),
             commandBus: $commandBus,
-            sessionRepairService: $this->createStub(SessionRepairServiceInterface::class),
-            activeRunContext: $active,
         );
 
         $this->assertSame($runId, $client->attach($runId)->runId);
+        $ownerAttach = new \Ineersa\CodingAgent\Application\Pipeline\SessionMaintenanceHandler(
+            $container->get(\Ineersa\AgentCore\Contract\History\HistorySelectionServiceInterface::class),
+            $container->get(\Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface::class),
+            $container->get(\Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink::class),
+            $container->get(\Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink::class),
+            false, new NullLogger(), $active, $runner,
+            $container->get(HatfieldSessionStore::class), $commandBus,
+        );
+        $ownerAttach->attach($commandBus->messages[0]);
 
-        $state = $active->stateFor($runId);
+        $state = $active->requireLoaded($runId);
         $this->assertSame(RunStatus::Cancelled, $state->status);
         $this->assertSame([], $state->pendingToolCalls);
         $this->assertSame([], $state->pendingHumanInputRequests);

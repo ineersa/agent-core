@@ -105,7 +105,7 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
 
         $activeRunContext = new TestActiveRunContext();
         $prev = RunState::queued('run-1');
-        $activeRunContext->remember($prev);
+        $activeRunContext->loadRecovered($prev);
         $commit = $this->createRunCommit($store, $activeRunContext);
 
         $next = new RunState(runId: 'run-1', status: RunStatus::Running, version: $prev->version + 1, turnNo: 1, lastSeq: 2, model: 'test-model');
@@ -143,7 +143,7 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
         $eventStore->method('append')->willThrowException(new \RuntimeException('append failed'));
         $active = new TestActiveRunContext();
         $previous = RunState::queued('run-1');
-        $active->remember($previous);
+        $active->loadRecovered($previous);
         $commit = new RunCommit(
             activeRunContext: $active, eventStore: $eventStore,
             stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()), logger: new TestLogger(),

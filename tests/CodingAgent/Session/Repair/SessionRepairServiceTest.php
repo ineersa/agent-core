@@ -83,7 +83,7 @@ final class SessionRepairServiceTest extends TestCase
         ]));
 
         $runStore = new TestActiveRunContext();
-        $runStore->remember(new RunState(
+        $runStore->loadRecovered(new RunState(
             runId: $runId,
             status: RunStatus::Completed,
             version: 1,
@@ -142,7 +142,7 @@ final class SessionRepairServiceTest extends TestCase
         ]));
 
         $runStore = new TestActiveRunContext();
-        $runStore->remember(new RunState(
+        $runStore->loadRecovered(new RunState(
             runId: $runId,
             status: RunStatus::Failed,
             version: 1,
@@ -200,7 +200,7 @@ final class SessionRepairServiceTest extends TestCase
             ]],
         ]));
         $store = new TestActiveRunContext();
-        $store->remember(new RunState(runId: $runId, status: RunStatus::Running, version: 1, turnNo: 1, lastSeq: 2, activeStepId: $stepId));
+        $store->loadRecovered(new RunState(runId: $runId, status: RunStatus::Running, version: 1, turnNo: 1, lastSeq: 2, activeStepId: $stepId));
         $bus = new TestMessageBus();
         $service = $this->createService($store, dispatcherBus: $bus);
 
@@ -254,7 +254,7 @@ final class SessionRepairServiceTest extends TestCase
             ]],
         ]));
         $store = new TestActiveRunContext();
-        $store->remember(new RunState(runId: $runId, status: RunStatus::Compacting, version: 1, turnNo: 4, lastSeq: 2, activeStepId: 'compact-step'));
+        $store->loadRecovered(new RunState(runId: $runId, status: RunStatus::Compacting, version: 1, turnNo: 4, lastSeq: 2, activeStepId: 'compact-step'));
         $bus = new TestMessageBus();
         $service = $this->createService($store, dispatcherBus: $bus);
         $before = $this->readEvents($runId);
@@ -297,7 +297,7 @@ final class SessionRepairServiceTest extends TestCase
             ]],
         ]));
         $store = new TestActiveRunContext();
-        $store->remember(new RunState(runId: $runId, status: RunStatus::Compacting, version: 1, turnNo: 4, lastSeq: 2, activeStepId: 'compact-step'));
+        $store->loadRecovered(new RunState(runId: $runId, status: RunStatus::Compacting, version: 1, turnNo: 4, lastSeq: 2, activeStepId: 'compact-step'));
         $bus = new TestMessageBus();
 
         $result = $this->createService($store, dispatcherBus: $bus)->repair($runId, true);
@@ -325,7 +325,7 @@ final class SessionRepairServiceTest extends TestCase
             ]],
         ]));
         $store = new TestActiveRunContext();
-        $store->remember(new RunState(runId: $runId, status: RunStatus::Running, version: 1, lastSeq: 2));
+        $store->loadRecovered(new RunState(runId: $runId, status: RunStatus::Running, version: 1, lastSeq: 2));
         $bus = new TestMessageBus();
         $service = $this->createService($store, dispatcherBus: $bus);
         $before = $this->readEvents($runId);
@@ -390,7 +390,7 @@ final class SessionRepairServiceTest extends TestCase
         $events = $factory->eventsFromSpecs($runId, $turnNo, 1, $specs);
         $this->persistRunEvents($runId, $events);
         $store = new TestActiveRunContext();
-        $store->remember(new RunState(
+        $store->loadRecovered(new RunState(
             runId: $runId,
             status: $childTurn ? RunStatus::Running : RunStatus::Queued,
             version: 1,
@@ -432,7 +432,7 @@ final class SessionRepairServiceTest extends TestCase
         ));
         $this->persistActiveToolBatchEvents($runId, $stepId);
         $store = new TestActiveRunContext();
-        $store->remember(new RunState(runId: $runId, status: RunStatus::Running, version: 1, turnNo: 3, lastSeq: 3, activeStepId: $stepId));
+        $store->loadRecovered(new RunState(runId: $runId, status: RunStatus::Running, version: 1, turnNo: 3, lastSeq: 3, activeStepId: $stepId));
         $bus = new TestMessageBus();
         $service = $this->createService($store, dispatcherBus: $bus, toolBatchStore: $batchStore);
         $before = $this->readEvents($runId);
@@ -467,7 +467,7 @@ final class SessionRepairServiceTest extends TestCase
         ));
         $this->persistActiveToolBatchEvents($runId, $stepId, waitingHuman: true);
         $store = new TestActiveRunContext();
-        $store->remember(new RunState(runId: $runId, status: RunStatus::WaitingHuman, version: 1, turnNo: 3, lastSeq: 4, activeStepId: $stepId));
+        $store->loadRecovered(new RunState(runId: $runId, status: RunStatus::WaitingHuman, version: 1, turnNo: 3, lastSeq: 4, activeStepId: $stepId));
         $bus = new TestMessageBus();
         $service = $this->createService($store, dispatcherBus: $bus, toolBatchStore: $batchStore);
         $before = $this->readEvents($runId);
@@ -486,7 +486,7 @@ final class SessionRepairServiceTest extends TestCase
             ['type' => RunEventTypeEnum::RunStarted->value, 'payload' => ['payload' => ['messages' => []]]],
         ]));
         $store = new TestActiveRunContext();
-        $store->remember(new RunState(runId: $runId, status: RunStatus::Running, version: 1, lastSeq: 1));
+        $store->loadRecovered(new RunState(runId: $runId, status: RunStatus::Running, version: 1, lastSeq: 1));
         $bus = new TestMessageBus();
         $service = $this->createService($store, commandBus: $bus);
         $before = $this->readEvents($runId);
@@ -639,7 +639,7 @@ final class SessionRepairServiceTest extends TestCase
         ]);
 
         $runStore = new TestActiveRunContext();
-        $runStore->remember(RunState::queued($runId));
+        $runStore->loadRecovered(RunState::queued($runId));
 
         $service = $this->createService($runStore);
         $before = $this->readRawLines($runId);
@@ -661,7 +661,7 @@ final class SessionRepairServiceTest extends TestCase
         ]));
 
         $runStore = new TestActiveRunContext();
-        $runStore->remember(new RunState(
+        $runStore->loadRecovered(new RunState(
             runId: $runId,
             status: RunStatus::Running,
             version: 1,
@@ -692,7 +692,7 @@ final class SessionRepairServiceTest extends TestCase
         ]);
 
         $runStore = new TestActiveRunContext();
-        $runStore->remember(RunState::queued($runId));
+        $runStore->loadRecovered(RunState::queued($runId));
 
         $service = $this->createService($runStore);
         $before = $this->readRawLines($runId);
@@ -709,7 +709,7 @@ final class SessionRepairServiceTest extends TestCase
         $this->persistRunEvents($runId, $events);
 
         $runStore = new TestActiveRunContext();
-        $runStore->remember(new RunState(
+        $runStore->loadRecovered(new RunState(
             runId: $runId,
             status: RunStatus::Running,
             version: 1,
@@ -742,7 +742,7 @@ final class SessionRepairServiceTest extends TestCase
         $this->persistRunEvents($runId, $events);
 
         $runStore = new TestActiveRunContext();
-        $runStore->remember(new RunState(
+        $runStore->loadRecovered(new RunState(
             runId: $runId,
             status: RunStatus::Cancelling,
             version: 1,
@@ -810,7 +810,7 @@ final class SessionRepairServiceTest extends TestCase
         $this->persistRunEvents($runId, $events);
 
         $runStore = new TestActiveRunContext();
-        $runStore->remember(new RunState(
+        $runStore->loadRecovered(new RunState(
             runId: $runId,
             status: RunStatus::Cancelling,
             version: 1,
@@ -1144,7 +1144,7 @@ final class SessionRepairServiceTest extends TestCase
             stepDispatcher: new StepDispatcher($commandBus, $dispatcherBus),
             toolBatchStore: $toolBatchStore,
             serializer: AttributeSerializerValidatorTestFactory::create()[0],
-            commandBus: $commandBus,
+            runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit($activeRunContext, $eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus()), new NullLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector()),
         );
     }
 
@@ -1152,7 +1152,7 @@ final class SessionRepairServiceTest extends TestCase
     {
         $runStore = new TestActiveRunContext();
         $eventCount = \count($this->buildStaleCancellationEvents($runId, $unresolvedTool));
-        $runStore->remember(new RunState(
+        $runStore->loadRecovered(new RunState(
             runId: $runId,
             status: RunStatus::Cancelling,
             version: 1,

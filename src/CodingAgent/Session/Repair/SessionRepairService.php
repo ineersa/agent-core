@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Session\Repair;
 
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
+use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
@@ -20,7 +21,6 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
-use Ineersa\AgentCore\Domain\Message\InvalidateRunContext;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -30,7 +30,6 @@ use Ineersa\AgentCore\Infrastructure\SymfonyAi\MalformedToolCallSequenceExceptio
 use Ineersa\CodingAgent\Runtime\Contract\RepairResult;
 use Ineersa\CodingAgent\Runtime\Contract\SessionRepairRefusalReasonEnum;
 use Psr\Log\LoggerInterface;
-use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
@@ -54,7 +53,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         private StepDispatcher $stepDispatcher,
         private ToolBatchStoreInterface $toolBatchStore,
         private NormalizerInterface&DenormalizerInterface $serializer,
-        private MessageBusInterface $commandBus,
+        private RunCommit $runCommit,
     ) {
         $this->toolExecutionEndPayloadCodec = new ToolExecutionEndPayloadCodec($this->serializer);
     }
@@ -102,7 +101,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             );
         }
 
-        $storedState = $this->activeRunContext->stateFor($runId);
+        $storedState = $this->activeRunContext->requireLoaded($runId);
 
         if ($storedState->isStreaming) {
             $this->logRefusal($runId, SessionRepairRefusalReasonEnum::ActiveStreaming);
@@ -453,34 +452,12 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             }
         }
 
-        try {
-            $this->eventStore->appendMany($proposedEvents);
-        } catch (\Throwable $exception) {
-            $this->logger->error('session_repair.append_failed', [
-                'run_id' => $runId,
-                'component' => 'session.repair',
-                'event_type' => 'session.repair.append_failed',
-                'exception_class' => $exception::class,
-                'exception_code' => $exception->getCode(),
-            ]);
-
-            throw $exception;
-        }
-
         $persisted = $hypotheticalReplay->with([
-            'version' => $storedState->version + 1,
+            'version' => $storedState->version,
             'isStreaming' => false,
             'streamingMessage' => null,
         ]);
-
-        // Repair runs outside run_control's lock. Its canonical append remains
-        // authoritative; the invalidation below makes the sole state owner replay
-        // before its next transition if a concurrent projection write won the race.
-        $this->activeRunContext->remember($persisted);
-
-        // Event persistence and run-control invalidation are non-transactional:
-        // a dispatch failure propagates after canonical events and the local projection are durable.
-        $this->commandBus->dispatch(new InvalidateRunContext($runId));
+        $this->runCommit->commit($storedState, $persisted, $proposedEvents, dispatchAfterTurnHooks: false);
 
         $this->logger->info('session_repair.completed', [
             'run_id' => $runId,

@@ -1169,8 +1169,6 @@ services:
     arguments:
       $commandBus: '@agent.command.bus'
       $mcpDispatcher: '@Ineersa\CodingAgent\Mcp\McpSessionLifecycleDispatcher'
-      $sessionRepairService: '@Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface'
-      $activeRunContext: '@Ineersa\AgentCore\Contract\ActiveRunContextInterface'
 
   # ─── MCP-04 / MCP-05 Dynamic MCP tool registration + invocation ────
 
@@ -1215,14 +1213,6 @@ services:
     arguments:
       $commandBus: '@agent.command.bus'
 
-  Ineersa\CodingAgent\Session\History\HistorySelectionService:
-    arguments:
-      $commandBus: '@agent.command.bus'
-
-  Ineersa\CodingAgent\Session\Repair\SessionRepairService:
-    arguments:
-      $commandBus: '@agent.command.bus'
-
   Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface:
     alias: Ineersa\CodingAgent\Session\Repair\SessionRepairService
 
@@ -1241,3 +1231,11 @@ services:
       $mcpToolsResolver: '@Ineersa\CodingAgent\Agent\Execution\AgentMcpToolsResolver'
       $agentsConfig: '@Ineersa\CodingAgent\Config\AgentsConfig'
 
+
+  Ineersa\CodingAgent\Runtime\Controller\CommandHandler\SelectHistoryTurnHandler:
+    arguments:
+      $commandBus: '@agent.command.bus'
+
+  Ineersa\CodingAgent\Runtime\Controller\CommandHandler\RepairHandler:
+    arguments:
+      $commandBus: '@agent.command.bus'

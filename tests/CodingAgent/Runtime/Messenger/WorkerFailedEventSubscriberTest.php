@@ -51,7 +51,7 @@ final class WorkerFailedEventSubscriberTest extends IsolatedKernelTestCase
     public function skipsWhenRetryWillHappen(): void
     {
         $activeContext = $this->createMock(ActiveRunContextInterface::class);
-        $activeContext->expects($this->never())->method('stateFor');
+        $activeContext->expects($this->never())->method('requireLoaded');
         $eventStore = $this->createMock(EventStoreInterface::class);
         $eventStore->expects($this->never())->method('append');
 
@@ -66,7 +66,7 @@ final class WorkerFailedEventSubscriberTest extends IsolatedKernelTestCase
     public function skipsNonAgentBusMessage(): void
     {
         $activeContext = $this->createMock(ActiveRunContextInterface::class);
-        $activeContext->expects($this->never())->method('stateFor');
+        $activeContext->expects($this->never())->method('requireLoaded');
         $eventStore = $this->createMock(EventStoreInterface::class);
         $eventStore->expects($this->never())->method('append');
 
@@ -82,7 +82,7 @@ final class WorkerFailedEventSubscriberTest extends IsolatedKernelTestCase
     public function skipsNonRunControlTransport(): void
     {
         $activeContext = $this->createMock(ActiveRunContextInterface::class);
-        $activeContext->expects($this->never())->method('stateFor');
+        $activeContext->expects($this->never())->method('requireLoaded');
         $eventStore = $this->createMock(EventStoreInterface::class);
         $eventStore->expects($this->never())->method('append');
 
@@ -99,10 +99,10 @@ final class WorkerFailedEventSubscriberTest extends IsolatedKernelTestCase
     {
         $activeContext = $this->createMock(ActiveRunContextInterface::class);
         $activeContext->expects($this->once())
-            ->method('stateFor')
+            ->method('requireLoaded')
             ->with(self::RUN_ID)
             ->willReturn(new RunState(runId: self::RUN_ID, status: RunStatus::Failed, version: 5, model: 'test-model'));
-        $activeContext->expects($this->never())->method('remember');
+        $activeContext->expects($this->never())->method('replaceCurrent');
         $eventStore = $this->createMock(EventStoreInterface::class);
         $eventStore->expects($this->never())->method('append');
 
@@ -115,11 +115,11 @@ final class WorkerFailedEventSubscriberTest extends IsolatedKernelTestCase
     {
         $activeContext = $this->createMock(ActiveRunContextInterface::class);
         $activeContext->expects($this->once())
-            ->method('stateFor')
+            ->method('requireLoaded')
             ->with(self::RUN_ID)
             ->willReturn(RunState::queued(self::RUN_ID));
         $activeContext->expects($this->once())
-            ->method('remember')
+            ->method('replaceCurrent')
             ->with($this->callback(static fn (RunState $state): bool => self::RUN_ID === $state->runId
                 && RunStatus::Failed === $state->status
                 && 1 === $state->version
@@ -157,9 +157,9 @@ final class WorkerFailedEventSubscriberTest extends IsolatedKernelTestCase
         );
 
         $activeContext = $this->createMock(ActiveRunContextInterface::class);
-        $activeContext->expects($this->once())->method('stateFor')->with(self::RUN_ID)->willReturn($existingState);
+        $activeContext->expects($this->once())->method('requireLoaded')->with(self::RUN_ID)->willReturn($existingState);
         $activeContext->expects($this->once())
-            ->method('remember')
+            ->method('replaceCurrent')
             ->with($this->callback(static fn (RunState $state): bool => self::RUN_ID === $state->runId
                 && RunStatus::Failed === $state->status
                 && 4 === $state->version
@@ -186,9 +186,9 @@ final class WorkerFailedEventSubscriberTest extends IsolatedKernelTestCase
     {
         $currentState = new RunState(runId: self::RUN_ID, status: RunStatus::Running, version: 3, turnNo: 1, lastSeq: 4, model: 'test-model');
         $activeContext = $this->createMock(ActiveRunContextInterface::class);
-        $activeContext->method('stateFor')->willReturn($currentState);
+        $activeContext->method('requireLoaded')->willReturn($currentState);
         $activeContext->expects($this->once())
-            ->method('remember')
+            ->method('replaceCurrent')
             ->willThrowException(new \RuntimeException('projection unavailable'));
 
         $eventStore = $this->createMock(EventStoreInterface::class);
@@ -212,8 +212,8 @@ final class WorkerFailedEventSubscriberTest extends IsolatedKernelTestCase
     public function skipsTypedDuplicateReplayCorruptionWithoutLoadingState(): void
     {
         $activeContext = $this->createMock(ActiveRunContextInterface::class);
-        $activeContext->expects($this->never())->method('stateFor');
-        $activeContext->expects($this->never())->method('remember');
+        $activeContext->expects($this->never())->method('requireLoaded');
+        $activeContext->expects($this->never())->method('replaceCurrent');
         $eventStore = $this->createMock(EventStoreInterface::class);
         $eventStore->expects($this->never())->method('append');
 
@@ -235,7 +235,7 @@ final class WorkerFailedEventSubscriberTest extends IsolatedKernelTestCase
     {
         $runId = self::getContainer()->get(HatfieldSessionStore::class)->createSession('failure fixture');
         $active = self::getContainer()->get(ActiveRunContextInterface::class);
-        $active->remember(new RunState($runId, RunStatus::Running, version: 3, turnNo: 2, model: 'test-model'));
+        $active->loadRecovered(new RunState($runId, RunStatus::Running, version: 3, turnNo: 2, model: 'test-model'));
         $batches = self::getContainer()->get(ToolBatchStoreInterface::class);
         $batches->save($runId, 1, 'older', new ToolBatchStateDTO([], [], [], [], [], false, 2));
         $batches->save($runId, 2, 'current', new ToolBatchStateDTO([], [], [], [], [], false, 2));
@@ -254,7 +254,7 @@ final class WorkerFailedEventSubscriberTest extends IsolatedKernelTestCase
         $this->assertSame('agent_end', $events[0]->type);
         $this->assertSame('failed', $events[0]->payload['reason']);
         $this->assertSame('handler failed', $events[0]->payload['error']);
-        $state = $active->stateFor($runId);
+        $state = $active->requireLoaded($runId);
         $this->assertSame(RunStatus::Failed, $state->status);
         $this->assertSame(4, $state->version);
         $this->assertSame($events[0]->seq, $state->lastSeq);
@@ -275,7 +275,7 @@ final class WorkerFailedEventSubscriberTest extends IsolatedKernelTestCase
             $other = (new LockFactory(new FlockStore($dir)))->createLock('agent_loop.run.'.self::RUN_ID);
             $order = [];
             $context = $this->createMock(ActiveRunContextInterface::class);
-            $context->expects($this->once())->method('stateFor')->willReturnCallback(function () use ($other, &$order): RunState {
+            $context->expects($this->once())->method('requireLoaded')->willReturnCallback(function () use ($other, &$order): RunState {
                 $this->assertFalse($other->acquire());
                 $order[] = 'load';
 
@@ -288,7 +288,7 @@ final class WorkerFailedEventSubscriberTest extends IsolatedKernelTestCase
 
                 return new RunEvent($event->runId, 1, $event->turnNo, $event->type, $event->payload);
             });
-            $context->expects($this->once())->method('remember')->willReturnCallback(function (RunState $state) use ($other, &$order): void {
+            $context->expects($this->once())->method('replaceCurrent')->willReturnCallback(function (RunState $state) use ($other, &$order): void {
                 $this->assertFalse($other->acquire());
                 $this->assertSame(1, $state->lastSeq);
                 $order[] = 'publish';
@@ -309,7 +309,7 @@ final class WorkerFailedEventSubscriberTest extends IsolatedKernelTestCase
         try {
             $this->assertTrue($other->acquire());
             $context = $this->createMock(ActiveRunContextInterface::class);
-            $context->expects($this->never())->method('stateFor');
+            $context->expects($this->never())->method('requireLoaded');
             $store = $this->createMock(EventStoreInterface::class);
             $store->expects($this->never())->method('append');
             $logger = new TestLogger();
@@ -325,8 +325,8 @@ final class WorkerFailedEventSubscriberTest extends IsolatedKernelTestCase
     public function testAppendFailureDoesNotPublishStateOrRetryAppend(): void
     {
         $context = $this->createMock(ActiveRunContextInterface::class);
-        $context->expects($this->once())->method('stateFor')->willReturn(RunState::queued(self::RUN_ID));
-        $context->expects($this->never())->method('remember');
+        $context->expects($this->once())->method('requireLoaded')->willReturn(RunState::queued(self::RUN_ID));
+        $context->expects($this->never())->method('replaceCurrent');
         $store = $this->createMock(EventStoreInterface::class);
         $store->expects($this->once())->method('append')->willThrowException(new \RuntimeException('append failed'));
         $logger = new TestLogger();
@@ -337,7 +337,7 @@ final class WorkerFailedEventSubscriberTest extends IsolatedKernelTestCase
     public function testLoadFailureDoesNotAttemptTerminalAppend(): void
     {
         $context = $this->createMock(ActiveRunContextInterface::class);
-        $context->expects($this->once())->method('stateFor')->willThrowException(new \RuntimeException('recovery unavailable'));
+        $context->expects($this->once())->method('requireLoaded')->willThrowException(new \RuntimeException('recovery unavailable'));
         $store = $this->createMock(EventStoreInterface::class);
         $store->expects($this->never())->method('append');
         $logger = new TestLogger();
@@ -348,7 +348,7 @@ final class WorkerFailedEventSubscriberTest extends IsolatedKernelTestCase
     public function testCollectorReleasePrecedesCleanupAndCleanupFailureDoesNotRepeatTerminalization(): void
     {
         $active = new TestActiveRunContext();
-        $active->remember(RunState::queued(self::RUN_ID));
+        $active->loadRecovered(RunState::queued(self::RUN_ID));
         $collector = new ToolBatchCollector();
         $request = new ExecuteToolCall(self::RUN_ID, 1, 'step', 1, 'identity', 'call', 'read', [], 0);
         $reference = \WeakReference::create($request);
@@ -358,7 +358,7 @@ final class WorkerFailedEventSubscriberTest extends IsolatedKernelTestCase
         $hook = $this->createMock(HookSubscriberInterface::class);
         $hook->expects($this->once())->method('handleAfterTurnCommit')->willReturnCallback(function (AfterTurnCommitHookContext $context) use ($reference, $active): AfterTurnCommitHookContext {
             $this->assertNull($reference->get());
-            $this->assertSame(RunStatus::Failed, $active->stateFor(self::RUN_ID)->status);
+            $this->assertSame(RunStatus::Failed, $active->requireLoaded(self::RUN_ID)->status);
             $this->assertSame(1, $context->events[0]->seq);
             throw new \RuntimeException('cleanup unavailable');
         });
@@ -371,7 +371,7 @@ final class WorkerFailedEventSubscriberTest extends IsolatedKernelTestCase
         $event = $this->createFinalFailedEvent(new \RuntimeException('handler failed'));
         $subscriber->onWorkerMessageFailed($event);
         $subscriber->onWorkerMessageFailed($event);
-        $this->assertSame(1, $active->stateFor(self::RUN_ID)->lastSeq);
+        $this->assertSame(1, $active->requireLoaded(self::RUN_ID)->lastSeq);
         $warnings = array_values(array_filter($logger->records, static fn (array $record): bool => 'After-turn commit hook failed (best-effort)' === $record['message']));
         $this->assertCount(1, $warnings);
         $this->assertSame('cleanup unavailable', $warnings[0]['context']['exception']->getMessage());

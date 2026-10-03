@@ -97,7 +97,7 @@ final readonly class WorkerFailedEventSubscriber implements EventSubscriberInter
             }
 
             $this->runLockManager->synchronized($runId, function () use ($runId, $exception, $message): void {
-                $current = $this->activeRunContext->stateFor($runId);
+                $current = $this->activeRunContext->requireLoaded($runId);
 
                 // If the run is already in a terminal state, don't overwrite it.
                 if (RunStatus::Failed === $current->status

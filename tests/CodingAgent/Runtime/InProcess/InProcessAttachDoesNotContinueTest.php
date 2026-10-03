@@ -46,12 +46,10 @@ final class InProcessAttachDoesNotContinueTest extends IsolatedKernelTestCase
         $runId = $store->createSession();
         $store->updateMetadata($runId, ['reasoning' => 'high']);
         $store->claimReasoningBaseline($runId, 'openai-codex/gpt-6-astra', 'medium');
+        $baseline = $store->findSession($runId)->reasoningBaseline;
         $handle = $client->attach($runId);
 
-        $this->assertSame(
-            ['continuation_generation' => $store->continuationGeneration($runId)],
-            $store->findSession($runId)->reasoningBaseline,
-        );
+        $this->assertSame($baseline, $store->findSession($runId)->reasoningBaseline, 'Producer attach must not reset owner reasoning state.');
         $this->assertSame('high', $store->findSession($runId)->reasoning);
         $this->assertSame($runId, $handle->runId);
         $this->assertSame('attached', $handle->status);

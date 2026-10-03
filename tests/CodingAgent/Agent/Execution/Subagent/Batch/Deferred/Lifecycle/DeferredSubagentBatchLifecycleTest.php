@@ -4,10 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Execution\Subagent\Batch\Deferred\Lifecycle;
 
-use Ineersa\AgentCore\Application\Dto\RunStateReplayResult;
 use Ineersa\AgentCore\Application\Handler\CompleteDeferredToolCallHandler;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
-use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Domain\Event\DeferredToolCompletionRegisteredEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -55,6 +53,7 @@ use Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
+use Ineersa\CodingAgent\Session\History\RunPresentationReader;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -1500,7 +1499,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $this->assertCount(0, $commandBus->messages, 'Redelivered lifecycle observation must not complete parent tool twice');
     }
 
-    public function testFailedChildOutcomeRebuildsCanonicalStateOnce(): void
+    public function testFailedChildOutcomeReadsCanonicalPresentation(): void
     {
         $identity = new ChildRunIdentityDTO(
             parentRunId: 'parent-canonical-outcome',
@@ -1511,17 +1510,11 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             artifactKind: AgentArtifactKindEnum::Subagent,
             batchIndex: 1,
         );
-        $state = new RunState(runId: $identity->childRunId, status: RunStatus::Failed, messages: [new AgentMessage('assistant', [['type' => 'text', 'text' => 'partial']])]);
-        $rebuilder = $this->createMock(RunStateRebuilderInterface::class);
-        $rebuilder->expects($this->once())
-            ->method('rebuildIfStale')
-            ->with(
-                $this->callback(static fn (RunState $queued): bool => $queued->runId === $identity->childRunId && RunStatus::Queued === $queued->status),
-                $identity->childRunId,
-            )
-            ->willReturn(RunStateReplayResult::rebuilt($state));
+        $events = self::getContainer()->get(\Ineersa\AgentCore\Contract\EventStoreInterface::class);
+        $events->append(\Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($identity->childRunId, 0, 'run_started', ['payload' => ['messages' => [['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'partial']]]]]]));
+        $events->append(\Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($identity->childRunId, 0, 'agent_end', ['reason' => 'failed']));
 
-        $outcome = $this->createOutcomeFactory($rebuilder)->buildNaturalArtifactOutcome(
+        $outcome = $this->createOutcomeFactory()->buildNaturalArtifactOutcome(
             $identity,
             new DeferredChildRunLifecycleProjectionDTO(
                 childStatus: RunStatus::Failed,
@@ -1534,10 +1527,13 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         );
 
         $this->assertSame(AgentArtifactStatusEnum::Failed, $outcome->status);
-        $this->assertSame($state, $outcome->childState);
+        $this->assertNotNull($outcome->childPresentation);
+        $this->assertSame('partial', $outcome->childPresentation->assistantExcerpt);
+        $this->assertSame(1, $outcome->childPresentation->messageCount);
+        $this->assertSame([], $outcome->childPresentation->historyLines);
     }
 
-    public function testCanonicalChildReplayFailureDegradesToSummaryWithoutChildState(): void
+    public function testCanonicalChildReadFailureDegradesToSummaryWithoutPresentation(): void
     {
         $identity = new ChildRunIdentityDTO(
             parentRunId: 'parent-canonical-failure',
@@ -1548,13 +1544,12 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             artifactKind: AgentArtifactKindEnum::Subagent,
             batchIndex: 1,
         );
-        $rebuilder = $this->createMock(RunStateRebuilderInterface::class);
-        $rebuilder->expects($this->once())
-            ->method('rebuildIfStale')
-            ->willThrowException(new \RuntimeException('canonical child replay failed'));
+        $events = $this->createMock(\Ineersa\AgentCore\Contract\EventStoreInterface::class);
+        $events->expects($this->once())->method('latestSequenceFor')->willThrowException(new \RuntimeException('SECRET canonical read failed'));
+        $reader = new RunPresentationReader($events, self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class), self::getContainer()->get(\Ineersa\AgentCore\Application\Replay\ReplayAssistantMessageFactory::class), self::getContainer()->get(\Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec::class));
         $logger = new TestLogger();
 
-        $outcome = $this->createOutcomeFactory($rebuilder, $logger)->buildNaturalArtifactOutcome(
+        $outcome = $this->createOutcomeFactory($reader, $logger)->buildNaturalArtifactOutcome(
             $identity,
             new DeferredChildRunLifecycleProjectionDTO(
                 childStatus: RunStatus::Cancelled,
@@ -1566,9 +1561,10 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         );
 
         $this->assertSame(AgentArtifactStatusEnum::Cancelled, $outcome->status);
-        $this->assertNull($outcome->childState);
+        $this->assertNull($outcome->childPresentation);
         $this->assertSame('deferred_subagent.child_state_load_failed', $logger->records[0]['message']);
         $this->assertSame($identity->childRunId, $logger->records[0]['context']['child_run_id']);
+        $this->assertStringNotContainsString('SECRET', json_encode($logger->records, \JSON_THROW_ON_ERROR));
     }
 
     #[DataProvider('delayedProgressCases')]
@@ -1620,21 +1616,21 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $this->assertFileExists($inputPath);
         // A retry may queue the same command; only owner consumption commits it.
         $active = self::getContainer()->get(\Ineersa\AgentCore\Contract\ActiveRunContextInterface::class);
-        $active->remember(\Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder::running($parent)->withTurnNo(2)->withPendingToolCalls([$tool => false])->build());
+        $active->loadRecovered(\Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder::running($parent)->withTurnNo(2)->withPendingToolCalls([$tool => false])->build());
         if ($superseded) {
             if (null !== $kind) {
                 // Cancellation has finished; a follow-up turn owns the context
                 // before the old forced command reaches run_control.
-                $active->remember($active->stateFor($parent)->with(['status' => RunStatus::Cancelled, 'pendingToolCalls' => []]));
-                $active->remember($active->stateFor($parent)->with(['status' => RunStatus::Running, 'turnNo' => 3, 'pendingToolCalls' => ['new-call' => false]]));
+                $active->loadRecovered($active->requireLoaded($parent)->with(['status' => RunStatus::Cancelled, 'pendingToolCalls' => []]));
+                $active->loadRecovered($active->requireLoaded($parent)->with(['status' => RunStatus::Running, 'turnNo' => 3, 'pendingToolCalls' => ['new-call' => false]]));
             } else {
-                $active->remember($active->stateFor($parent)->with(['pendingToolCalls' => [$tool => true, 'sibling' => false]]));
+                $active->loadRecovered($active->requireLoaded($parent)->with(['pendingToolCalls' => [$tool => true, 'sibling' => false]]));
             }
         }
         $bus = self::getContainer()->get('agent.command.bus');
         $bus->dispatch($queued->messages[0], [new \Symfony\Component\Messenger\Stamp\ReceivedStamp('run_control')]);
         $bus->dispatch($queued->messages[1], [new \Symfony\Component\Messenger\Stamp\ReceivedStamp('run_control')]);
-        $this->assertSame($superseded ? 0 : 1, $active->stateFor($parent)->lastSeq);
+        $this->assertSame($superseded ? 0 : 1, $active->requireLoaded($parent)->lastSeq);
         if ($superseded) {
             $this->assertNull(self::getContainer()->get(\Ineersa\AgentCore\Contract\EventStoreInterface::class)->latestSequenceFor($parent));
         }
@@ -1694,7 +1690,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
                 $bus = new TestMessageBus();
                 $handler = new \Ineersa\CodingAgent\Application\Pipeline\CommitSubagentProgressHandler($this->repo, $bus);
                 $active = new \Ineersa\AgentCore\Tests\Support\TestActiveRunContext();
-                $active->remember(\Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder::running($parentRunId)
+                $active->loadRecovered(\Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder::running($parentRunId)
                     ->withTurnNo($parentTurnNo)->withPendingToolCalls([$parentToolCallId => false])->build());
                 $dispatcher = new \Ineersa\AgentCore\Application\Handler\StepDispatcher($bus, $bus);
                 $commit = new \Ineersa\AgentCore\Application\Pipeline\RunCommit($active, $this->store, $dispatcher, new TestLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector());
@@ -1717,10 +1713,10 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         );
     }
 
-    private function createOutcomeFactory(?RunStateRebuilderInterface $runStateRebuilder = null, ?TestLogger $logger = null): DeferredSubagentBatchChildOutcomeFactory
+    private function createOutcomeFactory(?RunPresentationReader $reader = null, ?TestLogger $logger = null): DeferredSubagentBatchChildOutcomeFactory
     {
         return new DeferredSubagentBatchChildOutcomeFactory(
-            $runStateRebuilder ?? self::getContainer()->get(RunStateRebuilderInterface::class),
+            $reader ?? self::getContainer()->get(RunPresentationReader::class),
             $logger ?? new TestLogger(),
         );
     }

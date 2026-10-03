@@ -88,7 +88,7 @@ final class SubagentChildToolProgressPresentationFormatter
      */
 
     /**
-     * First assistant text block only — matches foreground {@see SubagentChildRunHandoffRenderer::extractLastMessage()}.
+     * First assistant text block only — matches the foreground historical assistant excerpt.
      *
      * @param array<string, mixed> $assistantPayload
      */

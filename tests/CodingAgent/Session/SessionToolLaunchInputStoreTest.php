@@ -286,7 +286,7 @@ final class SessionToolLaunchInputStoreTest extends IsolatedKernelTestCase
         $this->assertCount(1, $transition->events);
         $this->assertSame('tool_execution_end', $transition->events[0]->type);
         $active = new \Ineersa\AgentCore\Tests\Support\TestActiveRunContext();
-        $active->remember($state);
+        $active->loadRecovered($state);
         $eventStore = self::getContainer()->get(\Ineersa\AgentCore\Contract\EventStoreInterface::class);
         $commit = new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
             activeRunContext: $active, eventStore: $eventStore,
@@ -313,13 +313,13 @@ final class SessionToolLaunchInputStoreTest extends IsolatedKernelTestCase
         $duplicate = $ownerCollector->collect($freshBus->messages[0]);
         $this->assertTrue($duplicate->duplicate);
         $this->assertFalse($duplicate->complete);
-        $unchanged = $handler->handle($freshBus->messages[0], $active->stateFor($runId));
+        $unchanged = $handler->handle($freshBus->messages[0], $active->requireLoaded($runId));
         $this->assertSame([], $unchanged->events);
         $batch = $batchStore->load($runId, 1, 'step');
         $this->assertFalse($batch->finalized);
         $this->assertArrayHasKey('sibling', $batch->inFlight);
         $this->assertArrayNotHasKey('sibling', $batch->results);
-        $this->assertFalse($active->stateFor($runId)->pendingToolCalls['sibling']);
+        $this->assertFalse($active->requireLoaded($runId)->pendingToolCalls['sibling']);
     }
 
     private function assertOwnerVisibleInputFailure(TestMessageBus $bus, string $message): void

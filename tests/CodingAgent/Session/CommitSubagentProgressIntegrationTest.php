@@ -45,7 +45,7 @@ final class CommitSubagentProgressIntegrationTest extends PerMethodIsolatedKerne
         $this->assertSame(1, $this->sink->emitted[0]->seq);
         $this->assertSame('call', $this->sink->emitted[0]->payload['tool_call_id']);
         $active = self::getContainer()->get(ActiveRunContextInterface::class);
-        $this->assertSame(1, $active->stateFor('parent')->lastSeq);
+        $this->assertSame(1, $active->requireLoaded('parent')->lastSeq);
         $this->assertSame(1, $repo->findByLifecycleId('batch')->deliveredProgressRevision);
         $sent = self::getContainer()->get('messenger.transport.run_control')->getSent();
         $this->assertCount(2, $sent);
@@ -53,7 +53,7 @@ final class CommitSubagentProgressIntegrationTest extends PerMethodIsolatedKerne
         $this->assertInstanceOf(\Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Lifecycle\DeliverDeferredSubagentBatchLifecycleMessage::class, $sent[1]->getMessage());
         $bus->dispatch($queued->with(new ReceivedStamp('run_control')));
         $this->assertSame(1, $store->latestSequenceFor('parent'));
-        $this->assertSame(1, $active->stateFor('parent')->lastSeq);
+        $this->assertSame(1, $active->requireLoaded('parent')->lastSeq);
         $this->assertCount(1, $this->sink->emitted);
     }
 
@@ -89,7 +89,7 @@ final class CommitSubagentProgressIntegrationTest extends PerMethodIsolatedKerne
         // Cancelling an approval wait can terminalize and clear the tool map
         // before the interrupted child's final progress reaches the owner.
         $active = self::getContainer()->get(ActiveRunContextInterface::class);
-        $active->remember($active->stateFor('parent')->with(['status' => \Ineersa\AgentCore\Domain\Run\RunStatus::Cancelled, 'pendingToolCalls' => []]));
+        $active->loadRecovered($active->requireLoaded('parent')->with(['status' => \Ineersa\AgentCore\Domain\Run\RunStatus::Cancelled, 'pendingToolCalls' => []]));
         $forced = new CommitSubagentProgress('parent', 1, 'batch', 'call', 0, 1, ['status' => 'cancelled'], 'parent_cancelled');
         $this->consume($forced);
         $this->assertNotNull($repo->findByLifecycleId('batch')->interruptionProgressEnqueuedAt);
@@ -117,7 +117,7 @@ final class CommitSubagentProgressIntegrationTest extends PerMethodIsolatedKerne
             $processor->process('command.subagent_progress', $this->command(1));
         } finally {
             $this->assertSame(0, self::getContainer()->get(DeferredSubagentBatchRepository::class)->findByLifecycleId('batch')->deliveredProgressRevision);
-            $this->assertSame(0, self::getContainer()->get(ActiveRunContextInterface::class)->stateFor('parent')->lastSeq);
+            $this->assertSame(0, self::getContainer()->get(ActiveRunContextInterface::class)->requireLoaded('parent')->lastSeq);
             $this->assertSame([], $this->sink->emitted);
         }
     }
@@ -125,7 +125,7 @@ final class CommitSubagentProgressIntegrationTest extends PerMethodIsolatedKerne
     public function testOldParentTurnCannotPublishIntoCurrentInvocation(): void
     {
         $this->seed();
-        self::getContainer()->get(ActiveRunContextInterface::class)->remember(RunStateBuilder::running('parent')->withTurnNo(2)->withPendingToolCalls(['call' => false])->build());
+        self::getContainer()->get(ActiveRunContextInterface::class)->loadRecovered(RunStateBuilder::running('parent')->withTurnNo(2)->withPendingToolCalls(['call' => false])->build());
         $this->consume($this->command(1));
         $this->assertNull(self::getContainer()->get(EventStoreInterface::class)->latestSequenceFor('parent'));
         $this->assertSame([], $this->sink->emitted);
@@ -136,7 +136,7 @@ final class CommitSubagentProgressIntegrationTest extends PerMethodIsolatedKerne
     {
         $this->seed();
         $active = self::getContainer()->get(ActiveRunContextInterface::class);
-        $active->remember($active->stateFor('parent')->with(['pendingToolCalls' => ['call' => true, 'sibling' => false]]));
+        $active->loadRecovered($active->requireLoaded('parent')->with(['pendingToolCalls' => ['call' => true, 'sibling' => false]]));
         $this->consume($this->command(1));
         $this->assertNull(self::getContainer()->get(EventStoreInterface::class)->latestSequenceFor('parent'));
         $this->assertSame([], $this->sink->emitted);
@@ -174,7 +174,7 @@ final class CommitSubagentProgressIntegrationTest extends PerMethodIsolatedKerne
         $row = $repo->findEntityByLifecycleId('batch');
         $row->aggregateProgressRevision = $revision;
         self::getContainer()->get('doctrine.orm.entity_manager')->flush();
-        self::getContainer()->get(ActiveRunContextInterface::class)->remember(RunStateBuilder::running('parent')->withTurnNo(1)->withPendingToolCalls(['call' => false])->build());
+        self::getContainer()->get(ActiveRunContextInterface::class)->loadRecovered(RunStateBuilder::running('parent')->withTurnNo(1)->withPendingToolCalls(['call' => false])->build());
     }
 }
 
