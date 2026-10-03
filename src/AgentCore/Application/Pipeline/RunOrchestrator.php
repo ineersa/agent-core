@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Handler\RunTracer;
-use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
@@ -13,9 +12,7 @@ use Ineersa\AgentCore\Domain\Message\ApplyShellCommand;
 use Ineersa\AgentCore\Domain\Message\CommitSubagentProgress;
 use Ineersa\AgentCore\Domain\Message\CompactionStepResult;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
-use Ineersa\AgentCore\Domain\Message\InvalidateRunContext;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
-use Ineersa\AgentCore\Domain\Message\RefreshRunContext;
 use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
@@ -31,11 +28,9 @@ final readonly class RunOrchestrator
     private const string ScopeToolResult = 'result.tool';
     private const string ScopeCompactRun = 'command.compact';
     private const string ScopeCompactionResult = 'result.compaction';
-    private const string ScopeRefreshContext = 'command.refresh_context';
 
     public function __construct(
         private RunMessageProcessor $runMessageProcessor,
-        private ActiveRunContextInterface $activeRunContext,
         private ?RunTracer $tracer = null,
     ) {
     }
@@ -153,23 +148,6 @@ final readonly class RunOrchestrator
             $message,
             ['run_id' => $message->runId(), 'turn_no' => $message->turnNo(), 'step_id' => $message->stepId()],
         );
-    }
-
-    /**
-     * Handles a canonical-event side-channel notification without replaying,
-     * processing, or persisting run state. The next run-control transition
-     * rebuilds the invalidated process-local context from canonical events.
-     */
-    #[AsMessageHandler(bus: 'agent.command.bus')]
-    public function onInvalidateRunContext(InvalidateRunContext $message): void
-    {
-        $this->activeRunContext->invalidate($message->runId());
-    }
-
-    #[AsMessageHandler(bus: 'agent.command.bus')]
-    public function onRefreshRunContext(RefreshRunContext $message): void
-    {
-        $this->dispatch('context.refresh', self::ScopeRefreshContext, $message);
     }
 
     #[AsMessageHandler(bus: 'agent.command.bus')]

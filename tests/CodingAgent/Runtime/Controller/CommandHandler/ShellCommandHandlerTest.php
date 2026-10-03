@@ -5,13 +5,15 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller\CommandHandler;
 
 use Ineersa\AgentCore\Domain\Message\ApplyShellCommand;
+use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
 use Ineersa\CodingAgent\Runtime\Controller\CommandHandler\ShellCommandHandler;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\TestCase;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\MessageBusInterface;
 
@@ -21,18 +23,19 @@ use Symfony\Component\Messenger\MessageBusInterface;
  * turns, append events, or dispatch ExecuteShellToolCall directly.
  */
 #[CoversClass(ShellCommandHandler::class)]
-final class ShellCommandHandlerTest extends TestCase
+final class ShellCommandHandlerTest extends IsolatedKernelTestCase
 {
     private ShellCommandSpyBus $spyBus;
 
     protected function setUp(): void
     {
+        parent::setUp();
         $this->spyBus = new ShellCommandSpyBus();
     }
 
     public function testDispatchesApplyShellCommandOnCommandBus(): void
     {
-        $handler = new ShellCommandHandler($this->spyBus);
+        $handler = new ShellCommandHandler($this->spyBus, self::getContainer()->get(HatfieldSessionStore::class), self::getContainer()->get(AgentChildRunDirectory::class));
         $emitted = [];
 
         $command = new RuntimeCommand(
@@ -48,10 +51,12 @@ final class ShellCommandHandlerTest extends TestCase
 
         $this->assertNotNull($this->spyBus->lastMessage);
         $this->assertInstanceOf(ApplyShellCommand::class, $this->spyBus->lastMessage);
-        $this->assertSame('run-123', $this->spyBus->lastMessage->runId());
+        $run = $this->spyBus->lastMessage->runId();
+        $this->assertTrue(self::getContainer()->get(HatfieldSessionStore::class)->exists($run));
+        $this->assertNotSame('run-123', $run);
         $this->assertSame('!echo hello', $this->spyBus->lastMessage->rawInput);
         $this->assertSame('cmd_1', $this->spyBus->lastMessage->stepId());
-        $this->assertSame(hash('sha256', 'run-123|cmd_1'), $this->spyBus->lastMessage->idempotencyKey());
+        $this->assertSame(hash('sha256', $run.'|cmd_1'), $this->spyBus->lastMessage->idempotencyKey());
 
         $this->assertCount(1, $emitted);
         $this->assertSame(RuntimeEventTypeEnum::RunStarted->value, $emitted[0]->type);
@@ -60,7 +65,7 @@ final class ShellCommandHandlerTest extends TestCase
 
     public function testEmitsProtocolErrorWhenRunIdMissing(): void
     {
-        $handler = new ShellCommandHandler($this->spyBus);
+        $handler = new ShellCommandHandler($this->spyBus, self::getContainer()->get(HatfieldSessionStore::class), self::getContainer()->get(AgentChildRunDirectory::class));
         $emitted = [];
 
         $handler(new ControllerCommandEvent(new RuntimeCommand(
@@ -79,7 +84,7 @@ final class ShellCommandHandlerTest extends TestCase
 
     public function testRejectsMissingBangPrefixAndEmptyCommand(): void
     {
-        $handler = new ShellCommandHandler($this->spyBus);
+        $handler = new ShellCommandHandler($this->spyBus, self::getContainer()->get(HatfieldSessionStore::class), self::getContainer()->get(AgentChildRunDirectory::class));
 
         $missingBang = [];
         $handler(new ControllerCommandEvent(new RuntimeCommand(
@@ -108,7 +113,7 @@ final class ShellCommandHandlerTest extends TestCase
 
     public function testIgnoresNonShellCommands(): void
     {
-        $handler = new ShellCommandHandler($this->spyBus);
+        $handler = new ShellCommandHandler($this->spyBus, self::getContainer()->get(HatfieldSessionStore::class), self::getContainer()->get(AgentChildRunDirectory::class));
 
         $handler(new ControllerCommandEvent(new RuntimeCommand(
             id: 'cmd_complete',

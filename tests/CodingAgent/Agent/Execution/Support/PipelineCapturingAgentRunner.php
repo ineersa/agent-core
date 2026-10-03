@@ -36,6 +36,7 @@ final class PipelineCapturingAgentRunner implements AgentRunnerInterface
 
     public function __construct(
         private readonly RunOrchestrator $orchestrator,
+        private readonly TestActiveRunContext $activeRunContext,
     ) {
     }
 
@@ -64,7 +65,7 @@ final class PipelineCapturingAgentRunner implements AgentRunnerInterface
             ],
         );
 
-        return new self(new RunOrchestrator($processor, $activeRunContext));
+        return new self(new RunOrchestrator($processor), $activeRunContext);
     }
 
     public function start(StartRunInput $input): string
@@ -72,6 +73,7 @@ final class PipelineCapturingAgentRunner implements AgentRunnerInterface
         $this->lastStartInput = $input;
         $runId = $input->runId ?? Uuid::v4()->toRfc4122();
         $stepId = 'start-'.hrtime(true);
+        $this->activeRunContext->createNew($runId);
 
         $this->orchestrator->onStartRun(new StartRun(
             runId: $runId,

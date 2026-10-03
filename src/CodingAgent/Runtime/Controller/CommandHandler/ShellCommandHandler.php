@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Runtime\Controller\CommandHandler;
 
 use Ineersa\AgentCore\Domain\Message\ApplyShellCommand;
+use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
@@ -24,6 +26,8 @@ final readonly class ShellCommandHandler
 {
     public function __construct(
         private MessageBusInterface $commandBus,
+        private HatfieldSessionStore $sessions,
+        private AgentChildRunDirectory $children,
     ) {
     }
 
@@ -47,6 +51,14 @@ final readonly class ShellCommandHandler
             ));
 
             return;
+        }
+
+        // A shell can be the first action in a parent session. An opaque process
+        // label is not a reservation. Allocate the durable parent identity here,
+        // not when the owner observes a registry miss. Existing children retain
+        // their durable artifact identity.
+        if (!ctype_digit($runId) && null === $this->children->locate($runId)) {
+            $runId = $this->sessions->createSession();
         }
 
         // Shell-only runs do not emit RunStarted because they bypass start().

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Execution\Subagent\Batch\Deferred\Progress;
 
-use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
@@ -19,6 +18,7 @@ use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummaryBuilder;
 use Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressParallelSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingleSnapshotDTO;
+use Ineersa\CodingAgent\Session\History\RunPresentationReader;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Clock\MockClock;
 
@@ -130,7 +130,7 @@ final class DeferredSubagentBatchProgressSnapshotFactoryTest extends TestCase
     {
         return new DeferredSubagentBatchProgressSnapshotFactory(
             new DeferredSubagentBatchChildOutcomeFactory(
-                $this->createStub(RunStateRebuilderInterface::class),
+                new RunPresentationReader($this->createStub(\Ineersa\AgentCore\Contract\EventStoreInterface::class), new \Ineersa\AgentCore\Application\Handler\RunLockManager(new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\InMemoryStore())), new \Ineersa\AgentCore\Application\Replay\ReplayAssistantMessageFactory(), new \Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec(\Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::serializer(true))),
                 new TestLogger(),
             ),
             new SubagentChildProgressSummaryBuilder(),

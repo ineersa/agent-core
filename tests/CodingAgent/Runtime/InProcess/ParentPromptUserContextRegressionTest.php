@@ -174,6 +174,7 @@ final class ParentRegressionCapturingRunner implements AgentRunnerInterface
     public function __construct(
         private readonly RunOrchestrator $orchestrator,
         public readonly InMemoryEventStore $eventStore,
+        private readonly TestActiveRunContext $activeRunContext,
     ) {
     }
 
@@ -199,7 +200,7 @@ final class ParentRegressionCapturingRunner implements AgentRunnerInterface
             ],
         );
 
-        return new self(new RunOrchestrator($processor, $activeRunContext), $eventStore);
+        return new self(new RunOrchestrator($processor), $eventStore, $activeRunContext);
     }
 
     public function start(StartRunInput $input): string
@@ -207,6 +208,7 @@ final class ParentRegressionCapturingRunner implements AgentRunnerInterface
         $this->lastStartInput = $input;
         $runId = $input->runId ?? Uuid::v4()->toRfc4122();
         $stepId = 'start-'.hrtime(true);
+        $this->activeRunContext->createNew($runId);
         $this->orchestrator->onStartRun(new StartRun(
             runId: $runId,
             turnNo: 0,

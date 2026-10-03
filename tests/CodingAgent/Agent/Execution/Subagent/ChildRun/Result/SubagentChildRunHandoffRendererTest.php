@@ -4,11 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Execution\Subagent\ChildRun\Result;
 
-use Ineersa\AgentCore\Domain\Message\AgentMessage;
-use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Result\SubagentChildRunHandoffRenderer;
+use Ineersa\CodingAgent\Session\History\RunPresentationDTO;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -55,17 +54,7 @@ final class SubagentChildRunHandoffRendererTest extends TestCase
     public function testFailedHandoffIncludesPartialContextFromChildState(): void
     {
         $renderer = new SubagentChildRunHandoffRenderer();
-        $childState = new RunState(
-            runId: 'a5089241-a55a-5794-9353-b7cc43cb30fc',
-            status: RunStatus::Failed,
-            turnNo: 295,
-            lastSeq: 297,
-            errorMessage: 'Codex WebSocket request frame could not be sent.',
-            messages: [
-                new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'task']]),
-                new AgentMessage(role: 'assistant', content: [['type' => 'text', 'text' => 'Found root cause in CodexWebSocketModelClient send path.']]),
-            ],
-        );
+        $childPresentation = new RunPresentationDTO(RunStatus::Failed, 295, 297, 2, 2, 0, null, 'Found root cause in CodexWebSocketModelClient send path.', true, true, 1, []);
 
         $markdown = $renderer->buildHandoffMarkdown(
             status: AgentArtifactStatusEnum::Failed,
@@ -75,7 +64,7 @@ final class SubagentChildRunHandoffRendererTest extends TestCase
             artifactId: 'agent_a7f0997ff6034869',
             agentName: 'fork',
             agentRunId: 'a5089241-a55a-5794-9353-b7cc43cb30fc',
-            childState: $childState,
+            childPresentation: $childPresentation,
         );
 
         $this->assertStringContainsString('Status: failed', $markdown);
@@ -93,16 +82,7 @@ final class SubagentChildRunHandoffRendererTest extends TestCase
         $this->assertTrue(mb_check_encoding($box, 'UTF-8'));
         $renderer = new SubagentChildRunHandoffRenderer();
         $excerpt = str_repeat($box, 900);
-        $childState = new RunState(
-            runId: 'a5089241-a55a-5794-9353-b7cc43cb30fc',
-            status: RunStatus::Failed,
-            turnNo: 1,
-            lastSeq: 1,
-            errorMessage: 'failed',
-            messages: [
-                new AgentMessage(role: 'assistant', content: [['type' => 'text', 'text' => $excerpt]]),
-            ],
-        );
+        $childPresentation = new RunPresentationDTO(RunStatus::Failed, 1, 1, 1, 1, 0, null, $excerpt, true, true, 1, []);
 
         $markdown = $renderer->buildHandoffMarkdown(
             status: AgentArtifactStatusEnum::Failed,
@@ -112,11 +92,27 @@ final class SubagentChildRunHandoffRendererTest extends TestCase
             artifactId: 'agent_utf8',
             agentName: 'scout',
             agentRunId: 'a5089241-a55a-5794-9353-b7cc43cb30fc',
-            childState: $childState,
+            childPresentation: $childPresentation,
         );
 
         $this->assertTrue(mb_check_encoding($markdown, 'UTF-8'));
         $this->assertStringContainsString('...', $markdown);
         $this->assertStringContainsString($box, $markdown);
+    }
+
+    public function testPendingActivityAndExcerptDecisionUsePresentationScalars(): void
+    {
+        $presentation = new RunPresentationDTO(RunStatus::Cancelled, 3, 8, 8, 4, 1, str_repeat('p', 121), 'Cancelled text after leading whitespace', true, true, 1, []);
+        $renderer = new SubagentChildRunHandoffRenderer();
+        $markdown = $renderer->buildHandoffMarkdown(AgentArtifactStatusEnum::Cancelled, null, null, null, childPresentation: $presentation);
+        $this->assertStringContainsString('pending tool_call: '.str_repeat('p', 117).'...', $markdown);
+        $this->assertStringContainsString('## Last assistant excerpt', $markdown);
+        $this->assertStringContainsString('Cancelled text after leading whitespace', $markdown);
+        $this->assertStringContainsString('pending_tool_calls: 1', $markdown);
+
+        $suppressed = new RunPresentationDTO(RunStatus::Cancelled, 3, 8, 8, 4, 0, null, 'nonempty suppressed excerpt', false, false, 1, []);
+        $markdown = $renderer->buildHandoffMarkdown(AgentArtifactStatusEnum::Cancelled, null, null, null, childPresentation: $suppressed);
+        $this->assertStringContainsString('last_known_activity: run status cancelled', $markdown);
+        $this->assertStringNotContainsString('## Last assistant excerpt', $markdown);
     }
 }

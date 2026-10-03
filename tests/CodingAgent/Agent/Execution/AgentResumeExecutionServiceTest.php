@@ -102,7 +102,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         );
         $originalMessages = $state->messages;
         $finalizer = self::getContainer()->get(SubagentChildRunArtifactFinalizer::class);
-        $finalizer->apply(new ChildRunTerminalOutcomeDTO($identity, AgentArtifactStatusEnum::Completed, 'implemented slice', childState: $state));
+        $finalizer->apply(new ChildRunTerminalOutcomeDTO($identity, AgentArtifactStatusEnum::Completed, 'implemented slice'));
         $firstHandoffId = $this->registry()->listHandoffHistory($parent, $artifactId)[0]['id'];
 
         $commandBus = new TestMessageBus();
@@ -152,7 +152,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
             'messages' => [...$state->messages, new AgentMessage('assistant', [['type' => 'text', 'text' => 'Review-fix handoff']])],
             'status' => RunStatus::Completed,
         ]);
-        $finalizer->apply(new ChildRunTerminalOutcomeDTO($identity, AgentArtifactStatusEnum::Completed, 'review fixes applied', childState: $state));
+        $finalizer->apply(new ChildRunTerminalOutcomeDTO($identity, AgentArtifactStatusEnum::Completed, 'review fixes applied'));
 
         $history = $this->registry()->listHandoffHistory($parent, $artifactId);
         $this->assertCount(2, $history);

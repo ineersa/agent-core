@@ -4,17 +4,15 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\InProcess;
 
-use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
-use Ineersa\AgentCore\Contract\History\HistorySelectionServiceInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
-use Ineersa\AgentCore\Domain\Message\RefreshRunContext;
 use Ineersa\AgentCore\Domain\Run\RunMetadata;
-use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
+use Ineersa\CodingAgent\Application\Message\RepairSession;
+use Ineersa\CodingAgent\Application\Message\SelectHistoryPrompt;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Mcp\McpSessionLifecycleDispatcher;
@@ -25,11 +23,9 @@ use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
-use Ineersa\CodingAgent\Runtime\Protocol\RunHistoryPositionChangedEventFactory;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextDiscovery;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextRenderer;
@@ -37,6 +33,7 @@ use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
 use Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionAnswerResolver;
 use Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
+use Symfony\Component\Messenger\Stamp\HandledStamp;
 
 /**
  * In-process implementation of AgentSessionClient.
@@ -54,7 +51,6 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         private readonly AgentRunnerInterface $runner,
         private readonly EventStoreInterface $eventStore,
         private readonly RuntimeEventMapper $mapper,
-        private readonly HistorySelectionServiceInterface $historySelectionService,
         private readonly SystemPromptBuilder $systemPromptBuilder,
         private readonly AgentsContextDiscovery $agentsContextDiscovery,
         private readonly AgentsContextRenderer $agentsContextRenderer,
@@ -64,8 +60,6 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         private readonly HatfieldSessionStore $sessionMetaStore,
         private readonly ModelResolver $modelResolver,
         private readonly MessageBusInterface $commandBus,
-        private readonly SessionRepairServiceInterface $sessionRepairService,
-        private readonly ActiveRunContextInterface $activeRunContext,
         private readonly ?RuntimeEventSinkInterface $transientSink = null,
         private readonly ?ToolQuestionStoreInterface $toolQuestionStore = null,
         private readonly ToolQuestionAnswerResolver $answerResolver = new ToolQuestionAnswerResolver(),
@@ -92,16 +86,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
             throw new \RuntimeException(\sprintf('Session "%s" not found.', $runId));
         }
 
-        // Resume / relaunch / reload attach must cancel outstanding human waits
-        // before the passive context refresh. Ordinary RefreshRunContext alone
-        // must not clear pending questions.
-        $this->cancelOutstandingHumanWaitsOnAttach($runId);
-
-        // Resume starts a new reasoning epoch, independent of the prior socket.
-        $this->sessionMetaStore->resetReasoningBaseline($runId);
-
-        // Update instructions without starting or advancing a model turn.
-        $this->commandBus->dispatch(new RefreshRunContext($runId, $this->buildContextMessages()));
+        $this->commandBus->dispatch(new \Ineersa\CodingAgent\Application\Message\AttachRun($runId, $this->buildContextMessages()));
 
         // Attaching is a new parent lifetime: existing artifacts stay retrievable
         // but agent_resume must not continue children launched before /resume.
@@ -228,7 +213,13 @@ final class InProcessAgentSessionClient implements AgentSessionClient
             throw new \InvalidArgumentException('repair requires a non-empty runId.');
         }
 
-        return $this->sessionRepairService->repair($runId, $apply);
+        $envelope = $this->commandBus->dispatch(new RepairSession($runId, $apply, bin2hex(random_bytes(16))));
+        $result = $envelope->last(HandledStamp::class)?->getResult();
+        if (!$result instanceof RepairResult) {
+            throw new \LogicException('In-process repair requires synchronous owner handling.');
+        }
+
+        return $result;
     }
 
     /**
@@ -260,16 +251,6 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         }
 
         $this->mcpDispatcher->dispatchRefresh($runId);
-    }
-
-    private function cancelOutstandingHumanWaitsOnAttach(string $runId): void
-    {
-        $state = $this->activeRunContext->stateFor($runId);
-        if (RunStatus::WaitingHuman !== $state->status && [] === $state->pendingHumanInputRequests) {
-            return;
-        }
-
-        $this->runner->cancel($runId, 'Outstanding human questions cancelled on session attach.');
     }
 
     /** @return list<AgentMessage> */
@@ -430,18 +411,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
     {
         $targetTurnNo = (int) ($command->payload['turn_no'] ?? 0);
 
-        $result = $this->historySelectionService->selectPrompt($runId, $targetTurnNo);
-        $rebuiltState = $result['rebuiltState'];
-
-        if ($this->transientSink instanceof InMemoryRuntimeEventSink) {
-            $this->transientSink->emit(RunHistoryPositionChangedEventFactory::create(
-                $runId,
-                $result['positionEventSeq'],
-                $rebuiltState->turnNo,
-                (int) $result['selectedPromptTurnNo'],
-                (string) $result['editorPromptText'],
-            ));
-        }
+        $this->commandBus->dispatch(new SelectHistoryPrompt($runId, $targetTurnNo));
     }
 
     /**

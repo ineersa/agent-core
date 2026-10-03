@@ -1,6 +1,6 @@
 # Domain\Message architecture notes
 
-Transport contracts only — immutable bus payloads under `Ineersa\AgentCore\Domain\Message`.
+Immutable bus payloads and owner-local processor messages under `Ineersa\AgentCore\Domain\Message`.
 
 ## Taxonomy (current)
 
@@ -10,12 +10,14 @@ Transport contracts only — immutable bus payloads under `Ineersa\AgentCore\Dom
 - `LlmStepResult`, `ToolCallResult`, `CompactionStepResult`
 - `CompleteDeferredToolCall` (deferred completion; identity from durable record)
 - `CommitSubagentProgress` (frozen normalized progress, durable lifecycle and revision identity; App handler commits under the parent owner lock)
-- `InvalidateRunContext` (internal canonical-event side channel; carries only run ID and clears process-local context)
 
 **Run-control transitions** (transport `run_control` on `agent.command.bus`):
 
 - `AdvanceRun`, `CompactRun` — state transitions handled only by the dedicated run_control consumer
-- `RefreshRunContext` — rebuilt generated instructions from session attach; refreshes context without advancing execution
+
+**Owner-local processor messages** (no Messenger route):
+
+- `RefreshRunContext` — attach passes rebuilt generated instructions directly to `RunMessageProcessor`; refreshes context without advancing execution
 
 **Execution payloads** (`agent.execution.bus` → `llm` / `tool` transports):
 

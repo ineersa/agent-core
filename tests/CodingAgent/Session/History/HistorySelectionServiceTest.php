@@ -12,7 +12,6 @@ use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
-use Ineersa\AgentCore\Domain\Message\InvalidateRunContext;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
@@ -119,7 +118,7 @@ final class HistorySelectionServiceTest extends TestCase
         };
 
         $activeRunContext = new TestActiveRunContext();
-        $activeRunContext->remember(new RunState(runId: $runId, status: RunStatus::Running, version: 1, turnNo: 2, lastSeq: 6, model: 'test-model'));
+        $activeRunContext->loadRecovered(new RunState(runId: $runId, status: RunStatus::Running, version: 1, turnNo: 2, lastSeq: 6, model: 'test-model'));
         $commandBus = new TestMessageBus();
 
         $rebuilder = $this->createMock(RunStateRebuilderInterface::class);
@@ -136,7 +135,7 @@ final class HistorySelectionServiceTest extends TestCase
             logger: new NullLogger(),
             historyProjector: new HistoryProjector(),
             replayEventPreparer: new ReplayEventPreparer(),
-            commandBus: $commandBus,
+            runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit($activeRunContext, $eventStore, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus()), new NullLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector()),
         );
 
         $result = $service->selectPrompt($runId, 1);
@@ -147,10 +146,8 @@ final class HistorySelectionServiceTest extends TestCase
         $this->assertSame(RunEventTypeEnum::HistoryPositionSet->value, $appended[0]->type);
         $this->assertSame(0, $appended[0]->payload['position_turn_no']);
         $this->assertSame(1, $appended[0]->payload['selected_prompt_turn_no']);
-        $this->assertSame($result['rebuiltState'], $activeRunContext->stateFor($runId));
-        $this->assertCount(1, $commandBus->messages);
-        $this->assertInstanceOf(InvalidateRunContext::class, $commandBus->messages[0]);
-        $this->assertSame($runId, $commandBus->messages[0]->runId());
+        $this->assertSame($result['rebuiltState'], $activeRunContext->requireLoaded($runId));
+        $this->assertSame([], $commandBus->messages);
     }
 
     public function testSelectMiddlePromptPositionsAtPredecessorAndReturnsEditorText(): void
@@ -256,7 +253,7 @@ final class HistorySelectionServiceTest extends TestCase
         };
 
         $activeRunContext = new TestActiveRunContext();
-        $activeRunContext->remember(new RunState(runId: $runId, status: RunStatus::Running, version: 1, turnNo: 3, lastSeq: 9, model: 'test-model'));
+        $activeRunContext->loadRecovered(new RunState(runId: $runId, status: RunStatus::Running, version: 1, turnNo: 3, lastSeq: 9, model: 'test-model'));
         $commandBus = new TestMessageBus();
 
         $rebuilder = $this->createMock(RunStateRebuilderInterface::class);
@@ -273,7 +270,7 @@ final class HistorySelectionServiceTest extends TestCase
             logger: new NullLogger(),
             historyProjector: new HistoryProjector(),
             replayEventPreparer: new ReplayEventPreparer(),
-            commandBus: $commandBus,
+            runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit($activeRunContext, $eventStore, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus()), new NullLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector()),
         );
 
         $result = $service->selectPrompt($runId, 2);
@@ -286,10 +283,8 @@ final class HistorySelectionServiceTest extends TestCase
         $this->assertSame(3, $appended[0]->payload['previous_position_turn_no']);
         $this->assertSame(2, $appended[0]->payload['selected_prompt_turn_no']);
         $this->assertSame('history_select', $appended[0]->payload['reason']);
-        $this->assertSame($result['rebuiltState'], $activeRunContext->stateFor($runId));
-        $this->assertCount(1, $commandBus->messages);
-        $this->assertInstanceOf(InvalidateRunContext::class, $commandBus->messages[0]);
-        $this->assertSame($runId, $commandBus->messages[0]->runId());
+        $this->assertSame($result['rebuiltState'], $activeRunContext->requireLoaded($runId));
+        $this->assertSame([], $commandBus->messages);
     }
 
     public function testSelectInternalRetainedTurnWithoutPromptIsRejected(): void
@@ -363,7 +358,7 @@ final class HistorySelectionServiceTest extends TestCase
         };
 
         $activeRunContext = new TestActiveRunContext();
-        $activeRunContext->remember(new RunState(runId: $runId, status: RunStatus::Running, version: 1, turnNo: 3, lastSeq: 5, model: 'test-model'));
+        $activeRunContext->loadRecovered(new RunState(runId: $runId, status: RunStatus::Running, version: 1, turnNo: 3, lastSeq: 5, model: 'test-model'));
 
         $service = new HistorySelectionService(
             eventStore: $eventStore,
@@ -373,7 +368,7 @@ final class HistorySelectionServiceTest extends TestCase
             logger: new NullLogger(),
             historyProjector: new HistoryProjector(),
             replayEventPreparer: new ReplayEventPreparer(),
-            commandBus: new TestMessageBus(),
+            runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit($activeRunContext, $eventStore, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus()), new NullLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector()),
         );
 
         $this->expectException(\RuntimeException::class);
@@ -449,7 +444,7 @@ final class HistorySelectionServiceTest extends TestCase
         };
 
         $activeRunContext = new TestActiveRunContext();
-        $activeRunContext->remember(new RunState(runId: $runId, status: RunStatus::Running, version: 1, turnNo: 1, lastSeq: 2, model: 'test-model'));
+        $activeRunContext->loadRecovered(new RunState(runId: $runId, status: RunStatus::Running, version: 1, turnNo: 1, lastSeq: 2, model: 'test-model'));
 
         $rebuilder = $this->createMock(RunStateRebuilderInterface::class);
         $rebuilder->expects($this->never())->method('rebuildAtPosition');
@@ -462,7 +457,7 @@ final class HistorySelectionServiceTest extends TestCase
             logger: new NullLogger(),
             historyProjector: new HistoryProjector(),
             replayEventPreparer: new ReplayEventPreparer(),
-            commandBus: new TestMessageBus(),
+            runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit($activeRunContext, $eventStore, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus()), new NullLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector()),
         );
 
         try {

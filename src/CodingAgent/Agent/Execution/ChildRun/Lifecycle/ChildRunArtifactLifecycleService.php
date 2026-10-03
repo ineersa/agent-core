@@ -41,15 +41,6 @@ final class ChildRunArtifactLifecycleService
         $this->childRunDirectory->register($entry);
     }
 
-    public function markRunning(ChildRunIdentityDTO $identity): void
-    {
-        $this->artifactRegistry->promoteToRunningForwardOnly(
-            parentRunId: $identity->parentRunId,
-            artifactId: $identity->artifactId,
-            startedAt: new \DateTimeImmutable(),
-        );
-    }
-
     public function getArtifactStatus(string $parentRunId, string $artifactId): ?AgentArtifactStatusEnum
     {
         $entry = $this->artifactRegistry->get($parentRunId, $artifactId);

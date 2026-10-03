@@ -10,3 +10,9 @@
 - `Runtime/InProcess` calls AgentCore directly; `Runtime/Process` uses headless JSONL subprocess.
 - `src/CodingAgent/CLI/AgentCommand.php` wires TUI via `Ineersa\Tui\Application\InteractiveMode`.
 - Canonical source: `.hatfield/sessions/<id>/events.jsonl` via `EventStoreInterface`. Overview: `docs/async-runtime-architecture.md`.
+
+## Application maintenance commands
+
+`AttachRun`, `SelectHistoryPrompt`, and `RepairSession` live in `CodingAgent\Application\Message`. Controllers and the in-process client submit them on `agent.command.bus` to `run_control`. `SessionMaintenanceHandler` owns their application policy and runtime replies. Sharing a transport with framework commands does not make them AgentCore concepts.
+
+Attach completes pending-question cancellation and context refresh through `RunMessageProcessor` before returning, without starting a model turn. History selection and repair use `RunCommit` under the owner lock. The controller neither reconstructs execution state nor writes canonical history.

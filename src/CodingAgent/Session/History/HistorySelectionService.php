@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Session\History;
 
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\RunStateDuplicateSequenceReplayException;
+use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
@@ -13,10 +14,8 @@ use Ineersa\AgentCore\Contract\History\HistorySelectionServiceInterface;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
-use Ineersa\AgentCore\Domain\Message\InvalidateRunContext;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Psr\Log\LoggerInterface;
-use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
  * Positions linear history for /history selection.
@@ -40,7 +39,7 @@ final readonly class HistorySelectionService implements HistorySelectionServiceI
         private LoggerInterface $logger,
         private HistoryProjector $historyProjector,
         private ReplayEventPreparer $replayEventPreparer,
-        private MessageBusInterface $commandBus,
+        private RunCommit $runCommit,
     ) {
     }
 
@@ -64,7 +63,7 @@ final readonly class HistorySelectionService implements HistorySelectionServiceI
                 throw new \RuntimeException(\sprintf('Cannot select history for run %s: target turn %d is not a selectable human prompt.', $runId, $targetPromptTurnNo));
             }
 
-            $state = $this->activeRunContext->stateFor($runId);
+            $state = $this->activeRunContext->requireLoaded($runId);
 
             $duplicateSeqs = $this->replayEventPreparer->duplicateSequences($events);
             if ([] !== $duplicateSeqs) {
@@ -89,21 +88,15 @@ final readonly class HistorySelectionService implements HistorySelectionServiceI
                 createdAt: new \DateTimeImmutable(),
             );
 
-            $persisted = $this->eventStore->append($positionEvent);
-            $newSeq = $persisted->seq;
-
             $replayResult = $this->runStateRebuilder->rebuildAtPosition($state, $runId, $positionTurnNo);
             if (null === $replayResult->rebuiltState) {
                 throw new \RuntimeException(\sprintf('Failed to rebuild state for run %s at position %d.', $runId, $positionTurnNo));
             }
 
             $rebuiltState = $replayResult->rebuiltState;
-            if ($rebuiltState->lastSeq < $newSeq || $rebuiltState->turnNo !== $positionTurnNo) {
-                $rebuiltState = $rebuiltState->with([
-                    'turnNo' => $positionTurnNo,
-                    'lastSeq' => max($rebuiltState->lastSeq, $newSeq),
-                ]);
-            }
+            $rebuiltState = $rebuiltState->with(['turnNo' => $positionTurnNo, 'version' => $state->version]);
+            $rebuiltState = $this->runCommit->commit($state, $rebuiltState, [$positionEvent], dispatchAfterTurnHooks: false);
+            $newSeq = $rebuiltState->lastSeq;
 
             $this->logger->info('run_history.selected', [
                 'run_id' => $runId,
@@ -114,9 +107,6 @@ final readonly class HistorySelectionService implements HistorySelectionServiceI
                 'component' => 'history',
                 'event_type' => 'history_position_set',
             ]);
-
-            $this->activeRunContext->remember($rebuiltState);
-            $this->commandBus->dispatch(new InvalidateRunContext($runId));
 
             return [
                 'rebuiltState' => $rebuiltState,

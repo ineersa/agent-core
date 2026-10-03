@@ -21,6 +21,12 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
  */
 final class HistoryProjector
 {
+    /** @param iterable<RunEvent> $events */
+    public function replayPlan(iterable $events, ?int $positionTurnNo = null): HistoryReplayPlan
+    {
+        return HistoryReplayPlan::build($events, $positionTurnNo);
+    }
+
     /**
      * @param list<RunEvent> $events
      */
@@ -33,15 +39,14 @@ final class HistoryProjector
         $sorted = $events;
         usort($sorted, static fn (RunEvent $left, RunEvent $right): int => $left->seq <=> $right->seq);
 
-        /** @var list<int> $retainedTurnNos */
-        $retainedTurnNos = [];
+        $retention = new HistoryRetentionTracker();
         /** @var array<int, string> $promptsByTurnNo */
         $promptsByTurnNo = [];
-        $positionTurnNo = 0;
         $initialPrompt = null;
         $pendingHumanPrompt = null;
 
         foreach ($sorted as $event) {
+            $retention->observe($event);
             if (RunEventTypeEnum::RunStarted->value === $event->type) {
                 $text = self::extractInitialUserText($event);
                 if ('' !== $text) {
@@ -77,10 +82,6 @@ final class HistoryProjector
                     continue;
                 }
 
-                if (!\in_array($turnNo, $retainedTurnNos, true)) {
-                    $retainedTurnNos[] = $turnNo;
-                }
-
                 // Attach pending human prompt (or initial RunStarted prompt for first anchor).
                 if (null !== $pendingHumanPrompt) {
                     $promptsByTurnNo[$turnNo] = $pendingHumanPrompt;
@@ -92,56 +93,28 @@ final class HistoryProjector
                 // Never re-attach the session-start prompt to later internal anchors.
                 $initialPrompt = null;
 
-                $positionTurnNo = $turnNo;
                 continue;
             }
 
             if (RunEventTypeEnum::HistoryPositionSet->value === $event->type) {
-                $turnNo = (int) ($event->payload['position_turn_no'] ?? $event->turnNo);
-                if (0 === $turnNo) {
-                    $positionTurnNo = 0;
-                    continue;
-                }
-                if (\in_array($turnNo, $retainedTurnNos, true)) {
-                    $positionTurnNo = $turnNo;
-                }
                 continue;
             }
 
             if (RunEventTypeEnum::HistoryTailDiscarded->value === $event->type) {
-                $after = (int) ($event->payload['after_turn_no'] ?? 0);
-                $retainedTurnNos = array_values(array_filter(
-                    $retainedTurnNos,
-                    static fn (int $t): bool => $t <= $after,
-                ));
                 foreach (array_keys($promptsByTurnNo) as $promptTurn) {
-                    if (!\in_array($promptTurn, $retainedTurnNos, true)) {
+                    if (!\in_array($promptTurn, $retention->retainedTurnNos, true)) {
                         unset($promptsByTurnNo[$promptTurn]);
                     }
                 }
                 $pendingHumanPrompt = null;
-                if (0 === $after || [] === $retainedTurnNos) {
-                    $positionTurnNo = 0;
-                } elseif (\in_array($after, $retainedTurnNos, true)) {
-                    $positionTurnNo = $after;
-                } elseif ($positionTurnNo > $after) {
-                    $positionTurnNo = $retainedTurnNos[array_key_last($retainedTurnNos)];
-                }
                 // Compaction events leave pending human prompt intact (not handled here).
             }
         }
 
-        // Drop invalid position if it failed to materialize as a retained anchor.
-        if (0 !== $positionTurnNo && !\in_array($positionTurnNo, $retainedTurnNos, true)) {
-            $positionTurnNo = [] !== $retainedTurnNos
-                ? $retainedTurnNos[array_key_last($retainedTurnNos)]
-                : 0;
-        }
-
         return new HistoryDTO(
-            retainedTurnNos: $retainedTurnNos,
+            retainedTurnNos: $retention->retainedTurnNos,
             promptsByTurnNo: $promptsByTurnNo,
-            positionTurnNo: $positionTurnNo,
+            positionTurnNo: $retention->positionTurnNo,
         );
     }
 

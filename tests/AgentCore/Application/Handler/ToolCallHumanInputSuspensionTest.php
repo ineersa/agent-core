@@ -376,7 +376,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
             ->withActiveStepId('step-seq')
             ->withPendingToolCalls(['call-seq' => false])
             ->build();
-        $activeRunContext->remember($running);
+        $activeRunContext->loadRecovered($running);
 
         $handler = new ToolCallResultHandler($collector, new EventFactory(), new ToolCallExtractor(), new AgentMessageNormalizer(), AttributeSerializerValidatorTestFactory::denormalizer());
         $processor = new \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor(
@@ -409,14 +409,14 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         $this->assertNotSame($suspension->idempotencyKey(), $terminal->idempotencyKey());
 
         $processor->process('result.tool', $suspension);
-        $afterSuspension = $activeRunContext->stateFor('run-seq');
+        $afterSuspension = $activeRunContext->requireLoaded('run-seq');
         $this->assertNotNull($afterSuspension);
         $this->assertSame(RunStatus::WaitingHuman, $afterSuspension->status);
         $this->assertSame(['call-seq' => false], $afterSuspension->pendingToolCalls);
 
         // Duplicate suspension must dedup without state change.
         $processor->process('result.tool', $suspension);
-        $this->assertSame($afterSuspension->version, $activeRunContext->stateFor('run-seq')?->version);
+        $this->assertSame($afterSuspension->version, $activeRunContext->requireLoaded('run-seq')?->version);
 
         // Answer path clears WaitingHuman before the resumed terminal ToolCallResult arrives.
         $resumed = RunStateBuilder::running('run-seq')
@@ -428,13 +428,13 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
             ->withPendingHumanInputRequests([])
             ->withStatus(RunStatus::Running)
             ->build();
-        $activeRunContext->remember($resumed);
+        $activeRunContext->loadRecovered($resumed);
 
         // Resume requeues the exact call into a fresh batch (as resumeHumanInputAnswer does).
         $collector->registerExpectedBatch('run-seq', 1, 'step-seq', [$execute]);
 
         $processor->process('result.tool', $terminal);
-        $afterTerminal = $activeRunContext->stateFor('run-seq');
+        $afterTerminal = $activeRunContext->requireLoaded('run-seq');
         $this->assertNotNull($afterTerminal);
         // Single-call batch finalizes to empty pendingToolCalls (complete path).
         $this->assertSame([], $afterTerminal->pendingToolCalls);
@@ -444,7 +444,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         // Duplicate terminal must dedup (no further commit).
         $versionAfterTerminal = $afterTerminal->version;
         $processor->process('result.tool', $terminal);
-        $this->assertSame($versionAfterTerminal, $activeRunContext->stateFor('run-seq')?->version);
+        $this->assertSame($versionAfterTerminal, $activeRunContext->requireLoaded('run-seq')?->version);
     }
 
     public function testPostCommitEffectDispatchFailureRedrivesExactCallWithoutMarkingApplied(): void
@@ -470,7 +470,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
                 ),
             ])
             ->build();
-        $activeRunContext->remember($waiting);
+        $activeRunContext->loadRecovered($waiting);
 
         $executionBus = new class implements \Symfony\Component\Messenger\MessageBusInterface {
             public int $attempts = 0;
@@ -533,7 +533,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
             $this->assertStringContainsString('Failed to dispatch execution effect', $exception->getMessage());
         }
 
-        $afterFail = $activeRunContext->stateFor('run-pc');
+        $afterFail = $activeRunContext->requireLoaded('run-pc');
         $this->assertNotNull($afterFail);
         $this->assertSame(RunStatus::Running, $afterFail->status);
         $this->assertSame([], $afterFail->pendingHumanInputRequests);
@@ -579,7 +579,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
                 ),
             ])
             ->build();
-        $activeRunContext->remember($waiting);
+        $activeRunContext->loadRecovered($waiting);
 
         $executionBus = new class implements \Symfony\Component\Messenger\MessageBusInterface {
             public int $attempts = 0;
@@ -642,7 +642,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
             $this->assertStringContainsString('Failed to dispatch execution effect', $exception->getMessage());
         }
 
-        $afterFail = $activeRunContext->stateFor('run-fifo');
+        $afterFail = $activeRunContext->requireLoaded('run-fifo');
         $this->assertNotNull($afterFail);
         // q1 applied; q2 still pending → status remains WaitingHuman (the multi-request gap).
         $this->assertSame(RunStatus::WaitingHuman, $afterFail->status);
@@ -655,7 +655,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         // Redelivery of q1 while active FIFO head is q2 must redrive q1 without re-answering q2.
         $processor->process('command', $command);
 
-        $afterRetry = $activeRunContext->stateFor('run-fifo');
+        $afterRetry = $activeRunContext->requireLoaded('run-fifo');
         $this->assertNotNull($afterRetry);
         $this->assertSame(RunStatus::WaitingHuman, $afterRetry->status);
         $this->assertCount(1, $afterRetry->pendingHumanInputRequests);

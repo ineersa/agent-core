@@ -7,7 +7,6 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Controller\CommandHandler;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
-use Ineersa\AgentCore\Contract\History\HistorySelectionServiceInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -25,7 +24,6 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextDiscovery;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextRenderer;
@@ -93,7 +91,17 @@ final class ResumeHandlerCancelsPendingHumanTest extends IsolatedKernelTestCase
             {
             }
 
-            public function stateFor(string $runId): RunState
+            public function createNew(string $runId): RunState
+            {
+                throw new \LogicException('Fixture does not support initialization');
+            }
+
+            public function loadRecovered(RunState $state): void
+            {
+                throw new \LogicException('Fixture does not support recovery');
+            }
+
+            public function requireLoaded(string $runId): RunState
             {
                 return new RunState(
                     runId: $runId,
@@ -107,25 +115,24 @@ final class ResumeHandlerCancelsPendingHumanTest extends IsolatedKernelTestCase
                 );
             }
 
-            public function remember(RunState $state): void
+            public function replaceCurrent(RunState $state): void
             {
             }
 
-            public function invalidate(string $runId): void
-            {
-            }
-
-            public function clear(): void
+            public function release(string $runId): void
             {
             }
         };
 
+        $bus = new TestMessageBus();
         $container = self::getContainer();
+        $fixtureState = $active->requireLoaded($runId);
+        $active = $container->get(ActiveRunContextInterface::class);
+        $active->loadRecovered($fixtureState);
         $client = new InProcessAgentSessionClient(
             runner: $runner,
             eventStore: $this->createStub(EventStoreInterface::class),
             mapper: $container->get(RuntimeEventMapper::class),
-            historySelectionService: $this->createStub(HistorySelectionServiceInterface::class),
             systemPromptBuilder: $container->get(SystemPromptBuilder::class),
             agentsContextDiscovery: $container->get(AgentsContextDiscovery::class),
             agentsContextRenderer: $container->get(AgentsContextRenderer::class),
@@ -134,9 +141,7 @@ final class ResumeHandlerCancelsPendingHumanTest extends IsolatedKernelTestCase
             promptTemplateService: $container->get(PromptTemplateService::class),
             sessionMetaStore: $container->get(HatfieldSessionStore::class),
             modelResolver: $container->get(ModelResolver::class),
-            commandBus: new TestMessageBus(),
-            sessionRepairService: $this->createStub(SessionRepairServiceInterface::class),
-            activeRunContext: $active,
+            commandBus: $bus,
         );
 
         $emitted = [];
@@ -148,7 +153,18 @@ final class ResumeHandlerCancelsPendingHumanTest extends IsolatedKernelTestCase
             },
         ));
 
-        $this->assertSame([[$runId, 'Outstanding human questions cancelled on session attach.']], $runner->cancels);
+        $ownerAttach = new \Ineersa\CodingAgent\Application\Pipeline\SessionMaintenanceHandler(
+            $container->get(\Ineersa\AgentCore\Contract\History\HistorySelectionServiceInterface::class),
+            $container->get(\Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface::class),
+            $container->get(\Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink::class),
+            $container->get(\Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink::class),
+            false, new \Psr\Log\NullLogger(), $active, $container->get(\Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor::class),
+            $container->get(HatfieldSessionStore::class), $container->get(\Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware::class),
+        );
+        $ownerAttach->attach($bus->messages[0]);
+
+        $this->assertSame([], $runner->cancels);
+        $this->assertSame([], $active->requireLoaded($runId)->pendingHumanInputRequests);
         $this->assertCount(1, $emitted);
         $this->assertSame(RuntimeEventTypeEnum::RunResumed->value, $emitted[0]->type);
         $this->assertSame($runId, $emitted[0]->runId);

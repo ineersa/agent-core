@@ -8,5 +8,7 @@ use Ineersa\CodingAgent\Runtime\Contract\RepairResult;
 
 interface SessionRepairServiceInterface
 {
+    public function integrityRefusal(string $runId): ?RepairResult;
+
     public function repair(string $runId, bool $apply): RepairResult;
 }

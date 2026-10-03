@@ -18,7 +18,7 @@ use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Psr\Log\LoggerInterface;
 
 /**
- * Appends history_tail_discarded when a context-mutating message would diverge
+ * Prepares history_tail_discarded when a context-mutating message would diverge
  * while active turns exist after the current selected tip.
  *
  * Shared choke point used by RunMessageProcessor before handlers run.
@@ -55,38 +55,32 @@ final readonly class HistoryTailDiscardService implements HistoryTailDiscardInte
         return false;
     }
 
-    /**
-     * When active history has turns after the current tip, append discard marker.
-     * Returns updated lastSeq (and whether a discard was written).
-     *
-     * @return array{discarded: bool, lastSeq: int}
-     */
-    public function discardForwardTailIfNeeded(string $runId, RunState $state): array
+    public function prepareForwardTailDiscard(string $runId, RunState $state): ?RunEvent
     {
         // ponytail: full event-log rebuild O(n) per mutate-behind-tip; cache tip/active if discard checks become hot.
         $events = $this->eventStore->allFor($runId);
         if ([] === $events) {
-            return ['discarded' => false, 'lastSeq' => $state->lastSeq];
+            return null;
         }
 
         $history = $this->projector->build($events);
         $active = $history->retainedTurnNos;
         if ([] === $active) {
-            return ['discarded' => false, 'lastSeq' => $state->lastSeq];
+            return null;
         }
 
         // Invalid / non-retained current state must not fabricate a discard.
         $tip = $state->turnNo;
         if (0 !== $tip && !\in_array($tip, $active, true)) {
-            return ['discarded' => false, 'lastSeq' => $state->lastSeq];
+            return null;
         }
 
         $orderedTip = $active[array_key_last($active)];
         if ($tip >= $orderedTip) {
-            return ['discarded' => false, 'lastSeq' => $state->lastSeq];
+            return null;
         }
 
-        $discardEvent = new RunEvent(
+        return new RunEvent(
             runId: $runId,
             seq: 0,
             turnNo: max(0, $tip),
@@ -97,21 +91,18 @@ final readonly class HistoryTailDiscardService implements HistoryTailDiscardInte
             ],
             createdAt: new \DateTimeImmutable(),
         );
+    }
 
-        $persisted = $this->eventStore->append($discardEvent);
-
+    public function afterDiscardCommitted(string $runId): void
+    {
         // Drop transitions keyed to the discarded forward tail so the next
         // request re-establishes the still-selected effort as baseline.
         $this->sessionMetadataStore->resetReasoningBaseline($runId);
 
         $this->logger->info('history_tail_discarded.appended', [
             'run_id' => $runId,
-            'after_turn_no' => $tip,
-            'discard_seq' => $persisted->seq,
             'component' => 'history',
             'event_type' => 'history_tail_discarded',
         ]);
-
-        return ['discarded' => true, 'lastSeq' => $persisted->seq];
     }
 }

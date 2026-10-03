@@ -9,7 +9,6 @@ use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\CompactionStepResult;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
-use Ineersa\AgentCore\Domain\Message\InvalidateRunContext;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
@@ -59,22 +58,6 @@ final class RunResultMessagesRouteToRunControlTest extends IsolatedKernelTestCas
         $this->assertSame($message, $sent[0]->getMessage());
     }
 
-    public function testInvalidationDispatchEnqueuesExactlyOnceOnRunControlTransport(): void
-    {
-        /** @var InMemoryTransport $transport */
-        $transport = self::getContainer()->get('messenger.transport.run_control');
-        $transport->reset();
-
-        /** @var MessageBusInterface $commandBus */
-        $commandBus = self::getContainer()->get('agent.command.bus');
-        $message = new InvalidateRunContext('run-invalidation-route');
-        $commandBus->dispatch($message);
-
-        $sent = $transport->getSent();
-        $this->assertCount(1, $sent);
-        $this->assertSame($message, $sent[0]->getMessage());
-    }
-
     public function testExecutionEffectUsesExecutionBusAndLlmTransport(): void
     {
         /** @var InMemoryTransport $transport */
@@ -95,7 +78,7 @@ final class RunResultMessagesRouteToRunControlTest extends IsolatedKernelTestCas
     {
         $reflection = new \ReflectionClass(RunOrchestrator::class);
 
-        foreach (['onAdvanceRun', 'onCompactRun', 'onInvalidateRunContext'] as $methodName) {
+        foreach (['onAdvanceRun', 'onCompactRun'] as $methodName) {
             $attributes = $reflection->getMethod($methodName)->getAttributes(AsMessageHandler::class);
             $this->assertCount(1, $attributes, $methodName);
             $this->assertSame('agent.command.bus', $attributes[0]->newInstance()->bus, $methodName);

@@ -4,26 +4,25 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Controller\CommandHandler;
 
-use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Application\Message\RepairSession;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
-use Ineersa\CodingAgent\Session\Repair\RepairResultNormalizer;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
+use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
  * Handles repair JSONL commands from the parent TUI/controller process.
  *
- * Runs SessionRepairService through the in-process AgentSessionClient so
- * redrive effects land on the controller's session-scoped Doctrine queues.
+ * Submits owner work without waiting; run_control emits the correlated reply.
  */
 #[AsEventListener(event: ControllerCommandEvent::class)]
 final readonly class RepairHandler
 {
     public function __construct(
-        private readonly AgentSessionClient $client,
+        private readonly MessageBusInterface $commandBus,
         private readonly LoggerInterface $logger = new NullLogger(),
     ) {
     }
@@ -61,18 +60,7 @@ final readonly class RepairHandler
         ]);
 
         try {
-            $result = $this->client->repair($runId, $apply);
-            $payload = RepairResultNormalizer::toArray($result);
-            $payload['commandId'] = $command->id;
-            $payload['commandType'] = $command->type;
-            $payload['status'] = 'completed';
-
-            $event->emit(new RuntimeEvent(
-                type: RuntimeEventTypeEnum::SessionRepairCompleted->value,
-                runId: $runId,
-                seq: 0,
-                payload: $payload,
-            ));
+            $this->commandBus->dispatch(new RepairSession($runId, $apply, $command->id));
         } catch (\Throwable $exception) {
             $this->logger->error('session_repair.controller_failed', [
                 'component' => 'RepairHandler',

@@ -28,6 +28,7 @@ final readonly class RunStateReducer
         private DenormalizerInterface $denormalizer,
         private ToolExecutionEndPayloadCodec $toolExecutionEndPayloadCodec,
         private AgentMessageNormalizer $messageNormalizer = new AgentMessageNormalizer(),
+        private ReplayAssistantMessageFactory $assistantMessageFactory = new ReplayAssistantMessageFactory(),
     ) {
     }
 
@@ -378,7 +379,7 @@ final readonly class RunStateReducer
             // Replay the assistant payload via a dedicated helper that
             // handles tool-call-only messages (content: null) which
             // AgentMessage::fromPayload() would reject.
-            $msg = $this->replayAssistantMessage($assistantPayload);
+            $msg = $this->assistantMessageFactory->create($assistantPayload);
             if (null !== $msg) {
                 $messages[] = $msg;
             }
@@ -561,12 +562,7 @@ final readonly class RunStateReducer
     {
         $reason = \is_string($payload['reason'] ?? null) ? $payload['reason'] : null;
 
-        $status = match ($reason) {
-            'completed' => RunStatus::Completed,
-            'cancelled' => RunStatus::Cancelled,
-            'failed' => RunStatus::Failed,
-            default => RunStatus::Completed,
-        };
+        $status = ReplayLifecycleStatus::terminal($reason);
 
         return $state->with([
             'status' => $status,
@@ -669,7 +665,7 @@ final readonly class RunStateReducer
 
         $trigger = \is_string($payload['trigger'] ?? null) ? $payload['trigger'] : 'manual';
         $continueAfterCompaction = (bool) ($payload['continue_after_compaction'] ?? false);
-        $finalStatus = $continueAfterCompaction ? RunStatus::Running : RunStatus::Completed;
+        $finalStatus = ReplayLifecycleStatus::afterCompaction($continueAfterCompaction);
 
         return $state->with([
             'status' => $finalStatus,
@@ -705,8 +701,6 @@ final readonly class RunStateReducer
     private function applyContextCompactionFailed(array $payload, RunState $state): RunState
     {
         $payloadStepId = \is_string($payload['step_id'] ?? null) ? $payload['step_id'] : null;
-        $reason = \is_string($payload['reason'] ?? null) ? $payload['reason'] : null;
-        $trigger = \is_string($payload['trigger'] ?? null) ? $payload['trigger'] : null;
 
         // Structural failures from CompactRunHandler have no step_id.
         // They happen before the worker is dispatched — preserve activeStepId
@@ -730,17 +724,15 @@ final readonly class RunStateReducer
         // - stale_result or step_id mismatch: always resolve to Running.
         //   The live handler treats stale as non-current without looking at
         //   trigger; mismatch means a newer compaction is in flight.
-        $continueAfterCompaction = (bool) ($payload['continue_after_compaction'] ?? false);
-        $isTerminal = $payloadStepId === $state->activeStepId && 'stale_result' !== $reason;
-        $resolveCompacting = RunStatus::Compacting === $state->status
-            ? ($isTerminal && !$continueAfterCompaction ? RunStatus::Completed : RunStatus::Running)
-            : null;
+        $decision = ReplayLifecycleStatus::compactionFailure($state->status, $state->activeStepId, $payload);
+        $isTerminal = $decision['terminal'];
+        $resolveCompacting = $decision['status'];
 
         // Step_id matches AND not stale → clear the step (compaction
         // lifecycle complete).  Resolve Compacting if applicable.
         if ($isTerminal) {
             return $state->with([
-                'status' => $resolveCompacting ?? $state->status,
+                'status' => $resolveCompacting,
                 'activeStepId' => null,
                 'currentOperation' => null,
                 'lastAppliedCompactionKey' => $this->currentCompactionKey($state),
@@ -752,7 +744,7 @@ final readonly class RunStateReducer
         // arrived while a newer compaction may be in flight).  The newer
         // compaction's own started event will set Compacting again.
         return $state->with([
-            'status' => $resolveCompacting ?? $state->status,
+            'status' => $resolveCompacting,
         ]);
     }
 
@@ -787,114 +779,5 @@ final readonly class RunStateReducer
     private function applyNoMutation(RunEvent $event, RunState $state): RunState
     {
         return $state;
-    }
-
-    /**
-     * @param array<string, mixed> $payload
-     */
-    private function replayAssistantMessage(array $payload): ?AgentMessage
-    {
-        $msg = AgentMessage::fromPayload($payload);
-
-        // fromPayload succeeded — standard path for text-bearing messages.
-        if (null !== $msg) {
-            return $this->withReplayedAssistantMetadata($msg, $payload);
-        }
-
-        // Only handle assistant-role payloads where content is null/missing.
-        // fromPayload rejects these because is_array(content) fails, but
-        // the real AgentMessageNormalizer produces this shape for
-        // tool-call-only assistant responses.
-        $role = $payload['role'] ?? null;
-
-        if ('assistant' !== $role) {
-            return null;
-        }
-
-        $metadata = $this->replayedAssistantMetadata($payload);
-        $rawToolCalls = \is_array($metadata['tool_calls'] ?? null) ? $metadata['tool_calls'] : [];
-
-        $details = \is_array($payload['details'] ?? null) && [] !== $payload['details']
-            ? $payload['details']
-            : null;
-
-        // Filter thinking-only assistant messages (no content, no tool
-        // calls, reasoning present in details). These were erroneously
-        // persisted from provider reasoning-only responses (e.g. DeepSeek
-        // when max_tokens is exhausted mid-thinking) and cannot be
-        // replayed as valid conversation turns — providers reject
-        // {content: null, reasoning_content: "..."}.
-        if ([] === $rawToolCalls
-            && null !== $details
-            && \is_string($details['thinking'] ?? null)
-        ) {
-            return null;
-        }
-
-        return new AgentMessage(
-            role: 'assistant',
-            content: [],
-            details: $details,
-            metadata: $metadata,
-        );
-    }
-
-    /**
-     * Canonical llm_step_completed assistant payloads store tool_calls at the
-     * top level (see AgentMessageNormalizer::assistantMessagePayload()).
-     * AgentMessage::fromPayload() only reads metadata.*, so text-bearing
-     * assistant messages must copy top-level tool_calls into metadata on replay.
-     * Request-time conversion also needs the step model as source identity;
-     * that comes from llm_step_completed.model, not a duplicated assistant field.
-     *
-     * @param array<string, mixed> $payload
-     */
-    private function withReplayedAssistantMetadata(AgentMessage $message, array $payload): AgentMessage
-    {
-        $replayed = $this->replayedAssistantMetadata($payload);
-        if ([] === $replayed) {
-            return $message;
-        }
-
-        $metadata = $message->metadata;
-        foreach ($replayed as $key => $value) {
-            $metadata[$key] = $value;
-        }
-
-        return new AgentMessage(
-            role: $message->role,
-            content: $message->content,
-            timestamp: $message->timestamp,
-            name: $message->name,
-            toolCallId: $message->toolCallId,
-            toolName: $message->toolName,
-            details: $message->details,
-            isError: $message->isError,
-            metadata: $metadata,
-        );
-    }
-
-    /**
-     * @param array<string, mixed> $payload
-     *
-     * @return array<string, mixed>
-     */
-    private function replayedAssistantMetadata(array $payload): array
-    {
-        $metadata = [];
-
-        $rawToolCalls = \is_array($payload['tool_calls'] ?? null) ? $payload['tool_calls'] : [];
-        if ([] !== $rawToolCalls) {
-            $metadata['tool_calls'] = $rawToolCalls;
-        }
-
-        // Derive request-local source identity from the step model. Do not
-        // require a duplicated source_model field inside assistant_message.
-        $sourceModel = \is_string($payload['model'] ?? null) ? $payload['model'] : null;
-        if (\is_string($sourceModel) && '' !== $sourceModel) {
-            $metadata['source_model'] = $sourceModel;
-        }
-
-        return $metadata;
     }
 }

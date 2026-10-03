@@ -7,7 +7,6 @@ namespace Ineersa\CodingAgent\Tests\Runtime\InProcess;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
-use Ineersa\AgentCore\Contract\History\HistorySelectionServiceInterface;
 use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
@@ -18,7 +17,6 @@ use Ineersa\CodingAgent\PromptTemplate\PromptTemplateService;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextDiscovery;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextRenderer;
@@ -76,7 +74,17 @@ final class InProcessAttachCancelsPendingHumanTest extends IsolatedKernelTestCas
             {
             }
 
-            public function stateFor(string $runId): RunState
+            public function createNew(string $runId): RunState
+            {
+                throw new \LogicException('Fixture does not support initialization');
+            }
+
+            public function loadRecovered(RunState $state): void
+            {
+                throw new \LogicException('Fixture does not support recovery');
+            }
+
+            public function requireLoaded(string $runId): RunState
             {
                 return new RunState(
                     runId: $runId,
@@ -90,26 +98,24 @@ final class InProcessAttachCancelsPendingHumanTest extends IsolatedKernelTestCas
                 );
             }
 
-            public function remember(RunState $state): void
+            public function replaceCurrent(RunState $state): void
             {
             }
 
-            public function invalidate(string $runId): void
-            {
-            }
-
-            public function clear(): void
+            public function release(string $runId): void
             {
             }
         };
 
         $bus = new TestMessageBus();
         $container = self::getContainer();
+        $fixtureState = $active->requireLoaded($runId);
+        $active = $container->get(ActiveRunContextInterface::class);
+        $active->loadRecovered($fixtureState);
         $client = new InProcessAgentSessionClient(
             runner: $runner,
             eventStore: $this->createStub(EventStoreInterface::class),
             mapper: $container->get(RuntimeEventMapper::class),
-            historySelectionService: $this->createStub(HistorySelectionServiceInterface::class),
             systemPromptBuilder: $container->get(SystemPromptBuilder::class),
             agentsContextDiscovery: $container->get(AgentsContextDiscovery::class),
             agentsContextRenderer: $container->get(AgentsContextRenderer::class),
@@ -119,14 +125,23 @@ final class InProcessAttachCancelsPendingHumanTest extends IsolatedKernelTestCas
             sessionMetaStore: $container->get(HatfieldSessionStore::class),
             modelResolver: $container->get(ModelResolver::class),
             commandBus: $bus,
-            sessionRepairService: $this->createStub(SessionRepairServiceInterface::class),
-            activeRunContext: $active,
         );
 
         $this->assertSame($runId, $client->attach($runId)->runId);
-        $this->assertSame([[$runId, 'Outstanding human questions cancelled on session attach.']], $runner->cancels);
+        $ownerAttach = new \Ineersa\CodingAgent\Application\Pipeline\SessionMaintenanceHandler(
+            $container->get(\Ineersa\AgentCore\Contract\History\HistorySelectionServiceInterface::class),
+            $container->get(\Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface::class),
+            $container->get(\Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink::class),
+            $container->get(\Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink::class),
+            false, new \Psr\Log\NullLogger(), $active, $container->get(\Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor::class),
+            $container->get(HatfieldSessionStore::class), $container->get(\Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware::class),
+        );
+        $ownerAttach->attach($bus->messages[0]);
+
+        $this->assertSame([], $runner->cancels);
+        $this->assertSame([], $active->requireLoaded($runId)->pendingHumanInputRequests);
         $this->assertCount(1, $bus->messages);
-        $this->assertSame($runId, $bus->messages[0]->runId());
+        $this->assertSame($runId, $bus->messages[0]->runId);
     }
 
     #[Test]
@@ -172,31 +187,39 @@ final class InProcessAttachCancelsPendingHumanTest extends IsolatedKernelTestCas
         };
 
         $active = new class implements ActiveRunContextInterface {
-            public function stateFor(string $runId): RunState
+            public function createNew(string $runId): RunState
+            {
+                throw new \LogicException('Fixture does not support initialization');
+            }
+
+            public function loadRecovered(RunState $state): void
+            {
+                throw new \LogicException('Fixture does not support recovery');
+            }
+
+            public function requireLoaded(string $runId): RunState
             {
                 return RunState::queued($runId)->with(['status' => RunStatus::Completed]);
             }
 
-            public function remember(RunState $state): void
+            public function replaceCurrent(RunState $state): void
             {
             }
 
-            public function invalidate(string $runId): void
-            {
-            }
-
-            public function clear(): void
+            public function release(string $runId): void
             {
             }
         };
 
         $bus = new TestMessageBus();
         $container = self::getContainer();
+        $fixtureState = $active->requireLoaded($runId);
+        $active = $container->get(ActiveRunContextInterface::class);
+        $active->loadRecovered($fixtureState);
         $client = new InProcessAgentSessionClient(
             runner: $runner,
             eventStore: $this->createStub(EventStoreInterface::class),
             mapper: $container->get(RuntimeEventMapper::class),
-            historySelectionService: $this->createStub(HistorySelectionServiceInterface::class),
             systemPromptBuilder: $container->get(SystemPromptBuilder::class),
             agentsContextDiscovery: $container->get(AgentsContextDiscovery::class),
             agentsContextRenderer: $container->get(AgentsContextRenderer::class),
@@ -206,11 +229,18 @@ final class InProcessAttachCancelsPendingHumanTest extends IsolatedKernelTestCas
             sessionMetaStore: $container->get(HatfieldSessionStore::class),
             modelResolver: $container->get(ModelResolver::class),
             commandBus: $bus,
-            sessionRepairService: $this->createStub(SessionRepairServiceInterface::class),
-            activeRunContext: $active,
         );
 
         $client->attach($runId);
+        $ownerAttach = new \Ineersa\CodingAgent\Application\Pipeline\SessionMaintenanceHandler(
+            $container->get(\Ineersa\AgentCore\Contract\History\HistorySelectionServiceInterface::class),
+            $container->get(\Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface::class),
+            $container->get(\Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink::class),
+            $container->get(\Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink::class),
+            false, new \Psr\Log\NullLogger(), $active, $container->get(\Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor::class),
+            $container->get(HatfieldSessionStore::class), $container->get(\Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware::class),
+        );
+        $ownerAttach->attach($bus->messages[0]);
         $this->assertSame(0, $runner->cancelCount);
         $this->assertCount(1, $bus->messages);
     }

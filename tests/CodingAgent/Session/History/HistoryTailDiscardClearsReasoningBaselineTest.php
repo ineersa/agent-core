@@ -95,18 +95,7 @@ final class HistoryTailDiscardClearsReasoningBaselineTest extends IsolatedKernel
 
         $eventStore = $this->createMock(EventStoreInterface::class);
         $eventStore->method('allFor')->willReturn($events);
-        $eventStore->expects($this->once())
-            ->method('append')
-            ->willReturnCallback(static function (RunEvent $event): RunEvent {
-                return new RunEvent(
-                    runId: $event->runId,
-                    seq: 6,
-                    turnNo: $event->turnNo,
-                    type: $event->type,
-                    payload: $event->payload,
-                    createdAt: $event->createdAt,
-                );
-            });
+        $eventStore->expects($this->never())->method('append');
 
         $service = new HistoryTailDiscardService(
             $eventStore,
@@ -115,7 +104,7 @@ final class HistoryTailDiscardClearsReasoningBaselineTest extends IsolatedKernel
             new NullLogger(),
         );
 
-        $result = $service->discardForwardTailIfNeeded(
+        $result = $service->prepareForwardTailDiscard(
             $runId,
             new RunState(
                 runId: $runId,
@@ -126,7 +115,9 @@ final class HistoryTailDiscardClearsReasoningBaselineTest extends IsolatedKernel
             ),
         );
 
-        $this->assertTrue($result['discarded']);
+        $this->assertNotNull($result);
+        $this->assertNotEmpty($sessionStore->listReasoningTransitions($sessionId, 'openai-codex/gpt-6-astra'));
+        $service->afterDiscardCommitted($runId);
         $this->assertSame(
             ['continuation_generation' => $sessionStore->continuationGeneration($sessionId)],
             $sessionStore->findSession($sessionId)?->reasoningBaseline,
@@ -190,7 +181,7 @@ final class HistoryTailDiscardClearsReasoningBaselineTest extends IsolatedKernel
             new NullLogger(),
         );
 
-        $result = $service->discardForwardTailIfNeeded(
+        $result = $service->prepareForwardTailDiscard(
             $sessionId,
             new RunState(
                 runId: $sessionId,
@@ -201,7 +192,7 @@ final class HistoryTailDiscardClearsReasoningBaselineTest extends IsolatedKernel
             ),
         );
 
-        $this->assertFalse($result['discarded']);
+        $this->assertNull($result);
         $this->assertSame($before, $sessionStore->findSession($sessionId)?->reasoningBaseline);
     }
 
