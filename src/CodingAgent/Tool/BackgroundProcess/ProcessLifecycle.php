@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool\BackgroundProcess;
 
+use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Psr\Log\LoggerInterface;
 
@@ -389,9 +390,8 @@ final class ProcessLifecycle
             return $content;
         }
 
-        // Command logs contain arbitrary bytes. Only the text view is normalized;
-        // the original artifact remains intact for binary-safe inspection.
-        return "[Invalid UTF-8 replaced; original bytes kept in process log.]\n"
-            .mb_scrub($content, 'UTF-8');
+        // Do not turn an invalid result into a successful, altered text view.
+        // The process artifact and its recorded exit status remain untouched.
+        throw new MalformedToolResultException();
     }
 }

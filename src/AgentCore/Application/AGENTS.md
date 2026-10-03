@@ -77,6 +77,11 @@ subprocess start; duration remains on the later result metadata.
 
 ## Events and commit
 
+Tool-result text must be valid UTF-8 throughout content, metadata, structured keys, and nested return values. `ToolResultText` enforces this independently of storage format. Malformed output becomes a failed, non-retryable tool result with the fixed message `Tool call failed: its result contained malformed UTF-8.` The unchecked payload is discarded, not replaced or retained in `raw_result`.
+An inspection-depth refusal also becomes a non-retryable failed result, with a separate safe-inspection message. It does not throw from finalization or claim that valid text is malformed.
+
+`ToolExecutor` finalizes before processors can hide invalid values and before remembering the result. Success and exception-derived results share processors and finalization. Typed human-input and deferred markers remain coordination values. `ToolCallResultFactory` and direct shell dispatch finalize envelopes; owner admission rechecks PHP-deserialized envelopes before collection and projection. Persistence and model delivery use the same finalized result. Process-log files and exit status are unchanged; malformed log views fail rather than return repaired output. Snapshot serialization stays strict.
+
 - `RunCommit::commit()` appends canonical `RunEvent` via `EventStoreInterface` (`append` / `appendMany`), then persists the narrow projection and active context before effect dispatch via `StepDispatcher` and after-turn hooks via `HookDispatcher`
 - History selection, tail discard, and repair pass `dispatchAfterTurnHooks: false`. They retain commit publication and collector release without scheduling after-turn work ahead of pending user commands. Normal terminal worker-failure commits retain hooks.
 - `RunCommit` releases collector-owned in-memory batches after persistence and state publication: the exact batch on `tool_batch_committed`, or all run batches on a terminal `agent_end`. Finalized collection alone does not release them. Durable collector reads do not retain deserialized batches; the App cleanup hook deletes snapshot files independently.

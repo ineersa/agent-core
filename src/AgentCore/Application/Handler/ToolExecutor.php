@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Tool\DiagnosticMessageSanitizer;
+use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
@@ -21,6 +22,7 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionPolicy;
 use Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
+use Ineersa\AgentCore\Domain\Tool\ToolResultText;
 use Symfony\AI\Agent\Toolbox\Exception\InvalidToolCallArgumentsException;
 use Symfony\AI\Agent\Toolbox\Exception\ToolExecutionExceptionInterface;
 use Symfony\AI\Agent\Toolbox\Exception\ToolNotFoundException;
@@ -143,6 +145,17 @@ final class ToolExecutor implements ToolExecutorInterface
         try {
             $result = $this->executeToolCall($toolCall, $policy);
         } catch (\Throwable $exception) {
+            $representationFailure = ToolResultText::failureMessage([
+                $exception->getMessage(),
+                $exception->getPrevious()?->getMessage(),
+                $exception instanceof ToolCallException ? $exception->hint() : null,
+                $exception instanceof ToolExecutionExceptionInterface ? $exception->getToolCallResult() : null,
+            ]);
+            if (null !== $representationFailure) {
+                $exception = new ToolCallException($representationFailure, retryable: false);
+            } elseif ($exception instanceof \JsonException && \JSON_ERROR_UTF8 === $exception->getCode()) {
+                $exception = new MalformedToolResultException();
+            }
             if ($exception instanceof ToolCallException) {
                 $message = DiagnosticMessageSanitizer::redact($exception->getMessage());
                 if (null !== $exception->hint()) {
@@ -171,10 +184,11 @@ final class ToolExecutor implements ToolExecutorInterface
                 $previous = $exception->getPrevious();
                 $message = null !== $previous && '' !== trim($previous->getMessage())
                     ? DiagnosticMessageSanitizer::sanitize($previous->getMessage())
-                    : DiagnosticMessageSanitizer::sanitize($this->normalizeResultText($exception->getToolCallResult()));
+                    : $this->failureDiagnostic($exception->getToolCallResult());
                 $details = ['error_type' => $exception::class];
                 // Both resolution and validation failures require corrected arguments.
-                if ($exception instanceof InvalidToolCallArgumentsException) {
+                if ($exception instanceof InvalidToolCallArgumentsException
+                    || \in_array($message, [ToolResultText::FAILURE_MESSAGE, ToolResultText::INSPECTION_FAILURE_MESSAGE], true)) {
                     $details['retryable'] = false;
                 }
                 $result = $this->errorResult(
@@ -255,6 +269,11 @@ final class ToolExecutor implements ToolExecutorInterface
 
     private function executeToolCall(ToolCall $toolCall, ToolExecutionPolicy $policy): ToolResult
     {
+        $argumentFailure = ToolResultText::failureMessage($toolCall->arguments);
+        if (null !== $argumentFailure) {
+            throw new ToolCallException('Tool arguments could not be admitted. Execution was not started.', retryable: false);
+        }
+
         if (null === $this->toolbox) {
             return $this->errorResult(
                 toolCallId: $toolCall->toolCallId,
@@ -362,7 +381,15 @@ final class ToolExecutor implements ToolExecutorInterface
         ToolResult $result,
         ?float $durationMs = null,
     ): ToolResult {
-        $normalized = $this->withExecutionMetadata($result, $policy, $toolIdempotencyKey, $durationMs);
+        // Validate before processors can cap or discard the offending metadata.
+        // Typed coordination markers do not run terminal result processors.
+        $result = ToolResultText::finalize($result);
+        if (!$this->isDeferredOutcomeResult($result)) {
+            foreach ($this->toolResultProcessors as $processor) {
+                $result = ToolResultText::finalize($processor->process($result, $toolCall));
+            }
+        }
+        $normalized = ToolResultText::finalize($this->withExecutionMetadata($result, $policy, $toolIdempotencyKey, $durationMs));
 
         $runId = $this->runId($toolCall);
         if (null !== $runId) {
@@ -431,6 +458,11 @@ final class ToolExecutor implements ToolExecutorInterface
     {
         $rawResult = $toolboxResult->getResult();
 
+        $representationFailure = ToolResultText::failureMessage($rawResult);
+        if (null !== $representationFailure) {
+            throw new ToolCallException($representationFailure, retryable: false);
+        }
+
         if ($rawResult instanceof DeferredToolCompletionOutcome) {
             return new ToolResult(
                 toolCallId: $toolCall->toolCallId,
@@ -484,13 +516,6 @@ final class ToolExecutor implements ToolExecutorInterface
             details: $details,
             isError: false,
         );
-
-        // Apply registered tool-result processors (e.g. OutputCap).
-        // Processors may modify content, attach model_notifications, or
-        // replace the result entirely — but must never throw.
-        foreach ($this->toolResultProcessors as $processor) {
-            $result = $processor->process($result, $toolCall);
-        }
 
         return $result;
     }
@@ -620,6 +645,25 @@ final class ToolExecutor implements ToolExecutorInterface
         );
     }
 
+    private function failureDiagnostic(mixed $result): string
+    {
+        $failure = ToolResultText::failureMessage($result);
+        if (null !== $failure) {
+            return $failure;
+        }
+        try {
+            $text = $this->normalizeResultText($result);
+
+            return ToolResultText::failureMessage($text) ?? DiagnosticMessageSanitizer::sanitize($text);
+        } catch (\Throwable $exception) {
+            // Preserve this as a failed tool outcome, not a thrown conversion
+            // failure that would retry execution from inside the error handler.
+            return $exception instanceof \JsonException && \JSON_ERROR_UTF8 === $exception->getCode()
+                ? ToolResultText::FAILURE_MESSAGE
+                : ToolResultText::INSPECTION_FAILURE_MESSAGE;
+        }
+    }
+
     private function normalizeResultText(mixed $result): string
     {
         if (null === $result) {
@@ -638,9 +682,7 @@ final class ToolExecutor implements ToolExecutorInterface
             return (string) $result;
         }
 
-        $encoded = json_encode($result, \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
-
-        return false === $encoded ? '{}' : $encoded;
+        return json_encode($result, \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE | \JSON_THROW_ON_ERROR);
     }
 
     private function isHumanInputSuspension(ToolResult $result): bool

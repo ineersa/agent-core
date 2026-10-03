@@ -185,7 +185,7 @@ final readonly class OutputCapToolResultProcessor implements ToolResultProcessor
         // Forward only explicitly whitelisted non-sensitive operational metadata.
         // New keys must be reviewed before addition — raw output, error bodies,
         // and environment data must never appear here.
-        foreach (['mode', 'duration_ms', 'sources'] as $key) {
+        foreach (['mode', 'duration_ms', 'sources', 'error_type', 'retryable', 'hint', 'cancelled', 'stale_due_to_cancel'] as $key) {
             if (\array_key_exists($key, $original)) {
                 $safe[$key] = $original[$key];
             }
