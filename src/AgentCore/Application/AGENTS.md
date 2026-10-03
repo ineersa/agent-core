@@ -18,7 +18,6 @@ Topology map for AgentCore application handlers. Authoritative routing: `config/
 | `CompactionStepResult` | `agent.command.bus` (transport `run_control`) | `Ineersa\CodingAgent\Application\Pipeline\CompactionStepResultHandler` |
 | `CompleteDeferredToolCall` | `agent.command.bus` (transport `run_control`) | `CompleteDeferredToolCallHandler` |
 | `CommitSubagentProgress` | `agent.command.bus` (transport `run_control`) | `Ineersa\CodingAgent\Application\Pipeline\CommitSubagentProgressHandler` |
-| `SelectHistoryPrompt` / `RepairSession` | `agent.command.bus` (transport `run_control`) | App `SessionMaintenanceHandler` invokes locked history/repair services and emits narrow runtime replies |
 | `RefreshRunContext` | Owner-local `RunMessageProcessor` call from attach, no bus route | `RefreshRunContextHandler` replaces generated messages and commits `context_refreshed` without advancing a turn |
 
 ## Async workers (`agent.execution.bus`)
@@ -41,7 +40,6 @@ Workers post results (`LlmStepResult`, `ToolCallResult`, `CompactionStepResult`)
 - `AdvanceRun` / `CompactRun` — state-transition effects through `RunMessageProcessor` / `RunCommit` → `agent.command.bus` → `run_control`
 - `ExecuteLlmStep` / `ExecuteToolCall` / `ExecuteCompactionStep` — external-I/O effects through `RunMessageProcessor` / `RunCommit` → `agent.execution.bus`
 - `CompactRun` — auto-compaction hooks, manual `/compact`, pre-LLM compaction guard / overflow recovery paths
-- `SelectHistoryPrompt` / `RepairSession` — controller submission and synchronous in-process owner commands. Services commit through `RunCommit` under `RunLockManager`; the controller does not reconstruct or write canonical history.
 
 ## Subagent progress ownership
 
@@ -119,8 +117,6 @@ Only `StartRun`, first-shell `ApplyShellCommand`, and cancellation of a reserved
 Child launch enqueue leaves its artifact Pending. The owner promotes it to Running only after canonical StartRun acceptance. Launch redelivery uses the existing deterministic StartRun identity; Pending does not authorize ordinary commands to recreate missing history.
 
 First-shell controller entry reserves a real parent session before submission when the supplied identity is an opaque process label. It reports the resulting numeric identity in the existing `run.started` event. Registered children and numeric parent identities are not replaced.
-
-`AttachRun` applies pending-question cancellation and context refresh through `RunMessageProcessor` before its owner handler returns. It does not queue those transitions behind later user commands or start a model turn. Controller attach never reconstructs execution state. Transcript bootstrap remains separate work.
 
 Repair checks canonical sequence integrity before owner hydration. Integrity refusals do not admit registry state. Maintenance handlers perform required recovery inside their response boundary, so recovery failures still emit sanitized runtime replies. The middleware holds the owner lock throughout maintenance consumption.
 

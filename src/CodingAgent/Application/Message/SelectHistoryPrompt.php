@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\AgentCore\Domain\Message;
+namespace Ineersa\CodingAgent\Application\Message;
 
 final readonly class SelectHistoryPrompt
 {

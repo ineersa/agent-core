@@ -97,9 +97,9 @@ framework:
                 dsn: '%env(HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN)%'
 
         routing:
-            Ineersa\AgentCore\Domain\Message\AttachRun: run_control
-            Ineersa\AgentCore\Domain\Message\SelectHistoryPrompt: run_control
-            Ineersa\AgentCore\Domain\Message\RepairSession: run_control
+            Ineersa\CodingAgent\Application\Message\AttachRun: run_control
+            Ineersa\CodingAgent\Application\Message\SelectHistoryPrompt: run_control
+            Ineersa\CodingAgent\Application\Message\RepairSession: run_control
             Ineersa\AgentCore\Domain\Message\StartRun: run_control
             Ineersa\AgentCore\Domain\Message\ApplyCommand: run_control
             Ineersa\AgentCore\Domain\Message\ApplyShellCommand: run_control

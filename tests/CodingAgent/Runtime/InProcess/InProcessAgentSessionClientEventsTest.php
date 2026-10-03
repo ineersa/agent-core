@@ -131,14 +131,14 @@ final class InProcessAgentSessionClientEventsTest extends IsolatedKernelTestCase
         $this->assertSame($runId, $client->attach($runId)->runId);
         $this->assertCount(1, $bus->messages);
         $refresh = $bus->messages[0];
-        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\AttachRun::class, $refresh);
+        $this->assertInstanceOf(\Ineersa\CodingAgent\Application\Message\AttachRun::class, $refresh);
         $this->assertSame($runId, $refresh->runId);
         $this->assertSame('system', $refresh->messages[0]->role);
         $this->assertNotEmpty($refresh->messages[0]->content);
 
         $client->attach($runId);
         $this->assertCount(2, $bus->messages);
-        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\AttachRun::class, $bus->messages[1]);
+        $this->assertInstanceOf(\Ineersa\CodingAgent\Application\Message\AttachRun::class, $bus->messages[1]);
     }
 
     #[Test]

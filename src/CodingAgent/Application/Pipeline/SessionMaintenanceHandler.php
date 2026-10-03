@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Application\Pipeline;
 
 use Ineersa\AgentCore\Contract\History\HistorySelectionServiceInterface;
-use Ineersa\AgentCore\Domain\Message\RepairSession;
-use Ineersa\AgentCore\Domain\Message\SelectHistoryPrompt;
+use Ineersa\CodingAgent\Application\Message\RepairSession;
+use Ineersa\CodingAgent\Application\Message\SelectHistoryPrompt;
 use Ineersa\CodingAgent\Runtime\Contract\RepairResult;
 use Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink;
 use Ineersa\CodingAgent\Runtime\Protocol\RunHistoryPositionChangedEventFactory;
@@ -36,7 +36,7 @@ final readonly class SessionMaintenanceHandler
     }
 
     #[AsMessageHandler(bus: 'agent.command.bus')]
-    public function attach(\Ineersa\AgentCore\Domain\Message\AttachRun $command): void
+    public function attach(\Ineersa\CodingAgent\Application\Message\AttachRun $command): void
     {
         $state = $this->registry->requireLoaded($command->runId);
         if (\Ineersa\AgentCore\Domain\Run\RunStatus::WaitingHuman === $state->status || [] !== $state->pendingHumanInputRequests) {

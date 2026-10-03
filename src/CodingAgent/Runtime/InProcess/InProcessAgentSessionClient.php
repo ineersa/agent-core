@@ -7,12 +7,12 @@ namespace Ineersa\CodingAgent\Runtime\InProcess;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
-use Ineersa\AgentCore\Domain\Message\RepairSession;
-use Ineersa\AgentCore\Domain\Message\SelectHistoryPrompt;
 use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
+use Ineersa\CodingAgent\Application\Message\RepairSession;
+use Ineersa\CodingAgent\Application\Message\SelectHistoryPrompt;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Mcp\McpSessionLifecycleDispatcher;
@@ -86,7 +86,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
             throw new \RuntimeException(\sprintf('Session "%s" not found.', $runId));
         }
 
-        $this->commandBus->dispatch(new \Ineersa\AgentCore\Domain\Message\AttachRun($runId, $this->buildContextMessages()));
+        $this->commandBus->dispatch(new \Ineersa\CodingAgent\Application\Message\AttachRun($runId, $this->buildContextMessages()));
 
         // Attaching is a new parent lifetime: existing artifacts stay retrievable
         // but agent_resume must not continue children launched before /resume.

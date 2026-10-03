@@ -10,7 +10,6 @@ Immutable bus payloads and owner-local processor messages under `Ineersa\AgentCo
 - `LlmStepResult`, `ToolCallResult`, `CompactionStepResult`
 - `CompleteDeferredToolCall` (deferred completion; identity from durable record)
 - `CommitSubagentProgress` (frozen normalized progress, durable lifecycle and revision identity; App handler commits under the parent owner lock)
-- `SelectHistoryPrompt`, `RepairSession` (narrow owner maintenance commands; replies use existing runtime events, not RunState transport)
 
 **Run-control transitions** (transport `run_control` on `agent.command.bus`):
 
