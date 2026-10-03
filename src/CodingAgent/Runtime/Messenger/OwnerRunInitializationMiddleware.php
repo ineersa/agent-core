@@ -55,6 +55,19 @@ final readonly class OwnerRunInitializationMiddleware implements MiddlewareInter
         }
 
         return $this->locks->synchronized($runId, function () use ($runId, $message, $envelope, $stack): Envelope {
+            // Maintenance performs recovery inside its correlated response boundary.
+            if (!$message instanceof RepairSession && !$message instanceof SelectHistoryPrompt) {
+                $this->initializeForOwner($runId, $message);
+            }
+
+            return $stack->next()->handle($envelope, $stack);
+        });
+    }
+
+    /** Explicit owner entry, including maintenance after its integrity-only refusal checks. */
+    public function initializeForOwner(string $runId, object $message): void
+    {
+        $this->locks->synchronized($runId, function () use ($runId, $message): void {
             try {
                 $this->registry->requireLoaded($runId);
             } catch (RunContextNotLoadedException) {
@@ -65,13 +78,13 @@ final readonly class OwnerRunInitializationMiddleware implements MiddlewareInter
                     if ($message instanceof RepairSession || $message instanceof SelectHistoryPrompt) {
                         // Maintenance retains its narrow no-events/refusal response,
                         // without admitting unknown identities into the registry.
-                        return $stack->next()->handle($envelope, $stack);
+                        return;
                     }
                     throw new \RuntimeException('Owner initialization refused unregistered run: '.$runId);
                 }
                 if (null === $this->events->latestSequenceFor($runId)) {
                     if ($message instanceof RepairSession || $message instanceof SelectHistoryPrompt) {
-                        return $stack->next()->handle($envelope, $stack);
+                        return;
                     }
                     // Reservation alone does not authorize ordinary commands to
                     // recreate lost history. Start and shell entry, or cancellation
@@ -90,8 +103,6 @@ final readonly class OwnerRunInitializationMiddleware implements MiddlewareInter
                     $this->registry->loadRecovered($recovered);
                 }
             }
-
-            return $stack->next()->handle($envelope, $stack);
         });
     }
 }

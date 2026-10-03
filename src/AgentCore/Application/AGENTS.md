@@ -19,7 +19,7 @@ Topology map for AgentCore application handlers. Authoritative routing: `config/
 | `CompleteDeferredToolCall` | `agent.command.bus` (transport `run_control`) | `CompleteDeferredToolCallHandler` |
 | `CommitSubagentProgress` | `agent.command.bus` (transport `run_control`) | `Ineersa\CodingAgent\Application\Pipeline\CommitSubagentProgressHandler` |
 | `SelectHistoryPrompt` / `RepairSession` | `agent.command.bus` (transport `run_control`) | App `SessionMaintenanceHandler` invokes locked history/repair services and emits narrow runtime replies |
-| `RefreshRunContext` | `agent.command.bus` (transport `run_control`) | `RefreshRunContextHandler` replaces generated messages and commits `context_refreshed` without advancing a turn |
+| `RefreshRunContext` | Owner-local `RunMessageProcessor` call from attach, no bus route | `RefreshRunContextHandler` replaces generated messages and commits `context_refreshed` without advancing a turn |
 
 ## Async workers (`agent.execution.bus`)
 
@@ -118,4 +118,6 @@ Only `StartRun`, first-shell `ApplyShellCommand`, and cancellation of a reserved
 
 First-shell controller entry reserves a real parent session before submission when the supplied identity is an opaque process label. It reports the resulting numeric identity in the existing `run.started` event. Registered children and numeric parent identities are not replaced.
 
-`AttachRun` moves pending-question cancellation and context refresh to the owner. Controller attach never reconstructs execution state. Transcript bootstrap remains separate work.
+`AttachRun` applies pending-question cancellation and context refresh through `RunMessageProcessor` before its owner handler returns. It does not queue those transitions behind later user commands or start a model turn. Controller attach never reconstructs execution state. Transcript bootstrap remains separate work.
+
+Repair checks canonical sequence integrity before owner hydration. Integrity refusals do not admit registry state. Maintenance handlers perform required recovery inside their response boundary, so recovery failures still emit sanitized runtime replies. The middleware holds the owner lock throughout maintenance consumption.

@@ -82,13 +82,13 @@ existing `TransportNamesStamp`. Extension job dispatch is separate from
 
 ## Exact YAML route inventory
 
-All 26 explicitly routed message classes from `config/packages/messenger.yaml`
+All 25 explicitly routed message classes from `config/packages/messenger.yaml`
 are listed here by short class name. Dynamic `ExecuteToolCall` overrides are above.
 
 | Transport | Messages |
 |---|---|
 | `run_control` | `StartRun`, `ApplyCommand`, `ApplyShellCommand` |
-| `run_control` | `AttachRun`, `SelectHistoryPrompt`, `RepairSession`, `RefreshRunContext` |
+| `run_control` | `AttachRun`, `SelectHistoryPrompt`, `RepairSession` |
 | `run_control` | `LlmStepResult`, `ToolCallResult`, `CompactionStepResult`, `CommitSubagentProgress` |
 | `run_control` | `AdvanceRun`, `CompactRun`, `CompleteDeferredToolCall` |
 | `run_control` | `ObserveDeferredSubagentBatchChildTurnMessage`, `DeliverDeferredSubagentBatchLifecycleMessage` |

@@ -6,11 +6,15 @@ namespace Ineersa\CodingAgent\Tests\Session;
 
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\RunContextNotLoadedException;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Message\ApplyCommand;
+use Ineersa\AgentCore\Domain\Message\AttachRun;
 use Ineersa\AgentCore\Domain\Message\RepairSession;
 use Ineersa\AgentCore\Domain\Message\SelectHistoryPrompt;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\CodingAgent\Runtime\Contract\SessionRepairRefusalReasonEnum;
 use Ineersa\CodingAgent\Runtime\Controller\CommandHandler\RepairHandler;
 use Ineersa\CodingAgent\Runtime\Controller\CommandHandler\SelectHistoryTurnHandler;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
@@ -20,6 +24,7 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
+use Symfony\Component\Messenger\Exception\HandlerFailedException;
 use Symfony\Component\Messenger\Stamp\HandledStamp;
 use Symfony\Component\Messenger\Stamp\ReceivedStamp;
 
@@ -37,11 +42,12 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         $active = self::getContainer()->get(ActiveRunContextInterface::class);
         $state = $active->requireLoaded($run);
         $bus = self::getContainer()->get('agent.command.bus');
-        $queued = $bus->dispatch(new \Ineersa\AgentCore\Domain\Message\AttachRun($run, []));
+        $queued = $bus->dispatch(new AttachRun($run, []));
         $this->assertSame($baseline, $sessions->findSession($run)->reasoningBaseline);
         $bus->dispatch($queued->with(new ReceivedStamp('run_control')));
         $this->assertSame(['continuation_generation' => $sessions->continuationGeneration($run)], $sessions->findSession($run)->reasoningBaseline);
-        $this->assertSame($state, $active->requireLoaded($run));
+        $this->assertSame($state->turnNo, $active->requireLoaded($run)->turnNo);
+        $this->assertGreaterThan($state->lastSeq, $active->requireLoaded($run)->lastSeq);
         $this->assertSame([], self::getContainer()->get('messenger.transport.llm')->getSent());
     }
 
@@ -139,13 +145,102 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
             [$handler],
             self::getContainer()->get(\Ineersa\AgentCore\Contract\History\HistoryTailDiscardInterface::class),
         );
-        $processor->process('user-command', new \Ineersa\AgentCore\Domain\Message\ApplyCommand($run, 0, 'steer', 1, 'steer', 'steer'));
+        $processor->process('user-command', new ApplyCommand($run, 0, 'steer', 1, 'steer', 'steer'));
         $this->assertCount(1, $this->autoCompactionBus->messages);
         $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\AdvanceRun::class, $this->autoCompactionBus->messages[0]);
         $this->assertSame(0, $this->afterTurnCount);
         $this->assertSame(['continuation_generation' => $sessions->continuationGeneration($run)], $sessions->findSession($run)->reasoningBaseline);
         $this->autoCompactionBus->messages = [];
         $this->assertMaintenanceDidNotScheduleCompaction($run);
+    }
+
+    public function testAsyncFifoAttachFinishesCleanupBeforeAlreadyQueuedFollowUp(): void
+    {
+        $container = self::getContainer();
+        $sessions = $container->get(HatfieldSessionStore::class);
+        $run = $sessions->createSession('attach FIFO');
+        $events = $container->get(EventStoreInterface::class);
+        $events->appendMany([
+            RunEvent::forAppend($run, 0, 'run_started', ['payload' => ['metadata' => ['model' => 'test-model'], 'messages' => []]]),
+            RunEvent::forAppend($run, 0, 'waiting_human', ['question_id' => 'old-question', 'prompt' => 'Continue?']),
+        ]);
+        $sessions->claimReasoningBaseline($run, 'test-model', 'medium');
+        $bus = $container->get('agent.command.bus');
+        $bus->dispatch(new AttachRun($run, []));
+        $bus->dispatch(new ApplyCommand($run, 0, 'follow-now', 1, 'follow-now', 'follow_up', ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Continue now']]]]));
+        $transport = $container->get('messenger.transport.run_control');
+        $queued = $transport->getSent();
+        $this->assertCount(2, $queued);
+        $this->assertInstanceOf(AttachRun::class, $queued[0]->getMessage());
+        $this->assertInstanceOf(ApplyCommand::class, $queued[1]->getMessage());
+        $bus->dispatch($queued[0]->with(new ReceivedStamp('run_control')));
+        $state = $container->get(ActiveRunContextInterface::class)->requireLoaded($run);
+        $this->assertSame(RunStatus::Cancelled, $state->status);
+        $this->assertSame([], $state->pendingHumanInputRequests);
+        $this->assertSame(0, $state->turnNo);
+        $this->assertCount(2, $transport->getSent(), 'Attach must not enqueue its cleanup behind the follow-up.');
+        $this->assertSame([], $container->get('messenger.transport.llm')->getSent());
+        $this->assertSame(['continuation_generation' => $sessions->continuationGeneration($run)], $sessions->findSession($run)->reasoningBaseline);
+        $cleanup = $events->allFor($run);
+        $this->assertSame(['run_started', 'waiting_human', 'agent_command_applied', 'agent_end', 'context_refreshed'], array_column($cleanup, 'type'));
+        $bus->dispatch($queued[1]->with(new ReceivedStamp('run_control')));
+        $after = $events->allFor($run);
+        $this->assertNotContains('agent_command_rejected', array_column($after, 'type'));
+        $this->assertSame('agent_command_queued', $after[array_key_last($after)]->type);
+        $this->assertSame('follow_up', $after[array_key_last($after)]->payload['kind']);
+        $this->assertGreaterThan($cleanup[array_key_last($cleanup)]->seq, $after[array_key_last($after)]->seq);
+    }
+
+    public function testColdDuplicateArchiveReturnsCorrelatedRefusalWithoutRecoveryOrAppend(): void
+    {
+        $container = self::getContainer();
+        $run = $container->get(HatfieldSessionStore::class)->createSession('duplicate repair');
+        $store = $container->get(EventStoreInterface::class);
+        $store->append(RunEvent::forAppend($run, 0, 'run_started', ['payload' => ['messages' => []]]));
+        $path = $this->archivePath($run);
+        $line = file_get_contents($path);
+        $this->assertIsString($line);
+        file_put_contents($path, $line.$line);
+        $before = file_get_contents($path);
+        $bus = $container->get('agent.command.bus');
+        $queued = $bus->dispatch(new RepairSession($run, true, 'duplicate-request'));
+        $bus->dispatch($queued->with(new ReceivedStamp('run_control')));
+        $reply = $this->repairReply($run);
+        $this->assertSame('duplicate-request', $reply->payload['commandId']);
+        $this->assertSame('completed', $reply->payload['status']);
+        $this->assertSame(SessionRepairRefusalReasonEnum::DuplicateSequences->value, $reply->payload['refusal_reason']);
+        $this->assertSame($before, file_get_contents($path));
+        $this->assertNotAdmitted($run);
+    }
+
+    public function testColdRecoveryFailureStillEmitsSanitizedCorrelatedRepairReply(): void
+    {
+        $container = self::getContainer();
+        $run = $container->get(HatfieldSessionStore::class)->createSession('invalid recovery');
+        $store = $container->get(EventStoreInterface::class);
+        // Sequence integrity is valid; execution recovery rejects an invalid human request.
+        $store->appendMany([
+            RunEvent::forAppend($run, 0, 'run_started', ['payload' => ['messages' => []]]),
+            RunEvent::forAppend($run, 0, 'waiting_human', ['prompt' => 'private recovery content']),
+        ]);
+        $before = file_get_contents($this->archivePath($run));
+        $bus = $container->get('agent.command.bus');
+        $queued = $bus->dispatch(new RepairSession($run, true, 'recovery-request'));
+        try {
+            $bus->dispatch($queued->with(new ReceivedStamp('run_control')));
+            $this->fail('Invalid canonical recovery must fail.');
+        } catch (HandlerFailedException $exception) {
+            $this->assertNotEmpty($exception->getWrappedExceptions());
+        }
+        $reply = $this->repairReply($run);
+        $this->assertSame('recovery-request', $reply->payload['commandId']);
+        $this->assertSame('failed', $reply->payload['status']);
+        $this->assertSame(\InvalidArgumentException::class, $reply->payload['exception_class']);
+        $this->assertArrayNotHasKey('error', $reply->payload);
+        $this->assertArrayNotHasKey('message', $reply->payload);
+        $this->assertStringNotContainsString('private recovery content', json_encode($reply->payload, \JSON_THROW_ON_ERROR));
+        $this->assertSame($before, file_get_contents($this->archivePath($run)));
+        $this->assertNotAdmitted($run);
     }
 
     protected function afterKernelBoot(): void
@@ -186,9 +281,9 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
             false,
             new \Psr\Log\NullLogger(),
             $container->get(ActiveRunContextInterface::class),
-            $container->get(\Ineersa\AgentCore\Contract\AgentRunnerInterface::class),
+            $container->get(\Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor::class),
             $container->get(HatfieldSessionStore::class),
-            $container->get('agent.command.bus'),
+            $container->get(\Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware::class),
         ));
     }
 
@@ -218,5 +313,28 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         self::getContainer()->get(ActiveRunContextInterface::class)->loadRecovered(new RunState($run, RunStatus::Running, turnNo: 1, lastSeq: $store->latestSequenceFor($run), model: 'test-model'));
 
         return $run;
+    }
+
+    private function archivePath(string $run): string
+    {
+        return self::getContainer()->get(HatfieldSessionStore::class)->resolveSessionsBasePath().'/'.$run.'/events.jsonl';
+    }
+
+    private function repairReply(string $run): RuntimeEvent
+    {
+        $replies = array_values(array_filter(iterator_to_array(self::getContainer()->get(InMemoryRuntimeEventSink::class)->drain($run)), static fn ($event): bool => RuntimeEventTypeEnum::SessionRepairCompleted->value === $event->type));
+        $this->assertCount(1, $replies);
+
+        return $replies[0];
+    }
+
+    private function assertNotAdmitted(string $run): void
+    {
+        try {
+            self::getContainer()->get(ActiveRunContextInterface::class)->requireLoaded($run);
+            $this->fail('Refused maintenance must not admit state.');
+        } catch (RunContextNotLoadedException $exception) {
+            $this->assertStringContainsString($run, $exception->getMessage());
+        }
     }
 }

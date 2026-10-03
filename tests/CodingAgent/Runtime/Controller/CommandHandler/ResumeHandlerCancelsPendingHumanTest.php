@@ -126,6 +126,9 @@ final class ResumeHandlerCancelsPendingHumanTest extends IsolatedKernelTestCase
 
         $bus = new TestMessageBus();
         $container = self::getContainer();
+        $fixtureState = $active->requireLoaded($runId);
+        $active = $container->get(ActiveRunContextInterface::class);
+        $active->loadRecovered($fixtureState);
         $client = new InProcessAgentSessionClient(
             runner: $runner,
             eventStore: $this->createStub(EventStoreInterface::class),
@@ -155,12 +158,13 @@ final class ResumeHandlerCancelsPendingHumanTest extends IsolatedKernelTestCase
             $container->get(\Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface::class),
             $container->get(\Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink::class),
             $container->get(\Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink::class),
-            false, new \Psr\Log\NullLogger(), $active, $runner,
-            $container->get(HatfieldSessionStore::class), $bus,
+            false, new \Psr\Log\NullLogger(), $active, $container->get(\Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor::class),
+            $container->get(HatfieldSessionStore::class), $container->get(\Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware::class),
         );
         $ownerAttach->attach($bus->messages[0]);
 
-        $this->assertSame([[$runId, 'Outstanding human questions cancelled on session attach.']], $runner->cancels);
+        $this->assertSame([], $runner->cancels);
+        $this->assertSame([], $active->requireLoaded($runId)->pendingHumanInputRequests);
         $this->assertCount(1, $emitted);
         $this->assertSame(RuntimeEventTypeEnum::RunResumed->value, $emitted[0]->type);
         $this->assertSame($runId, $emitted[0]->runId);

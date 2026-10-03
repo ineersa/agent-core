@@ -94,7 +94,7 @@ final class InProcessAttachCancelsDeferredToolHumanTest extends IsolatedKernelTe
                 toolBatchCollector: $collector,
             ),
             stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
-            handlers: [$applyHandler],
+            handlers: [$applyHandler, new \Ineersa\AgentCore\Application\Pipeline\RefreshRunContextHandler()],
         );
 
         // Route AgentRunner ApplyCommand dispatches into the processor.
@@ -162,8 +162,8 @@ final class InProcessAttachCancelsDeferredToolHumanTest extends IsolatedKernelTe
             $container->get(\Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface::class),
             $container->get(\Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink::class),
             $container->get(\Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink::class),
-            false, new NullLogger(), $active, $runner,
-            $container->get(HatfieldSessionStore::class), $commandBus,
+            false, new NullLogger(), $active, $processor,
+            $container->get(HatfieldSessionStore::class), $container->get(\Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware::class),
         );
         $ownerAttach->attach($commandBus->messages[0]);
 

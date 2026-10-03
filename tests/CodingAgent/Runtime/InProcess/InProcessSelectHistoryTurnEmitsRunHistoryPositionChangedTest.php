@@ -184,7 +184,7 @@ final class InProcessSelectHistoryTurnEmitsRunHistoryPositionChangedTest extends
     ): InProcessAgentSessionClient {
         $container = self::getContainer();
 
-        $handler = new \Ineersa\CodingAgent\Application\Pipeline\SessionMaintenanceHandler($historySelectionService, $repair ?? $this->createStub(\Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface::class), $sink, $container->get(\Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink::class), false, new NullLogger(), $activeRunContext, $this->createStub(AgentRunnerInterface::class), $container->get(HatfieldSessionStore::class), new TestMessageBus());
+        $handler = new \Ineersa\CodingAgent\Application\Pipeline\SessionMaintenanceHandler($historySelectionService, $repair ?? $this->createStub(\Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface::class), $sink, $container->get(\Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink::class), false, new NullLogger(), $activeRunContext, $container->get(\Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor::class), $container->get(HatfieldSessionStore::class), $container->get(\Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware::class));
         $bus = new \Symfony\Component\Messenger\MessageBus([new \Symfony\Component\Messenger\Middleware\HandleMessageMiddleware(new \Symfony\Component\Messenger\Handler\HandlersLocator([
             \Ineersa\AgentCore\Domain\Message\SelectHistoryPrompt::class => [[$handler, 'select']],
             \Ineersa\AgentCore\Domain\Message\RepairSession::class => [[$handler, 'repair']],

@@ -65,7 +65,17 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         });
     }
 
-    private function doRepair(string $runId, bool $apply): RepairResult
+    public function integrityRefusal(string $runId): ?RepairResult
+    {
+        return $this->lockManager->synchronized($runId, function () use ($runId): ?RepairResult {
+            $history = $this->canonicalHistory($runId);
+
+            return $history instanceof RepairResult ? $history : null;
+        });
+    }
+
+    /** @return list<RunEvent>|RepairResult */
+    private function canonicalHistory(string $runId): array|RepairResult
     {
         $events = $this->eventStore->allFor($runId);
         if ([] === $events) {
@@ -99,6 +109,16 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
                 message: 'Session repair refused: missing event sequences detected.',
                 refusalReason: SessionRepairRefusalReasonEnum::MissingSequences,
             );
+        }
+
+        return $sorted;
+    }
+
+    private function doRepair(string $runId, bool $apply): RepairResult
+    {
+        $sorted = $this->canonicalHistory($runId);
+        if ($sorted instanceof RepairResult) {
+            return $sorted;
         }
 
         $storedState = $this->activeRunContext->requireLoaded($runId);
