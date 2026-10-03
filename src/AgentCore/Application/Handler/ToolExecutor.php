@@ -149,7 +149,8 @@ final class ToolExecutor implements ToolExecutorInterface
                 $exception->getMessage(),
                 $exception->getPrevious()?->getMessage(),
                 $exception instanceof ToolCallException ? $exception->hint() : null,
-                $exception instanceof ToolExecutionExceptionInterface ? $exception->getToolCallResult() : null,
+                $exception instanceof ToolExecutionExceptionInterface && !\is_object($exception->getToolCallResult())
+                    ? $exception->getToolCallResult() : null,
             ]);
             if (null !== $representationFailure) {
                 $exception = new ToolCallException($representationFailure, retryable: false);
@@ -383,11 +384,38 @@ final class ToolExecutor implements ToolExecutorInterface
     ): ToolResult {
         // Validate before processors can cap or discard the offending metadata.
         // Typed coordination markers do not run terminal result processors.
+        if ($this->isDeferredOutcomeResult($result)) {
+            $coordinationResult = $this->withExecutionMetadata($result, $policy, $toolIdempotencyKey, $durationMs);
+            $runId = $this->runId($toolCall);
+            if (null !== $runId) {
+                $this->resultStore->remember($runId, $toolCall->toolCallId, $toolCall->toolName, $toolIdempotencyKey, $coordinationResult);
+            }
+
+            return $coordinationResult;
+        }
         $result = ToolResultText::finalize($result);
-        if (!$this->isDeferredOutcomeResult($result)) {
+        try {
             foreach ($this->toolResultProcessors as $processor) {
                 $result = ToolResultText::finalize($processor->process($result, $toolCall));
             }
+        } catch (\Throwable $exception) {
+            // Execution already returned. Remember the processing failure and
+            // never invoke the failing processor again for the fallback result.
+            $message = $exception instanceof \JsonException && \JSON_ERROR_UTF8 === $exception->getCode()
+                ? ToolResultText::FAILURE_MESSAGE
+                : (ToolResultText::failureMessage($exception->getMessage()) ?? 'Tool call failed: its result could not be processed.');
+            $failureDetails = [
+                'retryable' => false,
+                'error_type' => $exception::class,
+            ];
+            // The last accepted result is closed data. Preserve only known
+            // artifact references, not its output body or arbitrary metadata.
+            $raw = \is_array($result->details) ? ($result->details['raw_result'] ?? null) : null;
+            $references = \is_array($raw) ? ($raw['attachment_refs'] ?? null) : null;
+            if (\is_array($references) && ToolResultText::isValid($references)) {
+                $failureDetails['raw_result'] = ['attachment_refs' => $references];
+            }
+            $result = $this->errorResult($toolCall->toolCallId, $toolCall->toolName, $message, $failureDetails);
         }
         $normalized = ToolResultText::finalize($this->withExecutionMetadata($result, $policy, $toolIdempotencyKey, $durationMs));
 
@@ -458,12 +486,10 @@ final class ToolExecutor implements ToolExecutorInterface
     {
         $rawResult = $toolboxResult->getResult();
 
-        $representationFailure = ToolResultText::failureMessage($rawResult);
-        if (null !== $representationFailure) {
-            throw new ToolCallException($representationFailure, retryable: false);
-        }
-
         if ($rawResult instanceof DeferredToolCompletionOutcome) {
+            if (!ToolResultText::isValid($rawResult->deferredId)) {
+                throw new MalformedToolResultException();
+            }
             return new ToolResult(
                 toolCallId: $toolCall->toolCallId,
                 toolName: $toolCall->toolName,
@@ -479,6 +505,11 @@ final class ToolExecutor implements ToolExecutorInterface
         }
 
         if ($rawResult instanceof ToolExecutionHumanInputSuspension) {
+            $failure = ToolResultText::failureMessage($rawResult->request->waitingHumanEventPayload())
+                ?? ToolResultText::failureMessage($rawResult->request->questionId);
+            if (null !== $failure) {
+                throw new ToolCallException($failure, retryable: false);
+            }
             return new ToolResult(
                 toolCallId: $toolCall->toolCallId,
                 toolName: $toolCall->toolName,
@@ -491,6 +522,20 @@ final class ToolExecutor implements ToolExecutorInterface
                 ],
                 isError: false,
             );
+        }
+
+        // Supported top-level values are converted once. The same concrete
+        // data feeds display and raw_result; no opaque object reaches storage.
+        if ($rawResult instanceof \BackedEnum) {
+            $rawResult = $rawResult->value;
+        } elseif ($rawResult instanceof \UnitEnum) {
+            $rawResult = $rawResult->name;
+        } elseif ($rawResult instanceof \Stringable) {
+            $rawResult = (string) $rawResult;
+        }
+        $representationFailure = ToolResultText::failureMessage($rawResult);
+        if (null !== $representationFailure) {
+            throw new ToolCallException($representationFailure, retryable: false);
         }
 
         $details = [
@@ -647,11 +692,18 @@ final class ToolExecutor implements ToolExecutorInterface
 
     private function failureDiagnostic(mixed $result): string
     {
-        $failure = ToolResultText::failureMessage($result);
-        if (null !== $failure) {
-            return $failure;
-        }
         try {
+            if ($result instanceof \BackedEnum) {
+                $result = $result->value;
+            } elseif ($result instanceof \UnitEnum) {
+                $result = $result->name;
+            } elseif ($result instanceof \Stringable) {
+                $result = (string) $result;
+            }
+            $failure = ToolResultText::failureMessage($result);
+            if (null !== $failure) {
+                return $failure;
+            }
             $text = $this->normalizeResultText($result);
 
             return ToolResultText::failureMessage($text) ?? DiagnosticMessageSanitizer::sanitize($text);

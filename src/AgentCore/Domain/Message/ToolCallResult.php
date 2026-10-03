@@ -51,11 +51,17 @@ final readonly class ToolCallResult extends AbstractAgentBusMessage
     {
         $failure = ToolResultText::failureMessage($this->result)
             ?? ToolResultText::failureMessage($this->error)
-            ?? ToolResultText::failureMessage($this->pendingHumanInput);
+            ?? ToolResultText::failureMessage($this->pendingHumanInput?->waitingHumanEventPayload())
+            ?? ToolResultText::failureMessage($this->pendingHumanInput?->questionId);
         if (null === $failure) {
             return $this;
         }
 
+        return $this->withRepresentationFailure($failure);
+    }
+
+    public function withRepresentationFailure(string $failure): self
+    {
         $result = [
             'content' => [['type' => 'text', 'text' => $failure]],
             'details' => ['retryable' => false],

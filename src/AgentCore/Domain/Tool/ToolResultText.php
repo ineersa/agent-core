@@ -16,7 +16,7 @@ final class ToolResultText
         return null === self::failureMessage($value);
     }
 
-    public static function failureMessage(mixed $value, ?\SplObjectStorage $visited = null, int $depth = 0): ?string
+    public static function failureMessage(mixed $value, int $depth = 0): ?string
     {
         if (\is_string($value)) {
             return mb_check_encoding($value, 'UTF-8') ? null : self::FAILURE_MESSAGE;
@@ -24,20 +24,21 @@ final class ToolResultText
         if ($depth > 512) {
             return self::INSPECTION_FAILURE_MESSAGE;
         }
-        if (\is_object($value)) {
-            $visited ??= new \SplObjectStorage();
-            if ($visited->contains($value)) {
-                return null;
-            }
-            $visited->attach($value);
-            $value = get_mangled_object_vars($value);
-        }
-        if (!\is_array($value)) {
+        if (null === $value || \is_bool($value) || \is_int($value)) {
             return null;
         }
+        if (\is_float($value)) {
+            return is_finite($value) ? null : self::INSPECTION_FAILURE_MESSAGE;
+        }
+        if (!\is_array($value)) {
+            // Terminal data has no opaque objects, resources, serialization
+            // hooks or hidden alternate representation. Producers convert
+            // supported wrapper values explicitly before this boundary.
+            return self::INSPECTION_FAILURE_MESSAGE;
+        }
         foreach ($value as $key => $item) {
-            $failure = self::failureMessage($key, $visited, $depth + 1)
-                ?? self::failureMessage($item, $visited, $depth + 1);
+            $failure = self::failureMessage($key, $depth + 1)
+                ?? self::failureMessage($item, $depth + 1);
             if (null !== $failure) {
                 return $failure;
             }

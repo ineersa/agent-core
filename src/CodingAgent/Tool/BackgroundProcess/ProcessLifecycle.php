@@ -255,11 +255,14 @@ final class ProcessLifecycle
     /**
      * Return the tail of a background process log file.
      *
-     * Uses a shell command (tail -c) to read the last N bytes, avoiding
-     * loading large files into PHP memory.
+     * Read one finite byte window from one open file. A growing log cannot
+     * turn the whole-log path into an unbounded read after the size check.
      */
-    public function readLogTail(string $logPath, int $maxChars): LogTailResult
+    public function readLogTail(string $logPath, int $maxChars, bool $final = true): LogTailResult
     {
+        if ($maxChars < 1) {
+            throw new \InvalidArgumentException('Process log read bound must be positive.');
+        }
         if (!is_file($logPath) || !is_readable($logPath)) {
             return new LogTailResult(
                 logPath: $logPath,
@@ -269,39 +272,55 @@ final class ProcessLifecycle
             );
         }
 
-        $totalBytes = @filesize($logPath);
-        if (false === $totalBytes) {
-            $totalBytes = 0;
+        $file = new \SplFileObject($logPath, 'rb');
+        $totalBytes = $file->fstat()['size'];
+        $offset = max(0, $totalBytes - $maxChars);
+        if (0 !== $file->fseek(max(0, $offset - 3))) {
+            throw new \RuntimeException('Unable to seek process log.');
         }
-
-        if ($totalBytes <= $maxChars) {
-            $content = @file_get_contents($logPath);
-
-            return new LogTailResult(
-                logPath: $logPath,
-                content: \is_string($content) ? $this->displayLogText($content) : '(failed to read log)',
-                truncated: false,
-                totalBytes: $totalBytes,
-            );
+        $prefix = $offset > 0 ? $file->fread(min(3, $offset)) : '';
+        $content = $totalBytes > 0 ? $file->fread(min($maxChars, $totalBytes)) : '';
+        if (false === $prefix || false === $content) {
+            throw new \RuntimeException('Unable to read process log.');
         }
-
-        // Read tail via shell for large files
-        $tailCmd = \sprintf('tail -c %d %s 2>/dev/null', $maxChars, escapeshellarg($logPath));
-        $content = @shell_exec($tailCmd);
-        if (\is_string($content)) {
-            // The byte-limited tail may begin inside a UTF-8 code point.
-            // Drop only that partial prefix; keep the newest output intact.
+        if ($offset > 0) {
+            // Up to three continuation bytes can belong to a character cut
+            // by our left boundary. Verify against the preceding bytes before
+            // dropping them, so invalid source bytes are never silently lost.
             $start = 0;
-            while (isset($content[$start]) && (\ord($content[$start]) & 0xC0) === 0x80) {
+            while ($start < 3 && isset($content[$start]) && (\ord($content[$start]) & 0xC0) === 0x80) {
                 ++$start;
             }
-            $content = substr($content, $start);
+            for ($back = 1; $start > 0 && $back <= \strlen($prefix); ++$back) {
+                $character = substr($prefix, -$back).substr($content, 0, $start);
+                if (mb_check_encoding($character, 'UTF-8') && 1 === mb_strlen($character, 'UTF-8')) {
+                    $content = substr($content, $start);
+                    break;
+                }
+                if (!$final && $start === \strlen($content)
+                    && $this->incompleteSuffixLength($character) === \strlen($character)) {
+                    // Both read boundaries are inside the same live character.
+                    $content = '';
+                    break;
+                }
+            }
+        }
+
+        if (!$final) {
+            // The live writer may be between bytes of one character. Withhold
+            // only a legal incomplete suffix, including UTF-8's constrained
+            // second-byte ranges. Subsequent reads see the suffix again.
+            // mb_strcut cannot distinguish invalid source from incomplete input.
+            $suffixLength = $this->incompleteSuffixLength($content);
+            if ($suffixLength > 0) {
+                $content = substr($content, 0, -$suffixLength);
+            }
         }
 
         return new LogTailResult(
             logPath: $logPath,
-            content: \is_string($content) ? $this->displayLogText($content) : '(failed to read log)',
-            truncated: true,
+            content: $this->displayLogText($content),
+            truncated: $offset > 0,
             totalBytes: $totalBytes,
         );
     }
@@ -382,6 +401,20 @@ final class ProcessLifecycle
         }
 
         return true;
+    }
+
+    private function incompleteSuffixLength(string $content): int
+    {
+        $matched = preg_match(
+            '/(?:[\xC2-\xDF]|\xE0[\xA0-\xBF]?|[\xE1-\xEC\xEE-\xEF][\x80-\xBF]?|\xED[\x80-\x9F]?|\xF0(?:[\x90-\xBF][\x80-\xBF]?)?|[\xF1-\xF3][\x80-\xBF]{0,2}|\xF4(?:[\x80-\x8F][\x80-\xBF]?)?)\z/',
+            $content,
+            $matches,
+        );
+        if (false === $matched) {
+            throw new \LogicException('Invalid process log suffix pattern.');
+        }
+
+        return 1 === $matched ? \strlen($matches[0]) : 0;
     }
 
     private function displayLogText(string $content): string

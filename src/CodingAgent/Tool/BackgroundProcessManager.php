@@ -412,7 +412,13 @@ final class BackgroundProcessManager
             throw new \RuntimeException(\sprintf('No background process found with PID %d for this session.', $pid));
         }
 
-        return $this->lifecycle->readLogTail($entity->logPath, $maxChars);
+        $wasFinished = null !== $entity->finishedAt;
+        $status = $this->resolveEntityStatus($entity);
+        if (!$wasFinished && null !== $entity->finishedAt) {
+            $this->store->flush();
+        }
+
+        return $this->lifecycle->readLogTail($entity->logPath, $maxChars, BackgroundProcessStatusEnum::Running !== $status);
     }
 
     /**
@@ -432,7 +438,13 @@ final class BackgroundProcessManager
             throw new \RuntimeException(\sprintf('No background process found with record ID %d for this session.', $recordId));
         }
 
-        return $this->lifecycle->readLogTail($entity->logPath, $maxChars);
+        $wasFinished = null !== $entity->finishedAt;
+        $status = $this->resolveEntityStatus($entity);
+        if (!$wasFinished && null !== $entity->finishedAt) {
+            $this->store->flush();
+        }
+
+        return $this->lifecycle->readLogTail($entity->logPath, $maxChars, BackgroundProcessStatusEnum::Running !== $status);
     }
 
     /**

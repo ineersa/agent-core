@@ -42,11 +42,12 @@ final readonly class CodeModeDiagnosticsToolResultProcessor implements ToolResul
         }
 
         $rawResult = $details['raw_result'];
-        if ($rawResult instanceof CodeModeExecutionResult) {
-            $value = $rawResult->result;
+        if (\is_array($rawResult) && \array_key_exists('code_mode_value', $rawResult)
+            && \is_array($rawResult['code_mode_diagnostics'] ?? null)) {
+            $value = $rawResult['code_mode_value'];
             // Host already prepared diagnostics; do not re-run prepare here.
-            $diagnostics = $rawResult->diagnostics;
-            $hasDiagnostics = $rawResult->hasDiagnostics();
+            $diagnostics = $rawResult['code_mode_diagnostics'];
+            $hasDiagnostics = [] !== $diagnostics;
         } else {
             $value = $rawResult;
             $diagnostics = [];
@@ -55,10 +56,6 @@ final readonly class CodeModeDiagnosticsToolResultProcessor implements ToolResul
 
         // Rewrite visible text for diagnostics and for null/bool returns.
         // Without this, ToolExecutor leaves false as "" and true as "1".
-        if (!$hasDiagnostics && null !== $value && !\is_bool($value)) {
-            return $result;
-        }
-
         $visibleReturn = $this->normalizeVisibleResult($value);
         if (!$hasDiagnostics) {
             $details['raw_result'] = $value;
