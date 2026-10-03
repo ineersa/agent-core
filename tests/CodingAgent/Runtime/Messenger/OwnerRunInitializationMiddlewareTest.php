@@ -26,6 +26,44 @@ use Symfony\Component\Messenger\Stamp\ReceivedStamp;
 
 final class OwnerRunInitializationMiddlewareTest extends PerMethodIsolatedKernelTestCase
 {
+    #[\PHPUnit\Framework\Attributes\DataProvider('launchKinds')]
+    public function testEnqueuedChildStartIsAcceptedByFreshOwnerDirectory(AgentArtifactKindEnum $kind): void
+    {
+        $container = self::getContainer();
+        $parent = $this->reserve();
+        $identity = new \Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO($parent, 'child-fresh', 'agent_fresh', 'scout', 'task', $kind);
+        $lifecycle = $container->get(\Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunArtifactLifecycleService::class);
+        $lifecycle->reservePending($identity);
+        $input = new \Ineersa\AgentCore\Domain\Run\StartRunInput('instructions', [], $identity->childRunId, new RunMetadata(session: ['kind' => 'agent_child', 'parent_run_id' => $parent], model: 'test-model'));
+        $container->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchRuntimeStartService::class)->startPreparedInOrder($parent, 'launch-call', [$identity], [new \Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\PreparedAgentChildRunDTO($identity, $input)]);
+        $queued = $container->get('messenger.transport.run_control')->getSent()[0];
+        $this->assertInstanceOf(StartRun::class, $queued->getMessage());
+        $artifacts = $container->get(AgentArtifactRegistry::class);
+        $freshDirectory = new \Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory($container->get(HatfieldSessionStore::class), $artifacts, new \Psr\Log\NullLogger());
+        $this->assertSame(\Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum::Pending, $freshDirectory->locate($identity->childRunId)->status);
+        $events = $container->get(EventStoreInterface::class);
+        $this->assertNull($events->latestSequenceFor($identity->childRunId));
+        self::$kernel->shutdown();
+        self::bootKernel(['environment' => 'test', 'debug' => false]);
+        $container = self::getContainer();
+        $freshRegistry = $container->get(ActiveRunContextInterface::class);
+        $events = $container->get(EventStoreInterface::class);
+        $artifacts = $container->get(AgentArtifactRegistry::class);
+        $container->get('agent.command.bus')->dispatch($queued->with(new ReceivedStamp('run_control')));
+        $this->assertSame(RunStatus::Running, $freshRegistry->requireLoaded($identity->childRunId)->status);
+        $this->assertSame($parent, $freshRegistry->requireLoaded($identity->childRunId)->parentRunId);
+        $this->assertSame(1, $events->latestSequenceFor($identity->childRunId));
+        $this->assertSame(\Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum::Running, $artifacts->get($parent, $identity->artifactId)->status);
+        $container->get('agent.command.bus')->dispatch($queued->with(new ReceivedStamp('run_control')));
+        $this->assertSame(1, $events->latestSequenceFor($identity->childRunId), 'Launch redelivery must not append a second StartRun.');
+    }
+
+    public static function launchKinds(): iterable
+    {
+        yield 'ordinary child' => [AgentArtifactKindEnum::Subagent];
+        yield 'profiled fork shared runtime start' => [AgentArtifactKindEnum::Fork];
+    }
+
     public function testProducerDispatchDoesNotAdmitOrRecoverReservedRun(): void
     {
         $run = $this->reserve();
@@ -128,7 +166,7 @@ final class OwnerRunInitializationMiddlewareTest extends PerMethodIsolatedKernel
             self::getContainer()->get(HatfieldSessionStore::class),
             self::getContainer()->get(\Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory::class),
             self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class),
-            new \Psr\Log\NullLogger());
+            new \Psr\Log\NullLogger(), self::getContainer()->get(AgentArtifactRegistry::class));
         try {
             $middleware->handle(new Envelope($this->start($run), [new ReceivedStamp('run_control')]), new StackMiddleware());
             $this->fail('Empty recovery must not admit queued state.');

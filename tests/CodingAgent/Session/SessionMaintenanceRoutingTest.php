@@ -243,6 +243,53 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         $this->assertNotAdmitted($run);
     }
 
+    public function testRepairPublishesRetainedSelectionAndNextInvocationExcludesDiscardedHistory(): void
+    {
+        $container = self::getContainer();
+        $run = $container->get(HatfieldSessionStore::class)->createSession('selected repair');
+        $store = $container->get(EventStoreInterface::class);
+        $rawMessage = static fn (string $role, string $text): array => ['role' => $role, 'content' => [['type' => 'text', 'text' => $text]]];
+        $store->appendMany([
+            RunEvent::forAppend($run, 0, 'run_started', ['payload' => ['metadata' => ['model' => 'test-model'], 'messages' => [$rawMessage('user', 'RETAINED_PROMPT')]]]),
+            RunEvent::forAppend($run, 1, 'turn_advanced', ['turn_no' => 1, 'step_id' => 'one']),
+            RunEvent::forAppend($run, 1, 'llm_step_completed', ['assistant_message' => $rawMessage('assistant', 'RETAINED_ASSISTANT')]),
+            RunEvent::forAppend($run, 1, 'agent_command_applied', ['kind' => 'follow_up', 'message' => $rawMessage('user', 'DISCARDED_PROMPT')]),
+            RunEvent::forAppend($run, 2, 'turn_advanced', ['turn_no' => 2, 'step_id' => 'two']),
+            RunEvent::forAppend($run, 2, 'llm_step_completed', ['assistant_message' => $rawMessage('assistant', 'DISCARDED_ASSISTANT')]),
+            RunEvent::forAppend($run, 2, 'agent_end', ['reason' => 'completed']),
+        ]);
+        $replay = $container->get(\Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface::class);
+        $registry = $container->get(ActiveRunContextInterface::class);
+        $registry->loadRecovered($replay->rebuildIfStale(RunState::queued($run), $run)->rebuiltState);
+        $container->get(\Ineersa\AgentCore\Contract\History\HistorySelectionServiceInterface::class)->selectPrompt($run, 2);
+        $processor = $container->get(\Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor::class);
+        $processor->process('test', new ApplyCommand($run, 1, 'append-selected', 1, 'append-selected', 'append_message', ['message' => $rawMessage('user', 'NEW_CONTEXT')]));
+        $this->assertContains('history_tail_discarded', array_column($store->allFor($run), 'type'));
+        // Persist only the cancellation acceptance to reproduce interruption before terminalization.
+        $store->append(RunEvent::forAppend($run, 1, 'agent_command_applied', ['kind' => 'cancel']));
+        $registry->loadRecovered($replay->rebuildIfStale(RunState::queued($run), $run)->rebuiltState);
+        $result = $container->get(\Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface::class)->repair($run, true);
+        $this->assertTrue($result->staleCancellationRepaired, $result->message);
+        $immediate = $registry->requireLoaded($run);
+        $cold = $replay->rebuildIfStale(RunState::queued($run), $run)->rebuiltState;
+        $this->assertSame(1, $immediate->turnNo);
+        $this->assertSame($store->latestSequenceFor($run), $immediate->lastSeq);
+        $this->assertEquals($cold->messages, $immediate->messages);
+        $this->assertSame($cold->status, $immediate->status);
+        $this->assertSame($cold->turnNo, $immediate->turnNo);
+        $processor->process('test', new ApplyCommand($run, 1, 'follow-after-repair', 1, 'follow-after-repair', 'follow_up', ['message' => $rawMessage('user', 'CONTINUE_RETAINED')]));
+        $processor->process('test', new \Ineersa\AgentCore\Domain\Message\AdvanceRun($run, 1, 'invoke-retained', 1, 'invoke-retained'));
+        $sent = $container->get('messenger.transport.llm')->getSent();
+        $this->assertCount(1, $sent);
+        $request = $sent[0]->getMessage();
+        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\ExecuteLlmStep::class, $request);
+        $texts = json_encode(array_map(static fn ($message): array => $message->toArray(), $request->messages), \JSON_THROW_ON_ERROR);
+        $this->assertStringContainsString('RETAINED_ASSISTANT', $texts);
+        $this->assertStringContainsString('CONTINUE_RETAINED', $texts);
+        $this->assertStringNotContainsString('DISCARDED_PROMPT', $texts);
+        $this->assertStringNotContainsString('DISCARDED_ASSISTANT', $texts);
+    }
+
     protected function afterKernelBoot(): void
     {
         $container = self::getContainer();

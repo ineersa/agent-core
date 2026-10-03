@@ -35,6 +35,7 @@ final readonly class OwnerRunInitializationMiddleware implements MiddlewareInter
         private AgentChildRunDirectory $children,
         private RunLockManager $locks,
         private \Psr\Log\LoggerInterface $logger,
+        private \Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry $artifacts,
     ) {
     }
 
@@ -60,7 +61,24 @@ final readonly class OwnerRunInitializationMiddleware implements MiddlewareInter
                 $this->initializeForOwner($runId, $message);
             }
 
-            return $stack->next()->handle($envelope, $stack);
+            $handled = $stack->next()->handle($envelope, $stack);
+            // Enqueue is not acceptance. Promote only after the owner committed
+            // StartRun; deterministic launch redelivery can safely reach here again.
+            if ($message instanceof StartRun && null !== $this->events->latestSequenceFor($runId)) {
+                $child = $this->children->locate($runId);
+                if (null !== $child && \Ineersa\AgentCore\Domain\Run\RunStatus::Running === $this->registry->requireLoaded($runId)->status) {
+                    try {
+                        $entry = $this->artifacts->promoteToRunningForwardOnly($child->parentRunId, $child->artifactId, new \DateTimeImmutable());
+                        if (null !== $entry) {
+                            $this->children->register($entry);
+                        }
+                    } catch (\Throwable $exception) {
+                        $this->logger->warning('child_run.artifact_running_persist_failed', ['run_id' => $runId, 'parent_run_id' => $child->parentRunId, 'artifact_id' => $child->artifactId, 'component' => 'run_control', 'event_type' => 'child_run.artifact_running_persist_failed', 'exception_class' => $exception::class]);
+                    }
+                }
+            }
+
+            return $handled;
         });
     }
 

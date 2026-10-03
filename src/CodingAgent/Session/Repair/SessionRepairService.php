@@ -54,6 +54,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         private ToolBatchStoreInterface $toolBatchStore,
         private NormalizerInterface&DenormalizerInterface $serializer,
         private RunCommit $runCommit,
+        private \Ineersa\CodingAgent\Session\History\HistoryReplayFilter $historyReplayFilter,
     ) {
         $this->toolExecutionEndPayloadCodec = new ToolExecutionEndPayloadCodec($this->serializer);
     }
@@ -114,6 +115,14 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         return $sorted;
     }
 
+    /** @param list<RunEvent> $events */
+    private function retainedReplay(string $runId, array $events): RunState
+    {
+        return $this->runStateReducer->replay(RunState::queued($runId), $this->historyReplayFilter->filter($events))->with([
+            'lastSeq' => $this->replayEventPreparer->maxSequence($events),
+        ]);
+    }
+
     private function doRepair(string $runId, bool $apply): RepairResult
     {
         $sorted = $this->canonicalHistory($runId);
@@ -134,7 +143,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             );
         }
 
-        $replayed = $this->runStateReducer->replay(RunState::queued($runId), $sorted);
+        $replayed = $this->retainedReplay($runId, $sorted);
 
         if ($this->hasTerminalAgentEnd($sorted)) {
             if ($this->terminalReasonIs($sorted, $replayed, RunStatus::Failed, 'failed')) {
@@ -431,7 +440,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
     ): RepairResult {
         $proposedEvents = $this->eventFactory->eventsFromSpecs($runId, $turnNo, $maxSeq + 1, $eventSpecs);
         $hypothetical = array_merge($sorted, $proposedEvents);
-        $hypotheticalReplay = $this->runStateReducer->replay(RunState::queued($runId), $hypothetical);
+        $hypotheticalReplay = $this->retainedReplay($runId, $hypothetical);
 
         if ($requiredStatus !== $hypotheticalReplay->status) {
             $this->logger->warning('session_repair.refused', [
@@ -498,6 +507,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
      */
     private function terminalReasonIs(array $sorted, RunState $replayed, RunStatus $status, string $reason): bool
     {
+        $sorted = $this->historyReplayFilter->filter($sorted);
         if ($status === $replayed->status) {
             return true;
         }
@@ -632,6 +642,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
      */
     private function hasTerminalAgentEnd(array $events): bool
     {
+        $events = $this->historyReplayFilter->filter($events);
         foreach (array_reverse($events) as $event) {
             if (RunEventTypeEnum::TurnAdvanced->value === $event->type) {
                 // A later turn supersedes an earlier terminal lifecycle (for
@@ -651,6 +662,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
      */
     private function hasCancellationContext(array $events): bool
     {
+        $events = $this->historyReplayFilter->filter($events);
         foreach ($events as $event) {
             if (RunEventTypeEnum::AgentCommandApplied->value !== $event->type) {
                 continue;
@@ -674,6 +686,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
      */
     private function llmStepRemainedIncomplete(array $events, RunState $replayed): bool
     {
+        $events = $this->historyReplayFilter->filter($events);
         $operation = $replayed->currentOperation;
         if (null === $operation || [] !== $replayed->pendingShellToolCalls) {
             return false;
@@ -698,6 +711,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
      */
     private function hasDurableToolEnd(array $events, string $toolCallId): bool
     {
+        $events = $this->historyReplayFilter->filter($events);
         foreach ($events as $event) {
             if (RunEventTypeEnum::ToolExecutionEnd->value !== $event->type) {
                 continue;
@@ -743,6 +757,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
      */
     private function toolCallInfoFromEvents(array $events): array
     {
+        $events = $this->historyReplayFilter->filter($events);
         $map = [];
 
         foreach ($events as $event) {
@@ -790,6 +805,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
      */
     private function currentOperationRedrive(string $runId, bool $apply, array $events, RunState $state): ?RepairResult
     {
+        $events = $this->historyReplayFilter->filter($events);
         $effects = [];
         $operation = $state->currentOperation;
 

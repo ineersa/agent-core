@@ -217,6 +217,7 @@ final class MessengerDoctrineRedeliverTimeoutLeaseTest extends IsolatedKernelTes
                 stepDispatcher: new StepDispatcher($commandBus, $executionBus),
                 toolBatchStore: $this->createStub(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
                 serializer: AttributeSerializerValidatorTestFactory::create()[0],
+                historyReplayFilter: self::getContainer()->get(\Ineersa\CodingAgent\Session\History\HistoryReplayFilter::class),
                 runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit($active, $eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus()), new NullLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector()),
             );
 

@@ -377,6 +377,37 @@ final class WorkerFailedEventSubscriberTest extends IsolatedKernelTestCase
         $this->assertSame('cleanup unavailable', $warnings[0]['context']['exception']->getMessage());
     }
 
+    public function testPermanentFailureRunsCleanupWithoutAutomaticModelWork(): void
+    {
+        $container = self::getContainer();
+        $run = $container->get(HatfieldSessionStore::class)->createSession('failed auto compaction');
+        $store = $container->get(EventStoreInterface::class);
+        $store->append(RunEvent::forAppend($run, 1, 'llm_step_completed', ['usage' => ['input_tokens' => 12000]]));
+        $active = new TestActiveRunContext();
+        $state = new RunState($run, RunStatus::Running, turnNo: 1, lastSeq: 1, model: 'test-model', messages: [new AgentMessage('user', [['type' => 'text', 'text' => 'fresh content']])]);
+        $active->loadRecovered($state);
+        $bus = new TestMessageBus();
+        $compaction = $this->createStub(\Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface::class);
+        $compaction->method('prepare')->willReturn(\Ineersa\AgentCore\Contract\Compaction\CompactionPrepareResult::ready(messagesToSummarize: $state->messages, retainedTailMessages: [], tokenEstimateBefore: 12000, messagesCompacted: 1, messagesRetained: 0, firstRetainedIndex: 1, priorSummaryPresent: false));
+        $auto = new \Ineersa\CodingAgent\Compaction\AutoCompactionHookSubscriber(new \Ineersa\CodingAgent\Compaction\ProviderContextUsageResolver($store), new \Ineersa\CodingAgent\Config\CompactionConfig(autoEnabled: true, compactAfterTokens: 11000, keepRecentTokens: 10), $this->createStub(\Ineersa\AgentCore\Contract\Model\RunModelResolverInterface::class), $bus, $compaction, \Ineersa\CodingAgent\Tests\Support\StubRunRelationshipReader::topLevel($run));
+        $cleanup = $this->createMock(HookSubscriberInterface::class);
+        $cleanup->expects($this->once())->method('handleAfterTurnCommit')->willReturnCallback(function (AfterTurnCommitHookContext $context): AfterTurnCommitHookContext {
+            $this->assertSame(RunStatus::Failed, $context->runState->status);
+
+            return $context;
+        });
+        $commit = new RunCommit($active, $store, new StepDispatcher($bus, $bus), new NullLogger(), new ToolBatchCollector(), new HookDispatcher([$auto, $cleanup]));
+        $subscriber = new WorkerFailedEventSubscriber($active, $commit, $container->get(RunLockManager::class), new NullLogger());
+        $subscriber->onWorkerMessageFailed(new WorkerMessageFailedEvent(new Envelope(new StartRun($run, 0, 'failed-start', 1, 'failed-start', new StartRunPayload('', [], new RunMetadata(model: 'test-model')))), 'run_control', new \RuntimeException('permanent failure')));
+        $this->assertSame(RunStatus::Failed, $active->requireLoaded($run)->status);
+        $this->assertSame([], $bus->messages);
+        // Positive control uses the same usage and partition, with successful completion.
+        $completed = $state->with(['status' => RunStatus::Completed]);
+        $auto->handleAfterTurnCommit(AfterTurnCommitHookContext::fromRunState($completed, [RunEvent::forAppend($run, 1, 'agent_end', ['reason' => 'completed'])], 0));
+        $this->assertCount(1, $bus->messages);
+        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\CompactRun::class, $bus->messages[0]);
+    }
+
     private function subscriber(ActiveRunContextInterface $context, EventStoreInterface $store, LoggerInterface $logger, ?RunLockManager $lockManager = null): WorkerFailedEventSubscriber
     {
         $bus = new TestMessageBus();

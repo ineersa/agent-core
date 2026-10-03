@@ -116,8 +116,12 @@ When routing, handlers, projector flow, or subscriber contracts change, update t
 
 Only `StartRun`, first-shell `ApplyShellCommand`, and cancellation of a reserved child before start can create new state. Creation rejects prior operational sequence/status or non-pending child artifact evidence when canonical history is missing. It preserves child parent/owner identity. Ordinary follow-up and attach require canonical recovery, not queued-on-miss. Maintenance may return its existing empty-history refusal without admitting state. Recovery rejects absent products, zero-sequence products, and mismatched run identities.
 
+Child launch enqueue leaves its artifact Pending. The owner promotes it to Running only after canonical StartRun acceptance. Launch redelivery uses the existing deterministic StartRun identity; Pending does not authorize ordinary commands to recreate missing history.
+
 First-shell controller entry reserves a real parent session before submission when the supplied identity is an opaque process label. It reports the resulting numeric identity in the existing `run.started` event. Registered children and numeric parent identities are not replaced.
 
 `AttachRun` applies pending-question cancellation and context refresh through `RunMessageProcessor` before its owner handler returns. It does not queue those transitions behind later user commands or start a model turn. Controller attach never reconstructs execution state. Transcript bootstrap remains separate work.
 
 Repair checks canonical sequence integrity before owner hydration. Integrity refusals do not admit registry state. Maintenance handlers perform required recovery inside their response boundary, so recovery failures still emit sanitized runtime replies. The middleware holds the owner lock throughout maintenance consumption.
+
+Repair derives execution state and validates proposed messages through the retained-history filter. Sequence integrity and append watermarks still use the whole canonical archive. Automatic compaction skips Failed state while other after-turn subscribers retain failure cleanup.

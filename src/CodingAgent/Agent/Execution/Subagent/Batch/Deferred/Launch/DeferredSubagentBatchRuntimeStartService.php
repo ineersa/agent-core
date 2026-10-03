@@ -65,20 +65,6 @@ final class DeferredSubagentBatchRuntimeStartService
 
                 throw new DeferredSubagentBatchRuntimeStartFailure($prepared->identity->batchIndex, $e);
             }
-
-            try {
-                $this->artifactLifecycle->markRunning($prepared->identity);
-            } catch (\Throwable $markRunningFailure) {
-                $this->logger->warning('deferred_subagent_batch.artifact_running_persist_failed', [
-                    'run_id' => $parentRunId,
-                    'tool_call_id' => $toolCallId,
-                    'child_run_id' => $prepared->identity->childRunId,
-                    'artifact_id' => $prepared->identity->artifactId,
-                    'component' => 'agent.execution',
-                    'event_type' => 'deferred_subagent_batch.artifact_running_persist_failed',
-                    'exception_class' => $markRunningFailure::class,
-                ]);
-            }
         }
     }
 

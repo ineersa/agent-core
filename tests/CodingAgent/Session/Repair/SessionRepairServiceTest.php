@@ -245,6 +245,7 @@ final class SessionRepairServiceTest extends TestCase
         $serializer = AttributeSerializerValidatorTestFactory::create()[0];
         $this->persistRunEvents($runId, $factory->eventsFromSpecs($runId, 4, 1, [
             ['type' => RunEventTypeEnum::RunStarted->value, 'payload' => ['payload' => ['messages' => []]]],
+            ['type' => RunEventTypeEnum::TurnAdvanced->value, 'payload' => ['turn_no' => 4, 'step_id' => 'step-4']],
             ['type' => RunEventTypeEnum::ContextCompactionStarted->value, 'payload' => [
                 'turn_no' => 4,
                 'step_id' => 'compact-step',
@@ -254,7 +255,7 @@ final class SessionRepairServiceTest extends TestCase
             ]],
         ]));
         $store = new TestActiveRunContext();
-        $store->loadRecovered(new RunState(runId: $runId, status: RunStatus::Compacting, version: 1, turnNo: 4, lastSeq: 2, activeStepId: 'compact-step'));
+        $store->loadRecovered(new RunState(runId: $runId, status: RunStatus::Compacting, version: 1, turnNo: 4, lastSeq: 3, activeStepId: 'compact-step'));
         $bus = new TestMessageBus();
         $service = $this->createService($store, dispatcherBus: $bus);
         $before = $this->readEvents($runId);
@@ -288,6 +289,7 @@ final class SessionRepairServiceTest extends TestCase
         $factory = new EventFactory();
         $this->persistRunEvents($runId, $factory->eventsFromSpecs($runId, 4, 1, [
             ['type' => RunEventTypeEnum::RunStarted->value, 'payload' => ['payload' => ['messages' => []]]],
+            ['type' => RunEventTypeEnum::TurnAdvanced->value, 'payload' => ['turn_no' => 4, 'step_id' => 'step-4']],
             ['type' => RunEventTypeEnum::ContextCompactionStarted->value, 'payload' => [
                 'turn_no' => 4,
                 'step_id' => 'compact-step',
@@ -297,7 +299,7 @@ final class SessionRepairServiceTest extends TestCase
             ]],
         ]));
         $store = new TestActiveRunContext();
-        $store->loadRecovered(new RunState(runId: $runId, status: RunStatus::Compacting, version: 1, turnNo: 4, lastSeq: 2, activeStepId: 'compact-step'));
+        $store->loadRecovered(new RunState(runId: $runId, status: RunStatus::Compacting, version: 1, turnNo: 4, lastSeq: 3, activeStepId: 'compact-step'));
         $bus = new TestMessageBus();
 
         $result = $this->createService($store, dispatcherBus: $bus)->repair($runId, true);
@@ -314,6 +316,8 @@ final class SessionRepairServiceTest extends TestCase
         $factory = new EventFactory();
         $this->persistRunEvents($runId, $factory->eventsFromSpecs($runId, 2, 1, [
             ['type' => RunEventTypeEnum::RunStarted->value, 'payload' => ['payload' => ['messages' => []]]],
+            ['type' => RunEventTypeEnum::TurnAdvanced->value, 'payload' => ['turn_no' => 2, 'step_id' => 'llm-step']],
+            ['type' => RunEventTypeEnum::LlmStepCompleted->value, 'payload' => ['assistant_message' => ['role' => 'assistant', 'content' => []]]],
             ['type' => RunEventTypeEnum::AgentCommandApplied->value, 'payload' => [
                 'kind' => 'shell_command',
                 'text' => '!printf repair-shell',
@@ -325,7 +329,7 @@ final class SessionRepairServiceTest extends TestCase
             ]],
         ]));
         $store = new TestActiveRunContext();
-        $store->loadRecovered(new RunState(runId: $runId, status: RunStatus::Running, version: 1, lastSeq: 2));
+        $store->loadRecovered(new RunState(runId: $runId, status: RunStatus::Running, version: 1, lastSeq: 4));
         $bus = new TestMessageBus();
         $service = $this->createService($store, dispatcherBus: $bus);
         $before = $this->readEvents($runId);
@@ -1144,6 +1148,7 @@ final class SessionRepairServiceTest extends TestCase
             stepDispatcher: new StepDispatcher($commandBus, $dispatcherBus),
             toolBatchStore: $toolBatchStore,
             serializer: AttributeSerializerValidatorTestFactory::create()[0],
+            historyReplayFilter: new \Ineersa\CodingAgent\Session\History\HistoryReplayFilter(new \Ineersa\CodingAgent\Session\History\HistoryProjector()),
             runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit($activeRunContext, $eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus()), new NullLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector()),
         );
     }
