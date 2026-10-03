@@ -4,70 +4,60 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Artifact;
 
-use Ineersa\AgentCore\Application\Dto\RunStateReplayResult;
-use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
+use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
+use Ineersa\AgentCore\Contract\RunContextNotLoadedException;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\CodingAgent\Agent\Artifact\ActiveRunContext;
 use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
-use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
 use Symfony\Component\Validator\Exception\ValidationFailedException;
 
-final class ActiveRunContextTest extends IsolatedKernelTestCase
+final class ActiveRunContextTest extends PerMethodIsolatedKernelTestCase
 {
-    private RunOperationalProjectionRepository $repository;
-
-    protected function setUp(): void
+    public function testKnownReservedRunIsNotImplicitlyQueuedByLookup(): void
     {
-        parent::setUp();
-        $this->repository = self::getContainer()->get('test.run_operational_projection_repository');
+        $run = self::getContainer()->get(HatfieldSessionStore::class)->createSession('registry');
+        $context = self::getContainer()->get(ActiveRunContextInterface::class);
+        $this->expectException(RunContextNotLoadedException::class);
+        $context->requireLoaded($run);
     }
 
-    public function testCacheMissReplaysOnceAndPersistsTheResult(): void
+    public function testExplicitCreationAndRecoveryRemainDistinctAndLookupIsMemoryOnly(): void
     {
-        $state = new RunState('run-1', RunStatus::Running, lastSeq: 4);
-        $rebuilder = $this->createMock(RunStateRebuilderInterface::class);
-        $rebuilder->expects($this->once())->method('rebuildIfStale')->willReturn(RunStateReplayResult::rebuilt($state));
-        $context = new ActiveRunContext($rebuilder, $this->repository);
-
-        $this->assertSame($state, $context->stateFor('run-1'));
-        $this->assertSame($state, $context->stateFor('run-1'));
-        $this->assertSame(RunStatus::Running, $this->repository->findOperationalStatus('run-1')?->status);
+        $run = self::getContainer()->get(HatfieldSessionStore::class)->createSession('registry');
+        $context = self::getContainer()->get(ActiveRunContextInterface::class);
+        $created = $context->createNew($run);
+        $this->assertSame(RunStatus::Queued, $created->status);
+        $this->assertSame($created, $context->requireLoaded($run));
+        $context->release($run);
+        $recovered = new RunState($run, RunStatus::Completed, lastSeq: 4);
+        $context->loadRecovered($recovered);
+        $this->assertSame($recovered, $context->requireLoaded($run));
+        $this->assertSame($recovered, $context->requireLoaded($run));
+        $repository = self::getContainer()->get(RunOperationalProjectionRepository::class);
+        $this->assertSame(RunStatus::Completed, $repository->findOperationalStatus($run)?->status);
     }
 
-    public function testRememberPersistsBeforeReplacingCachedState(): void
+    public function testUnreservedCreationIsRejected(): void
     {
-        $old = new RunState('run-1', RunStatus::Running, lastSeq: 1);
-        $next = new RunState('run-1', RunStatus::Completed, lastSeq: 2);
-        $rebuilder = $this->createMock(RunStateRebuilderInterface::class);
-        $rebuilder->expects($this->once())->method('rebuildIfStale')->willReturn(RunStateReplayResult::rebuilt($old));
-        $context = new ActiveRunContext($rebuilder, $this->repository);
-
-        $context->stateFor('run-1');
-        $context->remember($next);
-        $this->assertSame($next, $context->stateFor('run-1'));
-        $this->assertSame(RunStatus::Completed, $this->repository->findOperationalStatus('run-1')?->status);
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('unreserved run');
+        self::getContainer()->get(ActiveRunContextInterface::class)->createNew('unknown-registry-run');
     }
 
-    public function testPersistenceFailureInvalidatesCachedStateBeforeTheNextReplay(): void
+    public function testPublicationFailureLeavesRecoveryRequiredInsteadOfOldStateOrQueuedState(): void
     {
-        $old = new RunState('run-1', RunStatus::Running, lastSeq: 1);
-        $invalid = new RunState('run-1', RunStatus::Completed, activeStepId: str_repeat('x', 256));
-        $replayed = new RunState('run-1', RunStatus::Failed, lastSeq: 3);
-        $rebuilder = $this->createMock(RunStateRebuilderInterface::class);
-        $rebuilder->expects($this->exactly(2))->method('rebuildIfStale')->willReturnOnConsecutiveCalls(
-            RunStateReplayResult::rebuilt($old),
-            RunStateReplayResult::rebuilt($replayed),
-        );
-        $context = new ActiveRunContext($rebuilder, $this->repository);
-
-        $context->stateFor('run-1');
+        $run = self::getContainer()->get(HatfieldSessionStore::class)->createSession('registry');
+        $context = self::getContainer()->get(ActiveRunContextInterface::class);
+        $context->createNew($run);
         try {
-            $context->remember($invalid);
-            $this->fail('Invalid projection must fail.');
-        } catch (ValidationFailedException) {
+            $context->replaceCurrent(new RunState($run, RunStatus::Completed, activeStepId: str_repeat('x', 256)));
+            $this->fail('Invalid projection must fail publication.');
+        } catch (ValidationFailedException $exception) {
+            $this->assertNotEmpty($exception->getMessage());
         }
-
-        $this->assertSame($replayed, $context->stateFor('run-1'));
+        $this->expectException(RunContextNotLoadedException::class);
+        $context->requireLoaded($run);
     }
 }

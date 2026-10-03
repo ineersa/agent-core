@@ -299,7 +299,7 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
         $this->assertInstanceOf(ToolCallResult::class, $toolCallResult);
 
         $activeRunContext = new \Ineersa\AgentCore\Tests\Support\TestActiveRunContext();
-        $activeRunContext->remember(
+        $activeRunContext->loadRecovered(
             RunStateBuilder::running('run-deferred-1')
                 ->withVersion(1)
                 ->withTurnNo(3)
@@ -350,11 +350,11 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
         );
 
         $processor->process('result.tool', $toolCallResult);
-        $stateAfterFirst = $activeRunContext->stateFor('run-deferred-1');
+        $stateAfterFirst = $activeRunContext->requireLoaded('run-deferred-1');
         $this->assertSame([], $stateAfterFirst->pendingToolCalls);
 
         $processor->process('result.tool', $toolCallResult);
-        $stateAfterSecond = $activeRunContext->stateFor('run-deferred-1');
+        $stateAfterSecond = $activeRunContext->requireLoaded('run-deferred-1');
         $this->assertSame([], $stateAfterSecond->pendingToolCalls);
         $this->assertCount(1, $stateAfterSecond->messages);
     }

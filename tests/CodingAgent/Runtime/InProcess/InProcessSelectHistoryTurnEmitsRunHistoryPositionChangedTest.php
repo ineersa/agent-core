@@ -60,7 +60,7 @@ final class InProcessSelectHistoryTurnEmitsRunHistoryPositionChangedTest extends
         }
 
         $activeRunContext = new TestActiveRunContext();
-        $activeRunContext->remember(new RunState(
+        $activeRunContext->loadRecovered(new RunState(
             runId: self::RUN_ID,
             status: RunStatus::Running,
             version: 1,
@@ -90,7 +90,7 @@ final class InProcessSelectHistoryTurnEmitsRunHistoryPositionChangedTest extends
             logger: new NullLogger(),
             historyProjector: new HistoryProjector(),
             replayEventPreparer: new ReplayEventPreparer(),
-            commandBus: new TestMessageBus(),
+            runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit($activeRunContext, $eventStore, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus()), new NullLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector()),
         );
         $sink = new InMemoryRuntimeEventSink();
 
@@ -114,6 +114,43 @@ final class InProcessSelectHistoryTurnEmitsRunHistoryPositionChangedTest extends
         $this->assertSame(0, $event->payload['position_turn_no'] ?? null);
         $this->assertSame(1, $event->payload['selected_prompt_turn_no'] ?? null);
         $this->assertSame(4, $event->seq);
+    }
+
+    public function testSynchronousRepairReturnsHandledResultAndEmitsRefusalWithoutExceptionDetails(): void
+    {
+        $repair = $this->createMock(\Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface::class);
+        $result = new \Ineersa\CodingAgent\Runtime\Contract\RepairResult(true, false, 'refused', \Ineersa\CodingAgent\Runtime\Contract\SessionRepairRefusalReasonEnum::ActiveStreaming);
+        $repair->expects($this->once())->method('repair')->with(self::RUN_ID, false)->willReturn($result);
+        $sink = new InMemoryRuntimeEventSink();
+        $client = $this->client(new InMemoryEventStore(), $this->createStub(HistorySelectionServiceInterface::class), $sink, new TestActiveRunContext(), $repair);
+        $this->assertSame($result, $client->repair(self::RUN_ID, false));
+        $events = iterator_to_array($sink->drain(self::RUN_ID));
+        $this->assertCount(1, $events);
+        $this->assertSame('session.repair.completed', $events[0]->type);
+        $this->assertSame('completed', $events[0]->payload['status']);
+        $this->assertSame('active_streaming', $events[0]->payload['refusal_reason']);
+        $this->assertArrayNotHasKey('exception_class', $events[0]->payload);
+        $this->assertArrayNotHasKey('exception_message', $events[0]->payload);
+    }
+
+    public function testOwnerRepairFailureEmitsSanitizedReplyAndPropagatesToSynchronousCaller(): void
+    {
+        $repair = $this->createMock(\Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface::class);
+        $repair->expects($this->once())->method('repair')->willThrowException(new \RuntimeException('private detail'));
+        $sink = new InMemoryRuntimeEventSink();
+        $client = $this->client(new InMemoryEventStore(), $this->createStub(HistorySelectionServiceInterface::class), $sink, new TestActiveRunContext(), $repair);
+        try {
+            $client->repair(self::RUN_ID);
+            $this->fail('Owner repair failure must propagate.');
+        } catch (\Symfony\Component\Messenger\Exception\HandlerFailedException $exception) {
+            $this->assertSame('private detail', $exception->getPrevious()->getMessage());
+        }
+        $events = iterator_to_array($sink->drain(self::RUN_ID));
+        $this->assertCount(1, $events);
+        $this->assertSame('failed', $events[0]->payload['status']);
+        $this->assertSame(\RuntimeException::class, $events[0]->payload['exception_class']);
+        $this->assertArrayNotHasKey('exception_message', $events[0]->payload);
+        $this->assertNotEmpty($events[0]->payload['commandId']);
     }
 
     /** @return list<RunEvent> */
@@ -143,14 +180,20 @@ final class InProcessSelectHistoryTurnEmitsRunHistoryPositionChangedTest extends
         HistorySelectionServiceInterface $historySelectionService,
         InMemoryRuntimeEventSink $sink,
         TestActiveRunContext $activeRunContext,
+        ?\Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface $repair = null,
     ): InProcessAgentSessionClient {
         $container = self::getContainer();
+
+        $handler = new \Ineersa\CodingAgent\Application\Pipeline\SessionMaintenanceHandler($historySelectionService, $repair ?? $this->createStub(\Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface::class), $sink, $container->get(\Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink::class), false, new NullLogger(), $activeRunContext, $container->get(\Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor::class), $container->get(HatfieldSessionStore::class), $container->get(\Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware::class));
+        $bus = new \Symfony\Component\Messenger\MessageBus([new \Symfony\Component\Messenger\Middleware\HandleMessageMiddleware(new \Symfony\Component\Messenger\Handler\HandlersLocator([
+            \Ineersa\CodingAgent\Application\Message\SelectHistoryPrompt::class => [[$handler, 'select']],
+            \Ineersa\CodingAgent\Application\Message\RepairSession::class => [[$handler, 'repair']],
+        ]))]);
 
         return new InProcessAgentSessionClient(
             runner: $this->createStub(AgentRunnerInterface::class),
             eventStore: $eventStore,
             mapper: $container->get(RuntimeEventMapper::class),
-            historySelectionService: $historySelectionService,
             systemPromptBuilder: $container->get(SystemPromptBuilder::class),
             agentsContextDiscovery: $container->get(AgentsContextDiscovery::class),
             agentsContextRenderer: $container->get(AgentsContextRenderer::class),
@@ -159,10 +202,8 @@ final class InProcessSelectHistoryTurnEmitsRunHistoryPositionChangedTest extends
             promptTemplateService: $container->get(PromptTemplateService::class),
             sessionMetaStore: $container->get(HatfieldSessionStore::class),
             modelResolver: $container->get(ModelResolver::class),
-            commandBus: new TestMessageBus(),
-            sessionRepairService: $this->createStub(\Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface::class),
+            commandBus: $bus,
             transientSink: $sink,
-            activeRunContext: $activeRunContext,
         );
     }
 }

@@ -4,9 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Messenger;
 
+use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\RunStateDuplicateSequenceReplayException;
+use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
-use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
@@ -19,21 +20,15 @@ use Symfony\Component\Messenger\Event\WorkerMessageFailedEvent;
  *
  * Normal run mutations (StartRun, ApplyCommand, LlmStepResult, ToolCallResult,
  * CompactionStepResult) are serialized through RunMessageProcessor and
- * RunCommit in the single run_control consumer process. This subscriber is an
- * intentional exception to that path: it runs only after the processor/handler
- * for a run_control message has permanently failed (willRetry() is false) and
- * must append a sequenced agent_end then remember a terminal Failed RunState
- * so the controller/TUI does not hang with no durable terminal event.
+ * RunCommit in the single run_control consumer process. This subscriber's
+ * terminal failure path uses the same owner lock and RunCommit after the
+ * processor/handler permanently fails (willRetry() is false). This publishes
+ * the terminal event/state and invokes normal collector release and hooks.
  *
  * Receiver filtering (HANDLED_RECEIVERS = run_control) keeps the write inside
  * the same authorized run_control consumer process; execution-bus failures on
  * llm/tool/agent are out of scope here because workers enqueue results back to
  * run_control instead of mutating canonical state directly.
- *
- * Limitation: this bypass does not invoke RunCommit post-commit hooks (for
- * example tool-batch snapshot cleanup). Canonical append happens before the
- * active context and operational projection are updated; a projection failure
- * leaves the durable agent_end authoritative for replay.
  *
  * This subscriber only acts when willRetry() returns false (final rejection),
  * preventing partial/intermediate retries from writing spurious terminal states.
@@ -45,7 +40,8 @@ final readonly class WorkerFailedEventSubscriber implements EventSubscriberInter
 
     public function __construct(
         private ActiveRunContextInterface $activeRunContext,
-        private EventStoreInterface $eventStore,
+        private RunCommit $runCommit,
+        private RunLockManager $runLockManager,
         private LoggerInterface $logger,
     ) {
     }
@@ -100,58 +96,55 @@ final readonly class WorkerFailedEventSubscriber implements EventSubscriberInter
                 return;
             }
 
-            $current = $this->activeRunContext->stateFor($runId);
+            $this->runLockManager->synchronized($runId, function () use ($runId, $exception, $message): void {
+                $current = $this->activeRunContext->requireLoaded($runId);
 
-            // If the run is already in a terminal state, don't overwrite it.
-            if (RunStatus::Failed === $current->status
-                || RunStatus::Completed === $current->status
-                || RunStatus::Cancelled === $current->status
-            ) {
-                $this->logger->info('agent_loop.worker_failed_skipped_terminal', [
-                    'run_id' => $runId,
-                    'current_status' => $current->status->value,
-                    'component' => 'messenger.worker',
-                    'event_type' => 'worker_failed.skipped_terminal',
+                // If the run is already in a terminal state, don't overwrite it.
+                if (RunStatus::Failed === $current->status
+                    || RunStatus::Completed === $current->status
+                    || RunStatus::Cancelled === $current->status
+                ) {
+                    $this->logger->info('agent_loop.worker_failed_skipped_terminal', [
+                        'run_id' => $runId,
+                        'current_status' => $current->status->value,
+                        'component' => 'messenger.worker',
+                        'event_type' => 'worker_failed.skipped_terminal',
+                    ]);
+
+                    return;
+                }
+
+                $errorMessage = \sprintf(
+                    'Permanent worker failure: %s: %s',
+                    $exception::class,
+                    $exception->getMessage(),
+                );
+                $agentEndEvent = RunEvent::forAppend(
+                    runId: $runId,
+                    turnNo: $current->turnNo,
+                    type: 'agent_end',
+                    payload: [
+                        'reason' => 'failed',
+                        'error' => $exception->getMessage(),
+                        'message_type' => $message::class,
+                    ],
+                );
+
+                $failedState = $current->with([
+                    'status' => RunStatus::Failed,
+                    'isStreaming' => false,
+                    'streamingMessage' => null,
+                    'pendingToolCalls' => [],
+                    'errorMessage' => $errorMessage,
                 ]);
 
-                return;
-            }
+                $this->runCommit->commit($current, $failedState, [$agentEndEvent]);
 
-            $errorMessage = \sprintf(
-                'Permanent worker failure: %s: %s',
-                $exception::class,
-                $exception->getMessage(),
-            );
-            $agentEndEvent = RunEvent::forAppend(
-                runId: $runId,
-                turnNo: $current->turnNo,
-                type: 'agent_end',
-                payload: [
-                    'reason' => 'failed',
-                    'error' => $exception->getMessage(),
+                $this->logger->info('agent_loop.worker_failed_written', [
+                    'run_id' => $runId,
                     'message_type' => $message::class,
-                ],
-            );
-
-            $persisted = $this->eventStore->append($agentEndEvent);
-
-            $failedState = $current->with([
-                'status' => RunStatus::Failed,
-                'version' => $current->version + 1,
-                'lastSeq' => $persisted->seq,
-                'isStreaming' => false,
-                'streamingMessage' => null,
-                'pendingToolCalls' => [],
-                'errorMessage' => $errorMessage,
-            ]);
-
-            $this->activeRunContext->remember($failedState);
-
-            $this->logger->info('agent_loop.worker_failed_written', [
-                'run_id' => $runId,
-                'message_type' => $message::class,
-                'seq' => $persisted->seq,
-            ]);
+                ]);
+            });
         } catch (\Throwable $e) {
             // Never let this subscriber throw — we're inside Messenger's
             // failure-handling middleware, and throwing would interfere

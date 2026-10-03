@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Completion;
 
-use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
-use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
@@ -14,6 +12,8 @@ use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunTerminalOutcom
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
+use Ineersa\CodingAgent\Session\History\RunPresentationDTO;
+use Ineersa\CodingAgent\Session\History\RunPresentationReader;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 
@@ -24,7 +24,7 @@ use Psr\Log\NullLogger;
 final readonly class DeferredSubagentBatchChildOutcomeFactory
 {
     public function __construct(
-        private RunStateRebuilderInterface $runStateRebuilder,
+        private RunPresentationReader $presentationReader,
         private LoggerInterface $logger = new NullLogger(),
     ) {
     }
@@ -50,10 +50,10 @@ final readonly class DeferredSubagentBatchChildOutcomeFactory
         ChildRunIdentityDTO $identity,
         DeferredChildRunLifecycleProjectionDTO $projection,
     ): ChildRunTerminalOutcomeDTO {
-        // Failed/cancelled children replay canonical child events so handoff can
+        // Failed/cancelled children read canonical historical presentation so handoff can
         // include bounded partial context without another persistence path.
-        $childState = match ($projection->childStatus) {
-            RunStatus::Failed, RunStatus::Cancelled, RunStatus::Cancelling => $this->loadDurableChildStateForFailedOrCancelled($identity),
+        $childPresentation = match ($projection->childStatus) {
+            RunStatus::Failed, RunStatus::Cancelled, RunStatus::Cancelling => $this->loadDurableChildPresentationForFailedOrCancelled($identity),
             default => null,
         };
 
@@ -68,13 +68,13 @@ final readonly class DeferredSubagentBatchChildOutcomeFactory
                 status: AgentArtifactStatusEnum::Failed,
                 failureReason: $projection->errorMessage ?? 'Run failed without error message.',
                 summary: $projection->errorMessage ?? 'Run failed without error message.',
-                childState: $childState,
+                childPresentation: $childPresentation,
             ),
             RunStatus::Cancelled, RunStatus::Cancelling => new ChildRunTerminalOutcomeDTO(
                 identity: $identity,
                 status: AgentArtifactStatusEnum::Cancelled,
                 summary: 'Child run was cancelled.',
-                childState: $childState,
+                childPresentation: $childPresentation,
             ),
             default => throw new \RuntimeException('Terminal completion reached non-terminal child status.'),
         };
@@ -91,15 +91,13 @@ final readonly class DeferredSubagentBatchChildOutcomeFactory
     }
 
     /**
-     * Rebuild canonical child events for failed/cancelled handoffs.
+     * Read bounded presentation from canonical events for failed/cancelled handoffs.
      * Shared by natural terminal completion and interruption paths.
      */
-    public function loadDurableChildStateForFailedOrCancelled(ChildRunIdentityDTO $identity): ?RunState
+    public function loadDurableChildPresentationForFailedOrCancelled(ChildRunIdentityDTO $identity): ?RunPresentationDTO
     {
         try {
-            return $this->runStateRebuilder
-                ->rebuildIfStale(RunState::queued($identity->childRunId), $identity->childRunId)
-                ->rebuiltState;
+            return $this->presentationReader->read($identity->childRunId, 0, 800);
         } catch (\Throwable $e) {
             // Intentional local degradation: handoff still writes failure/cancel summary;
             // partial context is best-effort from canonical child events.

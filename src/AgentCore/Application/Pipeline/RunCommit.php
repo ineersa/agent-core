@@ -36,9 +36,9 @@ final readonly class RunCommit
      * @param list<RunEvent> $events
      * @param list<object>   $effects
      */
-    public function commit(RunState $state, RunState $nextState, array $events, array $effects = []): void
+    public function commit(RunState $state, RunState $nextState, array $events, array $effects = [], bool $dispatchAfterTurnHooks = true): RunState
     {
-        $persist = function () use ($nextState, $events, $effects): RunState {
+        $persist = function () use ($nextState, $events, $effects, $dispatchAfterTurnHooks): RunState {
             /** @var list<RunEvent> $persistedEvents */
             $persistedEvents = [];
             if ([] !== $events) {
@@ -58,9 +58,9 @@ final readonly class RunCommit
                 ]);
             }
 
-            // remember() persists the narrow projection before publishing the
+            // replaceCurrent() persists the narrow projection before publishing the
             // full state in memory and invalidates memory if persistence fails.
-            $this->activeRunContext->remember($committedState);
+            $this->activeRunContext->replaceCurrent($committedState);
 
             $this->toolBatchCollector->releaseAfterCommit($committedState, $persistedEvents);
 
@@ -80,6 +80,12 @@ final readonly class RunCommit
                 }
             }
 
+            // History maintenance publishes canonical state without scheduling a
+            // completed-turn continuation, matching its former raw-append semantics.
+            if (!$dispatchAfterTurnHooks) {
+                return $committedState;
+            }
+
             try {
                 $this->hookDispatcher?->dispatchAfterTurnCommit(
                     AfterTurnCommitHookContext::fromRunState($committedState, $persistedEvents, \count($effects)),
@@ -97,12 +103,10 @@ final readonly class RunCommit
         };
 
         if (null === $this->tracer) {
-            $persist();
-
-            return;
+            return $persist();
         }
 
-        $this->tracer->inSpan('persistence.commit', [
+        return $this->tracer->inSpan('persistence.commit', [
             'run_id' => $nextState->runId,
             'turn_no' => $nextState->turnNo,
             'step_id' => $nextState->activeStepId,

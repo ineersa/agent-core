@@ -4,17 +4,15 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Artifact;
 
-use Ineersa\AgentCore\Application\Dto\RunStateReplayResult;
+use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
+use Ineersa\AgentCore\Application\Replay\ReplayAssistantMessageFactory;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
-use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
-use Ineersa\AgentCore\Domain\Run\RunState;
-use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRetrievalService;
@@ -22,6 +20,7 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
 use Ineersa\CodingAgent\Agent\Artifact\AgentRetrieveArgumentsDTO;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Session\History\RunPresentationReader;
 use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -224,19 +223,19 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
 
     public function testBoundedEventsOmitRawPayloadSecrets(): void
     {
-        $parent = 'parent-f';
+        $parent = $this->hatfieldSessionStore->createSession('event summaries');
         $artifactId = 'agent_events';
         $childRun = 'child-events';
-        $this->registry->create($parent, $artifactId, $childRun, 'scout', AgentArtifactKindEnum::Subagent);
+        $entry = $this->registry->create($parent, $artifactId, $childRun, 'scout', AgentArtifactKindEnum::Subagent);
+        self::getContainer()->get(AgentChildRunDirectory::class)->register($entry);
+        $eventStore = self::getContainer()->get(EventStoreInterface::class);
 
         $secret = 'RAW_TOOL_OUTPUT_SECRET_12345';
         /** @var ToolExecutionEndPayloadCodec $toolExecutionEndPayloadCodec */
         $toolExecutionEndPayloadCodec = self::getContainer()->get(ToolExecutionEndPayloadCodec::class);
-        $events = [];
         for ($i = 1; $i <= 25; ++$i) {
-            $events[] = new RunEvent(
+            $eventStore->append(RunEvent::forAppend(
                 runId: $childRun,
-                seq: $i,
                 turnNo: 0,
                 type: RunEventTypeEnum::ToolExecutionEnd->value,
                 payload: $toolExecutionEndPayloadCodec->toEventPayload(new ToolCallResult(
@@ -249,23 +248,39 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
                     orderIndex: $i,
                     result: ['tool_name' => 'bash', 'output' => $secret.'-'.$i],
                 )),
-            );
+            ));
         }
 
-        $eventStore = $this->createMock(EventStoreInterface::class);
-        $eventStore->expects($this->once())->method('allFor')->with($this->identicalTo($childRun))->willReturn($events);
-        $service = $this->makeService(eventStore: $eventStore);
+        $observed = $this->createMock(EventStoreInterface::class);
+        $observed->expects($this->never())->method('allFor');
+        $observed->expects($this->exactly(2))->method('rangeFor')->with($childRun, 1, \PHP_INT_MAX)
+            ->willReturnCallback(function (string $runId, int $start, int $end) use ($eventStore): iterable {
+                $references = [];
+                foreach ($eventStore->rangeFor($runId, $start, $end) as $event) {
+                    if (2 === \count($references)) {
+                        $this->assertNull(array_shift($references)->get(), 'Retrieval must release decoded events rather than collect archive payloads.');
+                    }
+                    $references[] = \WeakReference::create($event);
+                    yield $event;
+                }
+            });
+        $service = $this->makeService(eventStore: $observed);
         $out = $service->retrieve($parent, $this->args(['artifact_id' => $artifactId, 'mode' => 'events', 'limit' => 5]));
 
         $this->assertStringContainsString('Showing last 5 of 25 events', $out);
         $this->assertStringNotContainsString($secret, $out);
         $this->assertStringNotContainsString($secret.'-1', $out);
         $this->assertStringContainsString('tool end: bash', $out);
+        $this->assertStringContainsString('- seq=21 ', $out);
+        $this->assertStringContainsString('- seq=25 ', $out);
+        $this->assertStringNotContainsString('- seq=20 ', $out);
+        $metadata = $service->retrieve($parent, $this->args(['artifact_id' => $artifactId, 'mode' => 'metadata']));
+        $this->assertStringContainsString('- event_count: 25', $metadata);
     }
 
     public function testBoundedHistorySkipsSystemAndOmitsRawText(): void
     {
-        $parent = 'parent-g';
+        $parent = $this->hatfieldSessionStore->createSession('history summaries');
         $artifactId = 'agent_hist';
         $childRun = 'child-hist';
         $this->registry->create($parent, $artifactId, $childRun, 'scout', AgentArtifactKindEnum::Subagent);
@@ -281,18 +296,11 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
             $messages[] = new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'short user message '.$i]]);
         }
 
-        $state = new RunState(runId: $childRun, status: RunStatus::Completed, messages: $messages, model: 'test-model');
-        $rebuilder = $this->createMock(RunStateRebuilderInterface::class);
-        $rebuilder->expects($this->once())
-            ->method('rebuildIfStale')
-            ->with(
-                $this->callback(static fn (RunState $queued): bool => $queued->runId === $childRun && 0 === $queued->lastSeq),
-                $this->identicalTo($childRun),
-            )
-            ->willReturn(RunStateReplayResult::rebuilt($state));
-        $eventStore = $this->createStub(EventStoreInterface::class);
-
-        $service = $this->makeService(rebuilder: $rebuilder, eventStore: $eventStore);
+        $entry = $this->registry->get($parent, $artifactId);
+        $this->directory->register($entry);
+        $eventStore = self::getContainer()->get(EventStoreInterface::class);
+        $eventStore->append(RunEvent::forAppend($childRun, 0, RunEventTypeEnum::RunStarted->value, ['payload' => ['messages' => array_map(static fn (AgentMessage $m): array => $m->toArray(), $messages)]]));
+        $service = $this->makeService(eventStore: $eventStore);
         $out = $service->retrieve($parent, $this->args(['artifact_id' => $artifactId, 'mode' => 'history', 'limit' => 3]));
 
         $this->assertStringContainsString('Showing last 3 of', $out);
@@ -345,35 +353,22 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
 
     public function testRetrievesCancelledMetadata(): void
     {
-        $parent = 'parent-cancel-meta';
+        $parent = $this->hatfieldSessionStore->createSession('cancel metadata');
         $artifactId = 'agent_cancel_meta';
         $childRun = 'child-cancel-meta';
         $this->registry->create($parent, $artifactId, $childRun, 'scout', AgentArtifactKindEnum::Subagent);
         $this->registry->update($parent, $artifactId, status: AgentArtifactStatusEnum::Cancelled, summary: 'Child run was cancelled.');
 
-        $state = new RunState(
-            runId: $childRun,
-            status: RunStatus::Cancelled,
-            version: 1,
-            turnNo: 4,
-            lastSeq: 18,
-            messages: [],
-            model: 'test-model');
-        $rebuilder = $this->createMock(RunStateRebuilderInterface::class);
-        $rebuilder->expects($this->once())
-            ->method('rebuildIfStale')
-            ->with(
-                $this->callback(static fn (RunState $queued): bool => $queued->runId === $childRun && 0 === $queued->lastSeq),
-                $this->identicalTo($childRun),
-            )
-            ->willReturn(RunStateReplayResult::rebuilt($state));
-
-        $service = $this->makeService(rebuilder: $rebuilder);
+        $this->directory->register($this->registry->get($parent, $artifactId));
+        $events = self::getContainer()->get(EventStoreInterface::class);
+        $events->append(RunEvent::forAppend($childRun, 4, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 4]));
+        $events->append(RunEvent::forAppend($childRun, 4, RunEventTypeEnum::AgentEnd->value, ['reason' => 'cancelled']));
+        $service = $this->makeService(eventStore: $events);
         $out = $service->retrieve($parent, $this->args(['artifact_id' => $artifactId, 'mode' => 'metadata']));
 
         $this->assertStringContainsString('status: cancelled', $out);
         $this->assertStringContainsString('turn_no: 4', $out);
-        $this->assertStringContainsString('last_seq: 18', $out);
+        $this->assertStringContainsString('last_seq: 2', $out);
     }
 
     public function testHandoffHistoryListsAndFetchesByHandoffId(): void
@@ -424,20 +419,16 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $this->assertStringContainsString('# Latest handoff body', $latest);
     }
 
-    private function makeService(
-        ?RunStateRebuilderInterface $rebuilder = null,
-        ?EventStoreInterface $eventStore = null,
-    ): AgentArtifactRetrievalService {
-        if (null === $rebuilder) {
-            $rebuilder = $this->createStub(RunStateRebuilderInterface::class);
-            $rebuilder->method('rebuildIfStale')->willReturn(RunStateReplayResult::noEvents());
-        }
+    private function makeService(?EventStoreInterface $eventStore = null): AgentArtifactRetrievalService
+    {
+        $eventStore ??= $this->createStub(EventStoreInterface::class);
+        $presentation = new RunPresentationReader($eventStore, self::getContainer()->get(RunLockManager::class), new ReplayAssistantMessageFactory(), self::getContainer()->get(ToolExecutionEndPayloadCodec::class));
 
         return new AgentArtifactRetrievalService(
             artifactRegistry: $this->registry,
             childRunDirectory: $this->directory,
-            runStateRebuilder: $rebuilder,
-            eventStore: $eventStore ?? $this->createStub(EventStoreInterface::class),
+            presentationReader: $presentation,
+            eventStore: $eventStore,
             logger: self::getContainer()->get('logger'),
             toolExecutionEndPayloadCodec: self::getContainer()->get(ToolExecutionEndPayloadCodec::class),
         );

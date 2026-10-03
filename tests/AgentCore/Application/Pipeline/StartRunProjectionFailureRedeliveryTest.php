@@ -37,6 +37,7 @@ final class StartRunProjectionFailureRedeliveryTest extends TestCase
         $commandBus = new TestMessageBus();
         $executionBus = new TestMessageBus();
         $activeRunContext = new FailOnceProjectionActiveRunContext();
+        $activeRunContext->createNew('run-start-projection-fail');
 
         $processor = new RunMessageProcessor(
             activeRunContext: $activeRunContext,
@@ -101,12 +102,25 @@ final class FailOnceProjectionActiveRunContext implements ActiveRunContextInterf
     private array $states = [];
     private int $rememberFailuresRemaining = 1;
 
-    public function stateFor(string $runId): RunState
+    public function createNew(string $runId): RunState
     {
-        return $this->states[$runId] ??= RunState::queued($runId);
+        $state = RunState::queued($runId);
+        $this->seed($state);
+
+        return $state;
     }
 
-    public function remember(RunState $state): void
+    public function loadRecovered(RunState $state): void
+    {
+        $this->seed($state);
+    }
+
+    public function requireLoaded(string $runId): RunState
+    {
+        return $this->states[$runId] ?? throw new \Ineersa\AgentCore\Contract\RunContextNotLoadedException('Fixture not loaded');
+    }
+
+    public function replaceCurrent(RunState $state): void
     {
         if ($this->rememberFailuresRemaining > 0) {
             --$this->rememberFailuresRemaining;
@@ -118,14 +132,9 @@ final class FailOnceProjectionActiveRunContext implements ActiveRunContextInterf
         $this->states[$state->runId] = $state;
     }
 
-    public function invalidate(string $runId): void
+    public function release(string $runId): void
     {
         unset($this->states[$runId]);
-    }
-
-    public function clear(): void
-    {
-        $this->states = [];
     }
 
     public function seed(RunState $state): void

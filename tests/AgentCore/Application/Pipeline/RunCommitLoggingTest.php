@@ -23,7 +23,7 @@ final class RunCommitLoggingTest extends TestCase
         $logger = new TestLogger();
         $activeRunContext = new TestActiveRunContext();
         $previous = RunState::queued('run-1');
-        $activeRunContext->remember($previous);
+        $activeRunContext->loadRecovered($previous);
         $eventStore = new RecordingEventStore();
 
         $commit = new RunCommit(
@@ -51,8 +51,8 @@ final class RunCommitLoggingTest extends TestCase
 
         $this->assertSame(1, $eventStore->appendManyCalls);
         $this->assertCount(2, $eventStore->appended);
-        $this->assertSame(2, $activeRunContext->stateFor('run-1')->lastSeq);
-        $this->assertSame($next->version + 1, $activeRunContext->stateFor('run-1')->version);
+        $this->assertSame(2, $activeRunContext->requireLoaded('run-1')->lastSeq);
+        $this->assertSame($next->version + 1, $activeRunContext->requireLoaded('run-1')->version);
 
         $messages = array_column($logger->records, 'message');
         $this->assertContains('persistence.events_committed', $messages);
@@ -86,7 +86,7 @@ final class RunCommitLoggingTest extends TestCase
         $active = new FailingBatchPublicationContext();
         $previous = new RunState(runId: 'run-1', status: RunStatus::Running, turnNo: 1);
         $next = $previous->with(['status' => $status]);
-        $active->remember($previous);
+        $active->loadRecovered($previous);
         $active->failRemember = $failPublication;
         $events = [new RunEvent('run-1', 0, 1, $eventType, ['turn_no' => 1, 'step_id' => 'tools'])];
         $store = new RecordingEventStore();
@@ -111,20 +111,20 @@ final class RunCommitLoggingTest extends TestCase
         }
         $this->assertSame($result, $collector->getStoredResult('run-1', 1, 'tools', 'read-call'));
         $this->assertNotNull($weakCall->get());
-        $this->assertSame($previous, $active->stateFor('run-1'));
+        $this->assertSame($previous, $active->requireLoaded('run-1'));
         $store->failAppend = false;
         $active->failRemember = false;
         $commit->commit($previous, $next, $events);
         $this->assertNull($weakCall->get(), 'Successful commit releases requests even when durable file deletion fails.');
         $this->assertNull($collector->getStoredResult('run-1', 1, 'tools', 'read-call'));
-        $this->assertSame($status, $active->stateFor('run-1')->status);
+        $this->assertSame($status, $active->requireLoaded('run-1')->status);
     }
 
     public function testNoEventCommitStillRemembersHandlerStateWithoutDiagnosticBump(): void
     {
         $activeRunContext = new TestActiveRunContext();
         $previous = RunState::queued('run-1');
-        $activeRunContext->remember($previous);
+        $activeRunContext->loadRecovered($previous);
         $next = $previous->with(['status' => RunStatus::Running, 'version' => $previous->version + 1]);
 
         (new RunCommit(
@@ -135,7 +135,7 @@ final class RunCommitLoggingTest extends TestCase
             toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(),
         ))->commit($previous, $next, []);
 
-        $this->assertSame($next, $activeRunContext->stateFor('run-1'));
+        $this->assertSame($next, $activeRunContext->requireLoaded('run-1'));
     }
 }
 
@@ -149,27 +149,35 @@ final class FailingBatchPublicationContext implements \Ineersa\AgentCore\Contrac
         $this->inner = new TestActiveRunContext();
     }
 
-    public function stateFor(string $runId): RunState
+    public function createNew(string $runId): RunState
     {
-        return $this->inner->stateFor($runId);
+        $state = RunState::queued($runId);
+        $this->loadRecovered($state);
+
+        return $state;
     }
 
-    public function remember(RunState $state): void
+    public function loadRecovered(RunState $state): void
+    {
+        $this->inner->loadRecovered($state);
+    }
+
+    public function requireLoaded(string $runId): RunState
+    {
+        return $this->inner->requireLoaded($runId);
+    }
+
+    public function replaceCurrent(RunState $state): void
     {
         if ($this->failRemember) {
             throw new \RuntimeException('publication failed');
         }
-        $this->inner->remember($state);
+        $this->inner->replaceCurrent($state);
     }
 
-    public function invalidate(string $runId): void
+    public function release(string $runId): void
     {
-        $this->inner->invalidate($runId);
-    }
-
-    public function clear(): void
-    {
-        $this->inner->clear();
+        $this->inner->release($runId);
     }
 }
 

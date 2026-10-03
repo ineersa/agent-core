@@ -63,6 +63,11 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
 
     public function handleAfterTurnCommit(AfterTurnCommitHookContext $context): AfterTurnCommitHookContext
     {
+        // A failed execution cannot be revived by automatic model work.
+        // Other after-turn subscribers still receive the failure for cleanup.
+        if (\Ineersa\AgentCore\Domain\Run\RunStatus::Failed === $context->runState->status) {
+            return $context;
+        }
         $runId = $context->runId;
 
         // Guard: fork/subagent child runs never compact (auto or manual).

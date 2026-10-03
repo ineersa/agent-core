@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Contract\History;
 
+use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
 
@@ -16,8 +17,7 @@ interface HistoryTailDiscardInterface
 {
     public function isContextMutatingMessage(AbstractAgentBusMessage $message): bool;
 
-    /**
-     * @return array{discarded: bool, lastSeq: int}
-     */
-    public function discardForwardTailIfNeeded(string $runId, RunState $state): array;
+    public function prepareForwardTailDiscard(string $runId, RunState $state): ?RunEvent;
+
+    public function afterDiscardCommitted(string $runId): void;
 }

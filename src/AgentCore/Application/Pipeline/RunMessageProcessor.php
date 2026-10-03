@@ -53,16 +53,17 @@ final readonly class RunMessageProcessor
                         : 'runtime',
                 ]);
                 try {
-                    $state = $this->activeRunContext->stateFor($runId);
+                    $state = $this->activeRunContext->requireLoaded($runId);
 
                     // A context-mutating action may append history_tail_discarded
                     // before its normal handler transition. Persist this separate
                     // canonical mutation immediately, including no-op handlers.
                     if (null !== $this->historyTailDiscard && $this->historyTailDiscard->isContextMutatingMessage($message)) {
-                        $discardResult = $this->historyTailDiscard->discardForwardTailIfNeeded($runId, $state);
-                        if ($discardResult['discarded'] && $discardResult['lastSeq'] > $state->lastSeq) {
-                            $state = $state->with(['lastSeq' => $discardResult['lastSeq']]);
-                            $this->activeRunContext->remember($state);
+                        $discardEvent = $this->historyTailDiscard->prepareForwardTailDiscard($runId, $state);
+                        if (null !== $discardEvent) {
+                            $this->runCommit->commit($state, $state, [$discardEvent], dispatchAfterTurnHooks: false);
+                            $state = $this->activeRunContext->requireLoaded($runId);
+                            $this->historyTailDiscard->afterDiscardCommitted($runId);
                         }
                     }
 

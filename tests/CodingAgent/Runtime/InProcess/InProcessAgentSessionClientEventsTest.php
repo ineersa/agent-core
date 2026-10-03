@@ -4,15 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\InProcess;
 
-use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
-use Ineersa\AgentCore\Contract\History\HistorySelectionServiceInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
-use Ineersa\AgentCore\Domain\Message\RefreshRunContext;
-use Ineersa\AgentCore\Domain\Run\RunState;
-use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
 use Ineersa\CodingAgent\Config\ModelResolver;
@@ -136,14 +131,14 @@ final class InProcessAgentSessionClientEventsTest extends IsolatedKernelTestCase
         $this->assertSame($runId, $client->attach($runId)->runId);
         $this->assertCount(1, $bus->messages);
         $refresh = $bus->messages[0];
-        $this->assertInstanceOf(RefreshRunContext::class, $refresh);
-        $this->assertSame($runId, $refresh->runId());
+        $this->assertInstanceOf(\Ineersa\CodingAgent\Application\Message\AttachRun::class, $refresh);
+        $this->assertSame($runId, $refresh->runId);
         $this->assertSame('system', $refresh->messages[0]->role);
         $this->assertNotEmpty($refresh->messages[0]->content);
 
         $client->attach($runId);
         $this->assertCount(2, $bus->messages);
-        $this->assertInstanceOf(RefreshRunContext::class, $bus->messages[1]);
+        $this->assertInstanceOf(\Ineersa\CodingAgent\Application\Message\AttachRun::class, $bus->messages[1]);
     }
 
     #[Test]
@@ -167,7 +162,6 @@ final class InProcessAgentSessionClientEventsTest extends IsolatedKernelTestCase
             runner: $this->createStub(AgentRunnerInterface::class),
             eventStore: self::$eventStore,
             mapper: $container->get(RuntimeEventMapper::class),
-            historySelectionService: $this->createStub(HistorySelectionServiceInterface::class),
             systemPromptBuilder: $container->get(SystemPromptBuilder::class),
             agentsContextDiscovery: $container->get(AgentsContextDiscovery::class),
             agentsContextRenderer: $container->get(AgentsContextRenderer::class),
@@ -177,26 +171,7 @@ final class InProcessAgentSessionClientEventsTest extends IsolatedKernelTestCase
             sessionMetaStore: $container->get(HatfieldSessionStore::class),
             modelResolver: $container->get(ModelResolver::class),
             commandBus: $commandBus ?? new TestMessageBus(),
-            sessionRepairService: $this->createStub(\Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface::class),
             transientSink: $transientSink,
-            activeRunContext: new class implements ActiveRunContextInterface {
-                public function stateFor(string $runId): RunState
-                {
-                    return RunState::queued($runId)->with(['status' => RunStatus::Completed]);
-                }
-
-                public function remember(RunState $state): void
-                {
-                }
-
-                public function invalidate(string $runId): void
-                {
-                }
-
-                public function clear(): void
-                {
-                }
-            },
         );
     }
 }

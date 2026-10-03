@@ -203,7 +203,7 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
         DeferredSubagentInterruptionKindEnum $kind,
         int $timeoutSecs,
     ): ChildRunTerminalOutcomeDTO {
-        $childState = $this->outcomeFactory->loadDurableChildStateForFailedOrCancelled($identity);
+        $childPresentation = $this->outcomeFactory->loadDurableChildPresentationForFailedOrCancelled($identity);
 
         if (DeferredSubagentInterruptionKindEnum::Timeout === $kind) {
             return new ChildRunTerminalOutcomeDTO(
@@ -211,7 +211,7 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
                 status: AgentArtifactStatusEnum::Failed,
                 failureReason: 'Child run timed out.',
                 summary: 'Timed out after '.$timeoutSecs.'s.',
-                childState: $childState,
+                childPresentation: $childPresentation,
             );
         }
 
@@ -219,7 +219,7 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
             identity: $identity,
             status: AgentArtifactStatusEnum::Cancelled,
             summary: 'Cancelled by parent run.',
-            childState: $childState,
+            childPresentation: $childPresentation,
         );
     }
 
@@ -234,7 +234,7 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
             return $this->outcomeFactory->buildNaturalArtifactOutcome($identity, $cp);
         }
 
-        $childState = $this->outcomeFactory->loadDurableChildStateForFailedOrCancelled($identity);
+        $childPresentation = $this->outcomeFactory->loadDurableChildPresentationForFailedOrCancelled($identity);
 
         if (DeferredSubagentInterruptionKindEnum::Timeout === $kind) {
             return new ChildRunTerminalOutcomeDTO(
@@ -242,7 +242,7 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
                 status: AgentArtifactStatusEnum::Failed,
                 failureReason: 'Child run timed out.',
                 summary: \sprintf('Timed out after %ds.', $timeoutSecs),
-                childState: $childState,
+                childPresentation: $childPresentation,
             );
         }
 
@@ -250,7 +250,7 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
             identity: $identity,
             status: AgentArtifactStatusEnum::Cancelled,
             summary: 'Cancelled by parent run.',
-            childState: $childState,
+            childPresentation: $childPresentation,
         );
     }
 

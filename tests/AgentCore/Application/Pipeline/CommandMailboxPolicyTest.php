@@ -60,6 +60,7 @@ final class CommandMailboxPolicyTest extends TestCase
         $fixture = $this->createFixture();
         $runId = 'run-mailbox-steer-turn-start';
 
+        $fixture->activeRunContext->createNew($runId);
         $fixture->orchestrator->onStartRun($this->startRun($runId));
 
         // Two distinct steers durably queued before the turn-start boundary snapshot.
@@ -74,7 +75,7 @@ final class CommandMailboxPolicyTest extends TestCase
             idempotencyKey: 'advance-idemp-1',
         ));
 
-        $state = $fixture->activeRunContext->stateFor($runId);
+        $state = $fixture->activeRunContext->requireLoaded($runId);
         $this->assertNotNull($state);
 
         $userMessages = array_values(array_filter(
@@ -118,6 +119,7 @@ final class CommandMailboxPolicyTest extends TestCase
         $fixture = $this->createFixture(maxPendingCommands: 1);
         $runId = 'run-mailbox-cap';
 
+        $fixture->activeRunContext->createNew($runId);
         $fixture->orchestrator->onStartRun($this->startRun($runId));
 
         $fixture->orchestrator->onApplyCommand($this->steerCommand($runId, 'cap-steer-1', 'queued'));
@@ -149,6 +151,7 @@ final class CommandMailboxPolicyTest extends TestCase
         $fixture = $this->createFixture();
         $runId = 'run-stop-boundary-follow-up';
 
+        $fixture->activeRunContext->createNew($runId);
         $fixture->orchestrator->onStartRun($this->startRun($runId));
 
         $fixture->orchestrator->onAdvanceRun(new AdvanceRun(
@@ -180,14 +183,14 @@ final class CommandMailboxPolicyTest extends TestCase
             turnNo: $this->currentTurnNo($fixture, $runId),
             stepId: 'advance-1',
             attempt: 1,
-            idempotencyKey: $fixture->activeRunContext->stateFor($runId)?->currentOperation?->idempotencyKey ?? throw new \LogicException('Expected active LLM operation.'),
+            idempotencyKey: $fixture->activeRunContext->requireLoaded($runId)?->currentOperation?->idempotencyKey ?? throw new \LogicException('Expected active LLM operation.'),
             assistantMessage: null,
             usage: [],
             stopReason: 'stop',
             error: null,
         ));
 
-        $state = $fixture->activeRunContext->stateFor($runId);
+        $state = $fixture->activeRunContext->requireLoaded($runId);
         $this->assertNotNull($state);
         // shouldContinue=true keeps the run Running
         $this->assertSame(RunStatus::Running, $state->status);
@@ -215,6 +218,7 @@ final class CommandMailboxPolicyTest extends TestCase
         $fixture = $this->createFixture();
         $runId = 'run-stop-boundary-steer';
 
+        $fixture->activeRunContext->createNew($runId);
         $fixture->orchestrator->onStartRun($this->startRun($runId));
 
         $fixture->orchestrator->onAdvanceRun(new AdvanceRun(
@@ -234,14 +238,14 @@ final class CommandMailboxPolicyTest extends TestCase
             turnNo: $this->currentTurnNo($fixture, $runId),
             stepId: 'advance-1',
             attempt: 1,
-            idempotencyKey: $fixture->activeRunContext->stateFor($runId)?->currentOperation?->idempotencyKey ?? throw new \LogicException('Expected active LLM operation.'),
+            idempotencyKey: $fixture->activeRunContext->requireLoaded($runId)?->currentOperation?->idempotencyKey ?? throw new \LogicException('Expected active LLM operation.'),
             assistantMessage: null,
             usage: [],
             stopReason: 'stop',
             error: null,
         ));
 
-        $state = $fixture->activeRunContext->stateFor($runId);
+        $state = $fixture->activeRunContext->requireLoaded($runId);
         $this->assertNotNull($state);
         $this->assertSame(RunStatus::Running, $state->status, 'Run should remain Running after steers at stop boundary');
 
@@ -282,6 +286,7 @@ final class CommandMailboxPolicyTest extends TestCase
         $fixture = $this->createFixture();
         $runId = 'run-stop-boundary-no-commands';
 
+        $fixture->activeRunContext->createNew($runId);
         $fixture->orchestrator->onStartRun($this->startRun($runId));
 
         $fixture->orchestrator->onAdvanceRun(new AdvanceRun(
@@ -299,14 +304,14 @@ final class CommandMailboxPolicyTest extends TestCase
             turnNo: $this->currentTurnNo($fixture, $runId),
             stepId: 'advance-1',
             attempt: 1,
-            idempotencyKey: $fixture->activeRunContext->stateFor($runId)?->currentOperation?->idempotencyKey ?? throw new \LogicException('Expected active LLM operation.'),
+            idempotencyKey: $fixture->activeRunContext->requireLoaded($runId)?->currentOperation?->idempotencyKey ?? throw new \LogicException('Expected active LLM operation.'),
             assistantMessage: null,
             usage: [],
             stopReason: 'stop',
             error: null,
         ));
 
-        $state = $fixture->activeRunContext->stateFor($runId);
+        $state = $fixture->activeRunContext->requireLoaded($runId);
         $this->assertNotNull($state);
         // shouldContinue=false should complete the run
         $this->assertSame(RunStatus::Completed, $state->status);
@@ -391,7 +396,7 @@ final class CommandMailboxPolicyTest extends TestCase
 
     private function currentTurnNo(CommandMailboxFixture $fixture, string $runId): int
     {
-        $state = $fixture->activeRunContext->stateFor($runId);
+        $state = $fixture->activeRunContext->requireLoaded($runId);
         $this->assertNotNull($state);
 
         return $state->turnNo;
@@ -468,7 +473,6 @@ final class CommandMailboxPolicyTest extends TestCase
 
         $orchestrator = new RunOrchestrator(
             runMessageProcessor: $runMessageProcessor,
-            activeRunContext: $activeRunContext,
         );
 
         return new CommandMailboxFixture($orchestrator, $activeRunContext, $eventStore, $commandStore, $commandBus, $executionBus);

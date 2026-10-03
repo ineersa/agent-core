@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Result;
 
-use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
+use Ineersa\CodingAgent\Session\History\RunPresentationDTO;
 
 use function Symfony\Component\String\u;
 
@@ -22,7 +22,7 @@ final class SubagentChildRunHandoffRenderer
         ?string $artifactId = null,
         ?string $agentName = null,
         ?string $agentRunId = null,
-        ?RunState $childState = null,
+        ?RunPresentationDTO $childPresentation = null,
     ): string {
         if (AgentArtifactStatusEnum::Cancelled === $status) {
             return $this->buildCancelledHandoffMarkdown(
@@ -30,7 +30,7 @@ final class SubagentChildRunHandoffRenderer
                 agentName: $agentName,
                 agentRunId: $agentRunId,
                 summary: $summary,
-                childState: $childState,
+                childPresentation: $childPresentation,
             );
         }
 
@@ -42,7 +42,7 @@ final class SubagentChildRunHandoffRenderer
                 summary: $summary,
                 failureReason: $failureReason,
                 needsClarification: $needsClarification,
-                childState: $childState,
+                childPresentation: $childPresentation,
             );
         }
 
@@ -134,28 +134,6 @@ TXT;
         return $this->limitInlineHandoff($text, $artifactId, 'timed out');
     }
 
-    public function extractLastMessage(RunState $state): string
-    {
-        $lastText = '';
-        foreach (array_reverse($state->messages) as $message) {
-            if ('assistant' !== $message->role) {
-                continue;
-            }
-            foreach ($message->content as $block) {
-                if ('text' === ($block['type'] ?? '') && isset($block['text'])) {
-                    $lastText = (string) $block['text'];
-                    break 2;
-                }
-            }
-        }
-
-        if ('' === $lastText) {
-            $lastText = \sprintf('%s with status %s.', $state->status->name, $state->status->value);
-        }
-
-        return $lastText;
-    }
-
     private function limitInlineHandoff(string $text, string $artifactId, string $status): string
     {
         if (u($text)->length() <= 50000) {
@@ -174,7 +152,7 @@ TXT;
         ?string $agentName,
         ?string $agentRunId,
         ?string $summary,
-        ?RunState $childState,
+        ?RunPresentationDTO $childPresentation,
     ): string {
         $template = <<<'MD'
 # Subagent handoff
@@ -195,7 +173,7 @@ MD;
             agentName: $agentName,
             agentRunId: $agentRunId,
             bodyText: '' !== $summaryText ? $summaryText : 'Child run was cancelled.',
-            childState: $childState,
+            childPresentation: $childPresentation,
         );
     }
 
@@ -206,7 +184,7 @@ MD;
         ?string $summary,
         ?string $failureReason,
         ?string $needsClarification,
-        ?RunState $childState,
+        ?RunPresentationDTO $childPresentation,
     ): string {
         // Session 37: durable child state existed after Codex WebSocket send failure,
         // but failed handoff only kept the generic transport error. Reuse cancelled
@@ -246,7 +224,7 @@ MD;
             agentName: $agentName,
             agentRunId: $agentRunId,
             bodyText: $resultText,
-            childState: $childState,
+            childPresentation: $childPresentation,
             extraReplacements: [
                 '{result_text}' => $resultText,
                 '{failure_text}' => $failureText,
@@ -264,7 +242,7 @@ MD;
         ?string $agentName,
         ?string $agentRunId,
         string $bodyText,
-        ?RunState $childState,
+        ?RunPresentationDTO $childPresentation,
         array $extraReplacements = [],
     ): string {
         $replacements = [
@@ -276,10 +254,10 @@ MD;
             '{retrieval_hint}' => '',
         ] + $extraReplacements;
 
-        if (null !== $childState) {
-            $lastActivity = $this->summarizeLastKnownActivity($childState);
-            $excerpt = $this->extractLastMessage($childState);
-            $includeExcerpt = '' !== trim($excerpt) && !str_starts_with($excerpt, $childState->status->name);
+        if (null !== $childPresentation) {
+            $lastActivity = $this->summarizeLastKnownActivity($childPresentation);
+            $excerpt = $childPresentation->assistantExcerpt;
+            $includeExcerpt = $childPresentation->includeAssistantExcerpt;
             $partial = <<<'MD'
 
 ## Partial context
@@ -291,10 +269,10 @@ MD;
 {last_activity_line}{assistant_excerpt_block}
 MD;
             $partialReplacements = [
-                '{turn_no}' => (string) $childState->turnNo,
-                '{last_seq}' => (string) $childState->lastSeq,
-                '{message_count}' => (string) \count($childState->messages),
-                '{pending_tool_calls}' => (string) \count($childState->pendingToolCalls),
+                '{turn_no}' => (string) $childPresentation->turnNo,
+                '{last_seq}' => (string) $childPresentation->lastSeq,
+                '{message_count}' => (string) $childPresentation->messageCount,
+                '{pending_tool_calls}' => (string) $childPresentation->pendingToolCallCount,
                 '{last_activity_line}' => '' !== $lastActivity ? '- last_known_activity: {last_activity}'."\n" : '',
                 '{assistant_excerpt_block}' => $includeExcerpt ? "\n## Last assistant excerpt\n\n{assistant_excerpt}\n" : '',
             ];
@@ -319,19 +297,16 @@ MD;
         return strtr($markdown, $valueMap);
     }
 
-    private function summarizeLastKnownActivity(RunState $state): string
+    private function summarizeLastKnownActivity(RunPresentationDTO $state): string
     {
-        if ([] !== $state->pendingToolCalls) {
-            $pendingIds = array_keys($state->pendingToolCalls);
-            $firstId = '' !== ($pendingIds[0] ?? '') ? (string) $pendingIds[0] : 'tool_call';
+        if ($state->pendingToolCallCount > 0) {
+            $firstId = null !== $state->firstPendingToolCallId && '' !== $state->firstPendingToolCallId ? $state->firstPendingToolCallId : 'tool_call';
 
             return 'pending tool_call: '.$this->truncateHandoffText($firstId, 120);
         }
 
-        foreach (array_reverse($state->messages) as $message) {
-            if ('assistant' === $message->role) {
-                return 'assistant message at turn '.$state->turnNo;
-            }
+        if ($state->hasAssistantMessage) {
+            return 'assistant message at turn '.$state->turnNo;
         }
 
         return 'run status '.$state->status->value;

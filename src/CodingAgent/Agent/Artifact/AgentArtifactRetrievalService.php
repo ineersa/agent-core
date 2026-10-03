@@ -6,12 +6,11 @@ namespace Ineersa\CodingAgent\Agent\Artifact;
 
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
-use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
-use Ineersa\AgentCore\Domain\Message\AgentMessage;
-use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\CodingAgent\Session\History\RunPresentationDTO;
+use Ineersa\CodingAgent\Session\History\RunPresentationReader;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -97,7 +96,7 @@ MD;
     public function __construct(
         private readonly AgentArtifactRegistry $artifactRegistry,
         private readonly AgentChildRunDirectory $childRunDirectory,
-        private readonly RunStateRebuilderInterface $runStateRebuilder,
+        private readonly RunPresentationReader $presentationReader,
         private readonly EventStoreInterface $eventStore,
         private readonly LoggerInterface $logger,
         private readonly ToolExecutionEndPayloadCodec $toolExecutionEndPayloadCodec,
@@ -124,7 +123,8 @@ MD;
         );
 
         $childState = match ($mode) {
-            AgentRetrieveModeEnum::Metadata, AgentRetrieveModeEnum::History => $this->loadChildState($entry),
+            AgentRetrieveModeEnum::Metadata => $this->loadChildPresentation($entry, 0),
+            AgentRetrieveModeEnum::History => $this->loadChildPresentation($entry, $limit),
             default => null,
         };
 
@@ -197,7 +197,7 @@ MD;
         return $header."\n\n".$handoff;
     }
 
-    private function renderMetadata(AgentArtifactEntryDTO $entry, ?RunState $state): string
+    private function renderMetadata(AgentArtifactEntryDTO $entry, ?RunPresentationDTO $state): string
     {
         $vars = $this->identityVars($entry) + [
             'status' => $entry->status->value,
@@ -228,16 +228,21 @@ MD;
                 '- run_status: '.$state->status->value,
                 '- turn_no: '.\sprintf('%d', $state->turnNo),
                 '- last_seq: '.\sprintf('%d', $state->lastSeq),
-                '- message_count: '.\sprintf('%d', \count($state->messages)),
-                '- pending_tool_calls: '.\sprintf('%d', \count($state->pendingToolCalls)),
+                '- message_count: '.\sprintf('%d', $state->messageCount),
+                '- pending_tool_calls: '.\sprintf('%d', $state->pendingToolCallCount),
             ])."\n";
         }
 
-        $events = $this->eventStore->allFor($entry->agentRunId);
+        $eventCount = $state->eventCount ?? 0;
+        if (null === $state) {
+            foreach ($this->eventStore->rangeFor($entry->agentRunId, 1, \PHP_INT_MAX) as $event) {
+                ++$eventCount;
+            }
+        }
         $vars['event_log_section'] = implode("\n", [
             '',
             '## Event log',
-            '- event_count: '.\sprintf('%d', \count($events)),
+            '- event_count: '.\sprintf('%d', $eventCount),
         ]);
 
         return rtrim($this->renderTemplate(self::TEMPLATE_METADATA, $vars));
@@ -245,20 +250,12 @@ MD;
 
     private function renderEvents(AgentArtifactEntryDTO $entry, int $limit): string
     {
-        $events = $this->eventStore->allFor($entry->agentRunId);
-        usort($events, static fn (RunEvent $a, RunEvent $b): int => $a->seq <=> $b->seq);
-        $slice = \array_slice($events, -$limit);
-
-        $summaryLine = [] === $slice
-            ? ''
-            : \sprintf('Showing last %d of %d events (sanitized summaries only).', \count($slice), \count($events))."\n";
-
-        $lines = [rtrim($this->renderTemplate(self::TEMPLATE_EVENTS_HEADER, $this->identityVars($entry) + [
-            'summary_line' => $summaryLine,
-        ]))];
-
-        foreach ($slice as $event) {
-            $lines[] = \sprintf(
+        $eventCount = 0;
+        $slice = [];
+        foreach ($this->eventStore->rangeFor($entry->agentRunId, 1, \PHP_INT_MAX) as $event) {
+            ++$eventCount;
+            // Retain bounded sanitized strings, never decoded event payloads.
+            $slice[] = \sprintf(
                 '- seq=%d turn=%d type=%s at=%s — %s',
                 $event->seq,
                 $event->turnNo,
@@ -266,6 +263,21 @@ MD;
                 $event->createdAt->format(\DateTimeInterface::ATOM),
                 $this->summarizeEvent($event),
             );
+            if (\count($slice) > $limit) {
+                array_shift($slice);
+            }
+        }
+
+        $summaryLine = [] === $slice
+            ? ''
+            : \sprintf('Showing last %d of %d events (sanitized summaries only).', \count($slice), $eventCount)."\n";
+
+        $lines = [rtrim($this->renderTemplate(self::TEMPLATE_EVENTS_HEADER, $this->identityVars($entry) + [
+            'summary_line' => $summaryLine,
+        ]))];
+
+        foreach ($slice as $line) {
+            $lines[] = $line;
         }
 
         if ([] === $slice) {
@@ -275,39 +287,18 @@ MD;
         return implode("\n", $lines);
     }
 
-    private function renderHistory(AgentArtifactEntryDTO $entry, int $limit, ?RunState $state): string
+    private function renderHistory(AgentArtifactEntryDTO $entry, int $limit, ?RunPresentationDTO $state): string
     {
-        $messages = null !== $state ? $state->messages : [];
-
-        $filtered = [];
-        foreach ($messages as $message) {
-            if ($this->shouldSkipHistoryMessage($message)) {
-                continue;
-            }
-            $filtered[] = $message;
-        }
-
-        $slice = \array_slice($filtered, -$limit);
-
+        $slice = $state->historyLines ?? [];
         $summaryLine = [] === $slice
             ? ''
-            : \sprintf('Showing last %d of %d eligible messages (system, user-context, and tool results omitted).', \count($slice), \count($filtered))."\n";
-
+            : \sprintf('Showing last %d of %d eligible messages (system, user-context, and tool results omitted).', \count($slice), $state->eligibleMessageCount)."\n";
         $lines = [rtrim($this->renderTemplate(self::TEMPLATE_HISTORY_HEADER, $this->identityVars($entry) + [
             'summary_line' => $summaryLine,
         ]))];
 
-        foreach ($slice as $message) {
-            $summary = $this->summarizeMessage($message);
-            $tool = '';
-            if (null !== $message->toolName && '' !== $message->toolName) {
-                $tool = ' tool='.$message->toolName;
-            }
-            if (null !== $message->toolCallId && '' !== $message->toolCallId) {
-                $tool .= ' tool_call_id='.$message->toolCallId;
-            }
-            $err = $message->isError ? ' error=yes' : '';
-            $lines[] = \sprintf('- role=%s%s%s — %s', $message->role, $tool, $err, $summary);
+        foreach ($slice as $line) {
+            $lines[] = $line;
         }
 
         if ([] === $slice) {
@@ -395,12 +386,10 @@ MD;
         return strtr($template, $replacements);
     }
 
-    private function loadChildState(AgentArtifactEntryDTO $entry): ?RunState
+    private function loadChildPresentation(AgentArtifactEntryDTO $entry, int $limit): ?RunPresentationDTO
     {
         try {
-            return $this->runStateRebuilder
-                ->rebuildIfStale(RunState::queued($entry->agentRunId), $entry->agentRunId)
-                ->rebuiltState;
+            return $this->presentationReader->read($entry->agentRunId, $limit, self::HISTORY_SUMMARY_CHARS);
         } catch (\Throwable $e) {
             $this->logger->debug('agent_retrieve.child_state_unavailable', [
                 'component' => 'agent.retrieve',
@@ -412,29 +401,6 @@ MD;
 
             return null;
         }
-    }
-
-    private function shouldSkipHistoryMessage(AgentMessage $message): bool
-    {
-        return \in_array($message->role, ['system', 'user-context', 'tool'], true);
-    }
-
-    private function summarizeMessage(AgentMessage $message): string
-    {
-        $parts = [];
-        foreach ($message->content as $part) {
-            if (!\is_array($part)) {
-                continue;
-            }
-            $type = $part['type'] ?? null;
-            if ('text' === $type && \is_string($part['text'] ?? null)) {
-                $parts[] = $part['text'];
-            }
-        }
-
-        $text = trim(implode(' ', $parts));
-
-        return $this->truncateLine('' === $text ? '(non-text content omitted)' : $text, self::HISTORY_SUMMARY_CHARS);
     }
 
     private function summarizeEvent(RunEvent $event): string

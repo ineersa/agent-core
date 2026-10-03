@@ -90,6 +90,10 @@ final class ControllerReplayShellThenFollowUpTest extends ControllerReplayE2eTes
 
         $events = $this->collectEventsUntil('run.completed', 8.0);
         $byType = $this->indexByType($events);
+        // First-shell entry allocates a durable parent session instead of using
+        // the opaque controller process label as an execution identity.
+        $this->assertArrayHasKey('run.started', $byType, $this->collectDiagnostics($events));
+        $this->runId = $byType['run.started'][0]['runId'];
 
         $this->assertTrue(
             $this->foundAck($events, $commandId),

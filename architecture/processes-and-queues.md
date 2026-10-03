@@ -82,13 +82,18 @@ existing `TransportNamesStamp`. Extension job dispatch is separate from
 
 ## Exact YAML route inventory
 
-All 22 explicitly routed message classes from `config/packages/messenger.yaml`
+All 25 explicitly routed message classes from `config/packages/messenger.yaml`
 are listed here by short class name. Dynamic `ExecuteToolCall` overrides are above.
+
+`AttachRun`, `SelectHistoryPrompt`, and `RepairSession` belong to
+`CodingAgent\Application\Message`, not AgentCore. The shared `run_control`
+transport establishes execution ownership, not framework ownership.
 
 | Transport | Messages |
 |---|---|
-| `run_control` | `StartRun`, `ApplyCommand`, `ApplyShellCommand`, `InvalidateRunContext` |
-| `run_control` | `LlmStepResult`, `ToolCallResult`, `CompactionStepResult` |
+| `run_control` | `StartRun`, `ApplyCommand`, `ApplyShellCommand` |
+| `run_control` | `AttachRun`, `SelectHistoryPrompt`, `RepairSession` |
+| `run_control` | `LlmStepResult`, `ToolCallResult`, `CompactionStepResult`, `CommitSubagentProgress` |
 | `run_control` | `AdvanceRun`, `CompactRun`, `CompleteDeferredToolCall` |
 | `run_control` | `ObserveDeferredSubagentBatchChildTurnMessage`, `DeliverDeferredSubagentBatchLifecycleMessage` |
 | `run_control` | `InterruptDeferredSubagentBatchMessage`, `RecoverDeferredSubagentBatchLifecycleMessage` |

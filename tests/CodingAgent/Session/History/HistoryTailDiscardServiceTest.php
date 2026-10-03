@@ -43,23 +43,9 @@ final class HistoryTailDiscardServiceTest extends TestCase
             ]),
         ];
 
-        $appended = null;
         $store = $this->createMock(EventStoreInterface::class);
         $store->method('allFor')->willReturn($events);
-        $store->expects($this->once())
-            ->method('append')
-            ->willReturnCallback(static function (RunEvent $event) use (&$appended): RunEvent {
-                $appended = $event;
-
-                return new RunEvent(
-                    runId: $event->runId,
-                    seq: 6,
-                    turnNo: $event->turnNo,
-                    type: $event->type,
-                    payload: $event->payload,
-                    createdAt: $event->createdAt,
-                );
-            });
+        $store->expects($this->never())->method('append');
 
         $service = new HistoryTailDiscardService(
             $store,
@@ -75,10 +61,11 @@ final class HistoryTailDiscardServiceTest extends TestCase
             lastSeq: 5,
         );
 
-        $result = $service->discardForwardTailIfNeeded($runId, $state);
+        $result = $service->prepareForwardTailDiscard($runId, $state);
 
-        $this->assertTrue($result['discarded']);
-        $this->assertSame(6, $result['lastSeq']);
+        $appended = $result;
+        $this->assertNotNull($appended);
+        $this->assertSame(0, $appended->seq);
         $this->assertInstanceOf(RunEvent::class, $appended);
         $this->assertSame(RunEventTypeEnum::HistoryTailDiscarded->value, $appended->type);
         $this->assertSame(1, $appended->payload['after_turn_no']);
@@ -110,9 +97,8 @@ final class HistoryTailDiscardServiceTest extends TestCase
             lastSeq: 2,
         );
 
-        $result = $service->discardForwardTailIfNeeded($runId, $state);
-        $this->assertFalse($result['discarded']);
-        $this->assertSame(2, $result['lastSeq']);
+        $result = $service->prepareForwardTailDiscard($runId, $state);
+        $this->assertNull($result);
     }
 
     public function testDetectsMutatingMessages(): void
