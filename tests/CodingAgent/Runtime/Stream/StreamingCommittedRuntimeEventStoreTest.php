@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Runtime\Stream;
 
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
-use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
@@ -23,14 +23,16 @@ use Symfony\Component\EventDispatcher\EventDispatcher;
  */
 final class StreamingCommittedRuntimeEventStoreTest extends TestCase
 {
-    public function testAppendEmitsMappedRuntimeEventAfterInnerAppend(): void
+    public function testFinalizationEmitsMappedRuntimeEventAfterPreparedAppend(): void
     {
         $inner = new RecordingEventStore();
         $sink = new RecordingCommittedStdoutSink();
         $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())));
 
         $store = new StreamingCommittedRuntimeEventStore($inner, $mapper, $sink, true);
-        $store->append(new RunEvent('run-a', 5, 0, RunEventTypeEnum::RunStarted->value, []));
+        $store->appendTransition([new RunEvent('run-a', 5, 0, RunEventTypeEnum::RunStarted->value, [])], []);
+        $this->assertCount(0, $sink->emitted);
+        $store->finalizeTransition('run-a');
 
         $this->assertCount(1, $inner->appended);
         $this->assertCount(1, $sink->emitted);
@@ -38,7 +40,7 @@ final class StreamingCommittedRuntimeEventStoreTest extends TestCase
         $this->assertSame(5, $sink->emitted[0]->seq);
     }
 
-    public function testAppendChildRunEventEmitsRuntimeEventPreservingChildRunId(): void
+    public function testFinalizedChildRunEventPreservesChildRunId(): void
     {
         $childRunId = 'child-subagent-run-7f3a';
         $inner = new RecordingEventStore();
@@ -46,7 +48,9 @@ final class StreamingCommittedRuntimeEventStoreTest extends TestCase
         $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())));
 
         $store = new StreamingCommittedRuntimeEventStore($inner, $mapper, $sink, true);
-        $store->append(new RunEvent($childRunId, 3, 1, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 1]));
+        $store->appendTransition([new RunEvent($childRunId, 3, 1, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 1])], []);
+        $this->assertCount(0, $sink->emitted);
+        $store->finalizeTransition($childRunId);
 
         $this->assertCount(1, $sink->emitted);
         $this->assertSame($childRunId, $sink->emitted[0]->runId);
@@ -54,17 +58,19 @@ final class StreamingCommittedRuntimeEventStoreTest extends TestCase
         $this->assertSame($childRunId, $inner->appended[0]->runId);
     }
 
-    public function testAppendManyEmitsInOrderAfterBatchAppend(): void
+    public function testFinalizationEmitsInOrderAfterBatchAppend(): void
     {
         $inner = new RecordingEventStore();
         $sink = new RecordingCommittedStdoutSink();
         $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())));
 
         $store = new StreamingCommittedRuntimeEventStore($inner, $mapper, $sink, true);
-        $store->appendMany([
+        $store->appendTransition([
             new RunEvent('run-a', 1, 0, RunEventTypeEnum::RunStarted->value, []),
             new RunEvent('run-a', 2, 0, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 1]),
-        ]);
+        ], []);
+        $this->assertCount(0, $sink->emitted);
+        $store->finalizeTransition('run-a');
 
         $this->assertSame([1, 2], array_map(static fn (RuntimeEvent $e): int => $e->seq, $sink->emitted));
     }
@@ -89,7 +95,8 @@ final class StreamingCommittedRuntimeEventStoreTest extends TestCase
         $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())));
 
         $store = new StreamingCommittedRuntimeEventStore($inner, $mapper, $sink, false);
-        $store->append(new RunEvent('run-a', 1, 0, RunEventTypeEnum::RunStarted->value, []));
+        $store->appendTransition([new RunEvent('run-a', 1, 0, RunEventTypeEnum::RunStarted->value, [])], []);
+        $store->finalizeTransition('run-a');
 
         $this->assertCount(1, $inner->appended);
         $this->assertCount(0, $sink->emitted);
@@ -99,7 +106,7 @@ final class StreamingCommittedRuntimeEventStoreTest extends TestCase
 /**
  * @internal
  */
-final class RecordingEventStore implements EventStoreInterface
+final class RecordingEventStore implements PreparedTransitionEventStoreInterface
 {
     /** @var list<RunEvent> */
     public array $appended = [];
@@ -122,6 +129,29 @@ final class RecordingEventStore implements EventStoreInterface
         }
 
         return $out;
+    }
+
+    public function appendTransition(array $events, array $work): array
+    {
+        return $this->appendMany($events);
+    }
+
+    public function verifiedPendingTransition(string $runId): ?\Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO
+    {
+        return null;
+    }
+
+    public function finalizeVerifiedTransition(string $runId, string $identity): void
+    {
+        $this->finalizeTransition($runId);
+    }
+
+    public function finalizeTransition(string $runId): void
+    {
+    }
+
+    public function assertTransitionReady(string $runId): void
+    {
     }
 
     public function latestSequenceFor(string $runId): ?int

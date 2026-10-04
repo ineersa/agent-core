@@ -85,6 +85,9 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
             $this->withSnapshotLock($runId, $turnNo, $stepId, function () use ($runId, $turnNo, $stepId): void {
                 $path = $this->snapshotPath($runId, $turnNo, $stepId);
                 if (is_file($path)) {
+                    if ($this->retainExecutionEvidence($this->readSnapshotEnvelope($path, $runId, $turnNo, $stepId))) {
+                        return;
+                    }
                     $this->unlinkOrThrow($path, $runId, $turnNo, $stepId);
                 }
 
@@ -117,10 +120,38 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
                 }
 
                 $name = $file->getFilename();
-                if (str_ends_with($name, '.json') || str_contains($name, '.json.tmp.')) {
+                if (str_ends_with($name, '.json')) {
+                    $envelope = $this->readSnapshotEnvelope($file->getPathname(), $runId, null, null);
+                    if ($name !== $this->filenamePrefix($envelope->turnNo, $envelope->stepId).'.json') {
+                        throw new SessionToolBatchStoreException('Tool batch cleanup filename identity mismatch.');
+                    }
+                    if ($this->retainExecutionEvidence($envelope)) {
+                        continue;
+                    }
                     $this->unlinkOrThrow($file->getPathname(), $runId, null, null);
                 }
             }
+        });
+    }
+
+    public function hasUnresolvedExecution(string $runId, ?string $toolCallId = null): bool
+    {
+        return $this->withRunLock($runId, function () use ($runId, $toolCallId): bool {
+            $directory = $this->batchesDir($runId);
+            if (!is_dir($directory)) {
+                return false;
+            }
+            foreach (new \FilesystemIterator($directory, \FilesystemIterator::SKIP_DOTS) as $file) {
+                if (!$file->isFile() || !str_ends_with($file->getFilename(), '.json')) {
+                    continue;
+                }
+                $envelope = $this->readSnapshotEnvelope($file->getPathname(), $runId, null, null);
+                if ((null === $toolCallId || isset($envelope->batchState->calls[$toolCallId])) && $this->retainExecutionEvidence($envelope)) {
+                    return true;
+                }
+            }
+
+            return false;
         });
     }
 
@@ -181,7 +212,7 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
         }
     }
 
-    private function readSnapshotEnvelope(string $path, string $expectedRunId, int $expectedTurnNo, string $expectedStepId): ToolBatchSnapshotEnvelopeDTO
+    private function readSnapshotEnvelope(string $path, string $expectedRunId, ?int $expectedTurnNo, ?string $expectedStepId): ToolBatchSnapshotEnvelopeDTO
     {
         $json = file_get_contents($path);
         if (false === $json || '' === trim($json)) {
@@ -208,11 +239,30 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
             throw new SessionToolBatchStoreException('Tool batch snapshot is invalid.', new ValidationFailedException($envelope, $violations));
         }
 
-        if ($envelope->runId !== $expectedRunId || $envelope->turnNo !== $expectedTurnNo || $envelope->stepId !== $expectedStepId) {
+        if ($envelope->runId !== $expectedRunId || (null !== $expectedTurnNo && $envelope->turnNo !== $expectedTurnNo) || (null !== $expectedStepId && $envelope->stepId !== $expectedStepId)) {
             throw new SessionToolBatchStoreException('Tool batch snapshot identity mismatch.');
         }
 
         return $envelope;
+    }
+
+    private function retainExecutionEvidence(ToolBatchSnapshotEnvelopeDTO $envelope): bool
+    {
+        foreach ($envelope->batchState->executionAuthorizations as $authorization) {
+            // Only a durable disposition permits reclamation. Cancellation is
+            // not evidence that an external execution stopped or had no effect.
+            if (!\in_array($authorization['state'], ['Consumed', 'Stale'], true)) {
+                $this->logger->info('tool_batch.execution_evidence_retained', [
+                    'component' => 'session_tool_batch_store', 'event_type' => 'execution_evidence_retained',
+                    'run_id' => $envelope->runId, 'turn_no' => $envelope->turnNo, 'step_id' => $envelope->stepId,
+                    'operation_state' => $authorization['state'],
+                ]);
+
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function writeSnapshot(string $runId, int $turnNo, string $stepId, ToolBatchSnapshotEnvelopeDTO $envelope): void

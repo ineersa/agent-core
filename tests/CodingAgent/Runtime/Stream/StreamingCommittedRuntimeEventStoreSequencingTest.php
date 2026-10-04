@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Runtime\Stream;
 
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
-use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
@@ -21,12 +21,12 @@ use Symfony\Component\EventDispatcher\EventDispatcher;
 #[AllowMockObjectsWithoutExpectations]
 final class StreamingCommittedRuntimeEventStoreSequencingTest extends TestCase
 {
-    public function testAppendWithNextSeqEmitsPersistedAssignedSeq(): void
+    public function testFinalizationEmitsPersistedAssignedSeq(): void
     {
-        $inner = $this->createMock(EventStoreInterface::class);
+        $inner = $this->createMock(PreparedTransitionEventStoreInterface::class);
         $input = new RunEvent('run-a', 0, 0, RunEventTypeEnum::RunStarted->value, []);
         $persisted = new RunEvent('run-a', 42, 0, RunEventTypeEnum::RunStarted->value, []);
-        $inner->expects($this->once())->method('append')->with($input)->willReturn($persisted);
+        $inner->expects($this->once())->method('appendTransition')->with([$input], [])->willReturn([$persisted]);
 
         $sink = new class implements RuntimeEventSinkInterface {
             /** @var list<RuntimeEvent> */
@@ -41,7 +41,10 @@ final class StreamingCommittedRuntimeEventStoreSequencingTest extends TestCase
         $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())));
         $store = new StreamingCommittedRuntimeEventStore($inner, $mapper, $sink, true);
 
-        $returned = $store->append($input);
+        $inner->expects($this->once())->method('finalizeTransition')->with('run-a');
+        $returned = $store->appendTransition([$input], [])[0];
+        $this->assertCount(0, $sink->emitted);
+        $store->finalizeTransition('run-a');
 
         $this->assertSame(42, $returned->seq);
         $this->assertCount(1, $sink->emitted);

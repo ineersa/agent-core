@@ -102,13 +102,13 @@ final class CommitSubagentProgressIntegrationTest extends PerMethodIsolatedKerne
     public function testAppendFailureDoesNotAdvanceDeliveryOrOwnerSequence(): void
     {
         $this->seed();
-        $store = $this->createMock(EventStoreInterface::class);
-        $store->expects($this->once())->method('append')->willThrowException(new \RuntimeException('canonical append failed'));
+        $store = $this->createMock(\Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface::class);
+        $store->expects($this->once())->method('appendTransition')->willThrowException(new \RuntimeException('canonical append failed'));
         $bus = new \Ineersa\AgentCore\Tests\Support\TestMessageBus();
         $active = self::getContainer()->get(ActiveRunContextInterface::class);
         $dispatcher = new \Ineersa\AgentCore\Application\Handler\StepDispatcher($bus, $bus);
         $commit = new \Ineersa\AgentCore\Application\Pipeline\RunCommit($active, $store, $dispatcher,
-            new \Ineersa\AgentCore\Tests\Support\TestLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector());
+            new \Ineersa\AgentCore\Tests\Support\TestLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization());
         $processor = new \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor($active,
             self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class), $commit, $dispatcher,
             [new \Ineersa\CodingAgent\Application\Pipeline\CommitSubagentProgressHandler(self::getContainer()->get(DeferredSubagentBatchRepository::class), $bus)]);

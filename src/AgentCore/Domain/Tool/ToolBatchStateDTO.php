@@ -21,12 +21,15 @@ final class ToolBatchStateDTO
     public const SNAPSHOT_GROUP = 'tool_batch_snapshot';
 
     /**
-     * @param array<string, int>             $expectedOrder
-     * @param array<string, ExecuteToolCall> $calls
-     * @param list<string>                   $pendingQueue
-     * @param array<string, true>            $inFlight
-     * @param array<string, ToolCallResult>  $results
-     * @param array<string, string>          $awaitingHumanInput tool_call_id => request question_id
+     * @param array<string, int>                                                                                          $expectedOrder
+     * @param array<string, ExecuteToolCall>                                                                              $calls
+     * @param list<string>                                                                                                $pendingQueue
+     * @param array<string, true>                                                                                         $inFlight
+     * @param array<string, ToolCallResult>                                                                               $results
+     * @param array<string, string>                                                                                       $awaitingHumanInput      tool_call_id => request question_id
+     * @param array<string, array{state: string, claim: string|null, deferred_id?: string, transition_identity?: string}> $executionAuthorizations
+     * @param array<string, ToolCallResult>                                                                               $executionResults
+     * @param array<string, \Ineersa\AgentCore\Domain\Coordination\ToolResultDispositionDTO>                              $pendingDispositions
      */
     public function __construct(
         #[Groups([self::SNAPSHOT_GROUP])]
@@ -49,6 +52,12 @@ final class ToolBatchStateDTO
         public int $maxParallelism,
         #[Groups([self::SNAPSHOT_GROUP])]
         public array $awaitingHumanInput = [],
+        #[Groups([self::SNAPSHOT_GROUP])]
+        public array $executionAuthorizations = [],
+        #[Groups([self::SNAPSHOT_GROUP])]
+        public array $executionResults = [],
+        #[Groups([self::SNAPSHOT_GROUP])]
+        public array $pendingDispositions = [],
     ) {
     }
 }

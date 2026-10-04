@@ -59,7 +59,9 @@ final class ToolBatchSnapshotCleanupHookSubscriber implements HookSubscriberInte
         if ($this->shouldDeleteAllSnapshotsAfterTerminalCommit($context)) {
             $this->tryDeleteAllForRun($context->runId);
             try {
-                $this->launchInputStore->deleteAllForRun($context->runId);
+                if (!$this->toolBatchStore->hasUnresolvedExecution($context->runId)) {
+                    $this->launchInputStore->deleteAllForRun($context->runId);
+                }
             } catch (\Throwable $exception) {
                 $this->logger->warning('tool_launch_input.terminal_cleanup_failed', [
                     'run_id' => $context->runId, 'component' => 'tool_batch_snapshot_cleanup',
@@ -74,7 +76,9 @@ final class ToolBatchSnapshotCleanupHookSubscriber implements HookSubscriberInte
     private function tryDeleteLaunchInput(string $runId, string $toolCallId): void
     {
         try {
-            $this->launchInputStore->delete($runId, $toolCallId);
+            if (!$this->toolBatchStore->hasUnresolvedExecution($runId, $toolCallId)) {
+                $this->launchInputStore->delete($runId, $toolCallId);
+            }
         } catch (\Throwable $exception) {
             $this->logger->warning('tool_launch_input.cleanup_failed', [
                 'run_id' => $runId, 'tool_call_id' => $toolCallId, 'component' => 'tool_batch_snapshot_cleanup',

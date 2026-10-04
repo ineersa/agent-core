@@ -19,6 +19,7 @@ namespace Ineersa\AgentCore\Domain\Run;
  * (null for ModelTurn). The event/payload surface embeds the same ref via
  * {@see waitingHumanEventPayload()} so live emission and reducer replay stay identical.
  */
+#[\Symfony\Component\Serializer\Attribute\Groups([\Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO::SNAPSHOT_GROUP])]
 final readonly class PendingHumanInputRequestDTO
 {
     /**

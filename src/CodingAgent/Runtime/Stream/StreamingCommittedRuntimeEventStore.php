@@ -9,8 +9,11 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 
-final class StreamingCommittedRuntimeEventStore implements EventStoreInterface
+final class StreamingCommittedRuntimeEventStore implements \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface
 {
+    /** @var array<string, list<RunEvent>> */
+    private array $pendingEvents = [];
+
     public function __construct(
         private readonly EventStoreInterface $inner,
         private readonly RuntimeEventMapper $mapper,
@@ -22,7 +25,6 @@ final class StreamingCommittedRuntimeEventStore implements EventStoreInterface
     public function append(RunEvent $event): RunEvent
     {
         $persisted = $this->inner->append($event);
-        $this->emitMapped($persisted);
 
         return $persisted;
     }
@@ -30,11 +32,71 @@ final class StreamingCommittedRuntimeEventStore implements EventStoreInterface
     public function appendMany(array $events): array
     {
         $persisted = $this->inner->appendMany($events);
-        foreach ($persisted as $event) {
-            $this->emitMapped($event);
-        }
 
         return $persisted;
+    }
+
+    public function appendTransition(array $events, array $work): array
+    {
+        if (!$this->inner instanceof \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface) {
+            throw new \LogicException('Configured canonical store lacks transition preparation.');
+        }
+        $persisted = $this->inner->appendTransition($events, $work);
+        $this->pendingEvents[$events[0]->runId ?? $work['run_id']] = $persisted;
+
+        return $persisted;
+    }
+
+    public function verifiedPendingTransition(string $runId): ?\Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO
+    {
+        $store = $this->inner;
+        if (!$store instanceof \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface) {
+            throw new \LogicException('Configured canonical store lacks transition preparation.');
+        }
+
+        return $store->verifiedPendingTransition($runId);
+    }
+
+    public function finalizeVerifiedTransition(string $runId, string $identity): void
+    {
+        $store = $this->inner;
+        if (!$store instanceof \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface) {
+            throw new \LogicException('Configured canonical store lacks transition preparation.');
+        }
+        $pending = $store->verifiedPendingTransition($runId);
+        if (null === $pending) {
+            throw new \RuntimeException('Verified transition missing before stream publication.');
+        }
+        $start = $pending->work['predecessor_seq'] ?? null;
+        if (!\is_int($start)) {
+            throw new \RuntimeException('Verified transition has no predecessor sequence.');
+        }
+        $store->finalizeVerifiedTransition($runId, $identity);
+        unset($this->pendingEvents[$runId]);
+        foreach ($store->rangeFor($runId, $start + 1, $store->latestSequenceFor($runId) ?? $start) as $event) {
+            $this->emitMapped($event);
+        }
+    }
+
+    public function finalizeTransition(string $runId): void
+    {
+        if (!$this->inner instanceof \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface) {
+            throw new \LogicException('Configured canonical store lacks transition preparation.');
+        }
+        $this->inner->finalizeTransition($runId);
+        $events = $this->pendingEvents[$runId] ?? [];
+        unset($this->pendingEvents[$runId]);
+        foreach ($events as $event) {
+            $this->emitMapped($event);
+        }
+    }
+
+    public function assertTransitionReady(string $runId): void
+    {
+        if (!$this->inner instanceof \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface) {
+            throw new \LogicException('Configured canonical store lacks transition preparation.');
+        }
+        $this->inner->assertTransitionReady($runId);
     }
 
     public function latestSequenceFor(string $runId): ?int

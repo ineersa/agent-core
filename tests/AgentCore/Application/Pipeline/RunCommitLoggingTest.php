@@ -6,7 +6,7 @@ namespace Ineersa\AgentCore\Tests\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
-use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
@@ -31,7 +31,7 @@ final class RunCommitLoggingTest extends TestCase
             eventStore: $eventStore,
             stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
             logger: $logger,
-            toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(),
+            toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), toolAuthorization: new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(),
         );
 
         $next = new RunState(
@@ -101,7 +101,7 @@ final class RunCommitLoggingTest extends TestCase
             activeRunContext: $active, eventStore: $store,
             stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
             logger: new TestLogger(), toolBatchCollector: $collector,
-            hookDispatcher: new \Ineersa\AgentCore\Application\Handler\HookDispatcher([$hook]),
+            hookDispatcher: new \Ineersa\AgentCore\Application\Handler\HookDispatcher([$hook]), toolAuthorization: new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(),
         );
         try {
             $commit->commit($previous, $next, $events);
@@ -132,10 +132,98 @@ final class RunCommitLoggingTest extends TestCase
             eventStore: new RecordingEventStore(),
             stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
             logger: new TestLogger(),
-            toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(),
+            toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), toolAuthorization: new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(),
         ))->commit($previous, $next, []);
 
         $this->assertSame($next, $activeRunContext->requireLoaded('run-1'));
+    }
+
+    public function testNoEventCommitCannotBypassPendingTransition(): void
+    {
+        $active = new TestActiveRunContext();
+        $previous = RunState::queued('run-1');
+        $active->loadRecovered($previous);
+        $store = $this->createMock(PreparedTransitionEventStoreInterface::class);
+        $store->expects($this->once())->method('assertTransitionReady')->with('run-1')
+            ->willThrowException(new \RuntimeException('coordination pending'));
+        $store->expects($this->never())->method('appendTransition');
+        $bus = $this->createMock(\Symfony\Component\Messenger\MessageBusInterface::class);
+        $bus->expects($this->never())->method('dispatch');
+        $commit = new RunCommit($active, $store, new StepDispatcher($bus, $bus), new TestLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization());
+
+        try {
+            $commit->commit($previous, $previous->with(['status' => RunStatus::Running]), [], [new \stdClass()]);
+            $this->fail('Pending coordination must block even an event-free commit.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('coordination pending', $exception->getMessage());
+        }
+        $this->assertSame($previous, $active->requireLoaded('run-1'));
+    }
+
+    public function testDispositionFailureRetainsPendingTransition(): void
+    {
+        $active = new TestActiveRunContext();
+        $previous = RunState::queued('run-1');
+        $active->loadRecovered($previous);
+        $event = new RunEvent('run-1', 1, 0, 'run_started', []);
+        $descriptor = new \Ineersa\AgentCore\Domain\Coordination\ToolResultDispositionDTO('run-1', 1, 'tools', 'operation', 'claim', 'hash', 'Consumed');
+        $store = $this->createMock(PreparedTransitionEventStoreInterface::class);
+        $store->expects($this->once())->method('assertTransitionReady');
+        $store->expects($this->once())->method('appendTransition')->willReturn([$event]);
+        $store->expects($this->never())->method('finalizeTransition');
+        $verified = new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO('transition', 0, 10, ['run_id' => 'run-1', 'result_disposition' => $descriptor]);
+        $store->method('verifiedPendingTransition')->willReturn($verified);
+        $authorization = $this->createMock(\Ineersa\AgentCore\Contract\Tool\ToolExecutionAuthorizationInterface::class);
+        $authorization->expects($this->once())->method('applyDisposition')->with($descriptor, $verified)
+            ->willThrowException(new \RuntimeException('disposition persistence failed'));
+        $commit = new RunCommit($active, $store, new StepDispatcher(new TestMessageBus(), new TestMessageBus()), new TestLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), $authorization);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('disposition persistence failed');
+        $commit->commit($previous, $previous, [$event], dispatchAfterTurnHooks: false, resultDisposition: $descriptor);
+    }
+
+    public function testDispositionPersistsBeforeTransitionFinalization(): void
+    {
+        $active = new TestActiveRunContext();
+        $previous = RunState::queued('run-1');
+        $active->loadRecovered($previous);
+        $event = new RunEvent('run-1', 1, 0, 'run_started', []);
+        $descriptor = new \Ineersa\AgentCore\Domain\Coordination\ToolResultDispositionDTO('run-1', 1, 'tools', 'operation', 'claim', 'hash', 'Consumed');
+        $disposed = false;
+        $store = $this->createMock(PreparedTransitionEventStoreInterface::class);
+        $store->expects($this->once())->method('assertTransitionReady');
+        $store->expects($this->once())->method('appendTransition')->willReturn([$event]);
+        $store->expects($this->once())->method('finalizeVerifiedTransition')->willReturnCallback(function () use (&$disposed): void {
+            $this->assertTrue($disposed, 'Required result disposition must be durable before deleting the transition manifest.');
+        });
+        $verified = new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO('transition', 0, 10, ['run_id' => 'run-1', 'result_disposition' => $descriptor]);
+        $store->method('verifiedPendingTransition')->willReturn($verified);
+        $authorization = $this->createMock(\Ineersa\AgentCore\Contract\Tool\ToolExecutionAuthorizationInterface::class);
+        $authorization->expects($this->once())->method('applyDisposition')->with($descriptor, $verified)->willReturnCallback(static function () use (&$disposed): void {
+            $disposed = true;
+        });
+        $commit = new RunCommit($active, $store, new StepDispatcher(new TestMessageBus(), new TestMessageBus()), new TestLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), $authorization);
+        $commit->commit($previous, $previous, [$event], dispatchAfterTurnHooks: false, resultDisposition: $descriptor);
+    }
+
+    public function testEffectDispatchFailurePropagatesWithoutFinalization(): void
+    {
+        $active = new TestActiveRunContext();
+        $previous = RunState::queued('run-1');
+        $active->loadRecovered($previous);
+        $event = new RunEvent('run-1', 1, 0, 'run_started', []);
+        $store = $this->createMock(PreparedTransitionEventStoreInterface::class);
+        $store->expects($this->once())->method('assertTransitionReady');
+        $store->expects($this->once())->method('appendTransition')->willReturn([$event]);
+        $store->expects($this->never())->method('finalizeTransition');
+        $bus = $this->createMock(\Symfony\Component\Messenger\MessageBusInterface::class);
+        $bus->expects($this->once())->method('dispatch')->willThrowException(new \RuntimeException('broker unavailable'));
+        $commit = new RunCommit($active, $store, new StepDispatcher($bus, $bus), new TestLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization());
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('broker unavailable');
+        $commit->commit($previous, $previous, [$event], [new \stdClass()]);
     }
 }
 
@@ -181,7 +269,7 @@ final class FailingBatchPublicationContext implements \Ineersa\AgentCore\Contrac
     }
 }
 
-final class RecordingEventStore implements EventStoreInterface
+final class RecordingEventStore implements PreparedTransitionEventStoreInterface
 {
     public bool $failAppend = false;
 
@@ -189,6 +277,31 @@ final class RecordingEventStore implements EventStoreInterface
 
     /** @var list<RunEvent> */
     public array $appended = [];
+
+    public function appendTransition(array $events, array $work): array
+    {
+        $this->assertTransitionReady($events[0]->runId);
+
+        return $this->appendMany($events);
+    }
+
+    public function assertTransitionReady(string $runId): void
+    {
+    }
+
+    public function verifiedPendingTransition(string $runId): ?\Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO
+    {
+        return null;
+    }
+
+    public function finalizeVerifiedTransition(string $runId, string $identity): void
+    {
+        $this->finalizeTransition($runId);
+    }
+
+    public function finalizeTransition(string $runId): void
+    {
+    }
 
     public function append(RunEvent $event): RunEvent
     {

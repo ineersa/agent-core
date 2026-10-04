@@ -8,7 +8,6 @@ use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\RunStateDuplicateSequenceReplayException;
 use Ineersa\AgentCore\Application\Handler\RunStateReplayException;
 use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
-use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -54,7 +53,7 @@ final class HistorySelectionServiceTest extends TestCase
         ];
 
         $appended = [];
-        $eventStore = new class($events, $appended) implements EventStoreInterface {
+        $eventStore = new class($events, $appended) implements \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface {
             /** @param list<RunEvent> $events */
             public function __construct(private array $events, private array &$appended)
             {
@@ -91,6 +90,29 @@ final class HistorySelectionServiceTest extends TestCase
             public function allFor(string $runId): array
             {
                 return $this->events;
+            }
+
+            public function appendTransition(array $events, array $work): array
+            {
+                return $this->appendMany($events);
+            }
+
+            public function assertTransitionReady(string $runId): void
+            {
+            }
+
+            public function verifiedPendingTransition(string $runId): ?\Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO
+            {
+                return null;
+            }
+
+            public function finalizeVerifiedTransition(string $runId, string $identity): void
+            {
+                $this->finalizeTransition($runId);
+            }
+
+            public function finalizeTransition(string $runId): void
+            {
             }
 
             public function append(RunEvent $event): RunEvent
@@ -135,7 +157,7 @@ final class HistorySelectionServiceTest extends TestCase
             logger: new NullLogger(),
             historyProjector: new HistoryProjector(),
             replayEventPreparer: new ReplayEventPreparer(),
-            runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit($activeRunContext, $eventStore, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus()), new NullLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector()),
+            runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit($activeRunContext, $eventStore, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus()), new NullLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization()),
         );
 
         $result = $service->selectPrompt($runId, 1);
@@ -189,7 +211,7 @@ final class HistorySelectionServiceTest extends TestCase
         ];
 
         $appended = [];
-        $eventStore = new class($events, $appended) implements EventStoreInterface {
+        $eventStore = new class($events, $appended) implements \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface {
             /** @param list<RunEvent> $events */
             public function __construct(private array $events, private array &$appended)
             {
@@ -226,6 +248,29 @@ final class HistorySelectionServiceTest extends TestCase
             public function allFor(string $runId): array
             {
                 return $this->events;
+            }
+
+            public function appendTransition(array $events, array $work): array
+            {
+                return $this->appendMany($events);
+            }
+
+            public function assertTransitionReady(string $runId): void
+            {
+            }
+
+            public function verifiedPendingTransition(string $runId): ?\Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO
+            {
+                return null;
+            }
+
+            public function finalizeVerifiedTransition(string $runId, string $identity): void
+            {
+                $this->finalizeTransition($runId);
+            }
+
+            public function finalizeTransition(string $runId): void
+            {
             }
 
             public function append(RunEvent $event): RunEvent
@@ -270,7 +315,7 @@ final class HistorySelectionServiceTest extends TestCase
             logger: new NullLogger(),
             historyProjector: new HistoryProjector(),
             replayEventPreparer: new ReplayEventPreparer(),
-            runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit($activeRunContext, $eventStore, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus()), new NullLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector()),
+            runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit($activeRunContext, $eventStore, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus()), new NullLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization()),
         );
 
         $result = $service->selectPrompt($runId, 2);
@@ -307,7 +352,7 @@ final class HistorySelectionServiceTest extends TestCase
             new RunEvent($runId, 5, 3, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 3]),
         ];
 
-        $eventStore = new class($events) implements EventStoreInterface {
+        $eventStore = new class($events) implements \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface {
             /** @param list<RunEvent> $events */
             public function __construct(private array $events)
             {
@@ -344,6 +389,29 @@ final class HistorySelectionServiceTest extends TestCase
             public function allFor(string $runId): array
             {
                 return $this->events;
+            }
+
+            public function appendTransition(array $events, array $work): array
+            {
+                return $this->appendMany($events);
+            }
+
+            public function assertTransitionReady(string $runId): void
+            {
+            }
+
+            public function verifiedPendingTransition(string $runId): ?\Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO
+            {
+                return null;
+            }
+
+            public function finalizeVerifiedTransition(string $runId, string $identity): void
+            {
+                $this->finalizeTransition($runId);
+            }
+
+            public function finalizeTransition(string $runId): void
+            {
             }
 
             public function append(RunEvent $event): RunEvent
@@ -368,7 +436,7 @@ final class HistorySelectionServiceTest extends TestCase
             logger: new NullLogger(),
             historyProjector: new HistoryProjector(),
             replayEventPreparer: new ReplayEventPreparer(),
-            runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit($activeRunContext, $eventStore, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus()), new NullLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector()),
+            runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit($activeRunContext, $eventStore, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus()), new NullLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization()),
         );
 
         $this->expectException(\RuntimeException::class);
@@ -393,7 +461,7 @@ final class HistorySelectionServiceTest extends TestCase
             ]),
         ];
 
-        $eventStore = new class($events) implements EventStoreInterface {
+        $eventStore = new class($events) implements \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface {
             /** @param list<RunEvent> $events */
             public function __construct(private array $events)
             {
@@ -430,6 +498,29 @@ final class HistorySelectionServiceTest extends TestCase
             public function allFor(string $runId): array
             {
                 return $this->events;
+            }
+
+            public function appendTransition(array $events, array $work): array
+            {
+                return $this->appendMany($events);
+            }
+
+            public function assertTransitionReady(string $runId): void
+            {
+            }
+
+            public function verifiedPendingTransition(string $runId): ?\Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO
+            {
+                return null;
+            }
+
+            public function finalizeVerifiedTransition(string $runId, string $identity): void
+            {
+                $this->finalizeTransition($runId);
+            }
+
+            public function finalizeTransition(string $runId): void
+            {
             }
 
             public function append(RunEvent $event): RunEvent
@@ -457,7 +548,7 @@ final class HistorySelectionServiceTest extends TestCase
             logger: new NullLogger(),
             historyProjector: new HistoryProjector(),
             replayEventPreparer: new ReplayEventPreparer(),
-            runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit($activeRunContext, $eventStore, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus()), new NullLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector()),
+            runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit($activeRunContext, $eventStore, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus()), new NullLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization()),
         );
 
         try {

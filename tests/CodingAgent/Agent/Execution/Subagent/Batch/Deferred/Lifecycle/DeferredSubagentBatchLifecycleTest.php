@@ -1382,7 +1382,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $events = new \Symfony\Component\EventDispatcher\EventDispatcher();
         $events->addListener(DeferredToolCompletionRegisteredEvent::class, static function () use (&$notifications): void { ++$notifications; });
         $workerBus = new TestMessageBus();
-        $worker = new \Ineersa\AgentCore\Application\Handler\ExecuteToolCallWorker($executor, $workerBus, $deferred, new \Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore(), new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(), eventDispatcher: $events, launchInputStore: $inputStore);
+        $worker = new \Ineersa\AgentCore\Application\Handler\ExecuteToolCallWorker($executor, $workerBus, $deferred, new \Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore(), new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(), eventDispatcher: $events, launchInputStore: $inputStore, toolAuthorization: new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization());
         $worker($original);
         $this->assertCount(0, $workerBus->messages, json_encode($workerBus->messages, \JSON_THROW_ON_ERROR));
         $this->assertSame('pending', $deferred->status($lifecycle));
@@ -1691,7 +1691,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
                 $handler = new \Ineersa\CodingAgent\Application\Pipeline\CommitSubagentProgressHandler($this->repo);
                 $active = new \Ineersa\AgentCore\Tests\Support\TestActiveRunContext();
                 $active->loadRecovered(\Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder::running($parentRunId)
-                    ->withTurnNo($parentTurnNo)->withPendingToolCalls([$parentToolCallId => false])->build());
+                    ->withTurnNo($parentTurnNo)->withLastSeq($this->store->latestSequenceFor($parentRunId) ?? 0)->withPendingToolCalls([$parentToolCallId => false])->build());
                 $coordination = new \Ineersa\CodingAgent\Application\Pipeline\SubagentProgressCoordinationHandler($this->repo, $bus);
                 $coordinationBus = new \Symfony\Component\Messenger\MessageBus([
                     new \Symfony\Component\Messenger\Middleware\HandleMessageMiddleware(new \Symfony\Component\Messenger\Handler\HandlersLocator([
@@ -1700,7 +1700,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
                     ])),
                 ]);
                 $dispatcher = new \Ineersa\AgentCore\Application\Handler\StepDispatcher($coordinationBus, $bus);
-                $commit = new \Ineersa\AgentCore\Application\Pipeline\RunCommit($active, $this->store, $dispatcher, new TestLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector());
+                $commit = new \Ineersa\AgentCore\Application\Pipeline\RunCommit($active, $this->store, $dispatcher, new TestLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization());
                 $processor = new \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor($active, $this->lock, $commit, $dispatcher, [$handler]);
                 $processor->process('command.subagent_progress', new \Ineersa\AgentCore\Domain\Message\CommitSubagentProgress(
                     $parentRunId, $parentTurnNo, $lifecycleId, $parentToolCallId, $parentOrderIndex, $revision, $normalized, $interruptionKind,

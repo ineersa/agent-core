@@ -44,6 +44,41 @@ final class ToolBatchCollectorDurableTest extends TestCase
         parent::tearDown();
     }
 
+    public function testRepeatedRegistrationPreservesResultsAndDoesNotReadmitExecution(): void
+    {
+        $store = $this->createStore();
+        $calls = [
+            $this->executeToolCall('run-register', 'step-register', 'call-1', 0, 'sequential'),
+            $this->executeToolCall('run-register', 'step-register', 'call-2', 1, 'sequential'),
+        ];
+        $collector = new ToolBatchCollector(store: $store);
+        $this->assertCount(1, $collector->registerExpectedBatch('run-register', 1, 'step-register', $calls));
+        $collector->collect($this->toolResult('run-register', 'step-register', 'call-1', 0));
+        $before = $store->load('run-register', 1, 'step-register');
+        $restored = new ToolBatchCollector(store: $store);
+        $this->assertSame([], $restored->registerExpectedBatch('run-register', 1, 'step-register', $calls));
+        $this->assertEquals($before, $store->load('run-register', 1, 'step-register'));
+        $restored->collect($this->toolResult('run-register', 'step-register', 'call-2', 1));
+        $this->assertSame([], $restored->registerExpectedBatch('run-register', 1, 'step-register', $calls));
+        $this->assertTrue($store->load('run-register', 1, 'step-register')->finalized);
+        $this->assertCount(2, $store->load('run-register', 1, 'step-register')->results);
+    }
+
+    public function testConflictingRegistrationCannotReplaceExistingBatch(): void
+    {
+        $store = $this->createStore();
+        $collector = new ToolBatchCollector(store: $store);
+        $collector->registerExpectedBatch('run-conflict', 1, 'step-conflict', [$this->executeToolCall('run-conflict', 'step-conflict', 'call', 0, 'sequential')]);
+        $before = $store->load('run-conflict', 1, 'step-conflict');
+        try {
+            $collector->registerExpectedBatch('run-conflict', 1, 'step-conflict', [$this->executeToolCall('run-conflict', 'step-conflict', 'different-call', 0, 'sequential')]);
+            $this->fail('Conflicting prepared membership must be rejected.');
+        } catch (\LogicException $exception) {
+            $this->assertStringContainsString('Conflicting prepared', $exception->getMessage());
+        }
+        $this->assertEquals($before, $store->load('run-conflict', 1, 'step-conflict'));
+    }
+
     public function testRegisterAndCollectWithStore(): void
     {
         $store = $this->createStore();
@@ -187,6 +222,11 @@ final class ToolBatchCollectorDurableTest extends TestCase
             public function delete(string $runId, int $turnNo, string $stepId): void
             {
                 $this->inner->delete($runId, $turnNo, $stepId);
+            }
+
+            public function hasUnresolvedExecution(string $runId, ?string $toolCallId = null): bool
+            {
+                return false;
             }
 
             public function deleteAllForRun(string $runId): void

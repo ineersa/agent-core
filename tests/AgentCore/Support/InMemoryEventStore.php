@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Support;
 
-use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 
-final class InMemoryEventStore implements EventStoreInterface
+final class InMemoryEventStore implements PreparedTransitionEventStoreInterface
 {
     public int $allForCalls = 0;
 
@@ -31,6 +31,31 @@ final class InMemoryEventStore implements EventStoreInterface
         $this->eventsByRun[$event->runId] ??= [];
         $this->eventsByRun[$event->runId][] = $event;
         $this->highWaterByRun[$event->runId] = max($this->highWaterByRun[$event->runId] ?? 0, $event->seq);
+    }
+
+    public function appendTransition(array $events, array $work): array
+    {
+        $this->assertTransitionReady($events[0]->runId);
+
+        return $this->appendMany($events);
+    }
+
+    public function assertTransitionReady(string $runId): void
+    {
+    }
+
+    public function verifiedPendingTransition(string $runId): ?\Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO
+    {
+        return null;
+    }
+
+    public function finalizeVerifiedTransition(string $runId, string $identity): void
+    {
+        $this->finalizeTransition($runId);
+    }
+
+    public function finalizeTransition(string $runId): void
+    {
     }
 
     public function append(RunEvent $event): RunEvent

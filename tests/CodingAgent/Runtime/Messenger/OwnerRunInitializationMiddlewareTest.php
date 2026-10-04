@@ -166,7 +166,7 @@ final class OwnerRunInitializationMiddlewareTest extends PerMethodIsolatedKernel
             self::getContainer()->get(HatfieldSessionStore::class),
             self::getContainer()->get(\Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory::class),
             self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class),
-            new \Psr\Log\NullLogger(), self::getContainer()->get(AgentArtifactRegistry::class));
+            new \Psr\Log\NullLogger(), self::getContainer()->get(AgentArtifactRegistry::class), self::getContainer()->get(\Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery::class));
         try {
             $middleware->handle(new Envelope($this->start($run), [new ReceivedStamp('run_control')]), new StackMiddleware());
             $this->fail('Empty recovery must not admit queued state.');

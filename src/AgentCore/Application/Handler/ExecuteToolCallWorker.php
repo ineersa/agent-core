@@ -31,6 +31,7 @@ final readonly class ExecuteToolCallWorker
         private DeferredToolCompletionRepositoryInterface $deferredToolCompletionRepository,
         private ToolExecutionResultStore $resultStore,
         private RunOperationalStatusReaderInterface $statusReader,
+        private \Ineersa\AgentCore\Contract\Tool\ToolExecutionAuthorizationInterface $toolAuthorization,
         private ?RunTracer $tracer = null,
         private ?EventDispatcherInterface $eventDispatcher = null,
         private ?ToolLaunchInputStoreInterface $launchInputStore = null,
@@ -55,8 +56,30 @@ final readonly class ExecuteToolCallWorker
 
         try {
             $execute = function () use ($message): void {
-                $outcome = $this->execute($message);
+                $existing = $this->deferredToolCompletionRepository->findByRunAndToolCall($message->runId(), $message->toolCallId);
+                if (null !== $existing) {
+                    $this->toolAuthorization->transferToDeferred($message, $existing->deferredId);
+                    $this->execute($message);
+
+                    return;
+                }
+                $claim = $this->toolAuthorization->claim($message);
+                if (null === $claim) {
+                    return; // Running work is never automatically repeated.
+                }
+                $outcome = $claim instanceof ToolCallResult ? $claim : $this->execute($message);
+                if (null !== $outcome && \is_string($claim)) {
+                    // This write must succeed before result notification or delivery ACK.
+                    $this->toolAuthorization->saveResult($message, $claim, $outcome);
+                }
                 if (null === $outcome) {
+                    $registration = $this->deferredToolCompletionRepository->findByRunAndToolCall($message->runId(), $message->toolCallId);
+                    if (null === $registration) {
+                        throw new \RuntimeException('Deferred execution has no durable registration.');
+                    }
+                    $this->toolAuthorization->transferToDeferred($message, $registration->deferredId);
+                    $this->dispatchDeferredRegistered($registration);
+
                     return;
                 }
 
@@ -197,7 +220,6 @@ final readonly class ExecuteToolCallWorker
                     $message->toolName,
                     $message->toolIdempotencyKey,
                 );
-                $this->dispatchDeferredRegistered($correlation);
 
                 return null;
             }

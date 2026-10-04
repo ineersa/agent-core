@@ -17,7 +17,7 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
  *
  * Child run location uses AgentChildRunDirectory.
  */
-final class ChildAwareEventStore implements EventStoreInterface
+final class ChildAwareEventStore implements \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface
 {
     /** @var array<string, AgentChildRunEventStore> agentRunId → store */
     private array $childStores = [];
@@ -58,6 +58,53 @@ final class ChildAwareEventStore implements EventStoreInterface
         }
 
         return $this->parentStore->appendMany($events);
+    }
+
+    public function appendTransition(array $events, array $work): array
+    {
+        $store = $this->resolveChildStore($events[0]->runId ?? $work['run_id']) ?? $this->parentStore;
+        if (!$store instanceof \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface) {
+            throw new \LogicException('Configured canonical store lacks transition preparation.');
+        }
+
+        return $store->appendTransition($events, $work);
+    }
+
+    public function verifiedPendingTransition(string $runId): ?\Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO
+    {
+        $store = $this->resolveChildStore($runId) ?? $this->parentStore;
+        if (!$store instanceof \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface) {
+            throw new \LogicException('Configured canonical store lacks transition preparation.');
+        }
+
+        return $store->verifiedPendingTransition($runId);
+    }
+
+    public function finalizeVerifiedTransition(string $runId, string $identity): void
+    {
+        $store = $this->resolveChildStore($runId) ?? $this->parentStore;
+        if (!$store instanceof \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface) {
+            throw new \LogicException('Configured canonical store lacks transition preparation.');
+        }
+        $store->finalizeVerifiedTransition($runId, $identity);
+    }
+
+    public function finalizeTransition(string $runId): void
+    {
+        $store = $this->resolveChildStore($runId) ?? $this->parentStore;
+        if (!$store instanceof \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface) {
+            throw new \LogicException('Configured canonical store lacks transition preparation.');
+        }
+        $store->finalizeTransition($runId);
+    }
+
+    public function assertTransitionReady(string $runId): void
+    {
+        $store = $this->resolveChildStore($runId) ?? $this->parentStore;
+        if (!$store instanceof \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface) {
+            throw new \LogicException('Configured canonical store lacks transition preparation.');
+        }
+        $store->assertTransitionReady($runId);
     }
 
     public function latestSequenceFor(string $runId): ?int

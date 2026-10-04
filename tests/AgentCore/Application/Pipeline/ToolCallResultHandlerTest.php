@@ -1160,6 +1160,11 @@ final class CancellationBatchReadObservationStore implements \Ineersa\AgentCore\
         $this->inner->delete($runId, $turnNo, $stepId);
     }
 
+    public function hasUnresolvedExecution(string $runId, ?string $toolCallId = null): bool
+    {
+        return false;
+    }
+
     public function deleteAllForRun(string $runId): void
     {
         $this->inner->deleteAllForRun($runId);

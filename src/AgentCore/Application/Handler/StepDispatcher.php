@@ -20,13 +20,15 @@ final readonly class StepDispatcher
      * Dispatches state transitions to the run-control command bus and external
      * I/O effects to the execution bus.
      *
-     * @param list<object> $effects
+     * @param list<object>                                                                   $effects
+     * @param array<int, \Ineersa\AgentCore\Domain\Coordination\ExecutionAuthorizationStamp> $authorizations
      */
-    public function dispatchEffects(array $effects): void
+    public function dispatchEffects(array $effects, array $authorizations = []): void
     {
         foreach ($effects as $effect) {
             try {
-                $this->busFor($effect)->dispatch($effect);
+                $stamp = $authorizations[spl_object_id($effect)] ?? null;
+                $this->busFor($effect)->dispatch($effect, null === $stamp ? [] : [$stamp]);
             } catch (ExceptionInterface $exception) {
                 throw new \RuntimeException('Failed to dispatch execution effect.', previous: $exception);
             }

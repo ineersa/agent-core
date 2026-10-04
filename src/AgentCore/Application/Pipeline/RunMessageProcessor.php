@@ -53,6 +53,7 @@ final readonly class RunMessageProcessor
                         : 'runtime',
                 ]);
                 try {
+                    $this->runCommit->assertTransitionReady($runId);
                     $state = $this->activeRunContext->requireLoaded($runId);
 
                     // A context-mutating action may append history_tail_discarded
@@ -67,15 +68,31 @@ final readonly class RunMessageProcessor
                         }
                     }
 
+                    if ($this->runCommit->executionResultAlreadyDisposed() || ($message instanceof \Ineersa\AgentCore\Domain\Message\ToolCallResult && $this->runCommit->toolResultAlreadyDisposed($message))) {
+                        return;
+                    }
                     $result = $handler->handle($message, $state);
+                    $executionDisposition = $this->runCommit->prepareExecutionDisposition(null === $result->nextState || $state->turnNo !== $message->turnNo() || \Ineersa\AgentCore\Domain\Run\RunStatus::Cancelled === $state->status);
+                    $disposition = $message instanceof \Ineersa\AgentCore\Domain\Message\ToolCallResult
+                        ? $this->runCommit->prepareToolDisposition($message, null === $result->nextState || $state->turnNo !== $message->turnNo() || \Ineersa\AgentCore\Domain\Run\RunStatus::Cancelled === $state->status)
+                        : null;
                     if (null === $result->nextState) {
+                        if (null !== $executionDisposition) {
+                            $this->runCommit->commit($state, $state, [], dispatchAfterTurnHooks: false, postCommitEffects: $result->postCommitEffects, postCommitActions: $result->postCommitActions, sourceIdentity: ['type' => $message::class, 'run_id' => $message->runId(), 'turn_no' => $message->turnNo(), 'step_id' => $message->stepId(), 'attempt' => $message->attempt(), 'idempotency_key' => $message->idempotencyKey()], executionDisposition: $executionDisposition);
+
+                            return;
+                        }
+                        if (null !== $disposition) {
+                            $this->runCommit->finishEventFreeDisposition($disposition, $result);
+
+                            return;
+                        }
                         $this->dispatchPostCommit($result);
 
                         return;
                     }
 
-                    $this->runCommit->commit($state, $result->nextState, $result->events, $result->effects);
-                    $this->dispatchPostCommit($result);
+                    $this->runCommit->commit($state, $result->nextState, $result->events, $result->effects, postCommitEffects: $result->postCommitEffects, postCommitActions: $result->postCommitActions, sourceIdentity: ['type' => $message::class, 'run_id' => $message->runId(), 'turn_no' => $message->turnNo(), 'step_id' => $message->stepId(), 'attempt' => $message->attempt(), 'idempotency_key' => $message->idempotencyKey()], resultDisposition: $disposition, executionDisposition: $executionDisposition);
                 } finally {
                     RunLogContext::leave();
                 }

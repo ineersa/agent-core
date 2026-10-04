@@ -14,7 +14,7 @@ use Symfony\Component\Messenger\MessageBusInterface;
 
 final readonly class CoordinationActionHandler
 {
-    public function __construct(private MessageBusInterface $commandBus, private CommandStoreInterface $commandStore, private ToolBatchCollector $toolBatchCollector, private StepDispatcher $stepDispatcher)
+    public function __construct(private MessageBusInterface $commandBus, private CommandStoreInterface $commandStore, private ToolBatchCollector $toolBatchCollector, private StepDispatcher $stepDispatcher, private \Ineersa\AgentCore\Contract\Tool\ToolExecutionAuthorizationInterface $toolAuthorization)
     {
     }
 
@@ -37,7 +37,10 @@ final readonly class CoordinationActionHandler
     #[AsMessageHandler(bus: 'agent.command.bus')]
     public function registerToolBatch(RegisterToolBatchDTO $action): void
     {
-        $effects = $this->toolBatchCollector->registerExpectedBatch($action->runId, $action->turnNo, $action->stepId, $action->effects);
+        $effects = $this->toolBatchCollector->registerExpectedBatch($action->runId, $action->turnNo, $action->stepId, $action->effects, redriveInFlight: true);
+        foreach ($effects as $effect) {
+            $this->toolAuthorization->arm($effect);
+        }
         if ([] !== $effects) {
             $this->stepDispatcher->dispatchEffects($effects);
         }

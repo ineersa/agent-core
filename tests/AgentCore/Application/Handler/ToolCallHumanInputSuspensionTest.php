@@ -64,7 +64,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
             $bus,
             new InMemoryDeferredToolCompletionRepository(),
             $store,
-            new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
+            new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(),
         ))(new ExecuteToolCall('run-susp', 2, 'turn-2-tools-1', 1, 'idemp', 'call-susp', 'bash', ['command' => 'env'], 0));
 
         $this->assertInstanceOf(ToolCallResult::class, $bus->messages[0] ?? null);
@@ -387,7 +387,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
                 eventStore: $eventStore,
                 stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus()),
                 logger: new \Psr\Log\NullLogger(),
-                toolBatchCollector: $collector,
+                toolBatchCollector: $collector, toolAuthorization: new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(),
             ),
             stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus()),
             handlers: [$handler],
@@ -510,7 +510,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
                 eventStore: $eventStore,
                 stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(\Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::bus(new TestMessageBus(), $commandStore, $collector), $executionBus),
                 logger: new \Psr\Log\NullLogger(),
-                toolBatchCollector: $collector,
+                toolBatchCollector: $collector, toolAuthorization: new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(),
             ),
             stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(\Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::bus(new TestMessageBus(), $commandStore, $collector), $executionBus),
             handlers: [$handler],
@@ -619,7 +619,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
                 eventStore: $eventStore,
                 stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(\Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::bus(new TestMessageBus(), $commandStore, $collector), $executionBus),
                 logger: new \Psr\Log\NullLogger(),
-                toolBatchCollector: $collector,
+                toolBatchCollector: $collector, toolAuthorization: new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(),
             ),
             stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(\Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::bus(new TestMessageBus(), $commandStore, $collector), $executionBus),
             handlers: [$handler],

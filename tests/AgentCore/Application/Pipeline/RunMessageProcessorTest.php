@@ -11,8 +11,8 @@ use Ineersa\AgentCore\Application\Pipeline\HandlerResult;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Application\Pipeline\RunMessageHandler;
 use Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor;
-use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\History\HistoryTailDiscardInterface;
+use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -39,13 +39,14 @@ final class RunMessageProcessorTest extends TestCase
     {
         $active = new TestActiveRunContext();
         $active->loadRecovered(RunState::queued('run'));
-        $store = $this->createMock(EventStoreInterface::class);
-        $store->expects($this->once())->method('append')->willReturnCallback(static function (RunEvent $event) use ($failAppend): RunEvent {
+        $store = $this->createMock(PreparedTransitionEventStoreInterface::class);
+        $store->expects($this->once())->method('appendTransition')->willReturnCallback(static function (array $events) use ($failAppend): array {
+            $event = $events[0];
             if ($failAppend) {
                 throw new \RuntimeException('append failed');
             }
 
-            return new RunEvent($event->runId, 7, $event->turnNo, $event->type, $event->payload);
+            return [new RunEvent($event->runId, 7, $event->turnNo, $event->type, $event->payload)];
         });
         $discard = $this->createMock(HistoryTailDiscardInterface::class);
         $discard->method('isContextMutatingMessage')->willReturn(true);
@@ -63,7 +64,7 @@ final class RunMessageProcessorTest extends TestCase
         });
         $bus = new TestMessageBus();
         $dispatcher = new StepDispatcher($bus, $bus);
-        $commit = new RunCommit($active, $store, $dispatcher, new NullLogger(), new ToolBatchCollector());
+        $commit = new RunCommit($active, $store, $dispatcher, new NullLogger(), new ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization());
         $processor = new RunMessageProcessor($active, new RunLockManager(new LockFactory(new InMemoryStore())), $commit, $dispatcher, [$handler], $discard);
         if ($failAppend) {
             $this->expectException(\RuntimeException::class);

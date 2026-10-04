@@ -57,6 +57,7 @@ framework:
         buses:
             agent.command.bus:
                 middleware:
+                    - Ineersa\AgentCore\Application\Messenger\ExecutionResultMiddleware
                     - Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware
                 default_middleware:
                     enabled: true
@@ -68,6 +69,7 @@ framework:
                     allow_no_handlers: false
                     allow_no_senders: true
                 middleware:
+                    - Ineersa\AgentCore\Application\Messenger\ExecutionAuthorizationMiddleware
                     # Subagent tool routing: stamps toolName=subagent|agent_resume
                     # with TransportNamesStamp(['agent']) before default YAML routes
                     # ExecuteToolCall to tool. fork stays on tool. Runs before MCP middleware.
@@ -97,6 +99,7 @@ framework:
                 dsn: '%env(HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN)%'
 
         routing:
+            Ineersa\AgentCore\Domain\Message\DurableExecutionResult: run_control
             Ineersa\CodingAgent\Application\Message\AttachRun: run_control
             Ineersa\CodingAgent\Application\Message\SelectHistoryPrompt: run_control
             Ineersa\CodingAgent\Application\Message\RepairSession: run_control

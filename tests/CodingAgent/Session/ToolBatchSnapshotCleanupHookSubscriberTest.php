@@ -8,7 +8,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Application\Handler\HookDispatcher;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
-use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
@@ -139,8 +139,8 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
         $inputStore = $this->createMock(\Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface::class);
         $inputStore->expects($this->never())->method('delete');
         $inputStore->expects($this->never())->method('deleteAllForRun');
-        $eventStore = $this->createStub(EventStoreInterface::class);
-        $eventStore->method('append')->willThrowException(new \RuntimeException('append failed'));
+        $eventStore = $this->createStub(PreparedTransitionEventStoreInterface::class);
+        $eventStore->method('appendTransition')->willThrowException(new \RuntimeException('append failed'));
         $active = new TestActiveRunContext();
         $previous = RunState::queued('run-1');
         $active->loadRecovered($previous);
@@ -148,7 +148,7 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
             activeRunContext: $active, eventStore: $eventStore,
             stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()), logger: new TestLogger(),
             toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(),
-            hookDispatcher: new HookDispatcher([new ToolBatchSnapshotCleanupHookSubscriber($this->createStore(), new TestLogger(), $inputStore)]),
+            hookDispatcher: new HookDispatcher([new ToolBatchSnapshotCleanupHookSubscriber($this->createStore(), new TestLogger(), $inputStore)]), toolAuthorization: new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(),
         );
         $this->expectExceptionMessage('append failed');
         $commit->commit($previous, new RunState('run-1', RunStatus::Running, version: 1, turnNo: 1, model: 'test-model'), [new RunEvent('run-1', 1, 1, RunEventTypeEnum::ToolExecutionEnd->value, ['tool_result' => ['tool_call_id' => 'fork-call']])]);
@@ -187,13 +187,38 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
             stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
             logger: new TestLogger(),
             toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(),
-            hookDispatcher: $hookDispatcher,
+            hookDispatcher: $hookDispatcher, toolAuthorization: new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(),
         );
     }
 }
 
-final class CleanupHookSubscriberNoOpEventStore implements EventStoreInterface
+final class CleanupHookSubscriberNoOpEventStore implements PreparedTransitionEventStoreInterface
 {
+    public function appendTransition(array $events, array $work): array
+    {
+        $this->assertTransitionReady($events[0]->runId);
+
+        return $this->appendMany($events);
+    }
+
+    public function assertTransitionReady(string $runId): void
+    {
+    }
+
+    public function verifiedPendingTransition(string $runId): ?\Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO
+    {
+        return null;
+    }
+
+    public function finalizeVerifiedTransition(string $runId, string $identity): void
+    {
+        $this->finalizeTransition($runId);
+    }
+
+    public function finalizeTransition(string $runId): void
+    {
+    }
+
     public function append(RunEvent $event): RunEvent
     {
         return $event;

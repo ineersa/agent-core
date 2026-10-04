@@ -45,11 +45,11 @@ final class StartRunProjectionFailureRedeliveryTest extends TestCase
             runCommit: new RunCommit(
                 activeRunContext: $activeRunContext,
                 eventStore: $eventStore,
-                stepDispatcher: new StepDispatcher(new TestMessageBus(), $executionBus),
+                stepDispatcher: new StepDispatcher($commandBus, $executionBus),
                 logger: new NullLogger(),
-                toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(),
+                toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), toolAuthorization: new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(),
             ),
-            stepDispatcher: new StepDispatcher(new TestMessageBus(), $executionBus),
+            stepDispatcher: new StepDispatcher($commandBus, $executionBus),
             handlers: [
                 new StartRunHandler(
                     eventFactory: new EventFactory(),
@@ -89,9 +89,10 @@ final class StartRunProjectionFailureRedeliveryTest extends TestCase
 
         $this->assertCount(1, $eventStore->allFor('run-start-projection-fail'), 'Redelivery must not append a second run_started.');
         $this->assertCount(1, $commandBus->messages);
-        $this->assertInstanceOf(AdvanceRun::class, $commandBus->messages[0]);
-        $this->assertSame('run-start-projection-fail', $commandBus->messages[0]->runId());
-        $this->assertStringStartsWith('start-follow-up-', $commandBus->messages[0]->stepId());
+        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO::class, $commandBus->messages[0]);
+        $this->assertInstanceOf(AdvanceRun::class, $commandBus->messages[0]->message);
+        $this->assertSame('run-start-projection-fail', $commandBus->messages[0]->message->runId());
+        $this->assertStringStartsWith('start-follow-up-', $commandBus->messages[0]->message->stepId());
     }
 }
 

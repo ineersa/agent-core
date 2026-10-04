@@ -222,7 +222,7 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
         // is NOT used as the trigger baseline — it undercounts real
         // provider context by omitting tool schemas, JSON envelope,
         // and provider-specific overhead.
-        $effectiveTokens = $this->providerUsageResolver->getLatestEligibleInputTokens($runId);
+        $effectiveTokens = $this->providerUsageResolver->getLatestEligibleInputTokens($runId, $context->events);
 
         if (null === $effectiveTokens || $effectiveTokens <= $runtimeSettings->compactAfterTokens) {
             return $context;

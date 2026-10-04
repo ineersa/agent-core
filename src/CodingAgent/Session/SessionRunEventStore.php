@@ -31,7 +31,7 @@ use Symfony\Component\Lock\LockFactory;
  * this process, and retaining every decoded body after resume kept obsolete
  * pre-compaction payloads hot for the TUI lifetime.
  */
-final class SessionRunEventStore implements EventStoreInterface
+final class SessionRunEventStore implements \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface
 {
     private readonly string $sessionsBasePath;
     private readonly JsonlRunEventLog $eventLog;
@@ -71,6 +71,42 @@ final class SessionRunEventStore implements EventStoreInterface
         $path = $this->eventsPath($runId);
 
         return $this->eventLog->appendMany($path, $events);
+    }
+
+    public function appendTransition(array $events, array $work): array
+    {
+        if ([] === $events) {
+            if (!\is_string($work['run_id'] ?? null)) {
+                throw new \InvalidArgumentException('Prepared decision requires run identity.');
+            }
+        }
+        foreach ($events as $event) {
+            if ($event->runId !== $events[0]->runId) {
+                throw new \InvalidArgumentException('Transition events have inconsistent run identity.');
+            }
+        }
+
+        return $this->eventLog->appendMany($this->eventsPath($events[0]->runId ?? $work['run_id']), $events, work: $work);
+    }
+
+    public function verifiedPendingTransition(string $runId): ?\Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO
+    {
+        return $this->eventLog->verifiedPendingTransition($this->eventsPath($runId), $runId);
+    }
+
+    public function finalizeVerifiedTransition(string $runId, string $identity): void
+    {
+        $this->eventLog->finalizeVerifiedTransition($this->eventsPath($runId), $runId, $identity);
+    }
+
+    public function finalizeTransition(string $runId): void
+    {
+        $this->eventLog->finalizeTransition($this->eventsPath($runId), $runId);
+    }
+
+    public function assertTransitionReady(string $runId): void
+    {
+        $this->eventLog->assertTransitionReady($this->eventsPath($runId), $runId);
     }
 
     public function latestSequenceFor(string $runId): ?int

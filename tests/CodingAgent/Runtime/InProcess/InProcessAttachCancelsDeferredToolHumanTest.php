@@ -91,7 +91,7 @@ final class InProcessAttachCancelsDeferredToolHumanTest extends IsolatedKernelTe
                 eventStore: $eventStore,
                 stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
                 logger: new NullLogger(),
-                toolBatchCollector: $collector,
+                toolBatchCollector: $collector, toolAuthorization: new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(),
             ),
             stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
             handlers: [$applyHandler, new \Ineersa\AgentCore\Application\Pipeline\RefreshRunContextHandler()],

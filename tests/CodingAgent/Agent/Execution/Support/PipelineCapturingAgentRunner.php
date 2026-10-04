@@ -50,7 +50,7 @@ final class PipelineCapturingAgentRunner implements AgentRunnerInterface
             stepDispatcher: new StepDispatcher(new TestMessageBus(), $executionBus),
             logger: new NullLogger(),
             toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(),
-            hookDispatcher: null,
+            hookDispatcher: null, toolAuthorization: new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(),
         );
         $processor = new RunMessageProcessor(
             activeRunContext: $activeRunContext,

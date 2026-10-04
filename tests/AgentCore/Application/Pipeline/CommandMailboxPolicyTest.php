@@ -425,7 +425,7 @@ final class CommandMailboxPolicyTest extends TestCase
             stepDispatcher: $stepDispatcher,
             logger: new NullLogger(),
             toolBatchCollector: $toolBatchCollector,
-            hookDispatcher: null,
+            hookDispatcher: null, toolAuthorization: new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(),
         );
 
         $runMessageProcessor = new RunMessageProcessor(

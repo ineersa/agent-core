@@ -10,8 +10,17 @@ services:
   Ineersa\AgentCore\Contract\EventStoreInterface:
     alias: Ineersa\CodingAgent\Runtime\Stream\StreamingCommittedRuntimeEventStore
 
+  Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface:
+    alias: Ineersa\CodingAgent\Runtime\Stream\StreamingCommittedRuntimeEventStore
+
+  Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface:
+    alias: Ineersa\CodingAgent\Session\DoctrineExecutionOperationStore
+
   Ineersa\AgentCore\Contract\AgentRunnerInterface:
     alias: Ineersa\AgentCore\Application\Pipeline\AgentRunner
 
   Ineersa\AgentCore\Contract\CommandStoreInterface:
     alias: Ineersa\AgentCore\Infrastructure\Storage\CacheCommandStore
+
+  Ineersa\AgentCore\Contract\Tool\ToolExecutionAuthorizationInterface:
+    alias: Ineersa\AgentCore\Application\Handler\ToolExecutionAuthorization

@@ -156,7 +156,7 @@ final class ExecutionWorkerTest extends TestCase
         };
 
         $commandBus = new TestMessageBus();
-        $worker = new ExecuteToolCallWorker($toolExecutor, $commandBus, new InMemoryDeferredToolCompletionRepository(), new ToolExecutionResultStore(), new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader());
+        $worker = new ExecuteToolCallWorker($toolExecutor, $commandBus, new InMemoryDeferredToolCompletionRepository(), new ToolExecutionResultStore(), new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization());
 
         $worker(new ExecuteToolCall(
             runId: 'run-worker-2',
@@ -199,7 +199,7 @@ final class ExecutionWorkerTest extends TestCase
             new TestMessageBus(),
             new InMemoryDeferredToolCompletionRepository(),
             $store,
-            new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
+            new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(),
         );
 
         $worker(new ExecuteToolCall(
@@ -241,7 +241,7 @@ final class ExecutionWorkerTest extends TestCase
             },
             new InMemoryDeferredToolCompletionRepository(),
             $store,
-            new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
+            new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(),
         );
 
         $this->expectException(\RuntimeException::class);
@@ -293,7 +293,7 @@ final class ExecutionWorkerTest extends TestCase
             new TestMessageBus(),
             new InMemoryDeferredToolCompletionRepository(),
             $store,
-            new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
+            new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(),
         );
         $worker(new ExecuteToolCall(
             runId: 'run-deferred-1', turnNo: 1, stepId: 'step-1', attempt: 1,

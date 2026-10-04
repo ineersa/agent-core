@@ -19,6 +19,8 @@ interface ToolBatchStoreInterface
 
     public function deleteAllForRun(string $runId): void;
 
+    public function hasUnresolvedExecution(string $runId, ?string $toolCallId = null): bool;
+
     /**
      * @param callable(?ToolBatchStateDTO): ToolBatchStoreMutation $callback
      */

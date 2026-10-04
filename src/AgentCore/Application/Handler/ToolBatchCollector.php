@@ -53,7 +53,7 @@ final class ToolBatchCollector
      *
      * @return list<ExecuteToolCall>
      */
-    public function registerExpectedBatch(string $runId, int $turnNo, string $stepId, array $toolCalls): array
+    public function registerExpectedBatch(string $runId, int $turnNo, string $stepId, array $toolCalls, bool $redriveInFlight = false): array
     {
         usort(
             $toolCalls,
@@ -68,6 +68,27 @@ final class ToolBatchCollector
             $expectedOrder[$toolCall->toolCallId] = $toolCall->orderIndex;
             $callsById[$toolCall->toolCallId] = $toolCall;
             $maxParallelism = max(1, $toolCall->maxParallelism ?? $maxParallelism);
+        }
+
+        $existing = $this->loadBatch($runId, $turnNo, $stepId);
+        if (null !== $existing) {
+            if ($existing->expectedOrder !== $expectedOrder) {
+                throw new \LogicException('Conflicting prepared tool batch membership.');
+            }
+            foreach ($callsById as $id => $call) {
+                $stored = $existing->calls[$id] ?? null;
+                if (null === $stored || $stored->runId() !== $call->runId() || $stored->turnNo() !== $call->turnNo()
+                    || $stored->stepId() !== $call->stepId() || $stored->idempotencyKey() !== $call->idempotencyKey()
+                    || $stored->toolName !== $call->toolName || $stored->args !== $call->args || (array) $stored->launchContext !== (array) $call->launchContext) {
+                    throw new \LogicException('Conflicting prepared tool batch invocation.');
+                }
+            }
+
+            // Registration is coordination, not permission to re-execute calls.
+            // Keep results, human answers, queue/in-flight state and finalization.
+            // Recover a crash between durable registration and arming/dispatch.
+            // Execution authorization rejects a second Running claim.
+            return $redriveInFlight ? array_values(array_filter($existing->calls, static fn (ExecuteToolCall $call): bool => isset($existing->inFlight[$call->toolCallId]) && !isset($existing->results[$call->toolCallId]))) : [];
         }
 
         $batch = new ToolBatchStateDTO(
