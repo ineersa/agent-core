@@ -30,7 +30,7 @@ final class CodeModeValueCodecTest extends TestCase
             CodeModeValueCodec::assertEncodable($cycle, 'value');
             $this->fail('Expected RuntimeException for cyclic array');
         } catch (\RuntimeException $exception) {
-            $this->assertStringContainsString('Recursion detected', $exception->getMessage());
+            $this->assertSame('Tool call failed: its result could not be safely inspected.', $exception->getMessage());
         }
     }
 
@@ -40,7 +40,7 @@ final class CodeModeValueCodecTest extends TestCase
             CodeModeValueCodec::assertEncodable("bad\x80text", 'value');
             $this->fail('Expected RuntimeException for invalid UTF-8');
         } catch (\RuntimeException $exception) {
-            $this->assertStringContainsString('Malformed UTF-8', $exception->getMessage());
+            $this->assertSame('Tool call failed: its result contained malformed UTF-8.', $exception->getMessage());
         }
     }
 
@@ -55,11 +55,11 @@ final class CodeModeValueCodecTest extends TestCase
             CodeModeValueCodec::assertEncodable($object, 'value');
             $this->fail('Expected RuntimeException for unsupported object');
         } catch (\RuntimeException $exception) {
-            $this->assertStringContainsString('unsupported object', $exception->getMessage());
+            $this->assertSame('value contains an unsupported IPC value.', $exception->getMessage());
         }
     }
 
-    public function testRejectsJsonSerializableWithoutInvokingSerializeTwice(): void
+    public function testRejectsJsonSerializableWithoutInvokingSerialization(): void
     {
         $calls = 0;
         $object = new class($calls) implements \JsonSerializable {
@@ -79,10 +79,9 @@ final class CodeModeValueCodecTest extends TestCase
             CodeModeValueCodec::assertEncodable($object, 'value');
             $this->fail('Expected RuntimeException for JsonSerializable object');
         } catch (\RuntimeException $exception) {
-            $this->assertStringContainsString('unsupported object', $exception->getMessage());
+            $this->assertSame('value contains an unsupported IPC value.', $exception->getMessage());
         }
 
-        // json_encode probes JsonSerializable once; our shape walk must not call it again.
-        $this->assertSame(1, $calls, 'jsonSerialize must run only during the json_encode probe');
+        $this->assertSame(0, $calls, 'Rejected objects must never execute serialization hooks');
     }
 }
