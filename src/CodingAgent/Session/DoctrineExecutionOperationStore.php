@@ -76,6 +76,42 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
         return new ExecutionRequest($request->runId(), $request->turnNo(), $request->stepId(), $request->attempt(), $request->idempotencyKey(), $authorization->effectId, $request::class, $hash, (int) $record['request_bytes']);
     }
 
+    /**
+     * Durable reservations scope descendants even when disposable operational rows disappear.
+     * Only scalar references are read here, never the sealed invocation bodies.
+     *
+     * @return array<string, Envelope> keyed by the stable effect identity
+     */
+    public function pendingDeliveries(string $ownerSessionId, string $afterEffectId): array
+    {
+        $records = $this->connection->fetchAllAssociative(<<<'SQL'
+            WITH RECURSIVE owned_runs(run_id) AS (
+                SELECT :owner
+                UNION
+                SELECT child.child_run_id
+                FROM deferred_subagent_child child
+                JOIN deferred_subagent_batch batch ON batch.lifecycle_id = child.batch_lifecycle_id
+                JOIN owned_runs parent ON parent.run_id = batch.parent_run_id
+            )
+            SELECT operation.* FROM execution_operation operation
+            JOIN owned_runs owned ON owned.run_id = operation.run_id
+            WHERE operation.state IN ('Armed', 'ResultReady') AND operation.effect_id > :after
+            ORDER BY operation.effect_id LIMIT 32
+            SQL, ['owner' => $ownerSessionId, 'after' => $afterEffectId]);
+        $deliveries = [];
+        foreach ($records as $record) {
+            if ('ResultReady' === $record['state']) {
+                $deliveries[$record['effect_id']] = new Envelope($this->reference($record));
+                continue;
+            }
+            $stamp = new ExecutionAuthorizationStamp($record['effect_id'], $record['request_hash']);
+            $request = new ExecutionRequest($record['run_id'], (int) $record['turn_no'], $record['step_id'], (int) $record['attempt'], $record['idempotency_key'], $record['effect_id'], $record['request_type'], $record['request_hash'], (int) $record['request_bytes']);
+            $deliveries[$record['effect_id']] = new Envelope($request, [$stamp]);
+        }
+
+        return $deliveries;
+    }
+
     public function claim(ExecutionRequest $request, ExecutionAuthorizationStamp $authorization): string|DurableExecutionResult|null
     {
         $record = $this->matchingRequest($request, $authorization);
