@@ -12,6 +12,7 @@ use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\CodingAgent\Agent\Execution\RunStartedMetadataReader;
 use Ineersa\CodingAgent\Agent\Execution\SessionAwareModelResolver;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchIdentityFactory;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
@@ -22,10 +23,12 @@ use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\PropertyAccess\PropertyAccess;
 use Symfony\Component\Uid\Uuid;
@@ -107,6 +110,39 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
         );
 
         $this->assertSame(['prompt_cache_key' => $runId], $result->providerOptions);
+    }
+
+    #[DataProvider('childRunIds')]
+    public function testCodexChildUsesPersistedUuidV7CacheKey(string $runId): void
+    {
+        $repository = static::getContainer()->get(DeferredSubagentChildRepository::class);
+        $repository->insertReservedChildren('cache-key-batch', [[
+            'batchIndex' => 1,
+            'childRunId' => $runId,
+            'artifactId' => 'agent_cache_key',
+            'agentName' => 'worker',
+            'task' => 'Check child cache identity',
+            'launchModel' => 'openai-codex/gpt-test',
+            'launchReasoning' => 'medium',
+        ]]);
+
+        $resolver = $this->createResolver($this->standardAiData());
+        $first = $resolver->resolve('openai-codex/gpt-test', false, new ModelInvocationInput(runId: $runId), new ModelResolutionOptions());
+        $key = $first->providerOptions['prompt_cache_key'];
+        $this->assertInstanceOf(UuidV7::class, Uuid::fromString($key));
+        $this->assertNotSame($runId, $key);
+
+        $this->entityManager->clear();
+        $freshResolver = $this->createResolver($this->standardAiData());
+        $next = $freshResolver->resolve('openai-codex/gpt-test', true, new ModelInvocationInput(runId: $runId), new ModelResolutionOptions());
+        $this->assertSame($first->providerOptions, $next->providerOptions);
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function childRunIds(): iterable
+    {
+        yield 'direct UUIDv4' => [Uuid::v4()->toRfc4122()];
+        yield 'deferred UUIDv5' => [(new DeferredSubagentBatchIdentityFactory())->childIdentity('parent', 'tool-call', 1)['childRunId']];
     }
 
     public function testGrokMapsSessionIdToProviderPromptCacheKey(): void
@@ -615,7 +651,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
 
         $catalog = $appConfig->catalog ?? new HatfieldModelCatalog(new AiConfig(defaultModel: '', defaultReasoning: 'medium', providers: []));
 
-        return new SessionAwareModelResolver($selectionService, $catalog, $sessionMetaStore, $childMetadataReader);
+        return new SessionAwareModelResolver($selectionService, $catalog, $sessionMetaStore, static::getContainer()->get(DeferredSubagentChildRepository::class), $childMetadataReader);
     }
 
     private function makeAppConfig(array $aiData): AppConfig

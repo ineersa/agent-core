@@ -229,6 +229,14 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
             }
         }
 
+        if (null !== $child?->cacheReadHitPercentage) {
+            $segments[] = new FooterSegment(
+                text: \sprintf('↻ %.0f%%', $child->cacheReadHitPercentage),
+                priority: 8,
+                color: ThemeColorEnum::Success,
+            );
+        }
+
         $segments[] = new FooterSegment(text: '/agents-main', priority: 10, color: ThemeColorEnum::Dim);
         $segments[] = new FooterSegment(text: 'Ctrl+\\ main', priority: 11, color: ThemeColorEnum::Dim);
         $segments[] = new FooterSegment(text: 'Esc cancel child', priority: 12, color: ThemeColorEnum::Muted);

@@ -71,6 +71,11 @@ final readonly class DeferredChildRunLifecycleProjectionDTO
         ?string $activeToolLine = null,
         #[Assert\Valid]
         public array $pendingToolCalls = [],
+        #[Assert\GreaterThanOrEqual(0)]
+        public ?int $cacheReadTokens = null,
+        // Lifetime denominator; inputTokens is a per-resume-segment counter.
+        #[Assert\GreaterThanOrEqual(0)]
+        public int $cacheInputTokens = 0,
     ) {
         $model = trim($model);
         $reasoning = trim($reasoning);

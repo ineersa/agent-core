@@ -240,7 +240,7 @@ final class TraceReplayTest extends PerMethodIsolatedKernelTestCase
         $selection = new ModelSelectionService($config, new ModelResolver($config, $this->sessionMetaStore, new NullLogger()), $writer, $this->sessionMetaStore);
         $catalog = $config->catalog ?? new HatfieldModelCatalog(new AiConfig(defaultModel: '', defaultReasoning: 'medium', providers: []));
 
-        return new SessionAwareModelResolver($selection, $catalog, $this->sessionMetaStore);
+        return new SessionAwareModelResolver($selection, $catalog, $this->sessionMetaStore, static::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class));
     }
 
     /** @param array<string, mixed> $aiData */

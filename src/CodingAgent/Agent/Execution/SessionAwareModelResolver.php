@@ -15,6 +15,7 @@ use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\CodingAgent\Config\ReasoningOptionsResolver;
+use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexRequestBodyFactory;
 use Symfony\Component\Uid\Uuid;
@@ -37,6 +38,7 @@ final class SessionAwareModelResolver implements ModelResolverInterface
         private readonly ModelSelectionService $selectionService,
         private readonly HatfieldModelCatalog $catalog,
         private readonly HatfieldSessionStore $sessionMetadataStore,
+        private readonly DeferredSubagentChildRepository $childRepository,
         private readonly ?RunStartedMetadataReader $childMetadataReader = null,
     ) {
     }
@@ -172,8 +174,21 @@ final class SessionAwareModelResolver implements ModelResolverInterface
         }
 
         if (null === $session) {
+            $childCacheKey = $this->childRepository->findProviderCacheKey($sessionId);
+            if (null !== $childCacheKey) {
+                if (!Uuid::isValid($childCacheKey) || !Uuid::fromString($childCacheKey) instanceof UuidV7) {
+                    throw new \RuntimeException(\sprintf('Child run "%s" has an invalid provider_cache_key.', $sessionId));
+                }
+
+                return ['prompt_cache_key' => $childCacheKey];
+            }
+
             if (Uuid::isValid($sessionId) && Uuid::fromString($sessionId) instanceof UuidV7) {
                 return ['prompt_cache_key' => $sessionId];
+            }
+
+            if (Uuid::isValid($sessionId)) {
+                throw new \RuntimeException(\sprintf('Child run "%s" is missing a provider_cache_key.', $sessionId));
             }
 
             return [];
