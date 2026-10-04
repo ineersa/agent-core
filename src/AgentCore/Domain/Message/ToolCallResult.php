@@ -6,6 +6,7 @@ namespace Ineersa\AgentCore\Domain\Message;
 
 use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
+use Ineersa\AgentCore\Domain\Tool\ToolResultText;
 use Symfony\Component\Serializer\Attribute\Groups;
 
 /**
@@ -44,6 +45,41 @@ final readonly class ToolCallResult extends AbstractAgentBusMessage
         public ?PendingHumanInputRequestDTO $pendingHumanInput = null,
     ) {
         parent::__construct($runId, $turnNo, $stepId, $attempt, $idempotencyKey);
+    }
+
+    /** Finalize before dispatch and again on owner admission after PHP deserialization. */
+    public function finalized(): self
+    {
+        $failure = ToolResultText::failureMessage($this->result)
+            ?? ToolResultText::failureMessage($this->error)
+            ?? ToolResultText::failureMessage($this->pendingHumanInput?->waitingHumanEventPayload())
+            ?? ToolResultText::failureMessage($this->pendingHumanInput?->questionId);
+        if (null === $failure) {
+            return $this;
+        }
+
+        return $this->withRepresentationFailure($failure);
+    }
+
+    public function withRepresentationFailure(string $failure): self
+    {
+        $result = [
+            'content' => [['type' => 'text', 'text' => $failure]],
+            'details' => ['retryable' => false],
+        ];
+        if (\is_array($this->result)) {
+            foreach (['tool_name', 'arguments', 'mode', 'tool_idempotency_key', 'standalone'] as $field) {
+                if (\array_key_exists($field, $this->result) && ToolResultText::isValid($this->result[$field])) {
+                    $result[$field] = $this->result[$field];
+                }
+            }
+        }
+
+        return new self(
+            $this->runId(), $this->turnNo(), $this->stepId(), $this->attempt(), $this->idempotencyKey(),
+            $this->toolCallId, $this->orderIndex, $result, true,
+            ['message' => $failure, 'retryable' => false],
+        );
     }
 
     public function isHumanInputSuspension(): bool

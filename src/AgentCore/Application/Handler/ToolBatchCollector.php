@@ -110,6 +110,7 @@ final class ToolBatchCollector
 
     public function collect(ToolCallResult $result): ToolBatchCollectOutcome
     {
+        $result = $result->finalized();
         if (null !== $this->store) {
             return $this->collectWithDurableStore($result);
         }

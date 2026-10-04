@@ -65,7 +65,7 @@ final readonly class ExecuteShellToolCallWorker
         ));
 
         try {
-            $this->commandBus->dispatch(new ToolCallResult(
+            $this->commandBus->dispatch((new ToolCallResult(
                 runId: $message->runId(),
                 turnNo: $message->turnNo(),
                 stepId: $message->stepId(),
@@ -81,7 +81,7 @@ final readonly class ExecuteShellToolCallWorker
                     'standalone' => $message->standalone,
                 ],
                 isError: $result->isError,
-            ));
+            ))->finalized());
         } catch (ExceptionInterface $exception) {
             throw new \RuntimeException('Failed to dispatch shell result to run_control.', previous: $exception);
         }
