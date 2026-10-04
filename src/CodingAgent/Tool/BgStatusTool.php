@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tool;
 
 use HelgeSverre\Toon\Toon;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
+use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
@@ -144,6 +145,8 @@ final class BgStatusTool implements HatfieldToolProviderInterface
 
         try {
             $result = $this->manager->readLogTail($this->contextAccessor->requireCurrent()->runId(), $pid, $this->config->logTailChars);
+        } catch (MalformedToolResultException $e) {
+            throw $e;
         } catch (\RuntimeException $e) {
             throw new ToolCallException($e->getMessage(), retryable: false, hint: 'The process may have already finished or belongs to a different session. Run bg_status list to see available processes for this session.');
         }

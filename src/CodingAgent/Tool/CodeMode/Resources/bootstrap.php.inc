@@ -26,7 +26,8 @@ if (!\function_exists('hatfield_code_mode_write')) {
      */
     function hatfield_code_mode_write(mixed $stream, array $payload): void
     {
-        $json = json_encode($payload, \JSON_THROW_ON_ERROR | \JSON_INVALID_UTF8_SUBSTITUTE);
+        $payload = \Ineersa\CodingAgent\Tool\CodeMode\CodeModeValueCodec::assertEncodable($payload, 'Code-mode frame');
+        $json = json_encode($payload, \JSON_THROW_ON_ERROR);
         $length = \strlen($json);
         if ($length > HATFIELD_CODE_MODE_MAX_FRAME_BYTES) {
             throw new RuntimeException(\sprintf('Code-mode IPC frame exceeds %d bytes.', HATFIELD_CODE_MODE_MAX_FRAME_BYTES));
@@ -173,7 +174,7 @@ if (!function_exists('toon_encode')) {
      */
     function toon_encode(mixed $value): string
     {
-        \Ineersa\CodingAgent\Tool\CodeMode\CodeModeValueCodec::assertEncodable($value, 'toon_encode() input');
+        $value = \Ineersa\CodingAgent\Tool\CodeMode\CodeModeValueCodec::assertEncodable($value, 'toon_encode() input');
 
         return \HelgeSverre\Toon\Toon::encode($value);
     }
@@ -274,7 +275,7 @@ try {
         return include $scriptPath;
     })();
 
-    \Ineersa\CodingAgent\Tool\CodeMode\CodeModeValueCodec::assertEncodable($result, 'Code-mode script return value');
+    $result = \Ineersa\CodingAgent\Tool\CodeMode\CodeModeValueCodec::assertEncodable($result, 'Code-mode script return value');
     hatfield_code_mode_write($connection, [
         'type' => 'return',
         'ok' => true,
@@ -289,13 +290,16 @@ try {
         if (\is_string($file) && '' !== $file && $line > 0) {
             $message .= \sprintf(' in %s on line %d', $file, $line);
         }
+        if (!mb_check_encoding($message, 'UTF-8') || $exception->getMessage() === \Ineersa\CodingAgent\Tool\CodeMode\CodeModeValueCodec::MALFORMED_MESSAGE) {
+            $message = \Ineersa\CodingAgent\Tool\CodeMode\CodeModeValueCodec::MALFORMED_MESSAGE;
+        }
         hatfield_code_mode_write($connection, [
             'type' => 'return',
             'ok' => false,
             'error' => $message,
         ]);
     } catch (Throwable) {
-        fwrite(\STDERR, $exception->getMessage()."\n");
+        fwrite(\STDERR, "Code-mode failed to deliver its error result.\n");
     }
     exit(1);
 }

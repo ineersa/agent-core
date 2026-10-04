@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Controller;
 
+use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
+use Ineersa\AgentCore\Domain\Tool\ToolResultText;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
@@ -206,6 +208,15 @@ final class BackgroundProcessCompletionPoller
         try {
             $tailResult = $this->processManager->readLogTailForRecord($process->id, self::NOTIFICATION_TAIL_CHARS, $sessionId);
             $output = $tailResult->content;
+        } catch (MalformedToolResultException $e) {
+            // Deliver the failure, not altered output or an endless read retry.
+            $output = ToolResultText::FAILURE_MESSAGE;
+            $this->logger->warning('bg_process_completion.malformed_output', [
+                'component' => 'bg_process_completion.poller',
+                'event_type' => 'bg_process_completion.malformed_output',
+                'process_pid' => $pid,
+                'run_id' => $sessionId,
+            ]);
         } catch (\Throwable $e) {
             $output = \sprintf('[Could not read log: %s]', $e->getMessage());
 

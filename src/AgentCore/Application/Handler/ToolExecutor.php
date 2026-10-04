@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Tool\DiagnosticMessageSanitizer;
+use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
@@ -21,6 +22,7 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionPolicy;
 use Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
+use Ineersa\AgentCore\Domain\Tool\ToolResultText;
 use Symfony\AI\Agent\Toolbox\Exception\InvalidToolCallArgumentsException;
 use Symfony\AI\Agent\Toolbox\Exception\ToolExecutionExceptionInterface;
 use Symfony\AI\Agent\Toolbox\Exception\ToolNotFoundException;
@@ -143,6 +145,18 @@ final class ToolExecutor implements ToolExecutorInterface
         try {
             $result = $this->executeToolCall($toolCall, $policy);
         } catch (\Throwable $exception) {
+            $representationFailure = ToolResultText::failureMessage([
+                $exception->getMessage(),
+                $exception->getPrevious()?->getMessage(),
+                $exception instanceof ToolCallException ? $exception->hint() : null,
+                $exception instanceof ToolExecutionExceptionInterface && !\is_object($exception->getToolCallResult())
+                    ? $exception->getToolCallResult() : null,
+            ]);
+            if (null !== $representationFailure) {
+                $exception = new ToolCallException($representationFailure, retryable: false);
+            } elseif ($exception instanceof \JsonException && \JSON_ERROR_UTF8 === $exception->getCode()) {
+                $exception = new MalformedToolResultException();
+            }
             if ($exception instanceof ToolCallException) {
                 $message = DiagnosticMessageSanitizer::redact($exception->getMessage());
                 if (null !== $exception->hint()) {
@@ -171,10 +185,11 @@ final class ToolExecutor implements ToolExecutorInterface
                 $previous = $exception->getPrevious();
                 $message = null !== $previous && '' !== trim($previous->getMessage())
                     ? DiagnosticMessageSanitizer::sanitize($previous->getMessage())
-                    : DiagnosticMessageSanitizer::sanitize($this->normalizeResultText($exception->getToolCallResult()));
+                    : $this->failureDiagnostic($exception->getToolCallResult());
                 $details = ['error_type' => $exception::class];
                 // Both resolution and validation failures require corrected arguments.
-                if ($exception instanceof InvalidToolCallArgumentsException) {
+                if ($exception instanceof InvalidToolCallArgumentsException
+                    || \in_array($message, [ToolResultText::FAILURE_MESSAGE, ToolResultText::INSPECTION_FAILURE_MESSAGE], true)) {
                     $details['retryable'] = false;
                 }
                 $result = $this->errorResult(
@@ -211,7 +226,15 @@ final class ToolExecutor implements ToolExecutorInterface
             return $this->withExecutionMetadata($result, $policy, $toolIdempotencyKey, $durationMs);
         }
 
-        if ($this->cancellationToken($toolCall)->isCancellationRequested()) {
+        // Processors promote extension control flags before cancellation
+        // arbitration. Execute this shared success/error path exactly once;
+        // coordination markers and pre-start cancellation do not enter it.
+        $processingFailed = false;
+        if (!$this->isDeferredOutcomeResult($result)) {
+            $result = $this->processTerminalResult($result, $toolCall, $processingFailed);
+        }
+
+        if (!$processingFailed && $this->cancellationToken($toolCall)->isCancellationRequested()) {
             // Don't overwrite a structured cancelled result.
             $details = $result->details;
             $cancelled = \is_array($details) ? ($details['cancelled'] ?? false) : false;
@@ -255,6 +278,11 @@ final class ToolExecutor implements ToolExecutorInterface
 
     private function executeToolCall(ToolCall $toolCall, ToolExecutionPolicy $policy): ToolResult
     {
+        $argumentFailure = ToolResultText::failureMessage($toolCall->arguments);
+        if (null !== $argumentFailure) {
+            throw new ToolCallException('Tool arguments could not be admitted. Execution was not started.', retryable: false);
+        }
+
         if (null === $this->toolbox) {
             return $this->errorResult(
                 toolCallId: $toolCall->toolCallId,
@@ -355,6 +383,47 @@ final class ToolExecutor implements ToolExecutorInterface
         );
     }
 
+    private function processTerminalResult(ToolResult $result, ToolCall $toolCall, bool &$processingFailed): ToolResult
+    {
+        $validated = ToolResultText::finalize($result);
+        $processingFailed = $validated !== $result;
+        $result = $validated;
+        if ($processingFailed) {
+            return $result;
+        }
+        try {
+            foreach ($this->toolResultProcessors as $processor) {
+                $processed = $processor->process($result, $toolCall);
+                $result = ToolResultText::finalize($processed);
+                $processingFailed = $processingFailed || $result !== $processed;
+                if ($processingFailed) {
+                    return $result;
+                }
+            }
+        } catch (\Throwable $exception) {
+            $processingFailed = true;
+            // Execution already returned. Remember the processing failure and
+            // never invoke the failing processor again for the fallback result.
+            $message = $exception instanceof \JsonException && \JSON_ERROR_UTF8 === $exception->getCode()
+                ? ToolResultText::FAILURE_MESSAGE
+                : (ToolResultText::failureMessage($exception->getMessage()) ?? 'Tool call failed: its result could not be processed.');
+            $failureDetails = [
+                'retryable' => false,
+                'error_type' => $exception::class,
+            ];
+            // The last accepted result is closed data. Preserve only known
+            // artifact references, not its output body or arbitrary metadata.
+            $raw = \is_array($result->details) ? ($result->details['raw_result'] ?? null) : null;
+            $references = \is_array($raw) ? ($raw['attachment_refs'] ?? null) : null;
+            if (\is_array($references) && ToolResultText::isValid($references)) {
+                $failureDetails['raw_result'] = ['attachment_refs' => $references];
+            }
+            $result = $this->errorResult($toolCall->toolCallId, $toolCall->toolName, $message, $failureDetails);
+        }
+
+        return $result;
+    }
+
     private function rememberAndReturn(
         ToolCall $toolCall,
         ToolExecutionPolicy $policy,
@@ -362,7 +431,18 @@ final class ToolExecutor implements ToolExecutorInterface
         ToolResult $result,
         ?float $durationMs = null,
     ): ToolResult {
-        $normalized = $this->withExecutionMetadata($result, $policy, $toolIdempotencyKey, $durationMs);
+        // Processing and cancellation arbitration have already finished.
+        // Coordination markers retain their separate in-process dedupe path.
+        if ($this->isDeferredOutcomeResult($result)) {
+            $coordinationResult = $this->withExecutionMetadata($result, $policy, $toolIdempotencyKey, $durationMs);
+            $runId = $this->runId($toolCall);
+            if (null !== $runId) {
+                $this->resultStore->remember($runId, $toolCall->toolCallId, $toolCall->toolName, $toolIdempotencyKey, $coordinationResult);
+            }
+
+            return $coordinationResult;
+        }
+        $normalized = ToolResultText::finalize($this->withExecutionMetadata($result, $policy, $toolIdempotencyKey, $durationMs));
 
         $runId = $this->runId($toolCall);
         if (null !== $runId) {
@@ -432,6 +512,9 @@ final class ToolExecutor implements ToolExecutorInterface
         $rawResult = $toolboxResult->getResult();
 
         if ($rawResult instanceof DeferredToolCompletionOutcome) {
+            if (!ToolResultText::isValid($rawResult->deferredId)) {
+                throw new MalformedToolResultException();
+            }
             return new ToolResult(
                 toolCallId: $toolCall->toolCallId,
                 toolName: $toolCall->toolName,
@@ -447,6 +530,11 @@ final class ToolExecutor implements ToolExecutorInterface
         }
 
         if ($rawResult instanceof ToolExecutionHumanInputSuspension) {
+            $failure = ToolResultText::failureMessage($rawResult->request->waitingHumanEventPayload())
+                ?? ToolResultText::failureMessage($rawResult->request->questionId);
+            if (null !== $failure) {
+                throw new ToolCallException($failure, retryable: false);
+            }
             return new ToolResult(
                 toolCallId: $toolCall->toolCallId,
                 toolName: $toolCall->toolName,
@@ -459,6 +547,20 @@ final class ToolExecutor implements ToolExecutorInterface
                 ],
                 isError: false,
             );
+        }
+
+        // Supported top-level values are converted once. The same concrete
+        // data feeds display and raw_result; no opaque object reaches storage.
+        if ($rawResult instanceof \BackedEnum) {
+            $rawResult = $rawResult->value;
+        } elseif ($rawResult instanceof \UnitEnum) {
+            $rawResult = $rawResult->name;
+        } elseif ($rawResult instanceof \Stringable) {
+            $rawResult = (string) $rawResult;
+        }
+        $representationFailure = ToolResultText::failureMessage($rawResult);
+        if (null !== $representationFailure) {
+            throw new ToolCallException($representationFailure, retryable: false);
         }
 
         $details = [
@@ -484,13 +586,6 @@ final class ToolExecutor implements ToolExecutorInterface
             details: $details,
             isError: false,
         );
-
-        // Apply registered tool-result processors (e.g. OutputCap).
-        // Processors may modify content, attach model_notifications, or
-        // replace the result entirely — but must never throw.
-        foreach ($this->toolResultProcessors as $processor) {
-            $result = $processor->process($result, $toolCall);
-        }
 
         return $result;
     }
@@ -620,6 +715,32 @@ final class ToolExecutor implements ToolExecutorInterface
         );
     }
 
+    private function failureDiagnostic(mixed $result): string
+    {
+        try {
+            if ($result instanceof \BackedEnum) {
+                $result = $result->value;
+            } elseif ($result instanceof \UnitEnum) {
+                $result = $result->name;
+            } elseif ($result instanceof \Stringable) {
+                $result = (string) $result;
+            }
+            $failure = ToolResultText::failureMessage($result);
+            if (null !== $failure) {
+                return $failure;
+            }
+            $text = $this->normalizeResultText($result);
+
+            return ToolResultText::failureMessage($text) ?? DiagnosticMessageSanitizer::sanitize($text);
+        } catch (\Throwable $exception) {
+            // Preserve this as a failed tool outcome, not a thrown conversion
+            // failure that would retry execution from inside the error handler.
+            return $exception instanceof \JsonException && \JSON_ERROR_UTF8 === $exception->getCode()
+                ? ToolResultText::FAILURE_MESSAGE
+                : ToolResultText::INSPECTION_FAILURE_MESSAGE;
+        }
+    }
+
     private function normalizeResultText(mixed $result): string
     {
         if (null === $result) {
@@ -638,9 +759,7 @@ final class ToolExecutor implements ToolExecutorInterface
             return (string) $result;
         }
 
-        $encoded = json_encode($result, \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
-
-        return false === $encoded ? '{}' : $encoded;
+        return json_encode($result, \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE | \JSON_THROW_ON_ERROR);
     }
 
     private function isHumanInputSuspension(ToolResult $result): bool
