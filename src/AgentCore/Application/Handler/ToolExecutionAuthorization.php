@@ -9,6 +9,9 @@ use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreMutation;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\LockInterface;
 use Symfony\Component\Serializer\Normalizer\AbstractNormalizer;
 use Symfony\Component\Serializer\SerializerInterface;
 
@@ -16,10 +19,12 @@ use Symfony\Component\Serializer\SerializerInterface;
 final readonly class ToolExecutionAuthorization implements \Ineersa\AgentCore\Contract\Tool\ToolExecutionAuthorizationInterface
 {
     private string $instanceToken;
+    private LockInterface $workerLock;
 
-    public function __construct(private ToolBatchStoreInterface $store, private SerializerInterface $serializer, private \Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface $deferredRepository)
+    public function __construct(private ToolBatchStoreInterface $store, private SerializerInterface $serializer, private \Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface $deferredRepository, #[Autowire(service: 'hatfield.controller.session_owner.lock_factory')] private LockFactory $claimLockFactory)
     {
         $this->instanceToken = bin2hex(random_bytes(32));
+        $this->workerLock = $claimLockFactory->createLock('tool-execution-worker.'.$this->instanceToken, ttl: null);
     }
 
     public function arm(ExecuteToolCall $call): void
@@ -38,6 +43,12 @@ final readonly class ToolExecutionAuthorization implements \Ineersa\AgentCore\Co
     /** A duplicate Running delivery returns null. A durable result is returned unchanged. */
     public function claim(ExecuteToolCall $call): string|ToolCallResult|null
     {
+        // Keep exclusion for the worker instance lifetime, including failures
+        // after external execution. Lease expiry or a PID cannot prove death.
+        if (!$this->workerLock->acquire()) {
+            throw new \RuntimeException('Unable to acquire tool execution worker ownership.');
+        }
+
         return $this->store->mutate($call->runId(), $call->turnNo(), $call->stepId(), function (?ToolBatchStateDTO $batch) use ($call): ToolBatchStoreMutation {
             if (null === $batch) {
                 throw new \RuntimeException('Tool execution is missing or differs from its durable batch invocation.');
@@ -63,10 +74,31 @@ final readonly class ToolExecutionAuthorization implements \Ineersa\AgentCore\Co
                 throw new \RuntimeException('Tool execution differs from its current durable invocation.');
             }
             $claim = $this->instanceToken.'.'.bin2hex(random_bytes(32));
-            $batch->executionAuthorizations[$key] = ['state' => 'Running', 'claim' => $claim];
+            $batch->executionAuthorizations[$key] = ['state' => 'Running', 'claim' => $claim, 'claim_lock_key' => $this->instanceToken];
 
             return new ToolBatchStoreMutation($claim, $batch);
         });
+    }
+
+    /** @return iterable<ExecuteToolCall|ToolCallResult> */
+    public function pendingDeliveries(ToolBatchStateDTO $batch): iterable
+    {
+        foreach ($batch->executionAuthorizations as $key => $authorization) {
+            if ('Armed' === $authorization['state']) {
+                foreach ($batch->calls as $call) {
+                    if ($this->identity($call) === $key) {
+                        yield $call;
+                        break;
+                    }
+                }
+            } elseif ('ResultReady' === $authorization['state']) {
+                $result = $batch->executionResults[$key] ?? null;
+                if (!$result instanceof ToolCallResult) {
+                    throw new \RuntimeException('Authorized tool result is missing.');
+                }
+                yield $result;
+            }
+        }
     }
 
     public function saveResult(ExecuteToolCall $call, string $claim, ToolCallResult $result): void

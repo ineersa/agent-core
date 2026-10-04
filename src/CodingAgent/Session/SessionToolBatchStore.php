@@ -49,6 +49,35 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
     ) {
     }
 
+    /** @return array{string, ToolBatchSnapshotEnvelopeDTO}|null */
+    public function nextSnapshot(string $runId, string $afterFilename): ?array
+    {
+        return $this->withRunLock($runId, function () use ($runId, $afterFilename): ?array {
+            $dir = $this->batchesDir($runId);
+            if (!is_dir($dir)) {
+                return null;
+            }
+            // Retain only the next filename, not a directory-sized list or decoded batches.
+            $next = null;
+            foreach (new \DirectoryIterator($dir) as $file) {
+                $name = $file->getFilename();
+                if ($file->isFile() && 1 === preg_match('/^[0-9]+_[a-f0-9]{64}\.json$/D', $name)
+                    && strcmp($name, $afterFilename) > 0 && (null === $next || strcmp($name, $next) < 0)) {
+                    $next = $name;
+                }
+            }
+            if (null === $next) {
+                return null;
+            }
+            $envelope = $this->readSnapshotEnvelope($dir.'/'.$next, $runId, null, null);
+            if ($this->snapshotPath($runId, $envelope->turnNo, $envelope->stepId) !== $dir.'/'.$next) {
+                throw new \RuntimeException('Tool batch snapshot filename differs from its invocation identity.');
+            }
+
+            return [$next, $envelope];
+        });
+    }
+
     public function load(string $runId, int $turnNo, string $stepId): ?ToolBatchStateDTO
     {
         return $this->withRunLock($runId, function () use ($runId, $turnNo, $stepId): ?ToolBatchStateDTO {

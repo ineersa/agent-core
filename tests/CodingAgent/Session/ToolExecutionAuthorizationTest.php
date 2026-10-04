@@ -24,6 +24,27 @@ use Symfony\Component\Serializer\SerializerInterface;
 
 final class ToolExecutionAuthorizationTest extends PerMethodIsolatedKernelTestCase
 {
+    public function testClaimRetainsNonExpiringWorkerExclusion(): void
+    {
+        $container = self::getContainer();
+        $run = $container->get(HatfieldSessionStore::class)->createSession('tool worker exclusion');
+        $call = $this->call($run);
+        $this->prepare($call);
+        $gate = $this->gate();
+        $this->assertIsString($gate->claim($call));
+        $batch = $container->get(ToolBatchStoreInterface::class)->load($run, 1, 'tools');
+        $this->assertNotNull($batch);
+        $authorization = array_values($batch->executionAuthorizations)[0];
+        $lock = $container->get('hatfield.controller.session_owner.lock_factory')->createLock('tool-execution-worker.'.$authorization['claim_lock_key'], ttl: null);
+        try {
+            $this->assertFalse($lock->acquire(), 'A retained worker must exclude recovery.');
+            unset($gate);
+            $this->assertTrue($lock->acquire(), 'Worker lifetime completion releases exclusion.');
+        } finally {
+            $lock->release();
+        }
+    }
+
     public function testRunningClaimCannotBeTakenByAnotherWorkerInstance(): void
     {
         $run = self::getContainer()->get(HatfieldSessionStore::class)->createSession('tool gate');
@@ -309,7 +330,7 @@ final class ToolExecutionAuthorizationTest extends PerMethodIsolatedKernelTestCa
 
     private function gate(): ToolExecutionAuthorization
     {
-        return new ToolExecutionAuthorization(self::getContainer()->get(ToolBatchStoreInterface::class), self::getContainer()->get(SerializerInterface::class), self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class));
+        return new ToolExecutionAuthorization(self::getContainer()->get(ToolBatchStoreInterface::class), self::getContainer()->get(SerializerInterface::class), self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class), self::getContainer()->get('hatfield.controller.session_owner.lock_factory'));
     }
 
     private function prepare(ExecuteToolCall $call): void
