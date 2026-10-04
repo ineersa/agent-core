@@ -7,6 +7,10 @@ namespace Ineersa\CodingAgent\Tool\CodeMode;
 /** Closed IPC data; this file is also loaded by the isolated child bootstrap. */
 final class CodeModeValueCodec
 {
+    // Same root-zero, key-and-leaf-inclusive budget as ToolResultText. This
+    // standalone bootstrap file deliberately has no AgentCore dependency.
+    public const int MAX_DATA_DEPTH = 64;
+
     public const string MALFORMED_MESSAGE = 'Tool call failed: its result contained malformed UTF-8.';
 
     public static function assertEncodable(mixed $value, string $context): mixed
@@ -18,7 +22,7 @@ final class CodeModeValueCodec
 
     private static function toData(mixed $value, string $context, int $depth): mixed
     {
-        if ($depth > 512) {
+        if ($depth > self::MAX_DATA_DEPTH) {
             throw new \RuntimeException('Tool call failed: its result could not be safely inspected.');
         }
         if ($value instanceof \BackedEnum) {
@@ -44,10 +48,8 @@ final class CodeModeValueCodec
         }
         $data = [];
         foreach ($value as $key => $item) {
-            if (\is_string($key) && !mb_check_encoding($key, 'UTF-8')) {
-                throw new \RuntimeException(self::MALFORMED_MESSAGE);
-            }
-            $data[$key] = self::toData($item, $context, $depth + 1);
+            $dataKey = self::toData($key, $context, $depth + 1);
+            $data[$dataKey] = self::toData($item, $context, $depth + 1);
         }
 
         return $data;

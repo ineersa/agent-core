@@ -226,7 +226,15 @@ final class ToolExecutor implements ToolExecutorInterface
             return $this->withExecutionMetadata($result, $policy, $toolIdempotencyKey, $durationMs);
         }
 
-        if ($this->cancellationToken($toolCall)->isCancellationRequested()) {
+        // Processors promote extension control flags before cancellation
+        // arbitration. Execute this shared success/error path exactly once;
+        // coordination markers and pre-start cancellation do not enter it.
+        $processingFailed = false;
+        if (!$this->isDeferredOutcomeResult($result)) {
+            $result = $this->processTerminalResult($result, $toolCall, $processingFailed);
+        }
+
+        if (!$processingFailed && $this->cancellationToken($toolCall)->isCancellationRequested()) {
             // Don't overwrite a structured cancelled result.
             $details = $result->details;
             $cancelled = \is_array($details) ? ($details['cancelled'] ?? false) : false;
@@ -375,30 +383,25 @@ final class ToolExecutor implements ToolExecutorInterface
         );
     }
 
-    private function rememberAndReturn(
-        ToolCall $toolCall,
-        ToolExecutionPolicy $policy,
-        ?string $toolIdempotencyKey,
-        ToolResult $result,
-        ?float $durationMs = null,
-    ): ToolResult {
-        // Validate before processors can cap or discard the offending metadata.
-        // Typed coordination markers do not run terminal result processors.
-        if ($this->isDeferredOutcomeResult($result)) {
-            $coordinationResult = $this->withExecutionMetadata($result, $policy, $toolIdempotencyKey, $durationMs);
-            $runId = $this->runId($toolCall);
-            if (null !== $runId) {
-                $this->resultStore->remember($runId, $toolCall->toolCallId, $toolCall->toolName, $toolIdempotencyKey, $coordinationResult);
-            }
-
-            return $coordinationResult;
+    private function processTerminalResult(ToolResult $result, ToolCall $toolCall, bool &$processingFailed): ToolResult
+    {
+        $validated = ToolResultText::finalize($result);
+        $processingFailed = $validated !== $result;
+        $result = $validated;
+        if ($processingFailed) {
+            return $result;
         }
-        $result = ToolResultText::finalize($result);
         try {
             foreach ($this->toolResultProcessors as $processor) {
-                $result = ToolResultText::finalize($processor->process($result, $toolCall));
+                $processed = $processor->process($result, $toolCall);
+                $result = ToolResultText::finalize($processed);
+                $processingFailed = $processingFailed || $result !== $processed;
+                if ($processingFailed) {
+                    return $result;
+                }
             }
         } catch (\Throwable $exception) {
+            $processingFailed = true;
             // Execution already returned. Remember the processing failure and
             // never invoke the failing processor again for the fallback result.
             $message = $exception instanceof \JsonException && \JSON_ERROR_UTF8 === $exception->getCode()
@@ -416,6 +419,28 @@ final class ToolExecutor implements ToolExecutorInterface
                 $failureDetails['raw_result'] = ['attachment_refs' => $references];
             }
             $result = $this->errorResult($toolCall->toolCallId, $toolCall->toolName, $message, $failureDetails);
+        }
+
+        return $result;
+    }
+
+    private function rememberAndReturn(
+        ToolCall $toolCall,
+        ToolExecutionPolicy $policy,
+        ?string $toolIdempotencyKey,
+        ToolResult $result,
+        ?float $durationMs = null,
+    ): ToolResult {
+        // Processing and cancellation arbitration have already finished.
+        // Coordination markers retain their separate in-process dedupe path.
+        if ($this->isDeferredOutcomeResult($result)) {
+            $coordinationResult = $this->withExecutionMetadata($result, $policy, $toolIdempotencyKey, $durationMs);
+            $runId = $this->runId($toolCall);
+            if (null !== $runId) {
+                $this->resultStore->remember($runId, $toolCall->toolCallId, $toolCall->toolName, $toolIdempotencyKey, $coordinationResult);
+            }
+
+            return $coordinationResult;
         }
         $normalized = ToolResultText::finalize($this->withExecutionMetadata($result, $policy, $toolIdempotencyKey, $durationMs));
 

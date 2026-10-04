@@ -7,6 +7,10 @@ namespace Ineersa\AgentCore\Domain\Tool;
 /** Text in a tool result must be UTF-8, independently of its storage format. */
 final class ToolResultText
 {
+    // Root depth is zero; keys and leaves count too. Reserve ample headroom
+    // for batch/event/transport envelopes outside this closed-data value.
+    public const int MAX_DATA_DEPTH = 64;
+
     public const string FAILURE_MESSAGE = 'Tool call failed: its result contained malformed UTF-8.';
 
     public const string INSPECTION_FAILURE_MESSAGE = 'Tool call failed: its result could not be safely inspected.';
@@ -18,11 +22,11 @@ final class ToolResultText
 
     public static function failureMessage(mixed $value, int $depth = 0): ?string
     {
+        if ($depth > self::MAX_DATA_DEPTH) {
+            return self::INSPECTION_FAILURE_MESSAGE;
+        }
         if (\is_string($value)) {
             return mb_check_encoding($value, 'UTF-8') ? null : self::FAILURE_MESSAGE;
-        }
-        if ($depth > 512) {
-            return self::INSPECTION_FAILURE_MESSAGE;
         }
         if (null === $value || \is_bool($value) || \is_int($value)) {
             return null;
