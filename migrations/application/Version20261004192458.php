@@ -24,7 +24,8 @@ final class Version20261004192458 extends AbstractMigration
 
         // Old projections have input totals but no cached-token totals. Replay
         // canonical child events on recovery/resume instead of showing a partial ratio.
-        $this->addSql('UPDATE deferred_subagent_child SET child_event_cursor = 0, child_lifecycle_projection = NULL');
+        // Recovery skips terminal batches, so retain their existing counters.
+        $this->addSql('UPDATE deferred_subagent_child SET child_event_cursor = 0, child_lifecycle_projection = NULL WHERE batch_lifecycle_id IN (SELECT lifecycle_id FROM deferred_subagent_batch WHERE terminal_completion_enqueued_at IS NULL)');
     }
 
     public function down(Schema $schema): void
