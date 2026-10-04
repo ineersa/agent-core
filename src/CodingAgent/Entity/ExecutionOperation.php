@@ -57,6 +57,12 @@ class ExecutionOperation
     #[ORM\Column(name: 'worker_pid', type: 'integer', nullable: true)]
     public ?int $workerPid = null;
 
+    #[ORM\Column(name: 'claim_lock_key', type: 'string', length: 64, nullable: true)]
+    public ?string $claimLockKey = null;
+
+    #[ORM\Column(name: 'unknown_notice_transition', type: 'string', length: 64, nullable: true)]
+    public ?string $unknownNoticeTransition = null;
+
     #[ORM\Column(name: 'result_hash', type: 'string', length: 64, nullable: true)]
     public ?string $resultHash = null;
 

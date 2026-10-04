@@ -14,7 +14,10 @@ use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
 use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
 use Ineersa\AgentCore\Domain\Message\DurableExecutionResult;
 use Ineersa\AgentCore\Domain\Message\ExecutionRequest;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\LockInterface;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Transport\Serialization\PhpSerializer;
 
@@ -23,10 +26,12 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
 {
     private const int MAX_PAYLOAD_BYTES = 16777216;
     private string $instance;
+    private LockInterface $workerLock;
 
-    public function __construct(private Connection $connection, private ToolBatchRunStoragePathsInterface $paths, private Filesystem $filesystem)
+    public function __construct(private Connection $connection, private ToolBatchRunStoragePathsInterface $paths, private Filesystem $filesystem, #[Autowire(service: 'hatfield.controller.session_owner.lock_factory')] private LockFactory $claimLockFactory)
     {
         $this->instance = bin2hex(random_bytes(32));
+        $this->workerLock = $claimLockFactory->createLock('execution-worker.'.$this->instance, ttl: null);
     }
 
     public function arm(AbstractAgentBusMessage $request, VerifiedTransitionDTO $transition): ExecutionAuthorizationStamp
@@ -80,7 +85,7 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
      * Durable reservations scope descendants even when disposable operational rows disappear.
      * Only scalar references are read here, never the sealed invocation bodies.
      *
-     * @return array<string, Envelope> keyed by the stable effect identity
+     * @return array<string, Envelope|null> keyed by the stable effect identity, including live claims to advance the page cursor
      */
     public function pendingDeliveries(string $ownerSessionId, string $afterEffectId): array
     {
@@ -95,11 +100,22 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
             )
             SELECT operation.* FROM execution_operation operation
             JOIN owned_runs owned ON owned.run_id = operation.run_id
-            WHERE operation.state IN ('Armed', 'ResultReady') AND operation.effect_id > :after
+            WHERE (operation.state IN ('Armed', 'Running', 'ResultReady') OR (operation.state = 'OutcomeUnknown' AND operation.unknown_notice_transition IS NULL)) AND operation.effect_id > :after
             ORDER BY operation.effect_id LIMIT 32
             SQL, ['owner' => $ownerSessionId, 'after' => $afterEffectId]);
         $deliveries = [];
         foreach ($records as $record) {
+            if ('Running' === $record['state']) {
+                $record = $this->recoverClaim($record);
+            }
+            if ('Running' === $record['state']) {
+                $deliveries[$record['effect_id']] = null;
+                continue;
+            }
+            if ('OutcomeUnknown' === $record['state']) {
+                $deliveries[$record['effect_id']] = new Envelope($this->unknownNotice($record));
+                continue;
+            }
             if ('ResultReady' === $record['state']) {
                 $deliveries[$record['effect_id']] = new Envelope($this->reference($record));
                 continue;
@@ -121,8 +137,13 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
         if ('Armed' !== $record['state']) {
             return null;
         }
+        // Publish no Running receipt until process-owned, nonexpiring exclusion
+        // is held. Retain it for the store/worker lifetime, including exceptions.
+        if (!$this->workerLock->isAcquired() && !$this->workerLock->acquire()) {
+            throw new \RuntimeException('Unable to acquire execution worker ownership.');
+        }
         $claim = $this->instance.'.'.bin2hex(random_bytes(32));
-        $updated = $this->connection->executeStatement("UPDATE execution_operation SET state = 'Running', claim_token = ?, worker_instance = ?, worker_pid = ? WHERE effect_id = ? AND state = 'Armed' AND request_hash = ?", [$claim, $this->instance, getmypid(), $authorization->effectId, $request->sha256]);
+        $updated = $this->connection->executeStatement("UPDATE execution_operation SET state = 'Running', claim_token = ?, worker_instance = ?, worker_pid = ?, claim_lock_key = ? WHERE effect_id = ? AND state = 'Armed' AND request_hash = ? AND NOT EXISTS (SELECT 1 FROM execution_operation pending WHERE pending.run_id = ? AND pending.state = 'OutcomeUnknown')", [$claim, $this->instance, getmypid(), $this->instance, $authorization->effectId, $request->sha256, $request->runId()]);
         if (1 !== $updated) {
             $current = $this->record($authorization->effectId);
 
@@ -167,7 +188,8 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
             || $result::class !== $record['result_type'] || $result->runId() !== $request->runId() || $result->turnNo() !== $request->turnNo() || $result->stepId() !== $request->stepId() || $result->attempt() !== $request->attempt() || $result->idempotencyKey() !== $request->idempotencyKey()) {
             throw new \RuntimeException('Execution result differs from its running authorization.');
         }
-        $bytes = (new PhpSerializer())->encode(new Envelope($result))['body'];
+        $body = (new PhpSerializer())->encode(new Envelope($result))['body'];
+        $bytes = json_encode(['schema' => 1, 'effect_id' => $authorization->effectId, 'claim_token' => $claim, 'body' => $body, 'sha256' => hash('sha256', $body), 'bytes' => \strlen($body)], \JSON_THROW_ON_ERROR);
         $this->checkBound($bytes);
         $hash = hash('sha256', $bytes);
         // The deterministic claim file permits later adoption after file publication
@@ -186,12 +208,8 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
     {
         $record = $this->matchingResult($reference);
         $bytes = $this->readSealed($this->path($reference->runId(), $reference->effectId, hash('sha256', $reference->claimToken).'.result'), $reference->sha256, $reference->bytes);
-        $result = (new PhpSerializer())->decode(['body' => $bytes])->getMessage();
-        if (!$result instanceof AbstractAgentBusMessage || $result::class !== $record['result_type'] || $result->runId() !== $reference->runId() || $result->turnNo() !== $reference->turnNo() || $result->stepId() !== $reference->stepId() || $result->attempt() !== $reference->attempt() || $result->idempotencyKey() !== $reference->idempotencyKey()) {
-            throw new \RuntimeException('Sealed execution result identity mismatch.');
-        }
 
-        return $result;
+        return $this->decodeResultSeal($bytes, $record);
     }
 
     public function isDisposed(DurableExecutionResult $reference): bool
@@ -225,6 +243,42 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
         }
     }
 
+    public function unknownNoticePending(\Ineersa\AgentCore\Domain\Message\ExecutionOutcomeUnknown $notice): bool
+    {
+        $record = $this->record($notice->effectId);
+        if ('OutcomeUnknown' !== $record['state'] || (array) $this->unknownNotice($record) !== (array) $notice) {
+            throw new \RuntimeException('Unknown execution notice differs from its durable receipt.');
+        }
+
+        return null === $record['unknown_notice_transition'];
+    }
+
+    public function consumeUnknownNotice(\Ineersa\AgentCore\Domain\Coordination\ConsumeExecutionUnknownDTO $action, VerifiedTransitionDTO $transition): void
+    {
+        $matched = false;
+        foreach ($transition->work['actions'] ?? [] as $expected) {
+            if ($expected instanceof \Ineersa\AgentCore\Domain\Coordination\ConsumeExecutionUnknownDTO && (array) $expected->notice === (array) $action->notice) {
+                $matched = true;
+            }
+        }
+        if (!$matched || ($transition->work['run_id'] ?? null) !== $action->notice->runId()) {
+            throw new \RuntimeException('Unknown notice acknowledgement has no verified owner decision.');
+        }
+        $this->unknownNoticePending($action->notice);
+        $record = $this->record($action->notice->effectId);
+        if (null !== $record['unknown_notice_transition'] && $record['unknown_notice_transition'] !== $transition->identity) {
+            throw new \RuntimeException('Conflicting unknown notice acknowledgement.');
+        }
+        $this->connection->executeStatement("UPDATE execution_operation SET unknown_notice_transition = ? WHERE effect_id = ? AND claim_token = ? AND state = 'OutcomeUnknown' AND unknown_notice_transition IS NULL", [$transition->identity, $action->notice->effectId, $action->notice->claimToken]);
+    }
+
+    public function assertNoUnknownExecution(string $runId): void
+    {
+        if (false !== $this->connection->fetchOne("SELECT effect_id FROM execution_operation WHERE run_id = ? AND state = 'OutcomeUnknown' LIMIT 1", [$runId])) {
+            throw new \RuntimeException(\Ineersa\AgentCore\Domain\Message\ExecutionOutcomeUnknown::ERROR_MESSAGE);
+        }
+    }
+
     /** @return array<string, mixed> */
     private function matchingRequest(ExecutionRequest $reference, ExecutionAuthorizationStamp $authorization): array
     {
@@ -238,6 +292,12 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
         return $record;
     }
 
+    /** @param array<string, mixed> $record */
+    private function unknownNotice(array $record): \Ineersa\AgentCore\Domain\Message\ExecutionOutcomeUnknown
+    {
+        return new \Ineersa\AgentCore\Domain\Message\ExecutionOutcomeUnknown($record['run_id'], (int) $record['turn_no'], $record['step_id'], (int) $record['attempt'], $record['idempotency_key'], $record['effect_id'], $record['claim_token']);
+    }
+
     /** @return array<string, mixed> */
     private function record(string $id): array
     {
@@ -247,6 +307,63 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
         }
 
         return $record;
+    }
+
+    /** @param array<string, mixed> $record
+     * @return array<string, mixed>
+     */
+    private function recoverClaim(array $record): array
+    {
+        $key = $record['claim_lock_key'];
+        if (!\is_string($key) || 1 !== preg_match('/^[a-f0-9]{64}$/D', $key) || $key !== $record['worker_instance'] || !\is_string($record['claim_token']) || !str_starts_with($record['claim_token'], $key.'.')) {
+            throw new \RuntimeException('Running execution has no verifiable ownership receipt.');
+        }
+        $lock = $this->claimLockFactory->createLock('execution-worker.'.$key, ttl: null);
+        if (!$lock->acquire()) {
+            return $record;
+        }
+        try {
+            $current = $this->record($record['effect_id']);
+            if ('Running' !== $current['state'] || $current['claim_token'] !== $record['claim_token'] || $current['claim_lock_key'] !== $key) {
+                return $current;
+            }
+            $path = $this->path($record['run_id'], $record['effect_id'], hash('sha256', $record['claim_token']).'.result');
+            if (is_link($path) || !is_readable(\dirname($path))) {
+                throw new \RuntimeException('Execution result storage is unavailable or unsafe.');
+            }
+            if (is_file($path)) {
+                $bytes = file_get_contents($path, false, null, 0, self::MAX_PAYLOAD_BYTES + 1);
+                if (false === $bytes) {
+                    throw new \RuntimeException('Unable to read sealed execution result.');
+                }
+                $this->checkBound($bytes);
+                $this->decodeResultSeal($bytes, $current);
+                $this->connection->executeStatement("UPDATE execution_operation SET state = 'ResultReady', result_hash = ?, result_bytes = ? WHERE effect_id = ? AND claim_token = ? AND claim_lock_key = ? AND state = 'Running'", [hash('sha256', $bytes), \strlen($bytes), $record['effect_id'], $record['claim_token'], $key]);
+            } else {
+                $this->connection->executeStatement("UPDATE execution_operation SET state = 'OutcomeUnknown' WHERE effect_id = ? AND claim_token = ? AND claim_lock_key = ? AND state = 'Running'", [$record['effect_id'], $record['claim_token'], $key]);
+            }
+
+            return $this->record($record['effect_id']);
+        } finally {
+            // Exclusion covers validation AND the durable decision, not a probe.
+            $lock->release();
+        }
+    }
+
+    /** @param array<string, mixed> $record */
+    private function decodeResultSeal(string $bytes, array $record): AbstractAgentBusMessage
+    {
+        $seal = json_decode($bytes, true, 8, \JSON_THROW_ON_ERROR);
+        if (!\is_array($seal) || ($seal['schema'] ?? null) !== 1 || ($seal['effect_id'] ?? null) !== $record['effect_id'] || ($seal['claim_token'] ?? null) !== $record['claim_token'] || !\is_string($seal['body'] ?? null)
+            || ($seal['bytes'] ?? null) !== \strlen($seal['body']) || ($seal['sha256'] ?? null) !== hash('sha256', $seal['body'])) {
+            throw new \RuntimeException('Sealed execution result evidence is corrupt.');
+        }
+        $result = (new PhpSerializer())->decode(['body' => $seal['body']])->getMessage();
+        if (!$result instanceof AbstractAgentBusMessage || $result::class !== $record['result_type'] || $result->runId() !== $record['run_id'] || $result->turnNo() !== (int) $record['turn_no'] || $result->stepId() !== $record['step_id'] || $result->attempt() !== (int) $record['attempt'] || $result->idempotencyKey() !== $record['idempotency_key']) {
+            throw new \RuntimeException('Sealed execution result identity mismatch.');
+        }
+
+        return $result;
     }
 
     /** @return array<string, mixed> */

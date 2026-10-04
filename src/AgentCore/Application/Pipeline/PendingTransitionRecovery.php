@@ -55,7 +55,7 @@ final readonly class PendingTransitionRecovery
                         throw new \RuntimeException('Execution authorization requires a direct pending effect.');
                     }
                 }
-            } elseif (!$action instanceof MarkCommandAppliedDTO) {
+            } elseif (!$action instanceof MarkCommandAppliedDTO && !$action instanceof \Ineersa\AgentCore\Domain\Coordination\ConsumeExecutionUnknownDTO) {
                 throw new \RuntimeException('Owner transition requires coordination recovery for unsupported action.');
             }
         }

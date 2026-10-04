@@ -14,6 +14,7 @@ Topology map for AgentCore application handlers. Authoritative routing: `config/
 | `AdvanceRun` | `agent.command.bus` (transport `run_control`) | `AdvanceRunHandler` |
 | `LlmStepResult` | `agent.command.bus` (transport `run_control`) | `LlmStepResultHandler` |
 | `ToolCallResult` | `agent.command.bus` (transport `run_control`) | `ToolCallResultHandler` |
+| `ExecutionOutcomeUnknown` | `agent.command.bus` (transport `run_control`) | `ExecutionOutcomeUnknownHandler` |
 | `CompactRun` | `agent.command.bus` (transport `run_control`) | `Ineersa\CodingAgent\Application\Pipeline\CompactRunHandler` (App layer; depends on compaction services) |
 | `CompactionStepResult` | `agent.command.bus` (transport `run_control`) | `Ineersa\CodingAgent\Application\Pipeline\CompactionStepResultHandler` |
 | `CompleteDeferredToolCall` | `agent.command.bus` (transport `run_control`) | `CompleteDeferredToolCallHandler` |
@@ -149,4 +150,8 @@ Configured persistent stores implement `PreparedTransitionEventStoreInterface`. 
 
 Pending persistent transitions block owner admission and ordinary mutation. Owner entry reconciles matching prepared bytes before coordination recovery. Direct LLM, compaction, and standalone-shell effects are armed against that verified transition and redispatched with the original authorization identity. Execution-result Consumed and Stale decisions, including event-free decisions, are validated and persisted before finalization. Ordinary tools retain their existing batch authority. Unsupported coordination actions and execution nested inside coordination descriptors still refuse recovery.
 
-Execution-bearing work references remain on disk after successful finalization. Their enumeration and cleanup remain unfinished. Controller replay exercises reference delivery through real workers, but dedicated competing-worker and crash-boundary acceptance proofs remain outstanding. The current checkpoint does not provide complete transition recovery or power-loss durability. Existing pre-commit mailbox/tool-batch mutations, hook failure policy, source-identity fencing, result adoption, repeated result notification scanning, and OutcomeUnknown still need protocol work.
+Execution-bearing work references remain on disk after successful finalization. Generic Armed and ResultReady rows are rediscovered in bounded lifecycle sweeps. Worker-instance exclusion protects Running receipts. Confirmed-dead claims adopt validated immutable result seals or become OutcomeUnknown. Separate-process tests prove live exclusion and dead-claim decisions for LLM, compaction, and standalone shell inputs.
+
+`ExecutionOutcomeUnknownHandler` fails only the matching current invocation. Attached-shell matching checks turn, batch step, attempt, pending call ID, and invocation key. Delayed notices retire through an event-free verified decision. `ConsumeExecutionUnknownDTO` durably acknowledges notices before pending-transition finalization. Acknowledgement does not authorize another execution. Existing cancellation remains admissible while automatic advancement is blocked.
+
+Ordinary-tool scanning and death recovery, explicit unknown-receipt repair, accepted-source fencing, pre-commit mailbox and batch mutations, general coordination recovery, durable hooks, and payload cleanup remain unfinished. The current checkpoint does not provide complete transition recovery or power-loss durability.

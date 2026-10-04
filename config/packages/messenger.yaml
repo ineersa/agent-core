@@ -104,6 +104,7 @@ framework:
 
         routing:
             Ineersa\AgentCore\Domain\Message\DurableExecutionResult: run_control
+            Ineersa\AgentCore\Domain\Message\ExecutionOutcomeUnknown: run_control
             Ineersa\CodingAgent\Application\Message\AttachRun: run_control
             Ineersa\CodingAgent\Application\Message\SelectHistoryPrompt: run_control
             Ineersa\CodingAgent\Application\Message\RepairSession: run_control

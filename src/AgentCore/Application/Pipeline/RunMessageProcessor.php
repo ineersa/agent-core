@@ -56,6 +56,11 @@ final readonly class RunMessageProcessor
                     $this->runCommit->assertTransitionReady($runId);
                     $state = $this->activeRunContext->requireLoaded($runId);
 
+                    if ($message instanceof \Ineersa\AgentCore\Domain\Message\AdvanceRun || $message instanceof \Ineersa\AgentCore\Domain\Message\CompactRun || $message instanceof \Ineersa\AgentCore\Domain\Message\ApplyShellCommand
+                        || ($message instanceof \Ineersa\AgentCore\Domain\Message\ApplyCommand && \Ineersa\AgentCore\Domain\Command\CoreCommandKind::Cancel !== $message->kind)) {
+                        $this->runCommit->assertNoUnknownExecution($runId);
+                    }
+
                     // A context-mutating action may append history_tail_discarded
                     // before its normal handler transition. Persist this separate
                     // canonical mutation immediately, including no-op handlers.

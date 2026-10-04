@@ -68,18 +68,21 @@ final class ExecutionPendingDeliverySubscriber
             return;
         }
         foreach ($deliveries as $effectId => $envelope) {
+            $this->cursor = $effectId;
+            if (null === $envelope) {
+                continue;
+            }
             $message = $envelope->getMessage();
             \assert($message instanceof AbstractAgentBusMessage);
             try {
                 // Armed rows can exist while owner coordination is unfinished.
                 // A sweep must not make those transitions externally executable.
                 $this->transitions->assertTransitionReady($message->runId());
-                ($message instanceof DurableExecutionResult ? $this->commandBus : $this->executionBus)->dispatch($envelope);
+                ($message instanceof DurableExecutionResult || $message instanceof \Ineersa\AgentCore\Domain\Message\ExecutionOutcomeUnknown ? $this->commandBus : $this->executionBus)->dispatch($envelope);
             } catch (\Throwable $exception) {
                 // Keep the durable row. Later sweeps retry it with the same identity.
                 $this->logFailure($message->runId(), $exception);
             }
-            $this->cursor = $effectId;
         }
     }
 

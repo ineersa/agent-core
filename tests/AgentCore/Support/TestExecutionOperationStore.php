@@ -67,6 +67,21 @@ final class TestExecutionOperationStore implements ExecutionOperationStoreInterf
         throw new \LogicException('Dispatch-only fixture cannot apply result dispositions.');
     }
 
+    public function unknownNoticePending(\Ineersa\AgentCore\Domain\Message\ExecutionOutcomeUnknown $notice): bool
+    {
+        throw new \LogicException('Dispatch-only fixture has no unknown execution receipts.');
+    }
+
+    public function consumeUnknownNotice(\Ineersa\AgentCore\Domain\Coordination\ConsumeExecutionUnknownDTO $action, VerifiedTransitionDTO $transition): void
+    {
+        throw new \LogicException('Dispatch-only fixture cannot consume unknown notices.');
+    }
+
+    public function assertNoUnknownExecution(string $runId): void
+    {
+        // This fixture arms only; it has no Running or OutcomeUnknown records.
+    }
+
     private function encode(AbstractAgentBusMessage $request): string
     {
         return (new PhpSerializer())->encode(new Envelope($request))['body'];

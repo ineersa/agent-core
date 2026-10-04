@@ -154,6 +154,11 @@ final readonly class RunCommit
         $this->eventStore->assertTransitionReady($runId);
     }
 
+    public function assertNoUnknownExecution(string $runId): void
+    {
+        $this->executionOperations->assertNoUnknownExecution($runId);
+    }
+
     /** @param list<RunEvent> $events
      * @param list<object> $effects
      * @param list<object> $actions
