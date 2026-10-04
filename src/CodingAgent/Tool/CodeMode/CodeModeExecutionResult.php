@@ -22,12 +22,4 @@ final readonly class CodeModeExecutionResult
         public array $diagnostics = [],
     ) {
     }
-
-    public function hasDiagnostics(): bool
-    {
-        $stdout = $this->diagnostics['stdout'] ?? '';
-        $stderr = $this->diagnostics['stderr'] ?? '';
-
-        return ('' !== $stdout) || ('' !== $stderr);
-    }
 }
