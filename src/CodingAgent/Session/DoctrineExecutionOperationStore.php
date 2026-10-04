@@ -13,10 +13,10 @@ use Ineersa\AgentCore\Domain\Coordination\ExecutionResultDispositionDTO;
 use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
 use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
 use Ineersa\AgentCore\Domain\Message\DurableExecutionResult;
+use Ineersa\AgentCore\Domain\Message\ExecutionRequest;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Transport\Serialization\PhpSerializer;
-use Symfony\Component\Serializer\SerializerInterface;
 
 /** Atomic scalar authorization rows; request/result bodies are private immutable files. */
 final readonly class DoctrineExecutionOperationStore implements ExecutionOperationStoreInterface
@@ -24,7 +24,7 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
     private const int MAX_PAYLOAD_BYTES = 16777216;
     private string $instance;
 
-    public function __construct(private Connection $connection, private ToolBatchRunStoragePathsInterface $paths, private SerializerInterface $serializer, private Filesystem $filesystem)
+    public function __construct(private Connection $connection, private ToolBatchRunStoragePathsInterface $paths, private Filesystem $filesystem)
     {
         $this->instance = bin2hex(random_bytes(32));
     }
@@ -65,14 +65,20 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
         return new ExecutionAuthorizationStamp($id, $hash);
     }
 
-    public function claim(AbstractAgentBusMessage $request, ExecutionAuthorizationStamp $authorization): string|DurableExecutionResult|null
+    public function requestReference(AbstractAgentBusMessage $request, ExecutionAuthorizationStamp $authorization): ExecutionRequest
     {
         $record = $this->record($authorization->effectId);
         $hash = hash('sha256', $this->encodeRequest($request));
         if ($record['request_hash'] !== $authorization->requestHash || $hash !== $authorization->requestHash || $record['request_type'] !== $request::class || $record['run_id'] !== $request->runId()) {
             throw new \RuntimeException('Execution delivery differs from its owner authorization.');
         }
-        $this->readSealed($this->path($request->runId(), $authorization->effectId, 'request'), $hash, (int) $record['request_bytes']);
+
+        return new ExecutionRequest($request->runId(), $request->turnNo(), $request->stepId(), $request->attempt(), $request->idempotencyKey(), $authorization->effectId, $request::class, $hash, (int) $record['request_bytes']);
+    }
+
+    public function claim(ExecutionRequest $request, ExecutionAuthorizationStamp $authorization): string|DurableExecutionResult|null
+    {
+        $record = $this->matchingRequest($request, $authorization);
         if ('ResultReady' === $record['state']) {
             return $this->reference($record);
         }
@@ -80,7 +86,7 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
             return null;
         }
         $claim = $this->instance.'.'.bin2hex(random_bytes(32));
-        $updated = $this->connection->executeStatement("UPDATE execution_operation SET state = 'Running', claim_token = ?, worker_instance = ?, worker_pid = ? WHERE effect_id = ? AND state = 'Armed' AND request_hash = ?", [$claim, $this->instance, getmypid(), $authorization->effectId, $hash]);
+        $updated = $this->connection->executeStatement("UPDATE execution_operation SET state = 'Running', claim_token = ?, worker_instance = ?, worker_pid = ? WHERE effect_id = ? AND state = 'Armed' AND request_hash = ?", [$claim, $this->instance, getmypid(), $authorization->effectId, $request->sha256]);
         if (1 !== $updated) {
             $current = $this->record($authorization->effectId);
 
@@ -88,6 +94,34 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
         }
 
         return $claim;
+    }
+
+    public function resolveRequest(ExecutionRequest $reference, ExecutionAuthorizationStamp $authorization, string $claim): AbstractAgentBusMessage
+    {
+        $record = $this->matchingRequest($reference, $authorization);
+        if ('Running' !== $record['state'] || $record['claim_token'] !== $claim) {
+            throw new \RuntimeException('Execution input requires its running claim.');
+        }
+        $bytes = $this->readSealed($this->path($reference->runId(), $reference->effectId, 'request'), $reference->sha256, $reference->bytes);
+        $request = (new PhpSerializer())->decode(['body' => $bytes])->getMessage();
+        if (!$request instanceof AbstractAgentBusMessage || !ExecutionOperationMapper::supports($request) || $request::class !== $reference->requestType
+            || $request->runId() !== $reference->runId() || $request->turnNo() !== $reference->turnNo() || $request->stepId() !== $reference->stepId() || $request->attempt() !== $reference->attempt() || $request->idempotencyKey() !== $reference->idempotencyKey()) {
+            throw new \RuntimeException('Sealed execution request identity mismatch.');
+        }
+
+        return $request;
+    }
+
+    public function resultForClaim(ExecutionRequest $reference, ExecutionAuthorizationStamp $authorization, string $claim): DurableExecutionResult
+    {
+        $record = $this->matchingRequest($reference, $authorization);
+        if ($record['claim_token'] !== $claim || !\in_array($record['state'], ['ResultReady', 'Consumed', 'Stale'], true)) {
+            throw new \RuntimeException('Execution handler returned without a durable result.');
+        }
+        $result = $this->reference($record);
+        $this->readSealed($this->path($reference->runId(), $reference->effectId, hash('sha256', $claim).'.result'), $result->sha256, $result->bytes);
+
+        return $result;
     }
 
     public function saveResult(AbstractAgentBusMessage $request, ExecutionAuthorizationStamp $authorization, string $claim, AbstractAgentBusMessage $result): DurableExecutionResult
@@ -156,6 +190,19 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
     }
 
     /** @return array<string, mixed> */
+    private function matchingRequest(ExecutionRequest $reference, ExecutionAuthorizationStamp $authorization): array
+    {
+        $record = $this->record($authorization->effectId);
+        if ($reference->effectId !== $authorization->effectId || $reference->sha256 !== $authorization->requestHash || $record['request_hash'] !== $reference->sha256
+            || (int) $record['request_bytes'] !== $reference->bytes || $record['request_type'] !== $reference->requestType || $record['run_id'] !== $reference->runId()
+            || (int) $record['turn_no'] !== $reference->turnNo() || $record['step_id'] !== $reference->stepId() || (int) $record['attempt'] !== $reference->attempt() || $record['idempotency_key'] !== $reference->idempotencyKey()) {
+            throw new \RuntimeException('Execution reference differs from its owner authorization.');
+        }
+
+        return $record;
+    }
+
+    /** @return array<string, mixed> */
     private function record(string $id): array
     {
         $record = $this->connection->fetchAssociative('SELECT * FROM execution_operation WHERE effect_id = ?', [$id]);
@@ -190,7 +237,7 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
 
     private function encodeRequest(AbstractAgentBusMessage $request): string
     {
-        $bytes = json_encode([$request::class, $request->runId(), $request->turnNo(), $request->stepId(), $request->attempt(), $request->idempotencyKey(), $this->serializer->serialize($request, 'json')], \JSON_THROW_ON_ERROR);
+        $bytes = (new PhpSerializer())->encode(new Envelope($request))['body'];
         $this->checkBound($bytes);
 
         return $bytes;

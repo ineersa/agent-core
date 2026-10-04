@@ -292,7 +292,7 @@ final class SessionToolLaunchInputStoreTest extends IsolatedKernelTestCase
             activeRunContext: $active, eventStore: $eventStore,
             stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus()),
             logger: new \Ineersa\AgentCore\Tests\Support\TestLogger(), toolBatchCollector: $ownerCollector,
-            hookDispatcher: new \Ineersa\AgentCore\Application\Handler\HookDispatcher([self::getContainer()->get(\Ineersa\CodingAgent\Session\ToolBatchSnapshotCleanupHookSubscriber::class)]), toolAuthorization: new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(),
+            hookDispatcher: new \Ineersa\AgentCore\Application\Handler\HookDispatcher([self::getContainer()->get(\Ineersa\CodingAgent\Session\ToolBatchSnapshotCleanupHookSubscriber::class)]), toolAuthorization: new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore()
         );
         $commit->commit($state, $transition->nextState, $transition->events, $transition->effects);
         $this->assertFileDoesNotExist($this->payloadPath($runId, 'fork'));

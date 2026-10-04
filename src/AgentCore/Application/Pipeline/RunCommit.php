@@ -164,6 +164,7 @@ final readonly class RunCommit
         $gated = array_values(array_filter($effects, \Ineersa\AgentCore\Application\Handler\ExecutionOperationMapper::supports(...)));
         $verified = null;
         $stamps = [];
+        $deliveries = [];
         if ([] !== $gated || null !== $resultDisposition || null !== $executionDisposition) {
             $verified = $this->eventStore->verifiedPendingTransition($runId);
             if (null === $verified) {
@@ -173,7 +174,10 @@ final readonly class RunCommit
                 if (!$effect instanceof \Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage) {
                     throw new \LogicException('Invalid execution effect.');
                 }
-                $stamps[spl_object_id($effect)] = $this->executionOperations->arm($effect, $verified);
+                $authorization = $this->executionOperations->arm($effect, $verified);
+                $reference = $this->executionOperations->requestReference($effect, $authorization);
+                $deliveries[] = $reference;
+                $stamps[spl_object_id($reference)] = $authorization;
             }
             if (null !== $executionDisposition) {
                 $this->executionOperations->validateDisposition($executionDisposition, $verified);
@@ -198,7 +202,7 @@ final readonly class RunCommit
         }
         // Armed records retain the original request when broker delivery fails.
         // The execution gate, not an enqueue acknowledgement, grants one claim.
-        $this->stepDispatcher->dispatchEffects($gated, $stamps);
+        $this->stepDispatcher->dispatchEffects($deliveries, $stamps);
     }
 
     /** @param list<object> $effects */

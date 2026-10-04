@@ -17,6 +17,7 @@ use Ineersa\AgentCore\Domain\Message\CompactionStepResult;
 use Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
+use Ineersa\AgentCore\Domain\Message\ExecutionRequest;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
@@ -58,16 +59,19 @@ final class PendingTransitionRecoveryTest extends IsolatedKernelTestCase
         $this->recovery($bus)->recover($run);
         $this->assertNull($store->verifiedPendingTransition($run));
         $this->assertInstanceOf(Envelope::class, $dispatched);
-        $this->assertEquals($request, $dispatched->getMessage());
+        $this->assertInstanceOf(ExecutionRequest::class, $dispatched->getMessage());
         $this->assertEquals($original, $dispatched->last(ExecutionAuthorizationStamp::class));
         $serializer = $container->get('messenger.transport.native_php_serializer');
         $this->assertInstanceOf(SerializerInterface::class, $serializer);
         $restored = $serializer->decode($serializer->encode($dispatched));
         $stamp = $restored->last(ExecutionAuthorizationStamp::class);
         $this->assertInstanceOf(ExecutionAuthorizationStamp::class, $stamp);
-        $claim = $operations->claim($restored->getMessage(), $stamp);
+        $delivery = $restored->getMessage();
+        $this->assertInstanceOf(ExecutionRequest::class, $delivery);
+        $claim = $operations->claim($delivery, $stamp);
         $this->assertIsString($claim);
-        $this->assertNull($operations->claim($request, $original));
+        $this->assertEquals($request, $operations->resolveRequest($delivery, $stamp, $claim));
+        $this->assertNull($operations->claim($delivery, $original));
         $this->recovery($bus)->recover($run);
     }
 
@@ -93,11 +97,12 @@ final class PendingTransitionRecoveryTest extends IsolatedKernelTestCase
         $operations = $container->get(ExecutionOperationStoreInterface::class);
         $authorization = $operations->arm($request, $pending);
         $store->finalizeVerifiedTransition($run, $pending->identity);
-        $claim = $operations->claim($request, $authorization);
+        $delivery = $operations->requestReference($request, $authorization);
+        $claim = $operations->claim($delivery, $authorization);
         $this->assertIsString($claim);
         $result = $this->executionResult($kind, $request);
         $reference = $operations->saveResult($request, $authorization, $claim, $result);
-        $this->assertEquals($reference, $operations->claim($request, $authorization), 'Redelivery reuses the durable original result.');
+        $this->assertEquals($reference, $operations->claim($delivery, $authorization), 'Redelivery reuses the durable original result.');
         $descriptor = new ExecutionResultDispositionDTO($reference, $decision);
         $store->appendTransition([], ['run_id' => $run, 'predecessor_seq' => 0, 'execution_disposition' => $descriptor]);
         $this->assertFalse($operations->isDisposed($reference));
@@ -105,7 +110,8 @@ final class PendingTransitionRecoveryTest extends IsolatedKernelTestCase
         $this->recovery($bus)->recover($run);
         $this->assertTrue($operations->isDisposed($reference));
         $this->assertEquals($result, $operations->resolveResult($reference));
-        $this->assertNull($operations->claim($request, $authorization));
+        $this->assertEquals($reference, $operations->resultForClaim($delivery, $authorization, $claim), 'Fast owner consumption must not invalidate acknowledgement of an already durable result.');
+        $this->assertNull($operations->claim($delivery, $authorization));
         $this->assertNull($store->verifiedPendingTransition($run));
         $this->assertNull($store->latestSequenceFor($run), 'A stale decision must not invent canonical events.');
         $this->recovery($bus)->recover($run);

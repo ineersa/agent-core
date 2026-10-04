@@ -74,11 +74,14 @@ final readonly class PendingTransitionRecovery
             $this->executionOperations->validateDisposition($executionDisposition, $pending);
         }
         $stamps = [];
-        foreach ($effects as $effect) {
+        foreach ($effects as $index => $effect) {
             if ($effect instanceof ExecuteToolCall) {
                 $this->authorization->arm($effect);
             } elseif ($effect instanceof AbstractAgentBusMessage && ExecutionOperationMapper::supports($effect)) {
-                $stamps[spl_object_id($effect)] = $this->executionOperations->arm($effect, $pending);
+                $authorization = $this->executionOperations->arm($effect, $pending);
+                $reference = $this->executionOperations->requestReference($effect, $authorization);
+                $effects[$index] = $reference;
+                $stamps[spl_object_id($reference)] = $authorization;
             }
         }
         $this->dispatcher->dispatchEffects($effects, $stamps);

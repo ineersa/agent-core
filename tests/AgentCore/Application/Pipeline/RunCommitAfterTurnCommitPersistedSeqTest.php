@@ -50,7 +50,7 @@ final class RunCommitAfterTurnCommitPersistedSeqTest extends TestCase
             stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
             logger: new TestLogger(),
             toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(),
-            hookDispatcher: new HookDispatcher([$subscriber]), toolAuthorization: new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(),
+            hookDispatcher: new HookDispatcher([$subscriber]), toolAuthorization: new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore()
         );
 
         $next = new RunState(

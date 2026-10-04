@@ -1057,6 +1057,14 @@ services:
     arguments:
       $executionBus: '@agent.execution.bus'
 
+  Ineersa\AgentCore\Application\Messenger\ExecutionAuthorizationMiddleware:
+    arguments:
+      $commandBus: '@agent.command.bus'
+      $requestTransports:
+        Ineersa\AgentCore\Domain\Message\ExecuteLlmStep: llm
+        Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep: llm
+        Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall: tool
+
   Ineersa\AgentCore\Application\Handler\CommandRouter:
     arguments:
       $handlers: !tagged_iterator agent_core.command_handler

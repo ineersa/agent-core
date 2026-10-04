@@ -11,7 +11,7 @@ use Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor;
 use Ineersa\AgentCore\Application\Pipeline\RunOrchestrator;
 use Ineersa\AgentCore\Application\Pipeline\StartRunHandler;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
-use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\StartRun;
@@ -40,7 +40,7 @@ final class PipelineCapturingAgentRunner implements AgentRunnerInterface
     ) {
     }
 
-    public static function create(EventStoreInterface $eventStore): self
+    public static function create(PreparedTransitionEventStoreInterface $eventStore): self
     {
         $executionBus = new TestMessageBus();
         $activeRunContext = new TestActiveRunContext();
@@ -50,7 +50,7 @@ final class PipelineCapturingAgentRunner implements AgentRunnerInterface
             stepDispatcher: new StepDispatcher(new TestMessageBus(), $executionBus),
             logger: new NullLogger(),
             toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(),
-            hookDispatcher: null, toolAuthorization: new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(),
+            hookDispatcher: null, toolAuthorization: new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore()
         );
         $processor = new RunMessageProcessor(
             activeRunContext: $activeRunContext,

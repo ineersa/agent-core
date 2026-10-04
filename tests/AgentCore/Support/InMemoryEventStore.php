@@ -7,6 +7,7 @@ namespace Ineersa\AgentCore\Tests\Support;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 
+/** Non-journaled unit fixture. Durable recovery proofs use configured persistent stores. */
 final class InMemoryEventStore implements PreparedTransitionEventStoreInterface
 {
     public int $allForCalls = 0;
@@ -23,6 +24,9 @@ final class InMemoryEventStore implements PreparedTransitionEventStoreInterface
     /** @var array<string, int> */
     private array $highWaterByRun = [];
 
+    /** @var array<string, \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO> */
+    private array $pending = [];
+
     /**
      * Test-only: insert a persisted row with explicit seq (gaps/historical logs).
      */
@@ -35,9 +39,12 @@ final class InMemoryEventStore implements PreparedTransitionEventStoreInterface
 
     public function appendTransition(array $events, array $work): array
     {
-        $this->assertTransitionReady($events[0]->runId);
+        $runId = $work['run_id'];
+        $this->assertTransitionReady($runId);
+        $persisted = $this->appendMany($events);
+        $this->pending[$runId] = new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(hash('sha256', serialize([$work, $persisted])), 0, 0, $work);
 
-        return $this->appendMany($events);
+        return $persisted;
     }
 
     public function assertTransitionReady(string $runId): void
@@ -46,16 +53,20 @@ final class InMemoryEventStore implements PreparedTransitionEventStoreInterface
 
     public function verifiedPendingTransition(string $runId): ?\Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO
     {
-        return null;
+        return $this->pending[$runId] ?? null;
     }
 
     public function finalizeVerifiedTransition(string $runId, string $identity): void
     {
+        if (($this->pending[$runId]->identity ?? null) !== $identity) {
+            throw new \RuntimeException('Fixture transition identity mismatch.');
+        }
         $this->finalizeTransition($runId);
     }
 
     public function finalizeTransition(string $runId): void
     {
+        unset($this->pending[$runId]);
     }
 
     public function append(RunEvent $event): RunEvent

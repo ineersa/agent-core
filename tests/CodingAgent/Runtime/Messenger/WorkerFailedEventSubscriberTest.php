@@ -367,7 +367,7 @@ final class WorkerFailedEventSubscriberTest extends IsolatedKernelTestCase
         $store->expects($this->once())->method('appendTransition')->willReturnCallback(static fn (array $events): array => [new RunEvent($events[0]->runId, 1, $events[0]->turnNo, $events[0]->type, $events[0]->payload)]);
         $logger = new TestLogger();
         $bus = new TestMessageBus();
-        $commit = new RunCommit($active, $store, new StepDispatcher($bus, $bus), $logger, $collector, new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), new HookDispatcher([$hook]));
+        $commit = new RunCommit($active, $store, new StepDispatcher($bus, $bus), $logger, $collector, new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(), new HookDispatcher([$hook]));
         $subscriber = new WorkerFailedEventSubscriber($active, $commit, new RunLockManager(new LockFactory(new InMemoryStore())), $logger);
         $event = $this->createFinalFailedEvent(new \RuntimeException('handler failed'));
         $subscriber->onWorkerMessageFailed($event);
@@ -397,7 +397,7 @@ final class WorkerFailedEventSubscriberTest extends IsolatedKernelTestCase
 
             return $context;
         });
-        $commit = new RunCommit($active, $store, new StepDispatcher($bus, $bus), new NullLogger(), new ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), new HookDispatcher([$auto, $cleanup]));
+        $commit = new RunCommit($active, $store, new StepDispatcher($bus, $bus), new NullLogger(), new ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(), new HookDispatcher([$auto, $cleanup]));
         $subscriber = new WorkerFailedEventSubscriber($active, $commit, $container->get(RunLockManager::class), new NullLogger());
         $subscriber->onWorkerMessageFailed(new WorkerMessageFailedEvent(new Envelope(new StartRun($run, 0, 'failed-start', 1, 'failed-start', new StartRunPayload('', [], new RunMetadata(model: 'test-model')))), 'run_control', new \RuntimeException('permanent failure')));
         $this->assertSame(RunStatus::Failed, $active->requireLoaded($run)->status);
@@ -414,7 +414,7 @@ final class WorkerFailedEventSubscriberTest extends IsolatedKernelTestCase
         $bus = new TestMessageBus();
 
         return new WorkerFailedEventSubscriber($context,
-            new RunCommit($context, $store, new StepDispatcher($bus, $bus), $logger, new ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization()),
+            new RunCommit($context, $store, new StepDispatcher($bus, $bus), $logger, new ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore()),
             $lockManager ?? new RunLockManager(new LockFactory(new InMemoryStore())), $logger);
     }
 

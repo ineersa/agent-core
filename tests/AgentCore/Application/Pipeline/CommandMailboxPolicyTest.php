@@ -109,7 +109,7 @@ final class CommandMailboxPolicyTest extends TestCase
 
         $llmSteps = array_values(array_filter(
             $fixture->executionBus->messages,
-            static fn (object $message): bool => $message instanceof ExecuteLlmStep,
+            static fn (object $message): bool => $message instanceof \Ineersa\AgentCore\Domain\Message\ExecutionRequest && ExecuteLlmStep::class === $message->requestType,
         ));
         $this->assertCount(1, $llmSteps, 'Turn-start must schedule exactly one LLM continuation for the drained batch.');
     }
@@ -425,7 +425,7 @@ final class CommandMailboxPolicyTest extends TestCase
             stepDispatcher: $stepDispatcher,
             logger: new NullLogger(),
             toolBatchCollector: $toolBatchCollector,
-            hookDispatcher: null, toolAuthorization: new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(),
+            hookDispatcher: null, toolAuthorization: new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore()
         );
 
         $runMessageProcessor = new RunMessageProcessor(

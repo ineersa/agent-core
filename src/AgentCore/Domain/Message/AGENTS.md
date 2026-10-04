@@ -8,6 +8,7 @@ Immutable bus payloads and owner-local processor messages under `Ineersa\AgentCo
 
 - `StartRun`, `ApplyCommand`, `ApplyShellCommand`
 - `LlmStepResult`, `ToolCallResult`, `CompactionStepResult`
+- `DurableExecutionResult` carries the sealed result reference for owner consumption
 - `CompleteDeferredToolCall` (deferred completion; identity from durable record)
 - `CommitSubagentProgress` (frozen normalized progress, durable lifecycle and revision identity; App handler commits under the parent owner lock)
 
@@ -21,8 +22,10 @@ Immutable bus payloads and owner-local processor messages under `Ineersa\AgentCo
 
 **Execution payloads** (`agent.execution.bus` → `llm` / `tool` transports):
 
-- `ExecuteLlmStep`, `ExecuteCompactionStep` → `llm`
-- `ExecuteToolCall`, `ExecuteShellToolCall` → `tool`
+- `ExecutionRequest` references a sealed LLM, compaction, or standalone-shell invocation. Application middleware selects its configured transport from the request type. Authorization stamps survive native PHP transport serialization.
+- `ExecuteToolCall` → `tool`, retaining the ordinary tool-batch authority
+
+`ExecuteLlmStep`, `ExecuteCompactionStep`, and `ExecuteShellToolCall` are frozen local inputs stored in immutable files. They are not Messenger deliveries. The gate atomically claims the reference before resolving the input and invoking its normal worker handler. Duplicate Running deliveries do not resolve the file or execute again. ResultReady deliveries notify the owner with the original durable result reference.
 
 Producers/consumers and App-layer workers: `../../Application/AGENTS.md`.
 

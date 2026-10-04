@@ -7,16 +7,10 @@ namespace Ineersa\AgentCore\Domain\Message;
 /**
  * Async worker request to invoke the summarization model for compaction.
  *
- * Dispatched to agent.execution.bus → llm transport (default Symfony
- * Serializer). Nested {@see AgentMessage} lists denormalize via
- * ArrayDenormalizer + PhpDoc property types — do not pre-flatten them to
- * associative arrays at the producer.
- *
- * Note: summarizationMessages and retainedTailMessages carry full message
- * objects because compaction operates on the raw conversation history,
- * unlike ExecuteLlmStep which uses a runId-backed deferred resolution.
- * Payload size is bounded by keep_recent_tokens (~20k tokens ≈ 65KB of
- * message JSON) and the summarization window.
+ * The owner seals the typed summarization and retained-tail messages in an
+ * immutable request file. Messenger sends only ExecutionRequest to the LLM
+ * transport. The authorization gate resolves this input for the winning claim,
+ * without reading execution state or rebuilding conversation history.
  */
 final readonly class ExecuteCompactionStep extends AbstractAgentBusMessage
 {
