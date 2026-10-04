@@ -22,7 +22,8 @@ final class CodeModeIpc
      */
     public static function write(mixed $stream, array $payload, ?callable $onWait = null): void
     {
-        $json = json_encode($payload, \JSON_THROW_ON_ERROR | \JSON_INVALID_UTF8_SUBSTITUTE);
+        $payload = CodeModeValueCodec::assertEncodable($payload, 'Code-mode frame');
+        $json = json_encode($payload, \JSON_THROW_ON_ERROR);
         $length = \strlen($json);
         if ($length > self::MAX_FRAME_BYTES) {
             throw new \RuntimeException(\sprintf('Code-mode IPC frame exceeds %d bytes.', self::MAX_FRAME_BYTES));

@@ -47,7 +47,7 @@ final class ToolCallResultFactory
             }
         }
 
-        return new ToolCallResult(
+        return (new ToolCallResult(
             runId: $message->runId(),
             turnNo: $message->turnNo(),
             stepId: $message->stepId(),
@@ -65,7 +65,7 @@ final class ToolCallResultFactory
             ],
             isError: $toolResult->isError,
             error: $error,
-        );
+        ))->finalized();
     }
 
     /**
@@ -82,7 +82,7 @@ final class ToolCallResultFactory
         ExecuteToolCall $message,
         ToolExecutionHumanInputSuspension $suspension,
     ): ToolCallResult {
-        return new ToolCallResult(
+        return (new ToolCallResult(
             runId: $message->runId(),
             turnNo: $message->turnNo(),
             stepId: $message->stepId(),
@@ -99,7 +99,7 @@ final class ToolCallResultFactory
             isError: false,
             error: null,
             pendingHumanInput: $suspension->request,
-        );
+        ))->finalized();
     }
 
     public static function fromExecuteToolCallAndThrowable(ExecuteToolCall $message, \Throwable $exception): ToolCallResult
@@ -123,7 +123,7 @@ final class ToolCallResultFactory
             $error['hint'] = $exception->hint();
         }
 
-        return new ToolCallResult(
+        return (new ToolCallResult(
             runId: $message->runId(),
             turnNo: $message->turnNo(),
             stepId: $message->stepId(),
@@ -146,7 +146,7 @@ final class ToolCallResultFactory
             ],
             isError: true,
             error: $error,
-        );
+        ))->finalized();
     }
 
     /**
@@ -166,7 +166,7 @@ final class ToolCallResultFactory
                 ? $details['tool_idempotency_key']
                 : $correlation->toolIdempotencyKey;
 
-        return new ToolCallResult(
+        return (new ToolCallResult(
             runId: $correlation->runId,
             turnNo: $correlation->turnNo,
             stepId: $correlation->stepId,
@@ -185,7 +185,7 @@ final class ToolCallResultFactory
             ],
             isError: $isError,
             error: $error,
-        );
+        ))->finalized();
     }
 
     private static function terminalResultIdempotencyKey(string $runId, string $stepId, string $toolCallId): string

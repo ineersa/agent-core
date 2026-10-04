@@ -195,6 +195,8 @@ final readonly class CodeModeHostBridge
 
         /* @var array<string, mixed> $arguments */
         try {
+            CodeModeValueCodec::assertEncodable($name, 'Nested tool name');
+            $arguments = CodeModeValueCodec::assertEncodable($arguments, 'Nested tool arguments');
             if ($cancelToken->isCancellationRequested()) {
                 throw new ToolCallException('Code-mode tool call cancelled before start.', retryable: false);
             }
@@ -207,7 +209,7 @@ final readonly class CodeModeHostBridge
             CodeModeIpc::write($connection, [
                 'id' => $id,
                 'ok' => true,
-                'result' => $this->normalizeResult($result),
+                'result' => $this->normalizeResult($result, $name),
             ], $waiter);
         } catch (\Throwable $exception) {
             CodeModeIpc::write($connection, [
@@ -268,7 +270,7 @@ final readonly class CodeModeHostBridge
         });
     }
 
-    private function normalizeResult(mixed $result): mixed
+    private function normalizeResult(mixed $result, string $toolName): mixed
     {
         if ($result instanceof DeferredToolCompletionOutcome) {
             throw new ToolCallException('Deferred tool completions are not supported inside code_mode.', retryable: false);
@@ -278,10 +280,11 @@ final readonly class CodeModeHostBridge
             throw new ToolCallException('Human-input suspensions are not supported inside code_mode.', retryable: false);
         }
 
-        // Nested code_mode may return a diagnostics envelope. Preserve only the
-        // nested script value for IPC; nested stdout/stderr stay in that child.
-        if ($result instanceof CodeModeExecutionResult) {
-            $result = $result->result;
+        // CodeModeTool has already converted its host wrapper to plain data.
+        // Preserve only the nested script value for IPC; nested diagnostics
+        // stay in that child rather than accompanying its tool() return value.
+        if ('code_mode' === $toolName && \is_array($result) && \array_key_exists('code_mode_value', $result)) {
+            $result = $result['code_mode_value'];
         }
 
         try {
@@ -293,6 +296,11 @@ final readonly class CodeModeHostBridge
 
     private function formatException(\Throwable $exception): string
     {
+        $diagnostic = $exception->getMessage();
+        $hint = $exception instanceof ToolCallException ? $exception->hint() : null;
+        if (!mb_check_encoding($diagnostic, 'UTF-8') || (null !== $hint && !mb_check_encoding($hint, 'UTF-8'))) {
+            return CodeModeValueCodec::MALFORMED_MESSAGE;
+        }
         if ($exception instanceof ToolCallException) {
             $message = $exception->getMessage();
             $hint = $exception->hint();

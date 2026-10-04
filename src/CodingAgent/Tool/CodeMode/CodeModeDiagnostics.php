@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool\CodeMode;
 
+use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
+
 /**
  * Formats code_mode stdout/stderr for model-facing diagnostics.
  *
@@ -22,6 +24,9 @@ final class CodeModeDiagnostics
      */
     public static function prepare(?string $stdout, ?string $stderr, int $wrapperPrefixLines = 3): array
     {
+        if (!mb_check_encoding((string) $stdout, 'UTF-8') || !mb_check_encoding((string) $stderr, 'UTF-8')) {
+            throw new MalformedToolResultException();
+        }
         $stdout = self::normalizePaths(trim((string) $stdout), $wrapperPrefixLines);
         $stderr = self::normalizePaths(trim((string) $stderr), $wrapperPrefixLines);
 

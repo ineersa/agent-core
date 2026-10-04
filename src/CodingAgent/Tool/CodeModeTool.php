@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tool;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Tool\Arguments\CodeModeArgumentsDTO;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeHostBridge;
+use Ineersa\CodingAgent\Tool\CodeMode\CodeModeExecutionResult;
 use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
 
 /**
@@ -37,11 +38,18 @@ final class CodeModeTool implements HatfieldToolProviderInterface
      */
     public function __invoke(#[MapToolArguments] CodeModeArgumentsDTO $arguments): mixed
     {
-        return $this->hostBridge->execute(
+        $result = $this->hostBridge->execute(
             $arguments->script,
             $arguments->timeout_seconds,
             $arguments->memory_limit_mb,
         );
+
+        // Convert the host-only wrapper once to closed terminal data before
+        // generic result processing. No wrapper object is stored in raw_result.
+        return [
+            'code_mode_value' => $result instanceof CodeModeExecutionResult ? $result->result : $result,
+            'code_mode_diagnostics' => $result instanceof CodeModeExecutionResult ? $result->diagnostics : [],
+        ];
     }
 
     public function definition(): ToolDefinitionDTO
