@@ -288,7 +288,7 @@ final class ToolExecutionAuthorizationTest extends PerMethodIsolatedKernelTestCa
         $bus = new TestMessageBus();
         $dispatcher = new \Ineersa\AgentCore\Application\Handler\StepDispatcher($bus, $bus);
         $events = $container->get(\Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface::class);
-        $commit = new \Ineersa\AgentCore\Application\Pipeline\RunCommit($active, $events, $dispatcher, new \Psr\Log\NullLogger(), new ToolBatchCollector(store: $container->get(ToolBatchStoreInterface::class)), $gate);
+        $commit = new \Ineersa\AgentCore\Application\Pipeline\RunCommit($active, $events, $dispatcher, new \Psr\Log\NullLogger(), new ToolBatchCollector(store: $container->get(ToolBatchStoreInterface::class)), $gate, $container->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class));
         $processor = new \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor($active, $container->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class), $commit, $dispatcher, [$container->get(\Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler::class)]);
         $processor->process('result', $result);
         $batch = $container->get(ToolBatchStoreInterface::class)->load($run, 1, 'tools');

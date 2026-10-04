@@ -29,7 +29,9 @@ final class ExecutionBoundaryContext
     /** @return array{AbstractAgentBusMessage, ExecutionAuthorizationStamp, string}|null */
     public function currentExecution(): ?array
     {
-        return $this->executions[array_key_last($this->executions)] ?? null;
+        $key = array_key_last($this->executions);
+
+        return null === $key ? null : $this->executions[$key];
     }
 
     public function accepting(DurableExecutionResult $result, callable $handler): mixed
@@ -44,6 +46,8 @@ final class ExecutionBoundaryContext
 
     public function currentResult(): ?DurableExecutionResult
     {
-        return $this->results[array_key_last($this->results)] ?? null;
+        $key = array_key_last($this->results);
+
+        return null === $key ? null : $this->results[$key];
     }
 }

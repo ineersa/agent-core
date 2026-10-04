@@ -395,7 +395,7 @@ final class ToolExecutor implements ToolExecutorInterface
             foreach ($this->toolResultProcessors as $processor) {
                 $processed = $processor->process($result, $toolCall);
                 $result = ToolResultText::finalize($processed);
-                $processingFailed = $processingFailed || $result !== $processed;
+                $processingFailed = $result !== $processed;
                 if ($processingFailed) {
                     return $result;
                 }
@@ -515,6 +515,7 @@ final class ToolExecutor implements ToolExecutorInterface
             if (!ToolResultText::isValid($rawResult->deferredId)) {
                 throw new MalformedToolResultException();
             }
+
             return new ToolResult(
                 toolCallId: $toolCall->toolCallId,
                 toolName: $toolCall->toolName,
@@ -535,6 +536,7 @@ final class ToolExecutor implements ToolExecutorInterface
             if (null !== $failure) {
                 throw new ToolCallException($failure, retryable: false);
             }
+
             return new ToolResult(
                 toolCallId: $toolCall->toolCallId,
                 toolName: $toolCall->toolName,

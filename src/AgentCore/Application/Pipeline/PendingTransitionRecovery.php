@@ -4,21 +4,25 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Pipeline;
 
+use Ineersa\AgentCore\Application\Handler\ExecutionOperationMapper;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
+use Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutionAuthorizationInterface;
 use Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO;
+use Ineersa\AgentCore\Domain\Coordination\ExecutionResultDispositionDTO;
 use Ineersa\AgentCore\Domain\Coordination\MarkCommandAppliedDTO;
 use Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO;
 use Ineersa\AgentCore\Domain\Coordination\ToolResultDispositionDTO;
+use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\RunControlTransitionMessageInterface;
 
 /** Owner-only reconciliation. Unsupported execution stays recovery-required. */
 final readonly class PendingTransitionRecovery
 {
-    public function __construct(private PreparedTransitionEventStoreInterface $store, private ToolExecutionAuthorizationInterface $authorization, private StepDispatcher $dispatcher, private ActiveRunContextInterface $registry)
+    public function __construct(private PreparedTransitionEventStoreInterface $store, private ToolExecutionAuthorizationInterface $authorization, private StepDispatcher $dispatcher, private ActiveRunContextInterface $registry, private ExecutionOperationStoreInterface $executionOperations)
     {
     }
 
@@ -29,11 +33,6 @@ final readonly class PendingTransitionRecovery
             return;
         }
         $work = $pending->work;
-        if (null !== ($work['execution_disposition'] ?? null)) {
-            // This new durable facility needs its matching recovery finalizer.
-            // Never erase an unconsumed decision while that integration is pending.
-            throw new \RuntimeException('Owner transition requires execution disposition recovery.');
-        }
         if (($work['run_id'] ?? null) !== $runId) {
             throw new \RuntimeException('Pending transition run identity mismatch.');
         }
@@ -46,9 +45,15 @@ final readonly class PendingTransitionRecovery
         foreach ($actions as $action) {
             if ($action instanceof DispatchCoordinationMessageDTO) {
                 $this->requireGated($action->message);
+                if (ExecutionOperationMapper::supports($action->message)) {
+                    throw new \RuntimeException('Execution authorization requires a direct pending effect.');
+                }
             } elseif ($action instanceof RegisterToolBatchDTO) {
                 foreach ($action->effects as $effect) {
                     $this->requireGated($effect);
+                    if (ExecutionOperationMapper::supports($effect)) {
+                        throw new \RuntimeException('Execution authorization requires a direct pending effect.');
+                    }
                 }
             } elseif (!$action instanceof MarkCommandAppliedDTO) {
                 throw new \RuntimeException('Owner transition requires coordination recovery for unsupported action.');
@@ -61,15 +66,28 @@ final readonly class PendingTransitionRecovery
         if (null !== $disposition) {
             $this->authorization->validateDisposition($disposition, $pending);
         }
+        $executionDisposition = $work['execution_disposition'] ?? null;
+        if (null !== $executionDisposition && !$executionDisposition instanceof ExecutionResultDispositionDTO) {
+            throw new \RuntimeException('Invalid pending execution disposition.');
+        }
+        if (null !== $executionDisposition) {
+            $this->executionOperations->validateDisposition($executionDisposition, $pending);
+        }
+        $stamps = [];
         foreach ($effects as $effect) {
             if ($effect instanceof ExecuteToolCall) {
                 $this->authorization->arm($effect);
+            } elseif ($effect instanceof AbstractAgentBusMessage && ExecutionOperationMapper::supports($effect)) {
+                $stamps[spl_object_id($effect)] = $this->executionOperations->arm($effect, $pending);
             }
         }
-        $this->dispatcher->dispatchEffects($effects);
+        $this->dispatcher->dispatchEffects($effects, $stamps);
         $this->dispatcher->dispatchCoordinationActions($actions);
         if (null !== $disposition) {
             $this->authorization->applyDisposition($disposition, $pending);
+        }
+        if (null !== $executionDisposition) {
+            $this->executionOperations->applyDisposition($executionDisposition, $pending);
         }
         $this->store->finalizeVerifiedTransition($runId, $pending->identity);
         // Cold replay must include the newly published suffix. A warm owner must
@@ -79,7 +97,7 @@ final readonly class PendingTransitionRecovery
 
     private function requireGated(object $effect): void
     {
-        if (!$effect instanceof ExecuteToolCall && !$effect instanceof RunControlTransitionMessageInterface) {
+        if (!$effect instanceof ExecuteToolCall && !$effect instanceof RunControlTransitionMessageInterface && !ExecutionOperationMapper::supports($effect)) {
             throw new \RuntimeException('Owner transition requires coordination recovery for ungated execution.');
         }
     }
