@@ -29,7 +29,7 @@ final class TuiCompactCommandVirtualTest extends TestCase
     use TuiRuntimeContextBuilderTrait;
 
     #[Test]
-    public function testCompactProgressMessageRendersOnVirtualScreen(): void
+    public function testCompactRequestMessageRendersOnVirtualScreen(): void
     {
         $harness = new VirtualTuiHarness(sessionId: 'compact-virtual');
         $state = new TuiSessionState('compact-virtual');
@@ -52,7 +52,7 @@ final class TuiCompactCommandVirtualTest extends TestCase
 
         $this->assertInstanceOf(TranscriptMessage::class, $result);
         $this->assertNotInstanceOf(DispatchRuntime::class, $result);
-        $this->assertSame('Compacting conversation...', $result->text);
+        $this->assertSame('Compaction requested.', $result->text);
 
         $factory = new TranscriptBlockFactory();
         $harness->screen()->setTranscriptBlocks([
@@ -60,7 +60,8 @@ final class TuiCompactCommandVirtualTest extends TestCase
         ]);
 
         $screen = $harness->plainScreenText();
-        $this->assertStringContainsString('Compacting conversation', $screen);
+        $this->assertStringContainsString('Compaction requested.', $screen);
+        $this->assertStringNotContainsString('Compacting conversation', $screen);
     }
 
     #[Test]
