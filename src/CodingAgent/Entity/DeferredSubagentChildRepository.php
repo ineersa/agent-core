@@ -196,7 +196,7 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
             latestInputTokens: null === $previous ? 0 : $previous->latestInputTokens,
             contextWindow: $previous?->contextWindow,
             cacheReadTokens: $previous?->cacheReadTokens,
-            cacheInputTokens: $previous->cacheInputTokens ?? 0,
+            cacheInputTokens: $previous?->cacheInputTokens,
         );
 
         $projectionJson = $this->serializer->serialize(

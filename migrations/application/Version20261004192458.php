@@ -12,20 +12,16 @@ final class Version20261004192458 extends AbstractMigration
 {
     public function getDescription(): string
     {
-        return 'Persist UUIDv7 provider cache keys for child runs and rebuild cache usage projections';
+        return 'Persist UUIDv7 provider cache keys for child runs';
     }
 
     public function up(Schema $schema): void
     {
+        // Child cursors delimit resumed tasks. Key backfill must not change them.
         $this->addSql('ALTER TABLE deferred_subagent_child ADD COLUMN provider_cache_key VARCHAR(36) DEFAULT NULL');
         foreach ($this->connection->fetchFirstColumn('SELECT id FROM deferred_subagent_child') as $id) {
             $this->addSql('UPDATE deferred_subagent_child SET provider_cache_key = ? WHERE id = ?', [UuidV7::v7()->toRfc4122(), $id]);
         }
-
-        // Old projections have input totals but no cached-token totals. Replay
-        // canonical child events on recovery/resume instead of showing a partial ratio.
-        // Recovery skips terminal batches, so retain their existing counters.
-        $this->addSql('UPDATE deferred_subagent_child SET child_event_cursor = 0, child_lifecycle_projection = NULL WHERE batch_lifecycle_id IN (SELECT lifecycle_id FROM deferred_subagent_batch WHERE terminal_completion_enqueued_at IS NULL)');
     }
 
     public function down(Schema $schema): void

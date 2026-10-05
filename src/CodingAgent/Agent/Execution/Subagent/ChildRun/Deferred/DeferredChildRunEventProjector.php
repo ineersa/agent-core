@@ -106,11 +106,13 @@ final class DeferredChildRunEventProjector
                 $usage = \is_array($payload['usage'] ?? null) ? $payload['usage'] : [];
                 $turnInput = $this->intVal($usage['input_tokens'] ?? 0);
                 $inputTokens += $turnInput;
-                $cacheInputTokens += $turnInput;
                 $latestInputTokens = $turnInput;
-                $turnCacheRead = $usage['cache_read_tokens'] ?? $usage['cached_tokens'] ?? null;
-                if (null !== $turnCacheRead) {
-                    $cacheReadTokens = ($cacheReadTokens ?? 0) + $this->intVal($turnCacheRead);
+                if (null !== $cacheInputTokens) {
+                    $cacheInputTokens += $turnInput;
+                    $turnCacheRead = $usage['cache_read_tokens'] ?? $usage['cached_tokens'] ?? null;
+                    if (null !== $turnCacheRead) {
+                        $cacheReadTokens = ($cacheReadTokens ?? 0) + $this->intVal($turnCacheRead);
+                    }
                 }
                 $outputTokens += $this->intVal($usage['output_tokens'] ?? 0);
                 $reasoningTokens += $this->intVal($usage['thinking_tokens'] ?? $usage['reasoning_tokens'] ?? 0);

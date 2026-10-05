@@ -73,9 +73,10 @@ final readonly class DeferredChildRunLifecycleProjectionDTO
         public array $pendingToolCalls = [],
         #[Assert\GreaterThanOrEqual(0)]
         public ?int $cacheReadTokens = null,
-        // Lifetime denominator; inputTokens is a per-resume-segment counter.
+        // NULL means legacy lifetime usage is unavailable. Never infer it by
+        // rewinding the operational cursor, which is also the resume boundary.
         #[Assert\GreaterThanOrEqual(0)]
-        public int $cacheInputTokens = 0,
+        public ?int $cacheInputTokens = null,
     ) {
         $model = trim($model);
         $reasoning = trim($reasoning);

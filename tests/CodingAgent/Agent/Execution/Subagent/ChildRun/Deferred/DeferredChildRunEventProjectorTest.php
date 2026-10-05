@@ -321,6 +321,7 @@ final class DeferredChildRunEventProjectorTest extends TestCase
             lastCommittedSeq: 0,
             model: 'deepseek/deepseek-v4-flash',
             reasoning: 'medium',
+            cacheInputTokens: 0,
         );
 
         $projection = $projector->apply(

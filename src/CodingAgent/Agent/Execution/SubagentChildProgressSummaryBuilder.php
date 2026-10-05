@@ -32,7 +32,7 @@ final class SubagentChildProgressSummaryBuilder
             assistantExcerpt: $projection->assistantExcerpt,
             recentTools: $projection->recentTools,
             activeToolLine: $projection->activeToolLine,
-            cacheReadHitPercentage: null !== $projection->cacheReadTokens && $projection->cacheInputTokens > 0
+            cacheReadHitPercentage: null !== $projection->cacheReadTokens && null !== $projection->cacheInputTokens && $projection->cacheInputTokens > 0
                 ? min(100.0, max(0.0, 100.0 * $projection->cacheReadTokens / $projection->cacheInputTokens))
                 : null,
         );
