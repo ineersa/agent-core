@@ -13,12 +13,16 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\Builder\ToolCallBuilder;
+use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingleSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\AssistantStreamProjectionSubscriber;
+use Ineersa\CodingAgent\Runtime\ProjectionPipeline\CancellationProjectionSubscriber;
+use Ineersa\CodingAgent\Runtime\ProjectionPipeline\CompactionProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ExtensionAgentJobFailedProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ModelNotificationProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber;
@@ -31,7 +35,11 @@ use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\CodingAgent\Tool\RawAwareToolCallArgumentResolver;
 use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
+use Ineersa\Tui\Command\SlashCommand;
+use Ineersa\Tui\Command\TranscriptMessage;
+use Ineersa\Tui\Listener\CompactCommandHandler;
 use Ineersa\Tui\Listener\FooterStateSegmentProvider;
+use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
@@ -64,6 +72,85 @@ use Symfony\Component\Tui\Ansi\AnsiUtils;
 final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
 {
     private const string SESSION_ID = 'virtual-transcript-render';
+
+    #[DataProvider('compactionRejectionSources')]
+    public function testCancelledSessionCompactionShowsRequestRejectionAndConfirmedLifecycle(bool $controllerRejection): void
+    {
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addSubscriber(new CancellationProjectionSubscriber());
+        $dispatcher->addSubscriber(new CompactionProjectionSubscriber());
+        $projector = new TranscriptProjector($dispatcher, new TranscriptProjectionState());
+        $state = new TuiSessionState(self::SESSION_ID);
+        $state->handle = new RunHandle(self::SESSION_ID);
+        $applier = new TuiRuntimeEventApplier($projector, SubagentProgressSerializerTestSupport::denormalizer());
+        $translator = new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()));
+        $harness = new VirtualTuiHarness(columns: 120, rows: 30, sessionId: self::SESSION_ID);
+        $harness->screen()->setWorkingVisible(false);
+        $client = $this->createMock(AgentSessionClient::class);
+        $client->expects($this->exactly(2))->method('compact')->with(self::SESSION_ID, null);
+        $client->expects($this->never())->method('send');
+        $client->expects($this->never())->method('start');
+        $handler = new CompactCommandHandler($client, $state);
+        $command = new SlashCommand('compact', '', '/compact');
+
+        $cancelled = $translator->translate(new RunEvent(self::SESSION_ID, 1, 1, 'agent_end', ['reason' => 'cancelled']));
+        $this->assertNotNull($cancelled);
+        $applier->apply($state, $cancelled);
+        $state->applyTranscriptChangeSet($applier->drainProjectedChanges());
+        $request = $handler->handle($command);
+        $this->assertInstanceOf(TranscriptMessage::class, $request);
+        $state->appendTranscriptBlock(new TranscriptBlock('local_request', TranscriptBlockKindEnum::System, self::SESSION_ID, 0, $request->text));
+        $harness->screen()->setTranscriptBlocks($state->transcript);
+        $this->assertStringContainsString('Compaction requested.', $harness->plainScreenText());
+        $this->assertStringNotContainsString('Compacting conversation', $harness->plainScreenText());
+        $this->assertSame(RunActivityStateEnum::Cancelled, $state->activity);
+        $duplicate = $handler->handle($command);
+        $this->assertInstanceOf(TranscriptMessage::class, $duplicate);
+        $this->assertSame('Compaction already requested.', $duplicate->text);
+
+        $rejected = $controllerRejection
+            ? new RuntimeEvent('command.rejected', self::SESSION_ID, 0, [
+                'commandId' => 'compact-request', 'commandType' => 'compact', 'reason' => 'Run is already cancelled.',
+            ])
+            : $translator->translate(new RunEvent(self::SESSION_ID, 2, 1, 'agent_command_rejected', [
+                'kind' => 'compact', 'reason' => 'Run is already cancelled.',
+            ]));
+        $this->assertNotNull($rejected);
+        $applier->apply($state, $rejected);
+        $state->applyTranscriptChangeSet($applier->drainProjectedChanges());
+        $harness->screen()->setTranscriptBlocks($state->transcript);
+        $this->assertStringContainsString('Compaction request rejected: Run is already cancelled.', $harness->plainScreenText());
+        $this->assertFalse($state->isCompacting);
+        $this->assertSame(RunActivityStateEnum::Cancelled, $state->activity);
+
+        $retry = $handler->handle($command);
+        $this->assertInstanceOf(TranscriptMessage::class, $retry);
+        $this->assertSame('Compaction requested.', $retry->text);
+        $started = $translator->translate(new RunEvent(self::SESSION_ID, 3, 1, 'context_compaction_started', ['trigger' => 'manual']));
+        $this->assertNotNull($started);
+        $applier->apply($state, $started);
+        $state->applyTranscriptChangeSet($applier->drainProjectedChanges());
+        $harness->screen()->setTranscriptBlocks($state->transcript);
+        $this->assertStringContainsString('Compacting conversation', $harness->plainScreenText());
+        $this->assertSame(RunActivityStateEnum::Compacting, $state->activity);
+
+        $completed = $translator->translate(new RunEvent(self::SESSION_ID, 4, 1, 'context_compacted', []));
+        $this->assertNotNull($completed);
+        $applier->apply($state, $completed);
+        $state->applyTranscriptChangeSet($applier->drainProjectedChanges());
+        $harness->screen()->setTranscriptBlocks($state->transcript);
+        $this->assertStringContainsString('Conversation compacted.', $harness->plainScreenText());
+        $this->assertStringNotContainsString('Compacting conversation', $harness->plainScreenText());
+        $this->assertFalse($state->isCompacting);
+        $this->assertSame(RunActivityStateEnum::Completed, $state->activity);
+    }
+
+    /** @return iterable<string, array{bool}> */
+    public static function compactionRejectionSources(): iterable
+    {
+        yield 'canonical owner rejection' => [false];
+        yield 'transient controller rejection' => [true];
+    }
 
     #[DataProvider('childCacheDisplays')]
     public function testChildCacheReuseAppearsWhileRunningInLiveViewAndAfterCompletion(string $tool, bool $parallel, ?float $percentage): void

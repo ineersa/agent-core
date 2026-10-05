@@ -231,48 +231,39 @@ final class RuntimeEventPoller
                         continue;
                     }
 
-                    // Auto-dispatch a queued follow-up when cancellation completes.
-                    // The user may have typed a message during the Cancelling grace
-                    // window; it was queued in $state->queuedFollowUp instead of
-                    // being sent immediately (where it would be rejected).
-                    if (RuntimeEventTypeEnum::RunCancelled->value === $runtimeEvent->type
-                        && null !== $state->queuedFollowUp
-                        && null !== $state->handle) {
-                        $queuedText = $state->queuedFollowUp;
-                        $state->queuedFollowUp = null;
-
-                        $client->send(
-                            $state->handle->runId,
-                            new \Ineersa\CodingAgent\Runtime\Contract\UserCommand(type: 'follow_up', text: $queuedText),
-                        );
-                        $state->activity = RunActivityStateEnum::Starting;
-                    }
-
-                    // Auto-dispatch a queued follow-up when compaction completes.
-                    // The user may have typed a message during the Compacting
-                    // window; it was queued in $state->queuedFollowUp instead of
-                    // being sent immediately (where it would race the compaction).
+                    // Release deferred input after cancellation, compaction
+                    // settlement, or rejection of the pending compact request.
                     //
                     // GUARD: if activity is Cancelling, the user also pressed
                     // Escape during compaction.  Do NOT dispatch the queued
                     // follow-up on the compaction result — the RunCancelled
-                    // branch above handles dispatch after the cancellation
+                    // event handles dispatch after the cancellation
                     // terminalizes.  Dispatching here would race the cancel
                     // terminal and may start a new run before Cancelled is
                     // visible in the UI.
-                    if ((RuntimeEventTypeEnum::CompactionCompleted->value === $runtimeEvent->type
-                        || RuntimeEventTypeEnum::CompactionFailed->value === $runtimeEvent->type)
-                        && null !== $state->queuedFollowUp
+                    // Keep intent in the queue until each send succeeds. The
+                    // applier may clear isCompacting before projection throws,
+                    // so retries must not depend on that boolean transition.
+                    // Failure events move old input to editor restoration; a
+                    // historical Failed activity must not block fresh input
+                    // from a later request, including rejection before start.
+                    if ((RuntimeEventTypeEnum::RunCancelled->value === $runtimeEvent->type
+                        || RuntimeEventTypeEnum::CompactionCompleted->value === $runtimeEvent->type
+                        || RuntimeEventTypeEnum::CompactionFailed->value === $runtimeEvent->type
+                        || (RuntimeEventTypeEnum::CommandRejected->value === $runtimeEvent->type
+                            && 'compact' === ($runtimeEvent->payload['commandType'] ?? null)))
+                        && [] !== $state->queuedFollowUps
                         && null !== $state->handle
-                        && RunActivityStateEnum::Cancelling !== $state->activity) {
-                        $queuedText = $state->queuedFollowUp;
-                        $state->queuedFollowUp = null;
-
-                        $client->send(
-                            $state->handle->runId,
-                            new \Ineersa\CodingAgent\Runtime\Contract\UserCommand(type: 'follow_up', text: $queuedText),
-                        );
-                        $state->activity = RunActivityStateEnum::Starting;
+                        && !$state->isCompacting
+                        && !\in_array($state->activity, [RunActivityStateEnum::Cancelling, RunActivityStateEnum::Compacting], true)) {
+                        while ([] !== $state->queuedFollowUps) {
+                            $client->send(
+                                $state->handle->runId,
+                                new \Ineersa\CodingAgent\Runtime\Contract\UserCommand(type: 'follow_up', text: $state->queuedFollowUps[0]),
+                            );
+                            array_shift($state->queuedFollowUps);
+                            $state->activity = RunActivityStateEnum::Starting;
+                        }
                     }
 
                     // Notify handlers for specific event types (isolated: one bad overlay callback

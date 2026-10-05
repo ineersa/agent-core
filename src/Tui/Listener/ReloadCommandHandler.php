@@ -55,7 +55,7 @@ final class ReloadCommandHandler implements SlashCommandHandler
             );
         }
 
-        if (null !== $this->state->queuedFollowUp) {
+        if ([] !== $this->state->queuedFollowUps || null !== $this->state->pendingEditorRestoreText) {
             return new TranscriptMessage(
                 'Cannot reload while a follow-up is queued.',
                 'system',

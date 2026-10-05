@@ -22,6 +22,7 @@ use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
 use Ineersa\Tui\Runtime\TuiSessionState;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 
@@ -107,6 +108,29 @@ final class TuiRuntimeEventApplierTest extends TestCase
 
         $this->assertSame([], $state->queuedUserMessages);
         $this->assertSame(RunActivityStateEnum::Cancelled, $state->activity);
+    }
+
+    #[DataProvider('compactionTerminalEvents')]
+    public function testCompactionBusyStateClearsOnFailureOrTermination(string $type, RunActivityStateEnum $expected): void
+    {
+        $state = new TuiSessionState('run-compaction-terminal');
+        $state->isCompacting = true;
+        $state->activity = RunActivityStateEnum::Compacting;
+
+        $this->buildApplier()->apply($state, new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent(
+            type: $type, runId: 'run-compaction-terminal', seq: 5,
+        ));
+
+        $this->assertFalse($state->isCompacting);
+        $this->assertSame($expected, $state->activity);
+    }
+
+    /** @return iterable<string, array{string, RunActivityStateEnum}> */
+    public static function compactionTerminalEvents(): iterable
+    {
+        yield 'compaction failed' => ['compaction.failed', RunActivityStateEnum::Completed];
+        yield 'run cancelled' => ['run.cancelled', RunActivityStateEnum::Cancelled];
+        yield 'run failed' => ['run.failed', RunActivityStateEnum::Failed];
     }
 
     public function testPostCancelSeqZeroToolCallDoesNotAddGhostTranscriptBlock(): void

@@ -38,7 +38,24 @@ final readonly class CompactionProjectionSubscriber implements EventSubscriberIn
             RuntimeEventTypeEnum::CompactionStarted->value => 'onCompactionStarted',
             RuntimeEventTypeEnum::CompactionCompleted->value => 'onCompactionCompleted',
             RuntimeEventTypeEnum::CompactionFailed->value => 'onCompactionFailed',
+            RuntimeEventTypeEnum::CommandRejected->value => 'onCommandRejected',
         ];
+    }
+
+    public function onCommandRejected(TranscriptProjectionEvent $event): void
+    {
+        $p = $event->payload();
+        if ('compact' !== ($p['commandType'] ?? null)) {
+            return;
+        }
+
+        $event->state->addBlock(new TranscriptBlock(
+            id: 'compaction_rejected_'.$event->state->nextSeq(),
+            kind: TranscriptBlockKindEnum::Error,
+            runId: $event->runId(),
+            seq: $event->state->nextSeq(),
+            text: \sprintf('Compaction request rejected: %s', (string) ($p['reason'] ?? '')),
+        ));
     }
 
     public function onCompactionStarted(TranscriptProjectionEvent $event): void
