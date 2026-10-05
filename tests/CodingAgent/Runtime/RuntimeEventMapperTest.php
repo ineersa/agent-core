@@ -664,6 +664,25 @@ final class RuntimeEventMapperTest extends TestCase
 
     // ── Status fallback normalization ────────────────────────────────────────
 
+    public function testCompactRejectionPreservesReasonAndCanonicalIdentity(): void
+    {
+        $event = $this->runEvent('agent_command_rejected', [
+            'kind' => 'compact',
+            'reason' => 'Command "compact" rejected because cancellation is in progress.',
+        ]);
+
+        $result = $this->mapper->toRuntimeEvent($event);
+
+        $this->assertNotNull($result);
+        $this->assertSame(RuntimeEventTypeEnum::CommandRejected->value, $result->type);
+        $this->assertSame($event->runId, $result->runId);
+        $this->assertSame($event->seq, $result->seq);
+        $this->assertSame([
+            'commandType' => 'compact',
+            'reason' => 'Command "compact" rejected because cancellation is in progress.',
+        ], $result->payload);
+    }
+
     public function testNormalizesAgentCommandRejectedToStatusUpdated(): void
     {
         $event = $this->runEvent('agent_command_rejected', [

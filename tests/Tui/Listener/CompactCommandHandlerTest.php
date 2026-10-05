@@ -11,6 +11,7 @@ use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Listener\CompactCommandHandler;
+use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -31,7 +32,7 @@ final class CompactCommandHandlerTest extends TestCase
     }
 
     #[Test]
-    public function dispatchesCompactAndReturnsProgressMessage(): void
+    public function dispatchesCompactAndReturnsRequestMessage(): void
     {
         $client = new CompactCommandSpyClient();
         $state = new TuiSessionState('compact-session');
@@ -41,7 +42,7 @@ final class CompactCommandHandlerTest extends TestCase
         $result = $handler->handle(new SlashCommand('compact', 'Focus on key points.', '/compact Focus on key points.'));
 
         $this->assertInstanceOf(TranscriptMessage::class, $result);
-        $this->assertSame('Compacting conversation...', $result->text);
+        $this->assertSame('Compaction requested.', $result->text);
         $this->assertSame('run-123', $client->lastCompactRunId);
         $this->assertSame('Focus on key points.', $client->lastCompactInstructions);
         $this->assertTrue($state->isCompacting);
@@ -53,6 +54,7 @@ final class CompactCommandHandlerTest extends TestCase
         $state = new TuiSessionState('compact-session');
         $state->handle = new RunHandle('run-123');
         $state->isCompacting = true;
+        $state->activity = RunActivityStateEnum::Compacting;
         $handler = new CompactCommandHandler(new CompactCommandSpyClient(), $state);
 
         $result = $handler->handle(new SlashCommand('compact', '', '/compact'));

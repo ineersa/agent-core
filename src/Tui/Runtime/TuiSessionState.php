@@ -57,12 +57,13 @@ final class TuiSessionState
     public bool $isShellRun = false;
 
     /**
-     * When the user submits a message while the run is Cancelling or Compacting,
-     * the message text is stored here. It is dispatched as a follow_up only after
-     * RuntimeEventPoller observes the corresponding terminal transition, avoiding
-     * races with cancellation or compaction maintenance.
+     * Submissions held locally during cancellation or pending/active compaction.
+     * Sent in order after settlement, removed only after successful dispatch.
+     * Failed runs return this input to the editor rather than starting a turn.
+     *
+     * @var list<string>
      */
-    public ?string $queuedFollowUp = null;
+    public array $queuedFollowUps = [];
 
     /**
      * Steer/follow-up messages queued by AgentCore while the run is active.
@@ -115,11 +116,9 @@ final class TuiSessionState
     public int $contextWindow = 0;
 
     /**
-     * Whether a compaction is currently in progress for the active
-     * run. Set by CompactCommandHandler (manual /compact) and by
-     * RuntimeEventPoller (auto compaction via CompactionStarted event).
-     * Cleared by RuntimeEventPoller when a compaction.completed or
-     * compaction.failed event arrives.
+     * A local compaction request is pending or backend compaction is active.
+     * Only activity=Compacting confirms that the backend started compaction.
+     * Blocks duplicate requests and context reload until rejection or settlement.
      */
     public bool $isCompacting = false;
 
@@ -128,6 +127,9 @@ final class TuiSessionState
      * into the editor after RunHistoryPositionChanged rebuild. Null when nothing pending.
      */
     public ?string $pendingEditorPromptText = null;
+
+    /** Deferred input returned after failure, prepended to the editor draft once. */
+    public ?string $pendingEditorRestoreText = null;
 
     /**
      * Usage/token projection for the TUI footer.
