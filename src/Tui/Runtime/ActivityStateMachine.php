@@ -34,9 +34,9 @@ final class ActivityStateMachine
         // resume replay stops at the first agent_end(completed) and later events
         // (session 4: follow_up → parallel bash → cancel) never update activity.
         //
-        // Completed may enter after-turn maintenance compaction. A cancelled
-        // execution may enter newly accepted manual compaction, not stale auto
-        // compaction. Both must allow Escape to cancel the active maintenance.
+        // Completed may enter after-turn maintenance compaction. Cancelled or
+        // failed executions may enter newly accepted manual compaction, not stale
+        // auto compaction. Allow Escape to cancel the active maintenance.
         //
         // Stale mid-turn deltas after terminal (e.g. assistant.text.delta) must
         // not reopen the run — only explicit continuation events may leave terminal.
@@ -45,7 +45,7 @@ final class ActivityStateMachine
         if ($current->isTerminal()
             && !(RuntimeEventTypeEnum::CompactionStarted->value === $event->type
                  && (RunActivityStateEnum::Completed === $current
-                     || (RunActivityStateEnum::Cancelled === $current
+                     || (\in_array($current, [RunActivityStateEnum::Cancelled, RunActivityStateEnum::Failed], true)
                          && $event->seq > 0
                          && 'manual' === ($event->payload['trigger'] ?? null))))
             && !self::allowsContinuationAfterTerminal($event)) {

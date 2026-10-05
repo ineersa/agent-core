@@ -244,6 +244,9 @@ final class RuntimeEventPoller
                     // Keep intent in the queue until each send succeeds. The
                     // applier may clear isCompacting before projection throws,
                     // so retries must not depend on that boolean transition.
+                    // Failure events move old input to editor restoration; a
+                    // historical Failed activity must not block fresh input
+                    // from a later request, including rejection before start.
                     if ((RuntimeEventTypeEnum::RunCancelled->value === $runtimeEvent->type
                         || RuntimeEventTypeEnum::CompactionCompleted->value === $runtimeEvent->type
                         || RuntimeEventTypeEnum::CompactionFailed->value === $runtimeEvent->type
@@ -252,7 +255,7 @@ final class RuntimeEventPoller
                         && [] !== $state->queuedFollowUps
                         && null !== $state->handle
                         && !$state->isCompacting
-                        && !\in_array($state->activity, [RunActivityStateEnum::Cancelling, RunActivityStateEnum::Compacting, RunActivityStateEnum::Failed], true)) {
+                        && !\in_array($state->activity, [RunActivityStateEnum::Cancelling, RunActivityStateEnum::Compacting], true)) {
                         while ([] !== $state->queuedFollowUps) {
                             $client->send(
                                 $state->handle->runId,
