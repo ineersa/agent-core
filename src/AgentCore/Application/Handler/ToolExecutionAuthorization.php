@@ -27,6 +27,43 @@ final readonly class ToolExecutionAuthorization implements \Ineersa\AgentCore\Co
         $this->workerLock = $claimLockFactory->createLock('tool-execution-worker.'.$this->instanceToken, ttl: null);
     }
 
+    public function unknownExecutionsForRepair(string $runId): array
+    {
+        return $this->store->unknownExecutionsForRepair($runId);
+    }
+
+    public function assertUnknownRepairable(\Ineersa\AgentCore\Domain\Message\ToolExecutionOutcomeUnknown $notice): void
+    {
+        $this->withUnknownExclusion($notice, static fn () => null);
+    }
+
+    public function retireUnknownExecution(\Ineersa\AgentCore\Domain\Coordination\RetireUnknownExecutionDTO $action, \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO $transition): void
+    {
+        $action->verifyTransition($transition);
+        $notice = $action->notice;
+        if (!$notice instanceof \Ineersa\AgentCore\Domain\Message\ToolExecutionOutcomeUnknown) {
+            throw new \RuntimeException('Tool retirement requires a batch execution receipt.');
+        }
+        $this->runLocks->synchronized($notice->runId(), function () use ($notice, $transition): void {
+            $receipt = $this->store->load($notice->runId(), $notice->turnNo(), $notice->stepId())?->executionAuthorizations[$notice->authorizationId] ?? null;
+            if (null !== $receipt && 'Stale' === $receipt['state'] && ($receipt['unknown_repair_transition'] ?? null) === $transition->identity && $receipt['claim'] === $notice->claimToken
+                && ($receipt['invocation'] ?? null) === ['attempt' => $notice->attempt(), 'key' => $notice->idempotencyKey(), 'call_id' => $notice->toolCallId]) {
+                return;
+            }
+            $this->withUnknownExclusion($notice, function () use ($notice, $transition): void {
+                $this->store->mutate($notice->runId(), $notice->turnNo(), $notice->stepId(), static function (?ToolBatchStateDTO $batch) use ($notice, $transition): ToolBatchStoreMutation {
+                    $receipt = $batch?->executionAuthorizations[$notice->authorizationId] ?? null;
+                    if (null === $batch || null === $receipt || 'OutcomeUnknown' !== $receipt['state'] || $receipt['claim'] !== $notice->claimToken) {
+                        throw new \RuntimeException('Unknown tool retirement lost its precise receipt.');
+                    }
+                    $batch->executionAuthorizations[$notice->authorizationId] = [...$receipt, 'state' => 'Stale', 'unknown_repair_transition' => $transition->identity];
+
+                    return new ToolBatchStoreMutation(null, $batch);
+                });
+            });
+        });
+    }
+
     public function arm(ExecuteToolCall $call): void
     {
         $this->store->mutate($call->runId(), $call->turnNo(), $call->stepId(), function (?ToolBatchStateDTO $batch) use ($call): ToolBatchStoreMutation {
@@ -84,6 +121,10 @@ final readonly class ToolExecutionAuthorization implements \Ineersa\AgentCore\Co
     {
         $batch = $this->store->load($notice->runId(), $notice->turnNo(), $notice->stepId());
         $receipt = $batch?->executionAuthorizations[$notice->authorizationId] ?? null;
+        if (null !== $receipt && 'Stale' === $receipt['state'] && isset($receipt['unknown_repair_transition']) && $receipt['claim'] === $notice->claimToken
+            && ($receipt['invocation'] ?? null) === ['attempt' => $notice->attempt(), 'key' => $notice->idempotencyKey(), 'call_id' => $notice->toolCallId]) {
+            return false;
+        }
         if (null === $receipt || 'OutcomeUnknown' !== $receipt['state'] || $receipt['claim'] !== $notice->claimToken
             || ($receipt['invocation'] ?? null) !== ['attempt' => $notice->attempt(), 'key' => $notice->idempotencyKey(), 'call_id' => $notice->toolCallId]) {
             throw new \RuntimeException('Unknown tool notice differs from its durable receipt.');
@@ -286,6 +327,27 @@ final readonly class ToolExecutionAuthorization implements \Ineersa\AgentCore\Co
             unset($batch->pendingDispositions[$descriptor->operationId]);
 
             return new ToolBatchStoreMutation(null, $batch);
+        });
+    }
+
+    private function withUnknownExclusion(\Ineersa\AgentCore\Domain\Message\ToolExecutionOutcomeUnknown $notice, callable $decision): void
+    {
+        $this->runLocks->synchronized($notice->runId(), function () use ($notice, $decision): void {
+            $this->unknownNoticePending($notice);
+            $receipt = $this->store->load($notice->runId(), $notice->turnNo(), $notice->stepId())?->executionAuthorizations[$notice->authorizationId] ?? null;
+            $key = $receipt['claim_lock_key'] ?? null;
+            if (null === $receipt || 'OutcomeUnknown' !== $receipt['state'] || !\is_string($key) || 1 !== preg_match('/^[a-f0-9]{64}$/D', $key) || !str_starts_with($notice->claimToken, $key.'.')) {
+                throw new \RuntimeException('Unknown tool repair has no matching ownership receipt.');
+            }
+            $lock = $this->claimLockFactory->createLock('tool-execution-worker.'.$key, ttl: null);
+            if (!$lock->acquire()) {
+                throw new \RuntimeException('Unknown tool repair refused: its original worker still owns execution.');
+            }
+            try {
+                $decision();
+            } finally {
+                $lock->release();
+            }
         });
     }
 

@@ -23,6 +23,9 @@ interface ToolBatchStoreInterface
 
     public function hasOutcomeUnknown(string $runId): bool;
 
+    /** @return list<\Ineersa\AgentCore\Domain\Message\ToolExecutionOutcomeUnknown> */
+    public function unknownExecutionsForRepair(string $runId): array;
+
     public function recoverResultPublication(string $runId, int $turnNo, string $stepId, string $key, string $claim): void;
 
     /**

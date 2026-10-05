@@ -33,6 +33,8 @@ Ordinary-tool claims retain a nonexpiring worker-instance exclusion lock and per
 
 Generic and ordinary claims share `RunLockManager` serialization with unknown decisions. Unknown receipts block new claims across both authorities. Ordinary unknown notices repeat until a verified owner transition acknowledges them. Acknowledgement does not erase possible side effects or authorize another attempt. Failed or blocked runs do not prevent the sweep from visiting reserved children.
 
-Explicit repair retirement of unknown receipts, source-delivery fencing, pre-commit mutations, general coordination recovery, and durable hooks remain unfinished. These limits prevent a complete crash-safe resumption claim.
+Explicit `/repair` previews unknown receipts and their side-effect warning. Apply verifies worker exclusion and commits the warning before retiring receipts through replayable coordination. Old deliveries remain unauthorized. Active-operation repair uses the original frozen request or saved result. Missing authorization is refused rather than reconstructed.
+
+Source-delivery fencing, pre-commit mutations, general coordination recovery, and durable hooks remain unfinished. These limits prevent a complete crash-safe resumption claim.
 
 An unfinished owner transition currently enters coordination-recovery-required after its physical suffix is reconciled. It remains hidden and blocks normal replay, including permanent-failure append attempts. Do not describe this intermediate checkpoint as automatic run resumption. Pending inputs and execution-bearing armed-work files must not be deleted or TTL-evicted; the next execution-gate/result slice owns their consumption and cleanup. Flush checks establish the tested process-failure boundary, not power-loss durability.

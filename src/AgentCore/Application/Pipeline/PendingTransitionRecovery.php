@@ -55,7 +55,7 @@ final readonly class PendingTransitionRecovery
                         throw new \RuntimeException('Execution authorization requires a direct pending effect.');
                     }
                 }
-            } elseif (!$action instanceof MarkCommandAppliedDTO && !$action instanceof \Ineersa\AgentCore\Domain\Coordination\ConsumeExecutionUnknownDTO && !$action instanceof \Ineersa\AgentCore\Domain\Coordination\ConsumeToolExecutionUnknownDTO) {
+            } elseif (!$action instanceof MarkCommandAppliedDTO && !$action instanceof \Ineersa\AgentCore\Domain\Coordination\ConsumeExecutionUnknownDTO && !$action instanceof \Ineersa\AgentCore\Domain\Coordination\ConsumeToolExecutionUnknownDTO && !$action instanceof \Ineersa\AgentCore\Domain\Coordination\RetireUnknownExecutionDTO) {
                 throw new \RuntimeException('Owner transition requires coordination recovery for unsupported action.');
             }
         }

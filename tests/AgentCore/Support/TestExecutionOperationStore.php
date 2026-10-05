@@ -17,6 +17,26 @@ use Symfony\Component\Messenger\Transport\Serialization\PhpSerializer;
 /** Dispatch-only unit fixtures. Execution and durability proofs require the configured store. */
 final class TestExecutionOperationStore implements ExecutionOperationStoreInterface
 {
+    public function unknownExecutionsForRepair(string $runId): array
+    {
+        return [];
+    }
+
+    public function assertUnknownRepairable(\Ineersa\AgentCore\Domain\Message\ExecutionOutcomeUnknown $notice): void
+    {
+        throw new \LogicException('Dispatch-only fixture cannot validate unknown repair.');
+    }
+
+    public function retireUnknownExecution(\Ineersa\AgentCore\Domain\Coordination\RetireUnknownExecutionDTO $action, VerifiedTransitionDTO $transition): void
+    {
+        throw new \LogicException('Dispatch-only fixture cannot retire unknown execution.');
+    }
+
+    public function repairDelivery(string $runId, \Ineersa\AgentCore\Domain\Run\CurrentOperationDTO $operation, string $requestType): ?Envelope
+    {
+        return null;
+    }
+
     public function arm(AbstractAgentBusMessage $request, VerifiedTransitionDTO $transition): ExecutionAuthorizationStamp
     {
         return new ExecutionAuthorizationStamp(hash('sha256', $transition->identity.'|'.$request->idempotencyKey()), hash('sha256', $this->encode($request)));

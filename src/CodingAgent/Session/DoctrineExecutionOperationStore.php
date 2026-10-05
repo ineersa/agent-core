@@ -36,6 +36,68 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
         $this->workerLock = $claimLockFactory->createLock('execution-worker.'.$this->instance, ttl: null);
     }
 
+    public function unknownExecutionsForRepair(string $runId): array
+    {
+        $records = $this->connection->fetchAllAssociative("SELECT * FROM execution_operation WHERE run_id = ? AND state = 'OutcomeUnknown' ORDER BY effect_id LIMIT 33", [$runId]);
+        if (\count($records) > 32) {
+            throw new \RuntimeException('Unknown execution repair exceeds the bounded decision capacity.');
+        }
+
+        return array_map($this->unknownNotice(...), $records);
+    }
+
+    public function assertUnknownRepairable(\Ineersa\AgentCore\Domain\Message\ExecutionOutcomeUnknown $notice): void
+    {
+        $this->withUnknownExclusion($notice, static fn () => null);
+    }
+
+    public function retireUnknownExecution(\Ineersa\AgentCore\Domain\Coordination\RetireUnknownExecutionDTO $action, VerifiedTransitionDTO $transition): void
+    {
+        $action->verifyTransition($transition);
+        $notice = $action->notice;
+        if (!$notice instanceof \Ineersa\AgentCore\Domain\Message\ExecutionOutcomeUnknown) {
+            throw new \RuntimeException('Generic retirement requires a generic execution receipt.');
+        }
+        $this->runLocks->synchronized($notice->runId(), function () use ($notice, $transition): void {
+            $record = $this->record($notice->effectId);
+            if ((array) $this->unknownNotice($record) !== (array) $notice) {
+                throw new \RuntimeException('Unknown retirement differs from its execution receipt.');
+            }
+            if ('Stale' === $record['state'] && $record['disposition_transition'] === $transition->identity && null === $record['result_hash']) {
+                return;
+            }
+            $this->withUnknownExclusion($notice, function () use ($notice, $transition): void {
+                $updated = $this->connection->executeStatement("UPDATE execution_operation SET state = 'Stale', disposition_transition = ? WHERE effect_id = ? AND claim_token = ? AND state = 'OutcomeUnknown'", [$transition->identity, $notice->effectId, $notice->claimToken]);
+                if (1 !== $updated) {
+                    throw new \RuntimeException('Unknown execution retirement lost its precise receipt.');
+                }
+            });
+        });
+    }
+
+    public function repairDelivery(string $runId, \Ineersa\AgentCore\Domain\Run\CurrentOperationDTO $operation, string $requestType): ?Envelope
+    {
+        $records = $this->connection->fetchAllAssociative('SELECT * FROM execution_operation WHERE run_id = ? AND turn_no = ? AND step_id = ? AND attempt = ? AND idempotency_key = ? AND request_type = ? ORDER BY effect_id LIMIT 2', [$runId, $operation->turnNo, $operation->stepId, $operation->attempt, $operation->idempotencyKey, $requestType]);
+        if ([] === $records) {
+            return null;
+        }
+        if (1 !== \count($records)) {
+            throw new \RuntimeException('Current execution identity has ambiguous authorization evidence.');
+        }
+        $record = $records[0];
+        if ('ResultReady' === $record['state']) {
+            return new Envelope($this->reference($record));
+        }
+        if ('Armed' !== $record['state']) {
+            return null;
+        }
+        // Repair never replaces the frozen input with current reconstructed messages.
+        $this->readSealed($this->path($runId, $record['effect_id'], 'request'), $record['request_hash'], (int) $record['request_bytes']);
+        $reference = new ExecutionRequest($record['run_id'], (int) $record['turn_no'], $record['step_id'], (int) $record['attempt'], $record['idempotency_key'], $record['effect_id'], $record['request_type'], $record['request_hash'], (int) $record['request_bytes']);
+
+        return new Envelope($reference, [new ExecutionAuthorizationStamp($record['effect_id'], $record['request_hash'])]);
+    }
+
     public function arm(AbstractAgentBusMessage $request, VerifiedTransitionDTO $transition): ExecutionAuthorizationStamp
     {
         if (!ExecutionOperationMapper::supports($request) || ($transition->work['run_id'] ?? null) !== $request->runId()) {
@@ -228,6 +290,9 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
     public function unknownNoticePending(\Ineersa\AgentCore\Domain\Message\ExecutionOutcomeUnknown $notice): bool
     {
         $record = $this->record($notice->effectId);
+        if ('Stale' === $record['state'] && null !== $record['disposition_transition'] && null === $record['result_hash'] && (array) $this->unknownNotice($record) === (array) $notice) {
+            return false;
+        }
         if ('OutcomeUnknown' !== $record['state'] || (array) $this->unknownNotice($record) !== (array) $notice) {
             throw new \RuntimeException('Unknown execution notice differs from its durable receipt.');
         }
@@ -259,6 +324,27 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
         if (false !== $this->connection->fetchOne("SELECT effect_id FROM execution_operation WHERE run_id = ? AND state = 'OutcomeUnknown' LIMIT 1", [$runId])) {
             throw new \RuntimeException(\Ineersa\AgentCore\Domain\Message\ExecutionOutcomeUnknown::ERROR_MESSAGE);
         }
+    }
+
+    private function withUnknownExclusion(\Ineersa\AgentCore\Domain\Message\ExecutionOutcomeUnknown $notice, callable $decision): void
+    {
+        $this->runLocks->synchronized($notice->runId(), function () use ($notice, $decision): void {
+            $record = $this->record($notice->effectId);
+            $key = $record['claim_lock_key'];
+            if ('OutcomeUnknown' !== $record['state'] || (array) $this->unknownNotice($record) !== (array) $notice
+                || !\is_string($key) || 1 !== preg_match('/^[a-f0-9]{64}$/D', $key) || $record['worker_instance'] !== $key || !str_starts_with($notice->claimToken, $key.'.')) {
+                throw new \RuntimeException('Unknown execution repair has no matching ownership receipt.');
+            }
+            $lock = $this->claimLockFactory->createLock('execution-worker.'.$key, ttl: null);
+            if (!$lock->acquire()) {
+                throw new \RuntimeException('Unknown execution repair refused: its original worker still owns execution.');
+            }
+            try {
+                $decision();
+            } finally {
+                $lock->release();
+            }
+        });
     }
 
     private function claimUnderRunLock(ExecutionRequest $request, ExecutionAuthorizationStamp $authorization): string|DurableExecutionResult|null

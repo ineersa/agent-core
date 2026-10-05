@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Pipeline;
 
-use Ineersa\AgentCore\Application\Handler\ToolExecutionAuthorization;
+use Ineersa\AgentCore\Contract\Tool\ToolExecutionAuthorizationInterface;
 use Ineersa\AgentCore\Domain\Coordination\ConsumeToolExecutionUnknownDTO;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\ExecutionOutcomeUnknown;
@@ -14,7 +14,7 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 
 final readonly class ToolExecutionOutcomeUnknownHandler implements RunMessageHandler
 {
-    public function __construct(private ToolExecutionAuthorization $authorization)
+    public function __construct(private ToolExecutionAuthorizationInterface $authorization)
     {
     }
 

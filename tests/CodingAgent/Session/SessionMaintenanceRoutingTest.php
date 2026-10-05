@@ -279,7 +279,14 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         $processor->process('test', new \Ineersa\AgentCore\Domain\Message\AdvanceRun($run, 1, 'invoke-retained', 1, 'invoke-retained'));
         $sent = $container->get('messenger.transport.llm')->getSent();
         $this->assertCount(1, $sent);
-        $request = $sent[0]->getMessage();
+        $reference = $sent[0]->getMessage();
+        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\ExecutionRequest::class, $reference);
+        $authorization = $sent[0]->last(\Ineersa\AgentCore\Domain\Coordination\ExecutionAuthorizationStamp::class);
+        $this->assertNotNull($authorization);
+        $operations = $container->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class);
+        $claim = $operations->claim($reference, $authorization);
+        $this->assertIsString($claim);
+        $request = $operations->resolveRequest($reference, $authorization, $claim);
         $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\ExecuteLlmStep::class, $request);
         $texts = json_encode(array_map(static fn ($message): array => $message->toArray(), $request->messages), \JSON_THROW_ON_ERROR);
         $this->assertStringContainsString('RETAINED_ASSISTANT', $texts);

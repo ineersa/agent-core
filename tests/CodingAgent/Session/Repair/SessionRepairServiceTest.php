@@ -18,8 +18,6 @@ use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep;
-use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
-use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
@@ -184,7 +182,7 @@ final class SessionRepairServiceTest extends TestCase
         $this->assertSame($lineCountAfterFirst, \count($this->readRawLines($runId)));
     }
 
-    public function testDryRunDoesNotDispatchAndApplyRedrivesCurrentLlmWithSameIdentity(): void
+    public function testCurrentLlmWithoutAuthorizationIsRefusedWithoutDispatch(): void
     {
         $runId = 'repair-llm';
         $stepId = 'step-repair';
@@ -209,18 +207,15 @@ final class SessionRepairServiceTest extends TestCase
         $this->assertSame([], $bus->messages);
 
         $applied = $service->repair($runId, true);
-        $this->assertSame(1, $applied->activeOperationsRedriven);
-        $this->assertCount(1, $bus->messages);
-        $this->assertInstanceOf(ExecuteLlmStep::class, $bus->messages[0]);
-        $this->assertSame($key, $bus->messages[0]->idempotencyKey());
+        $this->assertSame(SessionRepairRefusalReasonEnum::AmbiguousPendingWork, $applied->refusalReason);
+        $this->assertSame(0, $applied->activeOperationsRedriven);
 
         $service->repair($runId, true);
-        $this->assertCount(2, $bus->messages);
-        $this->assertSame($key, $bus->messages[1]->idempotencyKey());
+        $this->assertSame([], $bus->messages);
         $this->assertCount(2, $this->readEvents($runId));
     }
 
-    public function testDryRunAndRepeatedApplyRedriveCurrentCompactionWithSamePayload(): void
+    public function testCurrentCompactionWithoutAuthorizationIsRefusedWithoutDispatch(): void
     {
         $runId = 'repair-compaction';
         $key = 'compact-key';
@@ -264,15 +259,9 @@ final class SessionRepairServiceTest extends TestCase
         $this->assertSame([], $bus->messages);
         $this->assertSame($before, $this->readEvents($runId));
 
-        $service->repair($runId, true);
-        $service->repair($runId, true);
-        $this->assertCount(2, $bus->messages);
-        $this->assertContainsOnlyInstancesOf(ExecuteCompactionStep::class, $bus->messages);
-        $this->assertSame($key, $bus->messages[0]->idempotencyKey());
-        $this->assertSame($key, $bus->messages[1]->idempotencyKey());
-        $this->assertSame(2, $bus->messages[0]->attempt());
-        $this->assertSame('old', $bus->messages[0]->summarizationMessages[0]->content[0]['text']);
-        $this->assertSame('new', $bus->messages[0]->retainedTailMessages[0]->content[0]['text']);
+        $this->assertSame(SessionRepairRefusalReasonEnum::AmbiguousPendingWork, $service->repair($runId, true)->refusalReason);
+        $this->assertSame(SessionRepairRefusalReasonEnum::AmbiguousPendingWork, $service->repair($runId, true)->refusalReason);
+        $this->assertSame([], $bus->messages);
         $this->assertSame($before, $this->readEvents($runId));
     }
 
@@ -308,7 +297,7 @@ final class SessionRepairServiceTest extends TestCase
         $this->assertSame([], $bus->messages);
     }
 
-    public function testDryRunAndRepeatedApplyRedriveAttachedShellFromCanonicalCommand(): void
+    public function testAttachedShellWithoutAuthorizationIsRefusedWithoutDispatch(): void
     {
         $runId = 'repair-shell';
         $key = 'shell-command-key';
@@ -337,16 +326,9 @@ final class SessionRepairServiceTest extends TestCase
         $this->assertSame(0, $service->repair($runId, false)->activeOperationsRedriven);
         $this->assertSame([], $bus->messages);
 
-        $service->repair($runId, true);
-        $service->repair($runId, true);
-        $this->assertCount(2, $bus->messages);
-        $this->assertContainsOnlyInstancesOf(ExecuteShellToolCall::class, $bus->messages);
-        foreach ($bus->messages as $message) {
-            $this->assertSame($toolCallId, $message->toolCallId);
-            $this->assertSame('printf repair-shell', $message->commandText);
-            $this->assertSame(hash('sha256', $runId.'|'.$toolCallId), $message->idempotencyKey());
-            $this->assertFalse($message->standalone);
-        }
+        $this->assertSame(SessionRepairRefusalReasonEnum::AmbiguousPendingWork, $service->repair($runId, true)->refusalReason);
+        $this->assertSame(SessionRepairRefusalReasonEnum::AmbiguousPendingWork, $service->repair($runId, true)->refusalReason);
+        $this->assertSame([], $bus->messages);
         $this->assertSame($before, $this->readEvents($runId));
     }
 
@@ -360,7 +342,7 @@ final class SessionRepairServiceTest extends TestCase
     }
 
     #[DataProvider('standaloneShellRepairCases')]
-    public function testApplyRedrivesStandaloneShellFromCanonicalIdentityWithoutLlm(bool $childTurn): void
+    public function testStandaloneShellWithoutAuthorizationIsRefusedWithoutDispatch(bool $childTurn): void
     {
         $runId = $childTurn ? 'repair-terminal-shell' : 'repair-queued-shell';
         $key = $childTurn ? 'terminal-shell-key' : 'queued-shell-key';
@@ -409,16 +391,12 @@ final class SessionRepairServiceTest extends TestCase
         $this->assertSame([], $bus->messages);
 
         $result = $service->repair($runId, true);
-        $this->assertSame(1, $result->activeOperationsRedriven);
-        $this->assertCount(1, $bus->messages);
-        $this->assertInstanceOf(ExecuteShellToolCall::class, $bus->messages[0]);
-        $this->assertSame($toolCallId, $bus->messages[0]->toolCallId);
-        $this->assertSame($turnNo, $bus->messages[0]->turnNo());
-        $this->assertTrue($bus->messages[0]->standalone);
-        $this->assertNotInstanceOf(ExecuteLlmStep::class, $bus->messages[0]);
+        $this->assertSame(SessionRepairRefusalReasonEnum::AmbiguousPendingWork, $result->refusalReason);
+        $this->assertSame(0, $result->activeOperationsRedriven);
+        $this->assertSame([], $bus->messages);
     }
 
-    public function testRepeatedApplyRedrivesDurablePendingAndInFlightToolCalls(): void
+    public function testToolCallsWithoutAuthorizationAreRefusedWithoutDispatch(): void
     {
         $runId = 'repair-tools';
         $stepId = 'tool-step';
@@ -444,12 +422,9 @@ final class SessionRepairServiceTest extends TestCase
         $this->assertSame(0, $service->repair($runId, false)->activeOperationsRedriven);
         $this->assertSame([], $bus->messages);
 
-        $service->repair($runId, true);
-        $service->repair($runId, true);
-        $this->assertCount(4, $bus->messages);
-        $this->assertContainsOnlyInstancesOf(ExecuteToolCall::class, $bus->messages);
-        $this->assertSame(['tool-in-flight-key', 'tool-pending-key'], $this->toolKeys($bus->messages, 0, 2));
-        $this->assertSame(['tool-in-flight-key', 'tool-pending-key'], $this->toolKeys($bus->messages, 2, 2));
+        $this->assertSame(SessionRepairRefusalReasonEnum::AmbiguousPendingWork, $service->repair($runId, true)->refusalReason);
+        $this->assertSame(SessionRepairRefusalReasonEnum::AmbiguousPendingWork, $service->repair($runId, true)->refusalReason);
+        $this->assertSame([], $bus->messages);
         $this->assertSame($before, $this->readEvents($runId));
     }
 
@@ -1062,23 +1037,6 @@ final class SessionRepairServiceTest extends TestCase
         return $lines;
     }
 
-    /**
-     * @param list<object> $messages
-     *
-     * @return list<string>
-     */
-    private function toolKeys(array $messages, int $offset, int $length): array
-    {
-        $keys = [];
-        foreach (\array_slice($messages, $offset, $length) as $message) {
-            $this->assertInstanceOf(ExecuteToolCall::class, $message);
-            $keys[] = $message->idempotencyKey();
-        }
-        sort($keys);
-
-        return $keys;
-    }
-
     private function persistActiveToolBatchEvents(string $runId, string $stepId, bool $waitingHuman = false): void
     {
         $factory = new EventFactory();
@@ -1148,6 +1106,8 @@ final class SessionRepairServiceTest extends TestCase
             stepDispatcher: new StepDispatcher($commandBus, $dispatcherBus),
             toolBatchStore: $toolBatchStore,
             serializer: AttributeSerializerValidatorTestFactory::create()[0],
+            executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
+            toolAuthorization: new \Ineersa\AgentCore\Application\Handler\ToolExecutionAuthorization($toolBatchStore, AttributeSerializerValidatorTestFactory::serializer(), $this->createStub(\Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface::class), new LockFactory(new FlockStore($lockDir)), new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(), new RunLockManager(new LockFactory(new FlockStore($lockDir)))),
             historyReplayFilter: new \Ineersa\CodingAgent\Session\History\HistoryReplayFilter(new \Ineersa\CodingAgent\Session\History\HistoryProjector()),
             runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit($activeRunContext, $eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus()), new NullLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore()),
         );

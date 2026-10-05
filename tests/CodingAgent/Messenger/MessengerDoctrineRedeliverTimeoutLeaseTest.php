@@ -142,7 +142,7 @@ final class MessengerDoctrineRedeliverTimeoutLeaseTest extends IsolatedKernelTes
 
     public function testRepairRedriveEnqueuesFreshReceivableEnvelopeWithoutClearingClaimedRow(): void
     {
-        $runId = 'repair-claim-'.bin2hex(random_bytes(3));
+        $runId = self::getContainer()->get(HatfieldSessionStore::class)->createSession('repair claim lease');
         $stepId = 'advance-after-tools-repair';
         $key = hash('sha256', $runId.'|llm|1|'.$stepId);
         $queueName = 'llm_'.$runId;
@@ -151,10 +151,6 @@ final class MessengerDoctrineRedeliverTimeoutLeaseTest extends IsolatedKernelTes
 
         try {
             $abandoned = new ExecuteLlmStep($runId, 1, $stepId, 1, $key, \sprintf('toolset:run:%s:turn:1', $runId));
-            $transport->send(new Envelope($abandoned));
-            $claimed = iterator_to_array($transport->get());
-            $this->assertCount(1, $claimed);
-            $abandonedId = $this->envelopeId($claimed[0]);
 
             $projectDir = $this->isolatedCwd();
             $appConfig = new AppConfig(
@@ -190,6 +186,18 @@ final class MessengerDoctrineRedeliverTimeoutLeaseTest extends IsolatedKernelTes
                 $eventStore->append($event);
             }
 
+            $operations = self::getContainer()->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class);
+            $eventStore->appendTransition([], ['run_id' => $runId, 'predecessor_seq' => 2, 'effects' => [$abandoned]]);
+            $pending = $eventStore->verifiedPendingTransition($runId);
+            $this->assertNotNull($pending);
+            $authorization = $operations->arm($abandoned, $pending);
+            $reference = $operations->requestReference($abandoned, $authorization);
+            $eventStore->finalizeVerifiedTransition($runId, $pending->identity);
+            $transport->send(new Envelope($reference, [$authorization]));
+            $claimed = iterator_to_array($transport->get());
+            $this->assertCount(1, $claimed);
+            $abandonedId = $this->envelopeId($claimed[0]);
+
             $active = new TestActiveRunContext();
             $active->loadRecovered(new RunState(
                 runId: $runId,
@@ -217,6 +225,8 @@ final class MessengerDoctrineRedeliverTimeoutLeaseTest extends IsolatedKernelTes
                 stepDispatcher: new StepDispatcher($commandBus, $executionBus),
                 toolBatchStore: $this->createStub(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
                 serializer: AttributeSerializerValidatorTestFactory::create()[0],
+                executionOperations: self::getContainer()->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class),
+                toolAuthorization: self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\ToolExecutionAuthorization::class),
                 historyReplayFilter: self::getContainer()->get(\Ineersa\CodingAgent\Session\History\HistoryReplayFilter::class),
                 runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit($active, $eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus()), new NullLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore()),
             );
@@ -224,10 +234,10 @@ final class MessengerDoctrineRedeliverTimeoutLeaseTest extends IsolatedKernelTes
             $result = $repair->repair($runId, true);
             $this->assertSame(1, $result->activeOperationsRedriven);
             $this->assertCount(1, $executionBus->messages);
-            $this->assertInstanceOf(ExecuteLlmStep::class, $executionBus->messages[0]);
-            $this->assertSame($key, $executionBus->messages[0]->idempotencyKey());
+            $this->assertInstanceOf(Envelope::class, $executionBus->messages[0]);
+            $this->assertEquals($reference, $executionBus->messages[0]->getMessage());
 
-            $transport->send(new Envelope($executionBus->messages[0]));
+            $transport->send($executionBus->messages[0]);
             $this->assertSame(
                 1,
                 (int) $fresh->fetchOne('SELECT COUNT(*) FROM messenger_messages WHERE id = ?', [$abandonedId]),
@@ -238,7 +248,8 @@ final class MessengerDoctrineRedeliverTimeoutLeaseTest extends IsolatedKernelTes
             $this->assertCount(1, $redriven, 'Repair redrive must yield a fresh receivable envelope.');
             $redrivenId = $this->envelopeId($redriven[0]);
             $this->assertNotSame($abandonedId, $redrivenId);
-            $this->assertInstanceOf(ExecuteLlmStep::class, $redriven[0]->getMessage());
+            $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\ExecutionRequest::class, $redriven[0]->getMessage());
+            $this->assertEquals($reference, $redriven[0]->getMessage());
             $this->assertSame($key, $redriven[0]->getMessage()->idempotencyKey());
 
             $transport->ack($redriven[0]);

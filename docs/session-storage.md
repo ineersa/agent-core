@@ -140,12 +140,22 @@ Repair reuses the current operation identity. It does not mark unfinished work a
 completed, roll back side effects, or clear abandoned claimed messages. Check whether
 the original command or external tool already performed its action before redispatching.
 
+Armed work reuses its original frozen input and authorization. A saved result repeats
+its owner notification instead of executing again. Missing authorization is refused.
+
+Unknown execution blocks automatic work. Preview reports possible duplicate side
+effects without changing receipts. Apply verifies that the original worker no longer
+owns execution, commits the warning, and retires the old receipt. It does not repeat
+the ambiguous action. A later attempt may duplicate effects already performed.
+Retired deliveries cannot regain authorization, and stale notices cannot fail a newer
+operation. Interrupted retirement resumes from the committed repair decision.
+
 If a cancelled or failed terminal history has unmatched assistant tool calls, repair
 appends synthetic error tool results and a batch commit. This restores valid model
 history without repeating tool execution or appending another terminal event.
 
 Calls waiting for human input are not redispatched. Compaction repair requires a
-saved prepared request and refuses safely when that request is unavailable.
+saved authorized request and refuses safely when that request is unavailable.
 Do not edit queue rows or event logs to force recovery while a controller is live.
 
 Existing `idempotency.jsonl` files are inert legacy data. Current runs do not create

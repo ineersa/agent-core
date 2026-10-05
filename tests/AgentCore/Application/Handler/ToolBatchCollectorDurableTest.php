@@ -234,6 +234,11 @@ final class ToolBatchCollectorDurableTest extends TestCase
                 return $this->inner->hasOutcomeUnknown($runId);
             }
 
+            public function unknownExecutionsForRepair(string $runId): array
+            {
+                return $this->inner->unknownExecutionsForRepair($runId);
+            }
+
             public function recoverResultPublication(string $runId, int $turnNo, string $stepId, string $key, string $claim): void
             {
                 $this->inner->recoverResultPublication($runId, $turnNo, $stepId, $key, $claim);

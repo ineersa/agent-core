@@ -45,6 +45,10 @@ final readonly class StepDispatcher
 
     private function busFor(object $effect): MessageBusInterface
     {
+        if ($effect instanceof \Symfony\Component\Messenger\Envelope) {
+            $effect = $effect->getMessage();
+        }
+
         return $effect instanceof RunControlTransitionMessageInterface
             ? $this->commandBus
             : $this->executionBus;

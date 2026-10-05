@@ -170,6 +170,38 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
         });
     }
 
+    public function unknownExecutionsForRepair(string $runId): array
+    {
+        return $this->withRunLock($runId, function () use ($runId): array {
+            $notices = [];
+            $directory = $this->batchesDir($runId);
+            if (!is_dir($directory)) {
+                return [];
+            }
+            foreach (new \DirectoryIterator($directory) as $file) {
+                if (!$file->isFile() || !str_ends_with($file->getFilename(), '.json')) {
+                    continue;
+                }
+                $envelope = $this->readSnapshotEnvelope($file->getPathname(), $runId, null, null);
+                foreach ($envelope->batchState->executionAuthorizations as $key => $receipt) {
+                    if ('OutcomeUnknown' !== $receipt['state']) {
+                        continue;
+                    }
+                    $invocation = $receipt['invocation'] ?? null;
+                    if (null === $invocation || !\is_string($receipt['claim'])) {
+                        throw new \RuntimeException('Unknown tool repair lacks its scalar execution receipt.');
+                    }
+                    $notices[] = new \Ineersa\AgentCore\Domain\Message\ToolExecutionOutcomeUnknown($runId, $envelope->turnNo, $envelope->stepId, $invocation['attempt'], $invocation['key'], $invocation['call_id'], $key, $receipt['claim']);
+                    if (\count($notices) > 32) {
+                        throw new \RuntimeException('Unknown tool repair exceeds the bounded decision capacity.');
+                    }
+                }
+            }
+
+            return $notices;
+        });
+    }
+
     public function hasOutcomeUnknown(string $runId): bool
     {
         return $this->withRunLock($runId, fn (): bool => $this->hasOutcomeUnknownWithoutLock($runId));
@@ -359,7 +391,7 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
         foreach ($envelope->batchState->executionAuthorizations as $authorization) {
             // Only a durable disposition permits reclamation. Cancellation is
             // not evidence that an external execution stopped or had no effect.
-            if (!\in_array($authorization['state'], ['Consumed', 'Stale'], true)) {
+            if (isset($authorization['unknown_repair_transition']) || !\in_array($authorization['state'], ['Consumed', 'Stale'], true)) {
                 $this->logger->info('tool_batch.execution_evidence_retained', [
                     'component' => 'session_tool_batch_store', 'event_type' => 'execution_evidence_retained',
                     'run_id' => $envelope->runId, 'turn_no' => $envelope->turnNo, 'step_id' => $envelope->stepId,

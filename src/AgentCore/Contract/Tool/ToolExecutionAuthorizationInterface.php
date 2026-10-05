@@ -4,12 +4,22 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Contract\Tool;
 
+use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 
 interface ToolExecutionAuthorizationInterface
 {
+    /** @return list<\Ineersa\AgentCore\Domain\Message\ToolExecutionOutcomeUnknown> */
+    public function unknownExecutionsForRepair(string $runId): array;
+
+    public function retireUnknownExecution(\Ineersa\AgentCore\Domain\Coordination\RetireUnknownExecutionDTO $action, VerifiedTransitionDTO $transition): void;
+
     public function assertNoUnknownExecution(string $runId): void;
+
+    public function unknownNoticePending(\Ineersa\AgentCore\Domain\Message\ToolExecutionOutcomeUnknown $notice): bool;
+
+    public function matchesCurrentInvocation(\Ineersa\AgentCore\Domain\Message\ToolExecutionOutcomeUnknown $notice): bool;
 
     public function arm(ExecuteToolCall $call): void;
 
@@ -23,7 +33,7 @@ interface ToolExecutionAuthorizationInterface
 
     public function prepareDisposition(ToolCallResult $result, string $disposition): ?\Ineersa\AgentCore\Domain\Coordination\ToolResultDispositionDTO;
 
-    public function validateDisposition(\Ineersa\AgentCore\Domain\Coordination\ToolResultDispositionDTO $descriptor, \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO $transition): void;
+    public function validateDisposition(\Ineersa\AgentCore\Domain\Coordination\ToolResultDispositionDTO $descriptor, VerifiedTransitionDTO $transition): void;
 
-    public function applyDisposition(\Ineersa\AgentCore\Domain\Coordination\ToolResultDispositionDTO $descriptor, \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO $transition): void;
+    public function applyDisposition(\Ineersa\AgentCore\Domain\Coordination\ToolResultDispositionDTO $descriptor, VerifiedTransitionDTO $transition): void;
 }

@@ -14,6 +14,15 @@ use Ineersa\AgentCore\Domain\Message\ExecutionRequest;
 /** Narrow authority for execution effects not owned by the tool batch. */
 interface ExecutionOperationStoreInterface
 {
+    /** @return list<\Ineersa\AgentCore\Domain\Message\ExecutionOutcomeUnknown> */
+    public function unknownExecutionsForRepair(string $runId): array;
+
+    public function assertUnknownRepairable(\Ineersa\AgentCore\Domain\Message\ExecutionOutcomeUnknown $notice): void;
+
+    public function retireUnknownExecution(\Ineersa\AgentCore\Domain\Coordination\RetireUnknownExecutionDTO $action, VerifiedTransitionDTO $transition): void;
+
+    public function repairDelivery(string $runId, \Ineersa\AgentCore\Domain\Run\CurrentOperationDTO $operation, string $requestType): ?\Symfony\Component\Messenger\Envelope;
+
     public function arm(AbstractAgentBusMessage $request, VerifiedTransitionDTO $transition): ExecutionAuthorizationStamp;
 
     public function requestReference(AbstractAgentBusMessage $request, ExecutionAuthorizationStamp $authorization): ExecutionRequest;

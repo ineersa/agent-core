@@ -11,6 +11,26 @@ use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 /** Worker unit fixtures model an admitted call; durable protocol proofs use the real store. */
 final class TestToolExecutionAuthorization implements ToolExecutionAuthorizationInterface
 {
+    public function unknownExecutionsForRepair(string $runId): array
+    {
+        return [];
+    }
+
+    public function unknownNoticePending(\Ineersa\AgentCore\Domain\Message\ToolExecutionOutcomeUnknown $notice): bool
+    {
+        throw new \LogicException('Worker unit fixture has no unknown receipt.');
+    }
+
+    public function matchesCurrentInvocation(\Ineersa\AgentCore\Domain\Message\ToolExecutionOutcomeUnknown $notice): bool
+    {
+        throw new \LogicException('Worker unit fixture cannot match unknown invocation.');
+    }
+
+    public function retireUnknownExecution(\Ineersa\AgentCore\Domain\Coordination\RetireUnknownExecutionDTO $action, \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO $transition): void
+    {
+        throw new \LogicException('Worker unit fixture cannot retire unknown execution.');
+    }
+
     public function assertNoUnknownExecution(string $runId): void
     {
     }

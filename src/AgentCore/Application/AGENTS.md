@@ -159,4 +159,8 @@ Ordinary-tool Armed and ResultReady batches are rediscovered one snapshot per ow
 
 Both execution authorities use `RunLockManager` to serialize new claims with unknown decisions. Cross-authority checks stay inside that lock through the claim. `ToolExecutionOutcomeUnknownHandler` fails only the current turn, step, and invocation. Stale notices receive an event-free decision. `ConsumeToolExecutionUnknownDTO` acknowledges the notice against its verified transition, without removing the unknown execution evidence.
 
-Explicit unknown-receipt repair, accepted-source fencing, pre-commit mailbox and batch mutations, general coordination recovery, durable hooks, and payload cleanup remain unfinished. This checkpoint does not provide complete transition recovery or power-loss durability.
+Explicit repair previews unknown receipts without mutation. Apply verifies original-worker exclusion, commits `execution_unknown_retired` with the side-effect warning, and finalizes `RetireUnknownExecutionDTO` through the pending journal. Retired receipts remain Stale and reject old deliveries. Attached-shell repair matches the pending shell identity independently of the active model token. Superseded receipts do not fail newer operations.
+
+Active-operation repair republishes existing Armed references or ResultReady notifications. It never reconstructs execution input or recreates missing authorization. Human-input waits remain excluded.
+
+Accepted-source fencing, pre-commit mailbox and batch mutations, general coordination recovery, durable hooks, and payload cleanup remain unfinished. This checkpoint does not provide complete transition recovery or power-loss durability.
