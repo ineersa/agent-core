@@ -4,16 +4,30 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Session;
 
+use Ineersa\AgentCore\Application\Handler\ExecuteCompactionStepWorker;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\Model\PlatformInterface;
 use Ineersa\AgentCore\Contract\RunContextNotLoadedException;
+use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
+use Ineersa\AgentCore\Domain\Message\CompactionStepResult;
+use Ineersa\AgentCore\Domain\Message\CompactRun;
+use Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep;
+use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
+use Ineersa\AgentCore\Domain\Message\LlmStepResult;
+use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
+use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Tests\Support\SymfonyAiTestMessages;
 use Ineersa\CodingAgent\Application\Message\AttachRun;
 use Ineersa\CodingAgent\Application\Message\RepairSession;
 use Ineersa\CodingAgent\Application\Message\SelectHistoryPrompt;
+use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\CompactionConfig;
 use Ineersa\CodingAgent\Runtime\Contract\SessionRepairRefusalReasonEnum;
 use Ineersa\CodingAgent\Runtime\Controller\CommandHandler\RepairHandler;
 use Ineersa\CodingAgent\Runtime\Controller\CommandHandler\SelectHistoryTurnHandler;
@@ -32,6 +46,107 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
 {
     private \Ineersa\AgentCore\Tests\Support\TestMessageBus $autoCompactionBus;
     private int $afterTurnCount = 0;
+
+    public function testManualCompactionAfterCancelledToolRecoversColdOwnerAndReplacesCanonicalHistory(): void
+    {
+        $container = self::getContainer();
+        $container->get(AppConfig::class)->compaction = new CompactionConfig(autoEnabled: false, keepRecentTokens: 10, model: 'llama_cpp_test/test');
+        $bus = $container->get('agent.command.bus');
+        $ownerTransport = $container->get('messenger.transport.run_control');
+        $llmTransport = $container->get('messenger.transport.llm');
+        $toolTransport = $container->get('messenger.transport.tool');
+        $run = $container->get(HatfieldSessionStore::class)->createSession('cancelled maintenance');
+        $store = $container->get(EventStoreInterface::class);
+        $registry = $container->get(ActiveRunContextInterface::class);
+        $rawMessage = static fn (string $role, string $text): array => ['role' => $role, 'content' => [['type' => 'text', 'text' => $text]]];
+        $store->appendMany([
+            RunEvent::forAppend($run, 0, 'run_started', ['payload' => ['metadata' => ['model' => 'llama_cpp_test/test', 'session' => []], 'messages' => [
+                $rawMessage('user', 'OLD_CONTEXT '.str_repeat('previous conversation ', 60)),
+                $rawMessage('assistant', str_repeat('previous answer ', 60)),
+                $rawMessage('user', 'Read the recent file.'),
+            ]]]),
+            RunEvent::forAppend($run, 1, 'turn_advanced', ['turn_no' => 1, 'step_id' => 'old-step', 'operation_attempt' => 1, 'operation_idempotency_key' => 'old-key']),
+        ]);
+        $toolRequest = new LlmStepResult($run, 1, 'old-step', 1, 'old-key',
+            assistantMessage: SymfonyAiTestMessages::assistantWithToolCalls([['id' => 'cancelled-read', 'name' => 'read', 'arguments' => ['path' => './recent.txt']]]),
+            stopReason: 'tool_call',
+        );
+        $bus->dispatch($bus->dispatch($toolRequest)->with(new ReceivedStamp('run_control')));
+        $this->assertCount(1, $toolTransport->getSent());
+        $tool = $toolTransport->getSent()[0]->getMessage();
+        $this->assertInstanceOf(ExecuteToolCall::class, $tool);
+        $cancel = new ApplyCommand($run, 1, 'cancel', 1, 'cancel-key', CoreCommandKind::Cancel);
+        $bus->dispatch($bus->dispatch($cancel)->with(new ReceivedStamp('run_control')));
+        $this->assertSame(RunStatus::Cancelling, $registry->requireLoaded($run)->status);
+        // Resolve the cancelled worker without executing its read or starting another turn.
+        $cancelledResult = new ToolCallResult($run, 1, $tool->stepId(), 1, $tool->idempotencyKey(), $tool->toolCallId, 0,
+            result: ['content' => [['type' => 'text', 'text' => 'Tool call cancelled.']], 'details' => ['cancelled' => true]],
+            isError: true,
+        );
+        $bus->dispatch($bus->dispatch($cancelledResult)->with(new ReceivedStamp('run_control')));
+        $cancelled = $registry->requireLoaded($run);
+        $this->assertSame(RunStatus::Cancelled, $cancelled->status);
+        $this->assertNull($cancelled->currentOperation);
+        $checkpoint = $store->latestSequenceFor($run);
+        $archiveBefore = $store->allFor($run);
+        $ownerTransport->reset();
+        $toolTransport->reset();
+        $llmTransport->reset();
+        $registry->release($run);
+
+        $platform = $this->createMock(PlatformInterface::class);
+        $platform->expects($this->once())->method('invoke')->with($this->callback(static fn (ModelInvocationRequest $request): bool => !$request->options->toolsEnabled && !$request->options->streamObserverEnabled && $run === $request->input->runId))
+            ->willReturn(new PlatformInvocationResult(SymfonyAiTestMessages::assistantText('COMPACTED_HISTORY')));
+        $container->set(ExecuteCompactionStepWorker::class, new ExecuteCompactionStepWorker($platform, $bus));
+
+        $compact = new ApplyCommand($run, 1, 'manual-compact', 1, 'manual-compact-key', CoreCommandKind::Compact);
+        $queued = $bus->dispatch($compact);
+        $this->assertSame($checkpoint, $store->latestSequenceFor($run));
+        $bus->dispatch($queued->with(new ReceivedStamp('run_control')));
+        $sent = $ownerTransport->getSent();
+        $this->assertCount(2, $sent);
+        $request = $sent[1]->getMessage();
+        $this->assertInstanceOf(CompactRun::class, $request);
+        $this->assertFalse($request->continueAfterCompaction);
+        $this->assertSame('manual', $request->trigger);
+        $this->assertSame(RunStatus::Cancelled, $registry->requireLoaded($run)->status);
+        $bus->dispatch($sent[1]->with(new ReceivedStamp('run_control')));
+        $this->assertSame(RunStatus::Compacting, $registry->requireLoaded($run)->status);
+        $this->assertCount(1, $llmTransport->getSent());
+        $workerEnvelope = $llmTransport->getSent()[0];
+        $this->assertInstanceOf(ExecuteCompactionStep::class, $workerEnvelope->getMessage());
+        $container->get('agent.execution.bus')->dispatch($workerEnvelope->with(new ReceivedStamp('llm')));
+        $sent = $ownerTransport->getSent();
+        $this->assertCount(3, $sent);
+        $this->assertInstanceOf(CompactionStepResult::class, $sent[2]->getMessage());
+        $bus->dispatch($sent[2]->with(new ReceivedStamp('run_control')));
+
+        $completed = $registry->requireLoaded($run);
+        $this->assertSame(RunStatus::Completed, $completed->status);
+        $this->assertSame(1, $completed->turnNo);
+        $this->assertNull($completed->currentOperation);
+        $this->assertSame([], $toolTransport->getSent());
+        $this->assertSame([], $this->autoCompactionBus->messages);
+        $archiveAfter = $store->allFor($run);
+        $this->assertEquals($archiveBefore, \array_slice($archiveAfter, 0, \count($archiveBefore)));
+        $this->assertSame(['agent_command_applied', 'context_compaction_started', 'context_compacted'], array_column(\array_slice($archiveAfter, \count($archiveBefore)), 'type'));
+        $compactedEvent = $archiveAfter[array_key_last($archiveAfter)];
+        $this->assertStringContainsString('COMPACTED_HISTORY', json_encode($compactedEvent->payload['messages'], \JSON_THROW_ON_ERROR));
+        $this->assertStringNotContainsString('OLD_CONTEXT', json_encode($compactedEvent->payload['messages'], \JSON_THROW_ON_ERROR));
+        $this->assertEquals(array_map(static fn ($message): array => $message->toArray(), $completed->messages), $compactedEvent->payload['messages']);
+        $replay = $container->get(\Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface::class)->rebuildIfStale(RunState::queued($run), $run)->rebuiltState;
+        $this->assertEquals($completed->messages, $replay->messages);
+        $this->assertSame($completed->status, $replay->status);
+        $this->assertSame($completed->lastSeq, $replay->lastSeq);
+        // Command and worker-result redelivery cannot compact twice or revive the old work.
+        $bus->dispatch($queued->with(new ReceivedStamp('run_control')));
+        $registry->release($run);
+        $bus->dispatch($sent[2]->with(new ReceivedStamp('run_control')));
+        $this->assertSame($completed->lastSeq, $store->latestSequenceFor($run));
+        $this->assertCount(3, $ownerTransport->getSent(), 'Manual compaction must not dispatch AdvanceRun.');
+        $this->assertCount(1, $llmTransport->getSent());
+        $this->assertSame([], $toolTransport->getSent());
+    }
 
     public function testAttachResetsReasoningOnlyAtOwnerConsumptionWithoutStartingModelTurn(): void
     {
@@ -301,7 +416,7 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         ));
         $subscriber = new \Ineersa\CodingAgent\Compaction\AutoCompactionHookSubscriber(
             $container->get(\Ineersa\CodingAgent\Compaction\ProviderContextUsageResolver::class),
-            new \Ineersa\CodingAgent\Config\CompactionConfig(autoEnabled: true, compactAfterTokens: 11000, keepRecentTokens: 10),
+            new CompactionConfig(autoEnabled: true, compactAfterTokens: 11000, keepRecentTokens: 10),
             $this->createStub(\Ineersa\AgentCore\Contract\Model\RunModelResolverInterface::class),
             $this->autoCompactionBus,
             $compaction,
@@ -344,7 +459,7 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         self::getContainer()->get(\Ineersa\AgentCore\Application\Pipeline\RunCommit::class)->commit($state, $state, [RunEvent::forAppend($run, $state->turnNo, 'llm_step_completed', ['usage' => ['input_tokens' => 12000]])]);
         $this->assertSame(1, $this->afterTurnCount);
         $this->assertCount(1, $this->autoCompactionBus->messages);
-        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\CompactRun::class, $this->autoCompactionBus->messages[0]);
+        $this->assertInstanceOf(CompactRun::class, $this->autoCompactionBus->messages[0]);
     }
 
     private function seed(): string
