@@ -11,7 +11,11 @@ use Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressParallelSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingleSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotInterface;
+use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Serializer\Exception\ExceptionInterface as SerializerExceptionInterface;
 use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
@@ -23,6 +27,64 @@ use Symfony\Component\Validator\Exception\ValidationFailedException;
  */
 final class SubagentProgressSnapshotSerializerTest extends TestCase
 {
+    #[DataProvider('cachePercentageWireCases')]
+    public function testCachePercentageSurvivesJsonlRoundTrip(bool $parallel, ?float $percentage): void
+    {
+        $builder = new SubagentProgressSnapshotBuilder();
+        $summary = new SubagentChildProgressSummary(model: 'test/model', reasoning: 'medium', cacheReadHitPercentage: $percentage);
+        $snapshot = $parallel
+            ? $builder->parallelSnapshot(
+                reports: ['child' => new SubagentProgressParallelChildReportDTO(index: 1, agentName: 'scout', task: 'Task', artifactId: 'a1', agentRunId: 'r1', terminal: false, status: AgentArtifactStatusEnum::Running, elapsedMs: 0)],
+                activeTurns: ['r1' => 1], elapsedMs: 0, enrichmentByAgentRunId: ['r1' => $summary], aggregateStatus: 'running',
+            )
+            : $builder->singleFromChildTurn(agentName: 'scout', artifactId: 'a1', agentRunId: 'r1', taskSummary: 'Task', childTurnNo: 1, elapsedMs: 0, enrichment: $summary);
+        $payload = SubagentProgressSerializerTestSupport::normalizer()->normalize($snapshot, null, [AbstractObjectNormalizer::SKIP_NULL_VALUES => true]);
+        $event = JsonlCodec::decodeEvent(JsonlCodec::encodeEvent(new RuntimeEvent(
+            RuntimeEventTypeEnum::ToolExecutionOutputDelta->value, 'parent', 1, ['tool_call_id' => 'call1', 'subagent_progress' => $payload],
+        )));
+        $raw = $event->payload['subagent_progress'];
+        $decoded = SubagentProgressSerializerTestSupport::denormalizer()->denormalize($raw, SubagentProgressSnapshotInterface::class);
+        if ($parallel) {
+            $this->assertInstanceOf(SubagentProgressParallelSnapshotDTO::class, $decoded);
+            $this->assertCount(1, $decoded->children);
+            $actual = $decoded->children[0]->cacheReadHitPercentage;
+        } else {
+            $this->assertInstanceOf(SubagentProgressSingleSnapshotDTO::class, $decoded);
+            $actual = $decoded->cacheReadHitPercentage;
+        }
+        $this->assertSame($percentage, null === $actual ? null : (float) $actual);
+    }
+
+    public static function cachePercentageWireCases(): iterable
+    {
+        foreach (['single' => false, 'parallel' => true] as $mode => $parallel) {
+            yield $mode.' zero hits' => [$parallel, 0.0];
+            yield $mode.' all hits' => [$parallel, 100.0];
+            yield $mode.' fractional hits' => [$parallel, 93.5];
+            yield $mode.' missing telemetry' => [$parallel, null];
+        }
+    }
+
+    #[DataProvider('cachePercentageModes')]
+    public function testCachePercentageRejectsNumericStrings(bool $parallel): void
+    {
+        $raw = SubagentProgressSerializerTestSupport::canonicalSingleWire();
+        $raw['cache_read_hit_percentage'] = '100';
+        if ($parallel) {
+            unset($raw['mode']);
+            $raw = ['mode' => 'parallel', 'status' => 'running', 'children' => [['index' => 1, ...$raw]]];
+        }
+        $this->expectException(SerializerExceptionInterface::class);
+        $this->expectExceptionMessage('cacheReadHitPercentage');
+        SubagentProgressSerializerTestSupport::denormalizer()->denormalize($raw, SubagentProgressSnapshotInterface::class);
+    }
+
+    public static function cachePercentageModes(): iterable
+    {
+        yield 'single' => [false];
+        yield 'parallel' => [true];
+    }
+
     public function testNormalizeSingleMatchesHistoricalKeysAndOmissions(): void
     {
         $builder = new SubagentProgressSnapshotBuilder();
