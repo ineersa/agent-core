@@ -450,7 +450,7 @@ final class RuntimeEventPollerTest extends TestCase
 
     public function testQueuedFollowUpDispatchedOnRunCancelled(): void
     {
-        $this->state->queuedFollowUp = 'Continue after cancel';
+        $this->state->queuedFollowUps = ['Continue after cancel'];
         $this->state->activity = RunActivityStateEnum::Cancelling;
 
         $event = new RuntimeEvent(
@@ -481,7 +481,7 @@ final class RuntimeEventPollerTest extends TestCase
         $this->poller->poll($this->state, $this->client);
 
         // Queued text should be cleared after dispatch
-        $this->assertNull($this->state->queuedFollowUp);
+        $this->assertSame([], $this->state->queuedFollowUps);
         // Activity should transition to Cancelled (from RunCancelled event),
         // then to Starting (from the follow_up dispatch)
         $this->assertSame(RunActivityStateEnum::Starting, $this->state->activity);
@@ -557,7 +557,7 @@ final class RuntimeEventPollerTest extends TestCase
 
     public function testQueuedFollowUpNotDispatchedWithoutRunCancelled(): void
     {
-        $this->state->queuedFollowUp = 'Waiting message';
+        $this->state->queuedFollowUps = ['Waiting message'];
 
         $event = new RuntimeEvent(
             type: RuntimeEventTypeEnum::TurnStarted->value,
@@ -579,8 +579,8 @@ final class RuntimeEventPollerTest extends TestCase
         $this->poller->poll($this->state, $this->client);
 
         // Queued text should persist — only cleared on RunCancelled
-        $this->assertNotNull($this->state->queuedFollowUp);
-        $this->assertSame('Waiting message', $this->state->queuedFollowUp);
+        $this->assertNotEmpty($this->state->queuedFollowUps);
+        $this->assertSame(['Waiting message'], $this->state->queuedFollowUps);
     }
 
     public function testOnToolTerminalNotCalledForNonTerminalEvents(): void
@@ -610,10 +610,78 @@ final class RuntimeEventPollerTest extends TestCase
         $this->assertFalse($called);
     }
 
+    public function testCompactRejectionRetriesProjectionThenDispatchesDeferredInputExactlyOnce(): void
+    {
+        $this->state->activity = RunActivityStateEnum::Running;
+        $this->state->isCompacting = true;
+        $this->state->queuedFollowUps = ['Continue after rejection'];
+        $event = new RuntimeEvent('command.rejected', 'test-run', 10, [
+            'commandType' => 'compact', 'reason' => 'Command rejected.',
+        ]);
+        $this->client->expects($this->exactly(2))->method('events')->willReturnOnConsecutiveCalls([$event], []);
+        $sent = [];
+        $this->client->expects($this->once())->method('send')
+            ->willReturnCallback(static function (string $runId, UserCommand $command) use (&$sent): void {
+                $sent[] = [$command->type, $command->text];
+            });
+        $attempts = 0;
+        $this->projector->method('accept')->willReturnCallback(static function () use (&$attempts): void {
+            if (1 === ++$attempts) {
+                throw new \RuntimeException('one-shot projection failure');
+            }
+        });
+
+        $this->poller->poll($this->state, $this->client);
+        $this->assertFalse($this->state->isCompacting);
+        $this->assertSame(0, $this->state->lastSeq);
+        $this->assertSame([], $sent);
+
+        $this->state->lastPoll = 0.0;
+        $this->poller->poll($this->state, $this->client);
+        $this->assertSame(2, $attempts);
+        $this->assertSame(10, $this->state->lastSeq);
+        $this->assertSame([['follow_up', 'Continue after rejection']], $sent);
+        $this->assertSame([], $this->state->queuedFollowUps);
+
+        $this->state->lastPoll = 0.0;
+        $this->poller->poll($this->state, $this->client);
+        $this->assertCount(1, $sent);
+    }
+
+    public function testCompactRejectionRetainsUnsentTailWhenDispatchFails(): void
+    {
+        $this->state->activity = RunActivityStateEnum::Running;
+        $this->state->isCompacting = true;
+        $this->state->queuedFollowUps = ['First prompt', 'Second prompt'];
+        $this->client->expects($this->once())->method('events')->willReturn([
+            new RuntimeEvent('command.rejected', 'test-run', 10, ['commandType' => 'compact', 'reason' => 'Command rejected.']),
+        ]);
+        $attempts = 0;
+        $sent = [];
+        $this->client->expects($this->exactly(3))->method('send')
+            ->willReturnCallback(static function (string $runId, UserCommand $command) use (&$attempts, &$sent): void {
+                if (2 === ++$attempts) {
+                    throw new \RuntimeException('send failed before acceptance');
+                }
+                $sent[] = [$command->type, $command->text];
+            });
+
+        $this->poller->poll($this->state, $this->client);
+        $this->assertSame([['follow_up', 'First prompt']], $sent);
+        $this->assertSame(['Second prompt'], $this->state->queuedFollowUps);
+        $this->assertSame(0, $this->state->lastSeq);
+
+        $this->state->lastPoll = 0.0;
+        $this->poller->poll($this->state, $this->client);
+        $this->assertSame([['follow_up', 'First prompt'], ['follow_up', 'Second prompt']], $sent);
+        $this->assertSame([], $this->state->queuedFollowUps);
+        $this->assertSame(10, $this->state->lastSeq);
+    }
+
     #[DataProvider('compactionRejectionFollowUps')]
     public function testQueuedFollowUpAfterCompactionRejectionRespectsRemainingWork(RunActivityStateEnum $activity, string $command, bool $dispatch, bool $busy): void
     {
-        $this->state->queuedFollowUp = 'Continue after compaction request';
+        $this->state->queuedFollowUps = ['Continue after compaction request'];
         $this->state->activity = $activity;
         $this->state->isCompacting = true;
         $event = new RuntimeEvent('command.rejected', 'test-run', 10, [
@@ -629,7 +697,7 @@ final class RuntimeEventPollerTest extends TestCase
         $this->state->lastPoll = 0.0;
         $this->poller->poll($this->state, $this->client);
 
-        $this->assertSame($dispatch ? null : 'Continue after compaction request', $this->state->queuedFollowUp);
+        $this->assertSame($dispatch ? [] : ['Continue after compaction request'], $this->state->queuedFollowUps);
         $this->assertSame($dispatch ? RunActivityStateEnum::Starting : $activity, $this->state->activity);
         $this->assertSame($busy, $this->state->isCompacting);
     }
@@ -645,7 +713,7 @@ final class RuntimeEventPollerTest extends TestCase
 
     public function testQueuedFollowUpDispatchedOnceWhenCompactionCompletes(): void
     {
-        $this->state->queuedFollowUp = 'Run the checks after compaction';
+        $this->state->queuedFollowUps = ['Run the checks after compaction'];
         $this->state->activity = RunActivityStateEnum::Compacting;
 
         $event = new RuntimeEvent(
@@ -673,7 +741,7 @@ final class RuntimeEventPollerTest extends TestCase
 
         $this->poller->poll($this->state, $this->client);
 
-        $this->assertNull($this->state->queuedFollowUp);
+        $this->assertSame([], $this->state->queuedFollowUps);
         $this->assertSame(RunActivityStateEnum::Starting, $this->state->activity);
     }
 
@@ -685,7 +753,7 @@ final class RuntimeEventPollerTest extends TestCase
      */
     public function testQueuedFollowUpNotDispatchedOnCompactionCompletedWhileCancelling(): void
     {
-        $this->state->queuedFollowUp = 'Continue after cancel';
+        $this->state->queuedFollowUps = ['Continue after cancel'];
         $this->state->activity = RunActivityStateEnum::Cancelling;
 
         $event = new RuntimeEvent(
@@ -709,8 +777,8 @@ final class RuntimeEventPollerTest extends TestCase
         $this->poller->poll($this->state, $this->client);
 
         // Queued text must survive for the RunCancelled branch
-        $this->assertNotNull($this->state->queuedFollowUp);
-        $this->assertSame('Continue after cancel', $this->state->queuedFollowUp);
+        $this->assertNotEmpty($this->state->queuedFollowUps);
+        $this->assertSame(['Continue after cancel'], $this->state->queuedFollowUps);
         // Activity stays Cancelling (not overwritten to Starting)
         $this->assertSame(RunActivityStateEnum::Cancelling, $this->state->activity);
     }
@@ -722,7 +790,7 @@ final class RuntimeEventPollerTest extends TestCase
      */
     public function testQueuedFollowUpNotDispatchedOnCompactionFailedWhileCancelling(): void
     {
-        $this->state->queuedFollowUp = 'Resume after failed compact';
+        $this->state->queuedFollowUps = ['Resume after failed compact'];
         $this->state->activity = RunActivityStateEnum::Cancelling;
 
         $event = new RuntimeEvent(
@@ -744,8 +812,8 @@ final class RuntimeEventPollerTest extends TestCase
 
         $this->poller->poll($this->state, $this->client);
 
-        $this->assertNotNull($this->state->queuedFollowUp);
-        $this->assertSame('Resume after failed compact', $this->state->queuedFollowUp);
+        $this->assertNotEmpty($this->state->queuedFollowUps);
+        $this->assertSame(['Resume after failed compact'], $this->state->queuedFollowUps);
         $this->assertSame(RunActivityStateEnum::Cancelling, $this->state->activity);
     }
 
@@ -802,7 +870,7 @@ final class RuntimeEventPollerTest extends TestCase
         // Thesis: after a RunHistoryPositionChanged event, the poller fetches retained-history
         // RuntimeEvents from the provider, replays them through the projector,
         // and wholesale-replaces $state->transcript. Old discarded-tail blocks
-        // must be gone, activity = Idle, queuedFollowUp = null, lastSeq = history_position_set seq.
+        // must be gone, activity = Idle, queuedFollowUps = [], lastSeq = history_position_set seq.
 
         $this->state->queuedUserMessages = ['ik-abandoned' => 'Want to test bash in parallel'];
 
@@ -869,8 +937,8 @@ final class RuntimeEventPollerTest extends TestCase
         // Activity becomes Idle after RunHistoryPositionChanged
         $this->assertSame(RunActivityStateEnum::Idle, $this->state->activity);
 
-        // queuedFollowUp cleared
-        $this->assertNull($this->state->queuedFollowUp);
+        // queuedFollowUps cleared
+        $this->assertSame([], $this->state->queuedFollowUps);
         $this->assertSame([], $this->state->queuedUserMessages, 'Discarded-tail queued commands must not linger as ⏳');
 
         // lastSeq advanced to RunHistoryPositionChanged seq (not moved backward by rebuild)

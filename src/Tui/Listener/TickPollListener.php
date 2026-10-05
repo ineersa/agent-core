@@ -244,17 +244,21 @@ final class TickPollListener implements TuiListenerRegistrar
                 $state->pendingEditorPromptText = null;
             }
 
+            if (!$liveActive && null !== $state->pendingEditorRestoreText) {
+                $editor = $screen->promptEditor();
+                $draft = $editor->getText();
+                $editor->replaceText($state->pendingEditorRestoreText.('' !== $draft ? "\n\n".$draft : ''));
+                $state->pendingEditorRestoreText = null;
+            }
+
             // The pending-queue widget (slot 4, above the editor) reflects canonical
-            // queued messages plus a follow-up held locally while compaction finishes.
+            // queued messages plus all locally deferred submissions. Keep local
+            // input visible even if a projection or dispatch needs another attempt.
             // Sync every tick because neither source produces a transcript block.
             if ($liveActive) {
                 $screen->syncQueuedUserMessages($state->subagentLiveView->childQueuedUserMessages);
             } else {
-                $queuedMessages = $state->queuedUserMessages;
-                if (($state->isCompacting || RunActivityStateEnum::Compacting === $state->activity)
-                    && null !== $state->queuedFollowUp) {
-                    $queuedMessages[] = $state->queuedFollowUp;
-                }
+                $queuedMessages = [...$state->queuedUserMessages, ...$state->queuedFollowUps];
                 $screen->syncQueuedUserMessages($queuedMessages);
             }
 

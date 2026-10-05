@@ -75,7 +75,8 @@ final readonly class TuiRuntimeEventApplier
             $this->projector->reset();
 
             $state->activity = RunActivityStateEnum::Idle;
-            $state->queuedFollowUp = null;
+            $state->queuedFollowUps = [];
+            $state->pendingEditorRestoreText = null;
             // Discarded-tail queued steer/follow-up commands must not keep rendering
             // as pending after history selection/resume to an earlier position.
             $state->queuedUserMessages = [];
@@ -108,6 +109,14 @@ final readonly class TuiRuntimeEventApplier
             $state->queuedUserMessages = [];
             $state->llmRetryWorkingMessage = null;
             $state->isCompacting = false;
+        }
+
+        if (\in_array($event->type, [RuntimeEventTypeEnum::RunFailed->value, RuntimeEventTypeEnum::TurnFailed->value], true)
+            && [] !== $state->queuedFollowUps) {
+            // Failure must not start another turn or leave hidden input that a
+            // later compaction could dispatch. Return it to the user's editor.
+            $state->pendingEditorRestoreText = implode("\n\n", $state->queuedFollowUps);
+            $state->queuedFollowUps = [];
         }
 
         // After terminal activity, ignore stale seq=0 assistant/tool stream

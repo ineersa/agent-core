@@ -34,6 +34,8 @@ After cancellation finishes, `/compact` can compact the parent conversation with
 
 The TUI displays `Compaction requested.` when it sends the command. It displays `Compacting conversation` only after the backend starts compaction. Rejection displays the backend reason and clears the pending request.
 
+Messages submitted while compaction is pending or active wait locally and are sent in submission order after settlement. If the run fails, the TUI returns these messages to the editor before any existing draft. It does not start another turn automatically or send the restored text after a later compaction.
+
 ## Automatic compaction
 
 When enabled, parent runs may compact after token thresholds using:

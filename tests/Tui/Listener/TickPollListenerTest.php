@@ -952,13 +952,60 @@ final class TickPollListenerTest extends TestCase
         $this->assertNull($handler($tickEvent));
     }
 
+    public function testRunFailureRestoresDeferredPromptWithoutSendingOrOverwritingEditorDraft(): void
+    {
+        $runId = 'tick-failed-compaction-request';
+        $state = new TuiSessionState($runId);
+        $state->handle = new RunHandle($runId);
+        $state->activity = RunActivityStateEnum::Running;
+        $state->isCompacting = true;
+        $state->queuedFollowUps = ['Run the checks after compaction', 'Also update the docs'];
+        $harness = new VirtualTuiHarness(sessionId: $runId);
+        $harness->screen()->promptEditor()->setText('Unsubmitted draft');
+        $client = $this->createMock(AgentSessionClient::class);
+        $client->expects($this->never())->method('send');
+        $client->expects($this->exactly(2))->method('events')->willReturnOnConsecutiveCalls(
+            [new RuntimeEvent('run.failed', $runId, 10, ['reason' => 'provider_failure'])],
+            [new RuntimeEvent('compaction.started', $runId, 11, ['trigger' => 'manual']), new RuntimeEvent('compaction.completed', $runId, 12)],
+        );
+        $projector = $this->createStub(\Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface::class);
+        $projector->method('drainChanges')->willReturn(\Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet::incremental([]));
+        $poller = new RuntimeEventPoller(
+            new TuiRuntimeEventApplier($projector, SubagentProgressSerializerTestSupport::denormalizer()),
+            new NullLogger(),
+            new RuntimeExceptionBoundary($this->createStub(\Symfony\Component\EventDispatcher\EventDispatcherInterface::class)),
+            $this->createStub(SessionTranscriptProviderInterface::class),
+        );
+        $poller->poll($state, $client);
+        $this->assertSame(RunActivityStateEnum::Failed, $state->activity);
+        $this->assertFalse($state->isCompacting);
+        $state->subagentLiveView->enter(new \Ineersa\Tui\Runtime\SubagentLiveChildDTO(
+            'child-run', 'child-artifact', 'child', \Ineersa\Tui\Runtime\SubagentLiveStatusEnum::Completed,
+            'Child task', 1, 'llama_cpp_test/test', 'off',
+        ));
+        $handler = $this->registerTickHandler($this->createTickPollListener(), $state, screen: $harness->screen());
+        $handler(new \Symfony\Component\Tui\Event\TickEvent());
+        $this->assertSame('Unsubmitted draft', $harness->screen()->promptEditor()->getText(), 'Parent input must not enter the child editor.');
+        $state->subagentLiveView->exit();
+        $handler(new \Symfony\Component\Tui\Event\TickEvent());
+        $expected = "Run the checks after compaction\n\nAlso update the docs\n\nUnsubmitted draft";
+        $this->assertSame($expected, $harness->screen()->promptEditor()->getText());
+        $this->assertStringContainsString('Run the checks after compaction', $harness->plainScreenText());
+        $this->assertSame([], $state->queuedFollowUps);
+
+        $state->lastPoll = 0.0;
+        $poller->poll($state, $client);
+        $handler(new \Symfony\Component\Tui\Event\TickEvent());
+        $this->assertSame($expected, $harness->screen()->promptEditor()->getText());
+    }
+
     public function testTickShowsAndClearsFollowUpQueuedDuringCompaction(): void
     {
         $runId = 'tick-compaction-queue';
         $harness = new VirtualTuiHarness(sessionId: $runId);
         $state = new TuiSessionState($runId);
         $state->activity = RunActivityStateEnum::Compacting;
-        $state->queuedFollowUp = 'Run the checks after compaction';
+        $state->queuedFollowUps = ['Run the checks after compaction'];
         $state->queuedUserMessages = ['steer-1' => 'Existing queued steer'];
 
         $handler = $this->registerTickHandler(
@@ -973,7 +1020,7 @@ final class TickPollListenerTest extends TestCase
         $this->assertStringContainsString('⏳ Run the checks after compaction', $harness->plainScreenText());
 
         $state->activity = RunActivityStateEnum::Starting;
-        $state->queuedFollowUp = null;
+        $state->queuedFollowUps = [];
         $handler(new \Symfony\Component\Tui\Event\TickEvent());
         $this->assertStringContainsString('⏳ Existing queued steer', $harness->plainScreenText());
         $this->assertStringNotContainsString('⏳ Run the checks after compaction', $harness->plainScreenText());
@@ -1251,7 +1298,7 @@ final class TickPollListenerTest extends TestCase
         $state = new TuiSessionState($runId);
         $state->activity = RunActivityStateEnum::Compacting;
         $state->isCompacting = true;
-        $state->queuedFollowUp = 'Continue after compact';
+        $state->queuedFollowUps = ['Continue after compact'];
         $state->handle = new RunHandle($runId);
         $state->lastPoll = 0.0;
 
@@ -1317,7 +1364,7 @@ final class TickPollListenerTest extends TestCase
 
         $handler(new \Symfony\Component\Tui\Event\TickEvent());
         $this->assertSame(RunActivityStateEnum::Starting, $state->activity);
-        $this->assertNull($state->queuedFollowUp);
+        $this->assertSame([], $state->queuedFollowUps);
         $this->assertCount(1, $logger->records);
         $this->assertSame('tui.compaction.settled', $logger->records[0]['context']['event_type']);
         $this->assertSame('starting', $logger->records[0]['context']['activity']);
@@ -1332,7 +1379,7 @@ final class TickPollListenerTest extends TestCase
         $runId = 'tick-memory-terminal-followup';
         $state = new TuiSessionState($runId);
         $state->activity = RunActivityStateEnum::Cancelling;
-        $state->queuedFollowUp = 'Continue after cancel';
+        $state->queuedFollowUps = ['Continue after cancel'];
         $state->handle = new RunHandle($runId);
         $state->lastPoll = 0.0;
 
@@ -1402,7 +1449,7 @@ final class TickPollListenerTest extends TestCase
 
         $handler($tick);
         $this->assertSame(RunActivityStateEnum::Starting, $state->activity);
-        $this->assertNull($state->queuedFollowUp);
+        $this->assertSame([], $state->queuedFollowUps);
         $this->assertCount(1, $logger->records);
         $this->assertSame('tui.activity.terminal', $logger->records[0]['context']['event_type']);
         $this->assertSame('cancelled', $logger->records[0]['context']['boundary_activity']);

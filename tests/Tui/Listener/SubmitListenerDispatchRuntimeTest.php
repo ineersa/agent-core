@@ -188,7 +188,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
         $harness = new VirtualTuiHarness(sessionId: 'test-session');
         $screen = $this->dispatchSubmit('Run the checks after compaction', screen: $harness->screen());
 
-        $this->assertSame('Run the checks after compaction', $this->state->queuedFollowUp);
+        $this->assertSame(['Run the checks after compaction'], $this->state->queuedFollowUps);
         $this->assertSame('Message queued — waiting for compaction to complete...', $screen->workingMessage());
         $this->assertStringContainsString('⏳ Run the checks after compaction', $harness->plainScreenText());
     }
@@ -198,6 +198,44 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
     {
         yield 'backend compaction active' => [RunActivityStateEnum::Compacting, false];
         yield 'manual request pending after cancellation' => [RunActivityStateEnum::Cancelled, true];
+    }
+
+    #[Test]
+    public function pendingCompactionPreservesTwoSubmittedPromptsAndDispatchesThemInOrder(): void
+    {
+        $this->state->handle = new RunHandle('run-1');
+        $this->state->activity = RunActivityStateEnum::Running;
+        $this->state->isCompacting = true;
+        $harness = new VirtualTuiHarness(sessionId: 'test-session');
+        $sent = [];
+        $this->client->expects($this->exactly(2))->method('send')
+            ->willReturnCallback(static function (string $runId, UserCommand $command) use (&$sent): void {
+                $sent[] = [$runId, $command->type, $command->text];
+            });
+        $this->client->expects($this->once())->method('events')->willReturn([
+            new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent('compaction.completed', 'run-1', 10),
+        ]);
+
+        $this->dispatchSubmit('Add regression tests.', screen: $harness->screen());
+        $this->dispatchSubmit('Also update the docs.', screen: $harness->screen());
+        $this->assertSame([], $sent);
+        $this->assertStringContainsString('Add regression tests.', $harness->plainScreenText());
+        $this->assertStringContainsString('Also update the docs.', $harness->plainScreenText());
+
+        $projector = $this->createStub(\Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface::class);
+        $projector->method('drainChanges')->willReturn(\Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet::incremental([]));
+        $poller = new \Ineersa\Tui\Runtime\RuntimeEventPoller(
+            new \Ineersa\Tui\Runtime\TuiRuntimeEventApplier($projector, \Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport::denormalizer()),
+            $this->logger,
+            new \Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary($this->createStub(\Symfony\Component\EventDispatcher\EventDispatcherInterface::class)),
+            $this->createStub(\Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface::class),
+        );
+        $poller->poll($this->state, $this->client);
+
+        $this->assertSame([
+            ['run-1', 'follow_up', 'Add regression tests.'],
+            ['run-1', 'follow_up', 'Also update the docs.'],
+        ], $sent);
     }
 
     #[Test]
@@ -222,7 +260,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
 
         $this->dispatchSubmit('Run the checks after compaction', tui: $tui);
 
-        $this->assertSame('Run the checks after compaction', $this->state->queuedFollowUp);
+        $this->assertSame(['Run the checks after compaction'], $this->state->queuedFollowUps);
         $this->assertSame(RunActivityStateEnum::Compacting, $this->state->activity);
         $this->assertSame([], $this->state->transcript);
         $this->assertSame('error', $this->logger->records[0]['level']);
