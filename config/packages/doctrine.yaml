@@ -51,6 +51,10 @@ doctrine:
             default:
                 connection: default
                 mappings:
+                    AgentCore\Infrastructure\Doctrine:
+                        dir: '%kernel.project_dir%/src/AgentCore/Infrastructure/Doctrine'
+                        prefix: 'Ineersa\AgentCore\Infrastructure\Doctrine'
+                        type: attribute
                     CodingAgent\Entity:
                         dir: '%kernel.project_dir%/src/CodingAgent/Entity'
                         prefix: 'Ineersa\CodingAgent\Entity'
