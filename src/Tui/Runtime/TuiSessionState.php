@@ -115,11 +115,9 @@ final class TuiSessionState
     public int $contextWindow = 0;
 
     /**
-     * Whether a compaction is currently in progress for the active
-     * run. Set by CompactCommandHandler (manual /compact) and by
-     * RuntimeEventPoller (auto compaction via CompactionStarted event).
-     * Cleared by RuntimeEventPoller when a compaction.completed or
-     * compaction.failed event arrives.
+     * A local compaction request is pending or backend compaction is active.
+     * Only activity=Compacting confirms that the backend started compaction.
+     * Blocks duplicate requests and context reload until rejection or settlement.
      */
     public bool $isCompacting = false;
 

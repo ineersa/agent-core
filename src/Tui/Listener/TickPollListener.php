@@ -251,7 +251,8 @@ final class TickPollListener implements TuiListenerRegistrar
                 $screen->syncQueuedUserMessages($state->subagentLiveView->childQueuedUserMessages);
             } else {
                 $queuedMessages = $state->queuedUserMessages;
-                if (RunActivityStateEnum::Compacting === $state->activity && null !== $state->queuedFollowUp) {
+                if (($state->isCompacting || RunActivityStateEnum::Compacting === $state->activity)
+                    && null !== $state->queuedFollowUp) {
                     $queuedMessages[] = $state->queuedFollowUp;
                 }
                 $screen->syncQueuedUserMessages($queuedMessages);

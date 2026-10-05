@@ -30,6 +30,10 @@ Alias: `/cmp`
 
 Manual compaction is always available for **parent** sessions regardless of `compaction.auto_enabled`.
 
+After cancellation finishes, `/compact` can compact the parent conversation without a follow-up message or another agent turn. It does not resume cancelled work. Requests made while cancellation is still in progress are rejected.
+
+The TUI displays `Compaction requested.` when it sends the command. It displays `Compacting conversation` only after the backend starts compaction. Rejection displays the backend reason and clears the pending request.
+
 ## Automatic compaction
 
 When enabled, parent runs may compact after token thresholds using:

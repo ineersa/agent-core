@@ -37,6 +37,7 @@ use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -174,10 +175,12 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
     }
 
     #[Test]
-    public function normalPromptQueuesWhileCompacting(): void
+    #[DataProvider('compactionQueueStates')]
+    public function normalPromptQueuesWhileCompactionIsRequestedOrActive(RunActivityStateEnum $activity, bool $pending): void
     {
         $this->state->handle = new RunHandle('run-1');
-        $this->state->activity = RunActivityStateEnum::Compacting;
+        $this->state->activity = $activity;
+        $this->state->isCompacting = $pending;
         $this->state->sessionId = 'test-session';
 
         $this->client->expects($this->never())->method('send');
@@ -188,6 +191,13 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
         $this->assertSame('Run the checks after compaction', $this->state->queuedFollowUp);
         $this->assertSame('Message queued — waiting for compaction to complete...', $screen->workingMessage());
         $this->assertStringContainsString('⏳ Run the checks after compaction', $harness->plainScreenText());
+    }
+
+    /** @return iterable<string, array{RunActivityStateEnum, bool}> */
+    public static function compactionQueueStates(): iterable
+    {
+        yield 'backend compaction active' => [RunActivityStateEnum::Compacting, false];
+        yield 'manual request pending after cancellation' => [RunActivityStateEnum::Cancelled, true];
     }
 
     #[Test]

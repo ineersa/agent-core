@@ -65,7 +65,7 @@ final class RuntimeEventTranslator
             // Shared: agent_command_applied — explicit priority resolution
             RunEventTypeEnum::AgentCommandApplied->value => $this->onAgentCommandApplied(...),
             // Cancel / fallback
-            RunEventTypeEnum::AgentCommandRejected->value => $this->onStatusUpdated(...),
+            RunEventTypeEnum::AgentCommandRejected->value => $this->onAgentCommandRejected(...),
             // Compaction
             RunEventTypeEnum::ContextCompactionStarted->value => $this->onCompactionStarted(...),
             RunEventTypeEnum::ContextCompacted->value => $this->onCompactionCompleted(...),
@@ -538,8 +538,20 @@ final class RuntimeEventTranslator
 
     // ── Cancel / fallback ──────────────────────────────────────────────────
 
-    private function onStatusUpdated(RunEvent $runEvent): RuntimeEvent
+    private function onAgentCommandRejected(RunEvent $runEvent): RuntimeEvent
     {
+        if ('compact' === ($runEvent->payload['kind'] ?? null)) {
+            return new RuntimeEvent(
+                type: RuntimeEventTypeEnum::CommandRejected->value,
+                runId: $runEvent->runId,
+                seq: $runEvent->seq,
+                payload: [
+                    'commandType' => 'compact',
+                    'reason' => $runEvent->payload['reason'],
+                ],
+            );
+        }
+
         return $this->statusUpdatedEvent($runEvent);
     }
 
@@ -572,6 +584,7 @@ final class RuntimeEventTranslator
             seq: $runEvent->seq,
             payload: [
                 'estimated_tokens_before' => $estimatedTokens,
+                'trigger' => $p['trigger'] ?? null,
             ],
         );
     }

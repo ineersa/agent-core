@@ -88,6 +88,9 @@ final readonly class TuiRuntimeEventApplier
         } elseif (
             RuntimeEventTypeEnum::CompactionCompleted->value === $event->type
             || RuntimeEventTypeEnum::CompactionFailed->value === $event->type
+            || (RuntimeEventTypeEnum::CommandRejected->value === $event->type
+                && 'compact' === ($event->payload['commandType'] ?? null)
+                && RunActivityStateEnum::Compacting !== $state->activity)
         ) {
             $state->isCompacting = false;
         }
@@ -104,6 +107,7 @@ final readonly class TuiRuntimeEventApplier
             // ending turn; they will not be applied on the discarded tail.
             $state->queuedUserMessages = [];
             $state->llmRetryWorkingMessage = null;
+            $state->isCompacting = false;
         }
 
         // After terminal activity, ignore stale seq=0 assistant/tool stream

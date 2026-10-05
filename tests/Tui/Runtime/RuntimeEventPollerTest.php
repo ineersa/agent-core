@@ -23,6 +23,7 @@ use Ineersa\Tui\Runtime\RuntimeEventPoller;
 use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
@@ -607,6 +608,39 @@ final class RuntimeEventPollerTest extends TestCase
         $this->poller->poll($this->state, $this->client, onToolTerminal: $callback);
 
         $this->assertFalse($called);
+    }
+
+    #[DataProvider('compactionRejectionFollowUps')]
+    public function testQueuedFollowUpAfterCompactionRejectionRespectsRemainingWork(RunActivityStateEnum $activity, string $command, bool $dispatch, bool $busy): void
+    {
+        $this->state->queuedFollowUp = 'Continue after compaction request';
+        $this->state->activity = $activity;
+        $this->state->isCompacting = true;
+        $event = new RuntimeEvent('command.rejected', 'test-run', 10, [
+            'commandType' => $command, 'reason' => 'Command rejected.',
+        ]);
+        $this->client->expects($this->exactly(2))->method('events')->willReturn([$event]);
+        $this->client->expects($dispatch ? $this->once() : $this->never())->method('send')
+            ->with('test-run', $this->callback(static fn ($cmd): bool => $cmd instanceof UserCommand
+                && 'follow_up' === $cmd->type && 'Continue after compaction request' === $cmd->text));
+        $this->projector->method('drainChanges')->willReturn(TranscriptChangeSet::incremental([]));
+
+        $this->poller->poll($this->state, $this->client);
+        $this->state->lastPoll = 0.0;
+        $this->poller->poll($this->state, $this->client);
+
+        $this->assertSame($dispatch ? null : 'Continue after compaction request', $this->state->queuedFollowUp);
+        $this->assertSame($dispatch ? RunActivityStateEnum::Starting : $activity, $this->state->activity);
+        $this->assertSame($busy, $this->state->isCompacting);
+    }
+
+    /** @return iterable<string, array{RunActivityStateEnum, string, bool, bool}> */
+    public static function compactionRejectionFollowUps(): iterable
+    {
+        yield 'cancelled session request rejected' => [RunActivityStateEnum::Cancelled, 'compact', true, false];
+        yield 'cancellation still in progress' => [RunActivityStateEnum::Cancelling, 'compact', false, false];
+        yield 'another compaction remains active' => [RunActivityStateEnum::Compacting, 'compact', false, true];
+        yield 'unrelated command rejected' => [RunActivityStateEnum::Cancelled, 'repair', false, true];
     }
 
     public function testQueuedFollowUpDispatchedOnceWhenCompactionCompletes(): void

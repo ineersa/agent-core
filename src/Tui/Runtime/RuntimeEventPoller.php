@@ -248,7 +248,8 @@ final class RuntimeEventPoller
                         $state->activity = RunActivityStateEnum::Starting;
                     }
 
-                    // Auto-dispatch a queued follow-up when compaction completes.
+                    // Auto-dispatch a queued follow-up when compaction settles
+                    // or its pending request is rejected before starting.
                     // The user may have typed a message during the Compacting
                     // window; it was queued in $state->queuedFollowUp instead of
                     // being sent immediately (where it would race the compaction).
@@ -261,7 +262,10 @@ final class RuntimeEventPoller
                     // terminal and may start a new run before Cancelled is
                     // visible in the UI.
                     if ((RuntimeEventTypeEnum::CompactionCompleted->value === $runtimeEvent->type
-                        || RuntimeEventTypeEnum::CompactionFailed->value === $runtimeEvent->type)
+                        || RuntimeEventTypeEnum::CompactionFailed->value === $runtimeEvent->type
+                        || (RuntimeEventTypeEnum::CommandRejected->value === $runtimeEvent->type
+                            && 'compact' === ($runtimeEvent->payload['commandType'] ?? null)
+                            && $compactingBeforeApply && !$state->isCompacting))
                         && null !== $state->queuedFollowUp
                         && null !== $state->handle
                         && RunActivityStateEnum::Cancelling !== $state->activity) {

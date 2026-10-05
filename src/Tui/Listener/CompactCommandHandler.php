@@ -9,6 +9,7 @@ use Ineersa\Tui\Command\CommandResult;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\SlashCommandHandler;
 use Ineersa\Tui\Command\TranscriptMessage;
+use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
 
 /**
@@ -42,7 +43,9 @@ final class CompactCommandHandler implements SlashCommandHandler
 
         if ($this->state->isCompacting) {
             return new TranscriptMessage(
-                'Compaction already in progress.',
+                RunActivityStateEnum::Compacting === $this->state->activity
+                    ? 'Compaction already in progress.'
+                    : 'Compaction already requested.',
                 'system',
                 'error',
             );
@@ -67,7 +70,7 @@ final class CompactCommandHandler implements SlashCommandHandler
         }
 
         return new TranscriptMessage(
-            'Compacting conversation...',
+            'Compaction requested.',
             'system',
         );
     }
