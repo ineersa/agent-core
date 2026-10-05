@@ -102,7 +102,7 @@ final class Version20261004192458Test extends IsolatedKernelTestCase
         $repository->rebindExistingChildToResumeBatch('resume-batch', 1, $childId, 'agent_resume', 'fork', 'resume task', 'test/model', 'medium');
         $recovery = $container->get(DeferredSubagentBatchRecoveryService::class);
         if ($resultCommitted) {
-            $store->append(RunEvent::forAppend($childId, 2, 'agent_command_queued', ['command_kind' => 'follow_up']));
+            $store->append(RunEvent::forAppend($childId, 2, 'agent_command_queued', ['kind' => \Ineersa\AgentCore\Domain\Command\CoreCommandKind::FollowUp]));
             $store->append(RunEvent::forAppend($childId, 2, 'llm_step_completed', [
                 'usage' => ['input_tokens' => 20, 'output_tokens' => 2, 'total_tokens' => 22, 'cost' => 0.02, 'cache_read_tokens' => 18],
                 'assistant_message' => ['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'resumed result']]],
