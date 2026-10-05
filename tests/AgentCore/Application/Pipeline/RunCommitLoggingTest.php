@@ -171,7 +171,7 @@ final class RunCommitLoggingTest extends TestCase
         $store->expects($this->once())->method('assertTransitionReady');
         $store->expects($this->once())->method('appendTransition')->willReturn([$event]);
         $store->expects($this->never())->method('finalizeTransition');
-        $verified = new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO('transition', 0, 10, ['run_id' => 'run-1', 'result_disposition' => $descriptor]);
+        $verified = new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO('transition', 0, ['run_id' => 'run-1', 'result_disposition' => $descriptor]);
         $store->method('verifiedPendingTransition')->willReturn($verified);
         $authorization = $this->createMock(\Ineersa\AgentCore\Contract\Tool\ToolExecutionAuthorizationInterface::class);
         $authorization->expects($this->once())->method('applyDisposition')->with($descriptor, $verified)
@@ -197,7 +197,7 @@ final class RunCommitLoggingTest extends TestCase
         $store->expects($this->once())->method('finalizeVerifiedTransition')->willReturnCallback(function () use (&$disposed): void {
             $this->assertTrue($disposed, 'Required result disposition must be durable before deleting the transition manifest.');
         });
-        $verified = new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO('transition', 0, 10, ['run_id' => 'run-1', 'result_disposition' => $descriptor]);
+        $verified = new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO('transition', 0, ['run_id' => 'run-1', 'result_disposition' => $descriptor]);
         $store->method('verifiedPendingTransition')->willReturn($verified);
         $authorization = $this->createMock(\Ineersa\AgentCore\Contract\Tool\ToolExecutionAuthorizationInterface::class);
         $authorization->expects($this->once())->method('applyDisposition')->with($descriptor, $verified)->willReturnCallback(static function () use (&$disposed): void {

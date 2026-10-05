@@ -11,6 +11,10 @@ use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 /** Worker unit fixtures model an admitted call; durable protocol proofs use the real store. */
 final class TestToolExecutionAuthorization implements ToolExecutionAuthorizationInterface
 {
+    public function assertNoUnknownExecution(string $runId): void
+    {
+    }
+
     public function transferToDeferred(ExecuteToolCall $call, string $deferredId): void
     {
     }

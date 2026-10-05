@@ -15,6 +15,7 @@ Topology map for AgentCore application handlers. Authoritative routing: `config/
 | `LlmStepResult` | `agent.command.bus` (transport `run_control`) | `LlmStepResultHandler` |
 | `ToolCallResult` | `agent.command.bus` (transport `run_control`) | `ToolCallResultHandler` |
 | `ExecutionOutcomeUnknown` | `agent.command.bus` (transport `run_control`) | `ExecutionOutcomeUnknownHandler` |
+| `ToolExecutionOutcomeUnknown` | `agent.command.bus` (transport `run_control`) | `ToolExecutionOutcomeUnknownHandler` |
 | `CompactRun` | `agent.command.bus` (transport `run_control`) | `Ineersa\CodingAgent\Application\Pipeline\CompactRunHandler` (App layer; depends on compaction services) |
 | `CompactionStepResult` | `agent.command.bus` (transport `run_control`) | `Ineersa\CodingAgent\Application\Pipeline\CompactionStepResultHandler` |
 | `CompleteDeferredToolCall` | `agent.command.bus` (transport `run_control`) | `CompleteDeferredToolCallHandler` |
@@ -154,4 +155,8 @@ Execution-bearing work references remain on disk after successful finalization. 
 
 `ExecutionOutcomeUnknownHandler` fails only the matching current invocation. Attached-shell matching checks turn, batch step, attempt, pending call ID, and invocation key. Delayed notices retire through an event-free verified decision. `ConsumeExecutionUnknownDTO` durably acknowledges notices before pending-transition finalization. Acknowledgement does not authorize another execution. Existing cancellation remains admissible while automatic advancement is blocked.
 
-Ordinary-tool Armed and ResultReady batches are rediscovered one snapshot per owner callback. Worker-instance exclusion is retained before entering Running. Ordinary-tool death recovery, explicit unknown-receipt repair, accepted-source fencing, pre-commit mailbox and batch mutations, general coordination recovery, durable hooks, and payload cleanup remain unfinished. The current checkpoint does not provide complete transition recovery or power-loss durability.
+Ordinary-tool Armed and ResultReady batches are rediscovered one snapshot per owner callback. Worker-instance exclusion is retained before entering Running. Recovery holds the dead worker's exclusive lock through snapshot validation and the batch decision. It adopts a complete matching result publication, transfers a verified deferred registration, or records OutcomeUnknown without re-execution. Corrupt result evidence remains unresolved.
+
+Both execution authorities use `RunLockManager` to serialize new claims with unknown decisions. Cross-authority checks stay inside that lock through the claim. `ToolExecutionOutcomeUnknownHandler` fails only the current turn, step, and invocation. Stale notices receive an event-free decision. `ConsumeToolExecutionUnknownDTO` acknowledges the notice against its verified transition, without removing the unknown execution evidence.
+
+Explicit unknown-receipt repair, accepted-source fencing, pre-commit mailbox and batch mutations, general coordination recovery, durable hooks, and payload cleanup remain unfinished. This checkpoint does not provide complete transition recovery or power-loss durability.

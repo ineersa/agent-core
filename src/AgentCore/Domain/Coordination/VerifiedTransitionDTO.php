@@ -8,7 +8,7 @@ namespace Ineersa\AgentCore\Domain\Coordination;
 final readonly class VerifiedTransitionDTO
 {
     /** @param array<string, mixed> $work */
-    public function __construct(public string $identity, public int $startOffset, public int $endOffset, public array $work)
+    public function __construct(public string $identity, public int $startOffset, public array $work)
     {
     }
 }

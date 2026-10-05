@@ -7,7 +7,9 @@ namespace Ineersa\CodingAgent\Session;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Ineersa\AgentCore\Application\Handler\ExecutionOperationMapper;
+use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Coordination\ExecutionAuthorizationStamp;
 use Ineersa\AgentCore\Domain\Coordination\ExecutionResultDispositionDTO;
 use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
@@ -28,7 +30,7 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
     private string $instance;
     private LockInterface $workerLock;
 
-    public function __construct(private Connection $connection, private ToolBatchRunStoragePathsInterface $paths, private Filesystem $filesystem, #[Autowire(service: 'hatfield.controller.session_owner.lock_factory')] private LockFactory $claimLockFactory)
+    public function __construct(private Connection $connection, private ToolBatchRunStoragePathsInterface $paths, private Filesystem $filesystem, #[Autowire(service: 'hatfield.controller.session_owner.lock_factory')] private LockFactory $claimLockFactory, private RunLockManager $runLocks, private ToolBatchStoreInterface $toolBatches)
     {
         $this->instance = bin2hex(random_bytes(32));
         $this->workerLock = $claimLockFactory->createLock('execution-worker.'.$this->instance, ttl: null);
@@ -130,27 +132,7 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
 
     public function claim(ExecutionRequest $request, ExecutionAuthorizationStamp $authorization): string|DurableExecutionResult|null
     {
-        $record = $this->matchingRequest($request, $authorization);
-        if ('ResultReady' === $record['state']) {
-            return $this->reference($record);
-        }
-        if ('Armed' !== $record['state']) {
-            return null;
-        }
-        // Publish no Running receipt until process-owned, nonexpiring exclusion
-        // is held. Retain it for the store/worker lifetime, including exceptions.
-        if (!$this->workerLock->isAcquired() && !$this->workerLock->acquire()) {
-            throw new \RuntimeException('Unable to acquire execution worker ownership.');
-        }
-        $claim = $this->instance.'.'.bin2hex(random_bytes(32));
-        $updated = $this->connection->executeStatement("UPDATE execution_operation SET state = 'Running', claim_token = ?, worker_instance = ?, worker_pid = ?, claim_lock_key = ? WHERE effect_id = ? AND state = 'Armed' AND request_hash = ? AND NOT EXISTS (SELECT 1 FROM execution_operation pending WHERE pending.run_id = ? AND pending.state = 'OutcomeUnknown')", [$claim, $this->instance, getmypid(), $this->instance, $authorization->effectId, $request->sha256, $request->runId()]);
-        if (1 !== $updated) {
-            $current = $this->record($authorization->effectId);
-
-            return 'ResultReady' === $current['state'] ? $this->reference($current) : null;
-        }
-
-        return $claim;
+        return $this->runLocks->synchronized($request->runId(), fn (): string|DurableExecutionResult|null => $this->claimUnderRunLock($request, $authorization));
     }
 
     public function resolveRequest(ExecutionRequest $reference, ExecutionAuthorizationStamp $authorization, string $claim): AbstractAgentBusMessage
@@ -279,6 +261,34 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
         }
     }
 
+    private function claimUnderRunLock(ExecutionRequest $request, ExecutionAuthorizationStamp $authorization): string|DurableExecutionResult|null
+    {
+        $record = $this->matchingRequest($request, $authorization);
+        if ('ResultReady' === $record['state']) {
+            return $this->reference($record);
+        }
+        if ('Armed' !== $record['state']) {
+            return null;
+        }
+        if ($this->toolBatches->hasOutcomeUnknown($request->runId())) {
+            throw new \RuntimeException(\Ineersa\AgentCore\Domain\Message\ExecutionOutcomeUnknown::ERROR_MESSAGE);
+        }
+        // Publish no Running receipt until process-owned, nonexpiring exclusion
+        // is held. Retain it for the store/worker lifetime, including exceptions.
+        if (!$this->workerLock->isAcquired() && !$this->workerLock->acquire()) {
+            throw new \RuntimeException('Unable to acquire execution worker ownership.');
+        }
+        $claim = $this->instance.'.'.bin2hex(random_bytes(32));
+        $updated = $this->connection->executeStatement("UPDATE execution_operation SET state = 'Running', claim_token = ?, worker_instance = ?, worker_pid = ?, claim_lock_key = ? WHERE effect_id = ? AND state = 'Armed' AND request_hash = ? AND NOT EXISTS (SELECT 1 FROM execution_operation pending WHERE pending.run_id = ? AND pending.state = 'OutcomeUnknown')", [$claim, $this->instance, getmypid(), $this->instance, $authorization->effectId, $request->sha256, $request->runId()]);
+        if (1 !== $updated) {
+            $current = $this->record($authorization->effectId);
+
+            return 'ResultReady' === $current['state'] ? $this->reference($current) : null;
+        }
+
+        return $claim;
+    }
+
     /** @return array<string, mixed> */
     private function matchingRequest(ExecutionRequest $reference, ExecutionAuthorizationStamp $authorization): array
     {
@@ -313,6 +323,16 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
      * @return array<string, mixed>
      */
     private function recoverClaim(array $record): array
+    {
+        return $this->runLocks->synchronized($record['run_id'], fn (): array => $this->recoverClaimUnderRunLock($record));
+    }
+
+    /**
+     * @param array<string, mixed> $record
+     *
+     * @return array<string, mixed>
+     */
+    private function recoverClaimUnderRunLock(array $record): array
     {
         $key = $record['claim_lock_key'];
         if (!\is_string($key) || 1 !== preg_match('/^[a-f0-9]{64}$/D', $key) || $key !== $record['worker_instance'] || !\is_string($record['claim_token']) || !str_starts_with($record['claim_token'], $key.'.')) {

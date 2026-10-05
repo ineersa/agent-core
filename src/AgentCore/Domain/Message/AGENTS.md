@@ -10,6 +10,7 @@ Immutable bus payloads and owner-local processor messages under `Ineersa\AgentCo
 - `LlmStepResult`, `ToolCallResult`, `CompactionStepResult`
 - `DurableExecutionResult` carries the sealed result reference for owner consumption
 - `ExecutionOutcomeUnknown` reports a confirmed-dead claim without a recoverable result, not a synthetic execution result
+- `ToolExecutionOutcomeUnknown` reports the same condition for a batch-backed ordinary tool. Its scalar receipt identifies the invocation and claim independently of the current mutable call.
 - `CompleteDeferredToolCall` (deferred completion; identity from durable record)
 - `CommitSubagentProgress` (frozen normalized progress, durable lifecycle and revision identity; App handler commits under the parent owner lock)
 

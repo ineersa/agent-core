@@ -157,6 +157,7 @@ final readonly class RunCommit
     public function assertNoUnknownExecution(string $runId): void
     {
         $this->executionOperations->assertNoUnknownExecution($runId);
+        $this->toolAuthorization->assertNoUnknownExecution($runId);
     }
 
     /** @param list<RunEvent> $events

@@ -21,6 +21,10 @@ interface ToolBatchStoreInterface
 
     public function hasUnresolvedExecution(string $runId, ?string $toolCallId = null): bool;
 
+    public function hasOutcomeUnknown(string $runId): bool;
+
+    public function recoverResultPublication(string $runId, int $turnNo, string $stepId, string $key, string $claim): void;
+
     /**
      * @param callable(?ToolBatchStateDTO): ToolBatchStoreMutation $callback
      */

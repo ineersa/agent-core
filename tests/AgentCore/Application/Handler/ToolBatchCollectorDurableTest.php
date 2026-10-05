@@ -229,6 +229,16 @@ final class ToolBatchCollectorDurableTest extends TestCase
                 return false;
             }
 
+            public function hasOutcomeUnknown(string $runId): bool
+            {
+                return $this->inner->hasOutcomeUnknown($runId);
+            }
+
+            public function recoverResultPublication(string $runId, int $turnNo, string $stepId, string $key, string $claim): void
+            {
+                $this->inner->recoverResultPublication($runId, $turnNo, $stepId, $key, $claim);
+            }
+
             public function deleteAllForRun(string $runId): void
             {
                 $this->inner->deleteAllForRun($runId);

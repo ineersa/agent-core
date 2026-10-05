@@ -9,6 +9,8 @@ use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 
 interface ToolExecutionAuthorizationInterface
 {
+    public function assertNoUnknownExecution(string $runId): void;
+
     public function arm(ExecuteToolCall $call): void;
 
     public function claim(ExecuteToolCall $call): string|ToolCallResult|null;

@@ -88,6 +88,23 @@ final class SessionToolBatchStoreTest extends TestCase
         $this->assertNotNull($this->store->load('run-1', 1, 'step-b'));
     }
 
+    public function testMissingPredecessorRetainsUnpublishedSnapshotEvidence(): void
+    {
+        $this->store->save('run-1', 1, 'step-a', $this->emptyBatch([]));
+        $path = $this->hatfieldSessionStore->resolveSessionsBasePath().'/run-1/runtime/tool-batches/1_'.hash('sha256', 'step-a').'.json';
+        $bytes = file_get_contents($path);
+        $orphan = $path.'.tmp.interrupted';
+        $this->assertTrue(rename($path, $orphan));
+
+        try {
+            $this->store->load('run-1', 1, 'step-a');
+            $this->fail('Missing predecessor must not erase unpublished execution evidence.');
+        } catch (SessionToolBatchStoreException $exception) {
+            $this->assertStringContainsString('unpublished evidence is retained', $exception->getMessage());
+        }
+        $this->assertSame($bytes, file_get_contents($orphan));
+    }
+
     public function testLoadRejectsMismatchedEmbeddedIdentity(): void
     {
         $runId = 'run-1';

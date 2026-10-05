@@ -73,10 +73,39 @@ final class ToolPendingDeliverySubscriberTest extends PerMethodIsolatedKernelTes
         $this->assertSame([], $command->messages);
     }
 
-    private function prepare(): ExecuteToolCall
+    public function testBlockedParentDoesNotStarveReservedChild(): void
     {
         $container = self::getContainer();
-        $run = $container->get(HatfieldSessionStore::class)->createSession('tool rediscovery');
+        $root = $this->prepare();
+        $child = '123e4567-e89b-12d3-a456-426614174000';
+        $artifact = 'agent_tool_child';
+        $container->get(\Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory::class)->register(new \Ineersa\CodingAgent\Agent\Artifact\AgentArtifactEntryDTO(
+            artifactId: $artifact, parentRunId: $root->runId(), agentRunId: $child, agentName: 'scout',
+            kind: \Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum::Subagent, status: \Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum::Pending,
+            paths: \Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathsDTO::forArtifactId($artifact), createdAt: new \DateTimeImmutable(),
+        ));
+        $container->get(\Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository::class)->reserveBatch(
+            $child, $root->runId(), 1, 'launch-child', 0, \Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum::Parallel, 1, new \DateTimeImmutable(),
+            [['batchIndex' => 0, 'childRunId' => $child, 'artifactId' => $artifact, 'agentName' => 'scout', 'task' => 'safe task', 'launchModel' => 'test/model', 'launchReasoning' => 'off']],
+        );
+        $childCall = $this->prepare($child);
+        $container->get(PreparedTransitionEventStoreInterface::class)->appendTransition([], ['run_id' => $root->runId(), 'predecessor_seq' => 0, 'effects' => [$root]]);
+        $command = new TestMessageBus();
+        $execution = new TestMessageBus();
+        $subscriber = $this->subscriber($root->runId(), $command, $execution);
+        $worker = new Worker(['run_control' => new InMemoryTransport()], new TestMessageBus());
+        $subscriber->onStarted(new WorkerStartedEvent($worker));
+        $this->assertSame([], $execution->messages);
+        $subscriber->onRunning(new WorkerRunningEvent($worker, true));
+        $subscriber->onRunning(new WorkerRunningEvent($worker, true));
+        $this->assertCount(1, $execution->messages);
+        $this->assertEquals($childCall, $execution->messages[0]);
+    }
+
+    private function prepare(?string $run = null): ExecuteToolCall
+    {
+        $container = self::getContainer();
+        $run ??= $container->get(HatfieldSessionStore::class)->createSession('tool rediscovery');
         $call = new ExecuteToolCall($run, 1, 'tools', 1, 'invocation', 'read-1', 'read', ['path' => 'fixture'], 0);
         (new ToolBatchCollector(store: $container->get(ToolBatchStoreInterface::class)))->registerExpectedBatch($run, 1, 'tools', [$call]);
         $container->get(ToolExecutionAuthorization::class)->arm($call);

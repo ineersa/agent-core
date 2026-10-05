@@ -21,6 +21,7 @@ final class ToolPendingDeliverySubscriber
 {
     private string $runCursor = '';
     private string $fileCursor = '';
+    private bool $advanceRun = false;
 
     public function __construct(
         private readonly Connection $connection,
@@ -39,6 +40,7 @@ final class ToolPendingDeliverySubscriber
     {
         if (\in_array('run_control', $event->getWorker()->getMetadata()->getTransportNames(), true)) {
             $this->runCursor = $this->fileCursor = '';
+            $this->advanceRun = false;
             $this->publishNext();
         }
     }
@@ -57,6 +59,13 @@ final class ToolPendingDeliverySubscriber
             return;
         }
         try {
+            if ($this->advanceRun) {
+                $this->runCursor = $this->nextRun($this->runCursor) ?? '';
+                $this->fileCursor = '';
+                $this->advanceRun = false;
+
+                return;
+            }
             if ('' === $this->runCursor) {
                 $this->runCursor = $this->nextRun('') ?? '';
                 if ('' === $this->runCursor) {
@@ -72,12 +81,22 @@ final class ToolPendingDeliverySubscriber
 
                 return;
             }
-            foreach ($this->authorization->pendingDeliveries($snapshot[1]->batchState) as $message) {
-                ($message instanceof ToolCallResult ? $this->commandBus : $this->executionBus)->dispatch($message);
+            [$filename, $envelope] = $snapshot;
+            $turn = $envelope->turnNo;
+            $step = $envelope->stepId;
+            unset($snapshot, $envelope);
+            $this->authorization->recoverRunning($this->runCursor, $turn, $step);
+            $batch = $this->batches->load($this->runCursor, $turn, $step);
+            if (null !== $batch) {
+                foreach ($this->authorization->pendingDeliveries($this->runCursor, $turn, $step, $batch) as $message) {
+                    ($message instanceof ToolCallResult || $message instanceof \Ineersa\AgentCore\Domain\Message\ToolExecutionOutcomeUnknown ? $this->commandBus : $this->executionBus)->dispatch($message);
+                }
             }
-            // Delivery failure retains the cursor so the same snapshot is retried.
-            $this->fileCursor = $snapshot[0];
+            $this->fileCursor = $filename;
         } catch (\Throwable $exception) {
+            // Failed runs remain discoverable on the next sweep, without
+            // starving reserved children behind an unfinished parent transition.
+            $this->advanceRun = true;
             $this->logger->warning('tool_execution.pending_delivery_failed', [
                 'component' => 'tool_pending_delivery', 'event_type' => 'tool_execution.pending_delivery_failed',
                 'session_id' => $this->sessionId, 'run_id' => $this->runCursor, 'exception_class' => $exception::class,

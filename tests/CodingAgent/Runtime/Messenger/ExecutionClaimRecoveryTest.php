@@ -147,7 +147,7 @@ final class ExecutionClaimRecoveryTest extends IsolatedKernelTestCase
     {
         $container = self::getContainer();
 
-        return new DoctrineExecutionOperationStore($connection, $container->get(ToolBatchRunStoragePathsInterface::class), new Filesystem(), $container->get('hatfield.controller.session_owner.lock_factory'));
+        return new DoctrineExecutionOperationStore($connection, $container->get(ToolBatchRunStoragePathsInterface::class), new Filesystem(), $container->get('hatfield.controller.session_owner.lock_factory'), $container->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class), $container->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class));
     }
 
     private function consumeUnknown(DoctrineExecutionOperationStore $store, ExecutionOutcomeUnknown $notice): void

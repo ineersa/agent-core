@@ -110,6 +110,12 @@ final readonly class RunOrchestrator
         $this->runMessageProcessor->process('execution.outcome_unknown', $message);
     }
 
+    #[AsMessageHandler(bus: 'agent.command.bus')]
+    public function onToolExecutionOutcomeUnknown(\Ineersa\AgentCore\Domain\Message\ToolExecutionOutcomeUnknown $message): void
+    {
+        $this->runMessageProcessor->process('tool_execution.outcome_unknown', $message);
+    }
+
     /**
      * Handles ToolCallResult message to process tool execution outcomes.
      */

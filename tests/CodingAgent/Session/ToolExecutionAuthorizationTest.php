@@ -330,7 +330,7 @@ final class ToolExecutionAuthorizationTest extends PerMethodIsolatedKernelTestCa
 
     private function gate(): ToolExecutionAuthorization
     {
-        return new ToolExecutionAuthorization(self::getContainer()->get(ToolBatchStoreInterface::class), self::getContainer()->get(SerializerInterface::class), self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class), self::getContainer()->get('hatfield.controller.session_owner.lock_factory'));
+        return new ToolExecutionAuthorization(self::getContainer()->get(ToolBatchStoreInterface::class), self::getContainer()->get(SerializerInterface::class), self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class), self::getContainer()->get('hatfield.controller.session_owner.lock_factory'), self::getContainer()->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class), self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class));
     }
 
     private function prepare(ExecuteToolCall $call): void

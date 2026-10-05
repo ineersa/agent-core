@@ -21,7 +21,7 @@ final readonly class ToolExecutionAuthorization implements \Ineersa\AgentCore\Co
     private string $instanceToken;
     private LockInterface $workerLock;
 
-    public function __construct(private ToolBatchStoreInterface $store, private SerializerInterface $serializer, private \Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface $deferredRepository, #[Autowire(service: 'hatfield.controller.session_owner.lock_factory')] private LockFactory $claimLockFactory)
+    public function __construct(private ToolBatchStoreInterface $store, private SerializerInterface $serializer, private \Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface $deferredRepository, #[Autowire(service: 'hatfield.controller.session_owner.lock_factory')] private LockFactory $claimLockFactory, private \Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface $executionOperations, private RunLockManager $runLocks)
     {
         $this->instanceToken = bin2hex(random_bytes(32));
         $this->workerLock = $claimLockFactory->createLock('tool-execution-worker.'.$this->instanceToken, ttl: null);
@@ -33,7 +33,7 @@ final readonly class ToolExecutionAuthorization implements \Ineersa\AgentCore\Co
             $this->requireCall($batch, $call);
             $key = $this->identity($call);
             if (!isset($batch->executionAuthorizations[$key])) {
-                $batch->executionAuthorizations[$key] = ['state' => 'Armed', 'claim' => null];
+                $batch->executionAuthorizations[$key] = ['state' => 'Armed', 'claim' => null, 'invocation' => ['attempt' => $call->attempt(), 'key' => $call->idempotencyKey(), 'call_id' => $call->toolCallId]];
             }
 
             return new ToolBatchStoreMutation(null, $batch);
@@ -43,45 +43,13 @@ final readonly class ToolExecutionAuthorization implements \Ineersa\AgentCore\Co
     /** A duplicate Running delivery returns null. A durable result is returned unchanged. */
     public function claim(ExecuteToolCall $call): string|ToolCallResult|null
     {
-        // Keep exclusion for the worker instance lifetime, including failures
-        // after external execution. Lease expiry or a PID cannot prove death.
-        if (!$this->workerLock->acquire()) {
-            throw new \RuntimeException('Unable to acquire tool execution worker ownership.');
-        }
-
-        return $this->store->mutate($call->runId(), $call->turnNo(), $call->stepId(), function (?ToolBatchStateDTO $batch) use ($call): ToolBatchStoreMutation {
-            if (null === $batch) {
-                throw new \RuntimeException('Tool execution is missing or differs from its durable batch invocation.');
-            }
-            $key = $this->identity($call);
-            $authorization = $batch->executionAuthorizations[$key] ?? null;
-            if (null === $authorization) {
-                throw new \RuntimeException('Tool execution has no owner authorization.');
-            }
-            if ('ResultReady' === $authorization['state']) {
-                $result = $batch->executionResults[$key] ?? null;
-                if (!$result instanceof ToolCallResult) {
-                    throw new \RuntimeException('Authorized tool result is missing.');
-                }
-
-                return new ToolBatchStoreMutation($result);
-            }
-            if ('Armed' !== $authorization['state']) {
-                return new ToolBatchStoreMutation(null);
-            }
-            $storedCall = $batch->calls[$call->toolCallId] ?? null;
-            if (!$storedCall instanceof ExecuteToolCall || $this->identity($storedCall) !== $key) {
-                throw new \RuntimeException('Tool execution differs from its current durable invocation.');
-            }
-            $claim = $this->instanceToken.'.'.bin2hex(random_bytes(32));
-            $batch->executionAuthorizations[$key] = ['state' => 'Running', 'claim' => $claim, 'claim_lock_key' => $this->instanceToken];
-
-            return new ToolBatchStoreMutation($claim, $batch);
-        });
+        // Both execution authorities share owner serialization for unknown
+        // decisions and claims; a check before an unrelated claim can race.
+        return $this->runLocks->synchronized($call->runId(), fn (): string|ToolCallResult|null => $this->claimUnderRunLock($call));
     }
 
-    /** @return iterable<ExecuteToolCall|ToolCallResult> */
-    public function pendingDeliveries(ToolBatchStateDTO $batch): iterable
+    /** @return iterable<ExecuteToolCall|ToolCallResult|\Ineersa\AgentCore\Domain\Message\ToolExecutionOutcomeUnknown> */
+    public function pendingDeliveries(string $runId, int $turnNo, string $stepId, ToolBatchStateDTO $batch): iterable
     {
         foreach ($batch->executionAuthorizations as $key => $authorization) {
             if ('Armed' === $authorization['state']) {
@@ -97,7 +65,71 @@ final readonly class ToolExecutionAuthorization implements \Ineersa\AgentCore\Co
                     throw new \RuntimeException('Authorized tool result is missing.');
                 }
                 yield $result;
+            } elseif ('OutcomeUnknown' === $authorization['state'] && !isset($authorization['unknown_notice_transition'])) {
+                $invocation = $authorization['invocation'] ?? null;
+                if (!\is_array($invocation) || !\is_int($invocation['attempt'] ?? null) || !\is_string($invocation['key'] ?? null) || !\is_string($invocation['call_id'] ?? null) || !\is_string($authorization['claim'])) {
+                    throw new \RuntimeException('Unknown tool execution lacks its scalar invocation receipt.');
+                }
+                yield new \Ineersa\AgentCore\Domain\Message\ToolExecutionOutcomeUnknown($runId, $turnNo, $stepId, $invocation['attempt'], $invocation['key'], $invocation['call_id'], $key, $authorization['claim']);
             }
+        }
+    }
+
+    public function recoverRunning(string $runId, int $turnNo, string $stepId): void
+    {
+        $this->runLocks->synchronized($runId, fn () => $this->recoverRunningUnderRunLock($runId, $turnNo, $stepId));
+    }
+
+    public function unknownNoticePending(\Ineersa\AgentCore\Domain\Message\ToolExecutionOutcomeUnknown $notice): bool
+    {
+        $batch = $this->store->load($notice->runId(), $notice->turnNo(), $notice->stepId());
+        $receipt = $batch?->executionAuthorizations[$notice->authorizationId] ?? null;
+        if (null === $receipt || 'OutcomeUnknown' !== $receipt['state'] || $receipt['claim'] !== $notice->claimToken
+            || ($receipt['invocation'] ?? null) !== ['attempt' => $notice->attempt(), 'key' => $notice->idempotencyKey(), 'call_id' => $notice->toolCallId]) {
+            throw new \RuntimeException('Unknown tool notice differs from its durable receipt.');
+        }
+
+        return !isset($receipt['unknown_notice_transition']);
+    }
+
+    public function matchesCurrentInvocation(\Ineersa\AgentCore\Domain\Message\ToolExecutionOutcomeUnknown $notice): bool
+    {
+        $call = $this->store->load($notice->runId(), $notice->turnNo(), $notice->stepId())?->calls[$notice->toolCallId] ?? null;
+
+        return $call instanceof ExecuteToolCall && $this->identity($call) === $notice->authorizationId;
+    }
+
+    public function consumeUnknownNotice(\Ineersa\AgentCore\Domain\Coordination\ConsumeToolExecutionUnknownDTO $action, \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO $transition): void
+    {
+        $matched = false;
+        foreach ($transition->work['actions'] ?? [] as $expected) {
+            if ($expected instanceof \Ineersa\AgentCore\Domain\Coordination\ConsumeToolExecutionUnknownDTO && (array) $expected->notice === (array) $action->notice) {
+                $matched = true;
+            }
+        }
+        if (!$matched || ($transition->work['run_id'] ?? null) !== $action->notice->runId()) {
+            throw new \RuntimeException('Unknown tool acknowledgement has no verified owner decision.');
+        }
+        $this->unknownNoticePending($action->notice);
+        $notice = $action->notice;
+        $this->store->mutate($notice->runId(), $notice->turnNo(), $notice->stepId(), static function (?ToolBatchStateDTO $batch) use ($notice, $transition): ToolBatchStoreMutation {
+            $receipt = $batch?->executionAuthorizations[$notice->authorizationId] ?? null;
+            if (null === $batch || null === $receipt || 'OutcomeUnknown' !== $receipt['state'] || $receipt['claim'] !== $notice->claimToken) {
+                throw new \RuntimeException('Unknown tool acknowledgement lost its durable receipt.');
+            }
+            if (isset($receipt['unknown_notice_transition']) && $receipt['unknown_notice_transition'] !== $transition->identity) {
+                throw new \RuntimeException('Conflicting unknown tool acknowledgement.');
+            }
+            $batch->executionAuthorizations[$notice->authorizationId] = [...$receipt, 'unknown_notice_transition' => $transition->identity];
+
+            return new ToolBatchStoreMutation(null, $batch);
+        });
+    }
+
+    public function assertNoUnknownExecution(string $runId): void
+    {
+        if ($this->store->hasOutcomeUnknown($runId)) {
+            throw new \RuntimeException(\Ineersa\AgentCore\Domain\Message\ExecutionOutcomeUnknown::ERROR_MESSAGE);
         }
     }
 
@@ -255,6 +287,101 @@ final readonly class ToolExecutionAuthorization implements \Ineersa\AgentCore\Co
 
             return new ToolBatchStoreMutation(null, $batch);
         });
+    }
+
+    private function claimUnderRunLock(ExecuteToolCall $call): string|ToolCallResult|null
+    {
+        // Keep exclusion for the worker instance lifetime, including failures
+        // after external execution. Lease expiry or a PID cannot prove death.
+        if (!$this->workerLock->acquire()) {
+            throw new \RuntimeException('Unable to acquire tool execution worker ownership.');
+        }
+
+        return $this->store->mutate($call->runId(), $call->turnNo(), $call->stepId(), function (?ToolBatchStateDTO $batch) use ($call): ToolBatchStoreMutation {
+            if (null === $batch) {
+                throw new \RuntimeException('Tool execution is missing or differs from its durable batch invocation.');
+            }
+            $key = $this->identity($call);
+            $authorization = $batch->executionAuthorizations[$key] ?? null;
+            if (null === $authorization) {
+                throw new \RuntimeException('Tool execution has no owner authorization.');
+            }
+            if ('ResultReady' === $authorization['state']) {
+                $result = $batch->executionResults[$key] ?? null;
+                if (!$result instanceof ToolCallResult) {
+                    throw new \RuntimeException('Authorized tool result is missing.');
+                }
+
+                return new ToolBatchStoreMutation($result);
+            }
+            if ('Armed' !== $authorization['state']) {
+                return new ToolBatchStoreMutation(null);
+            }
+            $this->executionOperations->assertNoUnknownExecution($call->runId());
+            foreach ($batch->executionAuthorizations as $pending) {
+                if ('OutcomeUnknown' === $pending['state']) {
+                    throw new \RuntimeException(\Ineersa\AgentCore\Domain\Message\ExecutionOutcomeUnknown::ERROR_MESSAGE);
+                }
+            }
+            $storedCall = $batch->calls[$call->toolCallId] ?? null;
+            if (!$storedCall instanceof ExecuteToolCall || $this->identity($storedCall) !== $key) {
+                throw new \RuntimeException('Tool execution differs from its current durable invocation.');
+            }
+            $claim = $this->instanceToken.'.'.bin2hex(random_bytes(32));
+            $batch->executionAuthorizations[$key] = [...$authorization, 'state' => 'Running', 'claim' => $claim, 'claim_lock_key' => $this->instanceToken];
+
+            return new ToolBatchStoreMutation($claim, $batch);
+        });
+    }
+
+    private function recoverRunningUnderRunLock(string $runId, int $turnNo, string $stepId): void
+    {
+        $batch = $this->store->load($runId, $turnNo, $stepId);
+        $receipts = $batch->executionAuthorizations ?? [];
+        unset($batch);
+        foreach ($receipts as $key => $receipt) {
+            if ('Running' !== $receipt['state']) {
+                continue;
+            }
+            $owner = $receipt['claim_lock_key'] ?? null;
+            if (!\is_string($owner) || 1 !== preg_match('/^[a-f0-9]{64}$/D', $owner) || !\is_string($receipt['claim']) || !str_starts_with($receipt['claim'], $owner.'.')) {
+                throw new \RuntimeException('Running tool execution has no verifiable worker ownership.');
+            }
+            $lock = $this->claimLockFactory->createLock('tool-execution-worker.'.$owner, ttl: null);
+            if (!$lock->acquire()) {
+                continue;
+            }
+            try {
+                $this->store->recoverResultPublication($runId, $turnNo, $stepId, $key, $receipt['claim']);
+                $this->store->mutate($runId, $turnNo, $stepId, function (?ToolBatchStateDTO $current) use ($runId, $turnNo, $stepId, $key, $receipt): ToolBatchStoreMutation {
+                    $actual = $current?->executionAuthorizations[$key] ?? null;
+                    if (null === $current || $actual !== $receipt) {
+                        return new ToolBatchStoreMutation(null);
+                    }
+                    if (isset($current->executionResults[$key])) {
+                        // Result and ResultReady publish together. Running with a
+                        // result cannot be an interrupted successful publication.
+                        throw new \RuntimeException('Running tool execution has inconsistent durable result evidence.');
+                    }
+                    $identity = $actual['invocation'] ?? null;
+                    if (null === $identity) {
+                        throw new \RuntimeException('Running tool execution lacks its scalar invocation receipt.');
+                    }
+                    $deferred = $this->deferredRepository->findByRunAndToolCall($runId, $identity['call_id']);
+                    $storedCall = $current->calls[$identity['call_id']] ?? null;
+                    if (null !== $deferred && $storedCall instanceof ExecuteToolCall && $this->identity($storedCall) === $key
+                        && $deferred->turnNo === $turnNo && $deferred->stepId === $stepId && $deferred->attempt === $identity['attempt'] && $deferred->idempotencyKey === $identity['key']) {
+                        $current->executionAuthorizations[$key] = [...$actual, 'state' => 'Deferred', 'deferred_id' => $deferred->deferredId];
+                    } else {
+                        $current->executionAuthorizations[$key] = [...$actual, 'state' => 'OutcomeUnknown'];
+                    }
+
+                    return new ToolBatchStoreMutation(null, $current);
+                });
+            } finally {
+                $lock->release();
+            }
+        }
     }
 
     private function resultHash(ToolCallResult $result): string
