@@ -108,9 +108,9 @@ final class CommitSubagentProgressIntegrationTest extends PerMethodIsolatedKerne
         $active = self::getContainer()->get(ActiveRunContextInterface::class);
         $dispatcher = new \Ineersa\AgentCore\Application\Handler\StepDispatcher($bus, $bus);
         $commit = new \Ineersa\AgentCore\Application\Pipeline\RunCommit($active, $store, $dispatcher,
-            new \Ineersa\AgentCore\Tests\Support\TestLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore());
+            new \Ineersa\AgentCore\Tests\Support\TestLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(), actionValidator: self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\CoordinationActionValidator::class));
         $processor = new \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor($active,
-            self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class), $commit, $dispatcher,
+            self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class), $commit,
             [new \Ineersa\CodingAgent\Application\Pipeline\CommitSubagentProgressHandler(self::getContainer()->get(DeferredSubagentBatchRepository::class), $bus)]);
         $this->expectExceptionMessage('canonical append failed');
         try {
@@ -120,6 +120,29 @@ final class CommitSubagentProgressIntegrationTest extends PerMethodIsolatedKerne
             $this->assertSame(0, self::getContainer()->get(ActiveRunContextInterface::class)->requireLoaded('parent')->lastSeq);
             $this->assertSame([], $this->sink->emitted);
         }
+    }
+
+    public function testPreparedApplicationProgressActionRecoversWithoutRebuildingEvents(): void
+    {
+        $this->seed();
+        $container = self::getContainer();
+        $state = $container->get(ActiveRunContextInterface::class)->requireLoaded('parent');
+        $prepared = $container->get(\Ineersa\CodingAgent\Application\Pipeline\CommitSubagentProgressHandler::class)->handle($this->command(1), $state);
+        $store = $container->get(\Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface::class);
+        $store->appendTransition($prepared->events, ['run_id' => 'parent', 'predecessor_seq' => 0, 'actions' => $prepared->postCommitActions]);
+        $repository = $container->get(DeferredSubagentBatchRepository::class);
+        $this->assertSame(0, $repository->findByLifecycleId('batch')->deliveredProgressRevision);
+        $this->assertNull($store->latestSequenceFor('parent'));
+        $recovery = $container->get(\Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery::class);
+        $recovery->recover('parent');
+        $this->assertSame(1, $repository->findByLifecycleId('batch')->deliveredProgressRevision);
+        $this->assertSame(1, $store->latestSequenceFor('parent'));
+        $this->assertNull($store->verifiedPendingTransition('parent'));
+        $sent = $container->get('messenger.transport.run_control')->getSent();
+        $this->assertCount(1, $sent);
+        $this->assertInstanceOf(\Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Lifecycle\DeliverDeferredSubagentBatchLifecycleMessage::class, $sent[0]->getMessage());
+        $recovery->recover('parent');
+        $this->assertCount(1, $container->get('messenger.transport.run_control')->getSent());
     }
 
     public function testOldParentTurnCannotPublishIntoCurrentInvocation(): void

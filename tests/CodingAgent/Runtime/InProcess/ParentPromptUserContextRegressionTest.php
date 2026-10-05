@@ -194,7 +194,6 @@ final class ParentRegressionCapturingRunner implements AgentRunnerInterface
             activeRunContext: $activeRunContext,
             runLockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
             runCommit: $runCommit,
-            stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
             handlers: [
                 new StartRunHandler(new EventFactory(), TestSerializerFactory::normalizer()),
             ],

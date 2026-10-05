@@ -527,6 +527,10 @@ final class AdvanceRunHandlerTest extends TestCase
             'Effects must include a CompactRun message.',
         );
 
+        foreach ($result->postCommitActions as $action) {
+            \Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::run($action, store: $commandStore);
+        }
+
         // Compact command should be drained from the store
         $this->assertCount(0, $commandStore->pending('run-compact-completed'),
             'Compact command must be drained (marked applied).',

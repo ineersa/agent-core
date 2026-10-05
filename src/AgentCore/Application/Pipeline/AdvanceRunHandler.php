@@ -35,6 +35,11 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
 
     public function handle(object $message, RunState $state): HandlerResult
     {
+        return \Ineersa\AgentCore\Application\Handler\CommandMailboxCoordinationFactory::finalize($this->prepare($message, $state));
+    }
+
+    private function prepare(object $message, RunState $state): HandlerResult
+    {
         if (!$message instanceof AdvanceRun) {
             throw new \InvalidArgumentException('AdvanceRunHandler can only handle AdvanceRun messages.');
         }

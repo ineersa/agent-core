@@ -391,7 +391,7 @@ final class CommandMailboxPolicyTest extends TestCase
         $this->assertSame('Invalid command payload: missing message envelope.', $rejected[0]['payload']['reason']);
         $this->assertSame('env-malformed', $rejected[1]['payload']['idempotency_key']);
         $this->assertSame('Invalid command payload: malformed message envelope.', $rejected[1]['payload']['reason']);
-        $this->assertSame([], $commandStore->pending($runId), 'Both commands are marked rejected, not left pending.');
+        $this->assertCount(2, $commandStore->pending($runId), 'Preparation must retain commands until canonical acceptance.');
     }
 
     private function currentTurnNo(CommandMailboxFixture $fixture, string $runId): int
@@ -432,7 +432,6 @@ final class CommandMailboxPolicyTest extends TestCase
             activeRunContext: $activeRunContext,
             runLockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
             runCommit: $runCommit,
-            stepDispatcher: $stepDispatcher,
             handlers: [
                 new StartRunHandler(
                     eventFactory: new \Ineersa\AgentCore\Domain\Event\EventFactory(),

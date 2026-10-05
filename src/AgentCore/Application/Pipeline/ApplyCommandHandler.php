@@ -64,6 +64,11 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
 
     public function handle(object $message, RunState $state): HandlerResult
     {
+        return \Ineersa\AgentCore\Application\Handler\CommandMailboxCoordinationFactory::finalize($this->prepare($message, $state));
+    }
+
+    private function prepare(object $message, RunState $state): HandlerResult
+    {
         if (!$message instanceof ApplyCommand) {
             throw new \InvalidArgumentException('ApplyCommandHandler can only handle ApplyCommand messages.');
         }
@@ -145,10 +150,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             ),
         );
 
-        if (!$this->commandStore->enqueue($pendingCommand)) {
-            return new HandlerResult();
-        }
-
         $nextState = $state->with([
             'version' => $state->version + 1,
             'lastSeq' => $state->lastSeq + 1,
@@ -180,7 +181,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         // dispatch AdvanceRun while the prompt tail contains unresolved
         // assistant tool_calls, causing the provider to reject the run
         // with "insufficient tool messages following tool_calls message".
-        $postCommitActions = [];
+        $postCommitActions = [new \Ineersa\AgentCore\Domain\Coordination\EnqueueCommandDTO($pendingCommand)];
         // Active runs (Running, Cancelling, or Compacting) queue the command
         // for the next safe boundary.  Non-active runs apply immediately.
         $isActive = \in_array($state->status, [RunStatus::Running, RunStatus::Cancelling, RunStatus::Compacting], true);
@@ -201,7 +202,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
     private function rejectCommand(RunState $state, ApplyCommand $message, string $reason): HandlerResult
     {
         $runId = $message->runId();
-        $this->commandStore->markRejected($runId, $message->idempotencyKey(), $reason);
 
         $nextState = $state->with([
             'version' => $state->version + 1,
@@ -234,8 +234,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             ? $message->payload['reason']
             : 'Run cancelled by command.';
 
-        $this->commandStore->markApplied($runId, $message->idempotencyKey());
-
         // Reject stale queued user-input commands after cancel (#152).
         // AppendMessage stays pending in the mailbox for post-cancel AdvanceRun drain.
         $rejectedCommands = [];
@@ -253,7 +251,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 continue;
             }
 
-            $this->commandStore->markRejected($runId, $pendingCommand->idempotencyKey, $cancelRejectReason);
             $rejectedCommands[] = $pendingCommand;
         }
 
@@ -282,14 +279,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         // Repeated cancel during Cancelling should not be rejected.
         if (RunStatus::Cancelling === $state->status) {
             if (!self::hasActiveCancellationWork($state)) {
-                $terminalSpecs = [[
-                    'type' => RunEventTypeEnum::AgentCommandApplied->value,
-                    'payload' => [
-                        'kind' => $message->kind,
-                        'idempotency_key' => $message->idempotencyKey(),
-                        'options' => [],
-                    ],
-                ], [
+                $terminalSpecs = [...$eventSpecs, [
                     'type' => RunEventTypeEnum::AgentEnd->value,
                     'payload' => [
                         'reason' => 'cancelled',
@@ -324,14 +314,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 );
             }
 
-            $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, [[
-                'type' => RunEventTypeEnum::AgentCommandApplied->value,
-                'payload' => [
-                    'kind' => $message->kind,
-                    'idempotency_key' => $message->idempotencyKey(),
-                    'options' => [],
-                ],
-            ]]);
+            $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
 
             $noopState = $state->with([
                 'version' => $state->version + 1,
@@ -468,10 +451,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             ),
         );
 
-        if (!$this->commandStore->enqueue($pendingCommand)) {
-            return new HandlerResult();
-        }
-
         $nextState = $state->with([
             'version' => $state->version + 1,
             'lastSeq' => $state->lastSeq + 1,
@@ -493,6 +472,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         return new HandlerResult(
             nextState: $nextState,
             events: [$queuedEvent],
+            postCommitActions: [new \Ineersa\AgentCore\Domain\Coordination\EnqueueCommandDTO($pendingCommand)],
         );
     }
 
@@ -591,7 +571,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         }
 
         $runId = $message->runId();
-        $this->commandStore->markApplied($runId, $message->idempotencyKey());
 
         $messages = $state->messages;
         $messages[] = $humanResponseMessage;
@@ -737,8 +716,8 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             ],
         );
 
-        // markApplied only after postCommitEffects succeed so Messenger redelivery can
-        // redrive the exact ExecuteToolCall from durable batch answer metadata.
+        // Mailbox acceptance and the exact resumed effect share the pending plan.
+        // A dispatch failure recovers that plan, not another command preparation.
         return new HandlerResult(
             nextState: $nextState,
             events: [$event],
@@ -867,7 +846,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
 
         if (!$isActive) {
             // Terminal/safe boundary: apply immediately.
-            $this->commandStore->markApplied($runId, $message->idempotencyKey());
 
             $nextState = $state->with([
                 'version' => $state->version + 1,
@@ -907,10 +885,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             payload: $message->payload,
         );
 
-        if (!$this->commandStore->enqueue($pendingCommand)) {
-            return new HandlerResult();
-        }
-
         $nextState = $state->with([
             'version' => $state->version + 1,
             'lastSeq' => $state->lastSeq + 1,
@@ -931,6 +905,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         return new HandlerResult(
             nextState: $nextState,
             events: [$queuedEvent],
+            postCommitActions: [new \Ineersa\AgentCore\Domain\Coordination\EnqueueCommandDTO($pendingCommand)],
         );
     }
 

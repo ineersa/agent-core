@@ -24,6 +24,8 @@ final class CoordinationActionTestRunner
             new \Symfony\Component\Messenger\Middleware\HandleMessageMiddleware(new \Symfony\Component\Messenger\Handler\HandlersLocator([
                 DispatchCoordinationMessageDTO::class => [$handler->dispatchMessage(...)],
                 MarkCommandAppliedDTO::class => [$handler->markCommandApplied(...)],
+                \Ineersa\AgentCore\Domain\Coordination\EnqueueCommandDTO::class => [$handler->enqueueCommand(...)],
+                \Ineersa\AgentCore\Domain\Coordination\RejectCommandDTO::class => [$handler->rejectCommand(...)],
                 RegisterToolBatchDTO::class => [$handler->registerToolBatch(...)],
             ])),
         ]);
@@ -36,6 +38,8 @@ final class CoordinationActionTestRunner
         match (true) {
             $action instanceof DispatchCoordinationMessageDTO => $handler->dispatchMessage($action),
             $action instanceof MarkCommandAppliedDTO => $handler->markCommandApplied($action),
+            $action instanceof \Ineersa\AgentCore\Domain\Coordination\EnqueueCommandDTO => $handler->enqueueCommand($action),
+            $action instanceof \Ineersa\AgentCore\Domain\Coordination\RejectCommandDTO => $handler->rejectCommand($action),
             $action instanceof RegisterToolBatchDTO => $handler->registerToolBatch($action),
             default => throw new \LogicException('Unsupported test coordination action.'),
         };

@@ -134,18 +134,18 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         $handler = $this->createMock(\Ineersa\AgentCore\Application\Pipeline\RunMessageHandler::class);
         $handler->method('supports')->willReturn(true);
         $handler->expects($this->once())->method('handle')->willReturn(new \Ineersa\AgentCore\Application\Pipeline\HandlerResult(postCommitActions: [new \Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO(new \Ineersa\AgentCore\Domain\Message\AdvanceRun($run, 0, 'user-advance', 1, 'user-advance'), 'advance failed')]));
-        $dispatcher = new \Ineersa\AgentCore\Application\Handler\StepDispatcher(\Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::bus($this->autoCompactionBus), $this->autoCompactionBus);
         $processor = new \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor(
             $active,
             self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class),
             self::getContainer()->get(\Ineersa\AgentCore\Application\Pipeline\RunCommit::class),
-            $dispatcher,
             [$handler],
             self::getContainer()->get(\Ineersa\AgentCore\Contract\History\HistoryTailDiscardInterface::class),
         );
         $processor->process('user-command', new ApplyCommand($run, 0, 'steer', 1, 'steer', 'steer'));
-        $this->assertCount(1, $this->autoCompactionBus->messages);
-        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\AdvanceRun::class, $this->autoCompactionBus->messages[0]);
+        $sent = self::getContainer()->get('messenger.transport.run_control')->getSent();
+        $this->assertCount(1, $sent);
+        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\AdvanceRun::class, $sent[0]->getMessage());
+        $this->assertSame([], $this->autoCompactionBus->messages);
         $this->assertSame(0, $this->afterTurnCount);
         $this->assertSame(['continuation_generation' => $sessions->continuationGeneration($run)], $sessions->findSession($run)->reasoningBaseline);
         $this->autoCompactionBus->messages = [];

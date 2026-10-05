@@ -56,7 +56,6 @@ final class PipelineCapturingAgentRunner implements AgentRunnerInterface
             activeRunContext: $activeRunContext,
             runLockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
             runCommit: $runCommit,
-            stepDispatcher: new StepDispatcher(new TestMessageBus(), $executionBus),
             handlers: [
                 new StartRunHandler(
                     eventFactory: new EventFactory(),

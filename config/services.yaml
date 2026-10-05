@@ -61,6 +61,9 @@ services:
     Ineersa\AgentCore\Application\Pipeline\RunMessageHandler:
       tags: ['agent_core.run_message_handler']
 
+    Ineersa\AgentCore\Contract\CoordinationActionValidatorInterface:
+      tags: ['agent_core.coordination_action_validator']
+
     Ineersa\AgentCore\Contract\Extension\CommandHandlerInterface:
       tags: ['agent_core.command_handler']
 

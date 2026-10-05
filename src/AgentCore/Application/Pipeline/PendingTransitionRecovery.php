@@ -10,10 +10,7 @@ use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutionAuthorizationInterface;
-use Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO;
 use Ineersa\AgentCore\Domain\Coordination\ExecutionResultDispositionDTO;
-use Ineersa\AgentCore\Domain\Coordination\MarkCommandAppliedDTO;
-use Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO;
 use Ineersa\AgentCore\Domain\Coordination\ToolResultDispositionDTO;
 use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
@@ -22,7 +19,7 @@ use Ineersa\AgentCore\Domain\Message\RunControlTransitionMessageInterface;
 /** Owner-only reconciliation. Unsupported execution stays recovery-required. */
 final readonly class PendingTransitionRecovery
 {
-    public function __construct(private PreparedTransitionEventStoreInterface $store, private ToolExecutionAuthorizationInterface $authorization, private StepDispatcher $dispatcher, private ActiveRunContextInterface $registry, private ExecutionOperationStoreInterface $executionOperations)
+    public function __construct(private PreparedTransitionEventStoreInterface $store, private ToolExecutionAuthorizationInterface $authorization, private StepDispatcher $dispatcher, private ActiveRunContextInterface $registry, private ExecutionOperationStoreInterface $executionOperations, private \Ineersa\AgentCore\Application\Handler\CoordinationActionValidator $actionValidator = new \Ineersa\AgentCore\Application\Handler\CoordinationActionValidator())
     {
     }
 
@@ -43,21 +40,7 @@ final readonly class PendingTransitionRecovery
             $this->requireGated($effect);
         }
         foreach ($actions as $action) {
-            if ($action instanceof DispatchCoordinationMessageDTO) {
-                $this->requireGated($action->message);
-                if (ExecutionOperationMapper::supports($action->message)) {
-                    throw new \RuntimeException('Execution authorization requires a direct pending effect.');
-                }
-            } elseif ($action instanceof RegisterToolBatchDTO) {
-                foreach ($action->effects as $effect) {
-                    $this->requireGated($effect);
-                    if (ExecutionOperationMapper::supports($effect)) {
-                        throw new \RuntimeException('Execution authorization requires a direct pending effect.');
-                    }
-                }
-            } elseif (!$action instanceof MarkCommandAppliedDTO && !$action instanceof \Ineersa\AgentCore\Domain\Coordination\ConsumeExecutionUnknownDTO && !$action instanceof \Ineersa\AgentCore\Domain\Coordination\ConsumeToolExecutionUnknownDTO && !$action instanceof \Ineersa\AgentCore\Domain\Coordination\RetireUnknownExecutionDTO) {
-                throw new \RuntimeException('Owner transition requires coordination recovery for unsupported action.');
-            }
+            $this->actionValidator->validate($action);
         }
         $disposition = $work['result_disposition'] ?? null;
         if (null !== $disposition && !$disposition instanceof ToolResultDispositionDTO) {
@@ -74,6 +57,9 @@ final readonly class PendingTransitionRecovery
             $this->executionOperations->validateDisposition($executionDisposition, $pending);
         }
         $stamps = [];
+        $mailboxActions = array_values(array_filter($actions, \Ineersa\AgentCore\Application\Handler\CommandMailboxCoordinationFactory::isMailboxAction(...)));
+        $this->dispatcher->dispatchCoordinationActions($mailboxActions);
+        $actions = array_values(array_filter($actions, static fn (object $action): bool => !\Ineersa\AgentCore\Application\Handler\CommandMailboxCoordinationFactory::isMailboxAction($action)));
         foreach ($effects as $index => $effect) {
             if ($effect instanceof ExecuteToolCall) {
                 $this->authorization->arm($effect);

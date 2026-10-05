@@ -10,7 +10,7 @@ use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Messenger\MessageBusInterface;
 
-final readonly class SubagentProgressCoordinationHandler
+final readonly class SubagentProgressCoordinationHandler implements \Ineersa\AgentCore\Contract\CoordinationActionValidatorInterface
 {
     public function __construct(private DeferredSubagentBatchRepository $batchRepository, private MessageBusInterface $commandBus)
     {
@@ -29,5 +29,22 @@ final readonly class SubagentProgressCoordinationHandler
             $this->batchRepository->markDeliveredProgressRevision($current->lifecycleId, $revision, $current->projectionVersion);
         }
         $this->commandBus->dispatch(new DeliverDeferredSubagentBatchLifecycleMessage($action->lifecycleId));
+    }
+
+    public function supports(object $action): bool
+    {
+        return $action instanceof ConsumeSubagentProgressDTO || $action instanceof DeliverDeferredSubagentBatchLifecycleMessage;
+    }
+
+    public function validate(object $action): void
+    {
+        $id = match (true) {
+            $action instanceof ConsumeSubagentProgressDTO => $action->lifecycleId,
+            $action instanceof DeliverDeferredSubagentBatchLifecycleMessage => $action->batchLifecycleId,
+            default => null,
+        };
+        if (null === $id || '' === $id) {
+            throw new \RuntimeException('Invalid subagent lifecycle coordination identity.');
+        }
     }
 }

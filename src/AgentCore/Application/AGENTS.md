@@ -53,7 +53,7 @@ Controller nonterminal progress remains transient at sequence zero. Terminal sna
 
 Valid launch reservations always contain child rows: `DeferredSubagentBatchLaunchService` rejects empty task lists, and `DeferredSubagentBatchRepository::reserveBatch()` inserts the batch and planned children in one transaction. Missing child rows are an invariant failure, not a reason to wait for an unsubmitted command. Parallel timeout completion requires no forced snapshot and never waits for the interruption-progress marker.
 
-This ordering does not provide atomic recovery across canonical append and lifecycle-marker persistence. The later transition crash protocol remains separate work.
+The pending transition captures lifecycle consumption and delivery actions. Recovery repeats their idempotent coordination before removing the intent. Transport delivery can still repeat; canonical progress and its stable consumption obligation are not regenerated.
 
 There is **no** `CollectToolBatch` message type in `src/` (stale historical name — do not reintroduce docs for it).
 
@@ -143,13 +143,13 @@ Repair derives execution state and validates proposed messages through the retai
 
 ## Post-commit coordination
 
-`HandlerResult::postCommitActions` contains data descriptors, not callables. `RunMessageProcessor` dispatches them in order through `StepDispatcher` on the existing command bus, after `RunCommit` and `postCommitEffects`. Their unrouted Messenger handlers execute synchronously. A failure stops subsequent actions.
+`HandlerResult::postCommitActions` contains data descriptors, not callables. `RunCommit` journals them, including event-free coordination. Their unrouted handlers execute synchronously on the existing command bus. Mailbox decisions finalize before effects or continuation actions. A failure retains the pending plan for owner-entry recovery.
 
-Core actions dispatch prepared `AdvanceRun` or `CompactRun` messages, mark a command applied, or register a tool batch and dispatch its initially admitted calls. `AdvanceRunCoordinationFactory` captures the step ID and idempotency key before commit. Replaying the same descriptor preserves those values. Descriptors contain immutable messages or scalar identities, not services or `RunState`.
+Core actions dispatch prepared `AdvanceRun` or `CompactRun` messages, enqueue commands, finalize applied or rejected mailbox decisions, or register a tool batch and dispatch its initially admitted calls. `AdvanceRunCoordinationFactory` captures the step ID and idempotency key before commit. Replaying the same descriptor preserves those values. Descriptors contain immutable messages or scalar identities, not services or `RunState`.
 
 Configured persistent stores implement `PreparedTransitionEventStoreInterface`. `RunCommit` stages exact event bytes and native-PHP-serialized work references before physical append, then explicitly finalizes after its current coordination actions succeed. Streaming events publish only at that finalization boundary. In-memory framework stores retain their existing non-journaled contract.
 
-Pending persistent transitions block owner admission and ordinary mutation. Owner entry reconciles matching prepared bytes before coordination recovery. Direct LLM, compaction, and standalone-shell effects are armed against that verified transition and redispatched with the original authorization identity. Execution-result Consumed and Stale decisions, including event-free decisions, are validated and persisted before finalization. Ordinary tools retain their existing batch authority. Unsupported coordination actions and execution nested inside coordination descriptors still refuse recovery.
+Pending persistent transitions block owner admission and ordinary mutation. Owner entry reconciles matching prepared bytes before coordination recovery. Direct LLM, compaction, and standalone-shell effects are armed against that verified transition and redispatched with the original authorization identity. Execution-result Consumed and Stale decisions, including event-free decisions, are validated and persisted before finalization. Ordinary tools retain their existing batch authority. `CoordinationActionValidator` validates the whole plan before effects. Tagged application validators admit application-owned lifecycle actions without Core imports of application types. Unsupported actions fail closed. Dispatch descriptors have a closed `AdvanceRun|CompactRun` message field; batch registration accepts only matching `ExecuteToolCall` effects, armed through the existing batch authority.
 
 Execution-bearing work references remain on disk after successful finalization. Generic Armed and ResultReady rows are rediscovered in bounded lifecycle sweeps. Worker-instance exclusion protects Running receipts. Confirmed-dead claims adopt validated immutable result seals or become OutcomeUnknown. Separate-process tests prove live exclusion and dead-claim decisions for LLM, compaction, and standalone shell inputs.
 
@@ -163,4 +163,4 @@ Explicit repair previews unknown receipts without mutation. Apply verifies origi
 
 Active-operation repair republishes existing Armed references or ResultReady notifications. It never reconstructs execution input or recreates missing authorization. Human-input waits remain excluded.
 
-Accepted-source fencing, pre-commit mailbox and batch mutations, general coordination recovery, durable hooks, and payload cleanup remain unfinished. This checkpoint does not provide complete transition recovery or power-loss durability.
+Mailbox preparation does not enqueue, consume, or reject commands. Prepared events capture exact status decisions, and enqueue descriptors retain the original command payload and idempotency key. A safe-boundary drain captures the existing FIFO cutoff; recovery does not read later commands into that plan. Cancel preserves pending append messages and journals rejection of stale follow-up and steer commands.\n\nAccepted-source fencing beyond mailbox guards, pre-commit batch mutations, durable hooks, and payload cleanup remain unfinished. This checkpoint does not provide complete transition recovery or power-loss durability.

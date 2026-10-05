@@ -371,6 +371,10 @@ final class LlmStepResultHandlerTest extends TestCase
             'Stop-boundary effects must include the CompactRun dispatched from the mailbox drain.',
         );
 
+        foreach ($result->postCommitActions as $action) {
+            \Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::run($action, store: $commandStore);
+        }
+
         // Compact command should be marked applied in the store
         $this->assertCount(0, $commandStore->pending('run-stop-boundary-compact'),
             'Compact command must be drained (marked applied) from the store.',

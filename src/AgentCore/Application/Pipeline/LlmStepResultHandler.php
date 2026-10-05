@@ -61,6 +61,11 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
 
     public function handle(object $message, RunState $state): HandlerResult
     {
+        return \Ineersa\AgentCore\Application\Handler\CommandMailboxCoordinationFactory::finalize($this->prepare($message, $state));
+    }
+
+    private function prepare(object $message, RunState $state): HandlerResult
+    {
         if (!$message instanceof LlmStepResult) {
             throw new \InvalidArgumentException('LlmStepResultHandler can only handle LlmStepResult messages.');
         }

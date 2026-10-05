@@ -28,6 +28,7 @@ final readonly class RunCommit
         private ?HookDispatcher $hookDispatcher = null,
         private ?RunTracer $tracer = null,
         private \Ineersa\AgentCore\Application\Handler\ExecutionBoundaryContext $executionContext = new \Ineersa\AgentCore\Application\Handler\ExecutionBoundaryContext(),
+        private \Ineersa\AgentCore\Application\Handler\CoordinationActionValidator $actionValidator = new \Ineersa\AgentCore\Application\Handler\CoordinationActionValidator(),
     ) {
     }
 
@@ -45,6 +46,9 @@ final readonly class RunCommit
     public function commit(RunState $state, RunState $nextState, array $events, array $effects = [], bool $dispatchAfterTurnHooks = true, array $postCommitEffects = [], array $postCommitActions = [], array $sourceIdentity = [], ?\Ineersa\AgentCore\Domain\Coordination\ToolResultDispositionDTO $resultDisposition = null, ?\Ineersa\AgentCore\Domain\Coordination\ExecutionResultDispositionDTO $executionDisposition = null): RunState
     {
         $this->assertTransitionReady($state->runId);
+        foreach ($postCommitActions as $action) {
+            $this->actionValidator->validate($action);
+        }
         $persist = function () use ($state, $nextState, $events, $effects, $dispatchAfterTurnHooks, $postCommitEffects, $postCommitActions, $sourceIdentity, $resultDisposition, $executionDisposition): RunState {
             /** @var list<RunEvent> $persistedEvents */
             $persistedEvents = [];
@@ -71,6 +75,10 @@ final readonly class RunCommit
 
             $this->logCommittedEvents($committedState, $persistedEvents);
 
+            $mailboxActions = array_values(array_filter($postCommitActions, \Ineersa\AgentCore\Application\Handler\CommandMailboxCoordinationFactory::isMailboxAction(...)));
+            $this->stepDispatcher->dispatchCoordinationActions($mailboxActions);
+            $remainingActions = array_values(array_filter($postCommitActions, static fn (object $action): bool => !\Ineersa\AgentCore\Application\Handler\CommandMailboxCoordinationFactory::isMailboxAction($action)));
+
             $ordinaryEffects = array_values(array_filter($effects, static fn (object $effect): bool => !\Ineersa\AgentCore\Application\Handler\ExecutionOperationMapper::supports($effect)));
             $gatedEffects = array_values(array_filter($effects, \Ineersa\AgentCore\Application\Handler\ExecutionOperationMapper::supports(...)));
             if ([] !== $ordinaryEffects) {
@@ -81,7 +89,7 @@ final readonly class RunCommit
             // History maintenance publishes canonical state without scheduling a
             // completed-turn continuation, matching its former raw-append semantics.
             if (!$dispatchAfterTurnHooks) {
-                $this->finishTransition($committedState->runId, $persistedEvents, [...$gatedEffects, ...$postCommitEffects], $postCommitActions, $resultDisposition, $executionDisposition);
+                $this->finishTransition($committedState->runId, $persistedEvents, [...$gatedEffects, ...$postCommitEffects], $remainingActions, $resultDisposition, $executionDisposition);
 
                 return $committedState;
             }
@@ -99,7 +107,7 @@ final readonly class RunCommit
                 ]);
             }
 
-            $this->finishTransition($committedState->runId, $persistedEvents, [...$gatedEffects, ...$postCommitEffects], $postCommitActions, $resultDisposition, $executionDisposition);
+            $this->finishTransition($committedState->runId, $persistedEvents, [...$gatedEffects, ...$postCommitEffects], $remainingActions, $resultDisposition, $executionDisposition);
 
             return $committedState;
         };
@@ -168,7 +176,7 @@ final readonly class RunCommit
     {
         $ordinary = array_values(array_filter($effects, static fn (object $effect): bool => !\Ineersa\AgentCore\Application\Handler\ExecutionOperationMapper::supports($effect)));
         $gated = array_values(array_filter($effects, \Ineersa\AgentCore\Application\Handler\ExecutionOperationMapper::supports(...)));
-        $verified = null;
+        $verified = $this->eventStore->verifiedPendingTransition($runId);
         $stamps = [];
         $deliveries = [];
         if ([] !== $gated || null !== $resultDisposition || null !== $executionDisposition) {

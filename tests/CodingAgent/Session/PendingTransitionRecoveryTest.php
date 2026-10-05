@@ -118,11 +118,163 @@ final class PendingTransitionRecoveryTest extends IsolatedKernelTestCase
         $this->assertSame([], $bus->messages);
     }
 
+    public static function mailboxCrashBoundaries(): iterable
+    {
+        yield 'after append' => [false];
+        yield 'after mailbox finalization' => [true];
+    }
+
+    #[DataProvider('mailboxCrashBoundaries')]
+    public function testMailboxPreparationAndRecoveryPreserveOnePendingCommand(bool $interruptAfterFinalization): void
+    {
+        $container = self::getContainer();
+        $run = $container->get(HatfieldSessionStore::class)->createSession('mailbox recovery');
+        $commands = $container->get(\Ineersa\AgentCore\Contract\CommandStoreInterface::class);
+        $handler = $container->get(\Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler::class);
+        $message = new \Ineersa\AgentCore\Domain\Message\ApplyCommand($run, 1, 'input', 1, 'original-mailbox-command', 'follow_up', ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'original input']]]]);
+        $state = new \Ineersa\AgentCore\Domain\Run\RunState(runId: $run, status: \Ineersa\AgentCore\Domain\Run\RunStatus::Running, turnNo: 1);
+        $result = $handler->handle($message, $state);
+        $this->assertFalse($commands->has($run, $message->idempotencyKey()), 'Failure before intent must not reserve or consume the source command.');
+        $this->assertSame([], $commands->pending($run));
+        $retry = $handler->handle($message, $state);
+        $this->assertEquals($result->postCommitActions, $retry->postCommitActions);
+        $store = $container->get(PreparedTransitionEventStoreInterface::class);
+        $store->appendTransition($result->events, ['run_id' => $run, 'predecessor_seq' => 0, 'actions' => $result->postCommitActions]);
+        $this->assertFalse($commands->has($run, $message->idempotencyKey()));
+        $bus = $container->get('agent.command.bus');
+        if ($interruptAfterFinalization) {
+            $failure = $this->createMock(MessageBusInterface::class);
+            $failure->expects($this->once())->method('dispatch')->willReturnCallback(static function (object $action, array $stamps = []) use ($bus): Envelope {
+                $bus->dispatch($action, $stamps);
+                throw new \RuntimeException('injected mailbox finalization interruption');
+            });
+            try {
+                $this->recovery($failure)->recover($run);
+                $this->fail('The injected finalization failure must leave pending work.');
+            } catch (\RuntimeException $exception) {
+                $this->assertSame('injected mailbox finalization interruption', $exception->getMessage());
+            }
+            $this->assertCount(1, $commands->pending($run));
+            $this->assertNotNull($store->verifiedPendingTransition($run));
+            $this->assertNull($store->latestSequenceFor($run), 'The pending suffix remains hidden until finalization.');
+        }
+        $this->recovery($bus)->recover($run);
+        $this->assertNull($store->verifiedPendingTransition($run));
+        $pending = $commands->pending($run);
+        $this->assertCount(1, $pending);
+        $this->assertSame($message->idempotencyKey(), $pending[0]->idempotencyKey);
+        $this->assertSame($message->payload, $pending[0]->payload);
+        $this->assertSame(1, $store->latestSequenceFor($run));
+        $this->recovery($bus)->recover($run);
+        $this->assertEquals($pending, $commands->pending($run));
+    }
+
+    public function testUnsupportedActionIsRejectedBeforeAnyMailboxFinalization(): void
+    {
+        $container = self::getContainer();
+        $run = $container->get(HatfieldSessionStore::class)->createSession('unsupported coordination');
+        $commands = $container->get(\Ineersa\AgentCore\Contract\CommandStoreInterface::class);
+        $store = $container->get(PreparedTransitionEventStoreInterface::class);
+        $store->appendTransition([], ['run_id' => $run, 'predecessor_seq' => 0, 'actions' => [new \Ineersa\AgentCore\Domain\Coordination\MarkCommandAppliedDTO($run, 'must-not-apply'), new \stdClass()]]);
+        try {
+            $this->recovery($container->get('agent.command.bus'))->recover($run);
+            $this->fail('Unsupported work must not finalize.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('Owner transition requires coordination recovery for unsupported action.', $exception->getMessage());
+        }
+        $this->assertFalse($commands->has($run, 'must-not-apply'));
+        $this->assertNotNull($store->verifiedPendingTransition($run));
+    }
+
+    public static function mailboxDecisions(): iterable
+    {
+        yield 'applied' => [false];
+        yield 'rejected' => [true];
+    }
+
+    #[DataProvider('mailboxDecisions')]
+    public function testInterruptedMailboxDrainRetainsFifoCutoffAndFinishesDecisions(bool $rejected): void
+    {
+        $container = self::getContainer();
+        $run = $container->get(HatfieldSessionStore::class)->createSession('mailbox drain recovery');
+        $commands = $container->get(\Ineersa\AgentCore\Contract\CommandStoreInterface::class);
+        $payload = $rejected ? [] : ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'queued input']]]];
+        $commands->enqueue(new \Ineersa\AgentCore\Domain\Command\PendingCommand($run, 'steer', 'first', $payload));
+        $commands->enqueue(new \Ineersa\AgentCore\Domain\Command\PendingCommand($run, 'steer', 'second', $payload));
+        $state = new \Ineersa\AgentCore\Domain\Run\RunState(runId: $run, status: \Ineersa\AgentCore\Domain\Run\RunStatus::Running, turnNo: 1);
+        $prepared = $container->get(\Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy::class)->applyPendingTurnStartCommands($state);
+        $this->assertSame(['first', 'second'], array_column($commands->pending($run), 'idempotencyKey'));
+        $events = $container->get(\Ineersa\AgentCore\Domain\Event\EventFactory::class)->eventsFromSpecs($run, 1, 1, $prepared->eventSpecs);
+        $decision = \Ineersa\AgentCore\Application\Handler\CommandMailboxCoordinationFactory::finalize(new \Ineersa\AgentCore\Application\Pipeline\HandlerResult(events: $events));
+        $this->assertSame(['first', 'second'], array_map(static fn ($event): string => $event->payload['idempotency_key'], $events));
+        $store = $container->get(PreparedTransitionEventStoreInterface::class);
+        $store->appendTransition($events, ['run_id' => $run, 'predecessor_seq' => 0, 'actions' => $decision->postCommitActions]);
+        $this->assertCount(2, $commands->pending($run));
+        // This later enqueue is outside the captured cutoff and must survive recovery.
+        $commands->enqueue(new \Ineersa\AgentCore\Domain\Command\PendingCommand($run, 'steer', 'later', $payload));
+        $bus = $container->get('agent.command.bus');
+        $failure = $this->createMock(MessageBusInterface::class);
+        $failure->expects($this->once())->method('dispatch')->willReturnCallback(static function (object $action, array $stamps = []) use ($bus): Envelope {
+            $bus->dispatch($action, $stamps);
+            throw new \RuntimeException('injected drain interruption');
+        });
+        try {
+            $this->recovery($failure)->recover($run);
+            $this->fail('The injected drain failure must leave the captured plan unfinished.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('injected drain interruption', $exception->getMessage());
+        }
+        $this->assertSame(['second', 'later'], array_column($commands->pending($run), 'idempotencyKey'));
+        $this->assertNotNull($store->verifiedPendingTransition($run));
+        $this->recovery($bus)->recover($run);
+        $this->assertSame(['later'], array_column($commands->pending($run), 'idempotencyKey'));
+        $this->assertTrue($commands->has($run, 'first'));
+        $this->assertTrue($commands->has($run, 'second'));
+        $this->assertNull($store->verifiedPendingTransition($run));
+        $this->assertSame(2, $store->latestSequenceFor($run));
+        $this->recovery($bus)->recover($run);
+        $this->assertSame(['later'], array_column($commands->pending($run), 'idempotencyKey'));
+    }
+
+    public static function registeredClaimStates(): iterable
+    {
+        yield 'Running' => [false];
+        yield 'ResultReady' => [true];
+    }
+
+    #[DataProvider('registeredClaimStates')]
+    public function testRegisterBatchRecoveryPreservesClaimAndOriginalResult(bool $resultReady): void
+    {
+        $container = self::getContainer();
+        $run = $container->get(HatfieldSessionStore::class)->createSession('batch coordination recovery');
+        $call = new \Ineersa\AgentCore\Domain\Message\ExecuteToolCall($run, 1, 'tools', 1, 'original-tool', 'call', 'read', ['path' => 'fixture'], 0);
+        $action = new \Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO($run, 1, 'tools', [$call]);
+        $store = $container->get(PreparedTransitionEventStoreInterface::class);
+        $store->appendTransition([], ['run_id' => $run, 'predecessor_seq' => 0, 'actions' => [$action]]);
+        $bus = $container->get('agent.command.bus');
+        $bus->dispatch($action);
+        $authorization = $container->get(\Ineersa\AgentCore\Application\Handler\ToolExecutionAuthorization::class);
+        $claim = $authorization->claim($call);
+        $this->assertIsString($claim);
+        $result = new ToolCallResult($run, 1, 'tools', 1, 'original-tool', 'call', 0, ['content' => [['type' => 'text', 'text' => 'original saved result']]]);
+        if ($resultReady) {
+            $authorization->saveResult($call, $claim, $result);
+        }
+        $batches = $container->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class);
+        $before = $batches->load($run, 1, 'tools');
+        $this->recovery($bus)->recover($run);
+        $after = $batches->load($run, 1, 'tools');
+        $this->assertEquals($before->executionAuthorizations, $after->executionAuthorizations);
+        $this->assertEquals($before->executionResults, $after->executionResults);
+        $this->assertEquals($resultReady ? $result : null, $authorization->claim($call));
+        $this->assertNull($store->verifiedPendingTransition($run));
+    }
+
     private function recovery(MessageBusInterface $bus): PendingTransitionRecovery
     {
         $container = self::getContainer();
 
-        return new PendingTransitionRecovery($container->get(PreparedTransitionEventStoreInterface::class), $container->get(ToolExecutionAuthorizationInterface::class), new StepDispatcher($bus, $bus), $container->get(ActiveRunContextInterface::class), $container->get(ExecutionOperationStoreInterface::class));
+        return new PendingTransitionRecovery($container->get(PreparedTransitionEventStoreInterface::class), $container->get(ToolExecutionAuthorizationInterface::class), new StepDispatcher($bus, $bus), $container->get(ActiveRunContextInterface::class), $container->get(ExecutionOperationStoreInterface::class), $container->get(\Ineersa\AgentCore\Application\Handler\CoordinationActionValidator::class));
     }
 
     private function request(string $kind, string $run): AbstractAgentBusMessage

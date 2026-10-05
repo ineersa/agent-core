@@ -35,6 +35,18 @@ final readonly class CoordinationActionHandler
     }
 
     #[AsMessageHandler(bus: 'agent.command.bus')]
+    public function enqueueCommand(\Ineersa\AgentCore\Domain\Coordination\EnqueueCommandDTO $action): void
+    {
+        $this->commandStore->enqueue($action->command);
+    }
+
+    #[AsMessageHandler(bus: 'agent.command.bus')]
+    public function rejectCommand(\Ineersa\AgentCore\Domain\Coordination\RejectCommandDTO $action): void
+    {
+        $this->commandStore->markRejected($action->runId, $action->idempotencyKey, $action->reason);
+    }
+
+    #[AsMessageHandler(bus: 'agent.command.bus')]
     public function registerToolBatch(RegisterToolBatchDTO $action): void
     {
         $effects = $this->toolBatchCollector->registerExpectedBatch($action->runId, $action->turnNo, $action->stepId, $action->effects, redriveInFlight: true);

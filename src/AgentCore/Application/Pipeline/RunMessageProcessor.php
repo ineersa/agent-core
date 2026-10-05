@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
-use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\History\HistoryTailDiscardInterface;
 use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
@@ -26,7 +25,6 @@ final readonly class RunMessageProcessor
         private ActiveRunContextInterface $activeRunContext,
         private RunLockManager $runLockManager,
         private RunCommit $runCommit,
-        private StepDispatcher $stepDispatcher,
         iterable $handlers,
         private ?HistoryTailDiscardInterface $historyTailDiscard = null,
     ) {
@@ -92,7 +90,9 @@ final readonly class RunMessageProcessor
 
                             return;
                         }
-                        $this->dispatchPostCommit($result);
+                        if ([] !== $result->postCommitEffects || [] !== $result->postCommitActions) {
+                            $this->runCommit->commit($state, $state, [], dispatchAfterTurnHooks: false, postCommitEffects: $result->postCommitEffects, postCommitActions: $result->postCommitActions, sourceIdentity: ['type' => $message::class, 'run_id' => $message->runId(), 'turn_no' => $message->turnNo(), 'step_id' => $message->stepId(), 'attempt' => $message->attempt(), 'idempotency_key' => $message->idempotencyKey()]);
+                        }
 
                         return;
                     }
@@ -105,14 +105,6 @@ final readonly class RunMessageProcessor
         } finally {
             RunLogContext::leave();
         }
-    }
-
-    private function dispatchPostCommit(HandlerResult $result): void
-    {
-        if ([] !== $result->postCommitEffects) {
-            $this->stepDispatcher->dispatchEffects($result->postCommitEffects);
-        }
-        $this->stepDispatcher->dispatchCoordinationActions($result->postCommitActions);
     }
 
     private function resolveHandler(object $message): RunMessageHandler

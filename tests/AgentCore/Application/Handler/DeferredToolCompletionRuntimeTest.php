@@ -337,7 +337,6 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
                 logger: new NullLogger(),
                 toolBatchCollector: $collector, toolAuthorization: new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore()
             ),
-            stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
             handlers: [
                 new ToolCallResultHandler(
                     toolBatchCollector: $collector,
