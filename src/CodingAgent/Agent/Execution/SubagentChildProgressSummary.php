@@ -35,6 +35,7 @@ final readonly class SubagentChildProgressSummary
         public ?string $assistantExcerpt = null,
         public array $recentTools = [],
         public ?string $activeToolLine = null,
+        public ?float $cacheReadHitPercentage = null,
     ) {
     }
 }

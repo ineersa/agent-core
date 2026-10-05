@@ -321,20 +321,21 @@ final class DeferredChildRunEventProjectorTest extends TestCase
             lastCommittedSeq: 0,
             model: 'deepseek/deepseek-v4-flash',
             reasoning: 'medium',
+            cacheInputTokens: 0,
         );
 
         $projection = $projector->apply(
             $current,
             [
                 new AfterTurnCommitEventSummary(1, RunEventTypeEnum::LlmStepCompleted->value, [
-                    'usage' => ['input_tokens' => 10, 'output_tokens' => 2, 'total_tokens' => 12],
+                    'usage' => ['input_tokens' => 10, 'output_tokens' => 2, 'total_tokens' => 12, 'cache_read_tokens' => 0],
                     'assistant_message' => ['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'ok']]],
                 ]),
                 new AfterTurnCommitEventSummary(2, RunEventTypeEnum::LlmStepFailed->value, [
                     'error' => ['message' => 'provider overloaded'],
                 ]),
                 new AfterTurnCommitEventSummary(3, RunEventTypeEnum::LlmStepCompleted->value, [
-                    'usage' => ['input_tokens' => 20, 'output_tokens' => 3, 'total_tokens' => 23],
+                    'usage' => ['input_tokens' => 20, 'output_tokens' => 3, 'total_tokens' => 23, 'cached_tokens' => 18],
                 ]),
             ],
             committedStatus: RunStatus::Running,
@@ -344,6 +345,7 @@ final class DeferredChildRunEventProjectorTest extends TestCase
         $this->assertSame(3, $projection->llmStepCount);
         $this->assertSame(7, $projection->childTurnNo);
         $this->assertSame(30, $projection->inputTokens);
+        $this->assertSame(18, $projection->cacheReadTokens);
 
         [$serializer] = AttributeSerializerValidatorTestFactory::create(withBackedEnumNormalizer: true);
         $wire = $serializer->normalize($projection, null, [\Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer::SKIP_NULL_VALUES => true]);
@@ -351,25 +353,11 @@ final class DeferredChildRunEventProjectorTest extends TestCase
         $this->assertSame(3, $roundTrip->llmStepCount);
         $this->assertSame(3, $wire['llm_step_count'] ?? null);
         $this->assertSame(7, $roundTrip->childTurnNo);
+        $this->assertSame(18, $roundTrip->cacheReadTokens);
 
-        $summary = new \Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummary(
-            model: $roundTrip->model,
-            reasoning: $roundTrip->reasoning,
-            toolCount: $roundTrip->toolCount,
-            llmStepCount: $roundTrip->llmStepCount,
-            inputTokens: $roundTrip->inputTokens,
-            latestInputTokens: $roundTrip->latestInputTokens,
-            contextWindow: $roundTrip->contextWindow ?? 0,
-            outputTokens: $roundTrip->outputTokens,
-            reasoningTokens: $roundTrip->reasoningTokens,
-            totalTokens: $roundTrip->totalTokens,
-            cost: $roundTrip->cost,
-            artifactPath: 'artifacts/agents/agent_llm_steps',
-            assistantExcerpt: $roundTrip->assistantExcerpt,
-            recentTools: $roundTrip->recentTools,
-            activeToolLine: $roundTrip->activeToolLine,
-        );
+        $summary = (new \Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummaryBuilder())->fromDeferredProjection($roundTrip, 'agent_llm_steps');
         $this->assertSame(3, $summary->llmStepCount);
+        $this->assertSame(60.0, $summary->cacheReadHitPercentage);
 
         $snapshot = (new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder())->singleFromChildTurn(
             agentName: 'scout',
@@ -384,6 +372,7 @@ final class DeferredChildRunEventProjectorTest extends TestCase
         $singlePayload = SubagentProgressSerializerTestSupport::normalizer()->normalize($snapshot);
         $this->assertSame(3, $singlePayload['llm_step_count'] ?? null);
         $this->assertSame(7, $singlePayload['turn_no'] ?? null);
+        $this->assertSame(60.0, $singlePayload['cache_read_hit_percentage'] ?? null);
 
         $parallel = (new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder())->parallelSnapshot(
             reports: [
@@ -405,5 +394,6 @@ final class DeferredChildRunEventProjectorTest extends TestCase
         $parallelPayload = SubagentProgressSerializerTestSupport::normalizer()->normalize($parallel);
         $this->assertSame(3, $parallelPayload['children'][0]['llm_step_count'] ?? null);
         $this->assertSame(7, $parallelPayload['children'][0]['turn_no'] ?? null);
+        $this->assertSame(60.0, $parallelPayload['children'][0]['cache_read_hit_percentage'] ?? null);
     }
 }

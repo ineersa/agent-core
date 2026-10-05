@@ -31,6 +31,9 @@ use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\CodingAgent\Tool\RawAwareToolCallArgumentResolver;
 use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
+use Ineersa\Tui\Listener\FooterStateSegmentProvider;
+use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
+use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\ThemePalette;
@@ -61,6 +64,83 @@ use Symfony\Component\Tui\Ansi\AnsiUtils;
 final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
 {
     private const string SESSION_ID = 'virtual-transcript-render';
+
+    #[DataProvider('childCacheDisplays')]
+    public function testChildCacheReuseAppearsWhileRunningInLiveViewAndAfterCompletion(string $tool, bool $parallel, ?float $percentage): void
+    {
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addSubscriber(new ToolProjectionSubscriber(new SubagentProgressDisplayFormatter(), SubagentProgressSerializerTestSupport::denormalizer()));
+        $projector = new TranscriptProjector($dispatcher, new TranscriptProjectionState());
+        $state = new TuiSessionState(self::SESSION_ID);
+        $applier = new TuiRuntimeEventApplier($projector, SubagentProgressSerializerTestSupport::denormalizer());
+        $harness = new VirtualTuiHarness(columns: 120, rows: 30, sessionId: self::SESSION_ID);
+        $harness->screen()->addFooterProvider(new FooterStateSegmentProvider($state));
+        $harness->screen()->setWorkingVisible(false);
+        $child = [
+            'agent_name' => 'worker', 'artifact_id' => 'agent_cache', 'agent_run_id' => 'child-cache',
+            'task_summary' => 'Inspect cache reuse', 'model' => 'test/model', 'reasoning' => 'medium',
+            'input_tokens' => 100, 'cache_read_hit_percentage' => $percentage,
+        ];
+        $applier->apply($state, new RuntimeEvent(type: 'tool_execution.started', runId: self::SESSION_ID, seq: 1,
+            payload: ['tool_call_id' => 'cache-call', 'tool_name' => $tool]));
+
+        $progress = $parallel
+            ? ['mode' => 'parallel', 'status' => 'running', 'total_count' => 1, 'completed_count' => 0, 'children' => [$child + ['index' => 1, 'status' => 'running']]]
+            : $child + ['mode' => 'single', 'status' => 'running'];
+        $applier->apply($state, new RuntimeEvent(type: 'tool_execution.output_delta', runId: self::SESSION_ID, seq: 2,
+            payload: ['tool_call_id' => 'cache-call', 'tool_name' => $tool, 'delta' => '', 'subagent_progress' => $progress]));
+        $harness->screen()->setTranscriptBlocks($projector->blocks());
+        $running = $harness->plainScreenText();
+        $this->assertStringContainsString('worker', $running);
+        $label = null === $percentage ? null : \sprintf('↻ %.0f%%', $percentage);
+        if (null === $label) {
+            $this->assertStringNotContainsString('↻', $running);
+        } else {
+            $this->assertStringContainsString($label, $running);
+        }
+
+        $selected = $state->subagentLiveCatalog->findByArtifactId('agent_cache');
+        $this->assertNotNull($selected);
+        $state->subagentLiveView->enter($selected);
+        $harness->screen()->setTranscriptBlocks([]);
+        $harness->screen()->refreshFooter();
+        $live = $harness->plainScreenText();
+        $this->assertStringContainsString('agents-live', $live);
+        if (null === $label) {
+            $this->assertStringNotContainsString('↻', $live);
+        } else {
+            $this->assertStringContainsString($label, $live);
+        }
+
+        $state->subagentLiveView->exit();
+        $progress['status'] = 'completed';
+        if ($parallel) {
+            $progress['completed_count'] = 1;
+            $progress['children'][0]['status'] = 'completed';
+        }
+        $applier->apply($state, new RuntimeEvent(type: 'tool_execution.output_delta', runId: self::SESSION_ID, seq: 3,
+            payload: ['tool_call_id' => 'cache-call', 'tool_name' => $tool, 'delta' => '', 'subagent_progress' => $progress]));
+        $applier->apply($state, new RuntimeEvent(type: 'tool_execution.completed', runId: self::SESSION_ID, seq: 4,
+            payload: ['tool_call_id' => 'cache-call', 'tool_name' => $tool, 'result' => 'Child finished']));
+        $harness->screen()->setTranscriptBlocks($projector->blocks());
+        $harness->screen()->refreshFooter();
+        $completed = $harness->plainScreenText();
+        $this->assertStringContainsString('completed', $completed);
+        if (null === $label) {
+            $this->assertStringNotContainsString('↻', $completed);
+        } else {
+            $this->assertStringContainsString($label, $completed);
+        }
+    }
+
+    /** @return iterable<string, array{string, bool, ?float}> */
+    public static function childCacheDisplays(): iterable
+    {
+        yield 'fork' => ['fork', false, 93.0];
+        yield 'uncached subagent' => ['subagent', false, 0.0];
+        yield 'parallel child' => ['subagent', true, 93.0];
+        yield 'unreported telemetry' => ['subagent', false, null];
+    }
 
     #[Test]
     public function testSingleUserMessageShowsGlyphAndText(): void

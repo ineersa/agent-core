@@ -10,7 +10,6 @@ use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeDiagnosticsToolResultProcessor;
-use Ineersa\CodingAgent\Tool\CodeMode\CodeModeExecutionResult;
 use Ineersa\CodingAgent\Tool\CodeModeTool;
 use Ineersa\CodingAgent\Tool\OutputCap;
 use Ineersa\CodingAgent\Tool\OutputCapToolResultProcessor;
@@ -21,7 +20,6 @@ use Symfony\Component\Lock\Store\FlockStore;
 
 /**
  * @covers \Ineersa\CodingAgent\Tool\CodeMode\CodeModeDiagnosticsToolResultProcessor
- * @covers \Ineersa\CodingAgent\Tool\CodeMode\CodeModeExecutionResult
  */
 final class CodeModeDiagnosticsToolResultProcessorTest extends TestCase
 {
@@ -87,9 +85,10 @@ final class CodeModeDiagnosticsToolResultProcessorTest extends TestCase
             toolName: CodeModeTool::NAME,
             content: [['type' => 'text', 'text' => '']],
             details: [
-                'raw_result' => new CodeModeExecutionResult(false, [
-                    'stdout' => 'out',
-                ]),
+                'raw_result' => [
+                    'code_mode_value' => false,
+                    'code_mode_diagnostics' => ['stdout' => 'out'],
+                ],
             ],
         );
 
@@ -146,10 +145,10 @@ final class CodeModeDiagnosticsToolResultProcessorTest extends TestCase
             toolName: CodeModeTool::NAME,
             content: [['type' => 'text', 'text' => '{}']],
             details: [
-                'raw_result' => new CodeModeExecutionResult(9, [
-                    'stdout' => 'out',
-                    'stderr' => 'warn',
-                ]),
+                'raw_result' => [
+                    'code_mode_value' => 9,
+                    'code_mode_diagnostics' => ['stdout' => 'out', 'stderr' => 'warn'],
+                ],
             ],
         );
 
@@ -178,9 +177,10 @@ final class CodeModeDiagnosticsToolResultProcessorTest extends TestCase
             toolName: CodeModeTool::NAME,
             content: [['type' => 'text', 'text' => '{}']],
             details: [
-                'raw_result' => new CodeModeExecutionResult(str_repeat('A', 300), [
-                    'stdout' => 'diag',
-                ]),
+                'raw_result' => [
+                    'code_mode_value' => str_repeat('A', 300),
+                    'code_mode_diagnostics' => ['stdout' => 'diag'],
+                ],
             ],
         );
 

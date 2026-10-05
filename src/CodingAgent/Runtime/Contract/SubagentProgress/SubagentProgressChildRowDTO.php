@@ -56,6 +56,8 @@ final readonly class SubagentProgressChildRowDTO
         public ?string $artifactPath = null,
         public ?string $assistantExcerpt = null,
         public ?string $activeTool = null,
+        #[Assert\Range(min: 0, max: 100)]
+        public ?float $cacheReadHitPercentage = null,
     ) {
     }
 }

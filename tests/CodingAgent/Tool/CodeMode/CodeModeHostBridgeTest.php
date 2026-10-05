@@ -147,25 +147,24 @@ PHP);
             $this->runScript($bridge, 'return INF;');
             $this->fail('Expected ToolCallException for INF');
         } catch (ToolCallException $exception) {
-            $this->assertTrue(
-                str_contains($exception->getMessage(), 'non-finite float')
-                || str_contains($exception->getMessage(), 'Inf and NaN'),
-                $exception->getMessage(),
-            );
+            $this->assertStringContainsString('unsupported IPC value', $exception->getMessage());
+            $this->assertFalse($exception->retryable());
         }
 
         try {
             $this->runScript($bridge, 'return function () {};');
             $this->fail('Expected ToolCallException for Closure');
         } catch (ToolCallException $exception) {
-            $this->assertStringContainsString('Closure', $exception->getMessage());
+            $this->assertStringContainsString('unsupported IPC value', $exception->getMessage());
+            $this->assertFalse($exception->retryable());
         }
 
         try {
             $this->runScript($bridge, 'return new DateTimeImmutable("2026-01-01T00:00:00Z");');
             $this->fail('Expected ToolCallException for object');
         } catch (ToolCallException $exception) {
-            $this->assertStringContainsString('unsupported object', $exception->getMessage());
+            $this->assertStringContainsString('unsupported IPC value', $exception->getMessage());
+            $this->assertFalse($exception->retryable());
         }
     }
 
@@ -353,10 +352,10 @@ PHP);
                     {
                         return new \Symfony\AI\Agent\Toolbox\ToolResult(
                             $toolCall,
-                            new \Ineersa\CodingAgent\Tool\CodeMode\CodeModeExecutionResult(
-                                ['nested' => true],
-                                ['stdout' => 'child-out'],
-                            ),
+                            [
+                                'code_mode_value' => ['nested' => true],
+                                'code_mode_diagnostics' => ['stdout' => 'child-out'],
+                            ],
                         );
                     }
                 };
@@ -387,7 +386,8 @@ PHP);
             $this->runScript($bridge, 'return toon_encode(function () {});');
             $this->fail('Expected ToolCallException for unsupported toon_encode input');
         } catch (ToolCallException $exception) {
-            $this->assertStringContainsString('Closure', $exception->getMessage());
+            $this->assertStringContainsString('unsupported IPC value', $exception->getMessage());
+            $this->assertFalse($exception->retryable());
         }
 
         $this->assertSame('plain text', $this->runScript($bridge, "return toon_decode('plain text');"));

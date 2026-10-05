@@ -6,8 +6,8 @@ namespace Ineersa\CodingAgent\Tool;
 
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Tool\Arguments\CodeModeArgumentsDTO;
-use Ineersa\CodingAgent\Tool\CodeMode\CodeModeHostBridge;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeExecutionResult;
+use Ineersa\CodingAgent\Tool\CodeMode\CodeModeHostBridge;
 use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
 
 /**
