@@ -27,6 +27,7 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 final class ApplyCommandHandlerTest extends TestCase
@@ -140,7 +141,7 @@ final class ApplyCommandHandlerTest extends TestCase
         $this->assertInstanceOf(AdvanceRun::class, $commandBus->messages[0]);
     }
 
-    public function testNonFollowUpCommandRejectedAfterCancelledRun(): void
+    public function testSteerCommandRejectedAfterCancelledRun(): void
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
@@ -187,7 +188,9 @@ final class ApplyCommandHandlerTest extends TestCase
         $this->assertSame('agent_command_rejected', $result->events[0]->type);
     }
 
-    public function testFollowUpRejectedDuringCancelling(): void
+    /** @param array<string, mixed> $payload */
+    #[DataProvider('commandsRejectedDuringCancellation')]
+    public function testCommandRejectedDuringCancelling(string $kind, array $payload): void
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
@@ -220,18 +223,33 @@ final class ApplyCommandHandlerTest extends TestCase
             stepId: 'followup-step-1',
             attempt: 1,
             idempotencyKey: 'followup-idempotency-1',
-            kind: CoreCommandKind::FollowUp,
-            payload: ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Next message']]]],
+            kind: $kind,
+            payload: $payload,
         );
 
         $result = $handler->handle($message, $state);
 
-        // FollowUp should be rejected while Cancelling is in progress
         $this->assertNotNull($result->nextState);
         $this->assertSame(RunStatus::Cancelling, $result->nextState->status);
         $this->assertStringContainsString('rejected because cancellation is in progress', $result->nextState->errorMessage ?? '');
         $this->assertCount(1, $result->events);
         $this->assertSame('agent_command_rejected', $result->events[0]->type);
+        $this->assertSame($kind, $result->events[0]->payload['kind']);
+        $this->assertSame([], $result->effects);
+        $this->assertSame([], $result->postCommitEffects);
+        $this->assertCount(1, $result->postCommitActions);
+        $action = $result->postCommitActions[0];
+        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Coordination\RejectCommandDTO::class, $action);
+        $this->assertSame($message->runId(), $action->runId);
+        $this->assertSame($message->idempotencyKey(), $action->idempotencyKey);
+        $this->assertSame($result->events[0]->payload['reason'], $action->reason);
+    }
+
+    /** @return iterable<string, array{string, array<string, mixed>}> */
+    public static function commandsRejectedDuringCancellation(): iterable
+    {
+        yield 'follow-up' => [CoreCommandKind::FollowUp, ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Next message']]]]];
+        yield 'manual compaction' => [CoreCommandKind::Compact, ['custom_instructions' => 'Be brief.']];
     }
 
     public function testHumanResponseRejectedAfterCancelledRun(): void
@@ -799,7 +817,8 @@ final class ApplyCommandHandlerTest extends TestCase
      * immediately — no enqueue.  This prevents duplicate compact
      * when the pending command is drained by a future mailbox cycle.
      */
-    public function testCompactOnTerminalRunMarksAppliedNotQueued(): void
+    #[DataProvider('terminalCompactionStatuses')]
+    public function testCompactOnTerminalRunMarksAppliedNotQueued(RunStatus $status): void
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
@@ -822,7 +841,7 @@ final class ApplyCommandHandlerTest extends TestCase
 
         $state = new RunState(
             runId: 'run-terminal-compact',
-            status: RunStatus::Completed,
+            status: $status,
             version: 3,
             turnNo: 5,
             lastSeq: 10,
@@ -846,7 +865,7 @@ final class ApplyCommandHandlerTest extends TestCase
 
         // Terminal path: mark applied immediately, not queued
         $this->assertNotNull($result->nextState);
-        $this->assertSame(RunStatus::Completed, $result->nextState->status,
+        $this->assertSame($status, $result->nextState->status,
             'Terminal compact must not change run status.',
         );
 
@@ -873,6 +892,13 @@ final class ApplyCommandHandlerTest extends TestCase
         $this->assertCount(0, $commandStore->pending('run-terminal-compact'),
             'Terminal compact must not leave a pending command in the store.',
         );
+    }
+
+    /** @return iterable<string, array{RunStatus}> */
+    public static function terminalCompactionStatuses(): iterable
+    {
+        yield 'completed' => [RunStatus::Completed];
+        yield 'cancelled' => [RunStatus::Cancelled];
     }
 
     /**

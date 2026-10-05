@@ -146,11 +146,14 @@ final class SubagentProgressDisplayFormatter
         string $agentName,
         SubagentProgressSingleSnapshotDTO|SubagentProgressChildRowDTO $data,
     ): string {
+        $parts = [\sprintf('%s %s', $status, $agentName)];
+        if (null !== $data->cacheReadHitPercentage) {
+            $parts[] = \sprintf('↻ %.0f%%', $data->cacheReadHitPercentage);
+        }
         if (!\in_array($status, ['running', 'completed', 'failed', 'cancelled'], true)) {
-            return $status.' '.$agentName;
+            return implode(' | ', $parts);
         }
 
-        $parts = [\sprintf('%s %s', $status, $agentName)];
         if ($data->toolCount > 0) {
             $parts[] = \sprintf('%d tools', $data->toolCount);
         }

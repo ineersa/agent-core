@@ -51,6 +51,7 @@ final class SubagentProgressSnapshotBuilder
             artifactPath: (null !== $enrichment->artifactPath && '' !== $enrichment->artifactPath) ? $enrichment->artifactPath : null,
             assistantExcerpt: (null !== $enrichment->assistantExcerpt && '' !== $enrichment->assistantExcerpt) ? $enrichment->assistantExcerpt : null,
             activeTool: (null !== $enrichment->activeToolLine && '' !== $enrichment->activeToolLine) ? $enrichment->activeToolLine : null,
+            cacheReadHitPercentage: $enrichment->cacheReadHitPercentage,
         );
     }
 
@@ -178,6 +179,7 @@ final class SubagentProgressSnapshotBuilder
             artifactPath: (null !== $enrichment->artifactPath && '' !== $enrichment->artifactPath) ? $enrichment->artifactPath : null,
             assistantExcerpt: (null !== $enrichment->assistantExcerpt && '' !== $enrichment->assistantExcerpt) ? $enrichment->assistantExcerpt : null,
             activeTool: (null !== $enrichment->activeToolLine && '' !== $enrichment->activeToolLine) ? $enrichment->activeToolLine : null,
+            cacheReadHitPercentage: $enrichment->cacheReadHitPercentage,
         );
     }
 }

@@ -45,6 +45,8 @@ final class DeferredChildRunEventProjector
         $toolCount = $current->toolCount;
         $llmStepCount = $current->llmStepCount;
         $inputTokens = $current->inputTokens;
+        $cacheReadTokens = $current->cacheReadTokens;
+        $cacheInputTokens = $current->cacheInputTokens;
         $latestInputTokens = $current->latestInputTokens;
         $contextWindow = $current->contextWindow;
         $outputTokens = $current->outputTokens;
@@ -105,6 +107,13 @@ final class DeferredChildRunEventProjector
                 $turnInput = $this->intVal($usage['input_tokens'] ?? 0);
                 $inputTokens += $turnInput;
                 $latestInputTokens = $turnInput;
+                if (null !== $cacheInputTokens) {
+                    $cacheInputTokens += $turnInput;
+                    $turnCacheRead = $usage['cache_read_tokens'] ?? $usage['cached_tokens'] ?? null;
+                    if (null !== $turnCacheRead) {
+                        $cacheReadTokens = ($cacheReadTokens ?? 0) + $this->intVal($turnCacheRead);
+                    }
+                }
                 $outputTokens += $this->intVal($usage['output_tokens'] ?? 0);
                 $reasoningTokens += $this->intVal($usage['thinking_tokens'] ?? $usage['reasoning_tokens'] ?? 0);
                 $totalTokens += $this->intVal($usage['total_tokens'] ?? 0);
@@ -236,6 +245,8 @@ final class DeferredChildRunEventProjector
             recentTools: $recentTools,
             activeToolLine: $activeToolLine,
             pendingToolCalls: $pendingById,
+            cacheReadTokens: $cacheReadTokens,
+            cacheInputTokens: $cacheInputTokens,
         );
     }
 

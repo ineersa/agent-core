@@ -31,6 +31,10 @@ class DeferredSubagentChild
     #[ORM\Column(name: 'child_run_id', type: 'string', length: 36, unique: true)]
     public string $childRunId = '';
 
+    // Stable provider identity survives turns, worker recreation, and resume rebinds.
+    #[ORM\Column(name: 'provider_cache_key', type: 'string', length: 36, nullable: true)]
+    public ?string $providerCacheKey = null;
+
     #[ORM\Column(name: 'artifact_id', type: 'string', length: 64)]
     public string $artifactId = '';
 
@@ -82,5 +86,6 @@ class DeferredSubagentChild
         $now = new \DateTimeImmutable();
         $this->createdAt = $now;
         $this->updatedAt = $now;
+        $this->providerCacheKey = \Symfony\Component\Uid\UuidV7::v7()->toRfc4122();
     }
 }

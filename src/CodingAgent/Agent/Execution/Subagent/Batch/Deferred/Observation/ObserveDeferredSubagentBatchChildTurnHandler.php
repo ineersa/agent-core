@@ -91,6 +91,7 @@ final readonly class ObserveDeferredSubagentBatchChildTurnHandler
                 lastCommittedSeq: $cursor,
                 model: $child->launchModel,
                 reasoning: $child->launchReasoning,
+                cacheInputTokens: 0 === $cursor ? 0 : null,
             );
 
         $updated = $this->projector->apply(

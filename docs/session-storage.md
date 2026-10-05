@@ -80,6 +80,15 @@ Foreground subagent runs store parent-scoped artifacts under the parent session 
 
 Deferred subagent supervision (single and parallel) uses durable batch records and timeouts configured by `agents.subagent_tool_timeout_seconds` (default 24h, minimum 60s). Recovery reads child event logs backward from the durable tail until its stored event sequence cursor, then restores chronological order; it does not treat `sequence.cursor` as event-tail truth because allocation may leave valid sequence holes.
 
+Each child row in `deferred_subagent_child` stores an immutable UUIDv7 `provider_cache_key`, separate from its run ID.
+Codex uses that key across turns, worker recreation, and `agent_resume`. Resume rebinds the child to a new batch without changing the key.
+The upgrade backfills provider keys without changing operational event cursors, lifecycle state, or per-resume usage counters.
+
+Fork and subagent cards show cumulative cache reuse as `↻ N%` while running and after completion. The child live-view footer shows the same percentage.
+The percentage divides the child's accumulated cache-read tokens by its accumulated input tokens, matching the main-session footer.
+Reported zero hits appear as `↻ 0%`. Missing cache telemetry or zero input tokens hides the indicator.
+Legacy checkpoints without lifetime cache counters keep the indicator hidden, including after resume. Partial post-upgrade usage cannot reconstruct their lifetime percentage.
+
 ## Resume and new session
 
 | Flow | Behavior |

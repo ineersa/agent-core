@@ -91,6 +91,16 @@ final class DeferredSubagentChildRepositoryFreshnessTest extends IsolatedKernelT
     {
         [$oldLifecycle, $childRunId] = $this->reserveOneChild('parent-child-fresh-rebind', 'tool-child-fresh-rebind');
         unset($oldLifecycle);
+        $cacheKey = $this->childRepository->findProviderCacheKey($childRunId);
+        $this->assertNotNull($cacheKey);
+
+        $this->connection->update('deferred_subagent_child', [
+            'child_lifecycle_projection' => json_encode([
+                'child_status' => 'completed', 'child_turn_no' => 7, 'last_committed_seq' => 42,
+                'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'medium',
+                'input_tokens' => 30, 'cache_input_tokens' => 30, 'cache_read_tokens' => 18,
+            ], \JSON_THROW_ON_ERROR),
+        ], ['child_run_id' => $childRunId]);
 
         $managed = $this->entityManager->getRepository(DeferredSubagentChild::class)->findOneBy([
             'childRunId' => $childRunId,
@@ -147,6 +157,12 @@ final class DeferredSubagentChildRepositoryFreshnessTest extends IsolatedKernelT
         $this->assertSame(DeferredSubagentChildLaunchStatusEnum::Reserved->value, $row['launch_status']);
         $this->assertNull($row['terminal_status']);
         $this->assertNull($row['terminal_completed_at']);
+        $this->assertSame($cacheKey, $this->childRepository->findProviderCacheKey($childRunId));
+        $resumed = $this->childRepository->findByChildRunId($childRunId)?->childLifecycleProjection;
+        $this->assertNotNull($resumed);
+        $this->assertSame(0, $resumed->inputTokens);
+        $this->assertSame(30, $resumed->cacheInputTokens);
+        $this->assertSame(18, $resumed->cacheReadTokens);
     }
 
     /**

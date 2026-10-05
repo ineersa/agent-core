@@ -125,11 +125,13 @@ final class ReloadCommandHandlerTest extends TestCase
     }
 
     #[Test]
-    public function testRejectsQueuedFollowUp(): void
+    #[DataProvider('deferredInputStates')]
+    public function testRejectsQueuedFollowUp(array $queued, ?string $restoring): void
     {
         $switch = $this->createSwitchSpy();
         $state = new TuiSessionState('42', false);
-        $state->queuedFollowUp = 'follow up text';
+        $state->queuedFollowUps = $queued;
+        $state->pendingEditorRestoreText = $restoring;
         $handler = new ReloadCommandHandler(
             $switch,
             $state,
@@ -142,6 +144,13 @@ final class ReloadCommandHandlerTest extends TestCase
         $this->assertInstanceOf(TranscriptMessage::class, $result);
         $this->assertStringContainsString('follow-up', $result->text);
         $this->assertNull($switch->reloadedSessionId);
+    }
+
+    /** @return iterable<string, array{list<string>, ?string}> */
+    public static function deferredInputStates(): iterable
+    {
+        yield 'awaiting settlement' => [['follow up text'], null];
+        yield 'awaiting editor restoration' => [[], 'restored follow up text'];
     }
 
     #[Test]

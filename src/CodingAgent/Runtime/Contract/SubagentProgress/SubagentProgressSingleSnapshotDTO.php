@@ -60,6 +60,9 @@ final readonly class SubagentProgressSingleSnapshotDTO implements SubagentProgre
         public ?string $artifactPath = null,
         public ?string $assistantExcerpt = null,
         public ?string $activeTool = null,
+        // JSON numbers may decode as ints even when computed as floats.
+        #[Assert\Range(min: 0, max: 100)]
+        public int|float|null $cacheReadHitPercentage = null,
     ) {
     }
 
