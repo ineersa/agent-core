@@ -23,14 +23,14 @@ final class ToolBatchCollectorTest extends TestCase
         $this->assertCount(1, $initial);
         $this->assertSame('call-1', $initial[0]->toolCallId);
 
-        $firstOutcome = $collector->collect($this->toolResult('run-1', 'step-1', 'call-1', 0));
+        $firstOutcome = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($collector, $this->toolResult('run-1', 'step-1', 'call-1', 0));
 
         $this->assertTrue($firstOutcome->accepted);
         $this->assertFalse($firstOutcome->complete);
         $this->assertCount(1, $firstOutcome->effectsToDispatch);
         $this->assertSame('call-2', $firstOutcome->effectsToDispatch[0]->toolCallId);
 
-        $secondOutcome = $collector->collect($this->toolResult('run-1', 'step-1', 'call-2', 1));
+        $secondOutcome = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($collector, $this->toolResult('run-1', 'step-1', 'call-2', 1));
 
         $this->assertTrue($secondOutcome->accepted);
         $this->assertTrue($secondOutcome->complete);
@@ -56,16 +56,16 @@ final class ToolBatchCollectorTest extends TestCase
             $initial,
         ));
 
-        $firstOutcome = $collector->collect($this->toolResult('run-2', 'step-2', 'call-1', 0));
+        $firstOutcome = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($collector, $this->toolResult('run-2', 'step-2', 'call-1', 0));
         $this->assertFalse($firstOutcome->complete);
         $this->assertCount(1, $firstOutcome->effectsToDispatch);
         $this->assertSame('call-3', $firstOutcome->effectsToDispatch[0]->toolCallId);
 
-        $secondOutcome = $collector->collect($this->toolResult('run-2', 'step-2', 'call-2', 1));
+        $secondOutcome = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($collector, $this->toolResult('run-2', 'step-2', 'call-2', 1));
         $this->assertFalse($secondOutcome->complete);
         $this->assertSame([], $secondOutcome->effectsToDispatch);
 
-        $complete = $collector->collect($this->toolResult('run-2', 'step-2', 'call-3', 2));
+        $complete = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($collector, $this->toolResult('run-2', 'step-2', 'call-3', 2));
 
         $this->assertTrue($complete->complete);
         $this->assertSame(['call-1', 'call-2', 'call-3'], array_map(
@@ -93,18 +93,18 @@ final class ToolBatchCollectorTest extends TestCase
         ));
 
         // Complete call-1 — still in-flight (call-2), sequential barrier holds call-3
-        $firstOutcome = $collector->collect($this->toolResult('run-3', 'step-3', 'call-1', 0));
+        $firstOutcome = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($collector, $this->toolResult('run-3', 'step-3', 'call-1', 0));
         $this->assertFalse($firstOutcome->complete);
         $this->assertSame([], $firstOutcome->effectsToDispatch);
 
         // Complete call-2 — no more in-flight, now sequential call-3 dispatches
-        $secondOutcome = $collector->collect($this->toolResult('run-3', 'step-3', 'call-2', 1));
+        $secondOutcome = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($collector, $this->toolResult('run-3', 'step-3', 'call-2', 1));
         $this->assertFalse($secondOutcome->complete);
         $this->assertCount(1, $secondOutcome->effectsToDispatch);
         $this->assertSame('call-3', $secondOutcome->effectsToDispatch[0]->toolCallId);
 
         // Complete call-3 — batch done
-        $complete = $collector->collect($this->toolResult('run-3', 'step-3', 'call-3', 2));
+        $complete = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($collector, $this->toolResult('run-3', 'step-3', 'call-3', 2));
         $this->assertTrue($complete->complete);
         $this->assertSame(['call-1', 'call-2', 'call-3'], array_map(
             static fn (ToolCallResult $result): string => $result->toolCallId,
@@ -128,19 +128,19 @@ final class ToolBatchCollectorTest extends TestCase
         $this->assertSame('call-1', $initial[0]->toolCallId);
 
         // Complete call-1 → sequential call-2 dispatches alone
-        $outcome1 = $collector->collect($this->toolResult('run-4', 'step-4', 'call-1', 0));
+        $outcome1 = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($collector, $this->toolResult('run-4', 'step-4', 'call-1', 0));
         $this->assertFalse($outcome1->complete);
         $this->assertCount(1, $outcome1->effectsToDispatch);
         $this->assertSame('call-2', $outcome1->effectsToDispatch[0]->toolCallId);
 
         // Complete call-2 → parallel call-3 dispatches
-        $outcome2 = $collector->collect($this->toolResult('run-4', 'step-4', 'call-2', 1));
+        $outcome2 = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($collector, $this->toolResult('run-4', 'step-4', 'call-2', 1));
         $this->assertFalse($outcome2->complete);
         $this->assertCount(1, $outcome2->effectsToDispatch);
         $this->assertSame('call-3', $outcome2->effectsToDispatch[0]->toolCallId);
 
         // Complete call-3 → batch done
-        $complete = $collector->collect($this->toolResult('run-4', 'step-4', 'call-3', 2));
+        $complete = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($collector, $this->toolResult('run-4', 'step-4', 'call-3', 2));
         $this->assertTrue($complete->complete);
     }
 

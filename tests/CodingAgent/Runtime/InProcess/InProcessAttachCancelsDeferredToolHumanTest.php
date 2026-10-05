@@ -67,7 +67,7 @@ final class InProcessAttachCancelsDeferredToolHumanTest extends IsolatedKernelTe
         $collector->registerExpectedBatch($runId, 1, 'step-attach', [
             new ExecuteToolCall($runId, 1, 'step-attach', 1, 'idemp-attach', 'call-attach', 'bash', ['command' => 'ls'], 0),
         ]);
-        $collector->admitHumanInputSuspension($runId, 1, 'step-attach', 'call-attach', 'q-attach');
+        \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, $runId, 1, 'step-attach', 'call-attach', 'q-attach');
 
         $commandStore = new InMemoryCommandStore();
         $router = new CommandRouter([]);

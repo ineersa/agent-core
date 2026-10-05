@@ -6,6 +6,8 @@ namespace Ineersa\AgentCore\Application\Handler;
 
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreMutation;
+use Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO;
+use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
@@ -27,8 +29,8 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
  *   1. {@see LlmStepResultHandler} calls {@see registerExpectedBatch()}, which persists
  *      the batch and returns initial dispatchable {@see ExecuteToolCall} messages.
  *   2. Tool workers execute calls and dispatch {@see ToolCallResult} envelopes.
- *   3. {@see ToolCallResultHandler} calls {@see collect()}, which atomically mutates
- *      durable {@see ToolBatchStateDTO} state and may dispatch subsequent calls.
+ *   3. {@see ToolCallResultHandler} calls {@see prepareCollect()} without publication.
+ *      Verified coordination finalizes its delta before subsequent calls are armed.
  *
  * Durable mode reads through the store without retaining deserialized batches.
  * In-memory batches remain available until RunCommit publishes their canonical
@@ -108,14 +110,22 @@ final class ToolBatchCollector
         return $initialDispatch;
     }
 
-    public function collect(ToolCallResult $result): ToolBatchCollectOutcome
+    /** Preparation never publishes collection or changes the retained batch. */
+    public function prepareCollect(ToolCallResult $result): ToolBatchCollectOutcome
     {
         $result = $result->finalized();
-        if (null !== $this->store) {
-            return $this->collectWithDurableStore($result);
+        $before = $this->loadBatch($result->runId(), $result->turnNo(), $result->stepId());
+        if (null === $before) {
+            return ToolBatchCollectOutcome::rejected();
         }
+        $after = clone $before;
+        $outcome = $this->applyCollectToBatch($after, $result);
 
-        return $this->collectInMemory($result);
+        return new ToolBatchCollectOutcome(
+            $outcome->accepted, $outcome->duplicate, $outcome->complete,
+            $outcome->orderedResults, $outcome->effectsToDispatch,
+            $this->prepareDelta($result->runId(), $result->turnNo(), $result->stepId(), $before, $after, $result),
+        );
     }
 
     /**
@@ -138,22 +148,20 @@ final class ToolBatchCollector
     }
 
     /**
-     * Move an in-flight call into awaiting_human_input without creating a tool result.
+     * Prepare moving an in-flight call into awaiting_human_input without a tool result.
      *
      * Duplicate same question_id is idempotent. Conflicting question_id fails.
      * May return ordinary later ExecuteToolCall effects when removing the call
      * from inFlight frees dispatch capacity under current mode/maxParallelism.
-     *
-     * @return list<ExecuteToolCall>
      */
-    public function admitHumanInputSuspension(
+    public function prepareHumanInputSuspension(
         string $runId,
         int $turnNo,
         string $stepId,
         string $toolCallId,
         string $questionId,
-    ): array {
-        return $this->withBatch(
+    ): PreparedToolBatchDTO {
+        return $this->prepareWithBatch(
             $runId,
             $turnNo,
             $stepId,
@@ -163,7 +171,7 @@ final class ToolBatchCollector
     }
 
     /**
-     * Inverse of {@see admitHumanInputSuspension}: attach the typed human answer to the
+     * Inverse of {@see prepareHumanInputSuspension}: attach the typed human answer to the
      * exact stored call, clear the awaiting marker, and requeue through the existing
      * pendingQueue + dispatchableCalls/maxParallelism path.
      *
@@ -171,18 +179,16 @@ final class ToolBatchCollector
      * returns the same ExecuteToolCall effect so post-commit redispatch survives CAS
      * retries and failed-once dispatch without a second lifecycle.
      * Conflicting answer or missing awaiting marker fails closed.
-     *
-     * @return list<ExecuteToolCall>
      */
-    public function resumeHumanInputAnswer(
+    public function prepareHumanInputAnswer(
         string $runId,
         int $turnNo,
         string $stepId,
         string $toolCallId,
         string $questionId,
         ToolCallHumanInputAnswerDTO $answer,
-    ): array {
-        return $this->withBatch(
+    ): PreparedToolBatchDTO {
+        return $this->prepareWithBatch(
             $runId,
             $turnNo,
             $stepId,
@@ -192,7 +198,7 @@ final class ToolBatchCollector
     }
 
     /**
-     * Post-commit redrive after human_response already mutated durable batch state.
+     * Prepare redrive after human_response committed its durable batch decision.
      *
      * Locates exactly one call for the current run/turn/step whose stored answer
      * matches `$questionId` and `$answerValue`. Returns:
@@ -201,17 +207,15 @@ final class ToolBatchCollector
      * - empty list when already completed (recognized no-op)
      *
      * Ambiguous matches or answer conflicts fail closed.
-     *
-     * @return list<ExecuteToolCall>
      */
-    public function redriveHumanInputAnswer(
+    public function prepareHumanInputRedrive(
         string $runId,
         int $turnNo,
         string $stepId,
         string $questionId,
         mixed $answerValue,
-    ): array {
-        return $this->withBatch(
+    ): PreparedToolBatchDTO {
+        return $this->prepareWithBatch(
             $runId,
             $turnNo,
             $stepId,
@@ -248,51 +252,105 @@ final class ToolBatchCollector
         }
     }
 
+    public function finalizePreparedBatch(FinalizeToolBatchDTO $action, VerifiedTransitionDTO $transition): void
+    {
+        $matched = false;
+        foreach ($transition->work['actions'] ?? [] as $expected) {
+            if ($expected instanceof FinalizeToolBatchDTO && serialize($expected) === serialize($action)) {
+                $matched = true;
+            }
+        }
+        if (!$matched || ($transition->work['run_id'] ?? null) !== $action->runId) {
+            throw new \RuntimeException('Prepared batch has no matching verified transition.');
+        }
+        $apply = function (?ToolBatchStateDTO $batch) use ($action): ToolBatchStoreMutation {
+            if (null === $batch) {
+                throw new \RuntimeException('Prepared batch evidence is missing.');
+            }
+            $hash = $this->coordinationHash($batch);
+            if ($hash === $action->afterHash) {
+                return new ToolBatchStoreMutation(null);
+            }
+            if ($hash !== $action->beforeHash) {
+                throw new \RuntimeException('Prepared batch differs from its coordination predecessor.');
+            }
+            $next = clone $batch;
+            $next->pendingQueue = $action->pendingQueue;
+            $next->inFlight = $action->inFlight;
+            $next->awaitingHumanInput = $action->awaitingHumanInput;
+            $next->finalized = $action->finalized;
+            if (null !== $action->result) {
+                $next->results[$action->result->toolCallId] = $action->result;
+            }
+            if (null !== $action->revisedCallId) {
+                $next->calls[$action->revisedCallId] = $next->calls[$action->revisedCallId]->withHumanInputAnswer($action->answer);
+            }
+            if ($this->coordinationHash($next) !== $action->afterHash) {
+                throw new \RuntimeException('Prepared batch delta does not match its planned decision.');
+            }
+
+            return new ToolBatchStoreMutation(null, $next);
+        };
+        if (null !== $this->store) {
+            $this->store->mutate($action->runId, $action->turnNo, $action->stepId, $apply);
+
+            return;
+        }
+        $mutation = $apply($this->loadBatch($action->runId, $action->turnNo, $action->stepId));
+        if (null !== $mutation->nextState) {
+            $this->saveBatch($action->runId, $action->turnNo, $action->stepId, $mutation->nextState);
+        }
+    }
+
     /**
-     * Apply a batch mutation through both store modes.
-     *
-     * With a durable store the mutation runs atomically inside
-     * {@see ToolBatchStoreInterface::mutate()}; otherwise the in-memory batch
-     * is loaded, mutated, and saved back. A missing batch fails with the
-     * caller's exact message in both modes.
+     * Compute on a private clone. Worker receipts are not part of the delta.
      *
      * @param callable(ToolBatchStateDTO): list<ExecuteToolCall> $apply
-     * @param literal-string                                     $missingBatchMessage sprintf format with runId (%s), turnNo (%d), stepId (%s)
-     *
-     * @return list<ExecuteToolCall>
+     * @param literal-string                                     $missingBatchMessage
      */
-    private function withBatch(
+    private function prepareWithBatch(
         string $runId,
         int $turnNo,
         string $stepId,
         string $missingBatchMessage,
         callable $apply,
-    ): array {
-        if (null !== $this->store) {
-            /* @var list<ExecuteToolCall> */
-            return $this->store->mutate(
-                $runId,
-                $turnNo,
-                $stepId,
-                static function (?ToolBatchStateDTO $stored) use ($runId, $turnNo, $stepId, $missingBatchMessage, $apply): ToolBatchStoreMutation {
-                    if (null === $stored) {
-                        throw new \LogicException(\sprintf($missingBatchMessage, $runId, $turnNo, $stepId));
-                    }
-
-                    return new ToolBatchStoreMutation($apply($stored), $stored);
-                },
-            );
-        }
-
-        $batch = $this->loadBatch($runId, $turnNo, $stepId);
-        if (null === $batch) {
+    ): PreparedToolBatchDTO {
+        $before = $this->loadBatch($runId, $turnNo, $stepId);
+        if (null === $before) {
             throw new \LogicException(\sprintf($missingBatchMessage, $runId, $turnNo, $stepId));
         }
+        $after = clone $before;
+        $effects = $apply($after);
 
-        $effects = $apply($batch);
-        $this->saveBatch($runId, $turnNo, $stepId, $batch);
+        return new PreparedToolBatchDTO($effects, $this->prepareDelta($runId, $turnNo, $stepId, $before, $after));
+    }
 
-        return $effects;
+    private function prepareDelta(string $runId, int $turnNo, string $stepId, ToolBatchStateDTO $before, ToolBatchStateDTO $after, ?ToolCallResult $result = null): ?FinalizeToolBatchDTO
+    {
+        $beforeHash = $this->coordinationHash($before);
+        $afterHash = $this->coordinationHash($after);
+        if ($beforeHash === $afterHash) {
+            return null;
+        }
+        $revisedId = null;
+        $answer = null;
+        foreach ($after->calls as $id => $call) {
+            if ($call !== $before->calls[$id]) {
+                if (null !== $revisedId) {
+                    throw new \LogicException('Prepared human input changed multiple invocations.');
+                }
+                $revisedId = $id;
+                $answer = $call->humanInputAnswer;
+            }
+        }
+
+        return new FinalizeToolBatchDTO($runId, $turnNo, $stepId, $beforeHash, $afterHash, $after->pendingQueue, $after->inFlight, $after->awaitingHumanInput, $after->finalized, $result, $revisedId, $answer);
+    }
+
+    /** Worker authorization and result receipts can advance independently. */
+    private function coordinationHash(ToolBatchStateDTO $batch): string
+    {
+        return hash('sha256', serialize([$batch->expectedOrder, $batch->calls, $batch->pendingQueue, $batch->inFlight, $batch->results, $batch->finalized, $batch->maxParallelism, $batch->awaitingHumanInput]));
     }
 
     /**
@@ -454,52 +512,6 @@ final class ToolBatchCollector
         array_unshift($batch->pendingQueue, $toolCallId);
 
         return $this->dispatchableCalls($batch);
-    }
-
-    private function collectWithDurableStore(ToolCallResult $result): ToolBatchCollectOutcome
-    {
-        $runId = $result->runId();
-        $turnNo = $result->turnNo();
-        $stepId = $result->stepId();
-
-        /** @var ToolBatchCollectOutcome $outcome */
-        $outcome = $this->store->mutate(
-            $runId,
-            $turnNo,
-            $stepId,
-            function (?ToolBatchStateDTO $stored) use ($result): ToolBatchStoreMutation {
-                if (null === $stored) {
-                    return new ToolBatchStoreMutation(ToolBatchCollectOutcome::rejected());
-                }
-
-                $collectOutcome = $this->applyCollectToBatch($stored, $result);
-
-                if (!$collectOutcome->accepted || $collectOutcome->duplicate) {
-                    return new ToolBatchStoreMutation($collectOutcome);
-                }
-
-                return new ToolBatchStoreMutation($collectOutcome, $stored);
-            },
-        );
-
-        return $outcome;
-    }
-
-    private function collectInMemory(ToolCallResult $result): ToolBatchCollectOutcome
-    {
-        $batch = $this->loadBatch($result->runId(), $result->turnNo(), $result->stepId());
-
-        if (null === $batch) {
-            return ToolBatchCollectOutcome::rejected();
-        }
-
-        $outcome = $this->applyCollectToBatch($batch, $result);
-
-        if ($outcome->accepted && !$outcome->duplicate) {
-            $this->saveBatch($result->runId(), $result->turnNo(), $result->stepId(), $batch);
-        }
-
-        return $outcome;
     }
 
     private function applyCollectToBatch(ToolBatchStateDTO $batch, ToolCallResult $result): ToolBatchCollectOutcome

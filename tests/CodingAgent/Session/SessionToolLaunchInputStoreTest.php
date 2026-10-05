@@ -290,11 +290,11 @@ final class SessionToolLaunchInputStoreTest extends IsolatedKernelTestCase
         $eventStore = self::getContainer()->get(\Ineersa\AgentCore\Contract\EventStoreInterface::class);
         $commit = new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
             activeRunContext: $active, eventStore: $eventStore,
-            stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus()),
+            stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(self::getContainer()->get('agent.command.bus'), new TestMessageBus()),
             logger: new \Ineersa\AgentCore\Tests\Support\TestLogger(), toolBatchCollector: $ownerCollector,
             hookDispatcher: new \Ineersa\AgentCore\Application\Handler\HookDispatcher([self::getContainer()->get(\Ineersa\CodingAgent\Session\ToolBatchSnapshotCleanupHookSubscriber::class)]), toolAuthorization: new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore()
         );
-        $commit->commit($state, $transition->nextState, $transition->events, $transition->effects);
+        $commit->commit($state, $transition->nextState, $transition->events, $transition->effects, postCommitEffects: $transition->postCommitEffects, postCommitActions: $transition->postCommitActions);
         $this->assertFileDoesNotExist($this->payloadPath($runId, 'fork'));
         $this->assertNull($deferred->findByRunAndToolCall($runId, 'fork'));
         $this->assertEquals($originalFailure, $batchStore->load($runId, 1, 'step')->results['fork']);
@@ -310,7 +310,7 @@ final class SessionToolLaunchInputStoreTest extends IsolatedKernelTestCase
         $this->assertCount(1, $freshBus->messages);
         $this->assertEquals($originalFailure, $freshBus->messages[0]);
         $this->assertSame('original hint', $freshBus->messages[0]->error['hint']);
-        $duplicate = $ownerCollector->collect($freshBus->messages[0]);
+        $duplicate = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($ownerCollector, $freshBus->messages[0]);
         $this->assertTrue($duplicate->duplicate);
         $this->assertFalse($duplicate->complete);
         $unchanged = $handler->handle($freshBus->messages[0], $active->requireLoaded($runId));

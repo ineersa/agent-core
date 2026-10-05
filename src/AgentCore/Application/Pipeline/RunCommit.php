@@ -56,6 +56,12 @@ final readonly class RunCommit
                 $persistedEvents = $this->eventStore->appendTransition($events, ['run_id' => $nextState->runId, 'predecessor_seq' => $state->lastSeq, 'source' => $sourceIdentity, 'effects' => $effects, 'post_commit_effects' => $postCommitEffects, 'actions' => $postCommitActions, 'after_turn_hooks' => $dispatchAfterTurnHooks, 'result_disposition' => $resultDisposition, 'execution_disposition' => $executionDisposition]);
             }
 
+            // Batch decisions must survive before collector release, cleanup,
+            // or any dependent invocation can become authorized.
+            $batchActions = array_values(array_filter($postCommitActions, static fn (object $action): bool => $action instanceof \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO));
+            $this->stepDispatcher->dispatchCoordinationActions($batchActions);
+            $postCommitActions = array_values(array_filter($postCommitActions, static fn (object $action): bool => !$action instanceof \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO));
+
             $committedState = $nextState;
             if ([] !== $persistedEvents) {
                 $lastPersisted = $persistedEvents[array_key_last($persistedEvents)];
@@ -179,6 +185,9 @@ final readonly class RunCommit
         $verified = $this->eventStore->verifiedPendingTransition($runId);
         $stamps = [];
         $deliveries = [];
+        $batchActions = array_values(array_filter($actions, static fn (object $action): bool => $action instanceof \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO));
+        $this->stepDispatcher->dispatchCoordinationActions($batchActions);
+        $actions = array_values(array_filter($actions, static fn (object $action): bool => !$action instanceof \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO));
         if ([] !== $gated || null !== $resultDisposition || null !== $executionDisposition) {
             $verified = $this->eventStore->verifiedPendingTransition($runId);
             if (null === $verified) {

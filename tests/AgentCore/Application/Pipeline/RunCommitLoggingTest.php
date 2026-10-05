@@ -81,7 +81,7 @@ final class RunCommitLoggingTest extends TestCase
         unset($call);
         $result = \Ineersa\AgentCore\Tests\Support\Builder\ToolCallResultBuilder::success('run-1')
             ->withTurnNo(1)->withStepId('tools')->withToolCallId('read-call')->build();
-        $this->assertTrue($collector->collect($result)->complete);
+        $this->assertTrue(\Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($collector, $result)->complete);
         $this->assertNotNull($weakCall->get(), 'Finalizing collection precedes canonical commit and must not release the request.');
         $active = new FailingBatchPublicationContext();
         $previous = new RunState(runId: 'run-1', status: RunStatus::Running, turnNo: 1);

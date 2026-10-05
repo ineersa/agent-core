@@ -1492,7 +1492,7 @@ final class ApplyCommandHandlerTest extends TestCase
                 0,
             ),
         ]);
-        $collector->admitHumanInputSuspension('run-deferred-cancel', 1, 'step-d', 'call-d', 'q-d');
+        \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, 'run-deferred-cancel', 1, 'step-d', 'call-d', 'q-d');
 
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
@@ -1574,8 +1574,8 @@ final class ApplyCommandHandlerTest extends TestCase
             new ExecuteToolCall('run-multi-d', 1, 'step-m', 1, 'idemp-a', 'call-a', 'bash', ['command' => 'a'], 0),
             new ExecuteToolCall('run-multi-d', 1, 'step-m', 1, 'idemp-b', 'call-b', 'bash', ['command' => 'b'], 1),
         ]);
-        $collector->admitHumanInputSuspension('run-multi-d', 1, 'step-m', 'call-a', 'q-a');
-        $collector->admitHumanInputSuspension('run-multi-d', 1, 'step-m', 'call-b', 'q-b');
+        \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, 'run-multi-d', 1, 'step-m', 'call-a', 'q-a');
+        \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, 'run-multi-d', 1, 'step-m', 'call-b', 'q-b');
 
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
@@ -1682,12 +1682,12 @@ final class ApplyCommandHandlerTest extends TestCase
             isError: false,
             error: null,
         );
-        $accepted = $collector->collect($completedA);
+        $accepted = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($collector, $completedA);
         $this->assertTrue($accepted->accepted);
         $this->assertFalse($accepted->complete);
         $this->assertNotNull($collector->getStoredResult('run-partial-d', 1, 'step-p', 'call-a'));
 
-        $collector->admitHumanInputSuspension('run-partial-d', 1, 'step-p', 'call-b', 'q-b');
+        \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, 'run-partial-d', 1, 'step-p', 'call-b', 'q-b');
 
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
@@ -1854,7 +1854,7 @@ final class ApplyCommandHandlerTest extends TestCase
             new ExecuteToolCall('run-missing-store', 1, 'step-m', 1, 'idemp-a', 'call-a', 'bash', ['command' => 'a'], 0, mode: 'parallel', maxParallelism: 2),
             new ExecuteToolCall('run-missing-store', 1, 'step-m', 1, 'idemp-b', 'call-b', 'ask_human', ['prompt' => 'B?'], 1, mode: 'parallel', maxParallelism: 2),
         ]);
-        $collector->admitHumanInputSuspension('run-missing-store', 1, 'step-m', 'call-b', 'q-b');
+        \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, 'run-missing-store', 1, 'step-m', 'call-b', 'q-b');
 
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,

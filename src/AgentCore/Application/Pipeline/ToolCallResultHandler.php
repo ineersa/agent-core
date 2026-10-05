@@ -223,7 +223,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
             );
         }
 
-        $outcome = $this->toolBatchCollector->collect($message);
+        $outcome = $this->toolBatchCollector->prepareCollect($message);
         if ($outcome->duplicate) {
             return new HandlerResult();
         }
@@ -254,7 +254,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
             ? RunStatus::WaitingHuman
             : RunStatus::Running;
 
-        $postCommitActions = [];
+        $postCommitActions = null !== $outcome->action ? [$outcome->action] : [];
 
         if ($outcome->complete) {
             $interruptPayload = null;
@@ -414,7 +414,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
             throw new \LogicException(\sprintf('Conflicting tool-execution suspension for call "%s": existing request "%s", new request "%s".', $message->toolCallId, $existing->questionId, $request->questionId));
         }
 
-        $effects = $this->toolBatchCollector->admitHumanInputSuspension(
+        $prepared = $this->toolBatchCollector->prepareHumanInputSuspension(
             $message->runId(),
             $message->turnNo(),
             $message->stepId(),
@@ -443,7 +443,8 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
                 'pendingHumanInputRequests' => $pendingHumanInputRequests,
             ]),
             events: $events,
-            postCommitEffects: $effects,
+            postCommitEffects: $prepared->effects,
+            postCommitActions: null !== $prepared->action ? [$prepared->action] : [],
         );
     }
 

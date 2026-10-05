@@ -52,10 +52,10 @@ final class ToolBatchCollectorFinalizedRedeliveryTest extends TestCase
         ]);
 
         $result = $this->toolResult('call-1', 0);
-        $first = $collector->collect($result);
+        $first = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($collector, $result);
         $this->assertTrue($first->complete);
 
-        $redelivery = $collector->collect($result);
+        $redelivery = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($collector, $result);
         $this->assertTrue($redelivery->accepted);
         $this->assertFalse($redelivery->duplicate);
         $this->assertTrue($redelivery->complete);

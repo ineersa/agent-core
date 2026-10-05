@@ -666,7 +666,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         );
 
         try {
-            $effects = $this->toolBatchCollector->resumeHumanInputAnswer(
+            $prepared = $this->toolBatchCollector->prepareHumanInputAnswer(
                 $message->runId(),
                 $turnNo,
                 $stepId,
@@ -721,8 +721,8 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         return new HandlerResult(
             nextState: $nextState,
             events: [$event],
-            postCommitEffects: $effects,
-            postCommitActions: [
+            postCommitEffects: $prepared->effects,
+            postCommitActions: [...(null !== $prepared->action ? [$prepared->action] : []),
                 new MarkCommandAppliedDTO($runId, $message->idempotencyKey()),
             ],
         );
@@ -748,7 +748,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         }
 
         try {
-            $effects = $this->toolBatchCollector->redriveHumanInputAnswer(
+            $prepared = $this->toolBatchCollector->prepareHumanInputRedrive(
                 $message->runId(),
                 $turnNo,
                 $stepId,
@@ -764,8 +764,8 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         return new HandlerResult(
             nextState: null,
             events: [],
-            postCommitEffects: $effects,
-            postCommitActions: [
+            postCommitEffects: $prepared->effects,
+            postCommitActions: [...(null !== $prepared->action ? [$prepared->action] : []),
                 new MarkCommandAppliedDTO($runId, $message->idempotencyKey()),
             ],
         );

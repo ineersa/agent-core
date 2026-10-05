@@ -267,7 +267,8 @@ final class ToolCallResultHandlerTest extends TestCase
         $this->assertCount(1, $result->postCommitEffects);
         $this->assertInstanceOf(ExecuteToolCall::class, $result->postCommitEffects[0]);
         $this->assertSame('tool-b', $result->postCommitEffects[0]->toolCallId);
-        $this->assertSame([], $result->postCommitActions);
+        $this->assertCount(1, $result->postCommitActions);
+        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO::class, $result->postCommitActions[0]);
     }
 
     public function testUntrackedCurrentTokenRedeliveryIsIdempotentNoOp(): void
@@ -1081,7 +1082,7 @@ final class ToolCallResultHandlerTest extends TestCase
         $read = ToolCallResultBuilder::success($runId)->withTurnNo(1)->withStepId('tools')
             ->withToolCallId('read-call')->withOrderIndex(0)
             ->withResult(['tool_name' => 'read', 'content' => [['type' => 'text', 'text' => 'saved read result']]])->build();
-        $this->assertFalse($collector->collect($read)->complete);
+        $this->assertFalse(\Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($collector, $read)->complete);
         $handler = new ToolCallResultHandler(
             toolBatchCollector: $collector, eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(), messageNormalizer: new AgentMessageNormalizer(),

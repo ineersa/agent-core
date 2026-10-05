@@ -57,6 +57,9 @@ final readonly class PendingTransitionRecovery
             $this->executionOperations->validateDisposition($executionDisposition, $pending);
         }
         $stamps = [];
+        $batchActions = array_values(array_filter($actions, static fn (object $action): bool => $action instanceof \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO));
+        $this->dispatcher->dispatchCoordinationActions($batchActions);
+        $actions = array_values(array_filter($actions, static fn (object $action): bool => !$action instanceof \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO));
         $mailboxActions = array_values(array_filter($actions, \Ineersa\AgentCore\Application\Handler\CommandMailboxCoordinationFactory::isMailboxAction(...)));
         $this->dispatcher->dispatchCoordinationActions($mailboxActions);
         $actions = array_values(array_filter($actions, static fn (object $action): bool => !\Ineersa\AgentCore\Application\Handler\CommandMailboxCoordinationFactory::isMailboxAction($action)));

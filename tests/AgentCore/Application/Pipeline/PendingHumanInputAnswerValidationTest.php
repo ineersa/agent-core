@@ -99,7 +99,8 @@ final class PendingHumanInputAnswerValidationTest extends TestCase
         $this->assertCount(1, $result->events);
         $this->assertSame(RunEventTypeEnum::AgentCommandRejected->value, $result->events[0]->type);
         $this->assertStringContainsString('question_id', (string) $result->nextState?->errorMessage);
-        $this->assertSame([], $result->postCommitActions);
+        $this->assertCount(1, $result->postCommitActions);
+        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Coordination\RejectCommandDTO::class, $result->postCommitActions[0]);
     }
 
     public function testMatchingModelTurnAnswerClearsRequestAndSchedulesAdvance(): void
@@ -253,7 +254,7 @@ final class PendingHumanInputAnswerValidationTest extends TestCase
         $collector->registerExpectedBatch('run-tool-cancel', 1, 'step-t', [
             new \Ineersa\AgentCore\Domain\Message\ExecuteToolCall('run-tool-cancel', 1, 'step-t', 1, 'idemp-t', 'call-t', 'bash', ['command' => 'ls'], 0),
         ]);
-        $collector->admitHumanInputSuspension('run-tool-cancel', 1, 'step-t', 'call-t', 'q-t');
+        \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, 'run-tool-cancel', 1, 'step-t', 'call-t', 'q-t');
 
         $store = new InMemoryCommandStore();
         $router = new CommandRouter([]);

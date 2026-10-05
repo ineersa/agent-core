@@ -82,10 +82,10 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
             $this->call('run-b', 'step-b', 'call-1', 0),
             $this->call('run-b', 'step-b', 'call-2', 1),
         ]);
-        $this->assertSame('call-2', $collector->admitHumanInputSuspension('run-b', 1, 'step-b', 'call-1', 'q-1')[0]->toolCallId);
-        $this->assertSame([], $collector->admitHumanInputSuspension('run-b', 1, 'step-b', 'call-1', 'q-1'));
+        $this->assertSame('call-2', \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, 'run-b', 1, 'step-b', 'call-1', 'q-1')[0]->toolCallId);
+        $this->assertSame([], \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, 'run-b', 1, 'step-b', 'call-1', 'q-1'));
         $this->expectException(\LogicException::class);
-        $collector->admitHumanInputSuspension('run-b', 1, 'step-b', 'call-1', 'q-other');
+        \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, 'run-b', 1, 'step-b', 'call-1', 'q-other');
     }
 
     public function testHandlerAdmitsWaitingHumanAndReplayReconstructsToolCallRequest(): void
@@ -212,7 +212,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         $collector = new ToolBatchCollector(defaultMaxParallelism: 1);
         $call = $this->call('run-r', 'step-r', 'call-r', 0, 1);
         $collector->registerExpectedBatch('run-r', 1, 'step-r', [$call]);
-        $collector->admitHumanInputSuspension('run-r', 1, 'step-r', 'call-r', 'q-r');
+        \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, 'run-r', 1, 'step-r', 'call-r', 'q-r');
 
         $answer = new \Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO(
             questionId: 'q-r',
@@ -220,7 +220,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
             continuationRef: ['run_id' => 'run-r', 'turn_no' => 1, 'step_id' => 'step-r', 'tool_call_id' => 'call-r'],
             requestPayload: ['question_id' => 'q-r', 'prompt' => 'Allow?'],
         );
-        $effects = $collector->resumeHumanInputAnswer('run-r', 1, 'step-r', 'call-r', 'q-r', $answer);
+        $effects = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::resume($collector, 'run-r', 1, 'step-r', 'call-r', 'q-r', $answer);
         $this->assertCount(1, $effects);
         $this->assertSame('call-r', $effects[0]->toolCallId);
         $this->assertSame($call->args, $effects[0]->args);
@@ -230,7 +230,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         $router = new \Ineersa\AgentCore\Application\Handler\CommandRouter([]);
         $collector2 = new ToolBatchCollector();
         $collector2->registerExpectedBatch('run-h2', 2, 'step-h2', [$this->call('run-h2', 'step-h2', 'call-h2', 0, 2)]);
-        $collector2->admitHumanInputSuspension('run-h2', 2, 'step-h2', 'call-h2', 'q-h2');
+        \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector2, 'run-h2', 2, 'step-h2', 'call-h2', 'q-h2');
         $handler2 = new \Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler(
             commandStore: $store,
             commandRouter: $router,
@@ -281,12 +281,12 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         $this->assertNotEmpty($result->postCommitActions, 'markApplied must wait for post-commit after effects');
         $this->assertFalse($store->has('run-h2', 'human-q-h2'));
         foreach ($result->postCommitActions as $callback) {
-            \Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::run($callback, null, store: $store);
+            \Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::run($callback, null, collector: $collector2, store: $store);
         }
         $this->assertTrue($store->has('run-h2', 'human-q-h2'));
 
         // Identical resume while already inFlight returns the same effect (CAS retry safety).
-        $same = $collector2->resumeHumanInputAnswer(
+        $same = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::resume($collector2,
             'run-h2',
             2,
             'step-h2',
@@ -303,7 +303,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         $this->assertSame('call-h2', $same[0]->toolCallId);
 
         // Durable redrive by question_id + answer after state already advanced.
-        $redrive = $collector2->redriveHumanInputAnswer('run-h2', 2, 'step-h2', 'q-h2', '✅ Allow');
+        $redrive = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::redrive($collector2, 'run-h2', 2, 'step-h2', 'q-h2', '✅ Allow');
         $this->assertCount(1, $redrive);
         $this->assertSame('call-h2', $redrive[0]->toolCallId);
     }
@@ -323,7 +323,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         $router = new \Ineersa\AgentCore\Application\Handler\CommandRouter([]);
         $collector = new ToolBatchCollector();
         $collector->registerExpectedBatch('run-x', 1, 'step-x', [$this->call('run-x', 'step-x', 'call-x', 0)]);
-        $collector->admitHumanInputSuspension('run-x', 1, 'step-x', 'call-x', 'q-x');
+        \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, 'run-x', 1, 'step-x', 'call-x', 'q-x');
         $handler = new \Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler(
             commandStore: $store,
             commandRouter: $router,
@@ -453,7 +453,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         $commandStore = new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore();
         $collector = new ToolBatchCollector();
         $collector->registerExpectedBatch('run-pc', 1, 'step-pc', [$this->call('run-pc', 'step-pc', 'call-pc', 0)]);
-        $collector->admitHumanInputSuspension('run-pc', 1, 'step-pc', 'call-pc', 'q-pc');
+        \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, 'run-pc', 1, 'step-pc', 'call-pc', 'q-pc');
 
         $waiting = RunStateBuilder::running('run-pc')
             ->withStatus(RunStatus::WaitingHuman)
@@ -560,8 +560,8 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
             $this->call('run-fifo', 'step-fifo', 'call-q1', 0, 1, 'parallel', 2),
             $this->call('run-fifo', 'step-fifo', 'call-q2', 1, 1, 'parallel', 2),
         ]);
-        $collector->admitHumanInputSuspension('run-fifo', 1, 'step-fifo', 'call-q1', 'q1');
-        $collector->admitHumanInputSuspension('run-fifo', 1, 'step-fifo', 'call-q2', 'q2');
+        \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, 'run-fifo', 1, 'step-fifo', 'call-q1', 'q1');
+        \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, 'run-fifo', 1, 'step-fifo', 'call-q2', 'q2');
 
         $waiting = RunStateBuilder::running('run-fifo')
             ->withStatus(RunStatus::WaitingHuman)

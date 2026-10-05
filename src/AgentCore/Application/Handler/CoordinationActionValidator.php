@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Domain\Coordination\ConsumeExecutionUnknownDTO;
 use Ineersa\AgentCore\Domain\Coordination\ConsumeToolExecutionUnknownDTO;
 use Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO;
 use Ineersa\AgentCore\Domain\Coordination\EnqueueCommandDTO;
+use Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO;
 use Ineersa\AgentCore\Domain\Coordination\MarkCommandAppliedDTO;
 use Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO;
 use Ineersa\AgentCore\Domain\Coordination\RejectCommandDTO;
@@ -25,6 +26,36 @@ final readonly class CoordinationActionValidator
 
     public function validate(object $action): void
     {
+        if ($action instanceof FinalizeToolBatchDTO) {
+            if ('' === $action->runId || '' === $action->stepId || $action->turnNo < 0
+                || 1 !== preg_match('/^[a-f0-9]{64}$/D', $action->beforeHash) || 1 !== preg_match('/^[a-f0-9]{64}$/D', $action->afterHash)
+                || !array_is_list($action->pendingQueue)) {
+                throw new \RuntimeException('Invalid prepared batch coordination identity.');
+            }
+            foreach ($action->pendingQueue as $id) {
+                if (!\is_string($id) || '' === $id) {
+                    throw new \RuntimeException('Invalid prepared batch queue.');
+                }
+            }
+            foreach ($action->inFlight as $id => $value) {
+                if (true !== $value) {
+                    throw new \RuntimeException('Invalid prepared batch in-flight state.');
+                }
+            }
+            foreach ($action->awaitingHumanInput as $question) {
+                if (!\is_string($question) || '' === $question) {
+                    throw new \RuntimeException('Invalid prepared batch human-input state.');
+                }
+            }
+            if (null !== $action->result && ($action->result->runId() !== $action->runId || $action->result->turnNo() !== $action->turnNo || $action->result->stepId() !== $action->stepId)) {
+                throw new \RuntimeException('Prepared batch result differs from its invocation.');
+            }
+            if (null === $action->revisedCallId && null !== $action->answer) {
+                throw new \RuntimeException('Prepared batch answer has no invocation.');
+            }
+
+            return;
+        }
         if ($action instanceof DispatchCoordinationMessageDTO) {
             // Its closed AdvanceRun|CompactRun field excludes external execution.
             return;
