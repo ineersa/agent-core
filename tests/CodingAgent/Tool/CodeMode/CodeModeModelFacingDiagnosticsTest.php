@@ -15,7 +15,6 @@ use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeDiagnosticsToolResultProcessor;
-use Ineersa\CodingAgent\Tool\CodeMode\CodeModeExecutionResult;
 use Ineersa\CodingAgent\Tool\CodeModeTool;
 use Ineersa\CodingAgent\Tool\OutputCap;
 use Ineersa\CodingAgent\Tool\OutputCapToolResultProcessor;
@@ -53,10 +52,10 @@ final class CodeModeModelFacingDiagnosticsTest extends TestCase
 
     public function testReturningScriptDiagnosticsAreVisibleInModelToolMessage(): void
     {
-        $toolbox = $this->toolboxReturning(new CodeModeExecutionResult('plain', [
+        $toolbox = $this->toolboxReturning('plain', [
             'stdout' => 'OUT',
             'stderr' => 'ERR',
-        ]));
+        ]);
         $executor = $this->executor($toolbox, defaultCap: 10_000);
         $toolCall = $this->toolCall('call-visible');
 
@@ -89,9 +88,9 @@ final class CodeModeModelFacingDiagnosticsTest extends TestCase
 
     public function testNullReturnWithDiagnosticsRemainsVisible(): void
     {
-        $toolbox = $this->toolboxReturning(new CodeModeExecutionResult(null, [
+        $toolbox = $this->toolboxReturning(null, [
             'stdout' => 'null-out',
-        ]));
+        ]);
         $executor = $this->executor($toolbox, defaultCap: 10_000);
         $domainResult = $executor->execute($this->toolCall('call-null'));
         $visible = (string) ($domainResult->content[0]['text'] ?? '');
@@ -106,9 +105,9 @@ final class CodeModeModelFacingDiagnosticsTest extends TestCase
             ->execute($this->toolCall('call-false-plain'));
         $this->assertSame('false', $plain->content[0]['text'] ?? null);
 
-        $withDiag = $this->executor($this->toolboxReturning(new CodeModeExecutionResult(true, [
+        $withDiag = $this->executor($this->toolboxReturning(true, [
             'stderr' => 'warn',
-        ])), defaultCap: 10_000)->execute($this->toolCall('call-true-diag'));
+        ]), defaultCap: 10_000)->execute($this->toolCall('call-true-diag'));
         $visible = (string) ($withDiag->content[0]['text'] ?? '');
         $this->assertStringStartsWith("true\n\ncode_mode diagnostics\n", $visible);
         $this->assertStringContainsString("stderr:\nwarn", $visible);
@@ -130,9 +129,9 @@ final class CodeModeModelFacingDiagnosticsTest extends TestCase
     public function testOversizedReturnWithDiagnosticsIsStillCapped(): void
     {
         $large = str_repeat('A', 300);
-        $toolbox = $this->toolboxReturning(new CodeModeExecutionResult($large, [
+        $toolbox = $this->toolboxReturning($large, [
             'stdout' => 'diag',
-        ]));
+        ]);
         $executor = $this->executor($toolbox, defaultCap: 50);
         $domainResult = $executor->execute($this->toolCall('call-cap'));
 
@@ -167,9 +166,9 @@ final class CodeModeModelFacingDiagnosticsTest extends TestCase
     {
         // Combined return + stdout must use ordinary OutputCap with the document
         // report selection (50k), not a separate diagnostics truncation marker.
-        $toolbox = $this->toolboxReturning(new CodeModeExecutionResult('ok', [
+        $toolbox = $this->toolboxReturning('ok', [
             'stdout' => str_repeat('X', 60_000),
-        ]));
+        ]);
         $executor = $this->executor($toolbox, defaultCap: 20_000, docCap: 50_000);
         $domainResult = $executor->execute($this->toolCall('call-huge-diag'));
 
@@ -228,8 +227,11 @@ final class CodeModeModelFacingDiagnosticsTest extends TestCase
         );
     }
 
-    private function toolboxReturning(mixed $raw): ToolboxInterface
+    /** @param array{stdout?: string, stderr?: string} $diagnostics */
+    private function toolboxReturning(mixed $value, array $diagnostics = []): ToolboxInterface
     {
+        $raw = ['code_mode_value' => $value, 'code_mode_diagnostics' => $diagnostics];
+
         return new class($raw) implements ToolboxInterface {
             public function __construct(private mixed $raw)
             {

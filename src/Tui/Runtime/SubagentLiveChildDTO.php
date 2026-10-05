@@ -25,6 +25,7 @@ final readonly class SubagentLiveChildDTO
         string $reasoning,
         public int $latestInputTokens = 0,
         public int $contextWindow = 0,
+        public ?float $cacheReadHitPercentage = null,
     ) {
         $model = trim($model);
         $reasoning = trim($reasoning);

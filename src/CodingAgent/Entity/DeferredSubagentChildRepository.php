@@ -18,6 +18,7 @@ use Symfony\Component\Clock\Clock;
 use Symfony\Component\Serializer\Exception\ExceptionInterface as SerializerExceptionInterface;
 use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
 use Symfony\Component\Serializer\SerializerInterface;
+use Symfony\Component\Uid\UuidV7;
 use Symfony\Component\Validator\Exception\ValidationFailedException;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
@@ -39,6 +40,23 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
         $row = $this->findFreshOneBy(['childRunId' => $childRunId]);
 
         return $row instanceof DeferredSubagentChild ? $this->toDto($row) : null;
+    }
+
+    public function findProviderCacheKey(string $childRunId): ?string
+    {
+        $key = $this->getEntityManager()->getConnection()->fetchOne(
+            'SELECT provider_cache_key FROM deferred_subagent_child WHERE child_run_id = ?',
+            [$childRunId],
+        );
+
+        if (false === $key) {
+            return null;
+        }
+        if (!\is_string($key) || '' === $key) {
+            throw new \RuntimeException(\sprintf('Child run "%s" is missing a provider_cache_key.', $childRunId));
+        }
+
+        return $key;
     }
 
     /**
@@ -78,6 +96,7 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
                     'batch_lifecycle_id' => $batchLifecycleId,
                     'batch_index' => $intent['batchIndex'],
                     'child_run_id' => $intent['childRunId'],
+                    'provider_cache_key' => UuidV7::v7()->toRfc4122(),
                     'artifact_id' => $intent['artifactId'],
                     'agent_name' => $intent['agentName'],
                     'task' => $intent['task'],
@@ -176,6 +195,8 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
             reasoning: $launchReasoning,
             latestInputTokens: null === $previous ? 0 : $previous->latestInputTokens,
             contextWindow: $previous?->contextWindow,
+            cacheReadTokens: $previous?->cacheReadTokens,
+            cacheInputTokens: $previous?->cacheInputTokens,
         );
 
         $projectionJson = $this->serializer->serialize(
@@ -212,6 +233,7 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
             'batch_lifecycle_id' => $batchLifecycleId,
             'batch_index' => $batchIndex,
             'child_run_id' => $childRunId,
+            'provider_cache_key' => UuidV7::v7()->toRfc4122(),
             'artifact_id' => $artifactId,
             'agent_name' => $agentName,
             'task' => $task,

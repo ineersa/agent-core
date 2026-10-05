@@ -71,6 +71,12 @@ final readonly class DeferredChildRunLifecycleProjectionDTO
         ?string $activeToolLine = null,
         #[Assert\Valid]
         public array $pendingToolCalls = [],
+        #[Assert\GreaterThanOrEqual(0)]
+        public ?int $cacheReadTokens = null,
+        // NULL means legacy lifetime usage is unavailable. Never infer it by
+        // rewinding the operational cursor, which is also the resume boundary.
+        #[Assert\GreaterThanOrEqual(0)]
+        public ?int $cacheInputTokens = null,
     ) {
         $model = trim($model);
         $reasoning = trim($reasoning);

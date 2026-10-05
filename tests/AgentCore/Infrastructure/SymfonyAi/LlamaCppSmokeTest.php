@@ -262,7 +262,7 @@ final class LlamaCppSmokeTest extends KernelTestCase
         $catalog = $appConfig->catalog
             ?? new HatfieldModelCatalog(new AiConfig(defaultModel: '', defaultReasoning: 'medium', providers: []));
 
-        return new SessionAwareModelResolver($selectionService, $catalog, $this->sessionMetaStore);
+        return new SessionAwareModelResolver($selectionService, $catalog, $this->sessionMetaStore, static::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class));
     }
 
     /**

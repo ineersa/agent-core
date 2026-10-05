@@ -93,6 +93,7 @@ final class SubagentLiveCatalog
             reasoning: $existing->reasoning,
             latestInputTokens: $existing->latestInputTokens,
             contextWindow: $existing->contextWindow,
+            cacheReadHitPercentage: $existing->cacheReadHitPercentage,
         );
     }
 
@@ -152,6 +153,7 @@ final class SubagentLiveCatalog
             reasoning: $row->reasoning,
             latestInputTokens: $latestInputTokens,
             contextWindow: $contextWindow,
+            cacheReadHitPercentage: $row->cacheReadHitPercentage,
         );
     }
 }

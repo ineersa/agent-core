@@ -96,6 +96,7 @@ final readonly class DeferredSubagentBatchRecoveryService
                     lastCommittedSeq: $cursor,
                     model: $childEntity->launchModel,
                     reasoning: $childEntity->launchReasoning,
+                    cacheInputTokens: 0 === $cursor ? 0 : null,
                 );
 
             $maxTurnNo = $current->childTurnNo;

@@ -273,7 +273,7 @@ final class ConfiguredModelAgentRunnerThinkingLevelTest extends IsolatedKernelTe
         );
         $catalog = $appConfig->catalog ?? new HatfieldModelCatalog(new AiConfig(defaultModel: '', defaultReasoning: 'medium', providers: []));
 
-        return new SessionAwareModelResolver($selectionService, $catalog, $sessionStore);
+        return new SessionAwareModelResolver($selectionService, $catalog, $sessionStore, static::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class));
     }
 
     /**
