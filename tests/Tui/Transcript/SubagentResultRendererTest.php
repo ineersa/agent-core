@@ -196,6 +196,8 @@ final class SubagentResultRendererTest extends TestCase
             'task_summary' => 1 === $index ? 'Read docs' : 'Review patch',
             'model' => 'test/model',
             'reasoning' => 'medium',
+            'latest_input_tokens' => 196_900,
+            'context_window' => 200_000,
             'active_tool' => $activeTool,
         ];
         $snapshots = [
