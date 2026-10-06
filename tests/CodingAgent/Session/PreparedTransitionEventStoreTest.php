@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Session;
 
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
+use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Contract\RunContextNotLoadedException;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
@@ -18,7 +19,9 @@ use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Messenger\Transport\Serialization\SerializerInterface;
+use Symfony\Component\Process\Process;
 
 final class PreparedTransitionEventStoreTest extends IsolatedKernelTestCase
 {
@@ -129,5 +132,158 @@ final class PreparedTransitionEventStoreTest extends IsolatedKernelTestCase
         $this->assertSame($before, file_get_contents($counter));
         $this->assertFileDoesNotExist($path.'.append.pending.json');
         $this->assertSame(1, $store->latestSequenceFor($run));
+    }
+
+    public function testSeparateProcessColdFinalizationPublishesOrdinaryEventBatchWithoutPublicCutBypass(): void
+    {
+        $container = self::getContainer();
+        $sessions = $container->get(HatfieldSessionStore::class);
+        $run = $sessions->createSession('cold ordinary publish');
+        $store = $container->get(PreparedTransitionEventStoreInterface::class);
+        PreparedEventStoreSeeder::append($store, new RunEvent($run, 0, 0, 'run_started', []));
+        $path = $sessions->resolveSessionsBasePath().'/'.$run.'/events.jsonl';
+        $container->get(FileRunSequenceAllocator::class)->allocateBlock(FileRunSequenceAllocator::counterPathForEventsLog($path), 1);
+        $persisted = $store->appendTransition([
+            new RunEvent($run, 0, 0, 'agent_end', ['reason' => 'completed']),
+        ], ['run_id' => $run, 'predecessor_seq' => 1]);
+        $this->assertSame([3], array_map(static fn (RunEvent $event): int => $event->seq, $persisted));
+        $pending = $store->verifiedPendingTransition($run);
+        $this->assertNotNull($pending);
+        $this->assertSame([3], $pending->eventSequences);
+        $this->assertSame(1, $store->latestSequenceFor($run));
+        $this->assertSame([1], array_map(static fn (RunEvent $event): int => $event->seq, iterator_to_array($store->rangeFor($run, 1, \PHP_INT_MAX))));
+        $beforeBytes = file_get_contents($path);
+        $beforeManifest = file_get_contents($path.'.append.pending.json');
+        $beforeWork = file_get_contents($path.'.append.work');
+        $beforeStage = file_get_contents($path.'.append.staged');
+
+        $process = new Process([
+            \PHP_BINARY,
+            __DIR__.'/Support/FinalizeVerifiedStreamingTransition.php',
+            getcwd(),
+            $run,
+            $pending->identity,
+        ], env: ['HATFIELD_SESSION_ID' => false]);
+        $process->setTimeout(8);
+        $process->mustRun();
+        $payload = json_decode(trim($process->getOutput()), true, flags: \JSON_THROW_ON_ERROR);
+
+        $this->assertSame(1, $payload['count']);
+        $this->assertSame([3], $payload['seqs']);
+        $this->assertSame(['run.completed'], $payload['types']);
+        $this->assertSame(3, $payload['latest']);
+        $this->assertSame([1, 3], $payload['range']);
+        $this->assertNull($store->verifiedPendingTransition($run));
+        $this->assertSame(3, $store->latestSequenceFor($run));
+        $this->assertSame([1, 3], array_map(static fn (RunEvent $event): int => $event->seq, iterator_to_array($store->rangeFor($run, 1, \PHP_INT_MAX))));
+        $this->assertSame($beforeBytes, file_get_contents($path));
+        $this->assertFileDoesNotExist($path.'.append.pending.json');
+        $this->assertFileDoesNotExist($path.'.append.work');
+        $this->assertFileDoesNotExist($path.'.append.staged');
+        $this->assertNotFalse($beforeManifest);
+        $this->assertNotFalse($beforeWork);
+        $this->assertNotFalse($beforeStage);
+    }
+
+    public function testSeparateProcessRecoveryDeliversGatedEffectsOnlyAfterFinalization(): void
+    {
+        $container = self::getContainer();
+        $sessions = $container->get(HatfieldSessionStore::class);
+        $run = $sessions->createSession('cold gated recovery');
+        /** @var PreparedTransitionEventStoreInterface $store */
+        $store = $container->get(PreparedTransitionEventStoreInterface::class);
+        PreparedEventStoreSeeder::append($store, new RunEvent($run, 0, 0, 'run_started', []));
+        $path = $sessions->resolveSessionsBasePath().'/'.$run.'/events.jsonl';
+        $container->get(FileRunSequenceAllocator::class)->allocateBlock(FileRunSequenceAllocator::counterPathForEventsLog($path), 2);
+        $summary = new \Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary(0, 'agent_end', ['reason' => 'completed']);
+        $observation = new \Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Observation\ObserveDeferredSubagentBatchChildTurnMessage(
+            'batch-cold',
+            1,
+            $run,
+            \Ineersa\AgentCore\Domain\Run\RunStatus::Completed,
+            1,
+            [$summary],
+        );
+        $action = new \Ineersa\CodingAgent\Application\Message\DeferredAfterTurnCoordinationDTO($run, 1, $observation);
+        $request = new \Ineersa\AgentCore\Domain\Message\ExecuteLlmStep($run, 1, 'llm-cold', 1, 'llm-cold-key', 'tools');
+        $persisted = $store->appendTransition([
+            new RunEvent($run, 0, 0, 'agent_end', ['reason' => 'completed']),
+        ], [
+            'run_id' => $run,
+            'predecessor_seq' => 1,
+            'effects' => [$request],
+            'after_turn_actions' => [$action],
+        ]);
+        $this->assertSame([4], array_map(static fn (RunEvent $event): int => $event->seq, $persisted));
+        $pending = $store->verifiedPendingTransition($run);
+        $this->assertNotNull($pending);
+        $this->assertSame([4], $pending->eventSequences);
+        $this->assertSame(4, $pending->work['after_turn_actions'][0]->message->committedEvents[0]->seq);
+        $this->assertSame(1, $store->latestSequenceFor($run));
+        $this->assertSame([1], array_map(static fn (RunEvent $event): int => $event->seq, iterator_to_array($store->rangeFor($run, 1, \PHP_INT_MAX))));
+        $manifest = json_decode((string) file_get_contents($path.'.append.pending.json'), true, flags: \JSON_THROW_ON_ERROR);
+        $handle = fopen($path, 'r+b');
+        $this->assertIsResource($handle);
+        try {
+            $this->assertTrue(ftruncate($handle, $manifest['offset'] + 12));
+        } finally {
+            fclose($handle);
+        }
+        $this->assertSame(1, $store->latestSequenceFor($run));
+        $this->assertSame([1], array_map(static fn (RunEvent $event): int => $event->seq, iterator_to_array($store->rangeFor($run, 1, \PHP_INT_MAX))));
+        $beforeIdentity = $pending->identity;
+        $order = [];
+        $cutVisibleDuringObservation = null;
+        $failure = $this->createMock(MessageBusInterface::class);
+        $failure->expects($this->atLeastOnce())->method('dispatch')->willReturnCallback(static function (object $message) use (&$order, &$cutVisibleDuringObservation, $store, $run): \Symfony\Component\Messenger\Envelope {
+            $order[] = $message::class;
+            if ($message instanceof \Ineersa\AgentCore\Domain\Message\ExecutionRequest) {
+                throw new \RuntimeException('gated delivery must wait for finalization');
+            }
+            if ($message instanceof \Ineersa\CodingAgent\Application\Message\DeferredAfterTurnCoordinationDTO
+                || $message instanceof \Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Observation\ObserveDeferredSubagentBatchChildTurnMessage) {
+                $cutVisibleDuringObservation = null !== $store->verifiedPendingTransition($run);
+            }
+
+            return new \Symfony\Component\Messenger\Envelope($message);
+        });
+        $recovery = new \Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery(
+            $store,
+            $container->get(\Ineersa\AgentCore\Contract\Tool\ToolExecutionAuthorizationInterface::class),
+            new \Ineersa\AgentCore\Application\Handler\StepDispatcher($failure, $failure, $failure, $failure),
+            $container->get(ActiveRunContextInterface::class),
+            $container->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class),
+            $container->get(\Ineersa\AgentCore\Application\Pipeline\SourceAcceptance::class),
+            $container->get(\Ineersa\AgentCore\Application\Handler\CoordinationActionValidator::class),
+        );
+        try {
+            $recovery->recover($run);
+            $this->fail('Interrupted gated delivery must leave rediscoverable authority after finalization.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('gated delivery must wait for finalization', $exception->getMessage());
+        }
+
+        $this->assertNull($store->verifiedPendingTransition($run));
+        $this->assertSame(4, $store->latestSequenceFor($run));
+        $this->assertSame([1, 4], array_map(static fn (RunEvent $event): int => $event->seq, iterator_to_array($store->rangeFor($run, 1, \PHP_INT_MAX))));
+        $this->assertContains(\Ineersa\CodingAgent\Application\Message\DeferredAfterTurnCoordinationDTO::class, $order);
+        $this->assertSame(\Ineersa\AgentCore\Domain\Message\ExecutionRequest::class, $order[array_key_last($order)]);
+        $this->assertTrue($cutVisibleDuringObservation);
+        $this->assertSame($beforeIdentity, $beforeIdentity);
+
+        $publishedBytes = file_get_contents($path);
+        $process = new Process([
+            \PHP_BINARY,
+            __DIR__.'/Support/RecoverPendingTransition.php',
+            getcwd(),
+            $run,
+        ], env: ['HATFIELD_SESSION_ID' => false]);
+        $process->setTimeout(8);
+        $process->mustRun();
+        $this->assertSame("recovered\n", $process->getOutput());
+        $this->assertNull($store->verifiedPendingTransition($run));
+        $this->assertSame(4, $store->latestSequenceFor($run));
+        $this->assertSame([1, 4], array_map(static fn (RunEvent $event): int => $event->seq, iterator_to_array($store->rangeFor($run, 1, \PHP_INT_MAX))));
+        $this->assertSame($publishedBytes, file_get_contents($path));
     }
 }

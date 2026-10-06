@@ -224,6 +224,16 @@ final class CleanupHookSubscriberNoOpEventStore implements PreparedTransitionEve
         return $this->pending[$runId] ?? null;
     }
 
+    public function verifiedPendingBatch(string $runId, string $identity): array
+    {
+        $pending = $this->verifiedPendingTransition($runId);
+        if (null === $pending || $pending->identity !== $identity) {
+            throw new \RuntimeException('Fixture transition identity mismatch.');
+        }
+
+        return [];
+    }
+
     public function finalizeVerifiedTransition(string $runId, string $identity): void
     {
         if (($this->pending[$runId]->identity ?? null) !== $identity) {

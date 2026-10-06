@@ -28,7 +28,6 @@ final readonly class JsonlAppendJournal
         if ([] === $work) {
             throw new \InvalidArgumentException('Canonical append requires captured owner coordination work.');
         }
-        $bindSequences = array_any([...($work['actions'] ?? []), ...($work['after_turn_actions'] ?? [])], static fn (object $action): bool => $action instanceof \Ineersa\AgentCore\Contract\CanonicalSequenceBoundActionInterface);
         $archive = $this->open($path, 'c+b');
         $stage = $this->open($this->stagePath($path), 'wb');
         try {
@@ -46,22 +45,18 @@ final readonly class JsonlAppendJournal
                 }
                 $this->writeAll($stage, $record);
                 $length += $bytes;
-                if ($bindSequences) {
-                    $decoded = json_decode($record, true, 512, \JSON_THROW_ON_ERROR);
-                    if (!\is_array($decoded) || !\is_int($decoded['seq'] ?? null) || $decoded['seq'] <= $previousSequence) {
-                        throw new \RuntimeException('Staged event has no allocated sequence.');
-                    }
-                    $sequences[] = $decoded['seq'];
-                    $previousSequence = $decoded['seq'];
-                    unset($decoded);
+                $decoded = json_decode($record, true, 512, \JSON_THROW_ON_ERROR);
+                if (!\is_array($decoded) || !\is_int($decoded['seq'] ?? null) || $decoded['seq'] <= $previousSequence) {
+                    throw new \RuntimeException('Staged event has no allocated sequence.');
                 }
+                $sequences[] = $decoded['seq'];
+                $previousSequence = $decoded['seq'];
+                unset($decoded);
             }
             if (!fflush($stage)) {
                 throw new \RuntimeException('Cannot flush staged canonical bytes.');
             }
-            if ($bindSequences) {
-                $work['event_sequences'] = $sequences;
-            }
+            $work['event_sequences'] = $sequences;
             foreach (['actions', 'after_turn_actions'] as $key) {
                 foreach ($work[$key] ?? [] as $index => $action) {
                     if ($action instanceof \Ineersa\AgentCore\Contract\CanonicalSequenceBoundActionInterface) {
@@ -109,7 +104,7 @@ final readonly class JsonlAppendJournal
         if (null === $manifest) {
             return;
         }
-        if (($manifest['transition'] ?? false) && (!is_file($path.'.append.work') || hash_file('sha256', $path.'.append.work') !== ($manifest['work_hash'] ?? null))) {
+        if (!is_file($path.'.append.work') || hash_file('sha256', $path.'.append.work') !== ($manifest['work_hash'] ?? null)) {
             throw new \RuntimeException('Prepared coordination work is missing or corrupt.');
         }
         if (!is_file($this->stagePath($path)) || hash_file('sha256', $this->stagePath($path)) !== $manifest['stage_hash']) {
@@ -157,9 +152,6 @@ final readonly class JsonlAppendJournal
             return null;
         }
         $this->reconcile($path);
-        if (!$manifest['transition']) {
-            throw new \RuntimeException('Pending append has no owner coordination evidence.');
-        }
         $size = filesize($path.'.append.work');
         if (false === $size || $size > self::MAX_STAGED_BYTES) {
             throw new \RuntimeException('Invalid prepared coordination work size.');
@@ -178,6 +170,47 @@ final readonly class JsonlAppendJournal
         }
 
         return new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(hash('sha256', json_encode($manifest, \JSON_THROW_ON_ERROR)), $manifest['offset'], $descriptor->work, $descriptor->work['event_sequences'] ?? []);
+    }
+
+    /**
+     * Exact staged JSONL records for a verified pending transition.
+     *
+     * @return list<string>
+     */
+    public function verifiedStagedRecords(string $path, string $identity): array
+    {
+        $pending = $this->verifiedPending($path);
+        if (null === $pending || $pending->identity !== $identity) {
+            throw new \RuntimeException('Prepared transition identity changed before batch read.');
+        }
+        $manifest = $this->manifest($path);
+        if (null === $manifest) {
+            throw new \RuntimeException('Verified transition missing before batch read.');
+        }
+        if (!is_file($this->stagePath($path)) || hash_file('sha256', $this->stagePath($path)) !== $manifest['stage_hash']) {
+            throw new \RuntimeException('Staged canonical bytes are missing or corrupt.');
+        }
+        $contents = file_get_contents($this->stagePath($path));
+        if (false === $contents || \strlen($contents) !== $manifest['length'] || hash('sha256', $contents) !== $manifest['stage_hash']) {
+            throw new \RuntimeException('Staged canonical bytes are corrupt.');
+        }
+        if ('' === $contents) {
+            return [];
+        }
+
+        $records = [];
+        $offset = 0;
+        $length = \strlen($contents);
+        while ($offset < $length) {
+            $end = strpos($contents, "\n", $offset);
+            if (false === $end) {
+                throw new \RuntimeException('Staged canonical records are incomplete.');
+            }
+            $records[] = substr($contents, $offset, $end - $offset + 1);
+            $offset = $end + 1;
+        }
+
+        return $records;
     }
 
     public function finalizeVerified(string $path, string $identity): void
@@ -244,7 +277,10 @@ final readonly class JsonlAppendJournal
         if (!\is_array($data) || 1 !== ($data['version'] ?? null)) {
             throw new \RuntimeException('Invalid canonical append manifest.');
         }
-        if (!\is_bool($data['transition'] ?? null) || ($data['transition'] && (!\is_string($data['work_hash'] ?? null) || 1 !== preg_match('/^[a-f0-9]{64}$/D', $data['work_hash'])))) {
+        if (true !== ($data['transition'] ?? null)) {
+            throw new \RuntimeException('Pending append has no owner coordination evidence.');
+        }
+        if (!\is_string($data['work_hash'] ?? null) || 1 !== preg_match('/^[a-f0-9]{64}$/D', $data['work_hash'])) {
             throw new \RuntimeException('Invalid canonical coordination manifest.');
         }
         foreach (['offset', 'device', 'inode', 'boundary_length', 'length'] as $field) {

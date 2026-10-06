@@ -132,6 +132,15 @@ final class AgentChildRunEventStore implements \Ineersa\AgentCore\Contract\Prepa
         return $this->eventLog->verifiedPendingTransition($this->eventsPath(), $runId);
     }
 
+    public function verifiedPendingBatch(string $runId, string $identity): array
+    {
+        if ($runId !== $this->agentRunId) {
+            throw new \InvalidArgumentException('Child pending batch identity mismatch.');
+        }
+
+        return $this->eventLog->verifiedPendingBatch($this->eventsPath(), $runId, $identity);
+    }
+
     public function finalizeVerifiedTransition(string $runId, string $identity): void
     {
         if ($runId !== $this->agentRunId) {

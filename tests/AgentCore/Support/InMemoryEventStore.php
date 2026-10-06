@@ -64,6 +64,24 @@ final class InMemoryEventStore implements PreparedTransitionEventStoreInterface
         return $this->pending[$runId] ?? null;
     }
 
+    public function verifiedPendingBatch(string $runId, string $identity): array
+    {
+        $pending = $this->verifiedPendingTransition($runId);
+        if (null === $pending || $pending->identity !== $identity) {
+            throw new \RuntimeException('Fixture transition identity mismatch.');
+        }
+
+        $wanted = array_fill_keys($pending->eventSequences, true);
+        $out = [];
+        foreach ($this->eventsByRun[$runId] ?? [] as $event) {
+            if (isset($wanted[$event->seq])) {
+                $out[] = $event;
+            }
+        }
+
+        return $out;
+    }
+
     public function finalizeVerifiedTransition(string $runId, string $identity): void
     {
         if (($this->pending[$runId]->identity ?? null) !== $identity) {

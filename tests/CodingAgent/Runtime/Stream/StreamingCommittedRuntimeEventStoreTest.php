@@ -101,7 +101,8 @@ final class StreamingCommittedRuntimeEventStoreTest extends TestCase
         $cold = $this->store($inner, $sink, true);
         $cold->finalizeVerifiedTransition('run-a', $pending->identity);
 
-        $this->assertSame(1, $inner->rangeForCalls);
+        $this->assertSame(0, $inner->rangeForCalls);
+        $this->assertSame(1, $inner->verifiedPendingBatchCalls);
         $this->assertSame([1, 2], array_map(static fn (RuntimeEvent $event): int => $event->seq, $sink->emitted));
         $this->assertNull($cold->verifiedPendingTransition('run-a'));
         $this->assertNull($inner->verifiedPendingTransition('run-a'));
@@ -212,6 +213,8 @@ final class RecordingEventStore implements PreparedTransitionEventStoreInterface
 
     public int $rangeForCalls = 0;
 
+    public int $verifiedPendingBatchCalls = 0;
+
     /** @var array<string, VerifiedTransitionDTO> */
     private array $pending = [];
 
@@ -243,6 +246,28 @@ final class RecordingEventStore implements PreparedTransitionEventStoreInterface
     public function verifiedPendingTransition(string $runId): ?VerifiedTransitionDTO
     {
         return $this->pending[$runId] ?? null;
+    }
+
+    public function verifiedPendingBatch(string $runId, string $identity): array
+    {
+        ++$this->verifiedPendingBatchCalls;
+        $pending = $this->verifiedPendingTransition($runId);
+        if (null === $pending || $pending->identity !== $identity) {
+            throw new \RuntimeException('Fixture transition identity mismatch.');
+        }
+
+        $wanted = array_fill_keys($pending->eventSequences, true);
+        $out = [];
+        foreach ($this->eventsByRun[$runId] ?? [] as $event) {
+            if (isset($wanted[$event->seq])) {
+                $out[] = $event;
+            }
+        }
+        if (\count($out) !== \count($pending->eventSequences)) {
+            throw new \RuntimeException('Verified transition batch could not be reconstructed for stream publication.');
+        }
+
+        return $out;
     }
 
     public function finalizeVerifiedTransition(string $runId, string $identity): void

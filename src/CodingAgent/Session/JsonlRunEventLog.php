@@ -120,6 +120,60 @@ final class JsonlRunEventLog
         }
     }
 
+    /**
+     * @return list<RunEvent>
+     */
+    public function verifiedPendingBatch(string $path, string $runId, string $identity): array
+    {
+        $lock = $this->lockFactory->createLock('hatfield-run-'.$runId);
+        $lock->acquire(true);
+        try {
+            $pending = (new JsonlAppendJournal())->verifiedPending($path);
+            if (null === $pending) {
+                throw new \RuntimeException('Verified transition missing before batch read.');
+            }
+            if (($pending->work['run_id'] ?? null) !== $runId) {
+                throw new \RuntimeException('Prepared work run identity mismatch.');
+            }
+            if ($pending->identity !== $identity) {
+                throw new \RuntimeException('Prepared transition identity changed before batch read.');
+            }
+
+            $records = (new JsonlAppendJournal())->verifiedStagedRecords($path, $identity);
+            $events = [];
+            foreach ($records as $record) {
+                $line = rtrim($record, "\r\n");
+                if ('' === $line) {
+                    throw new \RuntimeException('Verified staged batch contains a blank record.');
+                }
+                $payload = $this->decodeLine($line);
+                if (!\is_array($payload)) {
+                    throw new \RuntimeException('Verified staged batch contains a non-object record.');
+                }
+                if (($payload['run_id'] ?? null) !== $runId) {
+                    throw new \RuntimeException('Verified staged batch run identity mismatch.');
+                }
+                if ($this->isIncompatibleSchemaVersion($payload)) {
+                    throw new \RuntimeException('Verified staged batch schema is incompatible.');
+                }
+                $event = $this->denormalizeRunEvent($payload);
+                if (null === $event) {
+                    throw new \RuntimeException('Verified staged batch could not be decoded.');
+                }
+                $events[] = $event;
+            }
+
+            $sequences = $pending->eventSequences;
+            if (array_map(static fn (RunEvent $event): int => $event->seq, $events) !== $sequences) {
+                throw new \RuntimeException('Verified staged batch sequences do not match captured identities.');
+            }
+
+            return $events;
+        } finally {
+            $lock->release();
+        }
+    }
+
     public function finalizeVerifiedTransition(string $path, string $runId, string $identity): void
     {
         $lock = $this->lockFactory->createLock('hatfield-run-'.$runId);

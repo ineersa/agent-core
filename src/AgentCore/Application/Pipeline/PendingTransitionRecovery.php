@@ -66,17 +66,22 @@ final readonly class PendingTransitionRecovery
         $mailboxActions = array_values(array_filter($actions, \Ineersa\AgentCore\Application\Handler\CommandMailboxCoordinationFactory::isMailboxAction(...)));
         $this->dispatcher->dispatchCoordinationActions($mailboxActions);
         $actions = array_values(array_filter($actions, static fn (object $action): bool => !\Ineersa\AgentCore\Application\Handler\CommandMailboxCoordinationFactory::isMailboxAction($action)));
-        foreach ($effects as $index => $effect) {
+        $ordinary = [];
+        $deliveries = [];
+        foreach ($effects as $effect) {
             if ($effect instanceof ExecuteToolCall) {
                 $this->authorization->arm($effect);
+                $ordinary[] = $effect;
             } elseif ($effect instanceof AbstractAgentBusMessage && ExecutionOperationMapper::supports($effect)) {
                 $authorization = $this->executionOperations->arm($effect, $pending);
                 $reference = $this->executionOperations->requestReference($effect, $authorization);
-                $effects[$index] = $reference;
+                $deliveries[] = $reference;
                 $stamps[spl_object_id($reference)] = $authorization;
+            } else {
+                $ordinary[] = $effect;
             }
         }
-        $this->dispatcher->dispatchEffects($effects, $stamps);
+        $this->dispatcher->dispatchEffects($ordinary);
         $this->dispatcher->dispatchCoordinationActions($actions);
         if (null !== $disposition) {
             $this->authorization->applyDisposition($disposition, $pending);
@@ -86,6 +91,8 @@ final readonly class PendingTransitionRecovery
         }
         $this->sourceAcceptance->publish($pending);
         $this->store->finalizeVerifiedTransition($runId, $pending->identity);
+        // Armed operation/batch authority owns rediscovery after broker failure.
+        $this->dispatcher->dispatchEffects($deliveries, $stamps);
         // Cold replay must include the newly published suffix. A warm owner must
         // not continue using its predecessor after recovered physical append.
         $this->registry->release($runId);

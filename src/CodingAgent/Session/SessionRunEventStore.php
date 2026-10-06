@@ -69,6 +69,11 @@ final class SessionRunEventStore implements \Ineersa\AgentCore\Contract\Prepared
         return $this->eventLog->verifiedPendingTransition($this->eventsPath($runId), $runId);
     }
 
+    public function verifiedPendingBatch(string $runId, string $identity): array
+    {
+        return $this->eventLog->verifiedPendingBatch($this->eventsPath($runId), $runId, $identity);
+    }
+
     public function finalizeVerifiedTransition(string $runId, string $identity): void
     {
         $this->eventLog->finalizeVerifiedTransition($this->eventsPath($runId), $runId, $identity);

@@ -32,12 +32,17 @@ final class JsonlAppendJournalTest extends TestCase
         try {
             $path = $dir.'/events.jsonl';
             $predecessor = "{\"seq\":1}\n";
-            $suffix = '{"seq":4,"payload":"'.str_repeat('x', 150000)."\"}\n{\"seq\":8}\n";
+            $records = [
+                '{"seq":4,"payload":"'.str_repeat('x', 150000)."\"}\n",
+                "{\"seq\":8}\n",
+            ];
+            $suffix = implode('', $records);
             file_put_contents($path, $predecessor);
             $journal = new JsonlAppendJournal();
-            $journal->append($path, [$suffix], ['effects' => [], 'actions' => []]);
+            $journal->append($path, $records, ['effects' => [], 'actions' => []]);
             $verified = $journal->verifiedPending($path);
             $this->assertNotNull($verified);
+            $this->assertSame([4, 8], $verified->eventSequences);
             $this->assertSame(\strlen($predecessor), $verified->startOffset);
             $manifestBytes = file_get_contents($path.'.append.pending.json');
             $handle = fopen($path, 'r+b');
@@ -55,7 +60,7 @@ final class JsonlAppendJournalTest extends TestCase
             $this->assertSame($predecessor.$suffix, file_get_contents($path));
             $this->assertSame($manifestBytes, file_get_contents($path.'.append.pending.json'));
             $this->assertSame($verified->identity, (new JsonlAppendJournal())->verifiedPending($path)->identity);
-            $this->assertSame(['effects' => [], 'actions' => []], (new JsonlAppendJournal())->verifiedPending($path)->work);
+            $this->assertSame(['effects' => [], 'actions' => [], 'event_sequences' => [4, 8]], (new JsonlAppendJournal())->verifiedPending($path)->work);
             $this->assertSame(\strlen($predecessor), $journal->readableOffset($path, filesize($path)), 'Physical completion does not publish an unfinished owner transition.');
             $journal->finalize($path);
             $this->assertFileDoesNotExist($path.'.append.pending.json');
@@ -81,11 +86,11 @@ final class JsonlAppendJournalTest extends TestCase
             $path = $dir.'/events.jsonl';
             file_put_contents($path, "prefix\n");
             $journal = new JsonlAppendJournal();
-            $journal->append($path, ["planned\n"], ['actions' => []]);
+            $journal->append($path, ["{\"seq\":2}\n"], ['actions' => [], 'predecessor_seq' => 0]);
             match ($change) {
-                'different suffix' => file_put_contents($path, "prefix\nWRONG!!\n"),
+                'different suffix' => file_put_contents($path, "prefix\n{\"seq\":9}\n"),
                 'extra tail' => file_put_contents($path, "extra\n", \FILE_APPEND),
-                'changed predecessor' => file_put_contents($path, "CHANGEDplanned\n"),
+                'changed predecessor' => file_put_contents($path, "CHANGED{\"seq\":2}\n"),
                 'truncated predecessor' => file_put_contents($path, 'x'),
                 'corrupt stage' => file_put_contents($path.'.append.staged', "tampered\n"),
             };
@@ -117,16 +122,16 @@ final class JsonlAppendJournalTest extends TestCase
         try {
             $path = $dir.'/events.jsonl';
             $journal = new JsonlAppendJournal();
-            $journal->append($path, ["prepared\n"], ['actions' => []]);
+            $journal->append($path, ["{\"seq\":1}\n"], ['actions' => [], 'predecessor_seq' => 0]);
             $intent = file_get_contents($path.'.append.pending.json');
             try {
-                $journal->append($path, ["different\n"], ['actions' => []]);
+                $journal->append($path, ["{\"seq\":2}\n"], ['actions' => [], 'predecessor_seq' => 0]);
                 $this->fail('Pending append must block another append.');
             } catch (\RuntimeException $exception) {
                 $this->assertStringContainsString('existing pending append', $exception->getMessage());
             }
             $this->assertSame($intent, file_get_contents($path.'.append.pending.json'));
-            $this->assertSame("prepared\n", file_get_contents($path.'.append.staged'));
+            $this->assertSame("{\"seq\":1}\n", file_get_contents($path.'.append.staged'));
         } finally {
             TestDirectoryIsolation::removeDirectory($dir);
         }
@@ -138,7 +143,7 @@ final class JsonlAppendJournalTest extends TestCase
         try {
             $path = $dir.'/events.jsonl';
             $journal = new JsonlAppendJournal();
-            $journal->append($path, ["prepared\n"], ['actions' => []]);
+            $journal->append($path, ["{\"seq\":1}\n"], ['actions' => [], 'predecessor_seq' => 0]);
             file_put_contents($path, "unexpected\n", \FILE_APPEND);
             clearstatcache(true, $path);
             $this->expectException(\RuntimeException::class);

@@ -49,6 +49,16 @@ final class StreamingCommittedRuntimeEventStore implements \Ineersa\AgentCore\Co
         return $store->verifiedPendingTransition($runId);
     }
 
+    public function verifiedPendingBatch(string $runId, string $identity): array
+    {
+        $store = $this->inner;
+        if (!$store instanceof \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface) {
+            throw new \LogicException('Configured canonical store lacks transition preparation.');
+        }
+
+        return $store->verifiedPendingBatch($runId, $identity);
+    }
+
     public function finalizeVerifiedTransition(string $runId, string $identity): void
     {
         $store = $this->inner;
@@ -65,9 +75,10 @@ final class StreamingCommittedRuntimeEventStore implements \Ineersa\AgentCore\Co
 
         $hotBatch = $this->pendingEvents[$runId] ?? null;
         if (null === $hotBatch) {
-            // Cold recovery reconstructs the verified batch through existing facilities.
-            $hotBatch = $this->reconstructVerifiedBatch($store, $runId, $pending);
+            // Cold recovery uses owner-only staged bytes. Public range readers still honor the cut.
+            $hotBatch = $store->verifiedPendingBatch($runId, $identity);
         }
+        $this->assertVerifiedBatch($pending, $hotBatch);
 
         $store->finalizeVerifiedTransition($runId, $identity);
         unset($this->pendingEvents[$runId]);
@@ -109,34 +120,20 @@ final class StreamingCommittedRuntimeEventStore implements \Ineersa\AgentCore\Co
         return $this->inner->allFor($runId);
     }
 
-    /**
-     * @return list<RunEvent>
-     */
-    private function reconstructVerifiedBatch(
-        \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface $store,
-        string $runId,
+    /** @param list<RunEvent> $batch */
+    private function assertVerifiedBatch(
         \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO $pending,
-    ): array {
-        $sequences = $pending->eventSequences;
-        if ([] === $sequences) {
-            return [];
+        array $batch,
+    ): void {
+        $sequences = array_map(static fn (RunEvent $event): int => $event->seq, $batch);
+        if ($sequences !== $pending->eventSequences) {
+            throw new \RuntimeException('Verified transition batch sequences do not match captured identities.');
         }
-
-        $wanted = array_fill_keys($sequences, true);
-        $min = min($sequences);
-        $max = max($sequences);
-        $reconstructed = [];
-        foreach ($store->rangeFor($runId, $min, $max) as $event) {
-            if (isset($wanted[$event->seq])) {
-                $reconstructed[] = $event;
+        foreach ($batch as $event) {
+            if (($pending->work['run_id'] ?? null) !== $event->runId) {
+                throw new \RuntimeException('Verified transition batch run identity mismatch.');
             }
         }
-
-        if (\count($reconstructed) !== \count($sequences)) {
-            throw new \RuntimeException('Verified transition batch could not be reconstructed for stream publication.');
-        }
-
-        return $reconstructed;
     }
 
     private function emitMapped(RunEvent $runEvent): void
