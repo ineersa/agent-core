@@ -41,16 +41,16 @@ use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\Repair\SessionRepairService;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
-use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Messenger\MessageBusInterface;
 
 #[Group('session-repair')]
-final class SessionRepairServiceTest extends TestCase
+final class SessionRepairServiceTest extends IsolatedKernelTestCase
 {
     private const string TOOL_CALL_ID = 'call_00_abc';
 
@@ -1150,6 +1150,7 @@ final class SessionRepairServiceTest extends TestCase
             serializer: AttributeSerializerValidatorTestFactory::create()[0],
             historyReplayFilter: new \Ineersa\CodingAgent\Session\History\HistoryReplayFilter(new \Ineersa\CodingAgent\Session\History\HistoryProjector()),
             runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit($activeRunContext, $eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus()), new NullLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector()),
+            deferredBatches: self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository::class),
         );
     }
 

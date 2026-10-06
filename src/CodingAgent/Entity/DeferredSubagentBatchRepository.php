@@ -50,6 +50,16 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
         return $row instanceof DeferredSubagentBatch ? $row : null;
     }
 
+    public function hasLaunchedPendingParentToolCall(string $parentRunId, int $parentTurnNo, string $parentToolCallId): bool
+    {
+        $batch = $this->findByParentRunAndToolCall($parentRunId, $parentToolCallId);
+
+        return null !== $batch
+            && $batch->parentTurnNo === $parentTurnNo
+            && DeferredSubagentBatchLaunchStatusEnum::Launched === $batch->launchStatus
+            && null === $batch->terminalCompletionEnqueuedAt;
+    }
+
     /**
      * Atomically applies one child lifecycle projection and bumps aggregate progress revision when the child cursor advances.
      */
