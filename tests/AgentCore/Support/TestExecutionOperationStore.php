@@ -87,6 +87,11 @@ final class TestExecutionOperationStore implements ExecutionOperationStoreInterf
         throw new \LogicException('Dispatch-only fixture cannot apply result dispositions.');
     }
 
+    public function reclaimDisposedPayloads(string $ownerSessionId, string $afterEffectId): string
+    {
+        return '';
+    }
+
     public function unknownNoticePending(\Ineersa\AgentCore\Domain\Message\ExecutionOutcomeUnknown $notice): bool
     {
         throw new \LogicException('Dispatch-only fixture has no unknown execution receipts.');

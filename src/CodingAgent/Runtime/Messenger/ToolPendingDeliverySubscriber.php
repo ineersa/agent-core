@@ -22,6 +22,9 @@ final class ToolPendingDeliverySubscriber
     private string $runCursor = '';
     private string $fileCursor = '';
     private bool $advanceRun = false;
+    private string $cleanupRunCursor = '';
+    private string $cleanupFileCursor = '';
+    private bool $cleanupAdvanceRun = false;
 
     public function __construct(
         private readonly Connection $connection,
@@ -41,7 +44,10 @@ final class ToolPendingDeliverySubscriber
         if (\in_array('run_control', $event->getWorker()->getMetadata()->getTransportNames(), true)) {
             $this->runCursor = $this->fileCursor = '';
             $this->advanceRun = false;
+            $this->cleanupRunCursor = $this->cleanupFileCursor = '';
+            $this->cleanupAdvanceRun = false;
             $this->publishNext();
+            $this->reclaimNext();
         }
     }
 
@@ -50,6 +56,7 @@ final class ToolPendingDeliverySubscriber
     {
         if ($event->isWorkerIdle() && \in_array('run_control', $event->getWorker()->getMetadata()->getTransportNames(), true)) {
             $this->publishNext();
+            $this->reclaimNext();
         }
     }
 
@@ -100,6 +107,43 @@ final class ToolPendingDeliverySubscriber
             $this->logger->warning('tool_execution.pending_delivery_failed', [
                 'component' => 'tool_pending_delivery', 'event_type' => 'tool_execution.pending_delivery_failed',
                 'session_id' => $this->sessionId, 'run_id' => $this->runCursor, 'exception_class' => $exception::class,
+            ]);
+        }
+    }
+
+    private function reclaimNext(): void
+    {
+        if ('' === trim($this->sessionId) || 'unknown' === $this->sessionId) {
+            return;
+        }
+        try {
+            if ($this->cleanupAdvanceRun) {
+                $this->cleanupRunCursor = $this->nextRun($this->cleanupRunCursor) ?? '';
+                $this->cleanupFileCursor = '';
+                $this->cleanupAdvanceRun = false;
+
+                return;
+            }
+            if ('' === $this->cleanupRunCursor) {
+                $this->cleanupRunCursor = $this->nextRun('') ?? '';
+                if ('' === $this->cleanupRunCursor) {
+                    return;
+                }
+            }
+            $this->transitions->assertTransitionReady($this->cleanupRunCursor);
+            $next = $this->authorization->reclaimDisposedPayloads($this->cleanupRunCursor, $this->cleanupFileCursor);
+            if ('' === $next) {
+                $this->cleanupRunCursor = $this->nextRun($this->cleanupRunCursor) ?? '';
+                $this->cleanupFileCursor = '';
+
+                return;
+            }
+            $this->cleanupFileCursor = $next;
+        } catch (\Throwable $exception) {
+            $this->cleanupAdvanceRun = true;
+            $this->logger->warning('tool_execution.payload_cleanup_failed', [
+                'component' => 'tool_pending_delivery', 'event_type' => 'tool_execution.payload_cleanup_failed',
+                'session_id' => $this->sessionId, 'run_id' => $this->cleanupRunCursor, 'exception_class' => $exception::class,
             ]);
         }
     }

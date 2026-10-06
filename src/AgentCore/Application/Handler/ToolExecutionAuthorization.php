@@ -243,6 +243,21 @@ final readonly class ToolExecutionAuthorization implements \Ineersa\AgentCore\Co
             throw new \RuntimeException('Incoming tool result differs from the durable worker outcome.');
         }
 
+        $call = $batch->calls[$result->toolCallId] ?? null;
+        if ($call instanceof ExecuteToolCall) {
+            $state = $batch->executionAuthorizations[$this->identity($call)]['state'] ?? null;
+
+            return \in_array($state, ['Consumed', 'Stale'], true);
+        }
+
+        foreach ($batch->executionAuthorizations as $authorization) {
+            $invocation = $authorization['invocation'] ?? null;
+            if (($invocation['call_id'] ?? null) === $result->toolCallId
+                && \in_array($authorization['state'], ['Consumed', 'Stale'], true)) {
+                return true;
+            }
+        }
+
         return false;
     }
 
@@ -328,6 +343,11 @@ final readonly class ToolExecutionAuthorization implements \Ineersa\AgentCore\Co
 
             return new ToolBatchStoreMutation(null, $batch);
         });
+    }
+
+    public function reclaimDisposedPayloads(string $runId, string $afterFilename): string
+    {
+        return $this->store->reclaimDisposedPayloads($runId, $afterFilename);
     }
 
     private function withUnknownExclusion(\Ineersa\AgentCore\Domain\Message\ToolExecutionOutcomeUnknown $notice, callable $decision): void

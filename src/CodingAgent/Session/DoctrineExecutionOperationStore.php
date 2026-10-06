@@ -64,6 +64,8 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
                 throw new \RuntimeException('Unknown retirement differs from its execution receipt.');
             }
             if ('Stale' === $record['state'] && $record['disposition_transition'] === $transition->identity && null === $record['result_hash']) {
+                $this->removePayloadDirectory($record['run_id'], $record['effect_id']);
+
                 return;
             }
             $this->withUnknownExclusion($notice, function () use ($notice, $transition): void {
@@ -71,6 +73,7 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
                 if (1 !== $updated) {
                     throw new \RuntimeException('Unknown execution retirement lost its precise receipt.');
                 }
+                $this->removePayloadDirectory($notice->runId(), $notice->effectId);
             });
         });
     }
@@ -220,7 +223,9 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
             throw new \RuntimeException('Execution handler returned without a durable result.');
         }
         $result = $this->reference($record);
-        $this->readSealed($this->path($reference->runId(), $reference->effectId, hash('sha256', $claim).'.result'), $result->sha256, $result->bytes);
+        if (!$this->payloadReclaimed($record)) {
+            $this->readSealed($this->path($reference->runId(), $reference->effectId, hash('sha256', $claim).'.result'), $result->sha256, $result->bytes);
+        }
 
         return $result;
     }
@@ -251,6 +256,9 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
     public function resolveResult(DurableExecutionResult $reference): AbstractAgentBusMessage
     {
         $record = $this->matchingResult($reference);
+        if ($this->payloadReclaimed($record)) {
+            throw new \RuntimeException('Disposed execution payload was reclaimed.');
+        }
         $bytes = $this->readSealed($this->path($reference->runId(), $reference->effectId, hash('sha256', $reference->claimToken).'.result'), $reference->sha256, $reference->bytes);
 
         return $this->decodeResultSeal($bytes, $record);
@@ -268,7 +276,11 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
             throw new \RuntimeException('Execution disposition has no matching verified transition.');
         }
         $record = $this->matchingResult($descriptor->result);
-        $this->resolveResult($descriptor->result);
+        // Disposition validation must succeed after payload reclaim. The sealed
+        // result is verified only while the body is still required for ownership.
+        if (!$this->payloadReclaimed($record)) {
+            $this->resolveResult($descriptor->result);
+        }
         if ((null !== $record['disposition_transition'] && $record['disposition_transition'] !== $transition->identity)
             || (\in_array($record['state'], ['Consumed', 'Stale'], true) && $record['state'] !== $descriptor->disposition)) {
             throw new \RuntimeException('Conflicting execution result disposition.');
@@ -285,6 +297,43 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
                 throw new \RuntimeException('Execution disposition could not be persisted.');
             }
         }
+    }
+
+    public function reclaimDisposedPayloads(string $ownerSessionId, string $afterEffectId): string
+    {
+        if ('' === trim($ownerSessionId) || 'unknown' === $ownerSessionId) {
+            return '';
+        }
+        $records = $this->connection->fetchAllAssociative(<<<'SQL'
+            WITH RECURSIVE owned_runs(run_id) AS (
+                SELECT :owner
+                UNION
+                SELECT child.child_run_id
+                FROM deferred_subagent_child child
+                JOIN deferred_subagent_batch batch ON batch.lifecycle_id = child.batch_lifecycle_id
+                JOIN owned_runs parent ON parent.run_id = batch.parent_run_id
+            )
+            SELECT operation.* FROM execution_operation operation
+            JOIN owned_runs owned ON owned.run_id = operation.run_id
+            WHERE operation.state IN ('Consumed', 'Stale') AND operation.disposition_transition IS NOT NULL AND operation.effect_id > :after
+            ORDER BY operation.effect_id LIMIT 32
+            SQL, ['owner' => $ownerSessionId, 'after' => $afterEffectId]);
+        $cursor = '';
+        foreach ($records as $record) {
+            $cursor = (string) $record['effect_id'];
+            $this->runLocks->synchronized($record['run_id'], function () use ($record): void {
+                $current = $this->record($record['effect_id']);
+                if (!\in_array($current['state'], ['Consumed', 'Stale'], true) || null === $current['disposition_transition']) {
+                    return;
+                }
+                if ($this->payloadReclaimed($current)) {
+                    return;
+                }
+                $this->removePayloadDirectory($current['run_id'], $current['effect_id']);
+            });
+        }
+
+        return $cursor;
     }
 
     public function unknownNoticePending(\Ineersa\AgentCore\Domain\Message\ExecutionOutcomeUnknown $notice): bool
@@ -516,6 +565,30 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
         }
 
         return \dirname($this->paths->resolveToolBatchesDirectory($runId)).'/execution-operations/'.$id.'/'.$name;
+    }
+
+    /** @param array<string, mixed> $record */
+    private function payloadReclaimed(array $record): bool
+    {
+        return \in_array($record['state'], ['Consumed', 'Stale'], true)
+            && null !== $record['disposition_transition']
+            && !is_file($this->path($record['run_id'], $record['effect_id'], 'request'));
+    }
+
+    private function removePayloadDirectory(string $runId, string $effectId): void
+    {
+        $directory = \dirname($this->path($runId, $effectId, 'request'));
+        if (!is_dir($directory)) {
+            return;
+        }
+        try {
+            $this->filesystem->remove($directory);
+        } catch (\Throwable $exception) {
+            throw new \RuntimeException('Disposed execution payload cleanup failed.', previous: $exception);
+        }
+        if (is_file($this->path($runId, $effectId, 'request'))) {
+            throw new \RuntimeException('Disposed execution payload cleanup left evidence behind.');
+        }
     }
 
     private function seal(string $path, string $bytes): void

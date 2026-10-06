@@ -25,6 +25,9 @@ final readonly class ExecutionResultMiddleware implements MiddlewareInterface
     {
         $message = $envelope->getMessage();
         if ($message instanceof DurableExecutionResult && null !== $envelope->last(ReceivedStamp::class)) {
+            if ($this->operations->isDisposed($message)) {
+                return $envelope->with(new \Symfony\Component\Messenger\Stamp\HandledStamp(null, self::class));
+            }
             $result = $this->operations->resolveResult($message);
 
             return $this->context->accepting($message, static fn (): Envelope => $stack->next()->handle(new Envelope($result, array_merge(...array_values($envelope->all()))), $stack));

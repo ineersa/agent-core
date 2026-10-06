@@ -19,6 +19,7 @@ use Symfony\Component\Messenger\MessageBusInterface;
 final class ExecutionPendingDeliverySubscriber
 {
     private string $cursor = '';
+    private string $cleanupCursor = '';
 
     public function __construct(
         private readonly DoctrineExecutionOperationStore $operations,
@@ -38,7 +39,9 @@ final class ExecutionPendingDeliverySubscriber
     {
         if (\in_array('run_control', $event->getWorker()->getMetadata()->getTransportNames(), true)) {
             $this->cursor = '';
+            $this->cleanupCursor = '';
             $this->publishPage();
+            $this->reclaimPage();
         }
     }
 
@@ -47,6 +50,7 @@ final class ExecutionPendingDeliverySubscriber
     {
         if ($event->isWorkerIdle() && \in_array('run_control', $event->getWorker()->getMetadata()->getTransportNames(), true)) {
             $this->publishPage();
+            $this->reclaimPage();
         }
     }
 
@@ -84,6 +88,21 @@ final class ExecutionPendingDeliverySubscriber
                 $this->logFailure($message->runId(), $exception);
             }
         }
+    }
+
+    private function reclaimPage(): void
+    {
+        if ('' === trim($this->sessionId) || 'unknown' === $this->sessionId) {
+            return;
+        }
+        try {
+            $next = $this->operations->reclaimDisposedPayloads($this->sessionId, $this->cleanupCursor);
+        } catch (\Throwable $exception) {
+            $this->logFailure($this->sessionId, $exception);
+
+            return;
+        }
+        $this->cleanupCursor = '' === $next ? '' : $next;
     }
 
     private function logFailure(string $runId, \Throwable $exception): void

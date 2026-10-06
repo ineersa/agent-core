@@ -29,6 +29,14 @@ interface ToolBatchStoreInterface
     public function recoverResultPublication(string $runId, int $turnNo, string $stepId, string $key, string $claim): void;
 
     /**
+     * Drops completed tool-result bodies after durable Consumed/Stale disposition
+     * and batch finalization. Keeps scalar authorization fences. One snapshot page.
+     *
+     * @return string next snapshot filename cursor, or empty when exhausted for the run
+     */
+    public function reclaimDisposedPayloads(string $runId, string $afterFilename): string;
+
+    /**
      * @param callable(?ToolBatchStateDTO): ToolBatchStoreMutation $callback
      */
     public function mutate(string $runId, int $turnNo, string $stepId, callable $callback): mixed;

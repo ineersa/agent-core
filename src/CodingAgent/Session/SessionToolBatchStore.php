@@ -52,30 +52,7 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
     /** @return array{string, ToolBatchSnapshotEnvelopeDTO}|null */
     public function nextSnapshot(string $runId, string $afterFilename): ?array
     {
-        return $this->withRunLock($runId, function () use ($runId, $afterFilename): ?array {
-            $dir = $this->batchesDir($runId);
-            if (!is_dir($dir)) {
-                return null;
-            }
-            // Retain only the next filename, not a directory-sized list or decoded batches.
-            $next = null;
-            foreach (new \DirectoryIterator($dir) as $file) {
-                $name = $file->getFilename();
-                if ($file->isFile() && 1 === preg_match('/^[0-9]+_[a-f0-9]{64}\.json$/D', $name)
-                    && strcmp($name, $afterFilename) > 0 && (null === $next || strcmp($name, $next) < 0)) {
-                    $next = $name;
-                }
-            }
-            if (null === $next) {
-                return null;
-            }
-            $envelope = $this->readSnapshotEnvelope($dir.'/'.$next, $runId, null, null);
-            if ($this->snapshotPath($runId, $envelope->turnNo, $envelope->stepId) !== $dir.'/'.$next) {
-                throw new \RuntimeException('Tool batch snapshot filename differs from its invocation identity.');
-            }
-
-            return [$next, $envelope];
-        });
+        return $this->withRunLock($runId, fn (): ?array => $this->nextSnapshotWithoutLock($runId, $afterFilename));
     }
 
     public function load(string $runId, int $turnNo, string $stepId): ?ToolBatchStateDTO
@@ -268,6 +245,57 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
         });
     }
 
+    public function reclaimDisposedPayloads(string $runId, string $afterFilename): string
+    {
+        return $this->withRunLock($runId, function () use ($runId, $afterFilename): string {
+            $snapshot = $this->nextSnapshotWithoutLock($runId, $afterFilename);
+            if (null === $snapshot) {
+                return '';
+            }
+            [$filename, $envelope] = $snapshot;
+
+            return $this->withSnapshotLock($runId, $envelope->turnNo, $envelope->stepId, function () use ($runId, $filename, $envelope): string {
+                $path = $this->snapshotPath($runId, $envelope->turnNo, $envelope->stepId);
+                if (!is_file($path)) {
+                    return $filename;
+                }
+                $current = $this->readSnapshotEnvelope($path, $runId, $envelope->turnNo, $envelope->stepId);
+                $batch = clone $current->batchState;
+                $changed = false;
+                foreach ($batch->executionAuthorizations as $key => $authorization) {
+                    if (!\in_array($authorization['state'], ['Consumed', 'Stale'], true)) {
+                        continue;
+                    }
+                    // Member consumption alone is not enough; keep bodies until the
+                    // batch's canonical tool-message commit finalizes the snapshot.
+                    if ($batch->finalized && isset($batch->executionResults[$key])) {
+                        unset($batch->executionResults[$key]);
+                        $changed = true;
+                    }
+                    if (isset($batch->pendingDispositions[$key])) {
+                        unset($batch->pendingDispositions[$key]);
+                        $changed = true;
+                    }
+                    // Retired unknown receipts keep scalar fences only.
+                    if (isset($authorization['unknown_repair_transition'])) {
+                        $batch->executionAuthorizations[$key] = [
+                            'state' => 'Stale',
+                            'claim' => $authorization['claim'],
+                            'unknown_repair_transition' => $authorization['unknown_repair_transition'],
+                            'invocation' => $authorization['invocation'] ?? null,
+                        ];
+                        $changed = true;
+                    }
+                }
+                if ($changed) {
+                    $this->writeSnapshot($runId, $current->turnNo, $current->stepId, new ToolBatchSnapshotEnvelopeDTO($runId, $current->turnNo, $current->stepId, $batch));
+                }
+
+                return $filename;
+            });
+        });
+    }
+
     public function hasUnresolvedExecution(string $runId, ?string $toolCallId = null): bool
     {
         return $this->withRunLock($runId, function () use ($runId, $toolCallId): bool {
@@ -391,7 +419,7 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
         foreach ($envelope->batchState->executionAuthorizations as $authorization) {
             // Only a durable disposition permits reclamation. Cancellation is
             // not evidence that an external execution stopped or had no effect.
-            if (isset($authorization['unknown_repair_transition']) || !\in_array($authorization['state'], ['Consumed', 'Stale'], true)) {
+            if (!\in_array($authorization['state'], ['Consumed', 'Stale'], true)) {
                 $this->logger->info('tool_batch.execution_evidence_retained', [
                     'component' => 'session_tool_batch_store', 'event_type' => 'execution_evidence_retained',
                     'run_id' => $envelope->runId, 'turn_no' => $envelope->turnNo, 'step_id' => $envelope->stepId,
@@ -403,6 +431,33 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
         }
 
         return false;
+    }
+
+    /** @return array{string, ToolBatchSnapshotEnvelopeDTO}|null */
+    private function nextSnapshotWithoutLock(string $runId, string $afterFilename): ?array
+    {
+        $dir = $this->batchesDir($runId);
+        if (!is_dir($dir)) {
+            return null;
+        }
+        // Retain only the next filename, not a directory-sized list or decoded batches.
+        $next = null;
+        foreach (new \DirectoryIterator($dir) as $file) {
+            $name = $file->getFilename();
+            if ($file->isFile() && 1 === preg_match('/^[0-9]+_[a-f0-9]{64}\.json$/D', $name)
+                && strcmp($name, $afterFilename) > 0 && (null === $next || strcmp($name, $next) < 0)) {
+                $next = $name;
+            }
+        }
+        if (null === $next) {
+            return null;
+        }
+        $envelope = $this->readSnapshotEnvelope($dir.'/'.$next, $runId, null, null);
+        if ($this->snapshotPath($runId, $envelope->turnNo, $envelope->stepId) !== $dir.'/'.$next) {
+            throw new \RuntimeException('Tool batch snapshot filename differs from its invocation identity.');
+        }
+
+        return [$next, $envelope];
     }
 
     private function writeSnapshot(string $runId, int $turnNo, string $stepId, ToolBatchSnapshotEnvelopeDTO $envelope): void

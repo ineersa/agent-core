@@ -43,6 +43,14 @@ interface ExecutionOperationStoreInterface
 
     public function applyDisposition(ExecutionResultDispositionDTO $descriptor, VerifiedTransitionDTO $transition): void;
 
+    /**
+     * Removes immutable request/result files for disposed operations after
+     * coordination finalization. Keeps scalar authorization rows. One bounded page.
+     *
+     * @return string next effect-id cursor, or empty when the page is exhausted
+     */
+    public function reclaimDisposedPayloads(string $ownerSessionId, string $afterEffectId): string;
+
     public function unknownNoticePending(\Ineersa\AgentCore\Domain\Message\ExecutionOutcomeUnknown $notice): bool;
 
     public function consumeUnknownNotice(\Ineersa\AgentCore\Domain\Coordination\ConsumeExecutionUnknownDTO $action, VerifiedTransitionDTO $transition): void;

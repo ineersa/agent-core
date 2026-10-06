@@ -36,4 +36,7 @@ interface ToolExecutionAuthorizationInterface
     public function validateDisposition(\Ineersa\AgentCore\Domain\Coordination\ToolResultDispositionDTO $descriptor, VerifiedTransitionDTO $transition): void;
 
     public function applyDisposition(\Ineersa\AgentCore\Domain\Coordination\ToolResultDispositionDTO $descriptor, VerifiedTransitionDTO $transition): void;
+
+    /** @return string next snapshot filename cursor, or empty when exhausted for the run */
+    public function reclaimDisposedPayloads(string $runId, string $afterFilename): string;
 }

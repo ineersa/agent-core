@@ -57,6 +57,11 @@ final class TestToolExecutionAuthorization implements ToolExecutionAuthorization
     {
     }
 
+    public function reclaimDisposedPayloads(string $runId, string $afterFilename): string
+    {
+        return '';
+    }
+
     public function arm(ExecuteToolCall $call): void
     {
     }

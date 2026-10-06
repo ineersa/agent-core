@@ -1181,6 +1181,11 @@ final class CancellationBatchReadObservationStore implements \Ineersa\AgentCore\
         $this->inner->recoverResultPublication($runId, $turnNo, $stepId, $key, $claim);
     }
 
+    public function reclaimDisposedPayloads(string $runId, string $afterFilename): string
+    {
+        return $this->inner->reclaimDisposedPayloads($runId, $afterFilename);
+    }
+
     public function deleteAllForRun(string $runId): void
     {
         $this->inner->deleteAllForRun($runId);

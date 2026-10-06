@@ -194,6 +194,7 @@ final readonly class JsonlAppendJournal
             throw new \RuntimeException('Prepared transition identity changed before finalization.');
         }
         $this->finalize($path);
+        $this->reclaimArmedWork($path, $pending->work);
     }
 
     public function assertReady(string $path): void
@@ -243,6 +244,30 @@ final readonly class JsonlAppendJournal
         }
 
         return false;
+    }
+
+    /** @param array<string, mixed> $work */
+    private function reclaimArmedWork(string $path, array $work): void
+    {
+        $directory = $path.'.armed-work';
+        if (!is_dir($directory)) {
+            return;
+        }
+        $encoded = json_encode((new \Symfony\Component\Messenger\Transport\Serialization\PhpSerializer())->encode(new \Symfony\Component\Messenger\Envelope(new PendingTransitionWorkDTO($work))), \JSON_THROW_ON_ERROR);
+        $file = $directory.'/'.hash('sha256', $encoded).'.json';
+        if (is_file($file)) {
+            $this->filesystem->remove($file);
+        }
+        $remaining = false;
+        foreach (new \DirectoryIterator($directory) as $entry) {
+            if ($entry->isFile()) {
+                $remaining = true;
+                break;
+            }
+        }
+        if (!$remaining) {
+            $this->filesystem->remove($directory);
+        }
     }
 
     /** @return array{version: int, offset: int, device: int, inode: int, boundary_length: int, boundary_hash: string, length: int, stage_hash: string, transition: bool, work_hash: string|null}|null */
