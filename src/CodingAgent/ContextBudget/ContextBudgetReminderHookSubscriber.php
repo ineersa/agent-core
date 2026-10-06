@@ -50,7 +50,7 @@ final readonly class ContextBudgetReminderHookSubscriber implements HookSubscrib
         }
 
         $runStarted = $this->eventStore->firstFor($context->runId);
-        if ($this->remindersDisabledForChild($runStarted)) {
+        if ($this->remindersDisabledForRun($runStarted)) {
             return $context;
         }
 
@@ -193,11 +193,11 @@ final readonly class ContextBudgetReminderHookSubscriber implements HookSubscrib
         return implode('', $parts);
     }
 
-    private function remindersDisabledForChild(?RunEvent $event): bool
+    private function remindersDisabledForRun(?RunEvent $event): bool
     {
         $session = $event?->payload['payload']['metadata']['session'] ?? [];
         if ('agent_child' !== ($session['kind'] ?? null)) {
-            return false;
+            return $this->config->disableForMain;
         }
 
         // Fork launches set child_kind; named subagent launches omit it.

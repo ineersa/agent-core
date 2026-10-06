@@ -23,6 +23,7 @@ use Ineersa\CodingAgent\Compaction\ProviderContextUsageResolver;
 use Ineersa\CodingAgent\Config\CompactionConfig;
 use Ineersa\CodingAgent\Tests\Support\StubRunRelationshipReader;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -95,10 +96,11 @@ final class AutoCompactionHookSubscriberTest extends TestCase
     }
 
     // ─────────────────────────────────────────────────────────────────
-    //  Test: auto compaction triggers when provider usage exceeds threshold
+    //  Test: auto compaction triggers at or above the provider usage threshold
     // ─────────────────────────────────────────────────────────────────
 
-    public function testDispatchesAutoCompactWhenProviderUsageExceedsThreshold(): void
+    #[DataProvider('eligibleProviderUsage')]
+    public function testDispatchesAutoCompactWhenProviderUsageReachesThreshold(int $inputTokens): void
     {
         $this->modelResolver->expects($this->once())
             ->method('resolveActiveModel')
@@ -109,7 +111,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         ];
         $runState = $this->createRunState($messages);
 
-        $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(12000)]);  // 12000 > 11000, no auto started event
+        $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent($inputTokens)]);
 
         $context = $this->createHookContext(runState: $runState);
         $this->subscriber->handleAfterTurnCommit($context);
@@ -117,6 +119,13 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $this->assertCount(1, $this->commandBus->messages);
         $this->assertSame('auto', $this->commandBus->messages[0]->trigger);
         $this->assertSame($runState->turnNo, $this->commandBus->messages[0]->turnNo());
+    }
+
+    /** @return iterable<string, array{int}> */
+    public static function eligibleProviderUsage(): iterable
+    {
+        yield 'at threshold' => [11000];
+        yield 'above threshold' => [12000];
     }
 
     /**

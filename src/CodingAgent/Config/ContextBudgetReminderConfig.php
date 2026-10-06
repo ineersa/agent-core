@@ -25,6 +25,7 @@ final readonly class ContextBudgetReminderConfig
         public int $earlyInputTokens = self::DEFAULT_EARLY_INPUT_TOKENS,
 
         public int $urgentRemainingTokens = self::DEFAULT_URGENT_REMAINING_TOKENS,
+        public bool $disableForMain = true,
         public bool $disableForForks = false,
         public bool $disableForSubagents = false,
     ) {
