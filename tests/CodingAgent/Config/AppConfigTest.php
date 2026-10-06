@@ -65,17 +65,20 @@ class AppConfigTest extends TestCase
     //  Valid default_model
     // ──────────────────────────────────────────────
 
-    public function testChildReminderSettingsDefaultToEnabledAndLoadOverrides(): void
+    public function testReminderDefaultsAndOverridesAreIndependentByRunKind(): void
     {
         $defaults = $this->buildConfig()->contextBudgetReminders;
+        $this->assertTrue($defaults->disableForMain);
         $this->assertFalse($defaults->disableForForks);
         $this->assertFalse($defaults->disableForSubagents);
 
         $this->defaultsWith(['context_budget_reminders' => [
+            'disable_for_main' => false,
             'disable_for_forks' => true,
             'disable_for_subagents' => true,
         ]]);
         $configured = $this->buildConfig()->contextBudgetReminders;
+        $this->assertFalse($configured->disableForMain);
         $this->assertTrue($configured->disableForForks);
         $this->assertTrue($configured->disableForSubagents);
     }

@@ -17,7 +17,7 @@ use Psr\Log\NullLogger;
 
 /**
  * After-turn hook that triggers auto-compaction when the latest provider-
- * reported context token count exceeds the compact_after_tokens threshold.
+ * reported context token count reaches the compact_after_tokens threshold.
  *
  * Uses committed llm_step_completed/llm_step_aborted event usage as the
  * authoritative context size — NOT the text-only CompactionTokenEstimator.
@@ -35,8 +35,8 @@ use Psr\Log\NullLogger;
  *  - Commit contains compaction lifecycle events (avoids loops)
  *  - Commit contains tool_batch_committed (ToolCallResultHandler uses postCommit
  *    for post-tool AdvanceRun, so effectsCount is 0 but the turn will continue;
- *    auto-compaction must not interrupt an in-progress assistant/tool cycle)
- *  - Provider context tokens ≤ threshold (or no provider measurement)
+ *    the scheduler owns pre-LLM compaction with continuation intent)
+ *  - Provider context tokens < threshold (or no provider measurement)
  *  - Stable request identity per settled model generation
  *  - Commits containing AgentCommandQueued or AgentCommandApplied
  *    (races pending follow-up command with auto-compaction)
@@ -205,7 +205,7 @@ final class AutoCompactionHookSubscriber implements EssentialAfterTurnHookInterf
         // and provider-specific overhead.
         $effectiveTokens = $this->providerUsageResolver->getLatestEligibleInputTokens($runId, $context->events);
 
-        if (null === $effectiveTokens || $effectiveTokens <= $runtimeSettings->compactAfterTokens) {
+        if (null === $effectiveTokens || $effectiveTokens < $runtimeSettings->compactAfterTokens) {
             return [];
         }
 

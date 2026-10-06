@@ -234,6 +234,7 @@ final class MessengerDoctrineRedeliverTimeoutLeaseTest extends IsolatedKernelTes
                 toolAuthorization: self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\ToolExecutionAuthorization::class),
                 historyReplayFilter: self::getContainer()->get(\Ineersa\CodingAgent\Session\History\HistoryReplayFilter::class),
                 runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit($active, $eventStore, new StepDispatcher($commandBus, $executionBus), new NullLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()), actionValidator: new \Ineersa\AgentCore\Application\Handler\CoordinationActionValidator([$redrive])),
+                deferredBatches: self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository::class),
             );
 
             $result = $repair->repair($runId, true, \Symfony\Component\Uid\Uuid::v4()->toRfc4122());

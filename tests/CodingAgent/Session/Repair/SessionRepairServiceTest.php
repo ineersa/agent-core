@@ -39,16 +39,16 @@ use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\Repair\SessionRepairService;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
-use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Messenger\MessageBusInterface;
 
 #[Group('session-repair')]
-final class SessionRepairServiceTest extends TestCase
+final class SessionRepairServiceTest extends IsolatedKernelTestCase
 {
     private const string TOOL_CALL_ID = 'call_00_abc';
 
@@ -1128,6 +1128,7 @@ final class SessionRepairServiceTest extends TestCase
             toolAuthorization: new \Ineersa\AgentCore\Application\Handler\ToolExecutionAuthorization($toolBatchStore, AttributeSerializerValidatorTestFactory::serializer(), $this->createStub(\Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface::class), new LockFactory(new FlockStore($lockDir)), new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(), new RunLockManager(new LockFactory(new FlockStore($lockDir)))),
             historyReplayFilter: new \Ineersa\CodingAgent\Session\History\HistoryReplayFilter(new \Ineersa\CodingAgent\Session\History\HistoryProjector()),
             runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit($activeRunContext, $eventStore, new StepDispatcher($coordinationBus, $dispatcherBus), new NullLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()), actionValidator: new \Ineersa\AgentCore\Application\Handler\CoordinationActionValidator([$redriveHandler])),
+            deferredBatches: self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository::class),
         );
     }
 

@@ -26,6 +26,7 @@ use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\MalformedToolCallSequenceException;
+use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Runtime\Contract\RepairResult;
 use Ineersa\CodingAgent\Runtime\Contract\SessionRepairRefusalReasonEnum;
 use Psr\Log\LoggerInterface;
@@ -55,6 +56,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         private \Ineersa\CodingAgent\Session\History\HistoryReplayFilter $historyReplayFilter,
         private \Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface $executionOperations,
         private \Ineersa\AgentCore\Application\Handler\ToolExecutionAuthorization $toolAuthorization,
+        private DeferredSubagentBatchRepository $deferredBatches,
     ) {
         $this->toolExecutionEndPayloadCodec = new ToolExecutionEndPayloadCodec($this->serializer);
     }
@@ -252,7 +254,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
                 return $redrive;
             }
 
-            if ($this->hasUnresolvedPendingWork($replayed)) {
+            if ($this->hasUnresolvedPendingWork($replayed) && !$this->hasOnlyDeferredChildWork($replayed)) {
                 return $this->ambiguousRefusal($runId);
             }
 
@@ -968,10 +970,21 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         if (null !== $state->activeStepId && [] !== $state->pendingToolCalls) {
             $batch = $this->toolBatchStore->load($runId, $state->turnNo, $state->activeStepId);
             if (null !== $batch && !$batch->finalized && [] === $batch->awaitingHumanInput) {
+                $pendingIds = [...$batch->pendingQueue, ...array_keys($batch->inFlight)];
                 foreach ($this->toolAuthorization->pendingDeliveries($runId, $state->turnNo, $state->activeStepId, $batch) as $delivery) {
-                    if (!$delivery instanceof \Ineersa\AgentCore\Domain\Message\ToolExecutionOutcomeUnknown) {
-                        $effects[] = $delivery;
+                    if ($delivery instanceof \Ineersa\AgentCore\Domain\Message\ToolExecutionOutcomeUnknown) {
+                        continue;
                     }
+                    if (!isset($delivery->toolCallId) || !\in_array($delivery->toolCallId, $pendingIds, true)) {
+                        continue;
+                    }
+                    // A launched fork/subagent is already durable. Replaying its
+                    // launch only returns the pending handle; maintenance must
+                    // repair the existing child's operation instead.
+                    if ($this->isDeferredChildCall($state, $delivery->toolCallId)) {
+                        continue;
+                    }
+                    $effects[] = $delivery;
                 }
             }
         }
@@ -1000,6 +1013,30 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             sourceIdentity: $this->repairSource($runId, $commandId, $leadingActions));
 
         return new RepairResult(false, false, 'Active operation redriven.', activeOperationsRedriven: \count($effects));
+    }
+
+    private function hasOnlyDeferredChildWork(RunState $state): bool
+    {
+        if ([] === $state->pendingToolCalls || [] !== $state->pendingShellToolCalls || [] !== $state->pendingHumanInputRequests || null !== $state->currentOperation) {
+            return false;
+        }
+        $hasDeferredCall = false;
+        foreach ($state->pendingToolCalls as $toolCallId => $completed) {
+            if ($completed) {
+                continue;
+            }
+            if (!$this->isDeferredChildCall($state, $toolCallId)) {
+                return false;
+            }
+            $hasDeferredCall = true;
+        }
+
+        return $hasDeferredCall;
+    }
+
+    private function isDeferredChildCall(RunState $state, string $toolCallId): bool
+    {
+        return $this->deferredBatches->hasLaunchedPendingParentToolCall($state->runId, $state->turnNo, $toolCallId);
     }
 
     /**

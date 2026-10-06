@@ -45,6 +45,10 @@ Workers post results (`LlmStepResult`, `ToolCallResult`, `CompactionStepResult`)
 - `ExecuteLlmStep` / `ExecuteToolCall` / `ExecuteCompactionStep` — external-I/O effects through `RunMessageProcessor` / `RunCommit` → `agent.execution.bus`
 - `CompactRun` — auto-compaction hooks, manual `/compact`, pre-LLM compaction guard / overflow recovery paths
 
+`AdvanceRunHandler` evaluates automatic compaction before the next LLM request, including after a completed tool batch. Unresolved tools and human-input waits stop advancement before this boundary. Parent input usage at or above the independent compaction threshold holds the request with `continueAfterCompaction=true`; result handling resumes it on compacted history. Children never compact. The after-turn hook retains maintenance scheduling and does not race post-tool advancement.
+
+Continuation compaction revalidates cancellation when the owner consumes `CompactRun`. Hook-provided `context_compacted` events persist continuation intent so cold replay matches the live lifecycle. Explicit terminal-session maintenance remains available without continuation.
+
 ## Subagent progress ownership
 
 `SubagentProgressEventAppender` submits `CommitSubagentProgress` for canonical progress. `RunOrchestrator` routes consumption through the locked `RunMessageProcessor` and App handler. The handler validates durable lifecycle, parent invocation, and revision identities before returning a `tool_execution_update` transition. `RunCommit` publishes the new owner sequence without invalidation or parent replay.

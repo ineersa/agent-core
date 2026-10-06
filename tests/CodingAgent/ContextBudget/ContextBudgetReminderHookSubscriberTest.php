@@ -53,9 +53,32 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
             new ContextBudgetReminderConfig(
                 earlyInputTokens: 200000,
                 urgentRemainingTokens: 25000,
+                disableForMain: false,
             ),
             $this->appConfigWithCatalogWindow(272000),
         );
+    }
+
+    #[DataProvider('mainReminderThresholds')]
+    public function testMainRemindersAreSuppressedByDefault(int $inputTokens): void
+    {
+        $subscriber = new ContextBudgetReminderHookSubscriber(
+            $this->eventStore,
+            new ContextBudgetReminderConfig(),
+            $this->appConfigWithCatalogWindow(272000),
+        );
+        $this->mockEvents([$this->runStarted(1, 272000)]);
+        $this->agentRunner->expects($this->never())->method('appendMessage');
+        $this->dispatchPrepared($subscriber, $this->hookContext([
+            $this->summary(2, RunEventTypeEnum::LlmStepCompleted->value, ['usage' => ['input_tokens' => $inputTokens]]),
+        ]));
+    }
+
+    /** @return iterable<string, array{int}> */
+    public static function mainReminderThresholds(): iterable
+    {
+        yield 'early' => [200000];
+        yield 'urgent' => [260000];
     }
 
     public function testEarlyQueuesWrappedAppendMessage(): void
@@ -269,11 +292,11 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
 
     /** @param array<string, mixed> $session */
     #[DataProvider('childReminderCases')]
-    public function testChildReminderSettings(array $session, bool $disableForks, bool $disableSubagents, int $inputTokens, bool $suppressed): void
+    public function testChildReminderSettings(array $session, bool $disableForks, bool $disableSubagents, int $inputTokens, bool $suppressed, bool $disableMain): void
     {
         $subscriber = new ContextBudgetReminderHookSubscriber(
             $this->eventStore,
-            new ContextBudgetReminderConfig(disableForForks: $disableForks, disableForSubagents: $disableSubagents),
+            new ContextBudgetReminderConfig(disableForMain: $disableMain, disableForForks: $disableForks, disableForSubagents: $disableSubagents),
             $this->appConfigWithCatalogWindow(272000),
         );
         $this->mockEvents([$this->runStarted(1, 272000, $session)]);
@@ -293,19 +316,19 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
         ]));
     }
 
-    /** @return iterable<string, array{array<string, mixed>, bool, bool, int, bool}> */
+    /** @return iterable<string, array{array<string, mixed>, bool, bool, int, bool, bool}> */
     public static function childReminderCases(): iterable
     {
         $fork = ['kind' => 'agent_child', 'child_kind' => 'fork'];
         $subagent = ['kind' => 'agent_child'];
         foreach (['early' => 200000, 'urgent' => 260000] as $level => $tokens) {
-            yield 'fork defaults '.$level => [$fork, false, false, $tokens, false];
-            yield 'subagent defaults '.$level => [$subagent, false, false, $tokens, false];
-            yield 'fork disabled '.$level => [$fork, true, false, $tokens, true];
-            yield 'subagent disabled '.$level => [$subagent, false, true, $tokens, true];
-            yield 'fork ignores subagent flag '.$level => [$fork, false, true, $tokens, false];
-            yield 'subagent ignores fork flag '.$level => [$subagent, true, false, $tokens, false];
-            yield 'parent ignores both flags '.$level => [[], true, true, $tokens, false];
+            yield 'fork defaults '.$level => [$fork, false, false, $tokens, false, true];
+            yield 'subagent defaults '.$level => [$subagent, false, false, $tokens, false, true];
+            yield 'fork disabled '.$level => [$fork, true, false, $tokens, true, true];
+            yield 'subagent disabled '.$level => [$subagent, false, true, $tokens, true, true];
+            yield 'fork ignores subagent flag '.$level => [$fork, false, true, $tokens, false, true];
+            yield 'subagent ignores fork flag '.$level => [$subagent, true, false, $tokens, false, true];
+            yield 'parent ignores both flags '.$level => [[], true, true, $tokens, false, false];
         }
     }
 

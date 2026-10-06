@@ -16,7 +16,7 @@ use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
  * events to find the most recent input_tokens/prompt_tokens measurement.
  *
  * Used by auto-compaction trigger policy: auto-compaction fires only
- * when a provider measurement exists and exceeds compact_after_tokens.
+ * when a provider measurement exists and reaches compact_after_tokens.
  * No provider measurement = no auto-compaction.
  *
  * Eligibility rule (event-log authoritative, not in-memory):

@@ -6,8 +6,15 @@ namespace Ineersa\CodingAgent\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Pipeline\SourceAcceptance;
 use Ineersa\AgentCore\Contract\History\HistorySelectionServiceInterface;
+use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
+use Ineersa\AgentCore\Domain\Message\ApplyCommand;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchStatusEnum;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildLaunchStatusEnum;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Recovery\DeferredSubagentBatchRecoveryService;
 use Ineersa\CodingAgent\Application\Message\RepairSession;
 use Ineersa\CodingAgent\Application\Message\SelectHistoryPrompt;
+use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Runtime\Contract\RepairResult;
 use Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink;
 use Ineersa\CodingAgent\Runtime\Protocol\RunHistoryPositionChangedEventFactory;
@@ -35,6 +42,8 @@ final readonly class SessionMaintenanceHandler
         private \Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware $initialization,
         private \Ineersa\AgentCore\Application\Pipeline\RunCommit $runCommit,
         private \Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery $recovery,
+        private DeferredSubagentBatchRepository $deferredBatches,
+        private DeferredSubagentBatchRecoveryService $deferredRecovery,
     ) {
     }
 
@@ -46,9 +55,9 @@ final readonly class SessionMaintenanceHandler
             return;
         }
         $state = $this->registry->requireLoaded($command->runId);
-        if (\Ineersa\AgentCore\Domain\Run\RunStatus::WaitingHuman === $state->status || [] !== $state->pendingHumanInputRequests) {
+        if (RunStatus::WaitingHuman === $state->status || [] !== $state->pendingHumanInputRequests) {
             $step = 'attach-cancel-'.$command->commandId;
-            $this->processor->process('attach', new \Ineersa\AgentCore\Domain\Message\ApplyCommand($command->runId, $state->turnNo, $step, 1, $step, 'cancel', ['reason' => 'Outstanding human questions cancelled on session attach.']), SourceAcceptance::actionIdentity($command::class, $command->runId, $command->commandId, 'cancel'));
+            $this->processor->process('attach', new ApplyCommand($command->runId, $state->turnNo, $step, 1, $step, 'cancel', ['reason' => 'Outstanding human questions cancelled on session attach.']), SourceAcceptance::actionIdentity($command::class, $command->runId, $command->commandId, 'cancel'));
         }
         $this->sessions->resetReasoningBaseline($command->runId);
         $this->processor->process('attach', new \Ineersa\AgentCore\Domain\Message\RefreshRunContext($command->runId, $command->messages), $source);
@@ -87,6 +96,9 @@ final readonly class SessionMaintenanceHandler
             if (null === $result) {
                 $this->initialization->initializeForOwner($command->runId, $command);
                 $result = $this->repair->repair($command->runId, $command->apply, $command->commandId);
+                if (null === $result->refusalReason) {
+                    $result = $this->repairDeferredChildren($command, $result);
+                }
             }
         } catch (\Throwable $exception) {
             $this->emit(new RuntimeEvent(type: RuntimeEventTypeEnum::SessionRepairCompleted->value, runId: $command->runId, seq: 0, payload: ['commandId' => $command->commandId, 'commandType' => 'repair', 'status' => 'failed', 'exception_class' => $exception::class]));
@@ -95,6 +107,100 @@ final readonly class SessionMaintenanceHandler
         $this->emit(new RuntimeEvent(type: RuntimeEventTypeEnum::SessionRepairCompleted->value, runId: $command->runId, seq: 0, payload: RepairResultNormalizer::toArray($result) + ['commandId' => $command->commandId, 'commandType' => 'repair', 'status' => 'completed']));
 
         return $result;
+    }
+
+    private function repairDeferredChildren(RepairSession $command, RepairResult $result): RepairResult
+    {
+        $parent = $this->registry->requireLoaded($command->runId);
+        if (RunStatus::Running !== $parent->status) {
+            return $result;
+        }
+        $redriven = $result->activeOperationsRedriven;
+        $detected = $result->repairableStaleCancellationDetected;
+        $repaired = $result->staleCancellationRepaired;
+        $message = $result->message;
+        foreach (array_keys($parent->pendingToolCalls) as $toolCallId) {
+            $batch = $this->deferredBatches->findByParentRunAndToolCall($command->runId, $toolCallId);
+            if (null === $batch || $batch->parentTurnNo !== $parent->turnNo || DeferredSubagentBatchLaunchStatusEnum::Launched !== $batch->launchStatus || null !== $batch->terminalCompletionEnqueuedAt) {
+                continue;
+            }
+            // Launch/startup already queued the deadline message. Leave expired
+            // work to that timeout owner rather than restarting its execution.
+            if (null !== $batch->deadlineAt && $batch->deadlineAt <= \Symfony\Component\Clock\Clock::get()->now()) {
+                continue;
+            }
+            // Cancellation and timeout retain their existing lifecycle owner.
+            // Never retry a child whose batch is already being interrupted.
+            if (null !== $batch->interruptionKind) {
+                if ($command->apply) {
+                    $this->deferredRecovery->recover($batch->lifecycleId);
+                    ++$redriven;
+                    $message = 'Deferred child interruption redriven.';
+                }
+                continue;
+            }
+            $allTerminal = true;
+            $unfinished = [];
+            foreach ($batch->children as $child) {
+                if (DeferredSubagentChildLaunchStatusEnum::Launched !== $child->launchStatus) {
+                    $allTerminal = false;
+                    continue;
+                }
+                $refusal = $this->repair->integrityRefusal($child->childRunId);
+                if (null !== $refusal) {
+                    return $refusal;
+                }
+                // Admit the existing child through the audited cold-owner entry.
+                // Preview every child before applying cancellation to this batch.
+                $childCommand = new RepairSession($child->childRunId, $command->apply, $command->commandId);
+                $this->initialization->initializeForOwner($child->childRunId, $childCommand);
+                $state = $this->registry->requireLoaded($child->childRunId);
+                if ($state->status->isTerminal()) {
+                    continue;
+                }
+                $allTerminal = false;
+                if (RunStatus::WaitingHuman === $state->status) {
+                    continue;
+                }
+                // Parent maintenance cancels unfinished children. Do not preview
+                // unauthorized LLM redrive; missing authorization is expected for
+                // abandoned child claims and must not block cancellation.
+                $unfinished[] = $child->childRunId;
+            }
+            if ([] !== $unfinished) {
+                $message = $command->apply ? 'Deferred children cancelled by session repair.' : 'Deferred children would be cancelled by session repair.';
+            }
+            if ($command->apply) {
+                foreach ($unfinished as $childRunId) {
+                    $state = $this->registry->requireLoaded($childRunId);
+                    if (RunStatus::Cancelling !== $state->status) {
+                        $key = 'repair-cancel-'.$command->commandId.'-'.$childRunId;
+                        $this->processor->process('repair', new ApplyCommand($childRunId, $state->turnNo, $key, 1, $key, CoreCommandKind::Cancel, ['reason' => 'Cancelled by session repair.']));
+                    }
+                    // A claimed request may never deliver its cancellation result.
+                    // Existing cancellation repair aborts it durably and fences
+                    // late results instead of waiting for or retrying the worker.
+                    if (RunStatus::Cancelling === $this->registry->requireLoaded($childRunId)->status) {
+                        $childResult = $this->repair->repair($childRunId, true, $command->commandId);
+                        if (null !== $childResult->refusalReason) {
+                            return $childResult;
+                        }
+                        $detected = $detected || $childResult->repairableStaleCancellationDetected;
+                        $repaired = $repaired || $childResult->staleCancellationRepaired;
+                    }
+                }
+                // Reconcile terminal children whose final observation was lost
+                // at shutdown or during repair, then settle the existing parent
+                // tool call. Completed siblings retain their natural outcomes.
+                $this->deferredRecovery->recover($batch->lifecycleId);
+                if ($allTerminal) {
+                    ++$redriven;
+                    $message = 'Deferred child result delivery redriven.';
+                }
+            }
+        }
+
+        return new RepairResult($detected, $repaired, $message, activeOperationsRedriven: $redriven);
     }
 
     private function emit(RuntimeEvent $event): void

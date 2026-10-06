@@ -141,9 +141,9 @@ an exactly-once guarantee. A retried operation can repeat external effects.
 
 ### Repair safety
 
-`/repair` is explicit recovery, never automatic. Inspect its diagnosis before using
-`/repair --apply` to redispatch stranded work. Restarting a session does not by itself
-make abandoned claimed queue messages available again.
+`/repair` is explicit recovery, never automatic. The terminal command applies repairs.
+The runtime protocol also supports a preview with `apply=false`. Restarting a session
+does not make abandoned claimed queue messages available again.
 
 Repair reuses the current operation identity. It does not mark unfinished work as
 completed, roll back side effects, or clear abandoned claimed messages. Check whether
@@ -162,6 +162,14 @@ Retirement and required synthetic tool-history fixes share one captured journal 
 Recovery finishes that plan without regenerating its events. Repair delivery repeats
 the original authorized reference, never a newly reconstructed request. A broker
 failure leaves the plan pending and the repair source unaccepted until recovery succeeds.
+
+For a pending fork or subagent call, repair cancels unfinished children instead of
+retrying their operations or launching replacements. It durably aborts abandoned
+requests and settles the existing parent tool call, so queued parent input can continue.
+Child run IDs, artifacts, worktrees, and provider cache keys remain intact. Completed
+children keep their results. Late child responses cannot revive cancelled executions.
+Active streaming and human-input waits retain their safety checks; existing batch
+interruptions and deadlines retain their lifecycle owner. A preview does not cancel work.
 
 If a cancelled or failed terminal history has unmatched assistant tool calls, repair
 appends synthetic error tool results and a batch commit. This restores valid model

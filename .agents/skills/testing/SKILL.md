@@ -26,11 +26,11 @@ castor test:controller      # controller E2E smoke (live LLM, opt-in; fixed Cont
 castor test:controller-replay      # controller E2E smoke tests with replay fixtures (no live LLM, default controller validation)
 castor llm:fixtures:info           # List available LLM replay fixtures
 castor deptrac              # architecture boundary validation
-castor phpstan [path]       # static analysis (optionally scoped to a path)
+castor phpstan [--path=PATH] # static analysis (optionally scoped to a path)
 castor lsp:check [--path=PATH] # Symfony runtime diagnostics for the project or selected path; requires Symfony CLI + Language Tools >=0.21.0
 castor dead-code            # ShipMonk dead-code detector (dedicated phpstan.dead-code.neon)
 castor dead-code:baseline   # regenerate phpstan.dead-code-baseline.neon after reviewing findings (empty baseline accepted)
-castor cs-fix [path]        # auto-fix coding style
+castor cs-fix [--path=PATH] # auto-fix coding style
 castor cs-check             # check coding style (dry-run)
 castor docs:validate        # built-in docs catalog, package-safe links, ≤25k chars (also a castor check lane)
 castor phar:build           # Build hatfield.phar (worktree-local by default)

@@ -47,7 +47,7 @@ final readonly class ContextBudgetReminderHookSubscriber implements EssentialAft
         }
 
         $runStarted = $this->eventStore->firstFor($context->runId);
-        if ($this->remindersDisabledForChild($runStarted)) {
+        if ($this->remindersDisabledForRun($runStarted)) {
             return [];
         }
 
@@ -190,11 +190,11 @@ final readonly class ContextBudgetReminderHookSubscriber implements EssentialAft
         return implode('', $parts);
     }
 
-    private function remindersDisabledForChild(?RunEvent $event): bool
+    private function remindersDisabledForRun(?RunEvent $event): bool
     {
         $session = $event?->payload['payload']['metadata']['session'] ?? [];
         if ('agent_child' !== ($session['kind'] ?? null)) {
-            return false;
+            return $this->config->disableForMain;
         }
 
         // Fork launches set child_kind; named subagent launches omit it.

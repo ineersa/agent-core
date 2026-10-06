@@ -238,51 +238,11 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
         // the run from advancing until compaction completes (the next
         // AdvanceRun after compaction will proceed normally).
         //
-        // GUARD: do NOT fire the pre-LLM guard on post-tool continuations.
-        // When the AdvanceRun is triggered by the post-commit coordination action after
-        // tool_batch_committed, we are still inside the assistant/tool cycle
-        // and the next LLM step is the final assistant answer.  Compaction
-        // here (even with continueAfterCompaction=true) risks:
-        //  - empty_summary failure → dead-end with status=Running, no pending
-        //    turn, cancel rejected
-        //  - summary overhead larger than compacted body → zero token reduction
-        //    (user sees “13k → 13k”), model confused by compacted context
-        //  - ghost continuation (fixed by continueAfterCompaction flag) but
-        //    user policy is to wait for the full assistant/tool cycle to
-        //    complete before compacting
-        //
-        // Detection: walk backward through messages.  If the most recent
-        // assistant message has tool_calls and a tool message follows it,
-        // this is a post-tool continuation — skip the pre-LLM guard.
-        $isPostToolContinuation = false;
+        // Completed tool batches are safe boundaries too: the unresolved-tool
+        // and human-wait guards above have already stopped incomplete work.
+        // Hold the next request with continuation intent so compaction does
+        // not require a final assistant answer or another user command.
         if (null !== $this->preLlmCompactionGuard) {
-            $msgCount = \count($preparedState->messages);
-            $lastAssistantIdx = null;
-            for ($i = $msgCount - 1; $i >= 0; --$i) {
-                if ('assistant' === $preparedState->messages[$i]->role) {
-                    $lastAssistantIdx = $i;
-                    break;
-                }
-            }
-
-            if (null !== $lastAssistantIdx) {
-                $lastAssistant = $preparedState->messages[$lastAssistantIdx];
-                $hasToolCalls = \count($lastAssistant->metadata['tool_calls'] ?? []) > 0;
-
-                // Check if a tool message follows this assistant message.
-                $hasToolAfter = false;
-                for ($i = $lastAssistantIdx + 1; $i < $msgCount; ++$i) {
-                    if ('tool' === $preparedState->messages[$i]->role) {
-                        $hasToolAfter = true;
-                        break;
-                    }
-                }
-
-                $isPostToolContinuation = $hasToolCalls && $hasToolAfter;
-            }
-        }
-
-        if (null !== $this->preLlmCompactionGuard && !$isPostToolContinuation) {
             $shouldCompact = null === $this->tracer
                 ? $this->preLlmCompactionGuard->shouldCompactBeforeLlmStep(
                     $runId,
