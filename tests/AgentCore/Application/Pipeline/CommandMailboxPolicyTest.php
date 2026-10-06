@@ -419,7 +419,7 @@ final class CommandMailboxPolicyTest extends TestCase
         $toolBatchCollector = new ToolBatchCollector();
         $stepDispatcher = new StepDispatcher(\Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::bus($commandBus, $commandStore, $toolBatchCollector, new StepDispatcher($commandBus, $executionBus)), $executionBus);
 
-        $runCommit = new RunCommit(
+        $runCommit = new RunCommit(sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new InMemoryCommandStore()),
             activeRunContext: $activeRunContext,
             eventStore: $eventStore,
             stepDispatcher: $stepDispatcher,

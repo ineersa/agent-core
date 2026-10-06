@@ -19,7 +19,7 @@ use Ineersa\AgentCore\Domain\Message\RunControlTransitionMessageInterface;
 /** Owner-only reconciliation. Unsupported execution stays recovery-required. */
 final readonly class PendingTransitionRecovery
 {
-    public function __construct(private PreparedTransitionEventStoreInterface $store, private ToolExecutionAuthorizationInterface $authorization, private StepDispatcher $dispatcher, private ActiveRunContextInterface $registry, private ExecutionOperationStoreInterface $executionOperations, private \Ineersa\AgentCore\Application\Handler\CoordinationActionValidator $actionValidator = new \Ineersa\AgentCore\Application\Handler\CoordinationActionValidator())
+    public function __construct(private PreparedTransitionEventStoreInterface $store, private ToolExecutionAuthorizationInterface $authorization, private StepDispatcher $dispatcher, private ActiveRunContextInterface $registry, private ExecutionOperationStoreInterface $executionOperations, private SourceAcceptance $sourceAcceptance, private \Ineersa\AgentCore\Application\Handler\CoordinationActionValidator $actionValidator = new \Ineersa\AgentCore\Application\Handler\CoordinationActionValidator())
     {
     }
 
@@ -33,6 +33,7 @@ final readonly class PendingTransitionRecovery
         if (($work['run_id'] ?? null) !== $runId) {
             throw new \RuntimeException('Pending transition run identity mismatch.');
         }
+        $this->sourceAcceptance->validate($pending);
         $effects = [...($work['effects'] ?? []), ...($work['post_commit_effects'] ?? [])];
         $actions = $work['actions'] ?? [];
         // Validate the entire recovery plan before applying any coordination.
@@ -81,6 +82,7 @@ final readonly class PendingTransitionRecovery
         if (null !== $executionDisposition) {
             $this->executionOperations->applyDisposition($executionDisposition, $pending);
         }
+        $this->sourceAcceptance->publish($pending);
         $this->store->finalizeVerifiedTransition($runId, $pending->identity);
         // Cold replay must include the newly published suffix. A warm owner must
         // not continue using its predecessor after recovered physical append.

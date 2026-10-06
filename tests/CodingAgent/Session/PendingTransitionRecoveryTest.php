@@ -274,7 +274,7 @@ final class PendingTransitionRecoveryTest extends IsolatedKernelTestCase
     {
         $container = self::getContainer();
 
-        return new PendingTransitionRecovery($container->get(PreparedTransitionEventStoreInterface::class), $container->get(ToolExecutionAuthorizationInterface::class), new StepDispatcher($bus, $bus), $container->get(ActiveRunContextInterface::class), $container->get(ExecutionOperationStoreInterface::class), $container->get(\Ineersa\AgentCore\Application\Handler\CoordinationActionValidator::class));
+        return new PendingTransitionRecovery($container->get(PreparedTransitionEventStoreInterface::class), $container->get(ToolExecutionAuthorizationInterface::class), new StepDispatcher($bus, $bus), $container->get(ActiveRunContextInterface::class), $container->get(ExecutionOperationStoreInterface::class), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore()), $container->get(\Ineersa\AgentCore\Application\Handler\CoordinationActionValidator::class));
     }
 
     private function request(string $kind, string $run): AbstractAgentBusMessage

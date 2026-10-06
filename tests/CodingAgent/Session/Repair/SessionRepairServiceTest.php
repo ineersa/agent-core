@@ -1109,7 +1109,7 @@ final class SessionRepairServiceTest extends TestCase
             executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
             toolAuthorization: new \Ineersa\AgentCore\Application\Handler\ToolExecutionAuthorization($toolBatchStore, AttributeSerializerValidatorTestFactory::serializer(), $this->createStub(\Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface::class), new LockFactory(new FlockStore($lockDir)), new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(), new RunLockManager(new LockFactory(new FlockStore($lockDir)))),
             historyReplayFilter: new \Ineersa\CodingAgent\Session\History\HistoryReplayFilter(new \Ineersa\CodingAgent\Session\History\HistoryProjector()),
-            runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit($activeRunContext, $eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus()), new NullLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore()),
+            runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit($activeRunContext, $eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus()), new NullLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore())),
         );
     }
 

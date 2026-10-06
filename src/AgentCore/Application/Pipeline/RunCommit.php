@@ -25,6 +25,7 @@ final readonly class RunCommit
         private ToolBatchCollector $toolBatchCollector,
         private \Ineersa\AgentCore\Contract\Tool\ToolExecutionAuthorizationInterface $toolAuthorization,
         private \Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface $executionOperations,
+        private SourceAcceptance $sourceAcceptance,
         private ?HookDispatcher $hookDispatcher = null,
         private ?RunTracer $tracer = null,
         private \Ineersa\AgentCore\Application\Handler\ExecutionBoundaryContext $executionContext = new \Ineersa\AgentCore\Application\Handler\ExecutionBoundaryContext(),
@@ -52,8 +53,12 @@ final readonly class RunCommit
         $persist = function () use ($state, $nextState, $events, $effects, $dispatchAfterTurnHooks, $postCommitEffects, $postCommitActions, $sourceIdentity, $resultDisposition, $executionDisposition): RunState {
             /** @var list<RunEvent> $persistedEvents */
             $persistedEvents = [];
-            if ([] !== $events || null !== $resultDisposition || null !== $executionDisposition || [] !== $effects || [] !== $postCommitEffects || [] !== $postCommitActions) {
+            if ([] !== $sourceIdentity || [] !== $events || null !== $resultDisposition || null !== $executionDisposition || [] !== $effects || [] !== $postCommitEffects || [] !== $postCommitActions) {
                 $persistedEvents = $this->eventStore->appendTransition($events, ['run_id' => $nextState->runId, 'predecessor_seq' => $state->lastSeq, 'source' => $sourceIdentity, 'effects' => $effects, 'post_commit_effects' => $postCommitEffects, 'actions' => $postCommitActions, 'after_turn_hooks' => $dispatchAfterTurnHooks, 'result_disposition' => $resultDisposition, 'execution_disposition' => $executionDisposition]);
+            }
+            $verifiedSource = $this->eventStore->verifiedPendingTransition($nextState->runId);
+            if (null !== $verifiedSource) {
+                $this->sourceAcceptance->validate($verifiedSource);
             }
 
             // Batch decisions must survive before collector release, cleanup,
@@ -174,6 +179,11 @@ final readonly class RunCommit
         $this->toolAuthorization->assertNoUnknownExecution($runId);
     }
 
+    public function sourceAlreadyAccepted(\Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage $message): bool
+    {
+        return $this->sourceAcceptance->alreadyAccepted($message);
+    }
+
     /** @param list<RunEvent> $events
      * @param list<object> $effects
      * @param list<object> $actions
@@ -219,6 +229,7 @@ final readonly class RunCommit
             $this->executionOperations->applyDisposition($executionDisposition, $verified);
         }
         if (null !== $verified) {
+            $this->sourceAcceptance->publish($verified);
             $this->eventStore->finalizeVerifiedTransition($runId, $verified->identity);
         } elseif ([] !== $events || [] !== $effects || [] !== $actions) {
             $this->eventStore->finalizeTransition($runId);

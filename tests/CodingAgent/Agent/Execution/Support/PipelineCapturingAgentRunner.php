@@ -44,7 +44,7 @@ final class PipelineCapturingAgentRunner implements AgentRunnerInterface
     {
         $executionBus = new TestMessageBus();
         $activeRunContext = new TestActiveRunContext();
-        $runCommit = new RunCommit(
+        $runCommit = new RunCommit(sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore()),
             activeRunContext: $activeRunContext,
             eventStore: $eventStore,
             stepDispatcher: new StepDispatcher(new TestMessageBus(), $executionBus),

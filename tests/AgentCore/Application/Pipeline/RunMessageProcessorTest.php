@@ -40,7 +40,10 @@ final class RunMessageProcessorTest extends TestCase
         $active = new TestActiveRunContext();
         $active->loadRecovered(RunState::queued('run'));
         $store = $this->createMock(PreparedTransitionEventStoreInterface::class);
-        $store->expects($this->once())->method('appendTransition')->willReturnCallback(static function (array $events) use ($failAppend): array {
+        $store->expects($failAppend ? $this->once() : $this->exactly(2))->method('appendTransition')->willReturnCallback(static function (array $events) use ($failAppend): array {
+            if ([] === $events) {
+                return [];
+            }
             $event = $events[0];
             if ($failAppend) {
                 throw new \RuntimeException('append failed');
@@ -64,7 +67,7 @@ final class RunMessageProcessorTest extends TestCase
         });
         $bus = new TestMessageBus();
         $dispatcher = new StepDispatcher($bus, $bus);
-        $commit = new RunCommit($active, $store, $dispatcher, new NullLogger(), new ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore());
+        $commit = new RunCommit($active, $store, $dispatcher, new NullLogger(), new ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore()));
         $processor = new RunMessageProcessor($active, new RunLockManager(new LockFactory(new InMemoryStore())), $commit, [$handler], $discard);
         if ($failAppend) {
             $this->expectException(\RuntimeException::class);

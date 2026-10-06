@@ -246,7 +246,7 @@ final class SessionRepairExecutionRecoveryTest extends PerMethodIsolatedKernelTe
                 }
                 throw new \RuntimeException('Injected repair interruption.');
             });
-            $c->set(\Ineersa\AgentCore\Application\Pipeline\RunCommit::class, new \Ineersa\AgentCore\Application\Pipeline\RunCommit($c->get(ActiveRunContextInterface::class), $journal, new \Ineersa\AgentCore\Application\Handler\StepDispatcher($bus, new \Ineersa\AgentCore\Tests\Support\TestMessageBus()), new \Ineersa\AgentCore\Tests\Support\TestLogger(), $c->get(ToolBatchCollector::class), $c->get(ToolExecutionAuthorization::class), $c->get(DoctrineExecutionOperationStore::class)));
+            $c->set(\Ineersa\AgentCore\Application\Pipeline\RunCommit::class, new \Ineersa\AgentCore\Application\Pipeline\RunCommit($c->get(ActiveRunContextInterface::class), $journal, new \Ineersa\AgentCore\Application\Handler\StepDispatcher($bus, new \Ineersa\AgentCore\Tests\Support\TestMessageBus()), new \Ineersa\AgentCore\Tests\Support\TestLogger(), $c->get(ToolBatchCollector::class), $c->get(ToolExecutionAuthorization::class), $c->get(DoctrineExecutionOperationStore::class), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore())));
         }
         $repair = $c->get(SessionRepairService::class);
         $preview = $repair->repair($run, false);

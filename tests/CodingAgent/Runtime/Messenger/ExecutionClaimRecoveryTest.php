@@ -177,7 +177,7 @@ final class ExecutionClaimRecoveryTest extends IsolatedKernelTestCase
 
             return new Envelope($action);
         });
-        $commit = new RunCommit($active, $events, new StepDispatcher($bus, new TestMessageBus()), new TestLogger(), $container->get(ToolBatchCollector::class), $container->get(ToolExecutionAuthorizationInterface::class), $store);
+        $commit = new RunCommit($active, $events, new StepDispatcher($bus, new TestMessageBus()), new TestLogger(), $container->get(ToolBatchCollector::class), $container->get(ToolExecutionAuthorizationInterface::class), $store, new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore()));
         try {
             $commit->commit($state, $result->nextState, $result->events, dispatchAfterTurnHooks: false, postCommitActions: $result->postCommitActions);
             $this->fail('The coordination interruption must leave a recoverable owner decision.');
@@ -186,7 +186,7 @@ final class ExecutionClaimRecoveryTest extends IsolatedKernelTestCase
         }
         $this->assertTrue($store->unknownNoticePending($notice));
         $this->assertNotNull($events->verifiedPendingTransition($notice->runId()));
-        $recovery = new PendingTransitionRecovery($events, $container->get(ToolExecutionAuthorizationInterface::class), new StepDispatcher($bus, new TestMessageBus()), $active, $store);
+        $recovery = new PendingTransitionRecovery($events, $container->get(ToolExecutionAuthorizationInterface::class), new StepDispatcher($bus, new TestMessageBus()), $active, $store, new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore()));
         $recovery->recover($notice->runId());
         $recovery->recover($notice->runId());
         $this->assertFalse($store->unknownNoticePending($notice));

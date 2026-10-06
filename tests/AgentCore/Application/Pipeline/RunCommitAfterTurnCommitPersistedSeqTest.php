@@ -44,7 +44,7 @@ final class RunCommitAfterTurnCommitPersistedSeqTest extends TestCase
         $activeRunContext->loadRecovered($previous);
         $eventStore = new InMemoryEventStore();
 
-        $commit = new RunCommit(
+        $commit = new RunCommit(sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore()),
             activeRunContext: $activeRunContext,
             eventStore: $eventStore,
             stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),

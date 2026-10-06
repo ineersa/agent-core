@@ -382,7 +382,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         $processor = new \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor(
             activeRunContext: $activeRunContext,
             runLockManager: new \Ineersa\AgentCore\Application\Handler\RunLockManager(new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\InMemoryStore())),
-            runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
+            runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit(sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore()),
                 activeRunContext: $activeRunContext,
                 eventStore: $eventStore,
                 stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus()),
@@ -504,7 +504,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         $processor = new \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor(
             activeRunContext: $activeRunContext,
             runLockManager: new \Ineersa\AgentCore\Application\Handler\RunLockManager(new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\InMemoryStore())),
-            runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
+            runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit(sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore()),
                 activeRunContext: $activeRunContext,
                 eventStore: $eventStore,
                 stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(\Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::bus(new TestMessageBus(), $commandStore, $collector), $executionBus),
@@ -537,7 +537,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         $this->assertSame([], $afterFail->pendingHumanInputRequests);
         $this->assertTrue($commandStore->has('run-pc', 'human-q-pc'));
         $this->assertNotNull($eventStore->verifiedPendingTransition('run-pc'));
-        (new \Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery($eventStore, new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), new \Ineersa\AgentCore\Application\Handler\StepDispatcher(\Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::bus(new TestMessageBus(), $commandStore, $collector), $executionBus), $activeRunContext, new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore()))->recover('run-pc');
+        (new \Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery($eventStore, new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), new \Ineersa\AgentCore\Application\Handler\StepDispatcher(\Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::bus(new TestMessageBus(), $commandStore, $collector), $executionBus), $activeRunContext, new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore())))->recover('run-pc');
         $activeRunContext->loadRecovered($afterFail);
         $this->assertNull($eventStore->verifiedPendingTransition('run-pc'));
 
@@ -616,7 +616,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         $processor = new \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor(
             activeRunContext: $activeRunContext,
             runLockManager: new \Ineersa\AgentCore\Application\Handler\RunLockManager(new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\InMemoryStore())),
-            runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
+            runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit(sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore()),
                 activeRunContext: $activeRunContext,
                 eventStore: $eventStore,
                 stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(\Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::bus(new TestMessageBus(), $commandStore, $collector), $executionBus),
@@ -651,7 +651,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         $this->assertSame('q2', $afterFail->pendingHumanInputRequests[0]->questionId);
         $this->assertTrue($commandStore->has('run-fifo', 'human-q1'));
         $this->assertNotNull($eventStore->verifiedPendingTransition('run-fifo'));
-        (new \Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery($eventStore, new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), new \Ineersa\AgentCore\Application\Handler\StepDispatcher(\Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::bus(new TestMessageBus(), $commandStore, $collector), $executionBus), $activeRunContext, new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore()))->recover('run-fifo');
+        (new \Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery($eventStore, new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), new \Ineersa\AgentCore\Application\Handler\StepDispatcher(\Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::bus(new TestMessageBus(), $commandStore, $collector), $executionBus), $activeRunContext, new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore())))->recover('run-fifo');
         $activeRunContext->loadRecovered($afterFail);
         $this->assertNull($eventStore->verifiedPendingTransition('run-fifo'));
 

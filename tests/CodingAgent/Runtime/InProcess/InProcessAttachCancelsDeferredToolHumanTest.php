@@ -86,7 +86,7 @@ final class InProcessAttachCancelsDeferredToolHumanTest extends IsolatedKernelTe
         $processor = new RunMessageProcessor(
             activeRunContext: $active,
             runLockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
-            runCommit: new RunCommit(
+            runCommit: new RunCommit(sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new InMemoryCommandStore()),
                 activeRunContext: $active,
                 eventStore: $eventStore,
                 stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),

@@ -26,7 +26,7 @@ final class RunCommitLoggingTest extends TestCase
         $activeRunContext->loadRecovered($previous);
         $eventStore = new RecordingEventStore();
 
-        $commit = new RunCommit(
+        $commit = new RunCommit(sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore()),
             activeRunContext: $activeRunContext,
             eventStore: $eventStore,
             stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
@@ -97,7 +97,7 @@ final class RunCommitLoggingTest extends TestCase
         $cleanupStore->expects('agent_end' === $eventType ? $this->once() : $this->never())
             ->method('deleteAllForRun')->willThrowException(new \RuntimeException('file deletion failed'));
         $hook = new \Ineersa\CodingAgent\Session\ToolBatchSnapshotCleanupHookSubscriber($cleanupStore, new TestLogger(), $this->createStub(\Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface::class));
-        $commit = new RunCommit(
+        $commit = new RunCommit(sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore()),
             activeRunContext: $active, eventStore: $store,
             stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
             logger: new TestLogger(), toolBatchCollector: $collector,
@@ -127,7 +127,7 @@ final class RunCommitLoggingTest extends TestCase
         $activeRunContext->loadRecovered($previous);
         $next = $previous->with(['status' => RunStatus::Running, 'version' => $previous->version + 1]);
 
-        (new RunCommit(
+        (new RunCommit(sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore()),
             activeRunContext: $activeRunContext,
             eventStore: new RecordingEventStore(),
             stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
@@ -149,7 +149,7 @@ final class RunCommitLoggingTest extends TestCase
         $store->expects($this->never())->method('appendTransition');
         $bus = $this->createMock(\Symfony\Component\Messenger\MessageBusInterface::class);
         $bus->expects($this->never())->method('dispatch');
-        $commit = new RunCommit($active, $store, new StepDispatcher($bus, $bus), new TestLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore());
+        $commit = new RunCommit($active, $store, new StepDispatcher($bus, $bus), new TestLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore()));
 
         try {
             $commit->commit($previous, $previous->with(['status' => RunStatus::Running]), [], [new \stdClass()]);
@@ -176,7 +176,7 @@ final class RunCommitLoggingTest extends TestCase
         $authorization = $this->createMock(\Ineersa\AgentCore\Contract\Tool\ToolExecutionAuthorizationInterface::class);
         $authorization->expects($this->once())->method('applyDisposition')->with($descriptor, $verified)
             ->willThrowException(new \RuntimeException('disposition persistence failed'));
-        $commit = new RunCommit($active, $store, new StepDispatcher(new TestMessageBus(), new TestMessageBus()), new TestLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), $authorization, new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore());
+        $commit = new RunCommit($active, $store, new StepDispatcher(new TestMessageBus(), new TestMessageBus()), new TestLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), $authorization, new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore()));
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('disposition persistence failed');
@@ -203,7 +203,7 @@ final class RunCommitLoggingTest extends TestCase
         $authorization->expects($this->once())->method('applyDisposition')->with($descriptor, $verified)->willReturnCallback(static function () use (&$disposed): void {
             $disposed = true;
         });
-        $commit = new RunCommit($active, $store, new StepDispatcher(new TestMessageBus(), new TestMessageBus()), new TestLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), $authorization, new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore());
+        $commit = new RunCommit($active, $store, new StepDispatcher(new TestMessageBus(), new TestMessageBus()), new TestLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), $authorization, new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore()));
         $commit->commit($previous, $previous, [$event], dispatchAfterTurnHooks: false, resultDisposition: $descriptor);
     }
 
@@ -219,7 +219,7 @@ final class RunCommitLoggingTest extends TestCase
         $store->expects($this->never())->method('finalizeTransition');
         $bus = $this->createMock(\Symfony\Component\Messenger\MessageBusInterface::class);
         $bus->expects($this->once())->method('dispatch')->willThrowException(new \RuntimeException('broker unavailable'));
-        $commit = new RunCommit($active, $store, new StepDispatcher($bus, $bus), new TestLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore());
+        $commit = new RunCommit($active, $store, new StepDispatcher($bus, $bus), new TestLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore()));
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('broker unavailable');

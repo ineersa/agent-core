@@ -144,7 +144,7 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
         $active = new TestActiveRunContext();
         $previous = RunState::queued('run-1');
         $active->loadRecovered($previous);
-        $commit = new RunCommit(
+        $commit = new RunCommit(sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore()),
             activeRunContext: $active, eventStore: $eventStore,
             stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()), logger: new TestLogger(),
             toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(),
@@ -181,7 +181,7 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
             new ToolBatchSnapshotCleanupHookSubscriber($store, new TestLogger(), $this->createStub(\Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface::class)),
         ]);
 
-        return new RunCommit(
+        return new RunCommit(sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore()),
             activeRunContext: $activeRunContext,
             eventStore: new CleanupHookSubscriberNoOpEventStore(),
             stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
