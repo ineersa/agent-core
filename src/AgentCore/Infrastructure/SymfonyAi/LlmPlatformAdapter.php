@@ -25,6 +25,7 @@ use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryExecutor;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Agent\Input;
+use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketContinuationMismatchException;
 use Symfony\AI\Platform\Bridge\OpenAICodex\Result\CancellableRawResultInterface;
 use Symfony\AI\Platform\Exception\ServerException;
 use Symfony\AI\Platform\FinishReason\FinishReason;
@@ -192,6 +193,8 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
                         availableToolsSchemaTokensEstimate: $availableToolsSnapshot['schema_tokens_estimate'],
                     );
                 }
+
+                $this->logContinuationMismatch($exception, $request->input->runId ?? '', $request->input->stepId);
 
                 return $this->errorResult(
                     deltas: [],
@@ -794,6 +797,29 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             availableTools: $availableTools,
             availableToolsSchemaTokensEstimate: $availableToolsSchemaTokensEstimate,
         );
+    }
+
+    private function logContinuationMismatch(\Throwable $exception, string $runId, ?string $stepId): void
+    {
+        if (!$exception instanceof CodexWebSocketContinuationMismatchException) {
+            return;
+        }
+
+        try {
+            $diagnostics = CodexContinuationDiagnosticFormatter::format($exception->diagnostics);
+        } catch (\JsonException $captureFailure) {
+            // Diagnostic serialization must not replace the original failure.
+            $diagnostics = ['capture_failed' => true, 'capture_error_type' => $captureFailure::class];
+        }
+
+        $this->logger->error('llm.provider.continuation_mismatch', [
+            ...$diagnostics,
+            'event_type' => 'llm.provider.continuation_mismatch',
+            'component' => 'llm_platform_adapter',
+            'run_id' => $runId,
+            'session_id' => $runId,
+            'step_id' => $stepId,
+        ]);
     }
 
     private function abortConnection(DeferredResult $deferredResult): void

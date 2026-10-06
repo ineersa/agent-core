@@ -26,10 +26,10 @@ final class DiagnosticMessageSanitizer
         ['/[?&]secret=\S+/i', 'secret=<redacted>'],
         ['/[?&]token=\S+/i', 'token=<redacted>'],
         ['/[?&]password=\S+/i', 'password=<redacted>'],
-        ['/api[-_]?key\s*[:=]\s*\S+/i', 'api_key <redacted>'],
-        ['/(token|password|secret)\s*["\']?\s*[:=]\s*["\']?[^\s,"\'}]+/i', '$1=<redacted>'],
+        ['/(api[-_]?key|token|password|secret|encrypted_content|prompt_cache_key)\s*["\']?\s*[:=]\s*("(?:\\\\.|[^"\\\\])*"|\'(?:\\\\.|[^\'\\\\])*\'|[^\s,"\'}]+)/i', '$1=<redacted>'],
         ['#(https?://)[^\s/@]+:[^\s/@]+@#i', '$1<redacted>@'],
         ['/\b(?:gh[pousr]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+)\b/', '<redacted>'],
+        ['/\bsk-[A-Za-z0-9_-]+\b/', '<redacted>'],
     ];
 
     private const int MAX_LENGTH = 500;
