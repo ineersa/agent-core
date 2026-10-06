@@ -37,6 +37,11 @@ final class TestExecutionOperationStore implements ExecutionOperationStoreInterf
         return null;
     }
 
+    public function assertRequestCapacity(AbstractAgentBusMessage $request): void
+    {
+        $this->encode($request);
+    }
+
     public function arm(AbstractAgentBusMessage $request, VerifiedTransitionDTO $transition): ExecutionAuthorizationStamp
     {
         return new ExecutionAuthorizationStamp(hash('sha256', $transition->identity.'|'.$request->idempotencyKey()), hash('sha256', $this->encode($request)));

@@ -17,6 +17,8 @@ use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
 use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
 use Ineersa\AgentCore\Domain\Message\DurableExecutionResult;
 use Ineersa\AgentCore\Domain\Message\ExecutionRequest;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Lock\LockFactory;
@@ -39,6 +41,7 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
         private RunLockManager $runLocks,
         private ToolBatchStoreInterface $toolBatches,
         private PreparedTransitionEventStoreInterface $transitions,
+        private LoggerInterface $logger = new NullLogger(),
     ) {
         $this->instance = bin2hex(random_bytes(32));
         $this->workerLock = $claimLockFactory->createLock('execution-worker.'.$this->instance, ttl: null);
@@ -106,11 +109,20 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
         return new Envelope($reference, [new ExecutionAuthorizationStamp($record['effect_id'], $record['request_hash'])]);
     }
 
+    public function assertRequestCapacity(AbstractAgentBusMessage $request): void
+    {
+        if (!ExecutionOperationMapper::supports($request)) {
+            throw new \RuntimeException('Execution request capacity applies only to gated execution effects.');
+        }
+        $this->encodeRequest($request);
+    }
+
     public function arm(AbstractAgentBusMessage $request, VerifiedTransitionDTO $transition): ExecutionAuthorizationStamp
     {
         if (!ExecutionOperationMapper::supports($request) || ($transition->work['run_id'] ?? null) !== $request->runId()) {
             throw new \RuntimeException('Execution authorization requires matching verified owner work.');
         }
+        $this->sanitizeRunId($request->runId());
         $bytes = $this->encodeRequest($request);
         $hash = hash('sha256', $bytes);
         $matched = false;
@@ -161,6 +173,7 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
      */
     public function pendingDeliveries(string $ownerSessionId, string $afterEffectId): array
     {
+        $this->sanitizeOwnerSessionId($ownerSessionId);
         $records = $this->connection->fetchAllAssociative(<<<'SQL'
             WITH RECURSIVE owned_runs(run_id) AS (
                 SELECT :owner
@@ -177,24 +190,38 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
             SQL, ['owner' => $ownerSessionId, 'after' => $afterEffectId]);
         $deliveries = [];
         foreach ($records as $record) {
-            if ('Running' === $record['state']) {
-                $record = $this->recoverClaim($record);
-            }
-            if ('Running' === $record['state']) {
+            try {
+                if ('Running' === $record['state']) {
+                    $record = $this->recoverClaim($record);
+                }
+                if ('Running' === $record['state']) {
+                    $deliveries[$record['effect_id']] = null;
+                    continue;
+                }
+                if ('OutcomeUnknown' === $record['state']) {
+                    $deliveries[$record['effect_id']] = new Envelope($this->unknownNotice($record));
+                    continue;
+                }
+                if ('ResultReady' === $record['state']) {
+                    $deliveries[$record['effect_id']] = new Envelope($this->reference($record));
+                    continue;
+                }
+                $stamp = new ExecutionAuthorizationStamp($record['effect_id'], $record['request_hash']);
+                $request = new ExecutionRequest($record['run_id'], (int) $record['turn_no'], $record['step_id'], (int) $record['attempt'], $record['idempotency_key'], $record['effect_id'], $record['request_type'], $record['request_hash'], (int) $record['request_bytes']);
+                $deliveries[$record['effect_id']] = new Envelope($request, [$stamp]);
+            } catch (\Throwable $exception) {
+                // Keep failed evidence. Advance the page past this row so healthy
+                // owned work is not starved; later sweeps revisit the same identity.
+                $this->logger->warning('execution.pending_delivery_record_failed', [
+                    'component' => 'execution_operation_store',
+                    'event_type' => 'execution.pending_delivery_record_failed',
+                    'run_id' => $record['run_id'] ?? null,
+                    'effect_id' => $record['effect_id'] ?? null,
+                    'state' => $record['state'] ?? null,
+                    'exception_class' => $exception::class,
+                ]);
                 $deliveries[$record['effect_id']] = null;
-                continue;
             }
-            if ('OutcomeUnknown' === $record['state']) {
-                $deliveries[$record['effect_id']] = new Envelope($this->unknownNotice($record));
-                continue;
-            }
-            if ('ResultReady' === $record['state']) {
-                $deliveries[$record['effect_id']] = new Envelope($this->reference($record));
-                continue;
-            }
-            $stamp = new ExecutionAuthorizationStamp($record['effect_id'], $record['request_hash']);
-            $request = new ExecutionRequest($record['run_id'], (int) $record['turn_no'], $record['step_id'], (int) $record['attempt'], $record['idempotency_key'], $record['effect_id'], $record['request_type'], $record['request_hash'], (int) $record['request_bytes']);
-            $deliveries[$record['effect_id']] = new Envelope($request, [$stamp]);
         }
 
         return $deliveries;
@@ -306,9 +333,7 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
 
     public function reclaimDisposedPayloads(string $ownerSessionId, string $afterEffectId): string
     {
-        if ('' === trim($ownerSessionId) || 'unknown' === $ownerSessionId) {
-            return '';
-        }
+        $this->sanitizeOwnerSessionId($ownerSessionId);
         $records = $this->connection->fetchAllAssociative(<<<'SQL'
             WITH RECURSIVE owned_runs(run_id) AS (
                 SELECT :owner
@@ -326,18 +351,28 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
         $cursor = '';
         foreach ($records as $record) {
             $cursor = (string) $record['effect_id'];
-            $this->runLocks->synchronized($record['run_id'], function () use ($record): void {
-                $current = $this->record($record['effect_id']);
-                if (!\in_array($current['state'], ['Consumed', 'Stale'], true) || null === $current['disposition_transition']) {
-                    return;
-                }
-                // Disposition alone is insufficient while owner coordination remains unfinished.
-                $this->transitions->assertTransitionReady($current['run_id']);
-                if ($this->payloadReclaimed($current)) {
-                    return;
-                }
-                $this->removePayloadDirectory($current['run_id'], $current['effect_id']);
-            });
+            try {
+                $this->runLocks->synchronized($record['run_id'], function () use ($record): void {
+                    $current = $this->record($record['effect_id']);
+                    if (!\in_array($current['state'], ['Consumed', 'Stale'], true) || null === $current['disposition_transition']) {
+                        return;
+                    }
+                    // Disposition alone is insufficient while owner coordination remains unfinished.
+                    $this->transitions->assertTransitionReady($current['run_id']);
+                    if ($this->payloadReclaimed($current)) {
+                        return;
+                    }
+                    $this->removePayloadDirectory($current['run_id'], $current['effect_id']);
+                });
+            } catch (\Throwable $exception) {
+                $this->logger->warning('execution.payload_cleanup_record_failed', [
+                    'component' => 'execution_operation_store',
+                    'event_type' => 'execution.payload_cleanup_record_failed',
+                    'run_id' => $record['run_id'] ?? null,
+                    'effect_id' => $record['effect_id'] ?? null,
+                    'exception_class' => $exception::class,
+                ]);
+            }
         }
 
         return $cursor;
@@ -567,6 +602,7 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
 
     private function path(string $runId, string $id, string $name): string
     {
+        $this->sanitizeRunId($runId);
         if (1 !== preg_match('/^[a-f0-9]{64}$/D', $id)) {
             throw new \InvalidArgumentException('Invalid execution operation identity.');
         }
@@ -630,5 +666,20 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
         }
 
         return $bytes;
+    }
+
+    private function sanitizeOwnerSessionId(string $ownerSessionId): void
+    {
+        if ('' === trim($ownerSessionId) || 'unknown' === $ownerSessionId) {
+            throw new \InvalidArgumentException('Invalid execution owner session identity.');
+        }
+        $this->sanitizeRunId($ownerSessionId);
+    }
+
+    private function sanitizeRunId(string $runId): void
+    {
+        if ('' === $runId || \strlen($runId) !== strcspn($runId, "/\\\0") || str_contains($runId, '..')) {
+            throw new \InvalidArgumentException(\sprintf('Invalid execution operation run ID: "%s".', $runId));
+        }
     }
 }

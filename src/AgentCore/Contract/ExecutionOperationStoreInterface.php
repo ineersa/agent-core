@@ -23,6 +23,12 @@ interface ExecutionOperationStoreInterface
 
     public function repairDelivery(string $runId, \Ineersa\AgentCore\Domain\Run\CurrentOperationDTO $operation, string $requestType): ?\Symfony\Component\Messenger\Envelope;
 
+    /**
+     * Reject oversized immutable requests before canonical append or authorization.
+     * Uses the same encoding and storage bound as arming; leaves archive and rows unchanged.
+     */
+    public function assertRequestCapacity(AbstractAgentBusMessage $request): void;
+
     public function arm(AbstractAgentBusMessage $request, VerifiedTransitionDTO $transition): ExecutionAuthorizationStamp;
 
     public function requestReference(AbstractAgentBusMessage $request, ExecutionAuthorizationStamp $authorization): ExecutionRequest;

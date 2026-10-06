@@ -86,13 +86,10 @@ final class ExecutionClaimRecoveryTest extends IsolatedKernelTestCase
             // This new store is another process-instance identity, not the old receipt owner.
             $store = $this->store($connection);
             if ('corrupt' === $mode) {
-                try {
-                    $store->pendingDeliveries($run, '');
-                    $this->fail('Corrupt evidence must not become success or OutcomeUnknown.');
-                } catch (\RuntimeException $exception) {
-                    $this->assertStringContainsString('corrupt', $exception->getMessage());
-                }
+                $deliveries = $store->pendingDeliveries($run, '');
+                $this->assertSame([$reference->effectId => null], $deliveries, 'Corrupt evidence must not become success or OutcomeUnknown.');
                 $this->assertSame('Running', $connection->fetchOne('SELECT state FROM execution_operation WHERE effect_id = ?', [$reference->effectId]));
+                $this->assertSame([$reference->effectId => null], $this->store($connection)->pendingDeliveries($run, ''), 'Later sweeps revisit the same failed identity.');
 
                 return;
             }

@@ -191,13 +191,9 @@ final class ExecutionPayloadCleanupTest extends IsolatedKernelTestCase
         $this->assertFileExists($eventsPath.'.append.pending.json');
         $this->assertFileExists($eventsPath.'.append.work');
         $this->assertDirectoryExists($directory);
-        try {
-            $operations->reclaimDisposedPayloads($run, '');
-            $this->fail('Unfinished transitions must block payload cleanup.');
-        } catch (\RuntimeException $exception) {
-            $this->assertStringContainsString('coordination recovery', $exception->getMessage());
-        }
+        $this->assertSame($reference->effectId, $operations->reclaimDisposedPayloads($run, ''), 'Unfinished disposal advances without deleting bodies.');
         $this->assertDirectoryExists($directory);
+        $this->assertFileExists($directory.'/request');
         $this->assertFileExists($eventsPath.'.append.pending.json');
         $this->assertFileExists($eventsPath.'.append.work');
         $this->assertDirectoryDoesNotExist($eventsPath.'.armed-work');
@@ -302,12 +298,9 @@ final class ExecutionPayloadCleanupTest extends IsolatedKernelTestCase
         $operations->retireUnknownExecution($action, $verified);
         $this->assertDirectoryExists($directory, 'Retirement during a pending transition must not delete payloads.');
         $this->assertFileExists($directory.'/request');
-        try {
-            $operations->reclaimDisposedPayloads($run, '');
-            $this->fail('Pending retirement transitions must block cleanup.');
-        } catch (\RuntimeException $exception) {
-            $this->assertStringContainsString('coordination recovery', $exception->getMessage());
-        }
+        $this->assertSame($notice->effectId, $operations->reclaimDisposedPayloads($run, ''), 'Unfinished disposal advances the page without deleting bodies.');
+        $this->assertDirectoryExists($directory);
+        $this->assertFileExists($directory.'/request');
         $events->finalizeVerifiedTransition($run, $verified->identity);
         $this->assertSame($notice->effectId, $operations->reclaimDisposedPayloads($run, ''));
         $this->assertDirectoryDoesNotExist($directory);
@@ -352,12 +345,7 @@ final class ExecutionPayloadCleanupTest extends IsolatedKernelTestCase
             $container->get(ToolBatchStoreInterface::class),
             $container->get(PreparedTransitionEventStoreInterface::class),
         );
-        try {
-            $broken->reclaimDisposedPayloads($run, '');
-            $this->fail('Cleanup failure must surface instead of fabricating completion.');
-        } catch (\RuntimeException $exception) {
-            $this->assertStringContainsString('cleanup failed', $exception->getMessage());
-        }
+        $this->assertSame($reference->effectId, $broken->reclaimDisposedPayloads($run, ''), 'Local cleanup degradation advances the page without inventing success.');
         $this->assertDirectoryExists($directory);
         $this->assertFileExists($directory.'/request');
         $this->assertSame($reference->effectId, $operations->reclaimDisposedPayloads($run, ''));

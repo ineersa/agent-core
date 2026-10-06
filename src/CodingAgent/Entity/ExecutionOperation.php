@@ -6,6 +6,15 @@ namespace Ineersa\CodingAgent\Entity;
 
 use Doctrine\ORM\Mapping as ORM;
 
+/**
+ * ORM metadata for the execution_operation schema.
+ *
+ * DoctrineExecutionOperationStore reads and writes rows through DBAL only.
+ * This entity keeps CodingAgent\Entity mapping and migrations aligned; it is
+ * not a repository or ownership API. worker_pid is diagnostic context for
+ * operators and logs. Ownership proof is the nonexpiring worker-instance lock
+ * and claim_lock_key / claim_token receipt, never the process id.
+ */
 #[ORM\Entity]
 #[ORM\Table(name: 'execution_operation')]
 #[ORM\Index(name: 'idx_execution_operation_run_state', columns: ['run_id', 'state'])]
@@ -54,6 +63,7 @@ class ExecutionOperation
     #[ORM\Column(name: 'worker_instance', type: 'string', length: 64, nullable: true)]
     public ?string $workerInstance = null;
 
+    /** Diagnostic only. Never treat as ownership or liveness proof. */
     #[ORM\Column(name: 'worker_pid', type: 'integer', nullable: true)]
     public ?int $workerPid = null;
 

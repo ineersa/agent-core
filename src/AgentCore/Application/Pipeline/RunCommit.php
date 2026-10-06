@@ -56,6 +56,12 @@ final readonly class RunCommit
         foreach ([...$postCommitActions, ...$afterTurnActions] as $action) {
             $this->actionValidator->validate($action);
         }
+        foreach ([...$effects, ...$postCommitEffects] as $effect) {
+            if ($effect instanceof \Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage
+                && \Ineersa\AgentCore\Application\Handler\ExecutionOperationMapper::supports($effect)) {
+                $this->executionOperations->assertRequestCapacity($effect);
+            }
+        }
         $persist = function () use ($state, $nextState, $events, $effects, $afterTurnActions, $dispatchAfterTurnHooks, $postCommitEffects, $postCommitActions, $sourceIdentity, $resultDisposition, $executionDisposition): RunState {
             /** @var list<RunEvent> $persistedEvents */
             $persistedEvents = [];

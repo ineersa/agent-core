@@ -102,7 +102,7 @@ final class ExecutionPendingDeliverySubscriber
 
             return;
         }
-        $this->cleanupCursor = '' === $next ? '' : $next;
+        $this->cleanupCursor = $next;
     }
 
     private function logFailure(string $runId, \Throwable $exception): void

@@ -47,9 +47,9 @@ parameters:
     env(HATFIELD_AGENT_TRANSPORT_DSN): 'sync://'
     env(HATFIELD_MCP_TRANSPORT_DSN): 'in-memory://'
     env(HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN): 'sync://'
-# llm and tool use native PHP serialization to preserve authorization stamps.
-# LLM, compaction, and standalone shell bodies stay in sealed request files.
-# ExecutionAuthorizationMiddleware selects their transport from the reference.
+# llm, tool, and run_control use native PHP serialization so sealed ExecutionRequest
+# references keep their authorization stamps. Request bodies stay in immutable files.
+# ExecutionAuthorizationMiddleware routes those references to llm/tool from the type map.
 
 framework:
     messenger:
