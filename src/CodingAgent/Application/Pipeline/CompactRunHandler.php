@@ -90,6 +90,14 @@ final readonly class CompactRunHandler implements RunMessageHandler, RunMessageH
             return new HandlerResult();
         }
 
+        // Cancellation may commit between scheduling and consuming this request.
+        // A held turn must not restart it; explicit terminal-session maintenance
+        // has no continuation intent and remains available.
+        if ($message->continueAfterCompaction
+            && \in_array($state->status, [RunStatus::Cancelled, RunStatus::Cancelling], true)) {
+            return new HandlerResult();
+        }
+
         // Defensive gate: fork/subagent children never compact. Silent no-op
         // (no lifecycle events, no preparation, no worker) so manual/API
         // CompactRun and any leak past scheduling paths produce no noise.
@@ -446,6 +454,7 @@ final readonly class CompactRunHandler implements RunMessageHandler, RunMessageH
                     'model' => $resolvedModel,
                     'thinking_level' => $thinkingLevel,
                     'trigger' => $message->trigger,
+                    'continue_after_compaction' => $message->continueAfterCompaction,
                     'hook_metadata' => $hookMetadata,
                     'replacement_summary' => true,
                     'operation_idempotency_key' => $message->idempotencyKey(),

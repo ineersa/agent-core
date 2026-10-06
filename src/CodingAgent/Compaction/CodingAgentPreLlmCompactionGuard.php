@@ -113,7 +113,7 @@ final class CodingAgentPreLlmCompactionGuard implements PreLlmCompactionGuardInt
         // specific overhead.  No provider measurement means no auto-compaction.
         $effectiveTokens = $this->providerUsageResolver->getLatestEligibleInputTokens($runId);
 
-        if (null !== $effectiveTokens && $effectiveTokens > $runtimeSettings->compactAfterTokens) {
+        if (null !== $effectiveTokens && $effectiveTokens >= $runtimeSettings->compactAfterTokens) {
             $this->preLlmCompacted[$dedupKey] = true;
 
             return true;
