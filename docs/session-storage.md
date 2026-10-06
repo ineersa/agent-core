@@ -149,11 +149,13 @@ Repair reuses the current operation identity. It does not mark unfinished work a
 completed, roll back side effects, or clear abandoned claimed messages. Check whether
 the original command or external tool already performed its action before redispatching.
 
-For a pending fork or subagent call, repair retries the existing child operation rather
-than launching another child. It preserves child run IDs, artifacts, worktrees, and
-provider cache keys. Completed children are not restarted. Existing batch recovery
-delivers their final results to the parent. Child streaming, cancellation, human input,
-and batch deadlines retain their existing safety checks.
+For a pending fork or subagent call, repair cancels unfinished children instead of
+retrying their operations or launching replacements. It durably aborts abandoned
+requests and settles the existing parent tool call, so queued parent input can continue.
+Child run IDs, artifacts, worktrees, and provider cache keys remain intact. Completed
+children keep their results. Late child responses cannot revive cancelled executions.
+Active streaming and human-input waits retain their safety checks; existing batch
+interruptions and deadlines retain their lifecycle owner. A preview does not cancel work.
 
 If a cancelled or failed terminal history has unmatched assistant tool calls, repair
 appends synthetic error tool results and a batch commit. This restores valid model

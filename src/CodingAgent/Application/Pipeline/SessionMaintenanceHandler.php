@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Application\Pipeline;
 
 use Ineersa\AgentCore\Contract\History\HistorySelectionServiceInterface;
+use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
+use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildLaunchStatusEnum;
@@ -48,7 +50,7 @@ final readonly class SessionMaintenanceHandler
         $state = $this->registry->requireLoaded($command->runId);
         if (RunStatus::WaitingHuman === $state->status || [] !== $state->pendingHumanInputRequests) {
             $step = 'attach-cancel-'.hrtime(true);
-            $this->processor->process('attach', new \Ineersa\AgentCore\Domain\Message\ApplyCommand($command->runId, $state->turnNo, $step, 1, $step, 'cancel', ['reason' => 'Outstanding human questions cancelled on session attach.']));
+            $this->processor->process('attach', new ApplyCommand($command->runId, $state->turnNo, $step, 1, $step, 'cancel', ['reason' => 'Outstanding human questions cancelled on session attach.']));
         }
         $this->sessions->resetReasoningBaseline($command->runId);
         $this->processor->process('attach', new \Ineersa\AgentCore\Domain\Message\RefreshRunContext($command->runId, $command->messages));
@@ -122,6 +124,7 @@ final readonly class SessionMaintenanceHandler
                 continue;
             }
             $allTerminal = true;
+            $unfinished = [];
             foreach ($batch->children as $child) {
                 if (DeferredSubagentChildLaunchStatusEnum::Launched !== $child->launchStatus) {
                     $allTerminal = false;
@@ -131,8 +134,8 @@ final readonly class SessionMaintenanceHandler
                 if (null !== $refusal) {
                     return $refusal;
                 }
-                // Reuse the audited cold-owner entry and the same operation
-                // repair as a parent. Do not manufacture a new child or turn.
+                // Admit the existing child through the audited cold-owner entry.
+                // Preview every child before applying cancellation to this batch.
                 $childCommand = new RepairSession($child->childRunId, $command->apply, $command->commandId);
                 $this->initialization->initializeForOwner($child->childRunId, $childCommand);
                 $state = $this->registry->requireLoaded($child->childRunId);
@@ -140,21 +143,40 @@ final readonly class SessionMaintenanceHandler
                     continue;
                 }
                 $allTerminal = false;
-                if (\in_array($state->status, [RunStatus::WaitingHuman, RunStatus::Cancelling], true)) {
+                if (RunStatus::WaitingHuman === $state->status) {
                     continue;
                 }
-                $childResult = $this->repair->repair($child->childRunId, $command->apply);
+                $childResult = $this->repair->repair($child->childRunId, false);
                 if (null !== $childResult->refusalReason) {
                     return $childResult;
                 }
-                $redriven += $childResult->activeOperationsRedriven;
-                $detected = $detected || $childResult->repairableStaleCancellationDetected;
-                $repaired = $repaired || $childResult->staleCancellationRepaired;
-                $message = $childResult->message;
+                $unfinished[] = $child->childRunId;
+            }
+            if ([] !== $unfinished) {
+                $message = $command->apply ? 'Deferred children cancelled by session repair.' : 'Deferred children would be cancelled by session repair.';
             }
             if ($command->apply) {
+                foreach ($unfinished as $childRunId) {
+                    $state = $this->registry->requireLoaded($childRunId);
+                    if (RunStatus::Cancelling !== $state->status) {
+                        $key = 'repair-cancel-'.$command->commandId.'-'.$childRunId;
+                        $this->processor->process('repair', new ApplyCommand($childRunId, $state->turnNo, $key, 1, $key, CoreCommandKind::Cancel, ['reason' => 'Cancelled by session repair.']));
+                    }
+                    // A claimed request may never deliver its cancellation result.
+                    // Existing cancellation repair aborts it durably and fences
+                    // late results instead of waiting for or retrying the worker.
+                    if (RunStatus::Cancelling === $this->registry->requireLoaded($childRunId)->status) {
+                        $childResult = $this->repair->repair($childRunId, true);
+                        if (null !== $childResult->refusalReason) {
+                            return $childResult;
+                        }
+                        $detected = $detected || $childResult->repairableStaleCancellationDetected;
+                        $repaired = $repaired || $childResult->staleCancellationRepaired;
+                    }
+                }
                 // Reconcile terminal children whose final observation was lost
-                // at shutdown, then deliver the existing parent tool result.
+                // at shutdown or during repair, then settle the existing parent
+                // tool call. Completed siblings retain their natural outcomes.
                 $this->deferredRecovery->recover($batch->lifecycleId);
                 if ($allTerminal) {
                     ++$redriven;

@@ -415,7 +415,7 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
     }
 
     #[DataProvider('deferredRepairCases')]
-    public function testRepairRedrivesExistingDeferredChildrenAfterOwnerRestart(int $children, bool $completedSibling, bool $completedOrdinaryTool = false): void
+    public function testRepairCancelsExistingDeferredChildrenAfterOwnerRestart(int $children, bool $completedSibling, bool $completedOrdinaryTool = false): void
     {
         [$run, $batchId, $childIds] = $this->seedDeferredRepair($children, $completedSibling, $completedOrdinaryTool);
         $container = self::getContainer();
@@ -443,24 +443,25 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         $handled = $bus->dispatch($apply->with(new ReceivedStamp('run_control')));
         $result = $handled->last(HandledStamp::class)->getResult();
         $expected = $completedSibling ? [$childIds[0]] : $childIds;
-        $this->assertCount(\count($expected), $llm->getSent(), 'Repair must retry the stranded child LLM request, not just its parent fork.');
-        $this->assertSame(\count($expected), $result->activeOperationsRedriven);
+        $this->assertCount(0, $llm->getSent(), 'Repair must cancel unfinished children without retrying their provider requests.');
+        $this->assertStringContainsString('cancelled', $result->message);
         $this->assertNull($result->refusalReason);
         $this->assertCount($completedOrdinaryTool ? 2 : 1, $tools->getSent(), 'Do not launch or requeue another fork.');
-        foreach ($llm->getSent() as $index => $envelope) {
-            $message = $envelope->getMessage();
-            $this->assertInstanceOf(ExecuteLlmStep::class, $message);
-            $this->assertSame($expected[$index], $message->runId());
-            $this->assertSame('child-step-'.$index, $message->stepId());
-            $this->assertSame('child-key-'.$index, $message->idempotencyKey());
-            $this->assertSame(1, $message->attempt());
-            $this->assertSame(1, $message->turnNo());
+        foreach ($expected as $childId) {
+            $this->assertSame(RunStatus::Cancelled, $registry->requireLoaded($childId)->status);
+            $cold = $container->get(RunStateRebuilderInterface::class)->rebuildIfStale(RunState::queued($childId), $childId)->rebuiltState;
+            $this->assertSame(RunStatus::Cancelled, $cold->status, 'Cancellation must survive owner recreation.');
+            $this->assertNull($cold->currentOperation);
         }
         $rows = $container->get(DeferredSubagentChildRepository::class)->findOrderedByBatchLifecycleId($batchId);
         $this->assertSame($childIds, array_column($rows, 'childRunId'));
         $this->assertSame($keys, array_map($container->get(DeferredSubagentChildRepository::class)->findProviderCacheKey(...), $childIds));
         foreach ($before as $id => $events) {
-            $this->assertEquals($events, $store->allFor((string) $id), 'Repair must not fabricate completion or rewind canonical history.');
+            $after = $store->allFor((string) $id);
+            $this->assertEquals($events, \array_slice($after, 0, \count($events)), 'Repair must preserve all prior canonical events.');
+            if (!\in_array((string) $id, $expected, true)) {
+                $this->assertEquals($events, $after, 'Parent and completed sibling histories must remain unchanged.');
+            }
         }
     }
 
@@ -472,7 +473,7 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         yield 'completed ordinary tool does not block child repair' => [1, false, true];
     }
 
-    public function testDeferredRepairCompletionUnblocksParent(): void
+    public function testDeferredRepairCancellationUnblocksQueuedParentInputAndRejectsLateChildResult(): void
     {
         $container = self::getContainer();
         [$run, $batchId, $children] = $this->seedDeferredRepair(1);
@@ -481,19 +482,22 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         $registry->release($children[0]);
         $bus = $container->get('agent.command.bus');
         $owner = $container->get('messenger.transport.run_control');
+        $followUp = $bus->dispatch(new ApplyCommand($run, 1, 'queued-input', 1, 'queued-input', CoreCommandKind::FollowUp, ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Continue after abandoning the fork.']]]]));
+        $bus->dispatch($followUp->with(new ReceivedStamp('run_control')));
+        $owner->ack($followUp);
         $repair = $bus->dispatch(new RepairSession($run, true, 'unblock-parent'));
         $bus->dispatch($repair->with(new ReceivedStamp('run_control')));
         $owner->ack($repair);
-        $platform = $this->createMock(PlatformInterface::class);
-        $platform->expects($this->once())->method('invoke')->willReturn(new PlatformInvocationResult(SymfonyAiTestMessages::assistantText('Child work completed.'), stopReason: 'stop'));
-        $container->set(ExecuteLlmStepWorker::class, new ExecuteLlmStepWorker($platform, $bus));
         $llm = $container->get('messenger.transport.llm');
-        $requests = iterator_to_array($llm->get());
-        $this->assertCount(1, $requests);
-        $container->get('agent.execution.bus')->dispatch($requests[0]->with(new ReceivedStamp('llm')));
-        $llm->ack($requests[0]);
-        // Drain real owner messages until the resolved fork schedules the next
-        // parent model step. This is a bounded queue drain, not a timing race.
+        $this->assertSame([], $llm->getSent(), 'No child provider request may be retried.');
+        $store = $container->get(EventStoreInterface::class);
+        $beforeLateResult = $store->allFor($children[0]);
+        $late = $bus->dispatch(new LlmStepResult($children[0], 1, 'child-step-0', 1, 'child-key-0', assistantMessage: SymfonyAiTestMessages::assistantText('Late child response.'), stopReason: 'stop'));
+        $bus->dispatch($late->with(new ReceivedStamp('run_control')));
+        $owner->ack($late);
+        $this->assertEquals($beforeLateResult, $store->allFor($children[0]), 'Late results from an abandoned request must not revive the child.');
+        // Drain real cancellation/completion messages without invoking a child
+        // provider. This is a bounded queue drain, not a timing race.
         for ($i = 0; $i < 16 && [] !== ($pending = iterator_to_array($owner->get())); ++$i) {
             foreach ($pending as $envelope) {
                 $bus->dispatch($envelope->with(new ReceivedStamp('run_control')));
@@ -502,12 +506,17 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         }
         $this->assertSame([], iterator_to_array($owner->get()), 'Owner completion messages must drain without a cycle.');
         $this->assertSame([], $registry->requireLoaded($run)->pendingToolCalls);
-        $this->assertSame(RunStatus::Completed, $registry->requireLoaded($children[0])->status);
+        $this->assertSame(RunStatus::Cancelled, $registry->requireLoaded($children[0])->status);
+        $this->assertSame(RunStatus::Running, $registry->requireLoaded($run)->status, 'Repair must not cancel the parent.');
         $this->assertNotNull($container->get(DeferredSubagentBatchRepository::class)->findByLifecycleId($batchId)->terminalCompletionEnqueuedAt);
         $next = iterator_to_array($llm->get());
         $this->assertCount(1, $next);
         $this->assertInstanceOf(ExecuteLlmStep::class, $next[0]->getMessage());
         $this->assertSame($run, $next[0]->getMessage()->runId(), 'The parent must continue after receiving the repaired child result.');
+        $messages = json_encode(array_map(static fn ($message): array => $message->toArray(), $next[0]->getMessage()->messages), \JSON_THROW_ON_ERROR);
+        $this->assertStringContainsString('Continue after abandoning the fork.', $messages);
+        $this->assertStringContainsString('cancelled', $messages);
+        $this->assertStringNotContainsString('Late child response.', $messages);
     }
 
     public function testDeferredRepairRefusesStreamingChild(): void
