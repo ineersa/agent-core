@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Session;
 
+use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreMutation;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
@@ -46,6 +47,7 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
         private readonly LoggerInterface $logger,
         private readonly SerializerInterface $serializer,
         private readonly ValidatorInterface $validator,
+        private readonly PreparedTransitionEventStoreInterface $transitions,
     ) {
     }
 
@@ -255,6 +257,8 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
             [$filename, $envelope] = $snapshot;
 
             return $this->withSnapshotLock($runId, $envelope->turnNo, $envelope->stepId, function () use ($runId, $filename, $envelope): string {
+                // Disposition alone is insufficient while owner coordination remains unfinished.
+                $this->transitions->assertTransitionReady($runId);
                 $path = $this->snapshotPath($runId, $envelope->turnNo, $envelope->stepId);
                 if (!is_file($path)) {
                     return $filename;
@@ -276,7 +280,7 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
                         unset($batch->pendingDispositions[$key]);
                         $changed = true;
                     }
-                    // Retired unknown receipts keep scalar fences only.
+                    // Retired unknown receipts keep scalar fences only and drop bodies.
                     if (isset($authorization['unknown_repair_transition'])) {
                         $batch->executionAuthorizations[$key] = [
                             'state' => 'Stale',
@@ -284,6 +288,41 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
                             'unknown_repair_transition' => $authorization['unknown_repair_transition'],
                             'invocation' => $authorization['invocation'] ?? null,
                         ];
+                        if (isset($batch->executionResults[$key])) {
+                            unset($batch->executionResults[$key]);
+                        }
+                        $callId = $authorization['invocation']['call_id'] ?? null;
+                        if (\is_string($callId) && '' !== $callId) {
+                            if (isset($batch->results[$callId])) {
+                                unset($batch->results[$callId]);
+                            }
+                            if (isset($batch->calls[$callId])) {
+                                $call = $batch->calls[$callId];
+                                if (null !== $call->humanInputAnswer || [] !== $call->args || null !== $call->assistantMessage || null !== $call->argSchema) {
+                                    $batch->calls[$callId] = new \Ineersa\AgentCore\Domain\Message\ExecuteToolCall(
+                                        runId: $call->runId(),
+                                        turnNo: $call->turnNo(),
+                                        stepId: $call->stepId(),
+                                        attempt: $call->attempt(),
+                                        idempotencyKey: $call->idempotencyKey(),
+                                        toolCallId: $call->toolCallId,
+                                        toolName: $call->toolName,
+                                        args: [],
+                                        orderIndex: $call->orderIndex,
+                                        toolIdempotencyKey: $call->toolIdempotencyKey,
+                                        mode: $call->mode,
+                                        timeoutSeconds: $call->timeoutSeconds,
+                                        maxParallelism: $call->maxParallelism,
+                                        assistantMessage: null,
+                                        argSchema: null,
+                                        toolsRef: $call->toolsRef,
+                                        humanInputAnswer: null,
+                                        parentModel: $call->parentModel,
+                                        launchContext: $call->launchContext,
+                                    );
+                                }
+                            }
+                        }
                         $changed = true;
                     }
                 }
@@ -426,6 +465,10 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
                     'operation_state' => $authorization['state'],
                 ]);
 
+                return true;
+            }
+            // Retired unknown receipts keep scalar fences after body reclaim.
+            if (isset($authorization['unknown_repair_transition'])) {
                 return true;
             }
         }

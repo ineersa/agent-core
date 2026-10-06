@@ -248,7 +248,7 @@ final class SessionRepairExecutionRecoveryTest extends PerMethodIsolatedKernelTe
             $journal->appendTransition([], ['run_id' => $run, 'predecessor_seq' => $before, 'effects' => [$request]]);
             $pending = $journal->verifiedPendingTransition($run);
             $this->assertNotNull($pending);
-            $worker = new DoctrineExecutionOperationStore($c->get(Connection::class), $c->get(ToolBatchRunStoragePathsInterface::class), new Filesystem(), $c->get('hatfield.controller.session_owner.lock_factory'), $c->get(RunLockManager::class), $c->get(ToolBatchStoreInterface::class));
+            $worker = new DoctrineExecutionOperationStore($c->get(Connection::class), $c->get(ToolBatchRunStoragePathsInterface::class), new Filesystem(), $c->get('hatfield.controller.session_owner.lock_factory'), $c->get(RunLockManager::class), $c->get(ToolBatchStoreInterface::class), $c->get(PreparedTransitionEventStoreInterface::class));
             $stamp = $worker->arm($request, $pending);
             $reference = $worker->requestReference($request, $stamp);
             $this->assertIsString($worker->claim($reference, $stamp));
@@ -362,7 +362,7 @@ final class SessionRepairExecutionRecoveryTest extends PerMethodIsolatedKernelTe
         $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\ExecutionRequest::class, $reference);
         $stamp = $sent[0]->last(\Ineersa\AgentCore\Domain\Coordination\ExecutionAuthorizationStamp::class);
         $this->assertNotNull($stamp);
-        $worker = new DoctrineExecutionOperationStore($c->get(Connection::class), $c->get(ToolBatchRunStoragePathsInterface::class), new Filesystem(), $c->get('hatfield.controller.session_owner.lock_factory'), $c->get(RunLockManager::class), $c->get(ToolBatchStoreInterface::class));
+        $worker = new DoctrineExecutionOperationStore($c->get(Connection::class), $c->get(ToolBatchRunStoragePathsInterface::class), new Filesystem(), $c->get('hatfield.controller.session_owner.lock_factory'), $c->get(RunLockManager::class), $c->get(ToolBatchStoreInterface::class), $c->get(PreparedTransitionEventStoreInterface::class));
         $this->assertIsString($worker->claim($reference, $stamp));
         if ($superseded) {
             $journal->appendTransition([

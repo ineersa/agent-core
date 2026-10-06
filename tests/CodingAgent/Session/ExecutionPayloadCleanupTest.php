@@ -163,28 +163,158 @@ final class ExecutionPayloadCleanupTest extends IsolatedKernelTestCase
         $this->assertIsString($gate->claim($second));
     }
 
-    public function testArmedWorkIsRemovedWithVerifiedFinalizationAndInterruptedCleanupRetainsBodies(): void
+    public function testPendingDispositionWithoutFinalizationRetainsPayloadsAndIntent(): void
     {
-        $dir = TestDirectoryIsolation::createProjectTempDir('armed-work-cleanup');
+        $container = self::getContainer();
+        $run = $container->get(HatfieldSessionStore::class)->createSession('pending disposition cleanup');
+        $request = new ExecuteLlmStep($run, 1, 'pending', 1, 'pending-key', 'tools');
+        $events = $container->get(PreparedTransitionEventStoreInterface::class);
+        $operations = $container->get(DoctrineExecutionOperationStore::class);
+        $events->appendTransition([], ['run_id' => $run, 'predecessor_seq' => 0, 'effects' => [$request]]);
+        $pending = $events->verifiedPendingTransition($run);
+        $this->assertNotNull($pending);
+        $authorization = $operations->arm($request, $pending);
+        $events->finalizeVerifiedTransition($run, $pending->identity);
+        $delivery = $operations->requestReference($request, $authorization);
+        $claim = $operations->claim($delivery, $authorization);
+        $this->assertIsString($claim);
+        $reference = $operations->saveResult($request, $authorization, $claim, new LlmStepResult($run, 1, 'pending', 1, 'pending-key'));
+        $descriptor = new ExecutionResultDispositionDTO($reference, 'Consumed');
+        $events->appendTransition([], ['run_id' => $run, 'predecessor_seq' => 0, 'execution_disposition' => $descriptor]);
+        $verified = $events->verifiedPendingTransition($run);
+        $this->assertNotNull($verified);
+        $operations->applyDisposition($descriptor, $verified);
+        $paths = $container->get(ToolBatchRunStoragePathsInterface::class);
+        $directory = \dirname($paths->resolveToolBatchesDirectory($run)).'/execution-operations/'.$reference->effectId;
+        $eventsPath = $paths->resolveToolBatchesDirectory($run);
+        $eventsPath = \dirname($eventsPath, 2).'/events.jsonl';
+        $this->assertFileExists($eventsPath.'.append.pending.json');
+        $this->assertFileExists($eventsPath.'.append.work');
+        $this->assertDirectoryExists($directory);
+        try {
+            $operations->reclaimDisposedPayloads($run, '');
+            $this->fail('Unfinished transitions must block payload cleanup.');
+        } catch (\RuntimeException $exception) {
+            $this->assertStringContainsString('coordination recovery', $exception->getMessage());
+        }
+        $this->assertDirectoryExists($directory);
+        $this->assertFileExists($eventsPath.'.append.pending.json');
+        $this->assertFileExists($eventsPath.'.append.work');
+        $this->assertDirectoryDoesNotExist($eventsPath.'.armed-work');
+    }
+
+    public function testJournalDoesNotCopyArmedWorkAndRetainsPendingIntentUntilFinalization(): void
+    {
+        $dir = TestDirectoryIsolation::createProjectTempDir('pending-intent-retention');
         try {
             $path = $dir.'/events.jsonl';
             file_put_contents($path, "{\"seq\":1}\n");
             $journal = new JsonlAppendJournal();
-            $request = new ExecuteLlmStep('run-armed', 1, 'step', 1, 'armed-key', 'tools');
-            $journal->append($path, ["{\"seq\":2}\n"], ['run_id' => 'run-armed', 'predecessor_seq' => 1, 'effects' => [$request]]);
+            $request = new ExecuteLlmStep('run-intent', 1, 'step', 1, 'intent-key', 'tools');
+            $journal->append($path, ["{\"seq\":2}\n"], ['run_id' => 'run-intent', 'predecessor_seq' => 1, 'effects' => [$request]]);
             $verified = $journal->verifiedPending($path);
             $this->assertNotNull($verified);
-            $armed = $path.'.armed-work';
-            $this->assertDirectoryExists($armed);
-            $before = glob($armed.'/*.json');
-            $this->assertIsArray($before);
-            $this->assertCount(1, $before);
+            $this->assertDirectoryDoesNotExist($path.'.armed-work');
+            $this->assertFileExists($path.'.append.pending.json');
+            $this->assertFileExists($path.'.append.work');
             $journal->finalizeVerified($path, $verified->identity);
-            $this->assertDirectoryDoesNotExist($armed);
+            $this->assertFileDoesNotExist($path.'.append.pending.json');
+            $this->assertFileDoesNotExist($path.'.append.work');
+            $this->assertDirectoryDoesNotExist($path.'.armed-work');
         } finally {
             TestDirectoryIsolation::removeDirectory($dir);
         }
+    }
 
+    public function testPartialDirectoryDeletionRetriesUntilSurvivingPayloadsAreGone(): void
+    {
+        $container = self::getContainer();
+        $run = $container->get(HatfieldSessionStore::class)->createSession('partial payload cleanup');
+        $request = new ExecuteLlmStep($run, 1, 'partial', 1, 'partial-key', 'tools');
+        $events = $container->get(PreparedTransitionEventStoreInterface::class);
+        $operations = $container->get(DoctrineExecutionOperationStore::class);
+        $events->appendTransition([], ['run_id' => $run, 'predecessor_seq' => 0, 'effects' => [$request]]);
+        $pending = $events->verifiedPendingTransition($run);
+        $this->assertNotNull($pending);
+        $authorization = $operations->arm($request, $pending);
+        $events->finalizeVerifiedTransition($run, $pending->identity);
+        $delivery = $operations->requestReference($request, $authorization);
+        $claim = $operations->claim($delivery, $authorization);
+        $this->assertIsString($claim);
+        $reference = $operations->saveResult($request, $authorization, $claim, new LlmStepResult($run, 1, 'partial', 1, 'partial-key'));
+        $descriptor = new ExecutionResultDispositionDTO($reference, 'Consumed');
+        $events->appendTransition([], ['run_id' => $run, 'predecessor_seq' => 0, 'execution_disposition' => $descriptor]);
+        $verified = $events->verifiedPendingTransition($run);
+        $this->assertNotNull($verified);
+        $operations->applyDisposition($descriptor, $verified);
+        $events->finalizeVerifiedTransition($run, $verified->identity);
+        $paths = $container->get(ToolBatchRunStoragePathsInterface::class);
+        $directory = \dirname($paths->resolveToolBatchesDirectory($run)).'/execution-operations/'.$reference->effectId;
+        $this->assertFileExists($directory.'/request');
+        $this->assertFileExists($directory.'/'.hash('sha256', $claim).'.result');
+        unlink($directory.'/request');
+        $this->assertFileDoesNotExist($directory.'/request');
+        $this->assertDirectoryExists($directory);
+        $this->assertSame($reference->effectId, $operations->reclaimDisposedPayloads($run, ''));
+        $this->assertDirectoryDoesNotExist($directory);
+    }
+
+    public function testUnknownRetirementLeavesPayloadsUntilFinalizedCleanupAndDropsRetiredBodies(): void
+    {
+        $container = self::getContainer();
+        $run = $container->get(HatfieldSessionStore::class)->createSession('unknown retirement cleanup');
+        $request = new ExecuteLlmStep($run, 1, 'unknown', 1, 'unknown-key', 'tools');
+        $events = $container->get(PreparedTransitionEventStoreInterface::class);
+        $operations = $container->get(DoctrineExecutionOperationStore::class);
+        $events->appendTransition([], ['run_id' => $run, 'predecessor_seq' => 0, 'effects' => [$request]]);
+        $pending = $events->verifiedPendingTransition($run);
+        $this->assertNotNull($pending);
+        $authorization = $operations->arm($request, $pending);
+        $events->finalizeVerifiedTransition($run, $pending->identity);
+        $delivery = $operations->requestReference($request, $authorization);
+        $worker = new DoctrineExecutionOperationStore(
+            $container->get(\Doctrine\DBAL\Connection::class),
+            $container->get(ToolBatchRunStoragePathsInterface::class),
+            new \Symfony\Component\Filesystem\Filesystem(),
+            $container->get('hatfield.controller.session_owner.lock_factory'),
+            $container->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class),
+            $container->get(ToolBatchStoreInterface::class),
+            $events,
+        );
+        $claim = $worker->claim($delivery, $authorization);
+        $this->assertIsString($claim);
+        unset($worker);
+        $operations->pendingDeliveries($run, '');
+        $notice = $operations->unknownExecutionsForRepair($run)[0];
+        $paths = $container->get(ToolBatchRunStoragePathsInterface::class);
+        $directory = \dirname($paths->resolveToolBatchesDirectory($run)).'/execution-operations/'.$notice->effectId;
+        $this->assertDirectoryExists($directory);
+        $this->assertFileExists($directory.'/request');
+        $action = new \Ineersa\AgentCore\Domain\Coordination\RetireUnknownExecutionDTO($notice);
+        $events->appendTransition([], [
+            'run_id' => $run,
+            'predecessor_seq' => 0,
+            'source' => ['command_type' => \Ineersa\AgentCore\Domain\Coordination\RetireUnknownExecutionDTO::class, 'command_id' => 'repair-cleanup'],
+            'actions' => [$action],
+        ]);
+        $verified = $events->verifiedPendingTransition($run);
+        $this->assertNotNull($verified);
+        $operations->retireUnknownExecution($action, $verified);
+        $this->assertDirectoryExists($directory, 'Retirement during a pending transition must not delete payloads.');
+        $this->assertFileExists($directory.'/request');
+        try {
+            $operations->reclaimDisposedPayloads($run, '');
+            $this->fail('Pending retirement transitions must block cleanup.');
+        } catch (\RuntimeException $exception) {
+            $this->assertStringContainsString('coordination recovery', $exception->getMessage());
+        }
+        $events->finalizeVerifiedTransition($run, $verified->identity);
+        $this->assertSame($notice->effectId, $operations->reclaimDisposedPayloads($run, ''));
+        $this->assertDirectoryDoesNotExist($directory);
+    }
+
+    public function testInterruptedCleanupRetainsBodiesAndConvergesOnRetry(): void
+    {
         $container = self::getContainer();
         $run = $container->get(HatfieldSessionStore::class)->createSession('interrupted payload cleanup');
         $request = new ExecuteLlmStep($run, 1, 'interrupt', 1, 'interrupt-key', 'tools');
@@ -220,6 +350,7 @@ final class ExecutionPayloadCleanupTest extends IsolatedKernelTestCase
             $container->get('hatfield.controller.session_owner.lock_factory'),
             $container->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class),
             $container->get(ToolBatchStoreInterface::class),
+            $container->get(PreparedTransitionEventStoreInterface::class),
         );
         try {
             $broken->reclaimDisposedPayloads($run, '');
@@ -231,5 +362,71 @@ final class ExecutionPayloadCleanupTest extends IsolatedKernelTestCase
         $this->assertFileExists($directory.'/request');
         $this->assertSame($reference->effectId, $operations->reclaimDisposedPayloads($run, ''));
         $this->assertDirectoryDoesNotExist($directory);
+    }
+
+    public function testRetiredUnknownToolBodiesAreClearedOnlyAfterFinalization(): void
+    {
+        $container = self::getContainer();
+        $run = $container->get(HatfieldSessionStore::class)->createSession('retired tool body cleanup');
+        $gate = $container->get(\Ineersa\AgentCore\Application\Handler\ToolExecutionAuthorization::class);
+        $store = $container->get(ToolBatchStoreInterface::class);
+        $call = new ExecuteToolCall($run, 1, 'tools', 1, 'tool-key', 'call-1', 'ask', ['prompt' => 'secret-body'], 0);
+        $answer = new \Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO('q1', ['approved' => true], ['run_id' => $run], ['hook' => 'approval']);
+        $call = $call->withHumanInputAnswer($answer);
+        (new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(store: $store))->registerExpectedBatch($run, 1, 'tools', [$call]);
+        $gate->arm($call);
+        $store->mutate($run, 1, 'tools', static function ($batch) {
+            $key = array_key_first($batch->executionAuthorizations);
+            $batch->executionAuthorizations[$key]['state'] = 'OutcomeUnknown';
+            $batch->executionAuthorizations[$key]['claim'] = 'dead-claim';
+            $batch->executionAuthorizations[$key]['claim_lock_key'] = str_repeat('a', 64);
+            $batch->executionResults[$key] = \Ineersa\AgentCore\Application\Handler\ToolCallResultFactory::fromExecuteToolCallAndToolResult(
+                $batch->calls['call-1'],
+                new ToolResult('body', 'ask', [['type' => 'text', 'text' => 'full-result-body']]),
+            );
+            $batch->results['call-1'] = $batch->executionResults[$key];
+
+            return new \Ineersa\AgentCore\Contract\Tool\ToolBatchStoreMutation(null, $batch);
+        });
+        $batch = $store->load($run, 1, 'tools');
+        $this->assertNotNull($batch);
+        $key = array_key_first($batch->executionAuthorizations);
+        $notice = new \Ineersa\AgentCore\Domain\Message\ToolExecutionOutcomeUnknown($run, 1, 'tools', 1, 'tool-key', 'call-1', $key, 'dead-claim');
+        // Force worker exclusion by using a fresh lock key owned nowhere: repairable path needs exclusion.
+        // For cleanup proof, mark Stale with unknown_repair_transition through store mutate after a fake transition identity.
+        $events = $container->get(PreparedTransitionEventStoreInterface::class);
+        $events->appendTransition([], ['run_id' => $run, 'predecessor_seq' => 0, 'actions' => []]);
+        $verified = $events->verifiedPendingTransition($run);
+        $this->assertNotNull($verified);
+        $store->mutate($run, 1, 'tools', static function ($batch) use ($key, $verified) {
+            $batch->executionAuthorizations[$key] = [
+                'state' => 'Stale',
+                'claim' => 'dead-claim',
+                'unknown_repair_transition' => $verified->identity,
+                'invocation' => ['attempt' => 1, 'key' => 'tool-key', 'call_id' => 'call-1'],
+            ];
+
+            return new \Ineersa\AgentCore\Contract\Tool\ToolBatchStoreMutation(null, $batch);
+        });
+        try {
+            $gate->reclaimDisposedPayloads($run, '');
+            $this->fail('Unfinished tool transitions must block body reclaim.');
+        } catch (\RuntimeException $exception) {
+            $this->assertStringContainsString('coordination recovery', $exception->getMessage());
+        }
+        $still = $store->load($run, 1, 'tools');
+        $this->assertNotNull($still);
+        $this->assertNotEmpty($still->executionResults);
+        $this->assertNotNull($still->calls['call-1']->humanInputAnswer);
+        $events->finalizeVerifiedTransition($run, $verified->identity);
+        $this->assertNotSame('', $gate->reclaimDisposedPayloads($run, ''));
+        $after = $store->load($run, 1, 'tools');
+        $this->assertNotNull($after);
+        $this->assertSame([], $after->executionResults);
+        $this->assertSame([], $after->results);
+        $this->assertSame([], $after->calls['call-1']->args);
+        $this->assertNull($after->calls['call-1']->humanInputAnswer);
+        $this->assertSame('Stale', $after->executionAuthorizations[$key]['state']);
+        $this->assertSame($verified->identity, $after->executionAuthorizations[$key]['unknown_repair_transition']);
     }
 }

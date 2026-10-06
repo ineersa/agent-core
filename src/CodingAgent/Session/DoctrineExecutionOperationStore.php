@@ -9,6 +9,7 @@ use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Ineersa\AgentCore\Application\Handler\ExecutionOperationMapper;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface;
+use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Coordination\ExecutionAuthorizationStamp;
 use Ineersa\AgentCore\Domain\Coordination\ExecutionResultDispositionDTO;
@@ -30,8 +31,15 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
     private string $instance;
     private LockInterface $workerLock;
 
-    public function __construct(private Connection $connection, private ToolBatchRunStoragePathsInterface $paths, private Filesystem $filesystem, #[Autowire(service: 'hatfield.controller.session_owner.lock_factory')] private LockFactory $claimLockFactory, private RunLockManager $runLocks, private ToolBatchStoreInterface $toolBatches)
-    {
+    public function __construct(
+        private Connection $connection,
+        private ToolBatchRunStoragePathsInterface $paths,
+        private Filesystem $filesystem,
+        #[Autowire(service: 'hatfield.controller.session_owner.lock_factory')] private LockFactory $claimLockFactory,
+        private RunLockManager $runLocks,
+        private ToolBatchStoreInterface $toolBatches,
+        private PreparedTransitionEventStoreInterface $transitions,
+    ) {
         $this->instance = bin2hex(random_bytes(32));
         $this->workerLock = $claimLockFactory->createLock('execution-worker.'.$this->instance, ttl: null);
     }
@@ -64,8 +72,6 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
                 throw new \RuntimeException('Unknown retirement differs from its execution receipt.');
             }
             if ('Stale' === $record['state'] && $record['disposition_transition'] === $transition->identity && null === $record['result_hash']) {
-                $this->removePayloadDirectory($record['run_id'], $record['effect_id']);
-
                 return;
             }
             $this->withUnknownExclusion($notice, function () use ($notice, $transition): void {
@@ -73,7 +79,6 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
                 if (1 !== $updated) {
                     throw new \RuntimeException('Unknown execution retirement lost its precise receipt.');
                 }
-                $this->removePayloadDirectory($notice->runId(), $notice->effectId);
             });
         });
     }
@@ -326,6 +331,8 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
                 if (!\in_array($current['state'], ['Consumed', 'Stale'], true) || null === $current['disposition_transition']) {
                     return;
                 }
+                // Disposition alone is insufficient while owner coordination remains unfinished.
+                $this->transitions->assertTransitionReady($current['run_id']);
                 if ($this->payloadReclaimed($current)) {
                     return;
                 }
@@ -572,7 +579,7 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
     {
         return \in_array($record['state'], ['Consumed', 'Stale'], true)
             && null !== $record['disposition_transition']
-            && !is_file($this->path($record['run_id'], $record['effect_id'], 'request'));
+            && !is_dir(\dirname($this->path($record['run_id'], $record['effect_id'], 'request')));
     }
 
     private function removePayloadDirectory(string $runId, string $effectId): void
@@ -586,7 +593,8 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
         } catch (\Throwable $exception) {
             throw new \RuntimeException('Disposed execution payload cleanup failed.', previous: $exception);
         }
-        if (is_file($this->path($runId, $effectId, 'request'))) {
+        clearstatcache(true, $directory);
+        if (is_dir($directory)) {
             throw new \RuntimeException('Disposed execution payload cleanup left evidence behind.');
         }
     }

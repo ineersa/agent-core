@@ -99,11 +99,9 @@ final readonly class JsonlAppendJournal
         $this->reconcile($path);
         if (null === $work) {
             $this->finalize($path);
-        } elseif ($this->containsExecutionWork($workDescriptor->work)) {
-            // Preserve armed request/action evidence independently of append cleanup.
-            $this->filesystem->mkdir($path.'.armed-work');
-            $this->filesystem->copy($path.'.append.work', $path.'.armed-work/'.hash('sha256', (string) $encodedWork).'.json');
         }
+        // Pending intent files stay until required coordination succeeds.
+        // Operation rows and batch authority own redispatch; do not copy full work.
     }
 
     /**
@@ -194,7 +192,6 @@ final readonly class JsonlAppendJournal
             throw new \RuntimeException('Prepared transition identity changed before finalization.');
         }
         $this->finalize($path);
-        $this->reclaimArmedWork($path, $pending->work);
     }
 
     public function assertReady(string $path): void
@@ -231,43 +228,6 @@ final readonly class JsonlAppendJournal
         }
 
         return $manifest['offset'];
-    }
-
-    /** @param array<string, mixed> $work */
-    private function containsExecutionWork(array $work): bool
-    {
-        foreach ([...($work['effects'] ?? []), ...($work['post_commit_effects'] ?? []), ...($work['actions'] ?? [])] as $item) {
-            if ($item instanceof \Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO
-                || ($item instanceof \Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage && !$item instanceof \Ineersa\AgentCore\Domain\Message\RunControlTransitionMessageInterface)) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /** @param array<string, mixed> $work */
-    private function reclaimArmedWork(string $path, array $work): void
-    {
-        $directory = $path.'.armed-work';
-        if (!is_dir($directory)) {
-            return;
-        }
-        $encoded = json_encode((new \Symfony\Component\Messenger\Transport\Serialization\PhpSerializer())->encode(new \Symfony\Component\Messenger\Envelope(new PendingTransitionWorkDTO($work))), \JSON_THROW_ON_ERROR);
-        $file = $directory.'/'.hash('sha256', $encoded).'.json';
-        if (is_file($file)) {
-            $this->filesystem->remove($file);
-        }
-        $remaining = false;
-        foreach (new \DirectoryIterator($directory) as $entry) {
-            if ($entry->isFile()) {
-                $remaining = true;
-                break;
-            }
-        }
-        if (!$remaining) {
-            $this->filesystem->remove($directory);
-        }
     }
 
     /** @return array{version: int, offset: int, device: int, inode: int, boundary_length: int, boundary_hash: string, length: int, stage_hash: string, transition: bool, work_hash: string|null}|null */

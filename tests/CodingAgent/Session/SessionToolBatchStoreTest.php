@@ -171,7 +171,7 @@ final class SessionToolBatchStoreTest extends TestCase
         $directory = new AgentChildRunDirectory($this->hatfieldSessionStore, $registry, new NullLogger());
         $directory->register($entry);
 
-        $childStore = new SessionToolBatchStore(new ChildAwareToolBatchRunStoragePaths($this->hatfieldSessionStore, $directory, $pathResolver), new LockFactory(new FlockStore()), new NullLogger(), $serializer, $validator);
+        $childStore = new SessionToolBatchStore(new ChildAwareToolBatchRunStoragePaths($this->hatfieldSessionStore, $directory, $pathResolver), new LockFactory(new FlockStore()), new NullLogger(), $serializer, $validator, new \Ineersa\AgentCore\Tests\Support\InMemoryEventStore());
         $childStore->save($childRunId, 2, 'step-child', $this->emptyBatch(['c1']));
 
         $expectedDir = $parentDir.'/artifacts/agents/'.$artifactId.'/runtime/tool-batches';
@@ -360,6 +360,7 @@ final class SessionToolBatchStoreTest extends TestCase
             new NullLogger(),
             $serializer,
             $validator,
+            new \Ineersa\AgentCore\Tests\Support\InMemoryEventStore(),
         );
     }
 

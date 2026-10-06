@@ -373,6 +373,7 @@ final class ToolBatchCollectorDurableTest extends TestCase
             new NullLogger(),
             $serializer,
             $validator,
+            new \Ineersa\AgentCore\Tests\Support\InMemoryEventStore(),
         );
     }
 

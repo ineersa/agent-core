@@ -1126,6 +1126,7 @@ final class ToolCallResultHandlerTest extends TestCase
             new NullLogger(),
             $serializer,
             $validator,
+            new \Ineersa\AgentCore\Tests\Support\InMemoryEventStore(),
         );
     }
 }
