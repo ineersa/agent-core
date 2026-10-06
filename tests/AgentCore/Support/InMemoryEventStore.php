@@ -41,7 +41,10 @@ final class InMemoryEventStore implements PreparedTransitionEventStoreInterface
     {
         $runId = $work['run_id'];
         $this->assertTransitionReady($runId);
-        $persisted = $this->appendMany($events);
+        $persisted = [];
+        foreach ($events as $event) {
+            $persisted[] = $this->persist($event);
+        }
         $this->pending[$runId] = new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(hash('sha256', serialize([$work, $persisted])), 0, $work);
 
         return $persisted;
@@ -67,34 +70,6 @@ final class InMemoryEventStore implements PreparedTransitionEventStoreInterface
     public function finalizeTransition(string $runId): void
     {
         unset($this->pending[$runId]);
-    }
-
-    public function append(RunEvent $event): RunEvent
-    {
-        $next = ($this->highWaterByRun[$event->runId] ?? 0) + 1;
-        $this->highWaterByRun[$event->runId] = $next;
-        $persisted = new RunEvent(
-            runId: $event->runId,
-            seq: $next,
-            turnNo: $event->turnNo,
-            type: $event->type,
-            payload: $event->payload,
-            createdAt: $event->createdAt,
-        );
-        $this->eventsByRun[$event->runId] ??= [];
-        $this->eventsByRun[$event->runId][] = $persisted;
-
-        return $persisted;
-    }
-
-    public function appendMany(array $events): array
-    {
-        $out = [];
-        foreach ($events as $event) {
-            $out[] = $this->append($event);
-        }
-
-        return $out;
     }
 
     public function latestSequenceFor(string $runId): ?int
@@ -141,5 +116,23 @@ final class InMemoryEventStore implements PreparedTransitionEventStoreInterface
         usort($events, static fn (RunEvent $l, RunEvent $r): int => $l->seq <=> $r->seq);
 
         return $events;
+    }
+
+    private function persist(RunEvent $event): RunEvent
+    {
+        $next = ($this->highWaterByRun[$event->runId] ?? 0) + 1;
+        $this->highWaterByRun[$event->runId] = $next;
+        $persisted = new RunEvent(
+            runId: $event->runId,
+            seq: $next,
+            turnNo: $event->turnNo,
+            type: $event->type,
+            payload: $event->payload,
+            createdAt: $event->createdAt,
+        );
+        $this->eventsByRun[$event->runId] ??= [];
+        $this->eventsByRun[$event->runId][] = $persisted;
+
+        return $persisted;
     }
 }

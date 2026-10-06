@@ -24,7 +24,7 @@ use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
-use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
+use Ineersa\AgentCore\Tests\Support\InMemoryCommandStore;
 use Ineersa\AgentCore\Tests\Support\SymfonyAiTestMessages;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use PHPUnit\Framework\TestCase;

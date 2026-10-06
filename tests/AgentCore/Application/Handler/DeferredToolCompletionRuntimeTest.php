@@ -330,7 +330,7 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
         $processor = new RunMessageProcessor(
             activeRunContext: $activeRunContext,
             runLockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
-            runCommit: new RunCommit(sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore()),
+            runCommit: new RunCommit(sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
                 activeRunContext: $activeRunContext,
                 eventStore: $eventStore,
                 stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),

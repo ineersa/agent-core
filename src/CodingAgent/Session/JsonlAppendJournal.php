@@ -18,15 +18,16 @@ final readonly class JsonlAppendJournal
     }
 
     /** @param iterable<string> $records
-     * @param array<string, mixed>|null $work */
-    public function append(string $path, iterable $records, ?array $work = null): void
+     * @param array<string, mixed> $work */
+    public function append(string $path, iterable $records, array $work): void
     {
         if (is_file($this->manifestPath($path))) {
             throw new \RuntimeException('Canonical append requires reconciliation of the existing pending append.');
         }
         $this->filesystem->mkdir(\dirname($path));
-        $workDescriptor = null === $work ? null : new PendingTransitionWorkDTO($work);
-        $encodedWork = null;
+        if ([] === $work) {
+            throw new \InvalidArgumentException('Canonical append requires captured owner coordination work.');
+        }
         $bindSequences = array_any([...($work['actions'] ?? []), ...($work['after_turn_actions'] ?? [])], static fn (object $action): bool => $action instanceof \Ineersa\AgentCore\Contract\CanonicalSequenceBoundActionInterface);
         $archive = $this->open($path, 'c+b');
         $stage = $this->open($this->stagePath($path), 'wb');
@@ -58,25 +59,22 @@ final readonly class JsonlAppendJournal
             if (!fflush($stage)) {
                 throw new \RuntimeException('Cannot flush staged canonical bytes.');
             }
-            if (null !== $work) {
-                if ($bindSequences) {
-                    $work['event_sequences'] = $sequences;
-                }
-                foreach (['actions', 'after_turn_actions'] as $key) {
-                    foreach ($work[$key] ?? [] as $index => $action) {
-                        if ($action instanceof \Ineersa\AgentCore\Contract\CanonicalSequenceBoundActionInterface) {
-                            $work[$key][$index] = $action->bindCanonicalSequences($sequences);
-                        }
+            if ($bindSequences) {
+                $work['event_sequences'] = $sequences;
+            }
+            foreach (['actions', 'after_turn_actions'] as $key) {
+                foreach ($work[$key] ?? [] as $index => $action) {
+                    if ($action instanceof \Ineersa\AgentCore\Contract\CanonicalSequenceBoundActionInterface) {
+                        $work[$key][$index] = $action->bindCanonicalSequences($sequences);
                     }
                 }
-                $workDescriptor = new PendingTransitionWorkDTO($work);
-                $workBytes = (new \Symfony\Component\Messenger\Transport\Serialization\PhpSerializer())->encode(new \Symfony\Component\Messenger\Envelope($workDescriptor));
-                $encodedWork = json_encode($workBytes, \JSON_THROW_ON_ERROR);
-                if (\strlen($encodedWork) > self::MAX_STAGED_BYTES) {
-                    throw new \RuntimeException('Prepared transition work exceeds its byte limit.');
-                }
-                $this->filesystem->dumpFile($path.'.append.work', $encodedWork);
             }
+            $workBytes = (new \Symfony\Component\Messenger\Transport\Serialization\PhpSerializer())->encode(new \Symfony\Component\Messenger\Envelope(new PendingTransitionWorkDTO($work)));
+            $encodedWork = json_encode($workBytes, \JSON_THROW_ON_ERROR);
+            if (\strlen($encodedWork) > self::MAX_STAGED_BYTES) {
+                throw new \RuntimeException('Prepared transition work exceeds its byte limit.');
+            }
+            $this->filesystem->dumpFile($path.'.append.work', $encodedWork);
             $boundaryLength = min(self::CHUNK_BYTES, $stat['size']);
             $boundary = $this->readAt($archive, $stat['size'] - $boundaryLength, $boundaryLength);
             $manifest = [
@@ -88,8 +86,8 @@ final readonly class JsonlAppendJournal
                 'boundary_hash' => hash('sha256', $boundary),
                 'length' => $length,
                 'stage_hash' => hash_file('sha256', $this->stagePath($path)),
-                'transition' => null !== $work,
-                'work_hash' => null === $work ? null : hash_file('sha256', $path.'.append.work'),
+                'transition' => true,
+                'work_hash' => hash_file('sha256', $path.'.append.work'),
             ];
             $this->filesystem->dumpFile($this->manifestPath($path), json_encode($manifest, \JSON_THROW_ON_ERROR));
         } finally {
@@ -97,9 +95,6 @@ final readonly class JsonlAppendJournal
             fclose($archive);
         }
         $this->reconcile($path);
-        if (null === $work) {
-            $this->finalize($path);
-        }
         // Pending intent files stay until required coordination succeeds.
         // Operation rows and batch authority own redispatch; do not copy full work.
     }

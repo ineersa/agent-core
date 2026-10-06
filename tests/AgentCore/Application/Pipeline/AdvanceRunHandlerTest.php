@@ -17,9 +17,9 @@ use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use Ineersa\AgentCore\Tests\Support\Builder\AdvanceRunMessageBuilder;
 use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
+use Ineersa\AgentCore\Tests\Support\InMemoryCommandStore;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use PHPUnit\Framework\TestCase;
 

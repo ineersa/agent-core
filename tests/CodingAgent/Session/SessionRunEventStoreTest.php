@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Session;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Schema\SchemaVersion;
+use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
@@ -59,7 +60,7 @@ final class SessionRunEventStoreTest extends TestCase
     public function testAppendAndRetrieveSingleEvent(): void
     {
         $runId = 'run-'.bin2hex(random_bytes(4));
-        $persisted = $this->store->append(RunEvent::forAppend(
+        $persisted = PreparedEventStoreSeeder::append($this->store, RunEvent::forAppend(
             runId: $runId,
             turnNo: 0,
             type: 'run_started',
@@ -82,7 +83,7 @@ final class SessionRunEventStoreTest extends TestCase
     public function testAppendManyAndRetrieveSorted(): void
     {
         $runId = 'run-'.bin2hex(random_bytes(4));
-        $persisted = $this->store->appendMany([
+        $persisted = PreparedEventStoreSeeder::appendMany($this->store, [
             RunEvent::forAppend(runId: $runId, turnNo: 1, type: 'tool_execution_end'),
             RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started'),
             RunEvent::forAppend(runId: $runId, turnNo: 1, type: 'tool_execution_start'),
@@ -104,8 +105,8 @@ final class SessionRunEventStoreTest extends TestCase
     public function testRangeForStreamsInclusiveOrderedBoundsAcrossHolesWithoutMaterializingAllFor(): void
     {
         $runId = 'run-'.bin2hex(random_bytes(4));
-        $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started'));
-        $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 1, type: 'turn_advanced'));
+        PreparedEventStoreSeeder::append($this->store, RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started'));
+        PreparedEventStoreSeeder::append($this->store, RunEvent::forAppend(runId: $runId, turnNo: 1, type: 'turn_advanced'));
         $this->store->allFor($runId);
 
         $eventsPath = $this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl';
@@ -128,8 +129,8 @@ final class SessionRunEventStoreTest extends TestCase
     public function testRangeForDoesNotReadMalformedRecordAfterRequestedRange(): void
     {
         $runId = 'run-'.bin2hex(random_bytes(4));
-        $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started'));
-        $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 1, type: 'turn_advanced'));
+        PreparedEventStoreSeeder::append($this->store, RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started'));
+        PreparedEventStoreSeeder::append($this->store, RunEvent::forAppend(runId: $runId, turnNo: 1, type: 'turn_advanced'));
         file_put_contents(
             $this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl',
             "{\"partial\":\n",
@@ -151,8 +152,8 @@ final class SessionRunEventStoreTest extends TestCase
     public function testFirstAndLatestReadCanonicalHeadAndTail(): void
     {
         $runId = 'run-'.bin2hex(random_bytes(4));
-        $first = $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started'));
-        $last = $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 1, type: 'turn_advanced'));
+        $first = PreparedEventStoreSeeder::append($this->store, RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started'));
+        $last = PreparedEventStoreSeeder::append($this->store, RunEvent::forAppend(runId: $runId, turnNo: 1, type: 'turn_advanced'));
 
         $this->assertSame($first->seq, $this->store->firstFor($runId)?->seq);
         $this->assertSame($last->seq, $this->store->latestSequenceFor($runId));
@@ -161,7 +162,7 @@ final class SessionRunEventStoreTest extends TestCase
     public function testLatestSequenceSkipsTrailingIncompatibleRecord(): void
     {
         $runId = 'run-'.bin2hex(random_bytes(4));
-        $last = $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started'));
+        $last = PreparedEventStoreSeeder::append($this->store, RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started'));
         file_put_contents($this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl', json_encode([
             'schema_version' => '999.0',
             'run_id' => $runId,
@@ -199,7 +200,7 @@ final class SessionRunEventStoreTest extends TestCase
     public function testLatestSequenceRejectsTrailingPartialRecordLikeAllFor(): void
     {
         $runId = 'run-'.bin2hex(random_bytes(4));
-        $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started'));
+        PreparedEventStoreSeeder::append($this->store, RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started'));
         file_put_contents($this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl', '{"partial":', \FILE_APPEND);
 
         $this->expectException(\RuntimeException::class);
@@ -211,7 +212,7 @@ final class SessionRunEventStoreTest extends TestCase
     {
         // Simulate process restart: write events, create new store, read back
         $runId = 'run-'.bin2hex(random_bytes(4));
-        $this->store->append(RunEvent::forAppend(
+        PreparedEventStoreSeeder::append($this->store, RunEvent::forAppend(
             runId: $runId,
             turnNo: 0,
             type: 'agent_end',
@@ -229,7 +230,7 @@ final class SessionRunEventStoreTest extends TestCase
     public function testEmbeddedRunIdMustMatchDirectory(): void
     {
         $runId = 'run-'.bin2hex(random_bytes(4));
-        $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started'));
+        PreparedEventStoreSeeder::append($this->store, RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started'));
 
         // Tamper with the JSONL to have wrong runId
         $eventsPath = $this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl';
@@ -247,8 +248,8 @@ final class SessionRunEventStoreTest extends TestCase
         $runA = 'run-'.bin2hex(random_bytes(2));
         $runB = 'run-'.bin2hex(random_bytes(2));
 
-        $this->store->append(RunEvent::forAppend(runId: $runA, turnNo: 0, type: 'run_started'));
-        $this->store->append(RunEvent::forAppend(runId: $runB, turnNo: 0, type: 'agent_end'));
+        PreparedEventStoreSeeder::append($this->store, RunEvent::forAppend(runId: $runA, turnNo: 0, type: 'run_started'));
+        PreparedEventStoreSeeder::append($this->store, RunEvent::forAppend(runId: $runB, turnNo: 0, type: 'agent_end'));
 
         $eventsA = $this->store->allFor($runA);
         $eventsB = $this->store->allFor($runB);
@@ -267,7 +268,7 @@ final class SessionRunEventStoreTest extends TestCase
         // Write a valid event then inject a corrupt line with no schema_version
         // and missing required fields — should throw, not silently skip.
         $runId = 'run-'.bin2hex(random_bytes(4));
-        $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started', payload: []));
+        PreparedEventStoreSeeder::append($this->store, RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started', payload: []));
 
         $eventsPath = $this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl';
         // Append a corrupt line (missing required fields, no schema_version)
@@ -281,7 +282,7 @@ final class SessionRunEventStoreTest extends TestCase
     public function testCorruptJsonLineWithCompatibleSchemaAndMissingRequiredFieldsThrows(): void
     {
         $runId = 'run-'.bin2hex(random_bytes(4));
-        $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started', payload: []));
+        PreparedEventStoreSeeder::append($this->store, RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started', payload: []));
 
         $eventsPath = $this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl';
         file_put_contents($eventsPath, '{"schema_version":"'.SchemaVersion::CURRENT.'","run_id":"'.$runId.'","seq":null}'."\n", \FILE_APPEND);
@@ -294,7 +295,7 @@ final class SessionRunEventStoreTest extends TestCase
     public function testIncompatibleSchemaVersionIsSkippedWithDiagnosticPolicy(): void
     {
         $runId = 'run-'.bin2hex(random_bytes(4));
-        $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started', payload: []));
+        PreparedEventStoreSeeder::append($this->store, RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started', payload: []));
 
         $eventsPath = $this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl';
         // Append an old-format event with incompatible schema version.
@@ -313,7 +314,7 @@ final class SessionRunEventStoreTest extends TestCase
         $logger = new TestLogger();
         $store = $this->createStore($logger);
         $runId = 'run-'.bin2hex(random_bytes(4));
-        $store->append(RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started', payload: ['marker' => 'once']));
+        PreparedEventStoreSeeder::append($store, RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started', payload: ['marker' => 'once']));
 
         $eventsPath = $this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl';
         file_put_contents(
@@ -345,7 +346,7 @@ final class SessionRunEventStoreTest extends TestCase
     public function testExternalAppendIsVisibleOnNextAllForEvenWithSameMtime(): void
     {
         $runId = 'run-'.bin2hex(random_bytes(4));
-        $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started', payload: []));
+        PreparedEventStoreSeeder::append($this->store, RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started', payload: []));
 
         $first = $this->store->allFor($runId);
         $this->assertCount(1, $first);
@@ -377,12 +378,12 @@ final class SessionRunEventStoreTest extends TestCase
     public function testStoreOwnedAppendIsVisibleOnNextAllFor(): void
     {
         $runId = 'run-'.bin2hex(random_bytes(4));
-        $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started', payload: []));
+        PreparedEventStoreSeeder::append($this->store, RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started', payload: []));
 
         $first = $this->store->allFor($runId);
         $this->assertCount(1, $first);
 
-        $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 1, type: 'agent_end', payload: ['via' => 'store']));
+        PreparedEventStoreSeeder::append($this->store, RunEvent::forAppend(runId: $runId, turnNo: 1, type: 'agent_end', payload: ['via' => 'store']));
 
         $second = $this->store->allFor($runId);
         $this->assertCount(2, $second);
@@ -396,9 +397,9 @@ final class SessionRunEventStoreTest extends TestCase
         $store = $this->createStore($logger);
         $runId = 'run-'.bin2hex(random_bytes(4));
 
-        $store->append(RunEvent::forAppend(runId: $runId, turnNo: 1, type: 'run_started', payload: ['n' => 1]));
-        $store->append(RunEvent::forAppend(runId: $runId, turnNo: 2, type: 'turn_advanced', payload: ['n' => 2]));
-        $store->append(RunEvent::forAppend(runId: $runId, turnNo: 3, type: 'agent_end', payload: ['n' => 3]));
+        PreparedEventStoreSeeder::append($store, RunEvent::forAppend(runId: $runId, turnNo: 1, type: 'run_started', payload: ['n' => 1]));
+        PreparedEventStoreSeeder::append($store, RunEvent::forAppend(runId: $runId, turnNo: 2, type: 'turn_advanced', payload: ['n' => 2]));
+        PreparedEventStoreSeeder::append($store, RunEvent::forAppend(runId: $runId, turnNo: 3, type: 'agent_end', payload: ['n' => 3]));
 
         $eventsPath = $this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl';
         $archiveBytes = filesize($eventsPath);

@@ -288,7 +288,7 @@ final class SessionToolLaunchInputStoreTest extends IsolatedKernelTestCase
         $active = new \Ineersa\AgentCore\Tests\Support\TestActiveRunContext();
         $active->loadRecovered($state);
         $eventStore = self::getContainer()->get(\Ineersa\AgentCore\Contract\EventStoreInterface::class);
-        $commit = new \Ineersa\AgentCore\Application\Pipeline\RunCommit(sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore()),
+        $commit = new \Ineersa\AgentCore\Application\Pipeline\RunCommit(sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
             activeRunContext: $active, eventStore: $eventStore,
             stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(self::getContainer()->get('agent.command.bus'), new TestMessageBus()),
             logger: new \Ineersa\AgentCore\Tests\Support\TestLogger(), toolBatchCollector: $ownerCollector,

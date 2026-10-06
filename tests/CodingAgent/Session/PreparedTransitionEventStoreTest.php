@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\RunContextNotLoadedException;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
+use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory;
 use Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink;
 use Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware;
@@ -27,7 +28,7 @@ final class PreparedTransitionEventStoreTest extends IsolatedKernelTestCase
         $sessions = $container->get(HatfieldSessionStore::class);
         $run = $sessions->createSession('prepared parent');
         $store = $container->get(SessionRunEventStore::class);
-        $first = $store->append(new RunEvent($run, 0, 0, 'run_started', []));
+        $first = PreparedEventStoreSeeder::append($store, new RunEvent($run, 0, 0, 'run_started', []));
         $path = $sessions->resolveSessionsBasePath().'/'.$run.'/events.jsonl';
         $container->get(FileRunSequenceAllocator::class)->allocateBlock(FileRunSequenceAllocator::counterPathForEventsLog($path), 2);
         $action = \Ineersa\AgentCore\Application\Handler\AdvanceRunCoordinationFactory::create($run, 0, 'prepared', 'failed');
@@ -61,8 +62,8 @@ final class PreparedTransitionEventStoreTest extends IsolatedKernelTestCase
         $store = $container->get(AgentChildRunEventStoreFactory::class)->create($parent, $child, 'artifact-prepared');
         $sink = new InMemoryRuntimeEventSink();
         $stream = new StreamingCommittedRuntimeEventStore($store, $container->get(RuntimeEventMapper::class), $sink, true);
-        $stream->append(new RunEvent($child, 0, 0, 'run_started', []));
-        $this->assertCount(0, iterator_to_array($sink->drain($child)), 'Raw appends do not emit owner-finalized events.');
+        PreparedEventStoreSeeder::append($store, new RunEvent($child, 0, 0, 'run_started', []));
+        $this->assertCount(0, iterator_to_array($sink->drain($child)), 'Seeding the inner store does not emit streaming events.');
         $stream->appendTransition([new RunEvent($child, 0, 0, 'agent_end', ['reason' => 'completed'])], ['run_id' => $child, 'predecessor_seq' => 1]);
         $this->assertSame(1, $stream->latestSequenceFor($child));
         $this->assertCount(0, iterator_to_array($sink->drain($child)));
@@ -79,7 +80,7 @@ final class PreparedTransitionEventStoreTest extends IsolatedKernelTestCase
         $sessions = $container->get(HatfieldSessionStore::class);
         $run = $sessions->createSession('unfinished owner');
         $store = $container->get(SessionRunEventStore::class);
-        $store->append(new RunEvent($run, 0, 0, 'run_started', []));
+        PreparedEventStoreSeeder::append($store, new RunEvent($run, 0, 0, 'run_started', []));
         $store->appendTransition([new RunEvent($run, 0, 0, 'agent_end', ['reason' => 'completed'])], ['run_id' => $run, 'predecessor_seq' => 1, 'effects' => [new \stdClass()]]);
         $path = $sessions->resolveSessionsBasePath().'/'.$run.'/events.jsonl';
         $manifest = json_decode(file_get_contents($path.'.append.pending.json'), true, flags: \JSON_THROW_ON_ERROR);
@@ -111,7 +112,7 @@ final class PreparedTransitionEventStoreTest extends IsolatedKernelTestCase
         $sessions = $container->get(HatfieldSessionStore::class);
         $run = $sessions->createSession('wrong predecessor');
         $store = $container->get(SessionRunEventStore::class);
-        $store->append(new RunEvent($run, 0, 0, 'run_started', []));
+        PreparedEventStoreSeeder::append($store, new RunEvent($run, 0, 0, 'run_started', []));
         $path = $sessions->resolveSessionsBasePath().'/'.$run.'/events.jsonl';
         $counter = FileRunSequenceAllocator::counterPathForEventsLog($path);
         $before = file_get_contents($counter);

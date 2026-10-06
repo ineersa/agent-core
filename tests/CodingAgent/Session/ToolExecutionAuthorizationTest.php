@@ -15,6 +15,7 @@ use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
+use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
@@ -195,7 +196,7 @@ final class ToolExecutionAuthorizationTest extends PerMethodIsolatedKernelTestCa
         $sessions = $container->get(HatfieldSessionStore::class);
         $run = $sessions->createSession('recover result disposition');
         $events = $container->get(\Ineersa\CodingAgent\Session\SessionRunEventStore::class);
-        $events->append(new \Ineersa\AgentCore\Domain\Event\RunEvent($run, 0, 0, 'run_started', []));
+        PreparedEventStoreSeeder::append($events, new \Ineersa\AgentCore\Domain\Event\RunEvent($run, 0, 0, 'run_started', []));
         $call = $this->call($run);
         $this->prepare($call);
         $gate = $this->gate();
@@ -263,7 +264,7 @@ final class ToolExecutionAuthorizationTest extends PerMethodIsolatedKernelTestCa
         $sessions = $container->get(HatfieldSessionStore::class);
         $run = $sessions->createSession('missing result recovery');
         $events = $container->get(\Ineersa\CodingAgent\Session\SessionRunEventStore::class);
-        $events->append(new \Ineersa\AgentCore\Domain\Event\RunEvent($run, 0, 0, 'run_started', []));
+        PreparedEventStoreSeeder::append($events, new \Ineersa\AgentCore\Domain\Event\RunEvent($run, 0, 0, 'run_started', []));
         $call = $this->call($run);
         $this->prepare($call);
         $gate = $this->gate();
@@ -309,7 +310,7 @@ final class ToolExecutionAuthorizationTest extends PerMethodIsolatedKernelTestCa
         $bus = new TestMessageBus();
         $dispatcher = new \Ineersa\AgentCore\Application\Handler\StepDispatcher($bus, $bus);
         $events = $container->get(\Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface::class);
-        $commit = new \Ineersa\AgentCore\Application\Pipeline\RunCommit($active, $events, $dispatcher, new \Psr\Log\NullLogger(), new ToolBatchCollector(store: $container->get(ToolBatchStoreInterface::class)), $gate, $container->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore()));
+        $commit = new \Ineersa\AgentCore\Application\Pipeline\RunCommit($active, $events, $dispatcher, new \Psr\Log\NullLogger(), new ToolBatchCollector(store: $container->get(ToolBatchStoreInterface::class)), $gate, $container->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()));
         $processor = new \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor($active, $container->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class), $commit, [$container->get(\Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler::class)]);
         $processor->process('result', $result);
         $batch = $container->get(ToolBatchStoreInterface::class)->load($run, 1, 'tools');

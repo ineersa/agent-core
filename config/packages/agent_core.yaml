@@ -3,7 +3,7 @@ services:
     autowire: true
     autoconfigure: true
 
-  # Durable append goes to ChildAwareEventStore; decorator may emit mapped RuntimeEvents
+  # Durable prepared transitions go to ChildAwareEventStore; decorator may emit mapped RuntimeEvents
   # on stdout after commit when HATFIELD_CONSUMER_STDOUT_EVENTS=1 (see services.yaml).
   # ConsumerSupervisor sets that env for every messenger:consume subprocess it launches;
   # default is off for in-process TUI, tests, and other non-supervised contexts.

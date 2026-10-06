@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\AgentCore\Infrastructure\Storage;
+namespace Ineersa\AgentCore\Tests\Support;
 
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;

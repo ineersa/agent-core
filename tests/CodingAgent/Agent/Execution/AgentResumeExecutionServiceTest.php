@@ -22,8 +22,9 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
+use Ineersa\AgentCore\Tests\Support\InMemoryCommandStore;
+use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
@@ -593,13 +594,13 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         for ($turn = 1; $turn <= 100; ++$turn) {
             $history[] = RunEvent::forAppend($child, $turn, 'turn_advanced');
         }
-        $store->appendMany($history);
-        $terminal = $store->append(RunEvent::forAppend($child, 101, 'agent_end', ['status' => 'completed']));
+        PreparedEventStoreSeeder::appendMany($store, $history);
+        $terminal = PreparedEventStoreSeeder::append($store, RunEvent::forAppend($child, 101, 'agent_end', ['status' => 'completed']));
         $repository = self::getContainer()->get(RunOperationalProjectionRepository::class);
         $repository->replace(new RunState($child, RunStatus::Completed, parentRunId: $parent, lastSeq: $terminal->seq));
         // Fault boundary: the next canonical append succeeds, but projection
         // publication never happens. Artifact and narrow status remain terminal.
-        $newWork = $store->append(RunEvent::forAppend($child, 2, 'turn_advanced'));
+        $newWork = PreparedEventStoreSeeder::append($store, RunEvent::forAppend($child, 2, 'turn_advanced'));
         $reader = self::getContainer()->get(RunOperationalStatusReaderInterface::class);
         $this->assertSame(RunStatus::Completed, $reader->findOperationalStatus($child)?->status);
         $this->assertGreaterThan($terminal->seq, $newWork->seq);
@@ -633,11 +634,11 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         $artifact = 'agent_allocation_holes';
         $this->seedTerminalChild($parent, $artifact, $child, latestInputTokens: 10, contextWindow: 200_000);
         $store = self::getContainer()->get(AgentChildRunEventStoreFactory::class)->create($parent, $child, $artifact);
-        $first = $store->append(RunEvent::forAppend($child, 1, 'run_started'));
+        $first = PreparedEventStoreSeeder::append($store, RunEvent::forAppend($child, 1, 'run_started'));
         $path = self::getContainer()->get(SessionAgentArtifactPathResolver::class)->eventsPath($parent, $artifact);
         $allocator = new FileRunSequenceAllocator();
         $allocator->allocateBlock(FileRunSequenceAllocator::counterPathForEventsLog($path), 5);
-        $terminal = $store->append(RunEvent::forAppend($child, 1, 'agent_end', ['status' => 'completed']));
+        $terminal = PreparedEventStoreSeeder::append($store, RunEvent::forAppend($child, 1, 'agent_end', ['status' => 'completed']));
         $this->assertSame($first->seq + 6, $terminal->seq);
         $allocated = $allocator->allocateBlock(FileRunSequenceAllocator::counterPathForEventsLog($path), 3);
         $this->assertGreaterThan($terminal->seq, $allocated[0]);

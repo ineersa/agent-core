@@ -113,27 +113,16 @@ final class RecordingEventStore implements PreparedTransitionEventStoreInterface
 
     public int $rangeForCalls = 0;
 
-    public function append(RunEvent $event): RunEvent
-    {
-        $persisted = new RunEvent($event->runId, $event->seq > 0 ? $event->seq : 1, $event->turnNo, $event->type, $event->payload, $event->createdAt);
-        $this->appended[] = $persisted;
-
-        return $persisted;
-    }
-
-    public function appendMany(array $events): array
+    public function appendTransition(array $events, array $work): array
     {
         $out = [];
         foreach ($events as $event) {
-            $out[] = $this->append($event);
+            $persisted = new RunEvent($event->runId, $event->seq > 0 ? $event->seq : 1, $event->turnNo, $event->type, $event->payload, $event->createdAt);
+            $this->appended[] = $persisted;
+            $out[] = $persisted;
         }
 
         return $out;
-    }
-
-    public function appendTransition(array $events, array $work): array
-    {
-        return $this->appendMany($events);
     }
 
     public function verifiedPendingTransition(string $runId): ?\Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO

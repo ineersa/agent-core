@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Session;
 
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
+use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
@@ -62,7 +63,7 @@ final class SessionRunEventStoreSequencingTest extends TestCase
         $counterPath = FileRunSequenceAllocator::counterPathForEventsLog($eventsPath);
         file_put_contents($counterPath, "5\n");
 
-        $persisted = $this->store->append(new RunEvent(
+        $persisted = PreparedEventStoreSeeder::append($this->store, new RunEvent(
             runId: $runId,
             seq: 0,
             turnNo: 1,
@@ -86,12 +87,12 @@ final class SessionRunEventStoreSequencingTest extends TestCase
         $counterPath = FileRunSequenceAllocator::counterPathForEventsLog($eventsPath);
         $this->assertFileDoesNotExist($counterPath);
 
-        $first = $this->store->append(new RunEvent($runId, 0, 2, 'tool_execution_start', []));
+        $first = PreparedEventStoreSeeder::append($this->store, new RunEvent($runId, 0, 2, 'tool_execution_start', []));
         $this->assertSame(9, $first->seq);
         $this->assertFileExists($counterPath);
         $this->assertSame("9\n", file_get_contents($counterPath));
 
-        $second = $this->store->append(new RunEvent($runId, 0, 2, 'tool_execution_end', []));
+        $second = PreparedEventStoreSeeder::append($this->store, new RunEvent($runId, 0, 2, 'tool_execution_end', []));
         $this->assertSame(10, $second->seq);
     }
 
@@ -102,7 +103,7 @@ final class SessionRunEventStoreSequencingTest extends TestCase
         TestDirectoryIsolation::ensureDirectory(\dirname($eventsPath));
         file_put_contents(FileRunSequenceAllocator::counterPathForEventsLog($eventsPath), "2\n");
 
-        $persisted = $this->store->appendMany([
+        $persisted = PreparedEventStoreSeeder::appendMany($this->store, [
             new RunEvent($runId, 0, 1, 'tool_execution_start', []),
             new RunEvent($runId, 0, 1, 'tool_execution_update', []),
             new RunEvent($runId, 0, 1, 'tool_execution_end', []),

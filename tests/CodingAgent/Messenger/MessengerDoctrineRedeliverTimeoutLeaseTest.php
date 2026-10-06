@@ -18,6 +18,7 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
+use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Config\AppConfig;
@@ -183,7 +184,7 @@ final class MessengerDoctrineRedeliverTimeoutLeaseTest extends IsolatedKernelTes
                     'operation_idempotency_key' => $key,
                 ]],
             ]) as $event) {
-                $eventStore->append($event);
+                PreparedEventStoreSeeder::append($eventStore, $event);
             }
 
             $operations = self::getContainer()->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class);
@@ -232,7 +233,7 @@ final class MessengerDoctrineRedeliverTimeoutLeaseTest extends IsolatedKernelTes
                 executionOperations: self::getContainer()->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class),
                 toolAuthorization: self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\ToolExecutionAuthorization::class),
                 historyReplayFilter: self::getContainer()->get(\Ineersa\CodingAgent\Session\History\HistoryReplayFilter::class),
-                runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit($active, $eventStore, new StepDispatcher($commandBus, $executionBus), new NullLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore()), actionValidator: new \Ineersa\AgentCore\Application\Handler\CoordinationActionValidator([$redrive])),
+                runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit($active, $eventStore, new StepDispatcher($commandBus, $executionBus), new NullLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()), actionValidator: new \Ineersa\AgentCore\Application\Handler\CoordinationActionValidator([$redrive])),
             );
 
             $result = $repair->repair($runId, true, \Symfony\Component\Uid\Uuid::v4()->toRfc4122());

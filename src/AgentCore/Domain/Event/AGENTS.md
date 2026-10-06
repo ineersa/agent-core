@@ -7,7 +7,7 @@
 - `RunEvent` — persisted event envelope
 - `RunEventTypeEnum` — **source of truth** for all AgentCore event type strings (lifecycle, pipeline, compaction, linear-history metadata). Prefer enum cases over string literals.
 - `EventFactory` — constructs typed events for handlers
-- After commit, persistence goes through `EventStoreInterface` (see `RunCommit`)
+- After commit, persistence goes through `PreparedTransitionEventStoreInterface::appendTransition()` (see `RunCommit`)
 - After-turn hooks: `HookDispatcher` aggregates typed `HookSubscriberInterface` subscribers in registration order (no EventDispatcher bridge)
 
 ## Lifecycle stream (ordered core)

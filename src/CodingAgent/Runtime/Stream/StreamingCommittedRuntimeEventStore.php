@@ -22,20 +22,6 @@ final class StreamingCommittedRuntimeEventStore implements \Ineersa\AgentCore\Co
     ) {
     }
 
-    public function append(RunEvent $event): RunEvent
-    {
-        $persisted = $this->inner->append($event);
-
-        return $persisted;
-    }
-
-    public function appendMany(array $events): array
-    {
-        $persisted = $this->inner->appendMany($events);
-
-        return $persisted;
-    }
-
     public function appendTransition(array $events, array $work): array
     {
         if (!$this->inner instanceof \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface) {

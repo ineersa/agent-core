@@ -12,6 +12,19 @@ use Symfony\Component\Process\Process;
 
 final class JsonlAppendJournalTest extends TestCase
 {
+    public function testAppendRejectsEmptyWorkDescriptor(): void
+    {
+        $dir = TestDirectoryIsolation::createProjectTempDir('append-empty-work');
+        try {
+            $path = $dir.'/events.jsonl';
+            $this->expectException(\InvalidArgumentException::class);
+            $this->expectExceptionMessage('Canonical append requires captured owner coordination work.');
+            (new JsonlAppendJournal())->append($path, ["x\n"], []);
+        } finally {
+            TestDirectoryIsolation::removeDirectory($dir);
+        }
+    }
+
     #[DataProvider('matchingPrefixes')]
     public function testSeparateProcessCompletesExactPreparedBytesWithoutFinalizingCoordination(int $prefix): void
     {
@@ -107,7 +120,7 @@ final class JsonlAppendJournalTest extends TestCase
             $journal->append($path, ["prepared\n"], ['actions' => []]);
             $intent = file_get_contents($path.'.append.pending.json');
             try {
-                $journal->append($path, ["different\n"]);
+                $journal->append($path, ["different\n"], ['actions' => []]);
                 $this->fail('Pending append must block another append.');
             } catch (\RuntimeException $exception) {
                 $this->assertStringContainsString('existing pending append', $exception->getMessage());

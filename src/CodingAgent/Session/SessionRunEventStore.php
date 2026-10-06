@@ -18,7 +18,7 @@ use Symfony\Component\Lock\LockFactory;
  * .hatfield/sessions/<runId>/events.jsonl.
  *
  * Sequence allocation uses a per-run {@see FileRunSequenceAllocator::COUNTER_BASENAME} file.
- * events.jsonl is never scanned during normal append (only bootstrap when cursor is missing).
+ * events.jsonl is never scanned during normal prepared transition append (only bootstrap when cursor is missing).
  *
  * Append/sequence/bootstrap mechanics and the decode/denormalize/schema/sort
  * primitives are delegated to {@see JsonlRunEventLog}; this class owns the
@@ -46,31 +46,6 @@ final class SessionRunEventStore implements \Ineersa\AgentCore\Contract\Prepared
     ) {
         $this->sessionsBasePath = $hatfieldSessionStore->resolveSessionsBasePath();
         $this->eventLog = new JsonlRunEventLog($eventPayloadNormalizer, $lockFactory, $sequenceAllocator, $bootstrapReader);
-    }
-
-    public function append(RunEvent $event): RunEvent
-    {
-        $path = $this->eventsPath($event->runId);
-
-        return $this->eventLog->appendMany($path, events: [$event])[0];
-    }
-
-    public function appendMany(array $events): array
-    {
-        if ([] === $events) {
-            return [];
-        }
-
-        $runId = $events[0]->runId;
-        foreach ($events as $event) {
-            if ($event->runId !== $runId) {
-                throw new \InvalidArgumentException('appendMany requires all events to share the same runId.');
-            }
-        }
-
-        $path = $this->eventsPath($runId);
-
-        return $this->eventLog->appendMany($path, $events);
     }
 
     public function appendTransition(array $events, array $work): array

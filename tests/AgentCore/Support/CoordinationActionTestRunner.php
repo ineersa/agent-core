@@ -12,7 +12,6 @@ use Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO;
 use Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO;
 use Ineersa\AgentCore\Domain\Coordination\MarkCommandAppliedDTO;
 use Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO;
-use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use Symfony\Component\Messenger\MessageBusInterface;
 
 final class CoordinationActionTestRunner

@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
 use Ineersa\CodingAgent\Config\ModelResolver;
@@ -77,7 +78,7 @@ final class InProcessAgentSessionClientEventsTest extends IsolatedKernelTestCase
 
         $this->assertSame([], iterator_to_array($this->client()->events(self::RUN_ID, 3)));
 
-        self::$eventStore->append(new RunEvent(self::RUN_ID, 5, 1, RunEventTypeEnum::AgentEnd->value, ['status' => 'completed']));
+        PreparedEventStoreSeeder::append(self::$eventStore, new RunEvent(self::RUN_ID, 5, 1, RunEventTypeEnum::AgentEnd->value, ['status' => 'completed']));
         $followUp = iterator_to_array($this->client()->events(self::RUN_ID, 3));
 
         $this->assertSame([5], array_map(static fn (RuntimeEvent $event): int => $event->seq, $followUp));
@@ -197,22 +198,6 @@ final class ReverseOnlyEventStore implements EventStoreInterface
         $this->allForCalls = 0;
         $this->reverseForCalls = 0;
         $this->reverseForYieldedEvents = 0;
-    }
-
-    public function append(RunEvent $event): RunEvent
-    {
-        $this->events[] = $event;
-
-        return $event;
-    }
-
-    public function appendMany(array $events): array
-    {
-        foreach ($events as $event) {
-            $this->append($event);
-        }
-
-        return $events;
     }
 
     public function latestSequenceFor(string $runId): ?int

@@ -26,6 +26,7 @@ use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
+use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
@@ -367,7 +368,7 @@ final class WorkerFailedEventSubscriberTest extends IsolatedKernelTestCase
         $store->expects($this->once())->method('appendTransition')->willReturnCallback(static fn (array $events): array => [new RunEvent($events[0]->runId, 1, $events[0]->turnNo, $events[0]->type, $events[0]->payload)]);
         $logger = new TestLogger();
         $bus = new TestMessageBus();
-        $commit = new RunCommit($active, $store, new StepDispatcher($bus, $bus), $logger, $collector, new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore()), new HookDispatcher([$hook]));
+        $commit = new RunCommit($active, $store, new StepDispatcher($bus, $bus), $logger, $collector, new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()), new HookDispatcher([$hook]));
         $subscriber = new WorkerFailedEventSubscriber($active, $commit, new RunLockManager(new LockFactory(new InMemoryStore())), $logger);
         $event = $this->createFinalFailedEvent(new \RuntimeException('handler failed'));
         $subscriber->onWorkerMessageFailed($event);
@@ -383,30 +384,31 @@ final class WorkerFailedEventSubscriberTest extends IsolatedKernelTestCase
         $container = self::getContainer();
         $run = $container->get(HatfieldSessionStore::class)->createSession('failed auto compaction');
         $store = $container->get(PreparedTransitionEventStoreInterface::class);
-        $store->append(RunEvent::forAppend($run, 1, 'llm_step_completed', ['usage' => ['input_tokens' => 12000]]));
+        PreparedEventStoreSeeder::append($store, RunEvent::forAppend($run, 1, 'llm_step_completed', ['usage' => ['input_tokens' => 12000]]));
         $active = new TestActiveRunContext();
         $state = new RunState($run, RunStatus::Running, turnNo: 1, lastSeq: 1, model: 'test-model', messages: [new AgentMessage('user', [['type' => 'text', 'text' => 'fresh content']])]);
         $active->loadRecovered($state);
         $bus = new TestMessageBus();
         $compaction = $this->createStub(\Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface::class);
         $compaction->method('prepare')->willReturn(\Ineersa\AgentCore\Contract\Compaction\CompactionPrepareResult::ready(messagesToSummarize: $state->messages, retainedTailMessages: [], tokenEstimateBefore: 12000, messagesCompacted: 1, messagesRetained: 0, firstRetainedIndex: 1, priorSummaryPresent: false));
-        $auto = new \Ineersa\CodingAgent\Compaction\AutoCompactionHookSubscriber(new \Ineersa\CodingAgent\Compaction\ProviderContextUsageResolver($store), new \Ineersa\CodingAgent\Config\CompactionConfig(autoEnabled: true, compactAfterTokens: 11000, keepRecentTokens: 10), $this->createStub(\Ineersa\AgentCore\Contract\Model\RunModelResolverInterface::class), $bus, $compaction, \Ineersa\CodingAgent\Tests\Support\StubRunRelationshipReader::topLevel($run));
+        $auto = new \Ineersa\CodingAgent\Compaction\AutoCompactionHookSubscriber(new \Ineersa\CodingAgent\Compaction\ProviderContextUsageResolver($store), new \Ineersa\CodingAgent\Config\CompactionConfig(autoEnabled: true, compactAfterTokens: 11000, keepRecentTokens: 10), $this->createStub(\Ineersa\AgentCore\Contract\Model\RunModelResolverInterface::class), $compaction, \Ineersa\CodingAgent\Tests\Support\StubRunRelationshipReader::topLevel($run));
         $cleanup = $this->createMock(HookSubscriberInterface::class);
         $cleanup->expects($this->once())->method('handleAfterTurnCommit')->willReturnCallback(function (AfterTurnCommitHookContext $context): AfterTurnCommitHookContext {
             $this->assertSame(RunStatus::Failed, $context->runState->status);
 
             return $context;
         });
-        $commit = new RunCommit($active, $store, new StepDispatcher($bus, $bus), new NullLogger(), new ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore()), new HookDispatcher([$auto, $cleanup]));
+        $commit = new RunCommit($active, $store, new StepDispatcher($bus, $bus), new NullLogger(), new ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()), new HookDispatcher([$auto, $cleanup]));
         $subscriber = new WorkerFailedEventSubscriber($active, $commit, $container->get(RunLockManager::class), new NullLogger());
         $subscriber->onWorkerMessageFailed(new WorkerMessageFailedEvent(new Envelope(new StartRun($run, 0, 'failed-start', 1, 'failed-start', new StartRunPayload('', [], new RunMetadata(model: 'test-model')))), 'run_control', new \RuntimeException('permanent failure')));
         $this->assertSame(RunStatus::Failed, $active->requireLoaded($run)->status);
         $this->assertSame([], $bus->messages);
-        // Positive control uses the same usage and partition, with successful completion.
+        // Positive control uses the same usage and partition with successful completion.
         $completed = $state->with(['status' => RunStatus::Completed]);
-        $auto->handleAfterTurnCommit(AfterTurnCommitHookContext::fromRunState($completed, [RunEvent::forAppend($run, 1, 'agent_end', ['reason' => 'completed'])], 0));
-        $this->assertCount(1, $bus->messages);
-        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\CompactRun::class, $bus->messages[0]);
+        $actions = $auto->prepareAfterTurnCommit(AfterTurnCommitHookContext::fromRunState($completed, [RunEvent::forAppend($run, 1, 'agent_end', ['reason' => 'completed'])], 0), $completed->lastSeq);
+        $this->assertCount(1, $actions);
+        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO::class, $actions[0]);
+        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\CompactRun::class, $actions[0]->message);
     }
 
     private function subscriber(ActiveRunContextInterface $context, PreparedTransitionEventStoreInterface $store, LoggerInterface $logger, ?RunLockManager $lockManager = null): WorkerFailedEventSubscriber
@@ -414,7 +416,7 @@ final class WorkerFailedEventSubscriberTest extends IsolatedKernelTestCase
         $bus = new TestMessageBus();
 
         return new WorkerFailedEventSubscriber($context,
-            new RunCommit($context, $store, new StepDispatcher($bus, $bus), $logger, new ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore())),
+            new RunCommit($context, $store, new StepDispatcher($bus, $bus), $logger, new ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore())),
             $lockManager ?? new RunLockManager(new LockFactory(new InMemoryStore())), $logger);
     }
 

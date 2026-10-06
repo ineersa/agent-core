@@ -62,40 +62,6 @@ final class AgentChildRunEventStore implements \Ineersa\AgentCore\Contract\Prepa
         $this->eventLog = new JsonlRunEventLog($eventPayloadNormalizer, $lockFactory, $sequenceAllocator, $bootstrapReader);
     }
 
-    public function append(RunEvent $event): RunEvent
-    {
-        if ($event->runId !== $this->agentRunId) {
-            throw new \RuntimeException(\sprintf('RunEvent integrity error: embedded runId "%s" does not match bound agentRunId "%s".', $event->runId, $this->agentRunId));
-        }
-
-        return $this->eventLog->appendMany(
-            path: $this->eventsPath(),
-            events: [$event],
-            runLabel: 'child run',
-            dirMode: SessionAgentArtifactPathResolver::DIR_PERMISSIONS,
-        )[0];
-    }
-
-    public function appendMany(array $events): array
-    {
-        if ([] === $events) {
-            return [];
-        }
-
-        foreach ($events as $event) {
-            if ($event->runId !== $this->agentRunId) {
-                throw new \RuntimeException(\sprintf('RunEvent integrity error: embedded runId "%s" does not match bound agentRunId "%s".', $event->runId, $this->agentRunId));
-            }
-        }
-
-        return $this->eventLog->appendMany(
-            path: $this->eventsPath(),
-            events: $events,
-            runLabel: 'child run',
-            dirMode: SessionAgentArtifactPathResolver::DIR_PERMISSIONS,
-        );
-    }
-
     /**
      * Recovery-only tail read of durable child events.jsonl (not for steady-state supervision).
      *

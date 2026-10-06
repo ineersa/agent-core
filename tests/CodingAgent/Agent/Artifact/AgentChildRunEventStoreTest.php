@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Agent\Artifact;
 
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
+use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStore;
 use Ineersa\CodingAgent\Config\AppConfig;
@@ -78,7 +79,7 @@ final class AgentChildRunEventStoreTest extends TestCase
             payload: ['prompt' => 'Explore codebase'],
         );
 
-        $store->append($event);
+        PreparedEventStoreSeeder::append($store, $event);
 
         $events = $store->allFor($agentRunId);
         $this->assertCount(1, $events);
@@ -91,9 +92,9 @@ final class AgentChildRunEventStoreTest extends TestCase
     public function testRangeForStreamsBoundedChildEvents(): void
     {
         $store = $this->createStore('parent-range', 'child-range', 'scout-range');
-        $store->append(new RunEvent(runId: 'child-range', seq: 1, turnNo: 0, type: 'run_started'));
-        $store->append(new RunEvent(runId: 'child-range', seq: 2, turnNo: 1, type: 'turn_advanced'));
-        $store->append(new RunEvent(runId: 'child-range', seq: 3, turnNo: 2, type: 'agent_end'));
+        PreparedEventStoreSeeder::append($store, new RunEvent(runId: 'child-range', seq: 1, turnNo: 0, type: 'run_started'));
+        PreparedEventStoreSeeder::append($store, new RunEvent(runId: 'child-range', seq: 2, turnNo: 1, type: 'turn_advanced'));
+        PreparedEventStoreSeeder::append($store, new RunEvent(runId: 'child-range', seq: 3, turnNo: 2, type: 'agent_end'));
 
         $events = iterator_to_array($store->rangeFor('child-range', 2, 3));
 
@@ -107,8 +108,8 @@ final class AgentChildRunEventStoreTest extends TestCase
         $agentRunId = 'child-range';
         $artifactId = 'scout-range';
         $store = $this->createStore($parentRunId, $agentRunId, $artifactId);
-        $store->append(new RunEvent(runId: $agentRunId, seq: 1, turnNo: 0, type: 'run_started'));
-        $store->append(new RunEvent(runId: $agentRunId, seq: 2, turnNo: 1, type: 'turn_advanced'));
+        PreparedEventStoreSeeder::append($store, new RunEvent(runId: $agentRunId, seq: 1, turnNo: 0, type: 'run_started'));
+        PreparedEventStoreSeeder::append($store, new RunEvent(runId: $agentRunId, seq: 2, turnNo: 1, type: 'turn_advanced'));
         file_put_contents(
             "{$this->projectDir}/.hatfield/sessions/{$parentRunId}/artifacts/agents/{$artifactId}/events.jsonl",
             "{\"partial\":\n",
@@ -159,7 +160,7 @@ final class AgentChildRunEventStoreTest extends TestCase
         $agentRunId = 'child-latest';
         $artifactId = 'scout-latest';
         $store = $this->createStore($parentRunId, $agentRunId, $artifactId);
-        $last = $store->append(new RunEvent(runId: $agentRunId, seq: 1, turnNo: 0, type: 'run_started'));
+        $last = PreparedEventStoreSeeder::append($store, new RunEvent(runId: $agentRunId, seq: 1, turnNo: 0, type: 'run_started'));
         $path = "{$this->projectDir}/.hatfield/sessions/{$parentRunId}/artifacts/agents/{$artifactId}/events.jsonl";
         file_put_contents($path, json_encode([
             'schema_version' => '999.0',
@@ -179,7 +180,7 @@ final class AgentChildRunEventStoreTest extends TestCase
         $agentRunId = 'child-latest';
         $artifactId = 'scout-latest';
         $store = $this->createStore($parentRunId, $agentRunId, $artifactId);
-        $store->append(new RunEvent(runId: $agentRunId, seq: 1, turnNo: 0, type: 'run_started'));
+        PreparedEventStoreSeeder::append($store, new RunEvent(runId: $agentRunId, seq: 1, turnNo: 0, type: 'run_started'));
         $path = "{$this->projectDir}/.hatfield/sessions/{$parentRunId}/artifacts/agents/{$artifactId}/events.jsonl";
         file_put_contents($path, '{"partial":', \FILE_APPEND);
 
@@ -196,7 +197,7 @@ final class AgentChildRunEventStoreTest extends TestCase
 
         $store = $this->createStore($parentRunId, $agentRunId, $artifactId);
 
-        $store->append(new RunEvent(
+        PreparedEventStoreSeeder::append($store, new RunEvent(
             runId: $agentRunId,
             seq: 1,
             turnNo: 0,
@@ -219,7 +220,7 @@ final class AgentChildRunEventStoreTest extends TestCase
 
         $store = $this->createStore($parentRunId, $agentRunId, $artifactId);
 
-        $store->append(new RunEvent(
+        PreparedEventStoreSeeder::append($store, new RunEvent(
             runId: $agentRunId,
             seq: 1,
             turnNo: 0,
@@ -239,10 +240,10 @@ final class AgentChildRunEventStoreTest extends TestCase
 
         $store = $this->createStore($parentRunId, $agentRunId, $artifactId);
 
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('integrity error');
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Child prepared work identity mismatch.');
 
-        $store->append(new RunEvent(
+        PreparedEventStoreSeeder::append($store, new RunEvent(
             runId: 'wrong-run-id',
             seq: 1,
             turnNo: 0,
@@ -270,7 +271,7 @@ final class AgentChildRunEventStoreTest extends TestCase
             new RunEvent(runId: $agentRunId, seq: 2, turnNo: 1, type: 'tool_execution_start'),
         ];
 
-        $store->appendMany($events);
+        PreparedEventStoreSeeder::appendMany($store, $events);
 
         $retrieved = $store->allFor($agentRunId);
         $this->assertCount(3, $retrieved);
@@ -294,10 +295,10 @@ final class AgentChildRunEventStoreTest extends TestCase
         ];
 
         try {
-            $store->appendMany($events);
-            $this->fail('Expected RuntimeException for mismatched runId');
-        } catch (\RuntimeException $exception) {
-            $this->assertStringContainsString('does not match bound agentRunId', $exception->getMessage());
+            PreparedEventStoreSeeder::appendMany($store, $events);
+            $this->fail('Expected InvalidArgumentException for mismatched runId');
+        } catch (\InvalidArgumentException $exception) {
+            $this->assertStringContainsString('PreparedEventStoreSeeder requires one run identity', $exception->getMessage());
         }
 
         $this->assertCount(0, $store->allFor($agentRunId));
@@ -310,8 +311,8 @@ final class AgentChildRunEventStoreTest extends TestCase
         $storeA = $this->createStore($parentRunId, 'child-a', 'scout-001');
         $storeB = $this->createStore($parentRunId, 'child-b', 'scout-002');
 
-        $storeA->append(new RunEvent(runId: 'child-a', seq: 1, turnNo: 0, type: 'run_started'));
-        $storeB->append(new RunEvent(runId: 'child-b', seq: 1, turnNo: 0, type: 'run_started'));
+        PreparedEventStoreSeeder::append($storeA, new RunEvent(runId: 'child-a', seq: 1, turnNo: 0, type: 'run_started'));
+        PreparedEventStoreSeeder::append($storeB, new RunEvent(runId: 'child-b', seq: 1, turnNo: 0, type: 'run_started'));
 
         // Each store only returns its own events
         $this->assertCount(1, $storeA->allFor('child-a'));
@@ -498,7 +499,7 @@ final class AgentChildRunEventStoreTest extends TestCase
         mkdir(\dirname($path), 0775, true);
         file_put_contents($path, json_encode($normalizer->normalize($agentRunId, 99, 0, 'run_started', []), \JSON_THROW_ON_ERROR)."\n", \FILE_APPEND);
 
-        $persisted = $store->append(new RunEvent(runId: $agentRunId, seq: 0, turnNo: 1, type: 'agent_end'));
+        $persisted = PreparedEventStoreSeeder::append($store, new RunEvent(runId: $agentRunId, seq: 0, turnNo: 1, type: 'agent_end'));
         $this->assertSame(100, $persisted->seq);
 
         $events = $store->allFor($agentRunId);
@@ -509,9 +510,9 @@ final class AgentChildRunEventStoreTest extends TestCase
     {
         $logger = new TestLogger();
         $store = $this->createStore('parent-phys', 'child-phys', 'scout-phys', $logger);
-        $store->append(new RunEvent(runId: 'child-phys', seq: 1, turnNo: 1, type: 'run_started', payload: ['n' => 1]));
-        $store->append(new RunEvent(runId: 'child-phys', seq: 2, turnNo: 2, type: 'turn_advanced', payload: ['n' => 2]));
-        $store->append(new RunEvent(runId: 'child-phys', seq: 3, turnNo: 3, type: 'agent_end', payload: ['n' => 3]));
+        PreparedEventStoreSeeder::append($store, new RunEvent(runId: 'child-phys', seq: 1, turnNo: 1, type: 'run_started', payload: ['n' => 1]));
+        PreparedEventStoreSeeder::append($store, new RunEvent(runId: 'child-phys', seq: 2, turnNo: 2, type: 'turn_advanced', payload: ['n' => 2]));
+        PreparedEventStoreSeeder::append($store, new RunEvent(runId: 'child-phys', seq: 3, turnNo: 3, type: 'agent_end', payload: ['n' => 3]));
 
         $path = "{$this->projectDir}/.hatfield/sessions/parent-phys/artifacts/agents/scout-phys/events.jsonl";
         $archiveBytes = filesize($path);

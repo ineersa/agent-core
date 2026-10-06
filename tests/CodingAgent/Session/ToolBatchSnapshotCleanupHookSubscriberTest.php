@@ -144,7 +144,7 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
         $active = new TestActiveRunContext();
         $previous = RunState::queued('run-1');
         $active->loadRecovered($previous);
-        $commit = new RunCommit(sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore()),
+        $commit = new RunCommit(sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
             activeRunContext: $active, eventStore: $eventStore,
             stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()), logger: new TestLogger(),
             toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(),
@@ -182,7 +182,7 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
             new ToolBatchSnapshotCleanupHookSubscriber($store, new TestLogger(), $this->createStub(\Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface::class)),
         ]);
 
-        return new RunCommit(sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore()),
+        return new RunCommit(sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
             activeRunContext: $activeRunContext,
             eventStore: new CleanupHookSubscriberNoOpEventStore(),
             stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
@@ -197,9 +197,9 @@ final class CleanupHookSubscriberNoOpEventStore implements PreparedTransitionEve
 {
     public function appendTransition(array $events, array $work): array
     {
-        $this->assertTransitionReady($events[0]->runId);
+        $this->assertTransitionReady($events[0]->runId ?? $work['run_id']);
 
-        return $this->appendMany($events);
+        return $events;
     }
 
     public function assertTransitionReady(string $runId): void
@@ -218,16 +218,6 @@ final class CleanupHookSubscriberNoOpEventStore implements PreparedTransitionEve
 
     public function finalizeTransition(string $runId): void
     {
-    }
-
-    public function append(RunEvent $event): RunEvent
-    {
-        return $event;
-    }
-
-    public function appendMany(array $events): array
-    {
-        return $events;
     }
 
     public function latestSequenceFor(string $runId): ?int

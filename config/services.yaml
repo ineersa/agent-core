@@ -1209,7 +1209,7 @@ services:
 
   # ─── AGENT-05 Subagent tool storage routing ─────────────────────────
 
-  # ChildAwareEventStore — delegates EventStoreInterface between parent-scoped
+  # ChildAwareEventStore — delegates prepared transitions between parent-scoped
   # SessionRunEventStore (parent runs) and AgentChildRunEventStore (child runs).
 
   Ineersa\CodingAgent\Session\Contract\RunSequenceAllocatorInterface:

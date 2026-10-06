@@ -39,8 +39,8 @@ final class JsonlRunEventLog
     /**
      * Allocates a contiguous seq block and appends already-validated events under the run lock.
      *
-     * @param list<RunEvent>            $events
-     * @param array<string, mixed>|null $work
+     * @param list<RunEvent>       $events
+     * @param array<string, mixed> $work
      *
      * @return list<RunEvent>
      */
@@ -49,7 +49,7 @@ final class JsonlRunEventLog
         array $events,
         string $runLabel = 'run',
         ?int $dirMode = null,
-        ?array $work = null,
+        array $work = [],
     ): array {
         $runId = $events[0]->runId ?? $work['run_id'] ?? null;
         if (!\is_string($runId) || '' === $runId) {
@@ -60,19 +60,20 @@ final class JsonlRunEventLog
 
         try {
             (new JsonlAppendJournal())->assertReady($path);
-            if (null !== $work) {
-                $predecessorSeq = 0;
-                foreach ($this->reverseLines($path) as $line) {
-                    $predecessor = $this->decodeLine($line);
-                    if (!\is_array($predecessor) || ($predecessor['run_id'] ?? null) !== $runId || !\is_int($predecessor['seq'] ?? null)) {
-                        throw new \RuntimeException('Invalid canonical transition predecessor identity.');
-                    }
-                    $predecessorSeq = $predecessor['seq'];
-                    break;
+            if ([] === $work) {
+                throw new \InvalidArgumentException('Canonical append requires captured owner coordination work.');
+            }
+            $predecessorSeq = 0;
+            foreach ($this->reverseLines($path) as $line) {
+                $predecessor = $this->decodeLine($line);
+                if (!\is_array($predecessor) || ($predecessor['run_id'] ?? null) !== $runId || !\is_int($predecessor['seq'] ?? null)) {
+                    throw new \RuntimeException('Invalid canonical transition predecessor identity.');
                 }
-                if (($work['predecessor_seq'] ?? null) !== $predecessorSeq) {
-                    throw new \RuntimeException('Canonical transition predecessor sequence changed.');
-                }
+                $predecessorSeq = $predecessor['seq'];
+                break;
+            }
+            if (($work['predecessor_seq'] ?? null) !== $predecessorSeq) {
+                throw new \RuntimeException('Canonical transition predecessor sequence changed.');
             }
             $seqBlock = [] === $events ? [] : $this->sequenceAllocator->allocateBlock(
                 FileRunSequenceAllocator::counterPathForEventsLog($path),

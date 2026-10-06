@@ -28,6 +28,7 @@ use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader;
+use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory;
@@ -94,7 +95,7 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
         $this->assertSame($started[0]->runId, $child->childRunId);
         $store = $container->get(AgentChildRunEventStoreFactory::class)->create($parent, $child->childRunId, $child->artifactId);
         $metadata = $container->get(\Symfony\Component\Serializer\SerializerInterface::class)->normalize($started[0]->metadata);
-        $store->append(RunEvent::forAppend($child->childRunId, 1, 'run_started', ['payload' => ['metadata' => $metadata]]));
+        PreparedEventStoreSeeder::append($store, RunEvent::forAppend($child->childRunId, 1, 'run_started', ['payload' => ['metadata' => $metadata]]));
 
         $frames = [];
         $connector = $this->createMock(CodexWebSocketConnectorInterface::class);
@@ -161,7 +162,7 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
             $this->assertSame($frames[0]['prompt_cache_key'], $frames[2]['prompt_cache_key']);
             $this->assertArrayNotHasKey('previous_response_id', $frames[2]);
 
-            $terminal = $store->append(RunEvent::forAppend($child->childRunId, 1, 'agent_end', ['reason' => 'completed']));
+            $terminal = PreparedEventStoreSeeder::append($store, RunEvent::forAppend($child->childRunId, 1, 'agent_end', ['reason' => 'completed']));
             $container->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Recovery\DeferredSubagentBatchRecoveryService::class)->recover($launch->deferredId);
             $container->get(RunOperationalProjectionRepository::class)->replace(new RunState(
                 $child->childRunId, RunStatus::Completed, parentRunId: $parent, lastSeq: $terminal->seq,
@@ -281,7 +282,7 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
     {
         $childRunId = 'child-fork-nested-1';
         $eventStore = self::getContainer()->get(EventStoreInterface::class);
-        $eventStore->append(new RunEvent(
+        PreparedEventStoreSeeder::append($eventStore, new RunEvent(
             runId: $childRunId,
             seq: 1,
             turnNo: 1,
@@ -366,14 +367,14 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
             $metadata['model'] = $model;
         }
         $eventStore = self::getContainer()->get(EventStoreInterface::class);
-        $eventStore->append(new RunEvent(
+        PreparedEventStoreSeeder::append($eventStore, new RunEvent(
             runId: $runId,
             seq: 1,
             turnNo: 0,
             type: \Ineersa\AgentCore\Domain\Event\RunEventTypeEnum::RunStarted->value,
             payload: ['payload' => ['metadata' => $metadata, 'messages' => []]],
         ));
-        $eventStore->append(new RunEvent(
+        PreparedEventStoreSeeder::append($eventStore, new RunEvent(
             runId: $runId,
             seq: 2,
             turnNo: $turnNo,

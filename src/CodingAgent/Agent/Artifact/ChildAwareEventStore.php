@@ -29,37 +29,6 @@ final class ChildAwareEventStore implements \Ineersa\AgentCore\Contract\Prepared
     ) {
     }
 
-    public function append(RunEvent $event): RunEvent
-    {
-        $childStore = $this->resolveChildStore($event->runId);
-        if (null !== $childStore) {
-            return $childStore->append($event);
-        }
-
-        return $this->parentStore->append($event);
-    }
-
-    public function appendMany(array $events): array
-    {
-        if ([] === $events) {
-            return [];
-        }
-
-        $runId = $events[0]->runId;
-        foreach ($events as $event) {
-            if ($event->runId !== $runId) {
-                throw new \InvalidArgumentException('appendMany requires all events to share the same runId.');
-            }
-        }
-
-        $childStore = $this->resolveChildStore($runId);
-        if (null !== $childStore) {
-            return $childStore->appendMany($events);
-        }
-
-        return $this->parentStore->appendMany($events);
-    }
-
     public function appendTransition(array $events, array $work): array
     {
         $store = $this->resolveChildStore($events[0]->runId ?? $work['run_id']) ?? $this->parentStore;
