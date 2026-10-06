@@ -61,19 +61,20 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         $this->toolExecutionEndPayloadCodec = new ToolExecutionEndPayloadCodec($this->serializer);
     }
 
-    public function repair(string $runId, bool $apply, string $commandId): RepairResult
+    /** @param list<object> $postCommitActions */
+    public function repair(string $runId, bool $apply, string $commandId, array $postCommitActions = []): RepairResult
     {
-        return $this->lockManager->synchronized($runId, function () use ($runId, $apply, $commandId): RepairResult {
+        return $this->lockManager->synchronized($runId, function () use ($runId, $apply, $commandId, $postCommitActions): RepairResult {
             $source = \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance::actionIdentity(\Ineersa\CodingAgent\Application\Message\RepairSession::class, $runId, $commandId);
             $this->runCommit->assertTransitionReady($runId);
             if ($apply && $this->runCommit->sourceIdentityAlreadyAccepted($source)) {
                 return $this->noRepairResult('Repair delivery was already accepted.');
             }
-            $result = $this->doRepair($runId, $apply, $commandId);
+            $result = $this->doRepair($runId, $apply, $commandId, leadingActions: $postCommitActions);
             if ($apply && !\in_array($result->refusalReason, [SessionRepairRefusalReasonEnum::NoEvents, SessionRepairRefusalReasonEnum::DuplicateSequences], true)
                 && !$this->runCommit->sourceIdentityAlreadyAccepted($source)) {
                 $state = $this->activeRunContext->requireLoaded($runId);
-                $this->runCommit->commit($state, $state, [], dispatchAfterTurnHooks: false, sourceIdentity: $source);
+                $this->runCommit->commit($state, $state, [], dispatchAfterTurnHooks: false, postCommitActions: $postCommitActions, sourceIdentity: $this->repairSource($runId, $commandId, $postCommitActions));
             }
 
             return $result;
@@ -200,7 +201,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             if (!$apply) {
                 return new RepairResult(true, false, 'Unknown execution repair available. '.$warning);
             }
-            $actions = array_map(static fn ($notice) => new \Ineersa\AgentCore\Domain\Coordination\RetireUnknownExecutionDTO($notice), $unknown);
+            $actions = [...$leadingActions, ...array_map(static fn ($notice) => new \Ineersa\AgentCore\Domain\Coordination\RetireUnknownExecutionDTO($notice), $unknown)];
             $event = RunEvent::forAppend($runId, $replayed->turnNo, RunEventTypeEnum::ExecutionUnknownRetired->value, ['warning' => $warning, 'execution_ids' => array_map(static fn ($notice) => $notice instanceof \Ineersa\AgentCore\Domain\Message\ExecutionOutcomeUnknown ? $notice->effectId : $notice->authorizationId, $unknown)]);
             $events = [$event];
             $nextState = $storedState;

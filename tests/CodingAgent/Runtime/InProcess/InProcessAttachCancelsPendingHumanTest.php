@@ -137,7 +137,6 @@ final class InProcessAttachCancelsPendingHumanTest extends IsolatedKernelTestCas
             $container->get(HatfieldSessionStore::class), $container->get(\Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware::class),
             $container->get(\Ineersa\AgentCore\Application\Pipeline\RunCommit::class), $container->get(\Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery::class),
             $container->get(\Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository::class),
-            $container->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Recovery\DeferredSubagentBatchRecoveryService::class),
         );
         $ownerAttach->attach($bus->messages[0]);
 
@@ -244,7 +243,6 @@ final class InProcessAttachCancelsPendingHumanTest extends IsolatedKernelTestCas
             $container->get(HatfieldSessionStore::class), $container->get(\Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware::class),
             $container->get(\Ineersa\AgentCore\Application\Pipeline\RunCommit::class), $container->get(\Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery::class),
             $container->get(\Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository::class),
-            $container->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Recovery\DeferredSubagentBatchRecoveryService::class),
         );
         $ownerAttach->attach($bus->messages[0]);
         $this->assertSame(0, $runner->cancelCount);

@@ -171,6 +171,11 @@ children keep their results. Late child responses cannot revive cancelled execut
 Active streaming and human-input waits retain their safety checks; existing batch
 interruptions and deadlines retain their lifecycle owner. A preview does not cancel work.
 
+Parent repair captures those child-maintenance obligations before accepting the root
+command. Recovery finishes the captured plan without reevaluating newer children.
+An accepted old repair ID remains a no-op against later parent or child generations;
+a fresh repair ID can still maintain the current generation.
+
 If a cancelled or failed terminal history has unmatched assistant tool calls, repair
 appends synthetic error tool results and a batch commit. This restores valid model
 history without repeating tool execution or appending another terminal event.
