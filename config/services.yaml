@@ -70,6 +70,9 @@ services:
     Ineersa\AgentCore\Contract\Extension\HookSubscriberInterface:
       tags: ['agent_core.hook_subscriber']
 
+    Ineersa\AgentCore\Contract\Extension\EssentialAfterTurnHookInterface:
+      tags: ['agent_core.hook_subscriber']
+
     Ineersa\AgentCore\Contract\Hook\TransformContextHookInterface:
       tags: ['agent_core.transform_context_hook']
 
@@ -805,16 +808,8 @@ services:
   Ineersa\CodingAgent\Config\ContextBudgetReminderConfig:
     factory: ['Ineersa\CodingAgent\Config\ContextBudgetReminderConfig', 'fromAppConfig']
 
-  # ContextBudgetReminderHookSubscriber is auto-tagged via
-  # _instanceof HookSubscriberInterface — no explicit registration.
-
-  # Auto-compaction after-turn hook subscriber.
-  # Tagged automatically via _instanceof HookSubscriberInterface.
-  # $commandBus is bound to agent.command.bus so CompactRun dispatch
-  # targets the correct bus.
-  Ineersa\CodingAgent\Compaction\AutoCompactionHookSubscriber:
-    arguments:
-      $commandBus: '@agent.command.bus'
+  # Reminder and auto-compaction preparation are auto-tagged through
+  # EssentialAfterTurnHookInterface. Their captured actions use the command bus.
 
   # ToolRegistry — concrete CodingAgent registry for permanent/dynamic tools.
   # Tagged built-in providers are seeded during registry construction.

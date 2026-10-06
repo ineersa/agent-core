@@ -57,7 +57,7 @@ final readonly class CoordinationActionValidator
             return;
         }
         if ($action instanceof DispatchCoordinationMessageDTO) {
-            // Its closed AdvanceRun|CompactRun field excludes external execution.
+            // Its closed control-message field excludes external execution.
             return;
         }
         if ($action instanceof RegisterToolBatchDTO) {

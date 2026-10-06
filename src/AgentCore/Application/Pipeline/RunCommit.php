@@ -47,18 +47,29 @@ final readonly class RunCommit
     public function commit(RunState $state, RunState $nextState, array $events, array $effects = [], bool $dispatchAfterTurnHooks = true, array $postCommitEffects = [], array $postCommitActions = [], array $sourceIdentity = [], ?\Ineersa\AgentCore\Domain\Coordination\ToolResultDispositionDTO $resultDisposition = null, ?\Ineersa\AgentCore\Domain\Coordination\ExecutionResultDispositionDTO $executionDisposition = null): RunState
     {
         $this->assertTransitionReady($state->runId);
-        foreach ($postCommitActions as $action) {
+        $afterTurnActions = [];
+        if ($dispatchAfterTurnHooks) {
+            $afterTurnActions = $this->hookDispatcher?->prepareAfterTurnCommit(
+                AfterTurnCommitHookContext::fromRunState($nextState, $events, \count($effects)), $state->lastSeq,
+            ) ?? [];
+        }
+        foreach ([...$postCommitActions, ...$afterTurnActions] as $action) {
             $this->actionValidator->validate($action);
         }
-        $persist = function () use ($state, $nextState, $events, $effects, $dispatchAfterTurnHooks, $postCommitEffects, $postCommitActions, $sourceIdentity, $resultDisposition, $executionDisposition): RunState {
+        $persist = function () use ($state, $nextState, $events, $effects, $afterTurnActions, $dispatchAfterTurnHooks, $postCommitEffects, $postCommitActions, $sourceIdentity, $resultDisposition, $executionDisposition): RunState {
             /** @var list<RunEvent> $persistedEvents */
             $persistedEvents = [];
-            if ([] !== $sourceIdentity || [] !== $events || null !== $resultDisposition || null !== $executionDisposition || [] !== $effects || [] !== $postCommitEffects || [] !== $postCommitActions) {
-                $persistedEvents = $this->eventStore->appendTransition($events, ['run_id' => $nextState->runId, 'predecessor_seq' => $state->lastSeq, 'source' => $sourceIdentity, 'effects' => $effects, 'post_commit_effects' => $postCommitEffects, 'actions' => $postCommitActions, 'after_turn_hooks' => $dispatchAfterTurnHooks, 'result_disposition' => $resultDisposition, 'execution_disposition' => $executionDisposition]);
+            if ([] !== $sourceIdentity || [] !== $events || null !== $resultDisposition || null !== $executionDisposition || [] !== $effects || [] !== $postCommitEffects || [] !== $postCommitActions || [] !== $afterTurnActions) {
+                $persistedEvents = $this->eventStore->appendTransition($events, ['run_id' => $nextState->runId, 'predecessor_seq' => $state->lastSeq, 'source' => $sourceIdentity, 'effects' => $effects, 'post_commit_effects' => $postCommitEffects, 'actions' => $postCommitActions, 'after_turn_actions' => $afterTurnActions, 'after_turn_hooks' => $dispatchAfterTurnHooks, 'result_disposition' => $resultDisposition, 'execution_disposition' => $executionDisposition]);
             }
             $verifiedSource = $this->eventStore->verifiedPendingTransition($nextState->runId);
             if (null !== $verifiedSource) {
                 $this->sourceAcceptance->validate($verifiedSource);
+                $postCommitActions = $verifiedSource->work['actions'] ?? [];
+                $afterTurnActions = $verifiedSource->work['after_turn_actions'] ?? [];
+                foreach ([...$postCommitActions, ...$afterTurnActions] as $action) {
+                    $this->actionValidator->validate($action);
+                }
             }
 
             // Batch decisions must survive before collector release, cleanup,
@@ -86,6 +97,9 @@ final readonly class RunCommit
 
             $this->logCommittedEvents($committedState, $persistedEvents);
 
+            // Required hook delivery precedes mailbox acceptance and continuations.
+            $this->stepDispatcher->dispatchCoordinationActions($afterTurnActions);
+
             $mailboxActions = array_values(array_filter($postCommitActions, \Ineersa\AgentCore\Application\Handler\CommandMailboxCoordinationFactory::isMailboxAction(...)));
             $this->stepDispatcher->dispatchCoordinationActions($mailboxActions);
             $remainingActions = array_values(array_filter($postCommitActions, static fn (object $action): bool => !\Ineersa\AgentCore\Application\Handler\CommandMailboxCoordinationFactory::isMailboxAction($action)));
@@ -105,6 +119,9 @@ final readonly class RunCommit
                 return $committedState;
             }
 
+            // Required obligations finish before observer callbacks or cleanup.
+            $this->finishTransition($committedState->runId, $persistedEvents, [...$gatedEffects, ...$postCommitEffects], $remainingActions, $resultDisposition, $executionDisposition);
+
             try {
                 $this->hookDispatcher?->dispatchAfterTurnCommit(
                     AfterTurnCommitHookContext::fromRunState($committedState, $persistedEvents, \count($effects)),
@@ -117,8 +134,6 @@ final readonly class RunCommit
                     'exception' => $exception,
                 ]);
             }
-
-            $this->finishTransition($committedState->runId, $persistedEvents, [...$gatedEffects, ...$postCommitEffects], $remainingActions, $resultDisposition, $executionDisposition);
 
             return $committedState;
         };

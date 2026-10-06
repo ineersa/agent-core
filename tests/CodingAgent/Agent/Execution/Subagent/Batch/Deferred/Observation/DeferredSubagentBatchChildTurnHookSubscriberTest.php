@@ -9,7 +9,6 @@ use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchIdentityFactory;
@@ -20,8 +19,6 @@ use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
-use Symfony\Component\Messenger\Envelope;
-use Symfony\Component\Messenger\MessageBusInterface;
 
 #[Group('db')]
 final class DeferredSubagentBatchChildTurnHookSubscriberTest extends IsolatedKernelTestCase
@@ -85,11 +82,7 @@ final class DeferredSubagentBatchChildTurnHookSubscriberTest extends IsolatedKer
         }
 
         $bus = new TestMessageBus();
-        $subscriber = new DeferredSubagentBatchChildTurnHookSubscriber(
-            $childRepo,
-            $bus,
-            new TestLogger(),
-        );
+        $subscriber = new DeferredSubagentBatchChildTurnHookSubscriber($childRepo);
 
         if ($useUntrackedChild) {
             $childRunId = 'untracked-child-'.$scenario;
@@ -102,20 +95,20 @@ final class DeferredSubagentBatchChildTurnHookSubscriberTest extends IsolatedKer
             new AfterTurnCommitEventSummary(7, RunEventTypeEnum::LlmStepCompleted->value, ['usage' => ['input_tokens' => 3]]),
             new AfterTurnCommitEventSummary(8, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 2]),
         ];
-        $subscriber->handleAfterTurnCommit(new AfterTurnCommitHookContext(
+        $actions = $subscriber->prepareAfterTurnCommit(new AfterTurnCommitHookContext(
             runId: $childRunId,
             turnNo: 2,
             status: 'running',
             events: $events,
             effectsCount: 0,
             runState: new RunState($childRunId, RunStatus::Running, turnNo: 2),
-        ));
+        ), 0);
 
-        $this->assertCount($expectedDispatches, $bus->messages);
+        $this->assertCount($expectedDispatches, $actions);
         if ($expectedDispatches > 0) {
-            $this->assertInstanceOf(ObserveDeferredSubagentBatchChildTurnMessage::class, $bus->messages[0]);
+            $this->assertInstanceOf(ObserveDeferredSubagentBatchChildTurnMessage::class, $actions[0]->message);
             /** @var ObserveDeferredSubagentBatchChildTurnMessage $msg */
-            $msg = $bus->messages[0];
+            $msg = $actions[0]->message;
             $this->assertSame($lifecycle, $msg->batchLifecycleId);
             $this->assertSame(1, $msg->batchIndex);
             $this->assertSame($tracked['childRunId'], $msg->childRunId);
@@ -123,6 +116,10 @@ final class DeferredSubagentBatchChildTurnHookSubscriberTest extends IsolatedKer
             $this->assertSame(2, $msg->turnNo);
             $this->assertCount(2, $msg->committedEvents);
             $this->assertSame(7, $msg->committedEvents[0]->seq);
+            // This complete canonical batch follows cursor zero despite allocation holes.
+            $bound = $actions[0]->bindCanonicalSequences([7, 8]);
+            self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Observation\ObserveDeferredSubagentBatchChildTurnHandler::class)($bound->message);
+            $this->assertSame(8, $childRepo->findEntityByBatchLifecycleAndIndex($lifecycle, 1)->childEventCursor);
         }
     }
 
@@ -139,10 +136,10 @@ final class DeferredSubagentBatchChildTurnHookSubscriberTest extends IsolatedKer
     }
 
     /**
-     * Test thesis: hook dispatch failures are locally degraded with structured correlation
-     * logging and must not leak raw exception messages or prompt/tool content.
+     * Preparation captures the obligation instead of dispatching best effort.
+     * DeferredAfterTurnCoordinationHandlerTest covers retained broker failures.
      */
-    public function testDispatchFailureIsLoggedWithoutExceptionMessage(): void
+    public function testPreparationCapturesObservationWithoutDispatch(): void
     {
         /** @var DeferredSubagentBatchRepository $batchRepo */
         $batchRepo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
@@ -168,28 +165,17 @@ final class DeferredSubagentBatchChildTurnHookSubscriberTest extends IsolatedKer
         );
         $batchRepo->applyLaunchSuccessState($parent, $tool, $lifecycle, new \DateTimeImmutable(), [1]);
 
-        $logger = new TestLogger();
-        $failingBus = new class implements MessageBusInterface {
-            public function dispatch(object $message, array $stamps = []): Envelope
-            {
-                throw new \RuntimeException('dsn=secret://should-not-log');
-            }
-        };
-        $subscriber = new DeferredSubagentBatchChildTurnHookSubscriber($childRepo, $failingBus, $logger);
-        $subscriber->handleAfterTurnCommit(new AfterTurnCommitHookContext(
+        $subscriber = new DeferredSubagentBatchChildTurnHookSubscriber($childRepo);
+        $actions = $subscriber->prepareAfterTurnCommit(new AfterTurnCommitHookContext(
             runId: $child['childRunId'],
             turnNo: 1,
             status: 'running',
             events: [new AfterTurnCommitEventSummary(1, RunEventTypeEnum::RunStarted->value, [])],
             effectsCount: 0,
             runState: new RunState($child['childRunId'], RunStatus::Running, turnNo: 1),
-        ));
+        ), 0);
 
-        $this->assertContains('deferred_subagent_batch.child_turn_dispatch_failed', array_column($logger->records, 'message'));
-        $record = $logger->records[array_key_last($logger->records)];
-        $this->assertArrayNotHasKey('message', $record['context']);
-        $this->assertSame(\RuntimeException::class, $record['context']['exception_class']);
-        $this->assertSame($lifecycle, $record['context']['batch_lifecycle_id']);
-        $this->assertSame($child['childRunId'], $record['context']['child_run_id']);
+        $this->assertCount(1, $actions);
+        $this->assertSame($lifecycle, $actions[0]->message->batchLifecycleId);
     }
 }

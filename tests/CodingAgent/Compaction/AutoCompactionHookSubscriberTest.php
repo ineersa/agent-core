@@ -88,7 +88,6 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             $this->providerUsageResolver,
             $this->compactionConfig,
             $this->modelResolver,
-            $this->commandBus,
             $this->compactionService,
             $this->metadataReader,
         );
@@ -112,7 +111,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(12000)]);  // 12000 > 11000, no auto started event
 
         $context = $this->createHookContext(runState: $runState);
-        $this->subscriber->handleAfterTurnCommit($context);
+        $this->dispatchPrepared($this->subscriber, $context);
 
         $this->assertCount(1, $this->commandBus->messages);
         $this->assertSame('auto', $this->commandBus->messages[0]->trigger);
@@ -139,7 +138,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(5000)]);  // 5000 < 11000
 
         $context = $this->createHookContext();
-        $this->subscriber->handleAfterTurnCommit($context);
+        $this->dispatchPrepared($this->subscriber, $context);
 
         $this->assertCount(0, $this->commandBus->messages);
     }
@@ -165,7 +164,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $this->stubChronologicalEvents([]);
 
         $context = $this->createHookContext();
-        $this->subscriber->handleAfterTurnCommit($context);
+        $this->dispatchPrepared($this->subscriber, $context);
 
         $this->assertCount(0, $this->commandBus->messages);
     }
@@ -184,13 +183,12 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             $this->providerUsageResolver,
             $disabledConfig,
             $this->modelResolver,
-            $this->commandBus,
             $this->compactionService,
             $this->metadataReader,
         );
 
         $context = $this->createHookContext();
-        $subscriber->handleAfterTurnCommit($context);
+        $this->dispatchPrepared($subscriber, $context);
 
         $this->assertCount(0, $this->commandBus->messages);
     }
@@ -202,7 +200,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
     public function testSkipsWhenCompactionLifecycleEventsPresent(): void
     {
         $context = $this->createHookContext([RunEventTypeEnum::ContextCompactionStarted->value]);
-        $this->subscriber->handleAfterTurnCommit($context);
+        $this->dispatchPrepared($this->subscriber, $context);
 
         $this->assertCount(0, $this->commandBus->messages);
     }
@@ -210,7 +208,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
     public function testSkipsWhenContextCompactedEventPresent(): void
     {
         $context = $this->createHookContext([RunEventTypeEnum::ContextCompacted->value]);
-        $this->subscriber->handleAfterTurnCommit($context);
+        $this->dispatchPrepared($this->subscriber, $context);
 
         $this->assertCount(0, $this->commandBus->messages);
     }
@@ -218,7 +216,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
     public function testSkipsWhenContextCompactionFailedEventPresent(): void
     {
         $context = $this->createHookContext([RunEventTypeEnum::ContextCompactionFailed->value]);
-        $this->subscriber->handleAfterTurnCommit($context);
+        $this->dispatchPrepared($this->subscriber, $context);
 
         $this->assertCount(0, $this->commandBus->messages);
     }
@@ -241,7 +239,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $this->committedRunState = $runState;
 
         $context = $this->createHookContext();
-        $this->subscriber->handleAfterTurnCommit($context);
+        $this->dispatchPrepared($this->subscriber, $context);
 
         $this->assertCount(0, $this->commandBus->messages);
     }
@@ -250,7 +248,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
     //  Test: in-process dedup
     // ─────────────────────────────────────────────────────────────────
 
-    public function testDedupPreventsDoubleDispatchWithinSameProcess(): void
+    public function testRepeatedPreparationKeepsTheSameLogicalCompactionIdentity(): void
     {
         $this->modelResolver->method('resolveActiveModel')->willReturn(null);
 
@@ -263,12 +261,13 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(12000)]); // exceeds 11000
 
         // First call → dispatches.
-        $this->subscriber->handleAfterTurnCommit($this->createHookContext());
+        $this->dispatchPrepared($this->subscriber, $this->createHookContext());
         $this->assertCount(1, $this->commandBus->messages);
 
-        // Second call → dedup prevents dispatch (inFlight guard).
-        $this->subscriber->handleAfterTurnCommit($this->createHookContext());
-        $this->assertCount(1, $this->commandBus->messages);
+        // Duplicate delivery is safe through the owner's durable source fence.
+        $this->dispatchPrepared($this->subscriber, $this->createHookContext());
+        $this->assertCount(2, $this->commandBus->messages);
+        $this->assertSame($this->commandBus->messages[0]->idempotencyKey(), $this->commandBus->messages[1]->idempotencyKey());
     }
 
     public function testDedupClearedAndEligibilityPreventsRedispatchOnStaleMeasurement(): void
@@ -306,10 +305,10 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         //
         // Simulate lifecycle commit (clears inFlight).
         $lifecycleContext = $this->createHookContext([RunEventTypeEnum::ContextCompactionFailed->value]);
-        $this->subscriber->handleAfterTurnCommit($lifecycleContext);
+        $this->dispatchPrepared($this->subscriber, $lifecycleContext);
 
         // Stable commit: measurement is ineligible via event-log.
-        $this->subscriber->handleAfterTurnCommit($this->createHookContext());
+        $this->dispatchPrepared($this->subscriber, $this->createHookContext());
         $this->assertCount(0, $this->commandBus->messages,
             'Stale measurement (seq=1, attempt seq=5) must NOT trigger dispatch');
     }
@@ -336,7 +335,6 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             $this->providerUsageResolver,
             $configWithOverride,
             $modelResolver,
-            $this->commandBus,
             $this->compactionService,
             $this->metadataReader,
         );
@@ -351,7 +349,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(12000)]); // 12000 < 50000 override
 
         $context = $this->createHookContext();
-        $subscriber->handleAfterTurnCommit($context);
+        $this->dispatchPrepared($subscriber, $context);
 
         $this->assertCount(0, $this->commandBus->messages);
     }
@@ -372,7 +370,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
 
         // RunStarted clears the resolved flag and returns early (no dispatch).
         $context = $this->createHookContext([RunEventTypeEnum::RunStarted->value]);
-        $this->subscriber->handleAfterTurnCommit($context);
+        $this->dispatchPrepared($this->subscriber, $context);
 
         $this->assertCount(0, $this->commandBus->messages);
     }
@@ -393,7 +391,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
 
         // effectsCount > 0 means intermediate orchestration commit — skip.
         $context = $this->createHookContext(effectsCount: 2);
-        $this->subscriber->handleAfterTurnCommit($context);
+        $this->dispatchPrepared($this->subscriber, $context);
 
         $this->assertCount(0, $this->commandBus->messages);
     }
@@ -432,10 +430,10 @@ final class AutoCompactionHookSubscriberTest extends TestCase
 
         // Pre-condition: simulate lifecycle commit (clears inFlight).
         $lifecycleContext = $this->createHookContext([RunEventTypeEnum::ContextCompactionStarted->value]);
-        $this->subscriber->handleAfterTurnCommit($lifecycleContext);
+        $this->dispatchPrepared($this->subscriber, $lifecycleContext);
 
         // Post-lifecycle stable commit — measurement is ineligible → no dispatch.
-        $this->subscriber->handleAfterTurnCommit($this->createHookContext());
+        $this->dispatchPrepared($this->subscriber, $this->createHookContext());
         $this->assertCount(0, $this->commandBus->messages,
             'Stale provider measurement must NOT trigger dispatch after lifecycle. '
             .'Event-log eligibility (seq 1 <= attempt seq 5) replaces compactionResolved.');
@@ -456,19 +454,19 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(12000)]);
 
         // Pre-condition: dispatch auto-compaction, then lifecycle sets resolved.
-        $this->subscriber->handleAfterTurnCommit($this->createHookContext());
+        $this->dispatchPrepared($this->subscriber, $this->createHookContext());
         $this->assertCount(1, $this->commandBus->messages);
 
         $lifecycleContext = $this->createHookContext([RunEventTypeEnum::ContextCompactionFailed->value]);
-        $this->subscriber->handleAfterTurnCommit($lifecycleContext);
+        $this->dispatchPrepared($this->subscriber, $lifecycleContext);
 
         // New user turn (run_started) — clears compactionResolved.
-        $this->subscriber->handleAfterTurnCommit(
+        $this->dispatchPrepared($this->subscriber,
             $this->createHookContext([RunEventTypeEnum::RunStarted->value]),
         );
 
         // After new turn, provider usage still > threshold → should dispatch again.
-        $this->subscriber->handleAfterTurnCommit($this->createHookContext());
+        $this->dispatchPrepared($this->subscriber, $this->createHookContext());
         $this->assertCount(2, $this->commandBus->messages);
         $this->assertSame('auto', $this->commandBus->messages[1]->trigger);
     }
@@ -487,7 +485,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $this->committedRunState = $runState;
         $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(12000)]);
 
-        $this->subscriber->handleAfterTurnCommit($this->createHookContext());
+        $this->dispatchPrepared($this->subscriber, $this->createHookContext());
 
         $this->assertCount(1, $this->commandBus->messages);
         $msg = $this->commandBus->messages[0];
@@ -556,12 +554,11 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             $this->providerUsageResolver,
             $this->compactionConfig,
             $this->modelResolver,
-            $this->commandBus,
             $this->compactionService,
             $this->metadataReader,
         );
 
-        $freshSubscriber->handleAfterTurnCommit($this->createHookContext());
+        $this->dispatchPrepared($freshSubscriber, $this->createHookContext());
 
         $this->assertCount(0, $this->commandBus->messages,
             'Failure-only auto marker at seq 79 must block dispatch from stale provider measurement at seq 74');
@@ -596,7 +593,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             eventTypes: [RunEventTypeEnum::ToolExecutionStart->value],
             effectsCount: 0,
         );
-        $this->subscriber->handleAfterTurnCommit($context);
+        $this->dispatchPrepared($this->subscriber, $context);
 
         $this->assertCount(0, $this->commandBus->messages,
             'ToolExecutionStart commit must NOT dispatch CompactRun '
@@ -641,7 +638,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             eventTypes: [RunEventTypeEnum::ToolBatchCommitted->value],
             effectsCount: 0,
         );
-        $this->subscriber->handleAfterTurnCommit($context);
+        $this->dispatchPrepared($this->subscriber, $context);
 
         $this->assertCount(0, $this->commandBus->messages,
             'ToolBatchCommitted commit must NOT dispatch CompactRun '
@@ -713,13 +710,13 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $lifecycleContext = $this->createHookContext(
             eventTypes: [RunEventTypeEnum::ContextCompactionStarted->value],
         );
-        $this->subscriber->handleAfterTurnCommit($lifecycleContext);
+        $this->dispatchPrepared($this->subscriber, $lifecycleContext);
         $this->assertCount(0, $this->commandBus->messages,
             'Lifecycle commit itself must not dispatch');
 
         // Step 2: a stable commit on a later turn — fresh eligible provider usage.
         $stableContext = $this->createHookContext();
-        $this->subscriber->handleAfterTurnCommit($stableContext);
+        $this->dispatchPrepared($this->subscriber, $stableContext);
 
         // On HEAD: compactionResolved prevents dispatch → 0 messages.
         // After fix: event-log eligibility allows dispatch → 1 message.
@@ -760,7 +757,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             eventTypes: [RunEventTypeEnum::AgentCommandQueued->value],
             effectsCount: 0,
         );
-        $this->subscriber->handleAfterTurnCommit($context);
+        $this->dispatchPrepared($this->subscriber, $context);
 
         $this->assertCount(0, $this->commandBus->messages,
             'AgentCommandQueued commit must NOT dispatch CompactRun '
@@ -795,7 +792,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             eventTypes: [RunEventTypeEnum::AgentCommandApplied->value],
             effectsCount: 0,
         );
-        $this->subscriber->handleAfterTurnCommit($context);
+        $this->dispatchPrepared($this->subscriber, $context);
 
         $this->assertCount(0, $this->commandBus->messages,
             'AgentCommandApplied commit must NOT dispatch CompactRun '
@@ -878,13 +875,12 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             $this->providerUsageResolver,
             $this->compactionConfig,
             $this->modelResolver,
-            $this->commandBus,
             $summaryOnlyService,
             $this->metadataReader,
         );
 
         $context = $this->createHookContext();
-        $summaryOnlySubscriber->handleAfterTurnCommit($context);
+        $this->dispatchPrepared($summaryOnlySubscriber, $context);
 
         $this->assertCount(0, $this->commandBus->messages,
             'Auto compaction must NOT dispatch when messagesToSummarize '
@@ -967,13 +963,12 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             $this->providerUsageResolver,
             $this->compactionConfig,
             $this->modelResolver,
-            $this->commandBus,
             $summaryPlusFreshService,
             $this->metadataReader,
         );
 
         $context = $this->createHookContext();
-        $summaryPlusFreshSubscriber->handleAfterTurnCommit($context);
+        $this->dispatchPrepared($summaryPlusFreshSubscriber, $context);
 
         $this->assertCount(1, $this->commandBus->messages,
             'Auto compaction MUST dispatch when messagesToSummarize includes '
@@ -1034,13 +1029,12 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             $this->providerUsageResolver,
             $this->compactionConfig,
             $this->modelResolver,
-            $this->commandBus,
             $failedService,
             $this->metadataReader,
         );
 
         $context = $this->createHookContext();
-        $failedSubscriber->handleAfterTurnCommit($context);
+        $this->dispatchPrepared($failedSubscriber, $context);
 
         $this->assertCount(0, $this->commandBus->messages,
             'Auto compaction must silently skip when preparation is not ready.');
@@ -1093,7 +1087,6 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             $this->providerUsageResolver,
             $this->compactionConfig,
             $this->modelResolver,
-            $this->commandBus,
             $compactionService,
             $childReader,
         );
@@ -1104,15 +1097,20 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $this->committedRunState = $runState;
         $this->stubChronologicalEvents([$this->makeLlmStepCompletedEvent(12000)]);
 
-        $subscriber->handleAfterTurnCommit($this->createHookContext());
+        $this->dispatchPrepared($subscriber, $this->createHookContext());
 
         $this->assertCount(0, $this->commandBus->messages,
             'Agent child runs must not dispatch CompactRun from after-turn auto-compaction.');
     }
 
-    /**
-     * @param list<RunEvent> $events chronological canonical event order
-     */
+    private function dispatchPrepared(AutoCompactionHookSubscriber $subscriber, AfterTurnCommitHookContext $context): void
+    {
+        foreach ($subscriber->prepareAfterTurnCommit($context, $context->runState->lastSeq) as $action) {
+            $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO::class, $action);
+            $this->commandBus->dispatch($action->message);
+        }
+    }
+
     private function stubChronologicalEvents(array $events): void
     {
         $this->eventStore->method('reverseFor')->willReturn(array_reverse($events));

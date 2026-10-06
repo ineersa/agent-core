@@ -26,14 +26,8 @@ final readonly class JsonlAppendJournal
         }
         $this->filesystem->mkdir(\dirname($path));
         $workDescriptor = null === $work ? null : new PendingTransitionWorkDTO($work);
-        $workBytes = null === $workDescriptor ? null : (new \Symfony\Component\Messenger\Transport\Serialization\PhpSerializer())->encode(new \Symfony\Component\Messenger\Envelope($workDescriptor));
-        if (null !== $workBytes) {
-            $encodedWork = json_encode($workBytes, \JSON_THROW_ON_ERROR);
-            if (\strlen($encodedWork) > self::MAX_STAGED_BYTES) {
-                throw new \RuntimeException('Prepared transition work exceeds its byte limit.');
-            }
-            $this->filesystem->dumpFile($path.'.append.work', $encodedWork);
-        }
+        $encodedWork = null;
+        $bindSequences = array_any([...($work['actions'] ?? []), ...($work['after_turn_actions'] ?? [])], static fn (object $action): bool => $action instanceof \Ineersa\AgentCore\Contract\CanonicalSequenceBoundActionInterface);
         $archive = $this->open($path, 'c+b');
         $stage = $this->open($this->stagePath($path), 'wb');
         try {
@@ -42,6 +36,8 @@ final readonly class JsonlAppendJournal
                 throw new \RuntimeException('Cannot inspect canonical archive.');
             }
             $length = 0;
+            $sequences = [];
+            $previousSequence = $work['predecessor_seq'] ?? 0;
             foreach ($records as $record) {
                 $bytes = \strlen($record);
                 if ($bytes > self::MAX_RECORD_BYTES || $length + $bytes > self::MAX_STAGED_BYTES) {
@@ -49,9 +45,37 @@ final readonly class JsonlAppendJournal
                 }
                 $this->writeAll($stage, $record);
                 $length += $bytes;
+                if ($bindSequences) {
+                    $decoded = json_decode($record, true, 512, \JSON_THROW_ON_ERROR);
+                    if (!\is_array($decoded) || !\is_int($decoded['seq'] ?? null) || $decoded['seq'] <= $previousSequence) {
+                        throw new \RuntimeException('Staged event has no allocated sequence.');
+                    }
+                    $sequences[] = $decoded['seq'];
+                    $previousSequence = $decoded['seq'];
+                    unset($decoded);
+                }
             }
             if (!fflush($stage)) {
                 throw new \RuntimeException('Cannot flush staged canonical bytes.');
+            }
+            if (null !== $work) {
+                if ($bindSequences) {
+                    $work['event_sequences'] = $sequences;
+                }
+                foreach (['actions', 'after_turn_actions'] as $key) {
+                    foreach ($work[$key] ?? [] as $index => $action) {
+                        if ($action instanceof \Ineersa\AgentCore\Contract\CanonicalSequenceBoundActionInterface) {
+                            $work[$key][$index] = $action->bindCanonicalSequences($sequences);
+                        }
+                    }
+                }
+                $workDescriptor = new PendingTransitionWorkDTO($work);
+                $workBytes = (new \Symfony\Component\Messenger\Transport\Serialization\PhpSerializer())->encode(new \Symfony\Component\Messenger\Envelope($workDescriptor));
+                $encodedWork = json_encode($workBytes, \JSON_THROW_ON_ERROR);
+                if (\strlen($encodedWork) > self::MAX_STAGED_BYTES) {
+                    throw new \RuntimeException('Prepared transition work exceeds its byte limit.');
+                }
+                $this->filesystem->dumpFile($path.'.append.work', $encodedWork);
             }
             $boundaryLength = min(self::CHUNK_BYTES, $stat['size']);
             $boundary = $this->readAt($archive, $stat['size'] - $boundaryLength, $boundaryLength);
@@ -160,7 +184,7 @@ final readonly class JsonlAppendJournal
             throw new \RuntimeException('Invalid prepared coordination descriptor.');
         }
 
-        return new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(hash('sha256', json_encode($manifest, \JSON_THROW_ON_ERROR)), $manifest['offset'], $descriptor->work);
+        return new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(hash('sha256', json_encode($manifest, \JSON_THROW_ON_ERROR)), $manifest['offset'], $descriptor->work, $descriptor->work['event_sequences'] ?? []);
     }
 
     public function finalizeVerified(string $path, string $identity): void

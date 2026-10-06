@@ -173,4 +173,8 @@ Application maintenance uses producer-captured action identities through the sam
 
 Repair captures unknown-receipt retirement and required synthetic history fixes in one journal plan. Application-owned `RedriveRepairEffectsDTO` repeats only captured, originally authorized deliveries after verifying that plan. It cannot arm a replacement request. Failed delivery retains the intent and prevents root acceptance until coordination succeeds. Core handles scalar source identities without importing application message types.
 
-Durable essential hooks and payload cleanup remain unfinished. This checkpoint does not provide complete transition recovery or power-loss durability.
+`EssentialAfterTurnHookInterface` prepares automatic compaction, child observation, parent cancellation, and context-budget commands before intent publication. The journal stores these descriptors separately from continuation actions. Required delivery finishes before continuation dispatch and source acceptance. Recovery repeats the captured descriptors without reevaluating policy or generating identifiers.
+
+`CanonicalSequenceBoundActionInterface` binds observation event ordinals to allocated staged sequences before the journal publishes its manifest. `VerifiedTransitionDTO` exposes that sequence list. Child observation carries the canonical predecessor, so allocation holes do not look like missing committed events. An observation whose predecessor is ahead of the durable child cursor still requests recovery.
+
+Extension observers and transient snapshot cleanup run after required coordination and transition finalization. Observer failures remain best effort, and recovery does not replay arbitrary extension callbacks. Payload cleanup remains unfinished. This checkpoint does not claim power-loss durability.

@@ -70,7 +70,7 @@ final class ProviderContextUsageResolver
     {
         $hasNewerAutoAttempt = false;
 
-        // The owner has verified these exact appended events, but observers
+        // The owner supplies its ordered transition batch, while observers
         // still see the predecessor cut until coordination is finalized.
         // Consult this batch first without exposing its physical suffix.
         $events = function () use ($runId, $ownerBatch): \Generator {

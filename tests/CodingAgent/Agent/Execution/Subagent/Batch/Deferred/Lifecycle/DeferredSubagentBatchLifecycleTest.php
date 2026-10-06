@@ -678,31 +678,31 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
 
         // Parent cancel hook dispatches ParentCancelled messages only for Cancelling/Cancelled parent
         $hookBus = new TestMessageBus();
-        $hook = new DeferredSubagentBatchParentCancelHookSubscriber($repo, $hookBus);
-        $result = $hook->handleAfterTurnCommit(new AfterTurnCommitHookContext(
+        $hook = new DeferredSubagentBatchParentCancelHookSubscriber($repo);
+        $actions = $hook->prepareAfterTurnCommit(new AfterTurnCommitHookContext(
             runId: $parent,
             turnNo: 1,
             status: 'cancelling',
             events: [],
             effectsCount: 0,
             runState: new RunState($parent, RunStatus::Cancelling, turnNo: 1),
-        ));
-        $this->assertSame('cancelling', $result->status);
-        $this->assertInstanceOf(InterruptDeferredSubagentBatchMessage::class, $hookBus->messages[0]);
-        $this->assertSame(DeferredSubagentInterruptionKindEnum::ParentCancelled, $hookBus->messages[0]->kind);
+        ), 0);
+        $this->assertCount(1, $actions);
+        $this->assertInstanceOf(InterruptDeferredSubagentBatchMessage::class, $actions[0]->message);
+        $this->assertSame(DeferredSubagentInterruptionKindEnum::ParentCancelled, $actions[0]->message->kind);
 
         // Non-cancelling status does not dispatch
         $hookBus2 = new TestMessageBus();
-        $hook2 = new DeferredSubagentBatchParentCancelHookSubscriber($repo, $hookBus2);
-        $hook2->handleAfterTurnCommit(new AfterTurnCommitHookContext(
+        $hook2 = new DeferredSubagentBatchParentCancelHookSubscriber($repo);
+        $actions2 = $hook2->prepareAfterTurnCommit(new AfterTurnCommitHookContext(
             runId: $parent,
             turnNo: 1,
             status: 'running',
             events: [],
             effectsCount: 0,
             runState: new RunState($parent, RunStatus::Running, turnNo: 1),
-        ));
-        $this->assertCount(0, $hookBus2->messages);
+        ), 0);
+        $this->assertCount(0, $actions2);
     }
 
     /**

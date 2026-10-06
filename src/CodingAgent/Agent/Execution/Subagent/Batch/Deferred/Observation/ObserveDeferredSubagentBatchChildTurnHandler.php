@@ -68,7 +68,11 @@ final readonly class ObserveDeferredSubagentBatchChildTurnHandler
             return;
         }
 
-        if (!$this->isContiguousFromCursor($newEvents, $cursor)) {
+        // A verified cut can skip unused allocation numbers, not canonical predecessors.
+        $coversPrefix = isset($message->predecessorSequence)
+            ? $message->predecessorSequence <= $cursor
+            : $this->isContiguousFromCursor($newEvents, $cursor);
+        if (!$coversPrefix) {
             $firstSeq = $newEvents[0]->seq;
             $this->logger->warning('deferred_subagent_batch.child_event_gap', [
                 'batch_lifecycle_id' => $message->batchLifecycleId,

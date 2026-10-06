@@ -36,11 +36,12 @@ final readonly class PendingTransitionRecovery
         $this->sourceAcceptance->validate($pending);
         $effects = [...($work['effects'] ?? []), ...($work['post_commit_effects'] ?? [])];
         $actions = $work['actions'] ?? [];
+        $afterTurnActions = $work['after_turn_actions'] ?? [];
         // Validate the entire recovery plan before applying any coordination.
         foreach ($effects as $effect) {
             $this->requireGated($effect);
         }
-        foreach ($actions as $action) {
+        foreach ([...$actions, ...$afterTurnActions] as $action) {
             $this->actionValidator->validate($action);
         }
         $disposition = $work['result_disposition'] ?? null;
@@ -61,6 +62,7 @@ final readonly class PendingTransitionRecovery
         $batchActions = array_values(array_filter($actions, static fn (object $action): bool => $action instanceof \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO));
         $this->dispatcher->dispatchCoordinationActions($batchActions);
         $actions = array_values(array_filter($actions, static fn (object $action): bool => !$action instanceof \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO));
+        $this->dispatcher->dispatchCoordinationActions($afterTurnActions);
         $mailboxActions = array_values(array_filter($actions, \Ineersa\AgentCore\Application\Handler\CommandMailboxCoordinationFactory::isMailboxAction(...)));
         $this->dispatcher->dispatchCoordinationActions($mailboxActions);
         $actions = array_values(array_filter($actions, static fn (object $action): bool => !\Ineersa\AgentCore\Application\Handler\CommandMailboxCoordinationFactory::isMailboxAction($action)));
