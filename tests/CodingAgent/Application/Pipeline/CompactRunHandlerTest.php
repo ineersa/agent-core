@@ -117,6 +117,27 @@ final class CompactRunHandlerTest extends TestCase
         $this->assertSame([], $result->effects);
     }
 
+    public function testContinuationCompactionCannotStartDuringCancellation(): void
+    {
+        $state = $this->createRunState([$this->userMsg('question'), $this->assistantMsg('answer')])->with(['status' => RunStatus::Cancelling]);
+        $service = $this->createMock(CompactionServiceInterface::class);
+        $service->expects($this->never())->method('prepare');
+        $handler = new CompactRunHandler(
+            $service,
+            $this->createAppConfig(),
+            new EventFactory(),
+            $this->hooks([]),
+            $this->extensionHooks([]),
+            $this->metadataReader(),
+            AttributeSerializerValidatorTestFactory::create()[0],
+            $this->sessionStore(),
+        );
+        $result = $handler->handle(new CompactRun('run-1', 5, 'step-1', 1, 'key-1', 'auto', continueAfterCompaction: true), $state);
+        $this->assertNull($result->nextState);
+        $this->assertSame([], $result->events);
+        $this->assertSame([], $result->effects);
+    }
+
     public function testPreLlmCompactionRequestUsesCommittedStateTurnAndStartsWorker(): void
     {
         $messages = [$this->userMsg('question'), $this->assistantMsg('answer')];
