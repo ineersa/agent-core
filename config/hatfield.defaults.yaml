@@ -113,6 +113,7 @@ context_budget_reminders:
     # Urgent wrap-up when remaining context drops strictly below this (sole reserve).
     urgent_remaining_tokens: 25000
 
+    disable_for_main: true
     disable_for_forks: false
     disable_for_subagents: false
 

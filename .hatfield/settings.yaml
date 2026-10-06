@@ -51,6 +51,7 @@ forks:
 context_budget_reminders:
     early_input_tokens: 200000
     urgent_remaining_tokens: 20000
+    disable_for_main: true
     disable_for_forks: false
     disable_for_subagents: false
 agents:

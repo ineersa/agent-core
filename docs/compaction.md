@@ -38,7 +38,11 @@ Messages submitted while compaction is pending or active wait locally and are se
 
 ## Automatic compaction
 
-When enabled, parent runs may compact after token thresholds using:
+When enabled, parent runs become eligible for automatic compaction when the latest provider-reported input usage reaches or exceeds `compaction.compact_after_tokens`. Before the next LLM request, the scheduler waits for the current tool batch to finish, compacts the eligible history, and resumes the same work on compacted context. No final assistant answer or new user prompt is required. Outstanding tools and human-input waits stop advancement before this boundary.
+
+The after-turn hook also schedules compaction as maintenance when work has finished. Neither path uses the context-budget reminder thresholds or suppression flags. Without a provider usage measurement, automatic compaction does not trigger. Each measurement can trigger only one attempt. Preparation can refuse an unsafe partition, and failed compaction preserves the original messages.
+
+Settings:
 
 | Key | Role |
 |---|---|
