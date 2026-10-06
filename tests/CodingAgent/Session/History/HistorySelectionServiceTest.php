@@ -54,6 +54,9 @@ final class HistorySelectionServiceTest extends TestCase
 
         $appended = [];
         $eventStore = new class($events, $appended) implements \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface {
+            /** @var array<string, \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO> */
+            private array $pending = [];
+
             /** @param list<RunEvent> $events */
             public function __construct(private array $events, private array &$appended)
             {
@@ -105,6 +108,16 @@ final class HistorySelectionServiceTest extends TestCase
                     $this->appended[] = $persisted;
                     $out[] = $persisted;
                 }
+                $runId = $work['run_id'] ?? ($out[0]->runId ?? null);
+                if (!\is_string($runId) || '' === $runId) {
+                    throw new \InvalidArgumentException('Prepared transition requires run identity.');
+                }
+                $this->pending[$runId] = new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(
+                    hash('sha256', serialize([$work, $out])),
+                    0,
+                    $work,
+                    array_map(static fn (RunEvent $event): int => $event->seq, $out),
+                );
 
                 return $out;
             }
@@ -115,16 +128,15 @@ final class HistorySelectionServiceTest extends TestCase
 
             public function verifiedPendingTransition(string $runId): ?\Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO
             {
-                return null;
+                return $this->pending[$runId] ?? null;
             }
 
             public function finalizeVerifiedTransition(string $runId, string $identity): void
             {
-                $this->finalizeTransition($runId);
-            }
-
-            public function finalizeTransition(string $runId): void
-            {
+                if (($this->pending[$runId]->identity ?? null) !== $identity) {
+                    throw new \RuntimeException('Fixture transition identity mismatch.');
+                }
+                unset($this->pending[$runId]);
             }
         };
 
@@ -201,6 +213,9 @@ final class HistorySelectionServiceTest extends TestCase
 
         $appended = [];
         $eventStore = new class($events, $appended) implements \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface {
+            /** @var array<string, \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO> */
+            private array $pending = [];
+
             /** @param list<RunEvent> $events */
             public function __construct(private array $events, private array &$appended)
             {
@@ -252,6 +267,16 @@ final class HistorySelectionServiceTest extends TestCase
                     $this->appended[] = $persisted;
                     $out[] = $persisted;
                 }
+                $runId = $work['run_id'] ?? ($out[0]->runId ?? null);
+                if (!\is_string($runId) || '' === $runId) {
+                    throw new \InvalidArgumentException('Prepared transition requires run identity.');
+                }
+                $this->pending[$runId] = new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(
+                    hash('sha256', serialize([$work, $out])),
+                    0,
+                    $work,
+                    array_map(static fn (RunEvent $event): int => $event->seq, $out),
+                );
 
                 return $out;
             }
@@ -262,16 +287,15 @@ final class HistorySelectionServiceTest extends TestCase
 
             public function verifiedPendingTransition(string $runId): ?\Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO
             {
-                return null;
+                return $this->pending[$runId] ?? null;
             }
 
             public function finalizeVerifiedTransition(string $runId, string $identity): void
             {
-                $this->finalizeTransition($runId);
-            }
-
-            public function finalizeTransition(string $runId): void
-            {
+                if (($this->pending[$runId]->identity ?? null) !== $identity) {
+                    throw new \RuntimeException('Fixture transition identity mismatch.');
+                }
+                unset($this->pending[$runId]);
             }
         };
 
@@ -331,6 +355,9 @@ final class HistorySelectionServiceTest extends TestCase
         ];
 
         $eventStore = new class($events) implements \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface {
+            /** @var array<string, \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO> */
+            private array $pending = [];
+
             /** @param list<RunEvent> $events */
             public function __construct(private array $events)
             {
@@ -371,6 +398,17 @@ final class HistorySelectionServiceTest extends TestCase
 
             public function appendTransition(array $events, array $work): array
             {
+                $runId = $work['run_id'] ?? ($events[0]->runId ?? null);
+                if (!\is_string($runId) || '' === $runId) {
+                    throw new \InvalidArgumentException('Prepared transition requires run identity.');
+                }
+                $this->pending[$runId] = new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(
+                    hash('sha256', serialize([$work, $events])),
+                    0,
+                    $work,
+                    array_map(static fn (RunEvent $event): int => $event->seq, $events),
+                );
+
                 return $events;
             }
 
@@ -380,16 +418,15 @@ final class HistorySelectionServiceTest extends TestCase
 
             public function verifiedPendingTransition(string $runId): ?\Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO
             {
-                return null;
+                return $this->pending[$runId] ?? null;
             }
 
             public function finalizeVerifiedTransition(string $runId, string $identity): void
             {
-                $this->finalizeTransition($runId);
-            }
-
-            public function finalizeTransition(string $runId): void
-            {
+                if (($this->pending[$runId]->identity ?? null) !== $identity) {
+                    throw new \RuntimeException('Fixture transition identity mismatch.');
+                }
+                unset($this->pending[$runId]);
             }
         };
 
@@ -430,6 +467,9 @@ final class HistorySelectionServiceTest extends TestCase
         ];
 
         $eventStore = new class($events) implements \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface {
+            /** @var array<string, \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO> */
+            private array $pending = [];
+
             /** @param list<RunEvent> $events */
             public function __construct(private array $events)
             {
@@ -470,6 +510,17 @@ final class HistorySelectionServiceTest extends TestCase
 
             public function appendTransition(array $events, array $work): array
             {
+                $runId = $work['run_id'] ?? ($events[0]->runId ?? null);
+                if (!\is_string($runId) || '' === $runId) {
+                    throw new \InvalidArgumentException('Prepared transition requires run identity.');
+                }
+                $this->pending[$runId] = new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(
+                    hash('sha256', serialize([$work, $events])),
+                    0,
+                    $work,
+                    array_map(static fn (RunEvent $event): int => $event->seq, $events),
+                );
+
                 return $events;
             }
 
@@ -479,16 +530,15 @@ final class HistorySelectionServiceTest extends TestCase
 
             public function verifiedPendingTransition(string $runId): ?\Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO
             {
-                return null;
+                return $this->pending[$runId] ?? null;
             }
 
             public function finalizeVerifiedTransition(string $runId, string $identity): void
             {
-                $this->finalizeTransition($runId);
-            }
-
-            public function finalizeTransition(string $runId): void
-            {
+                if (($this->pending[$runId]->identity ?? null) !== $identity) {
+                    throw new \RuntimeException('Fixture transition identity mismatch.');
+                }
+                unset($this->pending[$runId]);
             }
         };
 

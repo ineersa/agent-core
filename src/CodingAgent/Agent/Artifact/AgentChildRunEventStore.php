@@ -140,14 +140,6 @@ final class AgentChildRunEventStore implements \Ineersa\AgentCore\Contract\Prepa
         $this->eventLog->finalizeVerifiedTransition($this->eventsPath(), $runId, $identity);
     }
 
-    public function finalizeTransition(string $runId): void
-    {
-        if ($runId !== $this->agentRunId) {
-            throw new \InvalidArgumentException('Child finalization identity mismatch.');
-        }
-        $this->eventLog->finalizeTransition($this->eventsPath(), $runId);
-    }
-
     public function assertTransitionReady(string $runId): void
     {
         if ($runId !== $this->agentRunId) {

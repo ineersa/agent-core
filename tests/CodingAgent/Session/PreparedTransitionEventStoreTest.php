@@ -48,7 +48,9 @@ final class PreparedTransitionEventStoreTest extends IsolatedKernelTestCase
         $restored = $serializer->decode($encoded)->getMessage();
         $this->assertInstanceOf(\Ineersa\CodingAgent\Session\PendingTransitionWorkDTO::class, $restored);
         $this->assertSame($action->message->stepId(), $restored->work['actions'][0]->message->stepId());
-        $store->finalizeTransition($run);
+        $pending = $store->verifiedPendingTransition($run);
+        $this->assertNotNull($pending);
+        $store->finalizeVerifiedTransition($run, $pending->identity);
         $this->assertSame(4, $store->latestSequenceFor($run));
         $this->assertCount(2, iterator_to_array($store->rangeFor($run, 1, \PHP_INT_MAX)));
     }
@@ -69,7 +71,9 @@ final class PreparedTransitionEventStoreTest extends IsolatedKernelTestCase
         $this->assertCount(0, iterator_to_array($sink->drain($child)));
         $this->assertFileExists($sessions->resolveSessionsBasePath().'/'.$parent.'/artifacts/agents/artifact-prepared/events.jsonl.append.pending.json');
         $this->assertDirectoryDoesNotExist($sessions->resolveSessionsBasePath().'/'.$child);
-        $stream->finalizeTransition($child);
+        $pending = $stream->verifiedPendingTransition($child);
+        $this->assertNotNull($pending);
+        $stream->finalizeVerifiedTransition($child, $pending->identity);
         $this->assertSame(2, $stream->latestSequenceFor($child));
         $this->assertCount(1, iterator_to_array($sink->drain($child)));
     }

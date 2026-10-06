@@ -28,7 +28,13 @@ final class StreamingCommittedRuntimeEventStore implements \Ineersa\AgentCore\Co
             throw new \LogicException('Configured canonical store lacks transition preparation.');
         }
         $persisted = $this->inner->appendTransition($events, $work);
-        $this->pendingEvents[$events[0]->runId ?? $work['run_id']] = $persisted;
+        $runId = $events[0]->runId ?? $work['run_id'] ?? null;
+        if (!\is_string($runId) || '' === $runId) {
+            throw new \InvalidArgumentException('Prepared transition requires run identity.');
+        }
+        // Retain only the already-persisted hot batch until verified finalization.
+        // Normal commits must not recover these events through archive reads.
+        $this->pendingEvents[$runId] = $persisted;
 
         return $persisted;
     }
@@ -53,26 +59,19 @@ final class StreamingCommittedRuntimeEventStore implements \Ineersa\AgentCore\Co
         if (null === $pending) {
             throw new \RuntimeException('Verified transition missing before stream publication.');
         }
-        $start = $pending->work['predecessor_seq'] ?? null;
-        if (!\is_int($start)) {
-            throw new \RuntimeException('Verified transition has no predecessor sequence.');
+        if ($pending->identity !== $identity) {
+            throw new \RuntimeException('Prepared transition identity changed before stream publication.');
         }
+
+        $hotBatch = $this->pendingEvents[$runId] ?? null;
+        if (null === $hotBatch) {
+            // Cold recovery reconstructs the verified batch through existing facilities.
+            $hotBatch = $this->reconstructVerifiedBatch($store, $runId, $pending);
+        }
+
         $store->finalizeVerifiedTransition($runId, $identity);
         unset($this->pendingEvents[$runId]);
-        foreach ($store->rangeFor($runId, $start + 1, $store->latestSequenceFor($runId) ?? $start) as $event) {
-            $this->emitMapped($event);
-        }
-    }
-
-    public function finalizeTransition(string $runId): void
-    {
-        if (!$this->inner instanceof \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface) {
-            throw new \LogicException('Configured canonical store lacks transition preparation.');
-        }
-        $this->inner->finalizeTransition($runId);
-        $events = $this->pendingEvents[$runId] ?? [];
-        unset($this->pendingEvents[$runId]);
-        foreach ($events as $event) {
+        foreach ($hotBatch as $event) {
             $this->emitMapped($event);
         }
     }
@@ -108,6 +107,36 @@ final class StreamingCommittedRuntimeEventStore implements \Ineersa\AgentCore\Co
     public function allFor(string $runId): array
     {
         return $this->inner->allFor($runId);
+    }
+
+    /**
+     * @return list<RunEvent>
+     */
+    private function reconstructVerifiedBatch(
+        \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface $store,
+        string $runId,
+        \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO $pending,
+    ): array {
+        $sequences = $pending->eventSequences;
+        if ([] === $sequences) {
+            return [];
+        }
+
+        $wanted = array_fill_keys($sequences, true);
+        $min = min($sequences);
+        $max = max($sequences);
+        $reconstructed = [];
+        foreach ($store->rangeFor($runId, $min, $max) as $event) {
+            if (isset($wanted[$event->seq])) {
+                $reconstructed[] = $event;
+            }
+        }
+
+        if (\count($reconstructed) !== \count($sequences)) {
+            throw new \RuntimeException('Verified transition batch could not be reconstructed for stream publication.');
+        }
+
+        return $reconstructed;
     }
 
     private function emitMapped(RunEvent $runEvent): void

@@ -258,8 +258,6 @@ final readonly class RunCommit
         if (null !== $verified) {
             $this->sourceAcceptance->publish($verified);
             $this->eventStore->finalizeVerifiedTransition($runId, $verified->identity);
-        } elseif ([] !== $events || [] !== $effects || [] !== $actions) {
-            $this->eventStore->finalizeTransition($runId);
         }
         // Armed records retain the original request when broker delivery fails.
         // The execution gate, not an enqueue acknowledgement, grants one claim.

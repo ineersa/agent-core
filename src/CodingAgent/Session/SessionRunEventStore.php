@@ -74,11 +74,6 @@ final class SessionRunEventStore implements \Ineersa\AgentCore\Contract\Prepared
         $this->eventLog->finalizeVerifiedTransition($this->eventsPath($runId), $runId, $identity);
     }
 
-    public function finalizeTransition(string $runId): void
-    {
-        $this->eventLog->finalizeTransition($this->eventsPath($runId), $runId);
-    }
-
     public function assertTransitionReady(string $runId): void
     {
         $this->eventLog->assertTransitionReady($this->eventsPath($runId), $runId);

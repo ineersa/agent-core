@@ -19,7 +19,5 @@ interface PreparedTransitionEventStoreInterface extends EventStoreInterface
 
     public function finalizeVerifiedTransition(string $runId, string $identity): void;
 
-    public function finalizeTransition(string $runId): void;
-
     public function assertTransitionReady(string $runId): void;
 }

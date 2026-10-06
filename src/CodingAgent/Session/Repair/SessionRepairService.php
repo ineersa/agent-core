@@ -68,7 +68,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
                 return $this->noRepairResult('Repair delivery was already accepted.');
             }
             $result = $this->doRepair($runId, $apply, $commandId);
-            if ($apply && !\in_array($result->refusalReason, [SessionRepairRefusalReasonEnum::NoEvents, SessionRepairRefusalReasonEnum::DuplicateSequences, SessionRepairRefusalReasonEnum::MissingSequences], true)
+            if ($apply && !\in_array($result->refusalReason, [SessionRepairRefusalReasonEnum::NoEvents, SessionRepairRefusalReasonEnum::DuplicateSequences], true)
                 && !$this->runCommit->sourceIdentityAlreadyAccepted($source)) {
                 $state = $this->activeRunContext->requireLoaded($runId);
                 $this->runCommit->commit($state, $state, [], dispatchAfterTurnHooks: false, sourceIdentity: $source);
@@ -109,18 +109,6 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
                 staleCancellationRepaired: false,
                 message: 'Session repair refused: duplicate event sequences detected.',
                 refusalReason: SessionRepairRefusalReasonEnum::DuplicateSequences,
-            );
-        }
-
-        $missingSeqs = $this->replayEventPreparer->missingSequences($sorted);
-        if ([] !== $missingSeqs) {
-            $this->logRefusal($runId, SessionRepairRefusalReasonEnum::MissingSequences, ['missing_count' => \count($missingSeqs)]);
-
-            return new RepairResult(
-                repairableStaleCancellationDetected: false,
-                staleCancellationRepaired: false,
-                message: 'Session repair refused: missing event sequences detected.',
-                refusalReason: SessionRepairRefusalReasonEnum::MissingSequences,
             );
         }
 

@@ -170,7 +170,7 @@ final class RunCommitLoggingTest extends TestCase
         $store = $this->createMock(PreparedTransitionEventStoreInterface::class);
         $store->expects($this->once())->method('assertTransitionReady');
         $store->expects($this->once())->method('appendTransition')->willReturn([$event]);
-        $store->expects($this->never())->method('finalizeTransition');
+        $store->expects($this->never())->method('finalizeVerifiedTransition');
         $verified = new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO('transition', 0, ['run_id' => 'run-1', 'result_disposition' => $descriptor]);
         $store->method('verifiedPendingTransition')->willReturn($verified);
         $authorization = $this->createMock(\Ineersa\AgentCore\Contract\Tool\ToolExecutionAuthorizationInterface::class);
@@ -216,7 +216,7 @@ final class RunCommitLoggingTest extends TestCase
         $store = $this->createMock(PreparedTransitionEventStoreInterface::class);
         $store->expects($this->once())->method('assertTransitionReady');
         $store->expects($this->once())->method('appendTransition')->willReturn([$event]);
-        $store->expects($this->never())->method('finalizeTransition');
+        $store->expects($this->never())->method('finalizeVerifiedTransition');
         $bus = $this->createMock(\Symfony\Component\Messenger\MessageBusInterface::class);
         $bus->expects($this->once())->method('dispatch')->willThrowException(new \RuntimeException('broker unavailable'));
         $commit = new RunCommit($active, $store, new StepDispatcher($bus, $bus), new TestLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()));
@@ -278,9 +278,16 @@ final class RecordingEventStore implements PreparedTransitionEventStoreInterface
     /** @var list<RunEvent> */
     public array $appended = [];
 
+    /** @var array<string, \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO> */
+    private array $pending = [];
+
     public function appendTransition(array $events, array $work): array
     {
-        $this->assertTransitionReady($events[0]->runId);
+        $runId = $events[0]->runId ?? $work['run_id'] ?? null;
+        if (!\is_string($runId) || '' === $runId) {
+            throw new \InvalidArgumentException('Prepared transition requires run identity.');
+        }
+        $this->assertTransitionReady($runId);
 
         ++$this->appendManyCalls;
         $out = [];
@@ -292,6 +299,12 @@ final class RecordingEventStore implements PreparedTransitionEventStoreInterface
             $this->appended[] = $persisted;
             $out[] = $persisted;
         }
+        $this->pending[$runId] = new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(
+            hash('sha256', serialize([$work, $out])),
+            0,
+            $work,
+            array_map(static fn (RunEvent $event): int => $event->seq, $out),
+        );
 
         return $out;
     }
@@ -302,16 +315,15 @@ final class RecordingEventStore implements PreparedTransitionEventStoreInterface
 
     public function verifiedPendingTransition(string $runId): ?\Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO
     {
-        return null;
+        return $this->pending[$runId] ?? null;
     }
 
     public function finalizeVerifiedTransition(string $runId, string $identity): void
     {
-        $this->finalizeTransition($runId);
-    }
-
-    public function finalizeTransition(string $runId): void
-    {
+        if (($this->pending[$runId]->identity ?? null) !== $identity) {
+            throw new \RuntimeException('Fixture transition identity mismatch.');
+        }
+        unset($this->pending[$runId]);
     }
 
     public function latestSequenceFor(string $runId): ?int

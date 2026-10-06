@@ -80,7 +80,6 @@ final class RepairCommandHandler implements SlashCommandHandler
         if (null !== $result->refusalReason) {
             return match ($result->refusalReason) {
                 SessionRepairRefusalReasonEnum::DuplicateSequences => 'Session repair refused: duplicate event sequences.',
-                SessionRepairRefusalReasonEnum::MissingSequences => 'Session repair refused: missing event sequences.',
                 SessionRepairRefusalReasonEnum::ActiveStreaming => 'Session repair refused: the session is actively streaming.',
                 SessionRepairRefusalReasonEnum::AmbiguousPendingWork => 'Session repair refused: pending tool work is ambiguous.',
                 SessionRepairRefusalReasonEnum::NoEvents => 'Session repair refused: no canonical events were found.',

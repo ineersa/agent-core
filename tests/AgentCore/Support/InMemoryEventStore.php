@@ -45,7 +45,12 @@ final class InMemoryEventStore implements PreparedTransitionEventStoreInterface
         foreach ($events as $event) {
             $persisted[] = $this->persist($event);
         }
-        $this->pending[$runId] = new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(hash('sha256', serialize([$work, $persisted])), 0, $work);
+        $this->pending[$runId] = new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(
+            hash('sha256', serialize([$work, $persisted])),
+            0,
+            $work,
+            array_map(static fn (RunEvent $event): int => $event->seq, $persisted),
+        );
 
         return $persisted;
     }
@@ -64,11 +69,6 @@ final class InMemoryEventStore implements PreparedTransitionEventStoreInterface
         if (($this->pending[$runId]->identity ?? null) !== $identity) {
             throw new \RuntimeException('Fixture transition identity mismatch.');
         }
-        $this->finalizeTransition($runId);
-    }
-
-    public function finalizeTransition(string $runId): void
-    {
         unset($this->pending[$runId]);
     }
 

@@ -660,9 +660,9 @@ final class SessionRepairServiceTest extends TestCase
         $this->assertSame($before, $this->readRawLines($runId));
     }
 
-    public function testMissingSequencesProducesTypedRefusal(): void
+    public function testAbandonedAllocationGapIsAcceptedByRepair(): void
     {
-        $runId = 'missing';
+        $runId = 'abandoned-allocation';
         $factory = new EventFactory();
         $this->persistRunEvents($runId, [
             $factory->event($runId, 1, 0, RunEventTypeEnum::RunStarted->value, []),
@@ -671,14 +671,28 @@ final class SessionRepairServiceTest extends TestCase
         ]);
 
         $runStore = new TestActiveRunContext();
-        $runStore->loadRecovered(RunState::queued($runId));
+        $runStore->loadRecovered(new RunState(
+            runId: $runId,
+            status: RunStatus::Completed,
+            version: 1,
+            turnNo: 1,
+            lastSeq: 4,
+            model: 'test-model'));
 
         $service = $this->createService($runStore);
         $before = $this->readRawLines($runId);
-        $result = $service->repair($runId, true, \Symfony\Component\Uid\Uuid::v4()->toRfc4122());
+        $preview = $service->repair($runId, false, \Symfony\Component\Uid\Uuid::v4()->toRfc4122());
+        $this->assertNull($preview->refusalReason);
+        $this->assertStringContainsStringIgnoringCase('no repairable corruption', $preview->message);
 
-        $this->assertSame(SessionRepairRefusalReasonEnum::MissingSequences, $result->refusalReason);
+        $apply = $service->repair($runId, true, \Symfony\Component\Uid\Uuid::v4()->toRfc4122());
+        $this->assertNull($apply->refusalReason);
+        $this->assertFalse($apply->staleCancellationRepaired);
         $this->assertSame($before, $this->readRawLines($runId));
+        $this->assertSame([1, 2, 4], array_map(
+            static fn (array $event): int => $event['seq'],
+            $this->readEvents($runId),
+        ));
     }
 
     public function testAmbiguousPendingWorkProducesTypedRefusal(): void

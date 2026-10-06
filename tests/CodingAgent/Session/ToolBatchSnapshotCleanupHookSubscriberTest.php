@@ -195,9 +195,22 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
 
 final class CleanupHookSubscriberNoOpEventStore implements PreparedTransitionEventStoreInterface
 {
+    /** @var array<string, \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO> */
+    private array $pending = [];
+
     public function appendTransition(array $events, array $work): array
     {
-        $this->assertTransitionReady($events[0]->runId ?? $work['run_id']);
+        $runId = $events[0]->runId ?? $work['run_id'] ?? null;
+        if (!\is_string($runId) || '' === $runId) {
+            throw new \InvalidArgumentException('Prepared transition requires run identity.');
+        }
+        $this->assertTransitionReady($runId);
+        $this->pending[$runId] = new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(
+            hash('sha256', serialize([$work, $events])),
+            0,
+            $work,
+            array_map(static fn (RunEvent $event): int => $event->seq, $events),
+        );
 
         return $events;
     }
@@ -208,16 +221,15 @@ final class CleanupHookSubscriberNoOpEventStore implements PreparedTransitionEve
 
     public function verifiedPendingTransition(string $runId): ?\Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO
     {
-        return null;
+        return $this->pending[$runId] ?? null;
     }
 
     public function finalizeVerifiedTransition(string $runId, string $identity): void
     {
-        $this->finalizeTransition($runId);
-    }
-
-    public function finalizeTransition(string $runId): void
-    {
+        if (($this->pending[$runId]->identity ?? null) !== $identity) {
+            throw new \RuntimeException('Fixture transition identity mismatch.');
+        }
+        unset($this->pending[$runId]);
     }
 
     public function latestSequenceFor(string $runId): ?int

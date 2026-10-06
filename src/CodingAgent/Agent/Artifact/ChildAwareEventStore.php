@@ -58,15 +58,6 @@ final class ChildAwareEventStore implements \Ineersa\AgentCore\Contract\Prepared
         $store->finalizeVerifiedTransition($runId, $identity);
     }
 
-    public function finalizeTransition(string $runId): void
-    {
-        $store = $this->resolveChildStore($runId) ?? $this->parentStore;
-        if (!$store instanceof \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface) {
-            throw new \LogicException('Configured canonical store lacks transition preparation.');
-        }
-        $store->finalizeTransition($runId);
-    }
-
     public function assertTransitionReady(string $runId): void
     {
         $store = $this->resolveChildStore($runId) ?? $this->parentStore;

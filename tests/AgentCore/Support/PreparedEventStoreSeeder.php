@@ -9,7 +9,8 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 
 /**
  * Test-only seeding through the supported prepared-transition API.
- * Finalizes each write so later production commits do not see leftover intent.
+ * Finalizes each write with the verified transition identity so later
+ * production commits do not see leftover intent.
  */
 final class PreparedEventStoreSeeder
 {
@@ -44,7 +45,11 @@ final class PreparedEventStoreSeeder
             'post_commit_effects' => [],
             'after_turn_hooks' => false,
         ]);
-        $store->finalizeTransition($runId);
+        $pending = $store->verifiedPendingTransition($runId);
+        if (null === $pending) {
+            throw new \RuntimeException('PreparedEventStoreSeeder requires a verified pending transition.');
+        }
+        $store->finalizeVerifiedTransition($runId, $pending->identity);
 
         return $persisted;
     }

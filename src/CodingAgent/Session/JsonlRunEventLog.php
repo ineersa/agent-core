@@ -23,6 +23,7 @@ use Symfony\Component\Lock\LockFactory;
  * vs streaming reads, optional physical-read observations, per-store exception/log messages).
  * The only policy hook is the optional successful-write callback used by
  * SessionRunEventStore for cache invalidation.
+ * Canonical publication finalizes only through verified transition identity.
  *
  * @internal
  */
@@ -125,17 +126,6 @@ final class JsonlRunEventLog
         $lock->acquire(true);
         try {
             (new JsonlAppendJournal())->finalizeVerified($path, $identity);
-        } finally {
-            $lock->release();
-        }
-    }
-
-    public function finalizeTransition(string $path, string $runId): void
-    {
-        $lock = $this->lockFactory->createLock('hatfield-run-'.$runId);
-        $lock->acquire(true);
-        try {
-            (new JsonlAppendJournal())->finalize($path);
         } finally {
             $lock->release();
         }
