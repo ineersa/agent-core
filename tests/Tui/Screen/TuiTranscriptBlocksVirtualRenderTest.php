@@ -229,6 +229,65 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
         yield 'unreported telemetry' => ['subagent', false, null];
     }
 
+    #[DataProvider('parallelContextWidths')]
+    public function testParallelContextUsageSurvivesCompletion(int $columns): void
+    {
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addSubscriber(new ToolProjectionSubscriber(new SubagentProgressDisplayFormatter(), SubagentProgressSerializerTestSupport::denormalizer()));
+        $projector = new TranscriptProjector($dispatcher, new TranscriptProjectionState());
+        $state = new TuiSessionState(self::SESSION_ID);
+        $applier = new TuiRuntimeEventApplier($projector, SubagentProgressSerializerTestSupport::denormalizer());
+        $harness = new VirtualTuiHarness(columns: $columns, rows: 30, sessionId: self::SESSION_ID);
+        $harness->screen()->setWorkingVisible(false);
+        $child = static fn (int $index, int $latest, int $window): array => [
+            'index' => $index, 'status' => 'running', 'agent_name' => 'worker-'.$index,
+            'artifact_id' => 'agent_ctx_'.$index, 'agent_run_id' => 'child-ctx-'.$index,
+            'task_summary' => 'Inspect context', 'model' => 'test/model', 'reasoning' => 'medium',
+            'input_tokens' => 9_100_000, 'total_tokens' => 9_100_000,
+            'latest_input_tokens' => $latest, 'context_window' => $window,
+            'cache_read_hit_percentage' => 98, 'recent_tools' => ['read'],
+        ];
+        $progress = [
+            'mode' => 'parallel', 'status' => 'running', 'total_count' => 3, 'completed_count' => 0,
+            'children' => [$child(1, 196_900, 200_000), $child(2, 40_000, 80_000), $child(3, 0, 200_000)],
+        ];
+        $applier->apply($state, new RuntimeEvent(type: 'tool_execution.started', runId: self::SESSION_ID, seq: 1,
+            payload: ['tool_call_id' => 'ctx-call', 'tool_name' => 'subagent']));
+        $applier->apply($state, new RuntimeEvent(type: 'tool_execution.output_delta', runId: self::SESSION_ID, seq: 2,
+            payload: ['tool_call_id' => 'ctx-call', 'tool_name' => 'subagent', 'delta' => '', 'subagent_progress' => $progress]));
+        $harness->screen()->setTranscriptBlocks($projector->blocks());
+        $running = $harness->plainScreenText();
+        $this->assertStringContainsString('parallel subagents (0/3 completed)', $running);
+        $this->assertStringContainsString('CTX 98% 196.9k/200.0k', $running);
+        $this->assertStringContainsString('CTX 50% 40.0k/80.0k', $running);
+        $this->assertSame(2, substr_count($running, 'CTX '), 'Missing latest usage must not fall back to cumulative input.');
+        $this->assertStringContainsString('↻ 98%', $running);
+        $this->assertStringContainsString('9.1M tok', $running);
+        $this->assertStringContainsString('› read · Task Inspect context', $running);
+
+        $progress['status'] = 'completed';
+        $progress['completed_count'] = 3;
+        $progress['children'] = array_map(static fn (array $row): array => array_replace($row, ['status' => 'completed']), $progress['children']);
+        $applier->apply($state, new RuntimeEvent(type: 'tool_execution.output_delta', runId: self::SESSION_ID, seq: 3,
+            payload: ['tool_call_id' => 'ctx-call', 'tool_name' => 'subagent', 'delta' => '', 'subagent_progress' => $progress]));
+        $applier->apply($state, new RuntimeEvent(type: 'tool_execution.completed', runId: self::SESSION_ID, seq: 4,
+            payload: ['tool_call_id' => 'ctx-call', 'tool_name' => 'subagent', 'result' => 'Children finished']));
+        $harness->screen()->setTranscriptBlocks($projector->blocks());
+        $completed = $harness->plainScreenText();
+        $this->assertStringContainsString('parallel subagents (3/3 completed)', $completed);
+        $this->assertStringContainsString('CTX 98% 196.9k/200.0k', $completed);
+        $this->assertStringContainsString('CTX 50% 40.0k/80.0k', $completed);
+        $this->assertSame(2, substr_count($completed, 'CTX '));
+        $this->assertStringContainsString('↻ 98%', $completed);
+    }
+
+    /** @return iterable<string, array{int}> */
+    public static function parallelContextWidths(): iterable
+    {
+        yield 'narrow card' => [80];
+        yield 'wide card' => [120];
+    }
+
     #[Test]
     public function testSingleUserMessageShowsGlyphAndText(): void
     {

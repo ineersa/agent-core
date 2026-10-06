@@ -126,7 +126,8 @@ final class SubagentProgressCardWidget extends AbstractWidget
         $activity = $this->formatCurrentActivity($progress, $status);
 
         if (null !== $childIndex) {
-            $detail = implode(' · ', array_filter([$activity, $task], static fn (string $part): bool => '' !== $part));
+            $context = $this->formatContextUsageLine($progress) ?? '';
+            $detail = implode(' · ', array_filter([$context, $activity, $task], static fn (string $part): bool => '' !== $part));
 
             return [...$lines, $detail];
         }
@@ -229,6 +230,14 @@ final class SubagentProgressCardWidget extends AbstractWidget
 
     private function styleBodyLine(string $line, string $status): string
     {
+        if (str_starts_with($line, 'CTX ')) {
+            $parts = explode(' · ', $line, 2);
+            $context = $this->styleContextUsageLine($parts[0]);
+
+            return isset($parts[1])
+                ? $context.$this->applyElement('muted', ' · ').$this->styleBodyLine($parts[1], $status)
+                : $context;
+        }
         if ($this->looksLikeHeaderLine($line)) {
             return $this->applyElement($this->headerElement($status), $line);
         }
@@ -243,9 +252,6 @@ final class SubagentProgressCardWidget extends AbstractWidget
         }
         if (str_contains($line, ' LLM step') || str_contains($line, 'in:')) {
             return $this->applyElement('muted', $line);
-        }
-        if (str_starts_with($line, 'CTX ')) {
-            return $this->styleContextUsageLine($line);
         }
 
         return $this->applyElement('body', $line);
