@@ -231,7 +231,6 @@ final class PreparedTransitionEventStoreTest extends IsolatedKernelTestCase
         }
         $this->assertSame(1, $store->latestSequenceFor($run));
         $this->assertSame([1], array_map(static fn (RunEvent $event): int => $event->seq, iterator_to_array($store->rangeFor($run, 1, \PHP_INT_MAX))));
-        $beforeIdentity = $pending->identity;
         $order = [];
         $cutVisibleDuringObservation = null;
         $failure = $this->createMock(MessageBusInterface::class);
@@ -269,7 +268,6 @@ final class PreparedTransitionEventStoreTest extends IsolatedKernelTestCase
         $this->assertContains(\Ineersa\CodingAgent\Application\Message\DeferredAfterTurnCoordinationDTO::class, $order);
         $this->assertSame(\Ineersa\AgentCore\Domain\Message\ExecutionRequest::class, $order[array_key_last($order)]);
         $this->assertTrue($cutVisibleDuringObservation);
-        $this->assertSame($beforeIdentity, $beforeIdentity);
 
         $publishedBytes = file_get_contents($path);
         $process = new Process([
