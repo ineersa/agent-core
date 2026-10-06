@@ -184,6 +184,12 @@ final readonly class RunCommit
         return $this->sourceAcceptance->alreadyAccepted($message);
     }
 
+    /** @param array<string, int|string> $identity */
+    public function sourceIdentityAlreadyAccepted(array $identity): bool
+    {
+        return $this->sourceAcceptance->identityAlreadyAccepted($identity);
+    }
+
     /** @param list<RunEvent> $events
      * @param list<object> $effects
      * @param list<object> $actions

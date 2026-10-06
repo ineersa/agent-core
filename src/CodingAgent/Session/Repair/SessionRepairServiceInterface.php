@@ -10,5 +10,5 @@ interface SessionRepairServiceInterface
 {
     public function integrityRefusal(string $runId): ?RepairResult;
 
-    public function repair(string $runId, bool $apply): RepairResult;
+    public function repair(string $runId, bool $apply, string $commandId): RepairResult;
 }

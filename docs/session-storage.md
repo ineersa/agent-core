@@ -158,6 +158,10 @@ owns execution, commits the warning, and retires the old receipt. It does not re
 the ambiguous action. A later attempt may duplicate effects already performed.
 Retired deliveries cannot regain authorization, and stale notices cannot fail a newer
 operation. Interrupted retirement resumes from the committed repair decision.
+Retirement and required synthetic tool-history fixes share one captured journal plan.
+Recovery finishes that plan without regenerating its events. Repair delivery repeats
+the original authorized reference, never a newly reconstructed request. A broker
+failure leaves the plan pending and the repair source unaccepted until recovery succeeds.
 
 If a cancelled or failed terminal history has unmatched assistant tool calls, repair
 appends synthetic error tool results and a batch commit. This restores valid model

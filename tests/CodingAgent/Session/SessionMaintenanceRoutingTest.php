@@ -146,6 +146,8 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         $this->assertSame($completed->status, $replay->status);
         $this->assertSame($completed->lastSeq, $replay->lastSeq);
         // Command and worker-result redelivery cannot compact twice or revive the old work.
+        $container->get('cache.app')->clear();
+        $registry->release($run);
         $bus->dispatch($queued->with(new ReceivedStamp('run_control')));
         $registry->release($run);
         $bus->dispatch($sent[2]->with(new ReceivedStamp('run_control')));
@@ -164,7 +166,7 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         $active = self::getContainer()->get(ActiveRunContextInterface::class);
         $state = $active->requireLoaded($run);
         $bus = self::getContainer()->get('agent.command.bus');
-        $queued = $bus->dispatch(new AttachRun($run, []));
+        $queued = $bus->dispatch(new AttachRun($run, [], 'attach-id'));
         $this->assertSame($baseline, $sessions->findSession($run)->reasoningBaseline);
         $bus->dispatch($queued->with(new ReceivedStamp('run_control')));
         $this->assertSame(['continuation_generation' => $sessions->continuationGeneration($run)], $sessions->findSession($run)->reasoningBaseline);
@@ -196,6 +198,14 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         $this->assertSame('First prompt', $result->payload['editor_prompt_text']);
         $events = iterator_to_array(self::getContainer()->get(InMemoryRuntimeEventSink::class)->drain($run));
         $this->assertSame($result, $events[array_key_last($events)]);
+        $duplicate = self::getContainer()->get('agent.command.bus')->dispatch($queued->with(new ReceivedStamp('run_control')))->last(HandledStamp::class)->getResult();
+        $this->assertInstanceOf(RuntimeEvent::class, $duplicate);
+        $this->assertSame(RuntimeEventTypeEnum::CommandAck->value, $duplicate->type);
+        $this->assertSame(['commandId' => 'select', 'commandType' => 'select_history_turn', 'status' => 'accepted'], $duplicate->payload);
+        $this->assertSame(0, $duplicate->seq);
+        $this->assertSame($result->seq, $store->latestSequenceFor($run));
+        $events = iterator_to_array(self::getContainer()->get(InMemoryRuntimeEventSink::class)->drain($run));
+        $this->assertSame([$duplicate], $events, 'Duplicate selection acknowledges without reseeding the editor.');
         $this->assertMaintenanceDidNotScheduleCompaction($run);
     }
 
@@ -286,7 +296,7 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         ]);
         $sessions->claimReasoningBaseline($run, 'test-model', 'medium');
         $bus = $container->get('agent.command.bus');
-        $bus->dispatch(new AttachRun($run, []));
+        $bus->dispatch(new AttachRun($run, [], 'attach-id'));
         $bus->dispatch(new ApplyCommand($run, 0, 'follow-now', 1, 'follow-now', 'follow_up', ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Continue now']]]]));
         $transport = $container->get('messenger.transport.run_control');
         $queued = $transport->getSent();
@@ -381,14 +391,18 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         $replay = $container->get(\Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface::class);
         $registry = $container->get(ActiveRunContextInterface::class);
         $registry->loadRecovered($replay->rebuildIfStale(RunState::queued($run), $run)->rebuiltState);
-        $container->get(\Ineersa\AgentCore\Contract\History\HistorySelectionServiceInterface::class)->selectPrompt($run, 2);
+        $maintenance = $container->get(\Ineersa\CodingAgent\Application\Pipeline\SessionMaintenanceHandler::class);
+        $attach = new AttachRun($run, [], 'attach-before-discard');
+        $selection = new SelectHistoryPrompt($run, 2, 'selection-before-discard');
+        $maintenance->attach($attach);
+        $this->assertSame(RuntimeEventTypeEnum::RunHistoryPositionChanged->value, $maintenance->select($selection)->type);
         $processor = $container->get(\Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor::class);
         $processor->process('test', new ApplyCommand($run, 1, 'append-selected', 1, 'append-selected', 'append_message', ['message' => $rawMessage('user', 'NEW_CONTEXT')]));
         $this->assertContains('history_tail_discarded', array_column($store->allFor($run), 'type'));
         // Persist only the cancellation acceptance to reproduce interruption before terminalization.
         $store->append(RunEvent::forAppend($run, 1, 'agent_command_applied', ['kind' => 'cancel']));
         $registry->loadRecovered($replay->rebuildIfStale(RunState::queued($run), $run)->rebuiltState);
-        $result = $container->get(\Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface::class)->repair($run, true);
+        $result = $container->get(\Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface::class)->repair($run, true, 'repair-before-new-turn');
         $this->assertTrue($result->staleCancellationRepaired, $result->message);
         $immediate = $registry->requireLoaded($run);
         $cold = $replay->rebuildIfStale(RunState::queued($run), $run)->rebuiltState;
@@ -415,6 +429,213 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         $this->assertStringContainsString('CONTINUE_RETAINED', $texts);
         $this->assertStringNotContainsString('DISCARDED_PROMPT', $texts);
         $this->assertStringNotContainsString('DISCARDED_ASSISTANT', $texts);
+        $bytes = file_get_contents($this->archivePath($run));
+        $this->assertNotFalse($bytes);
+        $ownerCount = \count($container->get('messenger.transport.run_control')->getSent());
+        $container->get('cache.app')->clear();
+        $registry->release($run);
+        $container->get(\Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware::class)->initializeForOwner($run, $attach);
+        $maintenance->attach($attach);
+        $this->assertSame(RuntimeEventTypeEnum::CommandAck->value, $maintenance->select($selection)->type, 'An accepted selection of discarded history must not reposition newer work.');
+        $this->assertSame(0, $maintenance->repair(new RepairSession($run, true, 'repair-before-new-turn'))->activeOperationsRedriven);
+        $processor->process('test', new ApplyCommand($run, 1, 'append-selected', 1, 'append-selected', 'append_message', ['message' => $rawMessage('user', 'NEW_CONTEXT')]));
+        $this->assertSame($bytes, file_get_contents($this->archivePath($run)));
+        $this->assertCount(1, $container->get('messenger.transport.llm')->getSent());
+        $this->assertCount($ownerCount, $container->get('messenger.transport.run_control')->getSent());
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('maintenanceInterruptions')]
+    public function testMaintenanceRecoveryFencesTheOriginalActionButAllowsFreshIdentity(string $kind, string $phase, string $boundary): void
+    {
+        $c = self::getContainer();
+        $store = $c->get(\Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface::class);
+        $registry = $c->get(ActiveRunContextInterface::class);
+        $sessions = $c->get(HatfieldSessionStore::class);
+        if ('attach' === $kind) {
+            $run = $sessions->createSession('attach recovery');
+            $c->get(EventStoreInterface::class)->appendMany([
+                RunEvent::forAppend($run, 0, 'run_started', ['payload' => ['metadata' => ['model' => 'test-model'], 'messages' => []]]),
+                RunEvent::forAppend($run, 0, 'waiting_human', ['question_id' => 'old-question', 'prompt' => 'Continue?']),
+            ]);
+            $command = new AttachRun($run, [], 'original-action');
+        } else {
+            $run = $this->seed();
+            $command = new SelectHistoryPrompt($run, 1, 'original-action');
+        }
+        $source = \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance::actionIdentity($command::class, $run, $command->commandId);
+        $acceptance = $c->get(\Ineersa\AgentCore\Application\Pipeline\SourceAcceptance::class);
+        $this->assertFalse($acceptance->identityAlreadyAccepted($source));
+        $fault = $this->createStub(\Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface::class);
+        $fired = false;
+        $matches = static fn (array $work): bool => ($work['source']['type'] ?? null) === $command::class && ($work['source']['step_id'] ?? null) === $phase;
+        $fault->method('assertTransitionReady')->willReturnCallback($store->assertTransitionReady(...));
+        $fault->method('verifiedPendingTransition')->willReturnCallback($store->verifiedPendingTransition(...));
+        $fault->method('appendTransition')->willReturnCallback(static function (array $events, array $work) use ($store, $matches, $boundary, &$fired): array {
+            if (!$fired && 'before_append' === $boundary && $matches($work)) {
+                $fired = true;
+                throw new \RuntimeException('Injected maintenance interruption.');
+            }
+            $persisted = $store->appendTransition($events, $work);
+            if (!$fired && 'after_append' === $boundary && $matches($work)) {
+                $fired = true;
+                throw new \RuntimeException('Injected maintenance interruption.');
+            }
+
+            return $persisted;
+        });
+        $fault->method('finalizeVerifiedTransition')->willReturnCallback(static function (string $id, string $identity) use ($store, $matches, $boundary, &$fired): void {
+            $pending = $store->verifiedPendingTransition($id);
+            $store->finalizeVerifiedTransition($id, $identity);
+            if (!$fired && 'after_finalize' === $boundary && null !== $pending && $matches($pending->work)) {
+                $fired = true;
+                throw new \RuntimeException('Injected maintenance interruption.');
+            }
+        });
+        $commit = new \Ineersa\AgentCore\Application\Pipeline\RunCommit($registry, $fault,
+            $c->get(\Ineersa\AgentCore\Application\Handler\StepDispatcher::class), new \Psr\Log\NullLogger(),
+            $c->get(\Ineersa\AgentCore\Application\Handler\ToolBatchCollector::class),
+            $c->get(\Ineersa\AgentCore\Contract\Tool\ToolExecutionAuthorizationInterface::class),
+            $c->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class), $acceptance,
+            actionValidator: $c->get(\Ineersa\AgentCore\Application\Handler\CoordinationActionValidator::class));
+        $processor = new \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor($registry,
+            $c->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class), $commit,
+            [$c->get(\Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler::class), $c->get(\Ineersa\AgentCore\Application\Pipeline\RefreshRunContextHandler::class)]);
+        $history = new \Ineersa\CodingAgent\Session\History\HistorySelectionService($c->get(EventStoreInterface::class),
+            $c->get(\Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface::class), $registry,
+            $c->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class), new \Psr\Log\NullLogger(),
+            $c->get(\Ineersa\CodingAgent\Session\History\HistoryProjector::class),
+            $c->get(\Ineersa\AgentCore\Application\Replay\ReplayEventPreparer::class), $commit);
+        $handler = new \Ineersa\CodingAgent\Application\Pipeline\SessionMaintenanceHandler($history,
+            $c->get(\Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface::class), $c->get(InMemoryRuntimeEventSink::class),
+            $c->get(\Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink::class), false, new \Psr\Log\NullLogger(),
+            $registry, $processor, $sessions, $c->get(\Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware::class),
+            $commit, $c->get(\Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery::class));
+        $entry = $c->get(\Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware::class);
+        $entry->initializeForOwner($run, $command);
+        $asyncInterruptedAttach = 'attach' === $kind && 'complete' === $phase && 'before_append' === $boundary;
+        $bus = $c->get('agent.command.bus');
+        $attachBus = new \Symfony\Component\Messenger\MessageBus([$entry,
+            new \Symfony\Component\Messenger\Middleware\HandleMessageMiddleware(new \Symfony\Component\Messenger\Handler\HandlersLocator([
+                AttachRun::class => [$handler->attach(...)],
+            ])),
+        ]);
+        if ($asyncInterruptedAttach) {
+            $bus->dispatch($command);
+        }
+        if ($command instanceof AttachRun) {
+            try {
+                if ($asyncInterruptedAttach) {
+                    $attachBus->dispatch(new \Symfony\Component\Messenger\Envelope($command, [new ReceivedStamp('run_control')]));
+                } else {
+                    $handler->attach($command);
+                }
+                $this->fail('The configured failure must interrupt attach.');
+            } catch (\RuntimeException|HandlerFailedException $exception) {
+                $this->assertStringContainsString('Injected maintenance interruption.', $exception->getMessage());
+            }
+        } else {
+            $this->assertSame(RuntimeEventTypeEnum::ProtocolError->value, $handler->select($command)->type);
+        }
+        $this->assertTrue($fired);
+        $this->assertSame('after_finalize' === $boundary && 'complete' === $phase, $acceptance->identityAlreadyAccepted($source));
+        if ($asyncInterruptedAttach) {
+            // A delayed retry may arrive after a later owner delivery. The
+            // already committed cancel constituent must not reject that input.
+            $followUp = new ApplyCommand($run, 0, 'new-input', 1, 'new-input', 'follow_up', ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'New input after interrupted attach']]]]);
+            $bus->dispatch($followUp);
+            $bus->dispatch(new \Symfony\Component\Messenger\Envelope($followUp, [new ReceivedStamp('run_control')]));
+            $this->assertTrue($c->get(\Ineersa\AgentCore\Contract\CommandStoreInterface::class)->has($run, 'new-input'));
+            $attachBus->dispatch(new \Symfony\Component\Messenger\Envelope($command, [new ReceivedStamp('run_control')]));
+            $events = $c->get(EventStoreInterface::class)->allFor($run);
+            $this->assertCount(1, array_filter($events, static fn (RunEvent $event): bool => 'agent_command_applied' === $event->type && 'cancel' === ($event->payload['kind'] ?? null)));
+            $this->assertCount(1, array_filter($events, static fn (RunEvent $event): bool => 'agent_command_queued' === $event->type && 'new-input' === ($event->payload['idempotency_key'] ?? null)));
+            $this->assertNotContains('agent_command_rejected', array_column($events, 'type'));
+            $this->assertTrue($acceptance->identityAlreadyAccepted($source));
+        }
+        $registry->release($run);
+        $entry->initializeForOwner($run, $command);
+        if ($command instanceof AttachRun) {
+            $handler->attach($command);
+            $this->assertSame([], $registry->requireLoaded($run)->pendingHumanInputRequests);
+            $this->assertSame(RunStatus::Cancelled, $registry->requireLoaded($run)->status);
+        } else {
+            $handler->select($command);
+        }
+        $this->assertTrue($acceptance->identityAlreadyAccepted($source));
+        $this->assertNull($store->verifiedPendingTransition($run));
+        $bytes = file_get_contents($this->archivePath($run));
+        $this->assertNotFalse($bytes);
+        $c->get('cache.app')->clear();
+        $registry->release($run);
+        $entry->initializeForOwner($run, $command);
+        if ($command instanceof AttachRun) {
+            $sessions->claimReasoningBaseline($run, 'test-model', 'medium');
+            $baseline = $sessions->findSession($run)->reasoningBaseline;
+            $handler->attach($command);
+            $this->assertSame($baseline, $sessions->findSession($run)->reasoningBaseline);
+            $this->assertSame($bytes, file_get_contents($this->archivePath($run)));
+            $handler->attach(new AttachRun($run, [], 'fresh-action'));
+            $this->assertCount(2, array_filter($c->get(EventStoreInterface::class)->allFor($run), static fn (RunEvent $event): bool => 'context_refreshed' === $event->type));
+        } else {
+            $this->assertSame(RuntimeEventTypeEnum::CommandAck->value, $handler->select($command)->type);
+            $this->assertSame($bytes, file_get_contents($this->archivePath($run)));
+            $handler->select(new SelectHistoryPrompt($run, 1, 'fresh-action'));
+            $this->assertCount(3, array_filter($c->get(EventStoreInterface::class)->allFor($run), static fn (RunEvent $event): bool => 'history_position_set' === $event->type));
+        }
+        $this->assertSame([], $c->get('messenger.transport.llm')->getSent());
+    }
+
+    /** @return iterable<string, array{string, string, string}> */
+    public static function maintenanceInterruptions(): iterable
+    {
+        yield 'attach cancel appended' => ['attach', 'cancel', 'after_append'];
+        yield 'attach refresh not staged' => ['attach', 'complete', 'before_append'];
+        yield 'attach refresh appended' => ['attach', 'complete', 'after_append'];
+        yield 'attach root finalized' => ['attach', 'complete', 'after_finalize'];
+        yield 'selection appended' => ['select', 'complete', 'after_append'];
+        yield 'selection root finalized' => ['select', 'complete', 'after_finalize'];
+    }
+
+    public function testAcceptedOldHumanAnswerCannotChangeRevisedSuspensionOrDiscardHistory(): void
+    {
+        $c = self::getContainer();
+        $run = $c->get(HatfieldSessionStore::class)->createSession('revised human suspension');
+        $registry = $c->get(ActiveRunContextInterface::class);
+        $collector = $c->get(\Ineersa\AgentCore\Application\Handler\ToolBatchCollector::class);
+        $call = new ExecuteToolCall(runId: $run, turnNo: 1, stepId: 'tools', attempt: 1, idempotencyKey: 'call-key', toolCallId: 'call', orderIndex: 0, toolName: 'read', args: ['path' => './file']);
+        $collector->registerExpectedBatch($run, 1, 'tools', [$call]);
+        \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, $run, 1, 'tools', 'call', 'old-question');
+        $request = \Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO::toolCallFromPayload(
+            ['question_id' => 'old-question', 'prompt' => 'Allow?'],
+            ['run_id' => $run, 'turn_no' => 1, 'step_id' => 'tools', 'tool_call_id' => 'call']);
+        $state = new RunState($run, RunStatus::WaitingHuman, turnNo: 1, activeStepId: 'tools',
+            pendingToolCalls: ['call' => false], pendingHumanInputRequests: [$request], model: 'test-model');
+        $registry->loadRecovered($state);
+        $commit = $c->get(\Ineersa\AgentCore\Application\Pipeline\RunCommit::class);
+        $commit->commit($state, $state, [RunEvent::forAppend($run, 1, 'run_started', ['payload' => ['messages' => []]]),
+            RunEvent::forAppend($run, 1, 'turn_advanced', ['turn_no' => 1, 'step_id' => 'tools'])], dispatchAfterTurnHooks: false);
+        $answer = new ApplyCommand($run, 1, 'answer-step', 1, 'old-answer', 'human_response', ['question_id' => 'old-question', 'answer' => 'yes']);
+        $bus = $c->get('agent.command.bus');
+        $bus->dispatch(new \Symfony\Component\Messenger\Envelope($answer, [new ReceivedStamp('run_control')]));
+        \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, $run, 1, 'tools', 'call', 'new-question');
+        $request = \Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO::toolCallFromPayload(
+            ['question_id' => 'new-question', 'prompt' => 'Revised approval?'],
+            ['run_id' => $run, 'turn_no' => 1, 'step_id' => 'tools', 'tool_call_id' => 'call']);
+        $state = $registry->requireLoaded($run);
+        $next = $state->with(['status' => RunStatus::WaitingHuman, 'pendingHumanInputRequests' => [$request]]);
+        $commit->commit($state, $next, [RunEvent::forAppend($run, 2, 'turn_advanced', ['turn_no' => 2, 'step_id' => 'historical-tail']),
+            RunEvent::forAppend($run, 1, 'history_position_set', ['position_turn_no' => 1])], dispatchAfterTurnHooks: false);
+        $batchStore = $c->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class);
+        $before = serialize($batchStore->load($run, 1, 'tools'));
+        $bytes = file_get_contents($this->archivePath($run));
+        $this->assertNotFalse($bytes);
+        $sent = $c->get('messenger.transport.tool')->getSent();
+        $this->assertCount(1, $sent, 'The first accepted answer dispatches its continuation.');
+        $bus->dispatch(new \Symfony\Component\Messenger\Envelope($answer, [new ReceivedStamp('run_control')]));
+        $this->assertSame($bytes, file_get_contents($this->archivePath($run)));
+        $this->assertSame($before, serialize($batchStore->load($run, 1, 'tools')));
+        $this->assertSame('new-question', $registry->requireLoaded($run)->pendingHumanInputRequests[0]->questionId);
+        $this->assertSame($sent, $c->get('messenger.transport.tool')->getSent());
     }
 
     protected function afterKernelBoot(): void
@@ -458,6 +679,8 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
             $container->get(\Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor::class),
             $container->get(HatfieldSessionStore::class),
             $container->get(\Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware::class),
+            $container->get(\Ineersa\AgentCore\Application\Pipeline\RunCommit::class),
+            $container->get(\Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery::class),
         ));
     }
 

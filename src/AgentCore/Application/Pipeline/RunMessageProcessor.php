@@ -31,9 +31,11 @@ final readonly class RunMessageProcessor
         $this->handlers = [...$handlers];
     }
 
-    public function process(string $scope, AbstractAgentBusMessage $message): void
+    /** @param array<string, int|string>|null $sourceIdentity Owner-local constituent of a producer-captured action. */
+    public function process(string $scope, AbstractAgentBusMessage $message, ?array $sourceIdentity = null): void
     {
         $runId = $message->runId();
+        $sourceIdentity ??= SourceAcceptance::identity($message);
         RunLogContext::enter([
             'run_id' => $runId,
             'scope' => $scope,
@@ -42,7 +44,7 @@ final readonly class RunMessageProcessor
         ]);
 
         try {
-            $this->runLockManager->synchronized($runId, function () use ($message, $runId): void {
+            $this->runLockManager->synchronized($runId, function () use ($message, $runId, $sourceIdentity): void {
                 $handler = $this->resolveHandler($message);
                 RunLogContext::enter([
                     'handler' => $handler::class,
@@ -52,7 +54,7 @@ final readonly class RunMessageProcessor
                 ]);
                 try {
                     $this->runCommit->assertTransitionReady($runId);
-                    if ($this->runCommit->sourceAlreadyAccepted($message)) {
+                    if ($this->runCommit->sourceAlreadyAccepted($message) || $this->runCommit->sourceIdentityAlreadyAccepted($sourceIdentity)) {
                         return;
                     }
                     $state = $this->activeRunContext->requireLoaded($runId);
@@ -84,7 +86,7 @@ final readonly class RunMessageProcessor
                         : null;
                     if (null === $result->nextState) {
                         if (null !== $executionDisposition) {
-                            $this->runCommit->commit($state, $state, [], dispatchAfterTurnHooks: false, postCommitEffects: $result->postCommitEffects, postCommitActions: $result->postCommitActions, sourceIdentity: SourceAcceptance::identity($message), executionDisposition: $executionDisposition);
+                            $this->runCommit->commit($state, $state, [], dispatchAfterTurnHooks: false, postCommitEffects: $result->postCommitEffects, postCommitActions: $result->postCommitActions, sourceIdentity: $sourceIdentity, executionDisposition: $executionDisposition);
 
                             return;
                         }
@@ -93,14 +95,14 @@ final readonly class RunMessageProcessor
 
                             return;
                         }
-                        if ([] !== SourceAcceptance::identity($message) || [] !== $result->postCommitEffects || [] !== $result->postCommitActions) {
-                            $this->runCommit->commit($state, $state, [], dispatchAfterTurnHooks: false, postCommitEffects: $result->postCommitEffects, postCommitActions: $result->postCommitActions, sourceIdentity: SourceAcceptance::identity($message));
+                        if ([] !== $sourceIdentity || [] !== $result->postCommitEffects || [] !== $result->postCommitActions) {
+                            $this->runCommit->commit($state, $state, [], dispatchAfterTurnHooks: false, postCommitEffects: $result->postCommitEffects, postCommitActions: $result->postCommitActions, sourceIdentity: $sourceIdentity);
                         }
 
                         return;
                     }
 
-                    $this->runCommit->commit($state, $result->nextState, $result->events, $result->effects, postCommitEffects: $result->postCommitEffects, postCommitActions: $result->postCommitActions, sourceIdentity: SourceAcceptance::identity($message), resultDisposition: $disposition, executionDisposition: $executionDisposition);
+                    $this->runCommit->commit($state, $result->nextState, $result->events, $result->effects, postCommitEffects: $result->postCommitEffects, postCommitActions: $result->postCommitActions, sourceIdentity: $sourceIdentity, resultDisposition: $disposition, executionDisposition: $executionDisposition);
                 } finally {
                     RunLogContext::leave();
                 }

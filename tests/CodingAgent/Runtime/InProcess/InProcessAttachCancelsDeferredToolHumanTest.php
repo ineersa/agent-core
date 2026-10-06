@@ -163,6 +163,7 @@ final class InProcessAttachCancelsDeferredToolHumanTest extends IsolatedKernelTe
             $container->get(\Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink::class),
             false, new NullLogger(), $active, $processor,
             $container->get(HatfieldSessionStore::class), $container->get(\Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware::class),
+            $container->get(RunCommit::class), $container->get(\Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery::class),
         );
         $ownerAttach->attach($commandBus->messages[0]);
 

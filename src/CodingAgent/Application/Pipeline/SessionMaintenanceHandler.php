@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Application\Pipeline;
 
+use Ineersa\AgentCore\Application\Pipeline\SourceAcceptance;
 use Ineersa\AgentCore\Contract\History\HistorySelectionServiceInterface;
 use Ineersa\CodingAgent\Application\Message\RepairSession;
 use Ineersa\CodingAgent\Application\Message\SelectHistoryPrompt;
@@ -32,19 +33,25 @@ final readonly class SessionMaintenanceHandler
         private \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor $processor,
         private \Ineersa\CodingAgent\Session\HatfieldSessionStore $sessions,
         private \Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware $initialization,
+        private \Ineersa\AgentCore\Application\Pipeline\RunCommit $runCommit,
+        private \Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery $recovery,
     ) {
     }
 
     #[AsMessageHandler(bus: 'agent.command.bus')]
     public function attach(\Ineersa\CodingAgent\Application\Message\AttachRun $command): void
     {
+        $source = SourceAcceptance::actionIdentity($command::class, $command->runId, $command->commandId);
+        if ($this->runCommit->sourceIdentityAlreadyAccepted($source)) {
+            return;
+        }
         $state = $this->registry->requireLoaded($command->runId);
         if (\Ineersa\AgentCore\Domain\Run\RunStatus::WaitingHuman === $state->status || [] !== $state->pendingHumanInputRequests) {
-            $step = 'attach-cancel-'.hrtime(true);
-            $this->processor->process('attach', new \Ineersa\AgentCore\Domain\Message\ApplyCommand($command->runId, $state->turnNo, $step, 1, $step, 'cancel', ['reason' => 'Outstanding human questions cancelled on session attach.']));
+            $step = 'attach-cancel-'.$command->commandId;
+            $this->processor->process('attach', new \Ineersa\AgentCore\Domain\Message\ApplyCommand($command->runId, $state->turnNo, $step, 1, $step, 'cancel', ['reason' => 'Outstanding human questions cancelled on session attach.']), SourceAcceptance::actionIdentity($command::class, $command->runId, $command->commandId, 'cancel'));
         }
         $this->sessions->resetReasoningBaseline($command->runId);
-        $this->processor->process('attach', new \Ineersa\AgentCore\Domain\Message\RefreshRunContext($command->runId, $command->messages));
+        $this->processor->process('attach', new \Ineersa\AgentCore\Domain\Message\RefreshRunContext($command->runId, $command->messages), $source);
     }
 
     #[AsMessageHandler(bus: 'agent.command.bus')]
@@ -52,7 +59,13 @@ final readonly class SessionMaintenanceHandler
     {
         try {
             $this->initialization->initializeForOwner($command->runId, $command);
-            $result = $this->history->selectPrompt($command->runId, $command->turnNo);
+            if ($this->runCommit->sourceIdentityAlreadyAccepted(SourceAcceptance::actionIdentity($command::class, $command->runId, $command->commandId))) {
+                $event = new RuntimeEvent(RuntimeEventTypeEnum::CommandAck->value, $command->runId, 0, ['commandId' => $command->commandId, 'commandType' => 'select_history_turn', 'status' => 'accepted']);
+                $this->emit($event);
+
+                return $event;
+            }
+            $result = $this->history->selectPrompt($command->runId, $command->turnNo, $command->commandId);
             $event = RunHistoryPositionChangedEventFactory::create($command->runId, $result['positionEventSeq'], $result['rebuiltState']->turnNo, $result['selectedPromptTurnNo'], $result['editorPromptText']);
         } catch (\Throwable $exception) {
             $this->logger->warning('history.selection.failed', ['run_id' => $command->runId, 'component' => 'session.maintenance', 'event_type' => 'history.selection.failed', 'exception_class' => $exception::class]);
@@ -67,10 +80,13 @@ final readonly class SessionMaintenanceHandler
     public function repair(RepairSession $command): RepairResult
     {
         try {
+            // Reconcile a previous stage before integrity checks, without
+            // admitting empty or corrupt history into the owner registry.
+            $this->recovery->recover($command->runId);
             $result = $this->repair->integrityRefusal($command->runId);
             if (null === $result) {
                 $this->initialization->initializeForOwner($command->runId, $command);
-                $result = $this->repair->repair($command->runId, $command->apply);
+                $result = $this->repair->repair($command->runId, $command->apply, $command->commandId);
             }
         } catch (\Throwable $exception) {
             $this->emit(new RuntimeEvent(type: RuntimeEventTypeEnum::SessionRepairCompleted->value, runId: $command->runId, seq: 0, payload: ['commandId' => $command->commandId, 'commandType' => 'repair', 'status' => 'failed', 'exception_class' => $exception::class]));

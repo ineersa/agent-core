@@ -209,7 +209,12 @@ final class MessengerDoctrineRedeliverTimeoutLeaseTest extends IsolatedKernelTes
             ));
 
             $executionBus = new TestMessageBus();
-            $commandBus = new TestMessageBus();
+            $redrive = new \Ineersa\CodingAgent\Application\Pipeline\RedriveRepairEffectsHandler(new StepDispatcher(new TestMessageBus(), $executionBus), $eventStore);
+            $commandBus = new \Symfony\Component\Messenger\MessageBus([
+                new \Symfony\Component\Messenger\Middleware\HandleMessageMiddleware(new \Symfony\Component\Messenger\Handler\HandlersLocator([
+                    \Ineersa\CodingAgent\Application\Message\RedriveRepairEffectsDTO::class => [$redrive],
+                ])),
+            ]);
             $repair = new SessionRepairService(
                 eventStore: $eventStore,
                 activeRunContext: $active,
@@ -222,16 +227,15 @@ final class MessengerDoctrineRedeliverTimeoutLeaseTest extends IsolatedKernelTes
                 toolCallSequenceValidator: new AgentMessageToolCallSequenceValidator(),
                 lockManager: new RunLockManager(new LockFactory(new FlockStore($lockDir))),
                 logger: new NullLogger(),
-                stepDispatcher: new StepDispatcher($commandBus, $executionBus),
                 toolBatchStore: $this->createStub(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
                 serializer: AttributeSerializerValidatorTestFactory::create()[0],
                 executionOperations: self::getContainer()->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class),
                 toolAuthorization: self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\ToolExecutionAuthorization::class),
                 historyReplayFilter: self::getContainer()->get(\Ineersa\CodingAgent\Session\History\HistoryReplayFilter::class),
-                runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit($active, $eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus()), new NullLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore())),
+                runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit($active, $eventStore, new StepDispatcher($commandBus, $executionBus), new NullLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore()), actionValidator: new \Ineersa\AgentCore\Application\Handler\CoordinationActionValidator([$redrive])),
             );
 
-            $result = $repair->repair($runId, true);
+            $result = $repair->repair($runId, true, \Symfony\Component\Uid\Uuid::v4()->toRfc4122());
             $this->assertSame(1, $result->activeOperationsRedriven);
             $this->assertCount(1, $executionBus->messages);
             $this->assertInstanceOf(Envelope::class, $executionBus->messages[0]);

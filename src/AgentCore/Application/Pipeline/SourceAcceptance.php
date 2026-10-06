@@ -16,6 +16,22 @@ final readonly class SourceAcceptance
     }
 
     /** @return array<string, int|string> */
+    public static function actionIdentity(string $type, string $runId, string $commandId, string $phase = 'complete'): array
+    {
+        if ('' === $commandId) {
+            throw new \InvalidArgumentException('Source action requires a producer-captured identity.');
+        }
+
+        return ['type' => $type, 'run_id' => $runId, 'turn_no' => 0, 'step_id' => $phase, 'attempt' => 1, 'idempotency_key' => $commandId];
+    }
+
+    /** @param array<string, int|string> $identity */
+    public function identityAlreadyAccepted(array $identity): bool
+    {
+        return [] !== $identity && $this->commands->has((string) $identity['run_id'], self::key($identity));
+    }
+
+    /** @return array<string, int|string> */
     public static function identity(AbstractAgentBusMessage $message): array
     {
         if (!$message instanceof \Ineersa\AgentCore\Domain\Message\StartRun && !$message instanceof ApplyCommand && !$message instanceof \Ineersa\AgentCore\Domain\Message\ApplyShellCommand && !$message instanceof \Ineersa\AgentCore\Domain\Message\AdvanceRun && !$message instanceof \Ineersa\AgentCore\Domain\Message\CompactRun) {

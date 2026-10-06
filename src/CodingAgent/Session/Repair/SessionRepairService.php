@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Session\Repair;
 
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
-use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
@@ -50,7 +49,6 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         private AgentMessageToolCallSequenceValidator $toolCallSequenceValidator,
         private RunLockManager $lockManager,
         private LoggerInterface $logger,
-        private StepDispatcher $stepDispatcher,
         private ToolBatchStoreInterface $toolBatchStore,
         private NormalizerInterface&DenormalizerInterface $serializer,
         private RunCommit $runCommit,
@@ -61,10 +59,22 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         $this->toolExecutionEndPayloadCodec = new ToolExecutionEndPayloadCodec($this->serializer);
     }
 
-    public function repair(string $runId, bool $apply): RepairResult
+    public function repair(string $runId, bool $apply, string $commandId): RepairResult
     {
-        return $this->lockManager->synchronized($runId, function () use ($runId, $apply): RepairResult {
-            return $this->doRepair($runId, $apply);
+        return $this->lockManager->synchronized($runId, function () use ($runId, $apply, $commandId): RepairResult {
+            $source = \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance::actionIdentity(\Ineersa\CodingAgent\Application\Message\RepairSession::class, $runId, $commandId);
+            $this->runCommit->assertTransitionReady($runId);
+            if ($apply && $this->runCommit->sourceIdentityAlreadyAccepted($source)) {
+                return $this->noRepairResult('Repair delivery was already accepted.');
+            }
+            $result = $this->doRepair($runId, $apply, $commandId);
+            if ($apply && !\in_array($result->refusalReason, [SessionRepairRefusalReasonEnum::NoEvents, SessionRepairRefusalReasonEnum::DuplicateSequences, SessionRepairRefusalReasonEnum::MissingSequences], true)
+                && !$this->runCommit->sourceIdentityAlreadyAccepted($source)) {
+                $state = $this->activeRunContext->requireLoaded($runId);
+                $this->runCommit->commit($state, $state, [], dispatchAfterTurnHooks: false, sourceIdentity: $source);
+            }
+
+            return $result;
         });
     }
 
@@ -145,13 +155,37 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         return false;
     }
 
-    private function doRepair(string $runId, bool $apply): RepairResult
+    /** @param list<object> $actions
+     * @return array<string, int|string>
+     */
+    private function repairSource(string $runId, string $commandId, array $actions): array
+    {
+        $source = \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance::actionIdentity(\Ineersa\CodingAgent\Application\Message\RepairSession::class, $runId, $commandId);
+        foreach ($actions as $action) {
+            if ($action instanceof \Ineersa\AgentCore\Domain\Coordination\RetireUnknownExecutionDTO) {
+                $source['command_type'] = \Ineersa\AgentCore\Domain\Coordination\RetireUnknownExecutionDTO::class;
+            }
+        }
+
+        return $source;
+    }
+
+    /** @param list<RunEvent> $leadingEvents
+     * @param list<object> $leadingActions
+     */
+    private function doRepair(string $runId, bool $apply, string $commandId, array $leadingEvents = [], array $leadingActions = []): RepairResult
     {
         $sorted = $this->canonicalHistory($runId);
         if ($sorted instanceof RepairResult) {
             return $sorted;
         }
 
+        // Prepare the remaining repair before publishing retirement. One intent
+        // retains both decisions, so recovery never regenerates the second one.
+        $maxSeq = $this->replayEventPreparer->maxSequence($sorted);
+        foreach ($leadingEvents as $offset => $event) {
+            $sorted[] = new RunEvent($event->runId, $maxSeq + $offset + 1, $event->turnNo, $event->type, $event->payload, $event->createdAt);
+        }
         $storedState = $this->activeRunContext->requireLoaded($runId);
 
         if ($storedState->isStreaming) {
@@ -167,7 +201,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
 
         $replayed = $this->retainedReplay($runId, $sorted);
 
-        $unknown = [...$this->executionOperations->unknownExecutionsForRepair($runId), ...$this->toolAuthorization->unknownExecutionsForRepair($runId)];
+        $unknown = [] === $leadingEvents ? [...$this->executionOperations->unknownExecutionsForRepair($runId), ...$this->toolAuthorization->unknownExecutionsForRepair($runId)] : [];
         if ([] !== $unknown) {
             foreach ($unknown as $notice) {
                 ($notice instanceof \Ineersa\AgentCore\Domain\Message\ExecutionOutcomeUnknown ? $this->executionOperations : $this->toolAuthorization)->assertUnknownRepairable($notice);
@@ -190,10 +224,10 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
                     break;
                 }
             }
-            // Retirement is finalized through the journal before normal repair
-            // can publish synthetic messages or dispatch any continuation.
-            $this->runCommit->commit($storedState, $nextState, $events, dispatchAfterTurnHooks: false, postCommitActions: $actions, sourceIdentity: ['command_type' => \Ineersa\AgentCore\Domain\Coordination\RetireUnknownExecutionDTO::class]);
-            $result = $this->doRepair($runId, true);
+            $result = $this->doRepair($runId, true, $commandId, $events, $actions);
+            if (!$this->runCommit->sourceIdentityAlreadyAccepted(\Ineersa\AgentCore\Application\Pipeline\SourceAcceptance::actionIdentity(\Ineersa\CodingAgent\Application\Message\RepairSession::class, $runId, $commandId))) {
+                $this->runCommit->commit($storedState, $nextState, $events, dispatchAfterTurnHooks: false, postCommitActions: $actions, sourceIdentity: $this->repairSource($runId, $commandId, $actions));
+            }
 
             return new RepairResult(true, true, $warning.' '.$result->message, $result->refusalReason, $result->activeOperationsRedriven);
         }
@@ -206,6 +240,9 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
                     sorted: $sorted,
                     replayed: $replayed,
                     storedState: $storedState,
+                    commandId: $commandId,
+                    leadingEvents: $leadingEvents,
+                    leadingActions: $leadingActions,
                 );
             }
 
@@ -215,11 +252,14 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
                 sorted: $sorted,
                 replayed: $replayed,
                 storedState: $storedState,
+                commandId: $commandId,
+                leadingEvents: $leadingEvents,
+                leadingActions: $leadingActions,
             );
         }
 
         if (RunStatus::Cancelling !== $replayed->status) {
-            $redrive = $this->currentOperationRedrive($runId, $apply, $sorted, $replayed);
+            $redrive = $this->currentOperationRedrive($runId, $apply, $sorted, $replayed, $commandId, $leadingEvents, $leadingActions);
             if (null !== $redrive) {
                 return $redrive;
             }
@@ -311,6 +351,9 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             storedState: $storedState,
             successMessage: 'Stale non-terminal cancellation repaired.',
             requiredStatus: RunStatus::Cancelled,
+            commandId: $commandId,
+            leadingEvents: $leadingEvents,
+            leadingActions: $leadingActions,
         );
     }
 
@@ -322,6 +365,8 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
      * messages only — never a second agent_end or tool_batch_committed.
      *
      * @param list<RunEvent> $sorted
+     * @param list<RunEvent> $leadingEvents
+     * @param list<object>   $leadingActions
      */
     private function repairTerminalCancelledMalformedBatch(
         string $runId,
@@ -329,6 +374,9 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         array $sorted,
         RunState $replayed,
         RunState $storedState,
+        string $commandId,
+        array $leadingEvents,
+        array $leadingActions,
     ): RepairResult {
         if (!$this->hasCancellationContext($sorted)) {
             return $this->noRepairResult('No repairable corruption detected.');
@@ -348,6 +396,9 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             successMessage: 'Terminal cancelled session repaired: missing tool messages appended.',
             requiredStatus: RunStatus::Cancelled,
             stepIdPrefix: 'repair-cancel',
+            commandId: $commandId,
+            leadingEvents: $leadingEvents,
+            leadingActions: $leadingActions,
         );
     }
 
@@ -357,6 +408,8 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
      * unavailable result so a resumed session has a valid assistant/tool pair.
      *
      * @param list<RunEvent> $sorted
+     * @param list<RunEvent> $leadingEvents
+     * @param list<object>   $leadingActions
      */
     private function repairTerminalFailedMalformedBatch(
         string $runId,
@@ -364,6 +417,9 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         array $sorted,
         RunState $replayed,
         RunState $storedState,
+        string $commandId,
+        array $leadingEvents,
+        array $leadingActions,
     ): RepairResult {
         return $this->repairTerminalMalformedBatch(
             runId: $runId,
@@ -375,11 +431,16 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             successMessage: 'Failed session repaired: missing tool messages appended.',
             requiredStatus: RunStatus::Failed,
             stepIdPrefix: 'repair-failed',
+            commandId: $commandId,
+            leadingEvents: $leadingEvents,
+            leadingActions: $leadingActions,
         );
     }
 
     /**
      * @param list<RunEvent> $sorted
+     * @param list<RunEvent> $leadingEvents
+     * @param list<object>   $leadingActions
      */
     private function repairTerminalMalformedBatch(
         string $runId,
@@ -391,6 +452,9 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         string $successMessage,
         RunStatus $requiredStatus,
         string $stepIdPrefix,
+        string $commandId,
+        array $leadingEvents,
+        array $leadingActions,
     ): RepairResult {
         $missingIds = $this->missingToolResultIds($replayed->messages);
         if (null === $missingIds) {
@@ -472,6 +536,9 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             storedState: $storedState,
             successMessage: $successMessage,
             requiredStatus: $requiredStatus,
+            commandId: $commandId,
+            leadingEvents: $leadingEvents,
+            leadingActions: $leadingActions,
             requireValidToolCallSequence: true,
         );
     }
@@ -479,6 +546,8 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
     /**
      * @param list<array{type: string, payload: array<string, mixed>}> $eventSpecs
      * @param list<RunEvent>                                           $sorted
+     * @param list<RunEvent>                                           $leadingEvents
+     * @param list<object>                                             $leadingActions
      */
     private function appendProposedRepairEvents(
         string $runId,
@@ -489,7 +558,10 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         RunState $storedState,
         string $successMessage,
         RunStatus $requiredStatus,
+        string $commandId,
         bool $requireValidToolCallSequence = false,
+        array $leadingEvents = [],
+        array $leadingActions = [],
     ): RepairResult {
         $proposedEvents = $this->eventFactory->eventsFromSpecs($runId, $turnNo, $maxSeq + 1, $eventSpecs);
         $hypothetical = array_merge($sorted, $proposedEvents);
@@ -539,7 +611,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             'isStreaming' => false,
             'streamingMessage' => null,
         ]);
-        $this->runCommit->commit($storedState, $persisted, $proposedEvents, dispatchAfterTurnHooks: false);
+        $this->runCommit->commit($storedState, $persisted, [...$leadingEvents, ...$proposedEvents], dispatchAfterTurnHooks: false, postCommitActions: $leadingActions, sourceIdentity: $this->repairSource($runId, $commandId, $leadingActions));
 
         $this->logger->info('session_repair.completed', [
             'run_id' => $runId,
@@ -855,8 +927,10 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
      * result handlers remain the authoritative completion path.
      *
      * @param list<RunEvent> $events
+     * @param list<RunEvent> $leadingEvents
+     * @param list<object>   $leadingActions
      */
-    private function currentOperationRedrive(string $runId, bool $apply, array $events, RunState $state): ?RepairResult
+    private function currentOperationRedrive(string $runId, bool $apply, array $events, RunState $state, string $commandId, array $leadingEvents, array $leadingActions): ?RepairResult
     {
         $events = $this->historyReplayFilter->filter($events);
         $effects = [];
@@ -906,7 +980,11 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         if (null !== $state->activeStepId && [] !== $state->pendingToolCalls) {
             $batch = $this->toolBatchStore->load($runId, $state->turnNo, $state->activeStepId);
             if (null !== $batch && !$batch->finalized && [] === $batch->awaitingHumanInput) {
-                $effects = [...$effects, ...$this->toolAuthorization->pendingDeliveries($runId, $state->turnNo, $state->activeStepId, $batch)];
+                foreach ($this->toolAuthorization->pendingDeliveries($runId, $state->turnNo, $state->activeStepId, $batch) as $delivery) {
+                    if (!$delivery instanceof \Ineersa\AgentCore\Domain\Message\ToolExecutionOutcomeUnknown) {
+                        $effects[] = $delivery;
+                    }
+                }
             }
         }
 
@@ -928,7 +1006,10 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             return new RepairResult(false, false, 'Active operation repair available.');
         }
 
-        $this->stepDispatcher->dispatchEffects($effects);
+        $stored = $this->activeRunContext->requireLoaded($runId);
+        $this->runCommit->commit($stored, $state->with(['version' => $stored->version]), $leadingEvents, dispatchAfterTurnHooks: false,
+            postCommitActions: [...$leadingActions, new \Ineersa\CodingAgent\Application\Message\RedriveRepairEffectsDTO($runId, $effects)],
+            sourceIdentity: $this->repairSource($runId, $commandId, $leadingActions));
 
         return new RepairResult(false, false, 'Active operation redriven.', activeOperationsRedriven: \count($effects));
     }

@@ -40,10 +40,11 @@ final class SessionRepairExecutionRecoveryTest extends PerMethodIsolatedKernelTe
             yield $kind.' armed' => [$kind, false];
             yield $kind.' ready' => [$kind, true];
         }
+        yield 'llm lost broker acknowledgement' => ['llm', false, true];
     }
 
     #[DataProvider('deliveries')]
-    public function testRepairUsesOriginalAuthorizationAndFrozenDelivery(string $kind, bool $ready): void
+    public function testRepairUsesOriginalAuthorizationAndFrozenDelivery(string $kind, bool $ready, bool $lostAcknowledgement = false): void
     {
         $c = self::getContainer();
         $run = $c->get(HatfieldSessionStore::class)->createSession('repair delivery');
@@ -88,18 +89,60 @@ final class SessionRepairExecutionRecoveryTest extends PerMethodIsolatedKernelTe
         $this->hydrate($run);
         $before = $journal->latestSequenceFor($run);
         $repair = $c->get(SessionRepairService::class);
-        $this->assertSame(0, $repair->repair($run, false)->activeOperationsRedriven);
+        $this->assertSame(0, $repair->repair($run, false, \Symfony\Component\Uid\Uuid::v4()->toRfc4122())->activeOperationsRedriven);
         $this->assertSame($before, $journal->latestSequenceFor($run));
-        $applied = $repair->repair($run, true);
-        $this->assertSame(1, $applied->activeOperationsRedriven, $applied->message);
-        $this->assertSame(1, $repair->repair($run, true)->activeOperationsRedriven);
+        if ($lostAcknowledgement) {
+            $executionBus = $c->get('agent.execution.bus');
+            $fail = true;
+            $broker = $this->createStub(\Symfony\Component\Messenger\MessageBusInterface::class);
+            $broker->method('dispatch')->willReturnCallback(static function (object $message, array $stamps = []) use ($executionBus, &$fail): \Symfony\Component\Messenger\Envelope {
+                $envelope = $executionBus->dispatch($message, $stamps);
+                if ($fail) {
+                    $fail = false;
+                    throw new \RuntimeException('Injected lost broker acknowledgement.');
+                }
+
+                return $envelope;
+            });
+            $c->set(\Ineersa\CodingAgent\Application\Pipeline\RedriveRepairEffectsHandler::class,
+                new \Ineersa\CodingAgent\Application\Pipeline\RedriveRepairEffectsHandler(
+                    new \Ineersa\AgentCore\Application\Handler\StepDispatcher($c->get('agent.command.bus'), $broker), $journal));
+            try {
+                $repair->repair($run, true, 'original-repair');
+                $this->fail('Lost acknowledgement must leave the captured repair unresolved.');
+            } catch (\Symfony\Component\Messenger\Exception\HandlerFailedException $exception) {
+                $this->assertStringContainsString('Injected lost broker acknowledgement.', $exception->getMessage());
+            }
+            $pending = $journal->verifiedPendingTransition($run);
+            $this->assertNotNull($pending);
+            $this->assertCount(1, $pending->work['actions']);
+            $action = $pending->work['actions'][0];
+            $this->assertInstanceOf(\Ineersa\CodingAgent\Application\Message\RedriveRepairEffectsDTO::class, $action);
+            $this->assertEquals($reference, $action->effects[0]->getMessage());
+            $source = \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance::actionIdentity(\Ineersa\CodingAgent\Application\Message\RepairSession::class, $run, 'original-repair');
+            $acceptance = $c->get(\Ineersa\AgentCore\Application\Pipeline\SourceAcceptance::class);
+            $this->assertFalse($acceptance->identityAlreadyAccepted($source));
+            $c->get(\Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery::class)->recover($run);
+            $this->assertTrue($acceptance->identityAlreadyAccepted($source));
+            $this->assertNull($journal->verifiedPendingTransition($run));
+            $this->assertSame(1, (int) $c->get(Connection::class)->fetchOne('SELECT COUNT(*) FROM execution_operation WHERE run_id = ?', [$run]), 'Recovery must not create another authorization.');
+        }
+        $applied = $repair->repair($run, true, 'original-repair');
+        $this->assertSame($lostAcknowledgement ? 0 : 1, $applied->activeOperationsRedriven, $applied->message);
+        $c->get('cache.app')->clear();
+        $c->get(ActiveRunContextInterface::class)->release($run);
+        $this->hydrate($run);
+        $this->assertSame(0, $repair->repair($run, true, 'original-repair')->activeOperationsRedriven);
+        $this->assertSame(1, $repair->repair($run, true, 'fresh-repair')->activeOperationsRedriven);
         $transport = $c->get('messenger.transport.'.($ready ? 'run_control' : ('shell' === $kind ? 'tool' : 'llm')));
         $sent = $transport->getSent();
-        $this->assertCount(2, $sent);
+        $this->assertCount($lostAcknowledgement ? 3 : 2, $sent);
         $this->assertEquals($expected, $sent[0]->getMessage());
         $this->assertEquals($expected, $sent[1]->getMessage());
         $this->assertSame($before, $journal->latestSequenceFor($run));
         if (!$ready) {
+            $this->assertEquals($stamp, $sent[0]->last(\Ineersa\AgentCore\Domain\Coordination\ExecutionAuthorizationStamp::class));
+            $this->assertEquals($stamp, $sent[1]->last(\Ineersa\AgentCore\Domain\Coordination\ExecutionAuthorizationStamp::class));
             $claim = $operations->claim($reference, $stamp);
             $this->assertIsString($claim);
             $this->assertEquals($request, $operations->resolveRequest($reference, $stamp, $claim));
@@ -143,9 +186,11 @@ final class SessionRepairExecutionRecoveryTest extends PerMethodIsolatedKernelTe
         }
         $this->hydrate($run);
         $repair = $c->get(SessionRepairService::class);
-        $this->assertSame(0, $repair->repair($run, false)->activeOperationsRedriven);
-        $this->assertSame(1, $repair->repair($run, true)->activeOperationsRedriven);
-        $this->assertSame(1, $repair->repair($run, true)->activeOperationsRedriven);
+        $this->assertSame(0, $repair->repair($run, false, \Symfony\Component\Uid\Uuid::v4()->toRfc4122())->activeOperationsRedriven);
+        $this->assertSame(1, $repair->repair($run, true, 'original-repair')->activeOperationsRedriven);
+        $c->get('cache.app')->clear();
+        $this->assertSame(0, $repair->repair($run, true, 'original-repair')->activeOperationsRedriven);
+        $this->assertSame(1, $repair->repair($run, true, 'fresh-repair')->activeOperationsRedriven);
         $sent = $c->get('messenger.transport.'.($ready ? 'run_control' : 'tool'))->getSent();
         $this->assertCount(2, $sent);
         $this->assertEquals($expected, $sent[0]->getMessage());
@@ -222,7 +267,7 @@ final class SessionRepairExecutionRecoveryTest extends PerMethodIsolatedKernelTe
             try {
                 foreach ([false, true] as $apply) {
                     try {
-                        $c->get(SessionRepairService::class)->repair($run, $apply);
+                        $c->get(SessionRepairService::class)->repair($run, $apply, 'repair-id');
                         $this->fail('Repair must refuse while the original worker exclusion is held.');
                     } catch (\RuntimeException $exception) {
                         $this->assertStringContainsString('original worker still owns execution', $exception->getMessage());
@@ -246,16 +291,16 @@ final class SessionRepairExecutionRecoveryTest extends PerMethodIsolatedKernelTe
                 }
                 throw new \RuntimeException('Injected repair interruption.');
             });
-            $c->set(\Ineersa\AgentCore\Application\Pipeline\RunCommit::class, new \Ineersa\AgentCore\Application\Pipeline\RunCommit($c->get(ActiveRunContextInterface::class), $journal, new \Ineersa\AgentCore\Application\Handler\StepDispatcher($bus, new \Ineersa\AgentCore\Tests\Support\TestMessageBus()), new \Ineersa\AgentCore\Tests\Support\TestLogger(), $c->get(ToolBatchCollector::class), $c->get(ToolExecutionAuthorization::class), $c->get(DoctrineExecutionOperationStore::class), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore())));
+            $c->set(\Ineersa\AgentCore\Application\Pipeline\RunCommit::class, new \Ineersa\AgentCore\Application\Pipeline\RunCommit($c->get(ActiveRunContextInterface::class), $journal, new \Ineersa\AgentCore\Application\Handler\StepDispatcher($bus, new \Ineersa\AgentCore\Tests\Support\TestMessageBus()), new \Ineersa\AgentCore\Tests\Support\TestLogger(), $c->get(ToolBatchCollector::class), $c->get(ToolExecutionAuthorization::class), $c->get(DoctrineExecutionOperationStore::class), $c->get(\Ineersa\AgentCore\Application\Pipeline\SourceAcceptance::class)));
         }
         $repair = $c->get(SessionRepairService::class);
-        $preview = $repair->repair($run, false);
+        $preview = $repair->repair($run, false, 'repair-id');
         $this->assertStringContainsString('may duplicate', $preview->message);
         $this->assertCount(1, $gate->unknownExecutionsForRepair($run));
         $this->assertSame($before, $journal->latestSequenceFor($run));
         if (\in_array($boundary, ['before', 'after'], true)) {
             try {
-                $repair->repair($run, true);
+                $repair->repair($run, true, 'repair-id');
                 $this->fail('The injected interruption must leave the repair recoverable.');
             } catch (\RuntimeException $exception) {
                 $this->assertSame('Injected repair interruption.', $exception->getMessage());
@@ -267,10 +312,10 @@ final class SessionRepairExecutionRecoveryTest extends PerMethodIsolatedKernelTe
             $this->assertNull($journal->verifiedPendingTransition($run));
             $this->hydrate($run);
             if ($tool) {
-                $this->assertTrue($repair->repair($run, true)->staleCancellationRepaired, 'The interrupted repair must still finish the missing tool-message repair.');
+                $this->assertFalse($repair->repair($run, true, 'repair-id')->staleCancellationRepaired, 'Recovery must finish the entire captured repair, leaving no second mutable stage.');
             }
         } else {
-            $result = $repair->repair($run, true);
+            $result = $repair->repair($run, true, 'repair-id');
             $this->assertTrue($result->staleCancellationRepaired);
             $this->assertStringContainsString('may duplicate', $result->message);
         }
@@ -287,7 +332,7 @@ final class SessionRepairExecutionRecoveryTest extends PerMethodIsolatedKernelTe
             $batches->deleteAllForRun($run);
             $this->assertNotNull($batches->load($run, 1, 'step'), 'Cleanup must preserve the retired receipt decision.');
         }
-        $this->assertFalse($repair->repair($run, true)->staleCancellationRepaired);
+        $this->assertFalse($repair->repair($run, true, 'repair-id')->staleCancellationRepaired);
     }
 
     public static function attachedShellGenerations(): iterable
@@ -334,9 +379,9 @@ final class SessionRepairExecutionRecoveryTest extends PerMethodIsolatedKernelTe
         $this->hydrate($run);
         $before = $journal->latestSequenceFor($run);
         $repair = $c->get(SessionRepairService::class);
-        $this->assertStringContainsString('may duplicate', $repair->repair($run, false)->message);
+        $this->assertStringContainsString('may duplicate', $repair->repair($run, false, \Symfony\Component\Uid\Uuid::v4()->toRfc4122())->message);
         $this->assertSame($before, $journal->latestSequenceFor($run));
-        $this->assertStringContainsString('may duplicate', $repair->repair($run, true)->message);
+        $this->assertStringContainsString('may duplicate', $repair->repair($run, true, \Symfony\Component\Uid\Uuid::v4()->toRfc4122())->message);
         $state = $c->get(ActiveRunContextInterface::class)->requireLoaded($run);
         $this->assertSame($superseded ? \Ineersa\AgentCore\Domain\Run\RunStatus::Running : \Ineersa\AgentCore\Domain\Run\RunStatus::Failed, $state->status);
         $this->assertSame($superseded ? 'new-model-key' : 'model-key', $state->currentOperation?->idempotencyKey);

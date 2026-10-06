@@ -86,7 +86,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
             throw new \RuntimeException(\sprintf('Session "%s" not found.', $runId));
         }
 
-        $this->commandBus->dispatch(new \Ineersa\CodingAgent\Application\Message\AttachRun($runId, $this->buildContextMessages()));
+        $this->commandBus->dispatch(new \Ineersa\CodingAgent\Application\Message\AttachRun($runId, $this->buildContextMessages(), \Symfony\Component\Uid\Uuid::v4()->toRfc4122()));
 
         // Attaching is a new parent lifetime: existing artifacts stay retrievable
         // but agent_resume must not continue children launched before /resume.
@@ -213,7 +213,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
             throw new \InvalidArgumentException('repair requires a non-empty runId.');
         }
 
-        $envelope = $this->commandBus->dispatch(new RepairSession($runId, $apply, bin2hex(random_bytes(16))));
+        $envelope = $this->commandBus->dispatch(new RepairSession($runId, $apply, \Symfony\Component\Uid\Uuid::v4()->toRfc4122()));
         $result = $envelope->last(HandledStamp::class)?->getResult();
         if (!$result instanceof RepairResult) {
             throw new \LogicException('In-process repair requires synchronous owner handling.');
@@ -411,7 +411,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
     {
         $targetTurnNo = (int) ($command->payload['turn_no'] ?? 0);
 
-        $this->commandBus->dispatch(new SelectHistoryPrompt($runId, $targetTurnNo));
+        $this->commandBus->dispatch(new SelectHistoryPrompt($runId, $targetTurnNo, \Symfony\Component\Uid\Uuid::v4()->toRfc4122()));
     }
 
     /**

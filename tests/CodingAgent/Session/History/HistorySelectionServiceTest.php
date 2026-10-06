@@ -160,7 +160,7 @@ final class HistorySelectionServiceTest extends TestCase
             runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit($activeRunContext, $eventStore, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus()), new NullLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore())),
         );
 
-        $result = $service->selectPrompt($runId, 1);
+        $result = $service->selectPrompt($runId, 1, \Symfony\Component\Uid\Uuid::v4()->toRfc4122());
         $this->assertSame(0, $result['rebuiltState']->turnNo);
         $this->assertSame(1, $result['selectedPromptTurnNo']);
         $this->assertSame('First prompt', $result['editorPromptText']);
@@ -318,7 +318,7 @@ final class HistorySelectionServiceTest extends TestCase
             runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit($activeRunContext, $eventStore, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus()), new NullLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore())),
         );
 
-        $result = $service->selectPrompt($runId, 2);
+        $result = $service->selectPrompt($runId, 2, \Symfony\Component\Uid\Uuid::v4()->toRfc4122());
         $this->assertSame(1, $result['rebuiltState']->turnNo);
         $this->assertSame(2, $result['selectedPromptTurnNo']);
         $this->assertSame('Middle prompt', $result['editorPromptText']);
@@ -441,7 +441,7 @@ final class HistorySelectionServiceTest extends TestCase
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('not a selectable human prompt');
-        $service->selectPrompt($runId, 2);
+        $service->selectPrompt($runId, 2, \Symfony\Component\Uid\Uuid::v4()->toRfc4122());
     }
 
     public function testSelectPromptRejectsDuplicateSequences(): void
@@ -552,7 +552,7 @@ final class HistorySelectionServiceTest extends TestCase
         );
 
         try {
-            $service->selectPrompt($runId, 1);
+            $service->selectPrompt($runId, 1, \Symfony\Component\Uid\Uuid::v4()->toRfc4122());
             $this->fail('Expected RunStateReplayException');
         } catch (RunStateReplayException $exception) {
             $this->assertInstanceOf(RunStateDuplicateSequenceReplayException::class, $exception);

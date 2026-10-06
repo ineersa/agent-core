@@ -18,5 +18,5 @@ interface HistorySelectionServiceInterface
      *     editorPromptText: string
      * }
      */
-    public function selectPrompt(string $runId, int $targetPromptTurnNo): array;
+    public function selectPrompt(string $runId, int $targetPromptTurnNo, string $commandId): array;
 }
