@@ -16,6 +16,7 @@ use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmStreamCancelledException;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketContinuationMismatchException;
 use Symfony\AI\Platform\Bridge\OpenAICodex\Result\CancellableRawResultInterface;
 use Symfony\AI\Platform\Bridge\OpenAICodex\ResultConverter;
 use Symfony\AI\Platform\Exception\ServerException;
@@ -33,6 +34,56 @@ use Symfony\Contracts\HttpClient\ResponseInterface;
  */
 final class LlmPlatformAdapterTest extends TestCase
 {
+    #[\PHPUnit\Framework\Attributes\DataProvider('continuationCaptureCases')]
+    public function testContinuationMismatchIsLoggedByHostWithoutPersistingItems(bool $invalidIgnoredField): void
+    {
+        $diagnostics = [
+            'reason' => 'prefix_mismatch',
+            'first_mismatch_index' => 1,
+            'mismatch_response_item_offset' => 0,
+            'mismatch_field_path' => 'content[0].text',
+            'expected_source' => 'previous_response',
+            'current_item' => ['content' => [['text' => "Original.\nExtra."]]],
+            'expected_item' => ['content' => [['text' => 'Original.']]],
+        ];
+        if ($invalidIgnoredField) {
+            $diagnostics['current_item']['status'] = "\xFF";
+        }
+        $exception = new CodexWebSocketContinuationMismatchException('prefix_mismatch', $diagnostics);
+        $platform = $this->createMock(SymfonyPlatformInterface::class);
+        $platform->expects($this->once())->method('invoke')->willThrowException($exception);
+        $logger = new TestLogger();
+
+        $result = $this->createAdapter($platform, logger: $logger)->invoke(new ModelInvocationRequest(
+            model: 'openai-codex/gpt-6.1-sol',
+            input: new ModelInvocationInput(runId: 'run-mismatch', turnNo: 1, stepId: 'step-mismatch'),
+        ));
+
+        $this->assertCount(1, $logger->records);
+        $record = $logger->records[0];
+        $this->assertSame('llm.provider.continuation_mismatch', $record['message']);
+        $this->assertSame('run-mismatch', $record['context']['run_id']);
+        $this->assertSame('step-mismatch', $record['context']['step_id']);
+        if ($invalidIgnoredField) {
+            $this->assertTrue($record['context']['capture_failed']);
+            $this->assertSame(\JsonException::class, $record['context']['capture_error_type']);
+        } else {
+            $this->assertSame('input[1].content[0].text', $record['context']['current_path']);
+            $this->assertSame('output[0].content[0].text', $record['context']['expected_path']);
+            $this->assertSame($diagnostics['current_item'], json_decode($record['context']['current_item']['json'], true, flags: \JSON_THROW_ON_ERROR));
+            $this->assertSame($diagnostics['expected_item'], json_decode($record['context']['expected_item']['json'], true, flags: \JSON_THROW_ON_ERROR));
+        }
+        $this->assertSame(CodexWebSocketContinuationMismatchException::class, $result->error['type']);
+        $this->assertFalse($result->error['retryable']);
+        $this->assertStringNotContainsString('Original.', json_encode($result->error, \JSON_THROW_ON_ERROR));
+    }
+
+    public static function continuationCaptureCases(): iterable
+    {
+        yield 'complete rejected pair' => [false];
+        yield 'capture failure retains original rejection' => [true];
+    }
+
     public function testSynchronousUnknownExceptionUsesDefaultRetryWithoutMessageMatching(): void
     {
         $platform = $this->createStub(SymfonyPlatformInterface::class);
@@ -415,7 +466,7 @@ final class LlmPlatformAdapterTest extends TestCase
         $this->assertStringNotContainsString($secret, $encoded, 'Sensitive exception/header/body text must never reach diagnostic logs.');
     }
 
-    private function createAdapter(SymfonyPlatformInterface $platform, int $maxRetries = 0): LlmPlatformAdapter
+    private function createAdapter(SymfonyPlatformInterface $platform, int $maxRetries = 0, ?\Psr\Log\LoggerInterface $logger = null): LlmPlatformAdapter
     {
         return new LlmPlatformAdapter(
             statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
@@ -426,7 +477,7 @@ final class LlmPlatformAdapterTest extends TestCase
             convertToLlmHooks: [],
             streamObserver: null,
             costCalculator: null,
-            logger: new NullLogger(),
+            logger: $logger ?? new NullLogger(),
             denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
             requestRetryPolicy: new \Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy(
                 maxRetries: $maxRetries,

@@ -2858,12 +2858,12 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/ineersa/symfony-ai-openai-codex-platform.git",
-                "reference": "8fb96d3fceaf21d2b91d56be38ca908a94b31619"
+                "reference": "27e6d2b9c544436c0c54025980fe2c4619318abb"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/ineersa/symfony-ai-openai-codex-platform/zipball/8fb96d3fceaf21d2b91d56be38ca908a94b31619",
-                "reference": "8fb96d3fceaf21d2b91d56be38ca908a94b31619",
+                "url": "https://api.github.com/repos/ineersa/symfony-ai-openai-codex-platform/zipball/27e6d2b9c544436c0c54025980fe2c4619318abb",
+                "reference": "27e6d2b9c544436c0c54025980fe2c4619318abb",
                 "shasum": ""
             },
             "require": {
@@ -2909,7 +2909,7 @@
                 "issues": "https://github.com/ineersa/symfony-ai-openai-codex-platform/issues",
                 "source": "https://github.com/ineersa/symfony-ai-openai-codex-platform/tree/main"
             },
-            "time": "2026-09-27T00:41:31+00:00"
+            "time": "2026-10-06T23:15:24+00:00"
         },
         {
             "name": "kelunik/certificate",

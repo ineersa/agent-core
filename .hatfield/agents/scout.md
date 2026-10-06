@@ -1,7 +1,7 @@
 ---
 name: scout
 description: 'Fast codebase recon that returns compressed context for handoff'
-model: openai-codex/gpt-6-luna
+model: opencode-go/deepseek-v4.1-flash
 thinking: high
 systemPromptMode: append
 tools:
