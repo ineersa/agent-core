@@ -15,6 +15,7 @@ use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Coordination\EnqueueCommandDTO;
+use Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\CompactionStepResult;
 use Ineersa\AgentCore\Domain\Message\DurableExecutionResult;
@@ -28,6 +29,7 @@ use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
+use Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory;
 use Ineersa\CodingAgent\Runtime\Contract\SessionRepairRefusalReasonEnum;
 use Ineersa\CodingAgent\Session\DoctrineExecutionOperationStore;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
@@ -77,6 +79,7 @@ final class SessionRepairExecutionRecoveryTest extends PerMethodIsolatedKernelTe
         $pending = $journal->verifiedPendingTransition($run);
         $this->assertNotNull($pending);
         $operations = $c->get(DoctrineExecutionOperationStore::class);
+        $operations->prepare($request, $pending);
         $stamp = $operations->arm($request, $pending);
         $reference = $operations->requestReference($request, $stamp);
         $journal->finalizeVerifiedTransition($run, $pending->identity);
@@ -174,19 +177,19 @@ final class SessionRepairExecutionRecoveryTest extends PerMethodIsolatedKernelTe
         $this->assertSame(2, $i1->attempt());
         $this->assertNotSame('i0-key', $i1->idempotencyKey());
         $batches = $c->get(ToolBatchStoreInterface::class);
-        (new ToolBatchCollector(store: $batches))->registerExpectedBatch($run, 1, 'step', [$i1]);
-        $frozen = $batches->load($run, 1, 'step')?->calls['call'] ?? null;
-        $this->assertEquals($i1, $frozen);
         $journal = $c->get(PreparedTransitionEventStoreInterface::class);
         $journal->appendTransition([
             RunEvent::forAppend($run, 1, 'run_started', ['payload' => ['messages' => []]]),
             RunEvent::forAppend($run, 1, 'turn_advanced', ['turn_no' => 1, 'step_id' => 'step', 'operation_attempt' => 1, 'operation_idempotency_key' => 'model-key']),
             RunEvent::forAppend($run, 1, 'llm_step_completed', ['step_id' => 'step', 'assistant_message' => ['role' => 'assistant', 'content' => [], 'tool_calls' => [['id' => 'call', 'function' => ['name' => 'read', 'arguments' => '{"path":"reconstructed-path"}']]]]]),
             RunEvent::forAppend($run, 1, 'tool_execution_start', ['tool_call_id' => 'call', 'tool' => 'read', 'order_index' => 0, 'attempt' => 2]),
-        ], ['run_id' => $run, 'predecessor_seq' => 0, 'effects' => [$i1]]);
+        ], ['run_id' => $run, 'predecessor_seq' => 0, 'effects' => [$i1], 'actions' => [new RegisterToolBatchDTO($run, 1, 'step', [$i1])]]);
         $pending = $journal->verifiedPendingTransition($run);
         $this->assertNotNull($pending);
         $operations = $c->get(DoctrineExecutionOperationStore::class);
+        $operations->prepare($i1, $pending);
+        $batches->registerPrepared(new RegisterToolBatchDTO($run, 1, 'step', [$i1]), $pending);
+        $this->assertEquals($i1, $batches->load($run, 1, 'step')?->calls['call'] ?? null);
         $stamp = $operations->arm($i1, $pending);
         $reference = $operations->requestReference($i1, $stamp);
         $journal->finalizeVerifiedTransition($run, $pending->identity);
@@ -231,9 +234,6 @@ final class SessionRepairExecutionRecoveryTest extends PerMethodIsolatedKernelTe
         $i0 = new ExecuteToolCall($run, 1, 'step', 1, 'i0-key', 'call', 'read', ['path' => 'approved-path'], 0);
         $i1 = $i0->withAuthorizedHumanAnswer($answer);
         $batches = $c->get(ToolBatchStoreInterface::class);
-        (new ToolBatchCollector(store: $batches))->registerExpectedBatch($run, 1, 'step', [$i1]);
-        $this->assertEquals($i1, $batches->load($run, 1, 'step')?->calls['call'] ?? null);
-
         $journal = $c->get(PreparedTransitionEventStoreInterface::class);
         $journal->appendTransition([
             RunEvent::forAppend($run, 1, 'run_started', ['payload' => ['messages' => []]]),
@@ -244,6 +244,7 @@ final class SessionRepairExecutionRecoveryTest extends PerMethodIsolatedKernelTe
         $pending = $journal->verifiedPendingTransition($run);
         $this->assertNotNull($pending);
         $operations = $c->get(DoctrineExecutionOperationStore::class);
+        $operations->prepare($i0, $pending);
         $i0Stamp = $operations->arm($i0, $pending);
         $i0Reference = $operations->requestReference($i0, $i0Stamp);
         $journal->finalizeVerifiedTransition($run, $pending->identity);
@@ -255,9 +256,12 @@ final class SessionRepairExecutionRecoveryTest extends PerMethodIsolatedKernelTe
         );
         $operations->saveResult($i0, $i0Stamp, $i0Claim, (new ToolCallResult($run, 1, 'step', 1, 'i0-key', 'call', 0, null, false, null, $question))->finalized());
 
-        $journal->appendTransition([], ['run_id' => $run, 'predecessor_seq' => $journal->latestSequenceFor($run), 'effects' => [$i1]]);
+        $journal->appendTransition([], ['run_id' => $run, 'predecessor_seq' => $journal->latestSequenceFor($run), 'effects' => [$i1], 'actions' => [new RegisterToolBatchDTO($run, 1, 'step', [$i1])]]);
         $pending = $journal->verifiedPendingTransition($run);
         $this->assertNotNull($pending);
+        $operations->prepare($i1, $pending);
+        $batches->registerPrepared(new RegisterToolBatchDTO($run, 1, 'step', [$i1]), $pending);
+        $this->assertEquals($i1, $batches->load($run, 1, 'step')?->calls['call'] ?? null);
         $i1Stamp = $operations->arm($i1, $pending);
         $i1Reference = $operations->requestReference($i1, $i1Stamp);
         $journal->finalizeVerifiedTransition($run, $pending->identity);
@@ -313,16 +317,18 @@ final class SessionRepairExecutionRecoveryTest extends PerMethodIsolatedKernelTe
         $run = $c->get(HatfieldSessionStore::class)->createSession('repair nested refusal');
         $call = new ExecuteToolCall($run, 1, 'step', 1, 'key', 'call', 'read', [], 0);
         $batches = $c->get(ToolBatchStoreInterface::class);
-        (new ToolBatchCollector(store: $batches))->registerExpectedBatch($run, 1, 'step', [$call]);
         $journal = $c->get(PreparedTransitionEventStoreInterface::class);
         $journal->appendTransition([
             RunEvent::forAppend($run, 1, 'run_started', ['payload' => ['messages' => []]]),
             RunEvent::forAppend($run, 1, 'turn_advanced', ['turn_no' => 1, 'step_id' => 'step', 'operation_attempt' => 1, 'operation_idempotency_key' => 'model-key']),
             RunEvent::forAppend($run, 1, 'llm_step_completed', ['step_id' => 'step', 'assistant_message' => ['role' => 'assistant', 'content' => [], 'tool_calls' => [['id' => 'call', 'function' => ['name' => 'read', 'arguments' => '{}']]]]]),
             RunEvent::forAppend($run, 1, 'tool_execution_start', ['tool_call_id' => 'call', 'tool' => 'read', 'order_index' => 0, 'attempt' => 1]),
-        ], ['run_id' => $run, 'predecessor_seq' => 0]);
+        ], ['run_id' => $run, 'predecessor_seq' => 0, 'effects' => [$call], 'actions' => [new RegisterToolBatchDTO($run, 1, 'step', [$call])]]);
         $pending = $journal->verifiedPendingTransition($run);
         $this->assertNotNull($pending);
+        $operations = $c->get(DoctrineExecutionOperationStore::class);
+        $operations->prepare($call, $pending);
+        $batches->registerPrepared(new RegisterToolBatchDTO($run, 1, 'step', [$call]), $pending);
         $journal->finalizeVerifiedTransition($run, $pending->identity);
         $before = $journal->latestSequenceFor($run);
 
@@ -330,7 +336,7 @@ final class SessionRepairExecutionRecoveryTest extends PerMethodIsolatedKernelTe
         $journal->appendTransition([], ['run_id' => $run, 'predecessor_seq' => $before, 'effects' => [$stale]]);
         $pending = $journal->verifiedPendingTransition($run);
         $this->assertNotNull($pending);
-        $operations = $c->get(DoctrineExecutionOperationStore::class);
+        $operations->prepare($stale, $pending);
         $stamp = $operations->arm($stale, $pending);
         $reference = $operations->requestReference($stale, $stamp);
         $journal->finalizeVerifiedTransition($run, $pending->identity);
@@ -392,6 +398,7 @@ final class SessionRepairExecutionRecoveryTest extends PerMethodIsolatedKernelTe
         $pending = $journal->verifiedPendingTransition($run);
         $this->assertNotNull($pending);
         $worker = new DoctrineExecutionOperationStore($c->get(Connection::class), $c->get(ToolBatchRunStoragePathsInterface::class), new Filesystem(), $c->get('hatfield.controller.session_owner.lock_factory'), $c->get(RunLockManager::class), $c->get(PreparedTransitionEventStoreInterface::class), $c->get(DeferredToolCompletionRepositoryInterface::class));
+        $worker->prepare($request, $pending);
         $stamp = $worker->arm($request, $pending);
         $reference = $worker->requestReference($request, $stamp);
         $journal->finalizeVerifiedTransition($run, $pending->identity);
@@ -433,7 +440,15 @@ final class SessionRepairExecutionRecoveryTest extends PerMethodIsolatedKernelTe
                 }
                 throw new \RuntimeException('Injected repair interruption.');
             });
-            $c->set(\Ineersa\AgentCore\Application\Pipeline\RunCommit::class, new \Ineersa\AgentCore\Application\Pipeline\RunCommit($c->get(ActiveRunContextInterface::class), $journal, new \Ineersa\AgentCore\Application\Handler\StepDispatcher($bus, new \Ineersa\AgentCore\Tests\Support\TestMessageBus()), new \Ineersa\AgentCore\Tests\Support\TestLogger(), $c->get(ToolBatchCollector::class), $c->get(DoctrineExecutionOperationStore::class), $c->get(\Ineersa\AgentCore\Application\Pipeline\SourceAcceptance::class)));
+            $c->set(\Ineersa\AgentCore\Application\Pipeline\RunCommit::class, new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
+                activeRunContext: $c->get(ActiveRunContextInterface::class),
+                eventStore: $journal,
+                logger: new \Ineersa\AgentCore\Tests\Support\TestLogger(),
+                toolBatchCollector: $c->get(ToolBatchCollector::class),
+                executionOperations: $c->get(DoctrineExecutionOperationStore::class),
+                sourceAcceptance: $c->get(\Ineersa\AgentCore\Application\Pipeline\SourceAcceptance::class),
+                finalizer: TestTransitionFinalizerFactory::create($journal, new \Ineersa\AgentCore\Application\Handler\StepDispatcher($bus, new \Ineersa\AgentCore\Tests\Support\TestMessageBus()), operations: $c->get(DoctrineExecutionOperationStore::class)),
+            ));
         }
         $repair = $c->get(SessionRepairService::class);
         $preview = $repair->repair($run, false, 'repair-id');
@@ -503,6 +518,7 @@ final class SessionRepairExecutionRecoveryTest extends PerMethodIsolatedKernelTe
             ], ['run_id' => $run, 'predecessor_seq' => $journal->latestSequenceFor($run), 'effects' => [$next]]);
             $pending = $journal->verifiedPendingTransition($run);
             $this->assertNotNull($pending);
+            $c->get(DoctrineExecutionOperationStore::class)->prepare($next, $pending);
             $c->get(DoctrineExecutionOperationStore::class)->arm($next, $pending);
             $journal->finalizeVerifiedTransition($run, $pending->identity);
         }

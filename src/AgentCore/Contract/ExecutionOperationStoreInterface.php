@@ -35,6 +35,12 @@ interface ExecutionOperationStoreInterface
      */
     public function assertRequestCapacity(AbstractAgentBusMessage $request): void;
 
+    /**
+     * Seal the immutable request and retain a Prepared ledger row without making it
+     * claimable or publishable. Used for queued batch membership before admission.
+     */
+    public function prepare(AbstractAgentBusMessage $request, VerifiedTransitionDTO $transition): ExecutionAuthorizationStamp;
+
     public function arm(AbstractAgentBusMessage $request, VerifiedTransitionDTO $transition): ExecutionAuthorizationStamp;
 
     public function requestReference(AbstractAgentBusMessage $request, ExecutionAuthorizationStamp $authorization): ExecutionRequest;

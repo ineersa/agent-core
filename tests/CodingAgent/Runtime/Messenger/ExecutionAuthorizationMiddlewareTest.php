@@ -58,6 +58,7 @@ final class ExecutionAuthorizationMiddlewareTest extends IsolatedKernelTestCase
         $pending = $store->verifiedPendingTransition($run);
         $this->assertNotNull($pending);
         $operations = $container->get(ExecutionOperationStoreInterface::class);
+        $operations->prepare($request, $pending);
         $authorization = $operations->arm($request, $pending);
         $reference = $operations->requestReference($request, $authorization);
         $store->finalizeVerifiedTransition($run, $pending->identity);
@@ -149,6 +150,7 @@ final class ExecutionAuthorizationMiddlewareTest extends IsolatedKernelTestCase
         $pending = $store->verifiedPendingTransition($run);
         $this->assertNotNull($pending);
         $operations = $container->get(ExecutionOperationStoreInterface::class);
+        $operations->prepare($request, $pending);
         $authorization = $operations->arm($request, $pending);
         $reference = $operations->requestReference($request, $authorization);
         $store->finalizeVerifiedTransition($run, $pending->identity);
@@ -196,6 +198,7 @@ final class ExecutionAuthorizationMiddlewareTest extends IsolatedKernelTestCase
         $events->appendTransition([], ['run_id' => $run, 'predecessor_seq' => 0, 'effects' => [$suspension]]);
         $pending = $events->verifiedPendingTransition($run);
         $this->assertNotNull($pending);
+        $operations->prepare($suspension, $pending);
         $suspensionAuth = $operations->arm($suspension, $pending);
         $suspensionRef = $operations->requestReference($suspension, $suspensionAuth);
         $events->finalizeVerifiedTransition($run, $pending->identity);
@@ -215,6 +218,7 @@ final class ExecutionAuthorizationMiddlewareTest extends IsolatedKernelTestCase
         $events->appendTransition([], ['run_id' => $run, 'predecessor_seq' => 0, 'effects' => [$approved]]);
         $pending = $events->verifiedPendingTransition($run);
         $this->assertNotNull($pending);
+        $operations->prepare($approved, $pending);
         $auth = $operations->arm($approved, $pending);
         $reference = $operations->requestReference($approved, $auth);
         $events->finalizeVerifiedTransition($run, $pending->identity);

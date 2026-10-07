@@ -16,6 +16,7 @@ use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -44,13 +45,15 @@ final class RunCommitAfterTurnCommitPersistedSeqTest extends TestCase
         $activeRunContext->loadRecovered($previous);
         $eventStore = new InMemoryEventStore();
 
-        $commit = new RunCommit(sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
+        $commit = new RunCommit(
             activeRunContext: $activeRunContext,
             eventStore: $eventStore,
-            stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
             logger: new TestLogger(),
             toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(),
-            hookDispatcher: new HookDispatcher([$subscriber]), executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore()
+            executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
+            sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
+            hookDispatcher: new HookDispatcher([$subscriber]),
+            finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus())),
         );
 
         $next = new RunState(

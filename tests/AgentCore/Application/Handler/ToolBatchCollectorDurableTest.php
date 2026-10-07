@@ -4,45 +4,20 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Application\Handler;
 
-use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
-use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
-use Ineersa\CodingAgent\Config\AppConfig;
-use Ineersa\CodingAgent\Config\LoggingConfig;
-use Ineersa\CodingAgent\Config\TuiConfig;
-use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Ineersa\CodingAgent\Session\SessionToolBatchStore;
-use Ineersa\CodingAgent\Tests\Session\Support\ParentSessionToolBatchRunStoragePaths;
-use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\AgentCore\Tests\Support\TestToolBatchStore;
 use PHPUnit\Framework\TestCase;
-use Psr\Log\NullLogger;
-use Symfony\Component\Lock\LockFactory;
-use Symfony\Component\Lock\Store\FlockStore;
 
 /**
- * Durable coordination proofs use the real filesystem SessionToolBatchStore.
+ * Durable coordination proofs use the in-memory SQL-shaped scheduling store.
  */
 final class ToolBatchCollectorDurableTest extends TestCase
 {
-    private string $projectDir = '';
-
-    protected function setUp(): void
-    {
-        parent::setUp();
-        $this->projectDir = TestDirectoryIsolation::createOsTempDir('tool-batch-collector-durable');
-        TestDirectoryIsolation::createHatfieldTree($this->projectDir, withSessions: true);
-    }
-
-    protected function tearDown(): void
-    {
-        TestDirectoryIsolation::removeDirectory($this->projectDir);
-        parent::tearDown();
-    }
 
     public function testRepeatedRegistrationPreservesResultsAndDoesNotReadmitExecution(): void
     {
@@ -203,7 +178,7 @@ final class ToolBatchCollectorDurableTest extends TestCase
     public function testFailedDurableSaveDoesNotDirtyInMemoryCache(): void
     {
         $store = new class($this->createStore()) implements ToolBatchStoreInterface {
-            public function __construct(private readonly SessionToolBatchStore $inner)
+            public function __construct(private readonly ToolBatchStoreInterface $inner)
             {
             }
 
@@ -229,21 +204,6 @@ final class ToolBatchCollectorDurableTest extends TestCase
                 return false;
             }
 
-            public function hasOutcomeUnknown(string $runId): bool
-            {
-                return $this->inner->hasOutcomeUnknown($runId);
-            }
-
-            public function unknownExecutionsForRepair(string $runId): array
-            {
-                return $this->inner->unknownExecutionsForRepair($runId);
-            }
-
-            public function recoverResultPublication(string $runId, int $turnNo, string $stepId, string $key, string $claim): void
-            {
-                $this->inner->recoverResultPublication($runId, $turnNo, $stepId, $key, $claim);
-            }
-
             public function reclaimDisposedPayloads(string $runId, string $afterFilename): string
             {
                 return $this->inner->reclaimDisposedPayloads($runId, $afterFilename);
@@ -262,6 +222,25 @@ final class ToolBatchCollectorDurableTest extends TestCase
                 }
 
                 return $this->inner->mutate($runId, $turnNo, $stepId, $callback);
+            }
+
+            public function applyPrepared(\Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO $action, \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO $transition): void
+            {
+                if ($this->failNextMutate) {
+                    $this->failNextMutate = false;
+                    throw new \RuntimeException('Simulated durable write failure.');
+                }
+                $this->inner->applyPrepared($action, $transition);
+            }
+
+            public function registerPrepared(\Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO $action, \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO $transition): void
+            {
+                $this->inner->registerPrepared($action, $transition);
+            }
+
+            public function admittedCalls(string $runId, int $turnNo, string $stepId): array
+            {
+                return $this->inner->admittedCalls($runId, $turnNo, $stepId);
             }
         };
 
@@ -355,26 +334,9 @@ final class ToolBatchCollectorDurableTest extends TestCase
         }
     }
 
-    private function createStore(): SessionToolBatchStore
+    private function createStore(): ToolBatchStoreInterface
     {
-        $entityManager = $this->createStub(EntityManagerInterface::class);
-        $appConfig = new AppConfig(
-            tui: new TuiConfig(theme: 'default'),
-            logging: new LoggingConfig(),
-            cwd: $this->projectDir,
-        );
-        $hatfield = new HatfieldSessionStore($appConfig, $entityManager, new \Symfony\Component\EventDispatcher\EventDispatcher());
-
-        [$serializer, $validator] = AttributeSerializerValidatorTestFactory::create();
-
-        return new SessionToolBatchStore(
-            new ParentSessionToolBatchRunStoragePaths($hatfield),
-            new LockFactory(new FlockStore()),
-            new NullLogger(),
-            $serializer,
-            $validator,
-            new \Ineersa\AgentCore\Tests\Support\InMemoryEventStore(),
-        );
+        return new TestToolBatchStore();
     }
 
     private function executeToolCall(

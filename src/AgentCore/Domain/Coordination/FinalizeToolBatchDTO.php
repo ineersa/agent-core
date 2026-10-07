@@ -7,7 +7,7 @@ namespace Ineersa\AgentCore\Domain\Coordination;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
 
-/** A prepared coordination delta, excluding worker receipts and unchanged payloads. */
+/** Prepared scheduling delta applied under a verified transition identity. */
 final readonly class FinalizeToolBatchDTO
 {
     /**
@@ -19,8 +19,6 @@ final readonly class FinalizeToolBatchDTO
         public string $runId,
         public int $turnNo,
         public string $stepId,
-        public string $beforeHash,
-        public string $afterHash,
         public array $pendingQueue,
         public array $inFlight,
         public array $awaitingHumanInput,

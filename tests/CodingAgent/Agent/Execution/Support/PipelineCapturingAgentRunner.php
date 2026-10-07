@@ -20,6 +20,7 @@ use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
+use Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory;
 use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\InMemoryStore;
@@ -44,13 +45,15 @@ final class PipelineCapturingAgentRunner implements AgentRunnerInterface
     {
         $executionBus = new TestMessageBus();
         $activeRunContext = new TestActiveRunContext();
-        $runCommit = new RunCommit(sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
+        $runCommit = new RunCommit(
             activeRunContext: $activeRunContext,
             eventStore: $eventStore,
-            stepDispatcher: new StepDispatcher(new TestMessageBus(), $executionBus),
             logger: new NullLogger(),
             toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(),
-            hookDispatcher: null, executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore()
+            executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
+            sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
+            hookDispatcher: null,
+            finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus(), $executionBus)),
         );
         $processor = new RunMessageProcessor(
             activeRunContext: $activeRunContext,

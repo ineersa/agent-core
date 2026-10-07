@@ -20,6 +20,7 @@ use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
@@ -144,11 +145,15 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
         $active = new TestActiveRunContext();
         $previous = RunState::queued('run-1');
         $active->loadRecovered($previous);
-        $commit = new RunCommit(sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
-            activeRunContext: $active, eventStore: $eventStore,
-            stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()), logger: new TestLogger(),
+        $commit = new RunCommit(
+            activeRunContext: $active,
+            eventStore: $eventStore,
+            logger: new TestLogger(),
             toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(),
-            hookDispatcher: new HookDispatcher([new ToolBatchSnapshotCleanupHookSubscriber($this->createStore(), new TestLogger(), $inputStore)]), executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore()
+            executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
+            sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
+            hookDispatcher: new HookDispatcher([new ToolBatchSnapshotCleanupHookSubscriber($this->createStore(), new TestLogger(), $inputStore)]),
+            finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus())),
         );
         $this->expectExceptionMessage('append failed');
         $commit->commit($previous, new RunState('run-1', RunStatus::Running, version: 1, turnNo: 1, model: 'test-model'), [new RunEvent('run-1', 1, 1, RunEventTypeEnum::ToolExecutionEnd->value, ['tool_result' => ['tool_call_id' => 'fork-call']])]);
@@ -182,13 +187,15 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
             new ToolBatchSnapshotCleanupHookSubscriber($store, new TestLogger(), $this->createStub(\Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface::class)),
         ]);
 
-        return new RunCommit(sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
+        return new RunCommit(
             activeRunContext: $activeRunContext,
             eventStore: new CleanupHookSubscriberNoOpEventStore(),
-            stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
             logger: new TestLogger(),
             toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(),
-            hookDispatcher: $hookDispatcher, executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore()
+            executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
+            sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
+            hookDispatcher: $hookDispatcher,
+            finalizer: TestTransitionFinalizerFactory::create(new CleanupHookSubscriberNoOpEventStore(), new StepDispatcher(new TestMessageBus(), new TestMessageBus())),
         );
     }
 }

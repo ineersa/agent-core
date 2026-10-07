@@ -19,6 +19,7 @@ use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
+use Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
@@ -182,13 +183,15 @@ final class ParentRegressionCapturingRunner implements AgentRunnerInterface
     {
         $activeRunContext = new TestActiveRunContext();
         $eventStore = new InMemoryEventStore();
-        $runCommit = new RunCommit(sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
+        $runCommit = new RunCommit(
             activeRunContext: $activeRunContext,
             eventStore: $eventStore,
-            stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
             logger: new NullLogger(),
             toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(),
-            hookDispatcher: null, executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore()
+            executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
+            sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
+            hookDispatcher: null,
+            finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus())),
         );
         $processor = new RunMessageProcessor(
             activeRunContext: $activeRunContext,

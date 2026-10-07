@@ -19,6 +19,7 @@ use Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolLaunchInputReferenceDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
@@ -288,11 +289,15 @@ final class SessionToolLaunchInputStoreTest extends IsolatedKernelTestCase
         $active = new \Ineersa\AgentCore\Tests\Support\TestActiveRunContext();
         $active->loadRecovered($state);
         $eventStore = self::getContainer()->get(\Ineersa\AgentCore\Contract\EventStoreInterface::class);
-        $commit = new \Ineersa\AgentCore\Application\Pipeline\RunCommit(sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
-            activeRunContext: $active, eventStore: $eventStore,
-            stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(self::getContainer()->get('agent.command.bus'), new TestMessageBus()),
-            logger: new \Ineersa\AgentCore\Tests\Support\TestLogger(), toolBatchCollector: $ownerCollector,
-            hookDispatcher: new \Ineersa\AgentCore\Application\Handler\HookDispatcher([self::getContainer()->get(\Ineersa\CodingAgent\Session\ToolBatchSnapshotCleanupHookSubscriber::class)]), executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore()
+        $commit = new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
+            activeRunContext: $active,
+            eventStore: $eventStore,
+            logger: new \Ineersa\AgentCore\Tests\Support\TestLogger(),
+            toolBatchCollector: $ownerCollector,
+            executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
+            sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
+            hookDispatcher: new \Ineersa\AgentCore\Application\Handler\HookDispatcher([self::getContainer()->get(\Ineersa\CodingAgent\Session\ToolBatchSnapshotCleanupHookSubscriber::class)]),
+            finalizer: TestTransitionFinalizerFactory::create($eventStore, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(self::getContainer()->get('agent.command.bus'), new TestMessageBus())),
         );
         $commit->commit($state, $transition->nextState, $transition->events, $transition->effects, postCommitEffects: $transition->postCommitEffects, postCommitActions: $transition->postCommitActions);
         $this->assertFileDoesNotExist($this->payloadPath($runId, 'fork'));

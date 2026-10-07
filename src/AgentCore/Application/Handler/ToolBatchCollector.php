@@ -32,9 +32,9 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
  *   3. {@see ToolCallResultHandler} calls {@see prepareCollect()} without publication.
  *      Verified coordination finalizes its delta before subsequent calls are armed.
  *
- * Durable mode reads through the store without retaining deserialized batches.
- * In-memory batches remain available until RunCommit publishes their canonical
- * completion or terminal cancellation, even if collection finalized earlier.
+ * Durable mode reads through the SQL scheduling store without retaining
+ * deserialized batches. In-memory batches remain available until RunCommit
+ * publishes their canonical completion or terminal cancellation.
  */
 final class ToolBatchCollector
 {
@@ -254,25 +254,10 @@ final class ToolBatchCollector
 
     public function finalizePreparedBatch(FinalizeToolBatchDTO $action, VerifiedTransitionDTO $transition): void
     {
-        $matched = false;
-        foreach ($transition->work['actions'] ?? [] as $expected) {
-            if ($expected instanceof FinalizeToolBatchDTO && serialize($expected) === serialize($action)) {
-                $matched = true;
-            }
-        }
-        if (!$matched || ($transition->work['run_id'] ?? null) !== $action->runId) {
-            throw new \RuntimeException('Prepared batch has no matching verified transition.');
-        }
-        $apply = function (?ToolBatchStateDTO $batch) use ($action): ToolBatchStoreMutation {
+        if (null === $this->store) {
+            $batch = $this->loadBatch($action->runId, $action->turnNo, $action->stepId);
             if (null === $batch) {
                 throw new \RuntimeException('Prepared batch evidence is missing.');
-            }
-            $hash = $this->coordinationHash($batch);
-            if ($hash === $action->afterHash) {
-                return new ToolBatchStoreMutation(null);
-            }
-            if ($hash !== $action->beforeHash) {
-                throw new \RuntimeException('Prepared batch differs from its coordination predecessor.');
             }
             $next = clone $batch;
             $next->pendingQueue = $action->pendingQueue;
@@ -287,21 +272,11 @@ final class ToolBatchCollector
                     ? $next->calls[$action->revisedCallId]->withHumanInputAnswer(null)
                     : $next->calls[$action->revisedCallId]->withAuthorizedHumanAnswer($action->answer);
             }
-            if ($this->coordinationHash($next) !== $action->afterHash) {
-                throw new \RuntimeException('Prepared batch delta does not match its planned decision.');
-            }
-
-            return new ToolBatchStoreMutation(null, $next);
-        };
-        if (null !== $this->store) {
-            $this->store->mutate($action->runId, $action->turnNo, $action->stepId, $apply);
+            $this->saveBatch($action->runId, $action->turnNo, $action->stepId, $next);
 
             return;
         }
-        $mutation = $apply($this->loadBatch($action->runId, $action->turnNo, $action->stepId));
-        if (null !== $mutation->nextState) {
-            $this->saveBatch($action->runId, $action->turnNo, $action->stepId, $mutation->nextState);
-        }
+        $this->store->applyPrepared($action, $transition);
     }
 
     /**
@@ -329,9 +304,12 @@ final class ToolBatchCollector
 
     private function prepareDelta(string $runId, int $turnNo, string $stepId, ToolBatchStateDTO $before, ToolBatchStateDTO $after, ?ToolCallResult $result = null): ?FinalizeToolBatchDTO
     {
-        $beforeHash = $this->coordinationHash($before);
-        $afterHash = $this->coordinationHash($after);
-        if ($beforeHash === $afterHash) {
+        if ($before->pendingQueue === $after->pendingQueue
+            && $before->inFlight === $after->inFlight
+            && $before->awaitingHumanInput === $after->awaitingHumanInput
+            && $before->finalized === $after->finalized
+            && $before->results === $after->results
+            && $before->calls === $after->calls) {
             return null;
         }
         $revisedId = null;
@@ -346,13 +324,7 @@ final class ToolBatchCollector
             }
         }
 
-        return new FinalizeToolBatchDTO($runId, $turnNo, $stepId, $beforeHash, $afterHash, $after->pendingQueue, $after->inFlight, $after->awaitingHumanInput, $after->finalized, $result, $revisedId, $answer);
-    }
-
-    /** Worker authorization and result receipts can advance independently. */
-    private function coordinationHash(ToolBatchStateDTO $batch): string
-    {
-        return hash('sha256', serialize([$batch->expectedOrder, $batch->calls, $batch->pendingQueue, $batch->inFlight, $batch->results, $batch->finalized, $batch->maxParallelism, $batch->awaitingHumanInput]));
+        return new FinalizeToolBatchDTO($runId, $turnNo, $stepId, $after->pendingQueue, $after->inFlight, $after->awaitingHumanInput, $after->finalized, $result, $revisedId, $answer);
     }
 
     /**

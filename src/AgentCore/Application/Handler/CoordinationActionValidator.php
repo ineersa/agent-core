@@ -27,7 +27,6 @@ final readonly class CoordinationActionValidator
     {
         if ($action instanceof FinalizeToolBatchDTO) {
             if ('' === $action->runId || '' === $action->stepId || $action->turnNo < 0
-                || 1 !== preg_match('/^[a-f0-9]{64}$/D', $action->beforeHash) || 1 !== preg_match('/^[a-f0-9]{64}$/D', $action->afterHash)
                 || !array_is_list($action->pendingQueue)) {
                 throw new \RuntimeException('Invalid prepared batch coordination identity.');
             }

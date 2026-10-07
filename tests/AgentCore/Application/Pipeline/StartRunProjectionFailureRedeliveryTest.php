@@ -18,6 +18,7 @@ use Ineersa\AgentCore\Tests\Support\Builder\StartRunMessageBuilder;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
+use Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
@@ -42,13 +43,15 @@ final class StartRunProjectionFailureRedeliveryTest extends TestCase
         $processor = new RunMessageProcessor(
             activeRunContext: $activeRunContext,
             runLockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
-            runCommit: new RunCommit(sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
-                activeRunContext: $activeRunContext,
-                eventStore: $eventStore,
-                stepDispatcher: new StepDispatcher($commandBus, $executionBus),
-                logger: new NullLogger(),
-                toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore()
-            ),
+            runCommit: new RunCommit(
+            activeRunContext: $activeRunContext,
+            eventStore: $eventStore,
+            logger: new NullLogger(),
+            toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(),
+            executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
+            sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
+            finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher($commandBus, $executionBus)),
+        ),
             handlers: [
                 new StartRunHandler(
                     eventFactory: new EventFactory(),

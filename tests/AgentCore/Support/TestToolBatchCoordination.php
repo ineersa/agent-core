@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO;
 use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
+use Symfony\Component\Uid\Uuid;
 
 /** Algorithm tests explicitly finalize decisions. Journal proofs use the configured store. */
 final class TestToolBatchCoordination
@@ -17,7 +18,7 @@ final class TestToolBatchCoordination
     public static function finalize(ToolBatchCollector $collector, ?FinalizeToolBatchDTO $action): void
     {
         if (null !== $action) {
-            $collector->finalizePreparedBatch($action, new VerifiedTransitionDTO('algorithm-test', 0, ['run_id' => $action->runId, 'actions' => [$action]]));
+            $collector->finalizePreparedBatch($action, new VerifiedTransitionDTO(Uuid::v7()->toRfc4122(), 0, ['run_id' => $action->runId, 'actions' => [$action]]));
         }
     }
 

@@ -31,6 +31,7 @@ use Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\Group;
@@ -330,13 +331,15 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
         $processor = new RunMessageProcessor(
             activeRunContext: $activeRunContext,
             runLockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
-            runCommit: new RunCommit(sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
-                activeRunContext: $activeRunContext,
-                eventStore: $eventStore,
-                stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
-                logger: new NullLogger(),
-                toolBatchCollector: $collector, executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore()
-            ),
+            runCommit: new RunCommit(
+            activeRunContext: $activeRunContext,
+            eventStore: $eventStore,
+            logger: new NullLogger(),
+            toolBatchCollector: $collector,
+            executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
+            sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
+            finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus())),
+        ),
             handlers: [
                 new ToolCallResultHandler(
                     toolBatchCollector: $collector,

@@ -11,15 +11,14 @@ use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
-use Ineersa\CodingAgent\Session\ToolBatchSnapshotEnvelopeDTO;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Serializer\Normalizer\AbstractNormalizer;
 use Symfony\Component\Serializer\SerializerInterface;
 
 /**
- * Session snapshot persistence serializes the real ToolBatchStateDTO graph:
+ * Scheduling retains typed ToolBatchStateDTO graphs:
  * nested ExecuteToolCall/ToolCallResult objects via AttributeSerializer.
- * Configured Messenger + SessionToolBatchStore fork launch-context proof lives in
+ * Configured Messenger + launch-context proof lives in
  * ToolLaunchContextConfiguredBoundaryTest.
  */
 final class ToolBatchStateDTOParentModelRoundTripTest extends TestCase
@@ -52,7 +51,7 @@ final class ToolBatchStateDTOParentModelRoundTripTest extends TestCase
             mode: 'read_only',
             timeoutSeconds: 30,
             maxParallelism: 2,
-            assistantMessage: ['role' => 'assistant'],
+            batchToolCallCount: 2,
             argSchema: ['type' => 'object'],
             toolsRef: 'tools-v1',
             humanInputAnswer: $answer,
@@ -79,9 +78,14 @@ final class ToolBatchStateDTOParentModelRoundTripTest extends TestCase
             idempotencyKey: 'suspension-ik',
             toolCallId: 'c1',
             orderIndex: 0,
-            pendingHumanInput: PendingHumanInputRequestDTO::toolCallFromPayload(
-                ['question_id' => 'q-1', 'prompt' => 'Approve command?'],
-                ['run_id' => 'run-1', 'turn_no' => 2, 'step_id' => 'step-a', 'tool_call_id' => 'c1'],
+            result: [],
+            isError: false,
+            error: null,
+            pendingHumanInput: new PendingHumanInputRequestDTO(
+                questionId: 'q-1',
+                continuationKind: HumanInputContinuationKindEnum::ToolCall,
+                payload: ['question_id' => 'q-1', 'prompt' => 'Approve command?'],
+                continuationRef: ['run_id' => 'run-1', 'turn_no' => 2, 'step_id' => 'step-a', 'tool_call_id' => 'c1'],
             ),
         );
 
@@ -90,46 +94,41 @@ final class ToolBatchStateDTOParentModelRoundTripTest extends TestCase
             calls: ['c1' => $call],
             pendingQueue: ['c1'],
             inFlight: ['c2' => true],
-            results: ['c2' => $result],
+            results: ['c2' => $result, 'c1' => $suspension],
             finalized: false,
             maxParallelism: 2,
             awaitingHumanInput: ['c1' => 'q-1'],
-            executionResults: ['suspension-receipt' => $suspension],
         );
 
-        $envelope = new ToolBatchSnapshotEnvelopeDTO('run-1', 2, 'step-a', $batch);
-        $json = $serializer->serialize($envelope, 'json', [AbstractNormalizer::GROUPS => [ToolBatchStateDTO::SNAPSHOT_GROUP]]);
+        $json = $serializer->serialize($batch, 'json', [AbstractNormalizer::GROUPS => [ToolBatchStateDTO::SNAPSHOT_GROUP]]);
         $wire = json_decode($json, true, 512, \JSON_THROW_ON_ERROR);
-        $batchWire = $wire['batch_state'];
 
-        $this->assertSame(['run_id', 'turn_no', 'step_id', 'batch_state'], array_keys($wire));
-        $this->assertArrayHasKey('call_data', $batchWire);
-        $this->assertArrayHasKey('result_data', $batchWire);
-        $this->assertSame('run-1', $batchWire['call_data']['c1']['run_id']);
-        $this->assertSame(2, $batchWire['call_data']['c1']['turn_no']);
-        $this->assertSame('step-a', $batchWire['call_data']['c1']['step_id']);
-        $this->assertSame(3, $batchWire['call_data']['c1']['attempt']);
-        $this->assertSame('live-ik', $batchWire['call_data']['c1']['idempotency_key']);
-        $this->assertArrayHasKey('pending_human_input', $batchWire['result_data']['c2']);
-        $this->assertNull($batchWire['result_data']['c2']['pending_human_input']);
-        $this->assertSame('q-1', $batchWire['execution_results']['suspension-receipt']['pending_human_input']['question_id']);
-        $this->assertSame('deepseek/deepseek-v4-flash', $batchWire['call_data']['c1']['parent_model']);
+        $this->assertArrayHasKey('call_data', $wire);
+        $this->assertArrayHasKey('result_data', $wire);
+        $this->assertSame('run-1', $wire['call_data']['c1']['run_id']);
+        $this->assertSame(2, $wire['call_data']['c1']['turn_no']);
+        $this->assertSame('step-a', $wire['call_data']['c1']['step_id']);
+        $this->assertSame(3, $wire['call_data']['c1']['attempt']);
+        $this->assertSame('live-ik', $wire['call_data']['c1']['idempotency_key']);
+        $this->assertArrayHasKey('pending_human_input', $wire['result_data']['c2']);
+        $this->assertNull($wire['result_data']['c2']['pending_human_input']);
+        $this->assertSame('q-1', $wire['result_data']['c1']['pending_human_input']['question_id']);
+        $this->assertSame('deepseek/deepseek-v4-flash', $wire['call_data']['c1']['parent_model']);
         $this->assertTrue(
-            !\array_key_exists('launch_context', $batchWire['call_data']['c1'])
-            || null === $batchWire['call_data']['c1']['launch_context'],
+            !\array_key_exists('launch_context', $wire['call_data']['c1'])
+            || null === $wire['call_data']['c1']['launch_context'],
             'Ordinary tools must not carry a launch-context graph',
         );
-        $this->assertSame('q-1', $batchWire['call_data']['c1']['human_input_answer']['question_id']);
+        $this->assertSame('q-1', $wire['call_data']['c1']['human_input_answer']['question_id']);
 
-        $restoredEnvelope = $serializer->deserialize(
+        $restored = $serializer->deserialize(
             $json,
-            ToolBatchSnapshotEnvelopeDTO::class,
+            ToolBatchStateDTO::class,
             'json',
             [AbstractNormalizer::GROUPS => [ToolBatchStateDTO::SNAPSHOT_GROUP]],
         );
-        $this->assertInstanceOf(ToolBatchSnapshotEnvelopeDTO::class, $restoredEnvelope);
-        $this->assertSame(0, $validator->validate($restoredEnvelope)->count());
-        $restored = $restoredEnvelope->batchState;
+        $this->assertInstanceOf(ToolBatchStateDTO::class, $restored);
+        $this->assertSame(0, $validator->validate($restored)->count());
 
         $this->assertSame('bash', $restored->calls['c1']->toolName);
         $this->assertSame(['command' => 'ls'], $restored->calls['c1']->args);
@@ -139,7 +138,7 @@ final class ToolBatchStateDTOParentModelRoundTripTest extends TestCase
         $this->assertNull($restored->calls['c1']->launchContext);
         $this->assertSame(['stdout' => 'ok'], $restored->results['c2']->result);
         $this->assertNull($restored->results['c2']->pendingHumanInput);
-        $restoredSuspension = $restored->executionResults['suspension-receipt'];
+        $restoredSuspension = $restored->results['c1'];
         $this->assertTrue($restoredSuspension->isHumanInputSuspension());
         $this->assertNotNull($restoredSuspension->pendingHumanInput);
         $this->assertSame('suspension-ik', $restoredSuspension->idempotencyKey());
@@ -165,35 +164,30 @@ final class ToolBatchStateDTOParentModelRoundTripTest extends TestCase
         $this->expectException(\Throwable::class);
         $serializer->deserialize(
             json_encode([
-                'run_id' => 'run-x',
-                'turn_no' => 1,
-                'step_id' => 'step-x',
-                'batch_state' => [
-                    'expected_order' => ['c1' => 0],
-                    'call_data' => [
-                        'c1' => [
-                            'tool_call_id' => 'c1',
-                            'tool_name' => 'read',
-                            'order_index' => 0,
-                            'args' => [],
-                            'mode' => 99,
-                        ],
+                'expected_order' => ['c1' => 0],
+                'call_data' => [
+                    'c1' => [
+                        'tool_call_id' => 'c1',
+                        'tool_name' => 'read',
+                        'order_index' => 0,
+                        'args' => [],
+                        'mode' => 99,
                     ],
-                    'pending_queue' => [],
-                    'in_flight' => [],
-                    'result_data' => [],
-                    'finalized' => false,
-                    'max_parallelism' => 1,
-                    'awaiting_human_input' => [],
                 ],
+                'pending_queue' => [],
+                'in_flight' => [],
+                'result_data' => [],
+                'finalized' => false,
+                'max_parallelism' => 1,
+                'awaiting_human_input' => [],
             ], \JSON_THROW_ON_ERROR),
-            ToolBatchSnapshotEnvelopeDTO::class,
+            ToolBatchStateDTO::class,
             'json',
             [AbstractNormalizer::GROUPS => [ToolBatchStateDTO::SNAPSHOT_GROUP]],
         );
     }
 
-    public function testBlankHumanInputAnswerQuestionIdCascadesFromEnvelope(): void
+    public function testBlankHumanInputAnswerQuestionIdFailsValidation(): void
     {
         [$serializer, $validator] = AttributeSerializerValidatorTestFactory::create();
         $answer = new ToolCallHumanInputAnswerDTO(
@@ -228,25 +222,23 @@ final class ToolBatchStateDTOParentModelRoundTripTest extends TestCase
             finalized: false,
             maxParallelism: 1,
         );
-        $envelope = new ToolBatchSnapshotEnvelopeDTO('run-1', 2, 'step-a', $batch);
 
-        $violations = $validator->validate($envelope);
+        $violations = $validator->validate($batch);
         $this->assertGreaterThan(0, $violations->count());
         $paths = [];
         foreach ($violations as $violation) {
             $paths[] = $violation->getPropertyPath();
         }
-        $this->assertContains('batchState.calls[c1].humanInputAnswer.questionId', $paths);
+        $this->assertContains('calls[c1].humanInputAnswer.questionId', $paths);
 
-        // Serializer path also hydrates blank nested answer; validate after deserialize.
-        $json = $serializer->serialize($envelope, 'json', [AbstractNormalizer::GROUPS => [ToolBatchStateDTO::SNAPSHOT_GROUP]]);
+        $json = $serializer->serialize($batch, 'json', [AbstractNormalizer::GROUPS => [ToolBatchStateDTO::SNAPSHOT_GROUP]]);
         $restored = $serializer->deserialize(
             $json,
-            ToolBatchSnapshotEnvelopeDTO::class,
+            ToolBatchStateDTO::class,
             'json',
             [AbstractNormalizer::GROUPS => [ToolBatchStateDTO::SNAPSHOT_GROUP]],
         );
-        $this->assertInstanceOf(ToolBatchSnapshotEnvelopeDTO::class, $restored);
+        $this->assertInstanceOf(ToolBatchStateDTO::class, $restored);
         $restoredViolations = $validator->validate($restored);
         $this->assertGreaterThan(0, $restoredViolations->count());
     }

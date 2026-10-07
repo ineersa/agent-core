@@ -4,11 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Pipeline;
 
-use Ineersa\AgentCore\Application\Handler\CommandMailboxCoordinationFactory;
 use Ineersa\AgentCore\Application\Handler\ExecutionOperationMapper;
 use Ineersa\AgentCore\Application\Handler\HookDispatcher;
 use Ineersa\AgentCore\Application\Handler\RunTracer;
-use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface;
@@ -27,7 +25,6 @@ final readonly class RunCommit
     public function __construct(
         private ActiveRunContextInterface $activeRunContext,
         private PreparedTransitionEventStoreInterface $eventStore,
-        private StepDispatcher $stepDispatcher,
         private LoggerInterface $logger,
         private ToolBatchCollector $toolBatchCollector,
         private ExecutionOperationStoreInterface $executionOperations,
@@ -37,12 +34,10 @@ final readonly class RunCommit
         private \Ineersa\AgentCore\Application\Handler\CoordinationActionValidator $actionValidator = new \Ineersa\AgentCore\Application\Handler\CoordinationActionValidator(),
         ?TransitionFinalizer $finalizer = null,
     ) {
-        $this->finalizer = $finalizer ?? new TransitionFinalizer(
-            $eventStore,
-            $executionOperations,
-            $stepDispatcher,
-            $sourceAcceptance,
-        );
+        if (null === $finalizer) {
+            throw new \LogicException('Configured TransitionFinalizer is required for local metadata commits.');
+        }
+        $this->finalizer = $finalizer;
     }
 
     /**
@@ -90,10 +85,6 @@ final readonly class RunCommit
                 }
             }
 
-            $batchActions = array_values(array_filter($postCommitActions, static fn (object $action): bool => $action instanceof \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO));
-            $this->stepDispatcher->dispatchCoordinationActions($batchActions);
-            $postCommitActions = array_values(array_filter($postCommitActions, static fn (object $action): bool => !$action instanceof \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO));
-
             $committedState = $nextState;
             if ([] !== $persistedEvents) {
                 $lastPersisted = $persistedEvents[array_key_last($persistedEvents)];
@@ -107,14 +98,11 @@ final readonly class RunCommit
             $this->toolBatchCollector->releaseAfterCommit($committedState, $persistedEvents);
             $this->logCommittedEvents($committedState, $persistedEvents);
 
-            $mailboxActions = array_values(array_filter($postCommitActions, CommandMailboxCoordinationFactory::isMailboxAction(...)));
-            $remainingActions = array_values(array_filter($postCommitActions, static fn (object $action): bool => !CommandMailboxCoordinationFactory::isMailboxAction($action)));
-
             $this->finalizer->complete(
                 $committedState->runId,
                 $verifiedSource,
                 [...$effects, ...$postCommitEffects],
-                [...$mailboxActions, ...$remainingActions],
+                $postCommitActions,
                 $afterTurnActions,
                 $executionDisposition,
             );

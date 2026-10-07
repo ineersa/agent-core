@@ -18,6 +18,7 @@ use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
@@ -67,7 +68,15 @@ final class RunMessageProcessorTest extends TestCase
         });
         $bus = new TestMessageBus();
         $dispatcher = new StepDispatcher($bus, $bus);
-        $commit = new RunCommit($active, $store, $dispatcher, new NullLogger(), new ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()));
+        $commit = new RunCommit(
+            activeRunContext: $active,
+            eventStore: $store,
+            logger: new NullLogger(),
+            toolBatchCollector: new ToolBatchCollector(),
+            executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
+            sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
+            finalizer: TestTransitionFinalizerFactory::create($store, $dispatcher),
+        );
         $processor = new RunMessageProcessor($active, new RunLockManager(new LockFactory(new InMemoryStore())), $commit, [$handler], $discard);
         if ($failAppend) {
             $this->expectException(\RuntimeException::class);

@@ -1019,12 +1019,15 @@ services:
   Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface:
     alias: Ineersa\CodingAgent\Session\SessionToolLaunchInputStore
 
-  # Durable tool batch store — session-scoped atomic JSON snapshots (transient recovery).
+  # Durable tool-batch scheduling lives in application SQLite; payload paths remain for launch/execution files.
   Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface:
     alias: Ineersa\CodingAgent\Agent\Artifact\ChildAwareToolBatchRunStoragePaths
 
   Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface:
-    alias: Ineersa\CodingAgent\Session\SessionToolBatchStore
+    alias: Ineersa\CodingAgent\Session\DoctrineToolBatchStore
+
+  Ineersa\AgentCore\Contract\ApplicationDbTransactionInterface:
+    alias: Ineersa\CodingAgent\Session\DoctrineApplicationDbTransaction
 
   # ─── AI-10 Per-turn model/reasoning routing ───
 
@@ -1041,6 +1044,12 @@ services:
   Ineersa\AgentCore\Application\Handler\StepDispatcher:
     arguments:
       $executionBus: '@agent.execution.bus'
+
+  Ineersa\AgentCore\Application\Pipeline\TransitionFinalizer:
+    arguments:
+      $store: '@Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface'
+      $dispatcher: '@Ineersa\AgentCore\Application\Handler\StepDispatcher'
+      $localMetadata: '@Ineersa\AgentCore\Application\Pipeline\LocalMetadataCoordinator'
 
   Ineersa\AgentCore\Application\Messenger\ExecutionAuthorizationMiddleware:
     arguments:

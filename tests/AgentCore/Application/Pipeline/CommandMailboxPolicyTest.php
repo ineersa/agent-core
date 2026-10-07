@@ -35,6 +35,7 @@ use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
+use Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
@@ -419,13 +420,15 @@ final class CommandMailboxPolicyTest extends TestCase
         $toolBatchCollector = new ToolBatchCollector();
         $stepDispatcher = new StepDispatcher(\Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::bus($commandBus, $commandStore, $toolBatchCollector, new StepDispatcher($commandBus, $executionBus)), $executionBus);
 
-        $runCommit = new RunCommit(sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new InMemoryCommandStore()),
+        $runCommit = new RunCommit(
             activeRunContext: $activeRunContext,
             eventStore: $eventStore,
-            stepDispatcher: $stepDispatcher,
             logger: new NullLogger(),
             toolBatchCollector: $toolBatchCollector,
-            hookDispatcher: null, executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore()
+            executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
+            sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new InMemoryCommandStore()),
+            hookDispatcher: null,
+            finalizer: TestTransitionFinalizerFactory::create($eventStore, $stepDispatcher),
         );
 
         $runMessageProcessor = new RunMessageProcessor(

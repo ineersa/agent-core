@@ -143,54 +143,30 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
         $this->encodeRequest($request);
     }
 
+    public function prepare(AbstractAgentBusMessage $request, VerifiedTransitionDTO $transition): ExecutionAuthorizationStamp
+    {
+        return $this->authorize($request, $transition, arm: false);
+    }
+
     public function arm(AbstractAgentBusMessage $request, VerifiedTransitionDTO $transition): ExecutionAuthorizationStamp
     {
-        if (!ExecutionOperationMapper::supports($request) || ($transition->work['run_id'] ?? null) !== $request->runId()) {
-            throw new \RuntimeException('Execution authorization requires matching verified owner work.');
-        }
-        $this->sanitizeRunId($request->runId());
-        $bytes = $this->encodeRequest($request);
-        $hash = hash('sha256', $bytes);
-        $matched = false;
-        foreach ($this->authorizedRequests($transition) as $effect) {
-            if ($effect::class === $request::class && hash('sha256', $this->encodeRequest($effect)) === $hash) {
-                $matched = true;
-                break;
-            }
-        }
-        if (!$matched) {
-            throw new \RuntimeException('Execution request is absent from verified owner work.');
-        }
-        $id = hash('sha256', $transition->identity.'|'.$hash);
-        $logicalToolCallId = $request instanceof ExecuteToolCall ? $request->toolCallId : null;
-        $this->seal($this->path($request->runId(), $id, 'request'), $bytes);
-        try {
-            $this->connection->insert('execution_operation', [
-                'effect_id' => $id, 'run_id' => $request->runId(), 'turn_no' => $request->turnNo(), 'step_id' => $request->stepId(), 'attempt' => $request->attempt(), 'idempotency_key' => $request->idempotencyKey(),
-                'request_type' => $request::class, 'result_type' => ExecutionOperationMapper::resultType($request), 'request_hash' => $hash, 'request_bytes' => \strlen($bytes), 'owner_generation' => $transition->identity, 'state' => 'Prepared',
-                'logical_tool_call_id' => $logicalToolCallId, 'deferred_id' => null,
-            ]);
-        } catch (UniqueConstraintViolationException $exception) {
-            $existing = $this->record($id);
-            if ($existing['request_hash'] !== $hash || $existing['owner_generation'] !== $transition->identity) {
-                throw new \RuntimeException('Conflicting execution authorization.', previous: $exception);
-            }
-            // Intent recovery repeats the same immutable insertion, never resets a claim.
-        }
-        $this->connection->executeStatement("UPDATE execution_operation SET state = 'Armed' WHERE effect_id = ? AND state = 'Prepared'", [$id]);
-
-        return new ExecutionAuthorizationStamp($id, $hash);
+        return $this->authorize($request, $transition, arm: true);
     }
 
     public function requestReference(AbstractAgentBusMessage $request, ExecutionAuthorizationStamp $authorization): ExecutionRequest
     {
         $record = $this->record($authorization->effectId);
-        $hash = hash('sha256', $this->encodeRequest($request));
-        if ($record['request_hash'] !== $authorization->requestHash || $hash !== $authorization->requestHash || $record['request_type'] !== $request::class || $record['run_id'] !== $request->runId()) {
+        if ($record['request_hash'] !== $authorization->requestHash
+            || $record['request_type'] !== $request::class
+            || $record['run_id'] !== $request->runId()
+            || (int) $record['turn_no'] !== $request->turnNo()
+            || $record['step_id'] !== $request->stepId()
+            || (int) $record['attempt'] !== $request->attempt()
+            || $record['idempotency_key'] !== $request->idempotencyKey()) {
             throw new \RuntimeException('Execution delivery differs from its owner authorization.');
         }
 
-        return new ExecutionRequest($request->runId(), $request->turnNo(), $request->stepId(), $request->attempt(), $request->idempotencyKey(), $authorization->effectId, $request::class, $hash, (int) $record['request_bytes']);
+        return new ExecutionRequest($request->runId(), $request->turnNo(), $request->stepId(), $request->attempt(), $request->idempotencyKey(), $authorization->effectId, $request::class, $authorization->requestHash, (int) $record['request_bytes']);
     }
 
     /**
@@ -560,9 +536,76 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
                     }
                 }
             }
+            if ($action instanceof \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO
+                && null !== $action->revisedCallId
+                && null !== $action->answer) {
+                foreach ([...($transition->work['effects'] ?? []), ...($transition->work['post_commit_effects'] ?? [])] as $effect) {
+                    if ($effect instanceof ExecuteToolCall
+                        && $effect->toolCallId === $action->revisedCallId
+                        && $effect->humanInputAnswer instanceof \Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO
+                        && $effect->humanInputAnswer->isEquivalent($action->answer)) {
+                        $requests[] = $effect;
+                    }
+                }
+            }
         }
 
         return $requests;
+    }
+
+    private function authorize(AbstractAgentBusMessage $request, VerifiedTransitionDTO $transition, bool $arm): ExecutionAuthorizationStamp
+    {
+        if (!ExecutionOperationMapper::supports($request) || ($transition->work['run_id'] ?? null) !== $request->runId()) {
+            throw new \RuntimeException('Execution authorization requires matching verified owner work.');
+        }
+        $this->sanitizeRunId($request->runId());
+        if ($arm) {
+            $rows = $this->connection->fetchAllAssociative(
+                // Later capacity admission reuses the original Prepared seal. Match the
+                // frozen invocation identity, not the admitting transition generation.
+                "SELECT * FROM execution_operation WHERE run_id = ? AND turn_no = ? AND step_id = ? AND attempt = ? AND idempotency_key = ? AND request_type = ? AND state IN ('Prepared', 'Armed') ORDER BY effect_id LIMIT 2",
+                [$request->runId(), $request->turnNo(), $request->stepId(), $request->attempt(), $request->idempotencyKey(), $request::class],
+            );
+            if (1 !== \count($rows)) {
+                throw new \RuntimeException('Execution arming requires a prepared invocation.');
+            }
+            $existing = $rows[0];
+            $this->connection->executeStatement("UPDATE execution_operation SET state = 'Armed' WHERE effect_id = ? AND state IN ('Prepared', 'Armed')", [$existing['effect_id']]);
+
+            return new ExecutionAuthorizationStamp($existing['effect_id'], $existing['request_hash']);
+        }
+
+        $bytes = $this->encodeRequest($request);
+        $hash = hash('sha256', $bytes);
+        $matched = false;
+        foreach ($this->authorizedRequests($transition) as $effect) {
+            if ($effect::class === $request::class && hash('sha256', $this->encodeRequest($effect)) === $hash) {
+                $matched = true;
+                break;
+            }
+        }
+        if (!$matched) {
+            throw new \RuntimeException('Execution request is absent from verified owner work.');
+        }
+        $id = hash('sha256', $transition->identity.'|'.$hash);
+
+        $logicalToolCallId = $request instanceof ExecuteToolCall ? $request->toolCallId : null;
+        $this->seal($this->path($request->runId(), $id, 'request'), $bytes);
+        try {
+            $this->connection->insert('execution_operation', [
+                'effect_id' => $id, 'run_id' => $request->runId(), 'turn_no' => $request->turnNo(), 'step_id' => $request->stepId(), 'attempt' => $request->attempt(), 'idempotency_key' => $request->idempotencyKey(),
+                'request_type' => $request::class, 'result_type' => ExecutionOperationMapper::resultType($request), 'request_hash' => $hash, 'request_bytes' => \strlen($bytes), 'owner_generation' => $transition->identity, 'state' => 'Prepared',
+                'logical_tool_call_id' => $logicalToolCallId, 'deferred_id' => null,
+            ]);
+        } catch (UniqueConstraintViolationException $exception) {
+            $existing = $this->record($id);
+            if ($existing['request_hash'] !== $hash || $existing['owner_generation'] !== $transition->identity) {
+                throw new \RuntimeException('Conflicting execution authorization.', previous: $exception);
+            }
+            // Intent recovery repeats the same immutable insertion, never resets a claim.
+        }
+
+        return new ExecutionAuthorizationStamp($id, $hash);
     }
 
     private function withUnknownExclusion(\Ineersa\AgentCore\Domain\Message\ExecutionOutcomeUnknown $notice, callable $decision): void

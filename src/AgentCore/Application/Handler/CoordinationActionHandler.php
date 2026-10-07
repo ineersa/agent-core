@@ -7,14 +7,13 @@ namespace Ineersa\AgentCore\Application\Handler;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO;
 use Ineersa\AgentCore\Domain\Coordination\MarkCommandAppliedDTO;
-use Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 
 final readonly class CoordinationActionHandler
 {
-    public function __construct(private MessageBusInterface $commandBus, private CommandStoreInterface $commandStore, private ToolBatchCollector $toolBatchCollector)
+    public function __construct(private MessageBusInterface $commandBus, private CommandStoreInterface $commandStore)
     {
     }
 
@@ -44,12 +43,5 @@ final readonly class CoordinationActionHandler
     public function rejectCommand(\Ineersa\AgentCore\Domain\Coordination\RejectCommandDTO $action): void
     {
         $this->commandStore->markRejected($action->runId, $action->idempotencyKey, $action->reason);
-    }
-
-    #[AsMessageHandler(bus: 'agent.command.bus')]
-    public function registerToolBatch(RegisterToolBatchDTO $action): void
-    {
-        // Scheduling membership only. Authorization and delivery belong to TransitionFinalizer.
-        $this->toolBatchCollector->registerExpectedBatch($action->runId, $action->turnNo, $action->stepId, $action->effects, redriveInFlight: true);
     }
 }

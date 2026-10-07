@@ -31,6 +31,7 @@ use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
 use Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Agent\Toolbox\ToolResult as SymfonyToolResult;
@@ -376,13 +377,15 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         $processor = new \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor(
             activeRunContext: $activeRunContext,
             runLockManager: new \Ineersa\AgentCore\Application\Handler\RunLockManager(new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\InMemoryStore())),
-            runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit(sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
+            runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
                 activeRunContext: $activeRunContext,
                 eventStore: $eventStore,
-                stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus()),
                 logger: new \Psr\Log\NullLogger(),
-                toolBatchCollector: $collector, executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore()
-            ),
+                toolBatchCollector: $collector,
+                executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
+                sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
+                finalizer: TestTransitionFinalizerFactory::create($eventStore, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus())),
+                ),
             handlers: [$handler],
         );
 
@@ -497,13 +500,15 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         $processor = new \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor(
             activeRunContext: $activeRunContext,
             runLockManager: new \Ineersa\AgentCore\Application\Handler\RunLockManager(new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\InMemoryStore())),
-            runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit(sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
+            runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
                 activeRunContext: $activeRunContext,
                 eventStore: $eventStore,
-                stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(\Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::bus(new TestMessageBus(), $commandStore, $collector), $executionBus),
                 logger: new \Psr\Log\NullLogger(),
-                toolBatchCollector: $collector, executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore()
-            ),
+                toolBatchCollector: $collector,
+                executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
+                sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
+                finalizer: TestTransitionFinalizerFactory::create($eventStore, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(\Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::bus(new TestMessageBus(), $commandStore, $collector), $executionBus)),
+                ),
             handlers: [$handler],
         );
 
@@ -608,13 +613,15 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         $processor = new \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor(
             activeRunContext: $activeRunContext,
             runLockManager: new \Ineersa\AgentCore\Application\Handler\RunLockManager(new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\InMemoryStore())),
-            runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit(sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
+            runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
                 activeRunContext: $activeRunContext,
                 eventStore: $eventStore,
-                stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(\Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::bus(new TestMessageBus(), $commandStore, $collector), $executionBus),
                 logger: new \Psr\Log\NullLogger(),
-                toolBatchCollector: $collector, executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore()
-            ),
+                toolBatchCollector: $collector,
+                executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
+                sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
+                finalizer: TestTransitionFinalizerFactory::create($eventStore, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(\Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::bus(new TestMessageBus(), $commandStore, $collector), $executionBus)),
+                ),
             handlers: [$handler],
         );
 

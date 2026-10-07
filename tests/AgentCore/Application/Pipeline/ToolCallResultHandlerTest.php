@@ -35,7 +35,7 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Ineersa\CodingAgent\Session\SessionToolBatchStore;
+use Ineersa\AgentCore\Tests\Support\TestToolBatchStore;
 use Ineersa\CodingAgent\Tests\Session\Support\ParentSessionToolBatchRunStoragePaths;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
@@ -1108,26 +1108,9 @@ final class ToolCallResultHandlerTest extends TestCase
         $this->assertSame('fork-call', $fork->launchContext->toolCallId);
     }
 
-    private function createSessionToolBatchStore(): SessionToolBatchStore
+    private function createSessionToolBatchStore(): \Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface
     {
-        $entityManager = $this->createStub(EntityManagerInterface::class);
-        $appConfig = new AppConfig(
-            tui: new TuiConfig(theme: 'default'),
-            logging: new LoggingConfig(),
-            cwd: $this->toolBatchProjectDir,
-        );
-        $hatfield = new HatfieldSessionStore($appConfig, $entityManager, new \Symfony\Component\EventDispatcher\EventDispatcher());
-
-        [$serializer, $validator] = AttributeSerializerValidatorTestFactory::create();
-
-        return new SessionToolBatchStore(
-            new ParentSessionToolBatchRunStoragePaths($hatfield),
-            new LockFactory(new FlockStore()),
-            new NullLogger(),
-            $serializer,
-            $validator,
-            new \Ineersa\AgentCore\Tests\Support\InMemoryEventStore(),
-        );
+        return new TestToolBatchStore();
     }
 }
 
@@ -1137,7 +1120,7 @@ final class CancellationBatchReadObservationStore implements \Ineersa\AgentCore\
     public ?\WeakReference $loadedFork = null;
     public ?\WeakReference $loadedReference = null;
 
-    public function __construct(private readonly SessionToolBatchStore $inner)
+    public function __construct(private readonly \Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface $inner)
     {
     }
 
@@ -1167,21 +1150,6 @@ final class CancellationBatchReadObservationStore implements \Ineersa\AgentCore\
         return false;
     }
 
-    public function hasOutcomeUnknown(string $runId): bool
-    {
-        return $this->inner->hasOutcomeUnknown($runId);
-    }
-
-    public function unknownExecutionsForRepair(string $runId): array
-    {
-        return $this->inner->unknownExecutionsForRepair($runId);
-    }
-
-    public function recoverResultPublication(string $runId, int $turnNo, string $stepId, string $key, string $claim): void
-    {
-        $this->inner->recoverResultPublication($runId, $turnNo, $stepId, $key, $claim);
-    }
-
     public function reclaimDisposedPayloads(string $runId, string $afterFilename): string
     {
         return $this->inner->reclaimDisposedPayloads($runId, $afterFilename);
@@ -1195,5 +1163,20 @@ final class CancellationBatchReadObservationStore implements \Ineersa\AgentCore\
     public function mutate(string $runId, int $turnNo, string $stepId, callable $callback): mixed
     {
         return $this->inner->mutate($runId, $turnNo, $stepId, $callback);
+    }
+
+    public function applyPrepared(\Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO $action, \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO $transition): void
+    {
+        $this->inner->applyPrepared($action, $transition);
+    }
+
+    public function registerPrepared(\Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO $action, \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO $transition): void
+    {
+        $this->inner->registerPrepared($action, $transition);
+    }
+
+    public function admittedCalls(string $runId, int $turnNo, string $stepId): array
+    {
+        return $this->inner->admittedCalls($runId, $turnNo, $stepId);
     }
 }

@@ -19,7 +19,7 @@ final class CoordinationActionTestRunner
     public static function bus(MessageBusInterface $target, ?CommandStoreInterface $store = null, ?ToolBatchCollector $collector = null, ?StepDispatcher $dispatcher = null): MessageBusInterface
     {
         $collector ??= new ToolBatchCollector();
-        $handler = new CoordinationActionHandler($target, $store ?? new InMemoryCommandStore(), $collector);
+        $handler = new CoordinationActionHandler($target, $store ?? new InMemoryCommandStore());
 
         return new \Symfony\Component\Messenger\MessageBus([
             new \Symfony\Component\Messenger\Middleware\HandleMessageMiddleware(new \Symfony\Component\Messenger\Handler\HandlersLocator([
@@ -27,7 +27,7 @@ final class CoordinationActionTestRunner
                 MarkCommandAppliedDTO::class => [$handler->markCommandApplied(...)],
                 \Ineersa\AgentCore\Domain\Coordination\EnqueueCommandDTO::class => [$handler->enqueueCommand(...)],
                 \Ineersa\AgentCore\Domain\Coordination\RejectCommandDTO::class => [$handler->rejectCommand(...)],
-                RegisterToolBatchDTO::class => [$handler->registerToolBatch(...)],
+                RegisterToolBatchDTO::class => [static fn (RegisterToolBatchDTO $action) => $collector->registerExpectedBatch($action->runId, $action->turnNo, $action->stepId, $action->effects, redriveInFlight: true)],
                 FinalizeToolBatchDTO::class => [static fn (FinalizeToolBatchDTO $action) => TestToolBatchCoordination::finalize($collector, $action)],
             ])),
         ]);
@@ -36,14 +36,14 @@ final class CoordinationActionTestRunner
     public static function run(object $action, ?MessageBusInterface $bus = null, ?ToolBatchCollector $collector = null, ?StepDispatcher $dispatcher = null, ?CommandStoreInterface $store = null): void
     {
         $bus ??= new TestMessageBus();
-        $handler = new CoordinationActionHandler($bus, $store ?? new InMemoryCommandStore(), $collector ?? new ToolBatchCollector());
+        $handler = new CoordinationActionHandler($bus, $store ?? new InMemoryCommandStore());
         match (true) {
             $action instanceof FinalizeToolBatchDTO => TestToolBatchCoordination::finalize($collector ?? throw new \LogicException('Batch coordination needs its original collector.'), $action),
             $action instanceof DispatchCoordinationMessageDTO => $handler->dispatchMessage($action),
             $action instanceof MarkCommandAppliedDTO => $handler->markCommandApplied($action),
             $action instanceof \Ineersa\AgentCore\Domain\Coordination\EnqueueCommandDTO => $handler->enqueueCommand($action),
             $action instanceof \Ineersa\AgentCore\Domain\Coordination\RejectCommandDTO => $handler->rejectCommand($action),
-            $action instanceof RegisterToolBatchDTO => $handler->registerToolBatch($action),
+            $action instanceof RegisterToolBatchDTO => ($collector ?? new ToolBatchCollector())->registerExpectedBatch($action->runId, $action->turnNo, $action->stepId, $action->effects, redriveInFlight: true),
             default => throw new \LogicException('Unsupported test coordination action.'),
         };
     }

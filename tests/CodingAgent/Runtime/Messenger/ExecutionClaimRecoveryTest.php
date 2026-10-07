@@ -25,6 +25,7 @@ use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory;
 use Ineersa\CodingAgent\Session\DoctrineExecutionOperationStore;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface;
@@ -174,7 +175,15 @@ final class ExecutionClaimRecoveryTest extends IsolatedKernelTestCase
 
             return new Envelope($action);
         });
-        $commit = new RunCommit($active, $events, new StepDispatcher($bus, new TestMessageBus()), new TestLogger(), $container->get(ToolBatchCollector::class), $container->get(ToolExecutionAuthorizationInterface::class), $store, new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()));
+        $commit = new RunCommit(
+            activeRunContext: $active,
+            eventStore: $events,
+            logger: new TestLogger(),
+            toolBatchCollector: $container->get(ToolBatchCollector::class),
+            executionOperations: $store,
+            sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
+            finalizer: TestTransitionFinalizerFactory::create($events, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), new \Ineersa\AgentCore\Tests\Support\TestMessageBus()), operations: $store),
+        );
         try {
             $commit->commit($state, $result->nextState, $result->events, dispatchAfterTurnHooks: false, postCommitActions: $result->postCommitActions);
             $this->fail('The coordination interruption must leave a recoverable owner decision.');
@@ -183,7 +192,7 @@ final class ExecutionClaimRecoveryTest extends IsolatedKernelTestCase
         }
         $this->assertTrue($store->unknownNoticePending($notice));
         $this->assertNotNull($events->verifiedPendingTransition($notice->runId()));
-        $recovery = new PendingTransitionRecovery($events, $active, new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()), new \Ineersa\AgentCore\Application\Pipeline\TransitionFinalizer($events, $container->get(ToolExecutionAuthorizationInterface::class), $store, new StepDispatcher($bus, new TestMessageBus()), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore())));
+        $recovery = new PendingTransitionRecovery($events, $active, new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()), TestTransitionFinalizerFactory::create($events, new StepDispatcher($bus, new TestMessageBus()), operations: $store));
         $recovery->recover($notice->runId());
         $recovery->recover($notice->runId());
         $this->assertFalse($store->unknownNoticePending($notice));

@@ -30,6 +30,7 @@ use Ineersa\AgentCore\Tests\Support\InMemoryCommandStore;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory;
 use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
 use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateService;
@@ -86,13 +87,15 @@ final class InProcessAttachCancelsDeferredToolHumanTest extends IsolatedKernelTe
         $processor = new RunMessageProcessor(
             activeRunContext: $active,
             runLockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
-            runCommit: new RunCommit(sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new InMemoryCommandStore()),
-                activeRunContext: $active,
-                eventStore: $eventStore,
-                stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
-                logger: new NullLogger(),
-                toolBatchCollector: $collector, executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore()
-            ),
+            runCommit: new RunCommit(
+            activeRunContext: $active,
+            eventStore: $eventStore,
+            logger: new NullLogger(),
+            toolBatchCollector: $collector,
+            executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
+            sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new InMemoryCommandStore()),
+            finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus())),
+        ),
             handlers: [$applyHandler, new \Ineersa\AgentCore\Application\Pipeline\RefreshRunContextHandler()],
         );
 

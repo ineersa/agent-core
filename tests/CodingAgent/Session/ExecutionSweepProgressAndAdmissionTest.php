@@ -21,6 +21,7 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\InMemoryCommandStore;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactEntryDTO;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathsDTO;
@@ -208,14 +209,13 @@ final class ExecutionSweepProgressAndAdmissionTest extends IsolatedKernelTestCas
         $store->expects($this->never())->method('appendTransition');
         $bus = new TestMessageBus();
         $commit = new RunCommit(
-            $active,
-            $store,
-            new StepDispatcher($bus, $bus),
-            new TestLogger(),
-            new ToolBatchCollector(),
-            $container->get(ToolExecutionAuthorizationInterface::class),
-            $operations,
-            new SourceAcceptance(new InMemoryCommandStore()),
+            activeRunContext: $active,
+            eventStore: $store,
+            logger: new TestLogger(),
+            toolBatchCollector: new ToolBatchCollector(),
+            executionOperations: $operations,
+            sourceAcceptance: new SourceAcceptance(new InMemoryCommandStore()),
+            finalizer: TestTransitionFinalizerFactory::create($store, new StepDispatcher($bus, $bus)),
         );
         try {
             $commit->commit($previous, $previous, [$event], [$oversized], dispatchAfterTurnHooks: false);
