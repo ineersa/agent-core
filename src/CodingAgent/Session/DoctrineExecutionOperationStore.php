@@ -537,8 +537,8 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
         }
         $this->sanitizeRunId($runId);
         $rows = $this->connection->fetchAllAssociative(
-            "SELECT effect_id, state FROM execution_operation WHERE run_id = ? AND turn_no = ? AND step_id = ? AND state IN ('Prepared', 'Armed') ORDER BY effect_id",
-            [$runId, $turnNo, $stepId],
+            "SELECT effect_id, state FROM execution_operation WHERE run_id = ? AND turn_no = ? AND step_id = ? AND request_type = ? AND state IN ('Prepared', 'Armed') ORDER BY effect_id",
+            [$runId, $turnNo, $stepId, ExecuteToolCall::class],
         );
         foreach ($rows as $row) {
             $updated = $this->connection->executeStatement(

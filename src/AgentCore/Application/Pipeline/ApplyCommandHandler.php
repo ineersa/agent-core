@@ -1050,7 +1050,14 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             'currentOperation' => null,
         ]);
 
+        if (null === $this->toolBatchCollector) {
+            throw new \LogicException('Cancel of deferred tool-call human waits requires ToolBatchCollector to finalize scheduling.');
+        }
         $postCommitActions = [];
+        $cancelFinalization = $this->toolBatchCollector->prepareCancelFinalization($runId, $state->turnNo, $state->activeStepId ?? $syntheticStepId);
+        if (null !== $cancelFinalization) {
+            $postCommitActions[] = $cancelFinalization;
+        }
         if ($hasPendingAppendMessage) {
             $followUpAdvance = $this->followUpAdvanceAction($runId, $state->turnNo, 'post-cancel-advance');
             if (null !== $followUpAdvance) {

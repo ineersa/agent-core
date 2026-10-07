@@ -1589,6 +1589,12 @@ final class ApplyCommandHandlerTest extends TestCase
         $this->assertSame('tool', $result->nextState?->messages[1]->role);
         $this->assertSame('call-d', $result->nextState?->messages[1]->toolCallId);
         $this->assertTrue($result->nextState?->messages[1]->isError);
+        $finalizations = array_values(array_filter($result->postCommitActions, static fn (object $action): bool => $action instanceof \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO));
+        $this->assertCount(1, $finalizations);
+        $this->assertTrue($finalizations[0]->finalized);
+        $this->assertSame([], $finalizations[0]->pendingQueue);
+        $this->assertSame([], $finalizations[0]->inFlight);
+        $this->assertSame([], $finalizations[0]->awaitingHumanInput);
     }
 
     public function testCancelMultiDeferredToolCallHumanWaitsSynthesizesAll(): void
