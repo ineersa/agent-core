@@ -51,11 +51,10 @@ final class JbcontextExtension implements HatfieldExtensionInterface, TuiExtensi
     {
         $paths = JbcontextPaths::fromProjectRoot($api->getCwd());
         $this->paths = $paths;
-        $packageRoot = \dirname(__DIR__);
 
         $api->registerExtensionAgentJobHandler(
             JbcontextEligibilityJobHandler::HANDLER_ID,
-            new JbcontextEligibilityJobHandler($this->logger, $packageRoot),
+            new JbcontextEligibilityJobHandler($this->logger),
         );
         $api->registerExtensionAgentJobHandler(
             JbcontextReindexJobHandler::HANDLER_ID,

@@ -1,40 +1,22 @@
 ---
 name: task-workflow
-description: "Routes task workflow phases to focused procedures. Load for task-explain, task-start, task-to-pr, task-review-iterate, task-done, implementation ownership, reviewer workflows, or compaction recovery."
+description: "Load for task phases, ownership, review, or compaction recovery."
 ---
 
-# Task workflow router
+# Task workflow
 
-Do not perform phase work from this router alone. Before starting a phase or calling `move_task`, main must read the exact phase procedure linked below. Read one phase procedure at a time.
+- Use task tools for board transitions and metadata; never edit or move board files manually.
+- Before phase work or `move_task`, read the exact procedure below and its required references. Load only files needed for the current operation.
+- Main owns transitions; forks must not transition tasks.
+- Before ownership decisions outside a phase, read [ownership](references/implementation-ownership.md). Before review, also read [specification fidelity](references/specification-fidelity.md).
+- After compaction, run `task_list`, reload this router, and read the current procedure. Reread the procedure after every phase change.
 
 | Phase | Procedure |
 |---|---|
-| `task-explain` | [references/task-explain.md](references/task-explain.md) |
-| `task-start` | [references/task-start.md](references/task-start.md) |
-| `task-to-pr` | [references/task-to-pr.md](references/task-to-pr.md) |
-| `task-review-iterate` | [references/task-review-iterate.md](references/task-review-iterate.md) |
-| `task-done` | [references/task-done.md](references/task-done.md) |
+| `task-explain` | [Explain](references/task-explain.md) |
+| `task-start` | [Start](references/task-start.md) |
+| `task-to-pr` | [Submit](references/task-to-pr.md) |
+| `task-review-iterate` | [Iterate](references/task-review-iterate.md) |
+| `task-done` | [Merge](references/task-done.md) |
 
-The phase procedure links any other reference needed for that phase. Read those linked references before acting. Do not load unrelated phase files.
-
-When deciding implementation ownership outside a phase, read [references/implementation-ownership.md](references/implementation-ownership.md). When reviewing outside a phase, also read [references/specification-fidelity.md](references/specification-fidelity.md).
-
-## Task board
-
-Tasks live outside the code repository:
-
-- Code: `/home/ineersa/projects/agent-core`
-- Board: `/home/ineersa/projects/agent-core-tasks`
-- Configuration: `.pi/settings.json` → `taskWorkflow.taskRoot`, overridden by `PI_TASK_WORKFLOW_ROOT`
-
-Use task tools for status transitions and metadata; never move or edit task files manually. Board changes do not commit to `agent-core`; the user commits the external board separately when desired.
-
-## Workflow
-
-```text
-task-explain → task-start → task-to-pr → task-done
-                  ↕
-            task-review-iterate
-```
-
-Read a new phase procedure whenever the phase changes. After compaction, run `task_list`, reload this router, and read the current phase procedure before continuing.
+For board configuration, read [board](references/board.md).

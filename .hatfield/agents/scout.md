@@ -10,8 +10,6 @@ tools:
   - view_image
   - ask_human
   - code_search
-skills:
-  - jbcontext-semantic-search
 extensions:
   - Ineersa\HatfieldExt\Jbcontext\JbcontextExtension
 ---
@@ -44,7 +42,3 @@ Brief explanation of how the pieces connect.
 
 ## Start Here
 Which file to look at first and why.
-
-## jbcontext semantic search
-
-Prefer `code_search` for fast initial searches and conceptual questions about the codebase. Follow the tool's guidance.
