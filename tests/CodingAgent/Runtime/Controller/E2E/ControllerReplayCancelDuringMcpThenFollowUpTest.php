@@ -47,16 +47,12 @@ final class ControllerReplayCancelDuringMcpThenFollowUpTest extends ControllerRe
         $preCancel = $this->collectEventsUntil(
             null,
             12.0,
-            function (array $event): bool {
+            static function (array $event): bool {
                 if (($event['type'] ?? '') !== 'tool_execution.started') {
                     return false;
                 }
 
-                if (($event['payload']['tool_call_id'] ?? null) !== self::TOOL_CALL_ID) {
-                    return false;
-                }
-
-                return $this->markerSaysReceived();
+                return ($event['payload']['tool_call_id'] ?? null) === self::TOOL_CALL_ID;
             },
         );
         $preByType = $this->indexByType($preCancel);
@@ -68,7 +64,13 @@ final class ControllerReplayCancelDuringMcpThenFollowUpTest extends ControllerRe
             ?? '');
         $this->assertNotEmpty($this->runId, 'run.started must include runId');
 
-        $this->waitForMcpCatalogTool(self::TOOL_NAME, 8.0);
+        // The worker can publish tool_execution.started before the server reads
+        // the request. Wait for both sides of the barrier independently.
+        $deadline = microtime(true) + 3.0;
+        while (!$this->markerSaysReceived() && microtime(true) < $deadline) {
+            $this->assertRunning('waiting for the MCP server to receive the request');
+            usleep(10_000);
+        }
         $this->assertTrue(
             $this->markerSaysReceived(),
             'STDIO fixture must receive the slow MCP request before cancel. marker='
@@ -138,6 +140,11 @@ final class ControllerReplayCancelDuringMcpThenFollowUpTest extends ControllerRe
             'run.completed',
             $followUpByType,
             'Follow-up after cancel must complete without restart. '.$this->collectDiagnostics($followUpEvents),
+        );
+        $this->assertMatchesRegularExpression(
+            '/^cancelled:\d+$/',
+            (string) file_get_contents($this->markerPath),
+            'The MCP server must receive a cancellation notification, not merely observe local run cancellation.',
         );
 
         $sessionDir = $this->tempDir.'/.hatfield/sessions/'.$this->runId;
@@ -213,51 +220,5 @@ final class ControllerReplayCancelDuringMcpThenFollowUpTest extends ControllerRe
         $value = (string) file_get_contents($this->markerPath);
 
         return 'received' === $value || 1 === preg_match('/^cancelled:\\d+$/', $value);
-    }
-
-    private function waitForMcpCatalogTool(string $toolName, float $timeoutSeconds): void
-    {
-        $deadline = microtime(true) + $timeoutSeconds;
-        $catalogPath = '';
-
-        while (microtime(true) < $deadline) {
-            if ('' === $this->runId) {
-                $this->assertRunning('waiting for runId before MCP catalog');
-                usleep(10_000);
-                continue;
-            }
-
-            $catalogPath = $this->tempDir.'/.hatfield/sessions/'.$this->runId.'/mcp-tools.json';
-            if (is_file($catalogPath)) {
-                $raw = (string) file_get_contents($catalogPath);
-                if ('' !== $raw) {
-                    try {
-                        $catalog = json_decode($raw, true, 512, \JSON_THROW_ON_ERROR);
-                    } catch (\JsonException) {
-                        $catalog = null;
-                    }
-
-                    if (\is_array($catalog)) {
-                        foreach (($catalog['servers'] ?? []) as $server) {
-                            foreach (($server['tools'] ?? []) as $tool) {
-                                if (($tool['hatfieldName'] ?? null) === $toolName) {
-                                    return;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            $this->assertRunning('waiting for MCP catalog tool '.$toolName);
-            usleep(10_000);
-        }
-
-        $this->fail(\sprintf(
-            'MCP catalog did not expose tool "%s" before timeout. catalog=%s marker=%s',
-            $toolName,
-            is_file($catalogPath) ? (string) file_get_contents($catalogPath) : 'missing',
-            is_file($this->markerPath) ? (string) file_get_contents($this->markerPath) : 'missing',
-        ));
     }
 }
