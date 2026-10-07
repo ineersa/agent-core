@@ -54,14 +54,14 @@ final class SessionRunEventStoreSequencingTest extends TestCase
         TestDirectoryIsolation::removeDirectory($this->projectDir);
     }
 
-    public function testAppendWithNextSeqFromExistingCursorDoesNotReadEventsJsonl(): void
+    public function testAppendUsesExistingCursorBeyondCanonicalPredecessor(): void
     {
         $runId = 'run-'.bin2hex(random_bytes(4));
         $eventsPath = $this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl';
         TestDirectoryIsolation::ensureDirectory(\dirname($eventsPath));
         file_put_contents($eventsPath, '{"schema_version":"1.0","run_id":"'.$runId.'","seq":99,"turn_no":0,"type":"run_started","payload":[]}'."\n");
         $counterPath = FileRunSequenceAllocator::counterPathForEventsLog($eventsPath);
-        file_put_contents($counterPath, "5\n");
+        file_put_contents($counterPath, "105\n");
 
         $persisted = PreparedEventStoreSeeder::append($this->store, new RunEvent(
             runId: $runId,
@@ -71,11 +71,31 @@ final class SessionRunEventStoreSequencingTest extends TestCase
             payload: [],
         ));
 
-        $this->assertSame(6, $persisted->seq);
-        $this->assertSame("6\n", file_get_contents($counterPath));
+        $this->assertSame(106, $persisted->seq);
+        $this->assertSame("106\n", file_get_contents($counterPath));
         $lines = file($eventsPath) ?: [];
         $this->assertCount(2, $lines);
-        $this->assertStringContainsString('"seq":6', $lines[1]);
+        $this->assertStringContainsString('"seq":106', $lines[1]);
+    }
+
+    public function testCursorBehindCanonicalHistoryCannotAppend(): void
+    {
+        $runId = 'run-'.bin2hex(random_bytes(4));
+        $eventsPath = $this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl';
+        TestDirectoryIsolation::ensureDirectory(\dirname($eventsPath));
+        $canonical = '{"schema_version":"1.0","run_id":"'.$runId.'","seq":99,"turn_no":0,"type":"run_started","payload":[]}'."\n";
+        file_put_contents($eventsPath, $canonical);
+        file_put_contents(FileRunSequenceAllocator::counterPathForEventsLog($eventsPath), "5\n");
+
+        try {
+            PreparedEventStoreSeeder::append($this->store, RunEvent::forAppend($runId, 1, 'turn_advanced'));
+            $this->fail('Allocation behind canonical history must be refused.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('Staged event has no allocated sequence.', $exception->getMessage());
+        }
+
+        $this->assertSame($canonical, file_get_contents($eventsPath));
+        $this->assertNull($this->store->verifiedPendingTransition($runId));
     }
 
     public function testMissingCursorBootstrapsFromMaxSeqInLogOnce(): void
