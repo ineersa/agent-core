@@ -42,7 +42,7 @@ final class TaskWorkflowSkillInstallerTest extends TestCase
         $this->assertFileExists($skill);
         $this->assertSame($this->bundledSkillVersion(), TaskWorkflowMarkdownFrontmatter::versionOf((string) file_get_contents($skill)));
         $this->assertFileExists($this->destinationDir().'/references/implementation-ownership.md');
-        $this->assertStringContainsString('Tracked-work fork resume', (string) file_get_contents($skill));
+        $this->assertSame(file_get_contents($this->packageRoot.'/skills/task-workflow/SKILL.md'), file_get_contents($skill));
     }
 
     #[Test]
@@ -59,9 +59,9 @@ final class TaskWorkflowSkillInstallerTest extends TestCase
 
         $installed = (string) file_get_contents($dest.'/SKILL.md');
         $this->assertSame($this->bundledSkillVersion(), TaskWorkflowMarkdownFrontmatter::versionOf($installed));
-        $this->assertStringContainsString('Tracked-work fork resume', $installed);
+        $this->assertSame(file_get_contents($this->packageRoot.'/skills/task-workflow/SKILL.md'), $installed);
         $this->assertFileExists($dest.'/references/implementation-ownership.md');
-        $this->assertStringContainsString('Resuming a tracked fork', (string) file_get_contents($dest.'/references/implementation-ownership.md'));
+        $this->assertSame(file_get_contents($this->packageRoot.'/skills/task-workflow/references/implementation-ownership.md'), file_get_contents($dest.'/references/implementation-ownership.md'));
         $this->assertFileDoesNotExist($dest.'/references/stale.md');
     }
 

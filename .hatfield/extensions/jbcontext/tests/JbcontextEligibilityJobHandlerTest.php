@@ -25,14 +25,12 @@ use PHPUnit\Framework\TestCase;
 final class JbcontextEligibilityJobHandlerTest extends TestCase
 {
     private string $projectDir;
-    private string $packageRoot;
     private ?string $previousHome = null;
 
     protected function setUp(): void
     {
         parent::setUp();
         $this->projectDir = TestDirectoryIsolation::createOsTempDir('jbcontext-elig-');
-        $this->packageRoot = \dirname(__DIR__);
         $home = getenv('HOME');
         $this->previousHome = false === $home ? null : $home;
     }
@@ -58,7 +56,7 @@ final class JbcontextEligibilityJobHandlerTest extends TestCase
             new ExecResultDTO(stdout: '{"type":"status_result","indices":[]}', stderr: '', exitCode: 0),
         ]);
         $api = new TestExtensionApi($this->projectDir, $exec);
-        $handler = new JbcontextEligibilityJobHandler(new TestLogger(), $this->packageRoot, static function (): void {});
+        $handler = new JbcontextEligibilityJobHandler(new TestLogger(), static function (): void {});
         $this->claimPending('sess-1');
 
         $handler->handle($api, ['session_id' => 'sess-1', 'attempt' => 1, 'check_generation' => 1], 'job', 'sess-1');
@@ -84,7 +82,7 @@ final class JbcontextEligibilityJobHandlerTest extends TestCase
             ),
         ]);
         $api = new TestExtensionApi($this->projectDir, $exec);
-        $handler = new JbcontextEligibilityJobHandler(new TestLogger(), $this->packageRoot, static function (): void {});
+        $handler = new JbcontextEligibilityJobHandler(new TestLogger(), static function (): void {});
         $this->claimPending('sess-1');
 
         $handler->handle($api, ['session_id' => 'sess-1', 'attempt' => 1, 'check_generation' => 1], 'job', 'sess-1');
@@ -122,7 +120,7 @@ final class JbcontextEligibilityJobHandlerTest extends TestCase
             new ExecResultDTO(stdout: '', stderr: '', exitCode: 0),
         ]);
         $api = new TestExtensionApi($this->projectDir, $exec);
-        $handler = new JbcontextEligibilityJobHandler(new TestLogger(), $this->packageRoot, static function (): void {});
+        $handler = new JbcontextEligibilityJobHandler(new TestLogger(), static function (): void {});
         $this->claimPending('sess-1');
 
         $handler->handle($api, ['session_id' => 'sess-1', 'attempt' => 1, 'check_generation' => 1], 'job', 'sess-1');
@@ -131,7 +129,7 @@ final class JbcontextEligibilityJobHandlerTest extends TestCase
         $this->assertSame(JbcontextSessionModeEnum::Eligible, $state->mode);
         $this->assertSame(['status', 'index'], array_map(static fn (array $c): string => $c['args'][0], $exec->calls()));
         $this->assertContains('--silent', $exec->calls()[1]['args']);
-        $this->assertFileExists($this->projectDir.'/.hatfield/skills/jbcontext-semantic-search/SKILL.md');
+        $this->assertDirectoryDoesNotExist($this->projectDir.'/.hatfield/skills');
         $this->assertFileExists($this->projectDir.'/.hatfield/agents/scout.md');
         $this->assertStringContainsString('code_search', (string) file_get_contents($this->projectDir.'/.hatfield/agents/scout.md'));
         $this->assertStringNotContainsString('code_search', (string) file_get_contents($home.'/.hatfield/agents/scout.md'));
@@ -154,7 +152,7 @@ final class JbcontextEligibilityJobHandlerTest extends TestCase
             new ExecResultDTO(stdout: '', stderr: 'boom', exitCode: 1),
         ]);
         $api = new TestExtensionApi($this->projectDir, $exec);
-        $handler = new JbcontextEligibilityJobHandler(new TestLogger(), $this->packageRoot, $sleeper, $clock);
+        $handler = new JbcontextEligibilityJobHandler(new TestLogger(), $sleeper, $clock);
         $this->claimPending('sess-1', 1, 1000.0);
 
         $handler->handle($api, ['session_id' => 'sess-1', 'attempt' => 1, 'check_generation' => 1], 'job', 'sess-1');
@@ -204,7 +202,6 @@ final class JbcontextEligibilityJobHandlerTest extends TestCase
         $now = 1_000.0;
         $handler = new JbcontextEligibilityJobHandler(
             new TestLogger(),
-            $this->packageRoot,
             static function (int $seconds) use (&$sleeps): void {
                 $sleeps[] = $seconds;
             },
@@ -257,7 +254,6 @@ final class JbcontextEligibilityJobHandlerTest extends TestCase
         $api = new TestExtensionApi($this->projectDir, $exec);
         $handler = new JbcontextEligibilityJobHandler(
             new TestLogger(),
-            $this->packageRoot,
             static function (int $seconds) use (&$sleeps): void {
                 $sleeps[] = $seconds;
             },
@@ -305,7 +301,7 @@ final class JbcontextEligibilityJobHandlerTest extends TestCase
             new ExecResultDTO(stdout: '', stderr: '', exitCode: 0),
         ]);
         $api = new TestExtensionApi($this->projectDir, $exec);
-        $handler = new JbcontextEligibilityJobHandler(new TestLogger(), $this->packageRoot, static function (): void {});
+        $handler = new JbcontextEligibilityJobHandler(new TestLogger(), static function (): void {});
         $this->claimPending('sess-b');
         $handler->handle($api, ['session_id' => 'sess-b', 'attempt' => 1, 'check_generation' => 1], 'job', 'sess-b');
 
@@ -334,7 +330,7 @@ final class JbcontextEligibilityJobHandlerTest extends TestCase
             ),
         ]);
         $api = new TestExtensionApi($this->projectDir, $exec);
-        $handler = new JbcontextEligibilityJobHandler(new TestLogger(), $this->packageRoot, static function (): void {});
+        $handler = new JbcontextEligibilityJobHandler(new TestLogger(), static function (): void {});
 
         $handler->handle(
             $api,
@@ -390,7 +386,7 @@ final class JbcontextEligibilityJobHandlerTest extends TestCase
             new ExecResultDTO(stdout: '', stderr: '', exitCode: 0),
         ]);
         $api = new TestExtensionApi($this->projectDir, $exec);
-        $handler = new JbcontextEligibilityJobHandler(new TestLogger(), $this->packageRoot, static function (): void {});
+        $handler = new JbcontextEligibilityJobHandler(new TestLogger(), static function (): void {});
         $handler->handle(
             $api,
             ['session_id' => 'sess-recover', 'attempt' => 1, 'check_generation' => 2],
@@ -414,7 +410,7 @@ final class JbcontextEligibilityJobHandlerTest extends TestCase
             new ExecResultDTO(stdout: '{"type":"status_result","indices":[]}', stderr: '', exitCode: 0),
         ]);
         $api = new TestExtensionApi($this->projectDir, $exec);
-        $handler = new JbcontextEligibilityJobHandler($logger, $this->packageRoot, static function (): void {});
+        $handler = new JbcontextEligibilityJobHandler($logger, static function (): void {});
 
         $handler->handle($api, ['session_id' => 'sess-missing', 'attempt' => 1], 'job', 'sess-missing');
 
@@ -434,7 +430,7 @@ final class JbcontextEligibilityJobHandlerTest extends TestCase
             new ExecResultDTO(stdout: '{"type":"status_result","indices":[]}', stderr: '', exitCode: 0),
         ]);
         $api = new TestExtensionApi($this->projectDir, $exec);
-        $handler = new JbcontextEligibilityJobHandler($logger, $this->packageRoot, static function (): void {});
+        $handler = new JbcontextEligibilityJobHandler($logger, static function (): void {});
 
         $handler->handle(
             $api,

@@ -189,6 +189,7 @@ final class ForkToolContractTest extends TestCase
             'Parallel forks must NEVER target the same worktree/directory because concurrent edits can corrupt it.',
             'Never launch more than 3 forks concurrently because forks impose high load.',
             'Do not set model or thinking unless the user explicitly requested overrides.',
+            'For repository work, structure the task as Checkout, Task, Done when, and optional Validation. Start Task with Implement, Review, or Investigate. Add authorization, constraints, or entry points only when the fork otherwise lacks them.',
         ], $definition->promptGuidelines);
     }
 }

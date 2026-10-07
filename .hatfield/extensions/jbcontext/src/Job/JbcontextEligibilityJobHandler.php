@@ -37,7 +37,6 @@ final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerIn
 
     public function __construct(
         private readonly LoggerInterface $logger,
-        private readonly string $packageRoot,
         ?callable $sleeper = null,
         ?callable $clock = null,
     ) {
@@ -190,7 +189,7 @@ final class JbcontextEligibilityJobHandler implements ExtensionAgentJobHandlerIn
         ]);
 
         try {
-            (new JbcontextAssetInstaller($paths, $this->packageRoot, $this->logger))->install();
+            (new JbcontextAssetInstaller($paths, $this->logger))->install();
         } catch (\Throwable) {
             $this->logger->warning('jbcontext.assets.install_failed', [
                 'component' => 'jbcontext',

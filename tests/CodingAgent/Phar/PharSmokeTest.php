@@ -336,7 +336,7 @@ final class PharSmokeTest extends TestCase
         $this->assertDirectoryExists($locator->getAppRoot().'/'.\Ineersa\CodingAgent\Docs\BuiltinDocsCatalog::EXTENSION_API_DOCS_RELATIVE);
 
         $skillMd = 'src/CodingAgent/Resources/skills/subagents/SKILL.md';
-        $frontmatterMd = 'src/CodingAgent/Resources/skills/subagents/FRONTMATTER.md';
+        $frontmatterMd = 'src/CodingAgent/Resources/skills/subagents/references/frontmatter.md';
         $this->assertTrue(isset($phar[$skillMd]), 'Missing PHAR entry '.$skillMd);
         $this->assertTrue(isset($phar[$frontmatterMd]), 'Missing PHAR entry '.$frontmatterMd);
         $this->assertSame(
@@ -344,7 +344,7 @@ final class PharSmokeTest extends TestCase
             $locator->getBuiltinSkillsPath(),
         );
         $this->assertFileExists($locator->getBuiltinSkillsPath().'/subagents/SKILL.md');
-        $this->assertFileExists($locator->getBuiltinSkillsPath().'/subagents/FRONTMATTER.md');
+        $this->assertFileExists($locator->getBuiltinSkillsPath().'/subagents/references/frontmatter.md');
         $skillBody = (string) file_get_contents('phar://'.$pharPath.'/'.$skillMd);
         $this->assertStringContainsString('name: subagents', $skillBody);
         $this->assertStringContainsString('agent_retrieve', $skillBody);
