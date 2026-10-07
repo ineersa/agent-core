@@ -9,7 +9,6 @@ use Ineersa\AgentCore\Application\Handler\ExecutionOperationMapper;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Domain\Coordination\ExecutionResultDispositionDTO;
-use Ineersa\AgentCore\Domain\Coordination\ToolResultDispositionDTO;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\RunControlTransitionMessageInterface;
 
@@ -46,10 +45,6 @@ final readonly class PendingTransitionRecovery
         foreach ([...$actions, ...$afterTurnActions] as $action) {
             $this->actionValidator->validate($action);
         }
-        $disposition = $work['result_disposition'] ?? null;
-        if (null !== $disposition && !$disposition instanceof ToolResultDispositionDTO) {
-            throw new \RuntimeException('Invalid pending result disposition.');
-        }
         $executionDisposition = $work['execution_disposition'] ?? null;
         if (null !== $executionDisposition && !$executionDisposition instanceof ExecutionResultDispositionDTO) {
             throw new \RuntimeException('Invalid pending execution disposition.');
@@ -57,7 +52,7 @@ final readonly class PendingTransitionRecovery
 
         $finalized = false;
         try {
-            $this->finalizer->complete($runId, $pending, $effects, $actions, $afterTurnActions, $disposition, $executionDisposition);
+            $this->finalizer->complete($runId, $pending, $effects, $actions, $afterTurnActions, $executionDisposition);
             $finalized = true;
         } finally {
             // Cold replay must include the newly published suffix. A warm owner must

@@ -85,7 +85,7 @@ final class ExecutionPendingDeliverySubscriber
                 $this->recovery->recover($runId);
             });
         } catch (\Throwable $exception) {
-            $this->logFailure($this->pendingRunCursor !== '' ? $this->pendingRunCursor : $this->sessionId, $exception);
+            $this->logFailure('' !== $this->pendingRunCursor ? $this->pendingRunCursor : $this->sessionId, $exception);
         }
     }
 

@@ -47,7 +47,7 @@ final class StartRunProjectionFailureRedeliveryTest extends TestCase
                 eventStore: $eventStore,
                 stepDispatcher: new StepDispatcher($commandBus, $executionBus),
                 logger: new NullLogger(),
-                toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), toolAuthorization: new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore()
+                toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore()
             ),
             handlers: [
                 new StartRunHandler(

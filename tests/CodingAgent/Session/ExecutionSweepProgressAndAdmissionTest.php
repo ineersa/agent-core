@@ -77,8 +77,8 @@ final class ExecutionSweepProgressAndAdmissionTest extends IsolatedKernelTestCas
             new \Symfony\Component\Filesystem\Filesystem(),
             $container->get('hatfield.controller.session_owner.lock_factory'),
             $container->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class),
-            $container->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
             $events,
+            $container->get(\Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface::class),
             $logger,
         );
         $subscriber = new ExecutionPendingDeliverySubscriber($store, $events, self::getContainer()->get(\Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery::class), self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class), self::getContainer()->get(\Doctrine\DBAL\Connection::class), $command, $execution, $run, new TestLogger());

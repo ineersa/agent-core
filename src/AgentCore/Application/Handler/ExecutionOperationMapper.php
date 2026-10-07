@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Domain\Message\CompactionStepResult;
 use Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
+use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 
@@ -16,7 +17,10 @@ final class ExecutionOperationMapper
 {
     public static function supports(object $request): bool
     {
-        return $request instanceof ExecuteLlmStep || $request instanceof ExecuteCompactionStep || $request instanceof ExecuteShellToolCall;
+        return $request instanceof ExecuteLlmStep
+            || $request instanceof ExecuteCompactionStep
+            || $request instanceof ExecuteShellToolCall
+            || $request instanceof ExecuteToolCall;
     }
 
     /** @return class-string<AbstractAgentBusMessage> */
@@ -26,6 +30,7 @@ final class ExecutionOperationMapper
             $request instanceof ExecuteLlmStep => LlmStepResult::class,
             $request instanceof ExecuteCompactionStep => CompactionStepResult::class,
             $request instanceof ExecuteShellToolCall => ToolCallResult::class,
+            $request instanceof ExecuteToolCall => ToolCallResult::class,
             default => throw new \InvalidArgumentException('Unsupported execution operation.'),
         };
     }

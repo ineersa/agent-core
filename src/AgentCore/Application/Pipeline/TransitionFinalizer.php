@@ -9,10 +9,8 @@ use Ineersa\AgentCore\Application\Handler\ExecutionOperationMapper;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
-use Ineersa\AgentCore\Contract\Tool\ToolExecutionAuthorizationInterface;
 use Ineersa\AgentCore\Domain\Coordination\ExecutionResultDispositionDTO;
 use Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO;
-use Ineersa\AgentCore\Domain\Coordination\ToolResultDispositionDTO;
 use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
 use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
@@ -22,7 +20,6 @@ final readonly class TransitionFinalizer
 {
     public function __construct(
         private PreparedTransitionEventStoreInterface $store,
-        private ToolExecutionAuthorizationInterface $toolAuthorization,
         private ExecutionOperationStoreInterface $executionOperations,
         private StepDispatcher $dispatcher,
         private SourceAcceptance $sourceAcceptance,
@@ -40,15 +37,8 @@ final readonly class TransitionFinalizer
         array $effects,
         array $actions,
         array $afterTurnActions = [],
-        ?ToolResultDispositionDTO $resultDisposition = null,
         ?ExecutionResultDispositionDTO $executionDisposition = null,
     ): void {
-        if (null !== $resultDisposition) {
-            if (null === $verified) {
-                throw new \RuntimeException('Result disposition requires verified transition evidence.');
-            }
-            $this->toolAuthorization->validateDisposition($resultDisposition, $verified);
-        }
         if (null !== $executionDisposition) {
             if (null === $verified) {
                 throw new \RuntimeException('Execution authorization requires verified transition evidence.');
@@ -70,11 +60,6 @@ final readonly class TransitionFinalizer
         $deliveries = [];
         $stamps = [];
         foreach ($effects as $effect) {
-            if ($effect instanceof ExecuteToolCall) {
-                $this->toolAuthorization->arm($effect);
-                $ordinary[] = $effect;
-                continue;
-            }
             if ($effect instanceof AbstractAgentBusMessage && ExecutionOperationMapper::supports($effect)) {
                 if (null === $verified) {
                     throw new \RuntimeException('Execution authorization requires verified transition evidence.');
@@ -88,12 +73,27 @@ final readonly class TransitionFinalizer
             $ordinary[] = $effect;
         }
 
+        foreach ($actions as $action) {
+            if (!$action instanceof \Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO) {
+                continue;
+            }
+            if (null === $verified) {
+                throw new \RuntimeException('Execution authorization requires verified transition evidence.');
+            }
+            foreach ($action->effects as $effect) {
+                if (!$effect instanceof ExecuteToolCall) {
+                    continue;
+                }
+                $authorization = $this->executionOperations->arm($effect, $verified);
+                $reference = $this->executionOperations->requestReference($effect, $authorization);
+                $deliveries[] = $reference;
+                $stamps[spl_object_id($reference)] = $authorization;
+            }
+        }
+
         $this->dispatcher->dispatchEffects($ordinary);
         $this->dispatcher->dispatchCoordinationActions($actions);
 
-        if (null !== $resultDisposition) {
-            $this->toolAuthorization->applyDisposition($resultDisposition, $verified);
-        }
         if (null !== $executionDisposition) {
             $this->executionOperations->applyDisposition($executionDisposition, $verified);
         }
@@ -102,7 +102,6 @@ final readonly class TransitionFinalizer
             $this->store->finalizeVerifiedTransition($runId, $verified->identity);
         }
 
-        // Armed records retain the original request when broker delivery fails.
         $this->dispatcher->dispatchEffects($deliveries, $stamps);
     }
 }

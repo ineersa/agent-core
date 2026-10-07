@@ -70,7 +70,7 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
 
         $commandBus = new TestMessageBus();
         $repo = new InMemoryDeferredToolCompletionRepository();
-        $worker = new ExecuteToolCallWorker($toolExecutor, $commandBus, $repo, new ToolExecutionResultStore(), new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization());
+        $worker = new ExecuteToolCallWorker($toolExecutor, $repo, new ToolExecutionResultStore(), new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader());
 
         $message = $this->executeMessage(toolCallId: 'call-immediate');
 
@@ -116,7 +116,7 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
 
         $commandBus = new TestMessageBus();
         $repo = new InMemoryDeferredToolCompletionRepository();
-        $worker = new ExecuteToolCallWorker($toolExecutor, $commandBus, $repo, new ToolExecutionResultStore(), new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization());
+        $worker = new ExecuteToolCallWorker($toolExecutor, $repo, new ToolExecutionResultStore(), new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader());
 
         $message = $this->executeMessage(toolCallId: 'call-deferred');
 
@@ -160,7 +160,7 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
 
         $commandBus = new TestMessageBus();
         $repo = new InMemoryDeferredToolCompletionRepository();
-        $worker = new ExecuteToolCallWorker($toolExecutor, $commandBus, $repo, new ToolExecutionResultStore(), new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization());
+        $worker = new ExecuteToolCallWorker($toolExecutor, $repo, new ToolExecutionResultStore(), new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader());
         $message = $this->executeMessage(toolCallId: 'call-retry');
 
         $worker($message);
@@ -198,7 +198,7 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
 
         $commandBus = new TestMessageBus();
         $repo = new InMemoryDeferredToolCompletionRepository();
-        $worker = new ExecuteToolCallWorker($toolExecutor, $commandBus, $repo, new ToolExecutionResultStore(), new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization());
+        $worker = new ExecuteToolCallWorker($toolExecutor, $repo, new ToolExecutionResultStore(), new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader());
         $message = $this->executeMessage(toolCallId: 'call-complete');
         $worker($message);
 
@@ -335,7 +335,7 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
                 eventStore: $eventStore,
                 stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
                 logger: new NullLogger(),
-                toolBatchCollector: $collector, toolAuthorization: new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore()
+                toolBatchCollector: $collector, executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore()
             ),
             handlers: [
                 new ToolCallResultHandler(
@@ -500,7 +500,7 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
 
         $commandBus = new TestMessageBus();
         $repo = new InMemoryDeferredToolCompletionRepository();
-        $worker = new ExecuteToolCallWorker($toolExecutor, $commandBus, $repo, new ToolExecutionResultStore(), new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(), eventDispatcher: $dispatcher, toolAuthorization: new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization());
+        $worker = new ExecuteToolCallWorker($toolExecutor, $repo, new ToolExecutionResultStore(), new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(), eventDispatcher: $dispatcher);
 
         $worker($this->executeMessage(toolCallId: 'call-exact-id'));
 
@@ -540,7 +540,7 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
         };
 
         $repo = new InMemoryDeferredToolCompletionRepository();
-        $worker = new ExecuteToolCallWorker($toolExecutor, new TestMessageBus(), $repo, new ToolExecutionResultStore(), new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(), eventDispatcher: $dispatcher, toolAuthorization: new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization());
+        $worker = new ExecuteToolCallWorker($toolExecutor, $repo, new ToolExecutionResultStore(), new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(), eventDispatcher: $dispatcher);
         $message = $this->executeMessage(toolCallId: 'call-redelivery-event');
         $worker($message);
         $worker($message);

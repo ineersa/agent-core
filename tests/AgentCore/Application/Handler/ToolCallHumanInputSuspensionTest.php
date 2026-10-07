@@ -58,18 +58,14 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
             }
         };
         $store = new ToolExecutionResultStore();
-        $bus = new TestMessageBus();
-        (new ExecuteToolCallWorker(
+        $envelope = (new ExecuteToolCallWorker(
             new ToolExecutor('parallel', 2, $store, toolbox: $toolbox),
-            $bus,
             new InMemoryDeferredToolCompletionRepository(),
             $store,
-            new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(),
+            new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
         ))(new ExecuteToolCall('run-susp', 2, 'turn-2-tools-1', 1, 'idemp', 'call-susp', 'bash', ['command' => 'env'], 0));
 
-        $this->assertInstanceOf(ToolCallResult::class, $bus->messages[0] ?? null);
-        /** @var ToolCallResult $envelope */
-        $envelope = $bus->messages[0];
+        $this->assertInstanceOf(ToolCallResult::class, $envelope);
         $this->assertNotNull($envelope->pendingHumanInput);
         $this->assertSame(HumanInputContinuationKindEnum::ToolCall, $envelope->pendingHumanInput->continuationKind);
         $this->assertNull($store->findByRunToolCall('run-susp', 'call-susp'));
@@ -238,7 +234,6 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
-            commandBus: new TestMessageBus(),
             toolBatchCollector: $collector2,
         );
         $state = RunStateBuilder::running('run-h2')
@@ -331,7 +326,6 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
-            commandBus: new TestMessageBus(),
             toolBatchCollector: $collector,
         );
         $state = RunStateBuilder::running('run-x')
@@ -387,7 +381,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
                 eventStore: $eventStore,
                 stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus()),
                 logger: new \Psr\Log\NullLogger(),
-                toolBatchCollector: $collector, toolAuthorization: new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore()
+                toolBatchCollector: $collector, executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore()
             ),
             handlers: [$handler],
         );
@@ -497,7 +491,6 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
-            commandBus: new TestMessageBus(),
             toolBatchCollector: $collector,
         );
 
@@ -509,7 +502,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
                 eventStore: $eventStore,
                 stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(\Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::bus(new TestMessageBus(), $commandStore, $collector), $executionBus),
                 logger: new \Psr\Log\NullLogger(),
-                toolBatchCollector: $collector, toolAuthorization: new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore()
+                toolBatchCollector: $collector, executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore()
             ),
             handlers: [$handler],
         );
@@ -537,7 +530,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         $this->assertSame([], $afterFail->pendingHumanInputRequests);
         $this->assertTrue($commandStore->has('run-pc', 'human-q-pc'));
         $this->assertNotNull($eventStore->verifiedPendingTransition('run-pc'));
-        (new \Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery($eventStore, $activeRunContext, new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()), new \Ineersa\AgentCore\Application\Pipeline\TransitionFinalizer($eventStore, new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(), new \Ineersa\AgentCore\Application\Handler\StepDispatcher(\Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::bus(new TestMessageBus(), $commandStore, $collector), $executionBus), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()))))->recover('run-pc');
+        (new \Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery($eventStore, $activeRunContext, new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()), new \Ineersa\AgentCore\Application\Pipeline\TransitionFinalizer($eventStore, new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(), new \Ineersa\AgentCore\Application\Handler\StepDispatcher(\Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::bus(new TestMessageBus(), $commandStore, $collector), $executionBus), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()))))->recover('run-pc');
         $activeRunContext->loadRecovered($afterFail);
         $this->assertNull($eventStore->verifiedPendingTransition('run-pc'));
 
@@ -609,7 +602,6 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
-            commandBus: new TestMessageBus(),
             toolBatchCollector: $collector,
         );
 
@@ -621,7 +613,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
                 eventStore: $eventStore,
                 stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(\Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::bus(new TestMessageBus(), $commandStore, $collector), $executionBus),
                 logger: new \Psr\Log\NullLogger(),
-                toolBatchCollector: $collector, toolAuthorization: new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore()
+                toolBatchCollector: $collector, executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore()
             ),
             handlers: [$handler],
         );
@@ -651,7 +643,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         $this->assertSame('q2', $afterFail->pendingHumanInputRequests[0]->questionId);
         $this->assertTrue($commandStore->has('run-fifo', 'human-q1'));
         $this->assertNotNull($eventStore->verifiedPendingTransition('run-fifo'));
-        (new \Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery($eventStore, $activeRunContext, new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()), new \Ineersa\AgentCore\Application\Pipeline\TransitionFinalizer($eventStore, new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(), new \Ineersa\AgentCore\Application\Handler\StepDispatcher(\Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::bus(new TestMessageBus(), $commandStore, $collector), $executionBus), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()))))->recover('run-fifo');
+        (new \Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery($eventStore, $activeRunContext, new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()), new \Ineersa\AgentCore\Application\Pipeline\TransitionFinalizer($eventStore, new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(), new \Ineersa\AgentCore\Application\Handler\StepDispatcher(\Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::bus(new TestMessageBus(), $commandStore, $collector), $executionBus), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()))))->recover('run-fifo');
         $activeRunContext->loadRecovered($afterFail);
         $this->assertNull($eventStore->verifiedPendingTransition('run-fifo'));
 

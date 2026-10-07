@@ -100,7 +100,7 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
             $this->withSnapshotLock($runId, $turnNo, $stepId, function () use ($runId, $turnNo, $stepId): void {
                 $path = $this->snapshotPath($runId, $turnNo, $stepId);
                 if (is_file($path)) {
-                    if ($this->retainExecutionEvidence($this->readSnapshotEnvelope($path, $runId, $turnNo, $stepId))) {
+                    if ($this->retainSchedulingEvidence($this->readSnapshotEnvelope($path, $runId, $turnNo, $stepId))) {
                         return;
                     }
                     $this->unlinkOrThrow($path, $runId, $turnNo, $stepId);
@@ -140,110 +140,12 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
                     if ($name !== $this->filenamePrefix($envelope->turnNo, $envelope->stepId).'.json') {
                         throw new SessionToolBatchStoreException('Tool batch cleanup filename identity mismatch.');
                     }
-                    if ($this->retainExecutionEvidence($envelope)) {
+                    if ($this->retainSchedulingEvidence($envelope)) {
                         continue;
                     }
                     $this->unlinkOrThrow($file->getPathname(), $runId, null, null);
                 }
             }
-        });
-    }
-
-    public function unknownExecutionsForRepair(string $runId): array
-    {
-        return $this->withRunLock($runId, function () use ($runId): array {
-            $notices = [];
-            $directory = $this->batchesDir($runId);
-            if (!is_dir($directory)) {
-                return [];
-            }
-            foreach (new \DirectoryIterator($directory) as $file) {
-                if (!$file->isFile() || !str_ends_with($file->getFilename(), '.json')) {
-                    continue;
-                }
-                $envelope = $this->readSnapshotEnvelope($file->getPathname(), $runId, null, null);
-                foreach ($envelope->batchState->executionAuthorizations as $key => $receipt) {
-                    if ('OutcomeUnknown' !== $receipt['state']) {
-                        continue;
-                    }
-                    $invocation = $receipt['invocation'] ?? null;
-                    if (null === $invocation || !\is_string($receipt['claim'])) {
-                        throw new \RuntimeException('Unknown tool repair lacks its scalar execution receipt.');
-                    }
-                    $notices[] = new \Ineersa\AgentCore\Domain\Message\ToolExecutionOutcomeUnknown($runId, $envelope->turnNo, $envelope->stepId, $invocation['attempt'], $invocation['key'], $invocation['call_id'], $key, $receipt['claim']);
-                    if (\count($notices) > 32) {
-                        throw new \RuntimeException('Unknown tool repair exceeds the bounded decision capacity.');
-                    }
-                }
-            }
-
-            return $notices;
-        });
-    }
-
-    public function hasOutcomeUnknown(string $runId): bool
-    {
-        return $this->withRunLock($runId, fn (): bool => $this->hasOutcomeUnknownWithoutLock($runId));
-    }
-
-    public function recoverResultPublication(string $runId, int $turnNo, string $stepId, string $key, string $claim): void
-    {
-        $this->withRunLock($runId, function () use ($runId, $turnNo, $stepId, $key, $claim): void {
-            $this->withSnapshotLock($runId, $turnNo, $stepId, function () use ($runId, $turnNo, $stepId, $key, $claim): void {
-                $path = $this->snapshotPath($runId, $turnNo, $stepId);
-                if (!is_file($path)) {
-                    throw new \RuntimeException('Tool execution snapshot evidence is missing.');
-                }
-                $current = $this->readSnapshotEnvelope($path, $runId, $turnNo, $stepId);
-                $receipt = $current->batchState->executionAuthorizations[$key] ?? null;
-                if (null === $receipt || 'Running' !== $receipt['state'] || $receipt['claim'] !== $claim) {
-                    return;
-                }
-                $adoption = null;
-                $adoptionHash = null;
-                $adoptionPath = null;
-                foreach (new \DirectoryIterator(\dirname($path)) as $file) {
-                    if (!$file->isFile() || !str_starts_with($file->getFilename(), basename($path).'.tmp.')) {
-                        continue;
-                    }
-                    // A complete orphan may be the only persisted outcome after
-                    // process death before rename. Never discard it as routine cleanup.
-                    $candidate = $this->readSnapshotEnvelope($file->getPathname(), $runId, $turnNo, $stepId);
-                    $published = $candidate->batchState->executionAuthorizations[$key] ?? null;
-                    if (null === $published || 'ResultReady' !== $published['state'] || $published['claim'] !== $claim) {
-                        continue;
-                    }
-                    $result = $candidate->batchState->executionResults[$key] ?? null;
-                    if (!$result instanceof \Ineersa\AgentCore\Domain\Message\ToolCallResult) {
-                        throw new \RuntimeException('Orphan tool result lacks its durable payload.');
-                    }
-                    $invocation = $receipt['invocation'] ?? null;
-                    if (null === $invocation || $result->runId() !== $runId || $result->turnNo() !== $turnNo || $result->stepId() !== $stepId
-                        || $result->attempt() !== $invocation['attempt'] || $result->toolCallId !== $invocation['call_id']) {
-                        throw new \RuntimeException('Orphan tool result differs from its claimed invocation.');
-                    }
-                    $expectedBatch = clone $current->batchState;
-                    $expectedBatch->executionAuthorizations[$key] = ['state' => 'ResultReady', 'claim' => $claim];
-                    $expectedBatch->executionResults[$key] = $result->finalized();
-                    $expected = new ToolBatchSnapshotEnvelopeDTO($runId, $turnNo, $stepId, $expectedBatch);
-                    if ($this->serializer->serialize($candidate, 'json', self::SERIALIZER_CONTEXT) !== $this->serializer->serialize($expected, 'json', self::SERIALIZER_CONTEXT)) {
-                        throw new \RuntimeException('Orphan tool result differs from its running predecessor.');
-                    }
-                    $hash = hash('sha256', $this->serializer->serialize($result, 'json', self::SERIALIZER_CONTEXT));
-                    if (null !== $adoptionHash && $adoptionHash !== $hash) {
-                        throw new \RuntimeException('Conflicting orphan tool results retain unresolved execution evidence.');
-                    }
-                    $adoption = $expected;
-                    $adoptionHash = $hash;
-                    $adoptionPath = $file->getPathname();
-                }
-                if (null !== $adoption && null !== $adoptionPath) {
-                    // Validate every candidate before publishing a decision. A
-                    // directory order must not choose between conflicting results.
-                    $this->writeSnapshot($runId, $turnNo, $stepId, $adoption);
-                    $this->unlinkOrThrow($adoptionPath, $runId, $turnNo, $stepId);
-                }
-            });
         });
     }
 
@@ -264,71 +166,12 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
                     return $filename;
                 }
                 $current = $this->readSnapshotEnvelope($path, $runId, $envelope->turnNo, $envelope->stepId);
-                $batch = clone $current->batchState;
-                $changed = false;
-                foreach ($batch->executionAuthorizations as $key => $authorization) {
-                    if (!\in_array($authorization['state'], ['Consumed', 'Stale'], true)) {
-                        continue;
-                    }
-                    // Member consumption alone is not enough; keep bodies until the
-                    // batch's canonical tool-message commit finalizes the snapshot.
-                    if ($batch->finalized && isset($batch->executionResults[$key])) {
-                        unset($batch->executionResults[$key]);
-                        $changed = true;
-                    }
-                    if (isset($batch->pendingDispositions[$key])) {
-                        unset($batch->pendingDispositions[$key]);
-                        $changed = true;
-                    }
-                    // Retired unknown receipts keep scalar fences only and drop bodies.
-                    if (isset($authorization['unknown_repair_transition'])) {
-                        $batch->executionAuthorizations[$key] = [
-                            'state' => 'Stale',
-                            'claim' => $authorization['claim'],
-                            'unknown_repair_transition' => $authorization['unknown_repair_transition'],
-                            'invocation' => $authorization['invocation'] ?? null,
-                        ];
-                        if (isset($batch->executionResults[$key])) {
-                            unset($batch->executionResults[$key]);
-                        }
-                        $callId = $authorization['invocation']['call_id'] ?? null;
-                        if (\is_string($callId) && '' !== $callId) {
-                            if (isset($batch->results[$callId])) {
-                                unset($batch->results[$callId]);
-                            }
-                            if (isset($batch->calls[$callId])) {
-                                $call = $batch->calls[$callId];
-                                if (null !== $call->humanInputAnswer || [] !== $call->args || null !== $call->assistantMessage || null !== $call->argSchema) {
-                                    $batch->calls[$callId] = new \Ineersa\AgentCore\Domain\Message\ExecuteToolCall(
-                                        runId: $call->runId(),
-                                        turnNo: $call->turnNo(),
-                                        stepId: $call->stepId(),
-                                        attempt: $call->attempt(),
-                                        idempotencyKey: $call->idempotencyKey(),
-                                        toolCallId: $call->toolCallId,
-                                        toolName: $call->toolName,
-                                        args: [],
-                                        orderIndex: $call->orderIndex,
-                                        toolIdempotencyKey: $call->toolIdempotencyKey,
-                                        mode: $call->mode,
-                                        timeoutSeconds: $call->timeoutSeconds,
-                                        maxParallelism: $call->maxParallelism,
-                                        assistantMessage: null,
-                                        argSchema: null,
-                                        toolsRef: $call->toolsRef,
-                                        humanInputAnswer: null,
-                                        parentModel: $call->parentModel,
-                                        launchContext: $call->launchContext,
-                                    );
-                                }
-                            }
-                        }
-                        $changed = true;
-                    }
+                if ($this->retainSchedulingEvidence($current)) {
+                    return $filename;
                 }
-                if ($changed) {
-                    $this->writeSnapshot($runId, $current->turnNo, $current->stepId, new ToolBatchSnapshotEnvelopeDTO($runId, $current->turnNo, $current->stepId, $batch));
-                }
+                // Wholly finished scheduling snapshots can be deleted; scalar
+                // invocation fences now live in the SQL ledger.
+                $this->unlinkOrThrow($path, $runId, $current->turnNo, $current->stepId);
 
                 return $filename;
             });
@@ -347,7 +190,7 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
                     continue;
                 }
                 $envelope = $this->readSnapshotEnvelope($file->getPathname(), $runId, null, null);
-                if ((null === $toolCallId || isset($envelope->batchState->calls[$toolCallId])) && $this->retainExecutionEvidence($envelope)) {
+                if ((null === $toolCallId || isset($envelope->batchState->calls[$toolCallId])) && $this->retainSchedulingEvidence($envelope)) {
                     return true;
                 }
             }
@@ -361,15 +204,8 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
         return $this->withRunLock($runId, function () use ($runId, $turnNo, $stepId, $callback): mixed {
             return $this->withSnapshotLock($runId, $turnNo, $stepId, function () use ($runId, $turnNo, $stepId, $callback): mixed {
                 $path = $this->snapshotPath($runId, $turnNo, $stepId);
-                $unknown = $this->hasOutcomeUnknownWithoutLock($runId);
                 $envelope = is_readable($path) ? $this->readSnapshotEnvelope($path, $runId, $turnNo, $stepId) : null;
                 $current = null !== $envelope ? $envelope->batchState : null;
-                $existingClaims = [];
-                foreach ($current->executionAuthorizations ?? [] as $receipt) {
-                    if ('Running' === $receipt['state']) {
-                        $existingClaims[$receipt['claim']] = true;
-                    }
-                }
 
                 $outcome = $callback($current);
                 if (!$outcome instanceof ToolBatchStoreMutation) {
@@ -377,13 +213,6 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
                 }
 
                 if (null !== $outcome->nextState) {
-                    if ($unknown) {
-                        foreach ($outcome->nextState->executionAuthorizations as $receipt) {
-                            if ('Running' === $receipt['state'] && !isset($existingClaims[$receipt['claim']])) {
-                                throw new \RuntimeException(\Ineersa\AgentCore\Domain\Message\ExecutionOutcomeUnknown::ERROR_MESSAGE);
-                            }
-                        }
-                    }
                     $this->writeSnapshot(
                         $runId,
                         $turnNo,
@@ -395,28 +224,6 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
                 return $outcome->returnValue;
             });
         });
-    }
-
-    private function hasOutcomeUnknownWithoutLock(string $runId): bool
-    {
-        $dir = $this->batchesDir($runId);
-        if (!is_dir($dir)) {
-            return false;
-        }
-        foreach (new \DirectoryIterator($dir) as $file) {
-            if (!$file->isFile() || !str_ends_with($file->getFilename(), '.json')) {
-                continue;
-            }
-            $snapshot = $this->readSnapshotEnvelope($file->getPathname(), $runId, null, null);
-            foreach ($snapshot->batchState->executionAuthorizations as $receipt) {
-                if ('OutcomeUnknown' === $receipt['state']) {
-                    return true;
-                }
-            }
-            unset($snapshot);
-        }
-
-        return false;
     }
 
     private function readSnapshotEnvelope(string $path, string $expectedRunId, ?int $expectedTurnNo, ?string $expectedStepId): ToolBatchSnapshotEnvelopeDTO
@@ -453,24 +260,20 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
         return $envelope;
     }
 
-    private function retainExecutionEvidence(ToolBatchSnapshotEnvelopeDTO $envelope): bool
+    private function retainSchedulingEvidence(ToolBatchSnapshotEnvelopeDTO $envelope): bool
     {
-        foreach ($envelope->batchState->executionAuthorizations as $authorization) {
-            // Only a durable disposition permits reclamation. Cancellation is
-            // not evidence that an external execution stopped or had no effect.
-            if (!\in_array($authorization['state'], ['Consumed', 'Stale'], true)) {
-                $this->logger->info('tool_batch.execution_evidence_retained', [
-                    'component' => 'session_tool_batch_store', 'event_type' => 'execution_evidence_retained',
-                    'run_id' => $envelope->runId, 'turn_no' => $envelope->turnNo, 'step_id' => $envelope->stepId,
-                    'operation_state' => $authorization['state'],
-                ]);
+        $batch = $envelope->batchState;
+        if (!$batch->finalized || [] !== $batch->awaitingHumanInput || [] !== $batch->pendingQueue || [] !== $batch->inFlight) {
+            $this->logger->info('tool_batch.scheduling_evidence_retained', [
+                'component' => 'session_tool_batch_store', 'event_type' => 'scheduling_evidence_retained',
+                'run_id' => $envelope->runId, 'turn_no' => $envelope->turnNo, 'step_id' => $envelope->stepId,
+                'finalized' => $batch->finalized,
+                'awaiting_human_input' => \count($batch->awaitingHumanInput),
+                'pending_queue' => \count($batch->pendingQueue),
+                'in_flight' => \count($batch->inFlight),
+            ]);
 
-                return true;
-            }
-            // Retired unknown receipts keep scalar fences after body reclaim.
-            if (isset($authorization['unknown_repair_transition'])) {
-                return true;
-            }
+            return true;
         }
 
         return false;

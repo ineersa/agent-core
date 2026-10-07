@@ -31,7 +31,7 @@ final class RunCommitLoggingTest extends TestCase
             eventStore: $eventStore,
             stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
             logger: $logger,
-            toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), toolAuthorization: new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore()
+            toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore()
         );
 
         $next = new RunState(
@@ -101,7 +101,7 @@ final class RunCommitLoggingTest extends TestCase
             activeRunContext: $active, eventStore: $store,
             stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
             logger: new TestLogger(), toolBatchCollector: $collector,
-            hookDispatcher: new \Ineersa\AgentCore\Application\Handler\HookDispatcher([$hook]), toolAuthorization: new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore()
+            hookDispatcher: new \Ineersa\AgentCore\Application\Handler\HookDispatcher([$hook]), executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore()
         );
         try {
             $commit->commit($previous, $next, $events);
@@ -132,7 +132,7 @@ final class RunCommitLoggingTest extends TestCase
             eventStore: new RecordingEventStore(),
             stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
             logger: new TestLogger(),
-            toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), toolAuthorization: new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore()
+            toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore()
         ))->commit($previous, $next, []);
 
         $this->assertSame($next, $activeRunContext->requireLoaded('run-1'));
@@ -149,7 +149,7 @@ final class RunCommitLoggingTest extends TestCase
         $store->expects($this->never())->method('appendTransition');
         $bus = $this->createMock(\Symfony\Component\Messenger\MessageBusInterface::class);
         $bus->expects($this->never())->method('dispatch');
-        $commit = new RunCommit($active, $store, new StepDispatcher($bus, $bus), new TestLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()));
+        $commit = new RunCommit($active, $store, new StepDispatcher($bus, $bus), new TestLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()));
 
         try {
             $commit->commit($previous, $previous->with(['status' => RunStatus::Running]), [], [new \stdClass()]);
@@ -219,7 +219,7 @@ final class RunCommitLoggingTest extends TestCase
         $store->expects($this->never())->method('finalizeVerifiedTransition');
         $bus = $this->createMock(\Symfony\Component\Messenger\MessageBusInterface::class);
         $bus->expects($this->once())->method('dispatch')->willThrowException(new \RuntimeException('broker unavailable'));
-        $commit = new RunCommit($active, $store, new StepDispatcher($bus, $bus), new TestLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()));
+        $commit = new RunCommit($active, $store, new StepDispatcher($bus, $bus), new TestLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()));
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('broker unavailable');

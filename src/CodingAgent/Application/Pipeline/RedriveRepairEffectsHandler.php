@@ -9,9 +9,7 @@ use Ineersa\AgentCore\Contract\CoordinationActionValidatorInterface;
 use Ineersa\AgentCore\Domain\Coordination\ExecutionAuthorizationStamp;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\DurableExecutionResult;
-use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ExecutionRequest;
-use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\CodingAgent\Application\Message\RedriveRepairEffectsDTO;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Messenger\Envelope;
@@ -47,7 +45,7 @@ final readonly class RedriveRepairEffectsHandler implements CoordinationActionVa
         }
         foreach ($action->effects as $effect) {
             $message = $effect instanceof Envelope ? $effect->getMessage() : $effect;
-            if ((!$message instanceof AdvanceRun && !$message instanceof DurableExecutionResult && !$message instanceof ExecuteToolCall && !$message instanceof ToolCallResult && !$message instanceof ExecutionRequest)
+            if ((!$message instanceof AdvanceRun && !$message instanceof DurableExecutionResult && !$message instanceof ExecutionRequest)
                 || $message->runId() !== $action->runId) {
                 throw new \RuntimeException('Prepared repair delivery differs from its owner.');
             }

@@ -1383,7 +1383,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $events = new \Symfony\Component\EventDispatcher\EventDispatcher();
         $events->addListener(DeferredToolCompletionRegisteredEvent::class, static function () use (&$notifications): void { ++$notifications; });
         $workerBus = new TestMessageBus();
-        $worker = new \Ineersa\AgentCore\Application\Handler\ExecuteToolCallWorker($executor, $workerBus, $deferred, new \Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore(), new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(), eventDispatcher: $events, launchInputStore: $inputStore, toolAuthorization: new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization());
+        $worker = new \Ineersa\AgentCore\Application\Handler\ExecuteToolCallWorker($executor, $deferred, new \Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore(), new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(), eventDispatcher: $events, launchInputStore: $inputStore);
         $worker($original);
         $this->assertCount(0, $workerBus->messages, json_encode($workerBus->messages, \JSON_THROW_ON_ERROR));
         $this->assertSame('pending', $deferred->status($lifecycle));
@@ -1701,7 +1701,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
                     ])),
                 ]);
                 $dispatcher = new \Ineersa\AgentCore\Application\Handler\StepDispatcher($coordinationBus, $bus);
-                $commit = new \Ineersa\AgentCore\Application\Pipeline\RunCommit($active, $this->store, $dispatcher, new TestLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()), actionValidator: new \Ineersa\AgentCore\Application\Handler\CoordinationActionValidator([$coordination]));
+                $commit = new \Ineersa\AgentCore\Application\Pipeline\RunCommit($active, $this->store, $dispatcher, new TestLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()), actionValidator: new \Ineersa\AgentCore\Application\Handler\CoordinationActionValidator([$coordination]));
                 $processor = new \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor($active, $this->lock, $commit, [$handler]);
                 $processor->process('command.subagent_progress', new \Ineersa\AgentCore\Domain\Message\CommitSubagentProgress(
                     $parentRunId, $parentTurnNo, $lifecycleId, $parentToolCallId, $parentOrderIndex, $revision, $normalized, $interruptionKind,

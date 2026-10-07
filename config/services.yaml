@@ -580,14 +580,6 @@ services:
     arguments:
       $commandBus: '@agent.command.bus'
 
-  # Standalone shell worker wakes run_control after AgentEnd so a follow_up
-  # queued while the shell still looked Running is drained (issue #183).
-  # $commandBus must bind agent.command.bus, not the execution bus this
-  # handler itself consumes.
-  Ineersa\CodingAgent\Runtime\Controller\CommandHandler\ExecuteShellToolCallWorker:
-    arguments:
-      $commandBus: '@agent.command.bus'
-
   # Explicit wiring overrides Ineersa\CodingAgent\ resource autowire (bool $streamCommittedEventsToStdout).
   Ineersa\CodingAgent\Runtime\Stream\StreamingCommittedRuntimeEventStore:
     arguments:
@@ -788,13 +780,8 @@ services:
     alias: Ineersa\CodingAgent\Compaction\CompactionService
 
   # Compaction worker: async model invocation for summarization.
+  # Returns CompactionStepResult for ledger notification.
   # @see ExecuteLlmStepWorker for the parallel LLM-step pattern.
-  # $commandBus is explicitly bound to agent.command.bus so the worker
-  # dispatches CompactionStepResult back to the orchestrator within the
-  # same consumer process.
-  Ineersa\AgentCore\Application\Handler\ExecuteCompactionStepWorker:
-    arguments:
-      $commandBus: '@agent.command.bus'
 
   # ─── Compaction auto-trigger (COMP-06) ───
 
@@ -1062,6 +1049,7 @@ services:
         Ineersa\AgentCore\Domain\Message\ExecuteLlmStep: llm
         Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep: llm
         Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall: tool
+        Ineersa\AgentCore\Domain\Message\ExecuteToolCall: tool
 
   Ineersa\AgentCore\Application\Handler\CommandRouter:
     arguments:

@@ -54,7 +54,6 @@ final class ExecutionFailureDrillTest extends TestCase
 
         $failingWorker = new ExecuteLlmStepWorker(
             platform: $platform,
-            commandBus: new FailingOnceMessageBus(new TransportException('simulated dispatch crash')),
         );
 
         try {
@@ -103,30 +102,15 @@ final class ExecutionFailureDrillTest extends TestCase
             orderIndex: 0,
         );
 
-        $failingWorker = new ExecuteToolCallWorker(
+        $worker = new ExecuteToolCallWorker(
             toolExecutor: $toolExecutor,
-            commandBus: new FailingOnceMessageBus(new TransportException('simulated dispatch crash')),
             deferredToolCompletionRepository: new InMemoryDeferredToolCompletionRepository(),
             resultStore: new ToolExecutionResultStore(),
-            statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(), toolAuthorization: new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(),
+            statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
         );
 
-        try {
-            $failingWorker($message);
-            $this->fail('Expected dispatch crash to bubble as RuntimeException.');
-        } catch (\RuntimeException $exception) {
-            $this->assertSame('Failed to dispatch tool result to command bus.', $exception->getMessage());
-        }
-
-        $collectingBus = new TestMessageBus();
-        $retryWorker = new ExecuteToolCallWorker($toolExecutor, $collectingBus, new InMemoryDeferredToolCompletionRepository(), new ToolExecutionResultStore(), new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization());
-        $retryWorker($message);
-
-        $this->assertCount(1, $collectingBus->messages);
-        $this->assertInstanceOf(ToolCallResult::class, $collectingBus->messages[0]);
-
-        /** @var ToolCallResult $result */
-        $result = $collectingBus->messages[0];
+        $result = $worker($message);
+        $this->assertInstanceOf(ToolCallResult::class, $result);
         $this->assertSame('web_search', $result->result['tool_name']);
         $this->assertFalse($result->isError);
     }

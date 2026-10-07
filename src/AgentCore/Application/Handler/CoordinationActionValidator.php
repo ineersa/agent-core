@@ -6,7 +6,6 @@ namespace Ineersa\AgentCore\Application\Handler;
 
 use Ineersa\AgentCore\Contract\CoordinationActionValidatorInterface;
 use Ineersa\AgentCore\Domain\Coordination\ConsumeExecutionUnknownDTO;
-use Ineersa\AgentCore\Domain\Coordination\ConsumeToolExecutionUnknownDTO;
 use Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO;
 use Ineersa\AgentCore\Domain\Coordination\EnqueueCommandDTO;
 use Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO;
@@ -70,7 +69,7 @@ final readonly class CoordinationActionValidator
             return;
         }
         if ($action instanceof MarkCommandAppliedDTO || $action instanceof EnqueueCommandDTO || $action instanceof RejectCommandDTO
-            || $action instanceof ConsumeExecutionUnknownDTO || $action instanceof ConsumeToolExecutionUnknownDTO || $action instanceof RetireUnknownExecutionDTO) {
+            || $action instanceof ConsumeExecutionUnknownDTO || $action instanceof RetireUnknownExecutionDTO) {
             return;
         }
         foreach ($this->validators as $validator) {

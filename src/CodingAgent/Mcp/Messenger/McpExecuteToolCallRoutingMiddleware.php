@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Mcp\Messenger;
 
+use Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
+use Ineersa\AgentCore\Domain\Message\ExecutionRequest;
 use Ineersa\CodingAgent\Mcp\Catalog\McpServerCatalogStatusEnum;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
 use Psr\Log\LoggerInterface;
@@ -35,6 +37,7 @@ final readonly class McpExecuteToolCallRoutingMiddleware implements MiddlewareIn
     public function __construct(
         private McpToolCatalogStoreInterface $catalogStore,
         private LoggerInterface $logger,
+        private ExecutionOperationStoreInterface $operations,
     ) {
     }
 
@@ -42,6 +45,9 @@ final readonly class McpExecuteToolCallRoutingMiddleware implements MiddlewareIn
     {
         $message = $envelope->getMessage();
 
+        if ($message instanceof ExecutionRequest && ExecuteToolCall::class === $message->requestType) {
+            $message = $this->operations->peekRequest($message);
+        }
         if (!$message instanceof ExecuteToolCall) {
             return $stack->next()->handle($envelope, $stack);
         }

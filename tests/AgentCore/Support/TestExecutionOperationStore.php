@@ -27,6 +27,11 @@ final class TestExecutionOperationStore implements ExecutionOperationStoreInterf
         throw new \LogicException('Dispatch-only fixture cannot validate unknown repair.');
     }
 
+    public function matchesCurrentAuthorizedToolInvocation(\Ineersa\AgentCore\Domain\Message\ExecutionOutcomeUnknown $notice, \Ineersa\AgentCore\Domain\Message\ExecuteToolCall $authorizedCall): bool
+    {
+        return false;
+    }
+
     public function retireUnknownExecution(\Ineersa\AgentCore\Domain\Coordination\RetireUnknownExecutionDTO $action, VerifiedTransitionDTO $transition): void
     {
         throw new \LogicException('Dispatch-only fixture cannot retire unknown execution.');
@@ -62,6 +67,11 @@ final class TestExecutionOperationStore implements ExecutionOperationStoreInterf
         throw new \LogicException('Dispatch-only fixture cannot resolve execution inputs.');
     }
 
+    public function peekRequest(ExecutionRequest $reference): AbstractAgentBusMessage
+    {
+        throw new \LogicException('Dispatch-only fixture cannot peek execution inputs.');
+    }
+
     public function resultForClaim(ExecutionRequest $reference, ExecutionAuthorizationStamp $authorization, string $claim): DurableExecutionResult
     {
         throw new \LogicException('Dispatch-only fixture cannot acknowledge execution.');
@@ -70,6 +80,16 @@ final class TestExecutionOperationStore implements ExecutionOperationStoreInterf
     public function saveResult(AbstractAgentBusMessage $request, ExecutionAuthorizationStamp $authorization, string $claim, AbstractAgentBusMessage $result): DurableExecutionResult
     {
         throw new \LogicException('Dispatch-only fixture cannot persist execution results.');
+    }
+
+    public function transferToDeferred(ExecutionRequest $reference, ExecutionAuthorizationStamp $authorization, string $claim, string $deferredId): void
+    {
+        throw new \LogicException('Dispatch-only fixture cannot transfer deferred ownership.');
+    }
+
+    public function saveDeferredResult(string $deferredId, AbstractAgentBusMessage $result): DurableExecutionResult
+    {
+        throw new \LogicException('Dispatch-only fixture cannot persist deferred results.');
     }
 
     public function resolveResult(DurableExecutionResult $reference): AbstractAgentBusMessage

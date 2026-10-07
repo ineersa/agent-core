@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Messenger;
 
+use Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
+use Ineersa\AgentCore\Domain\Message\ExecutionRequest;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Middleware\MiddlewareInterface;
 use Symfony\Component\Messenger\Middleware\StackInterface;
@@ -25,10 +27,17 @@ final readonly class SubagentExecuteToolCallRoutingMiddleware implements Middlew
     public const string SUBAGENT_TOOL_NAME = 'subagent';
     public const string AGENT_RESUME_TOOL_NAME = 'agent_resume';
 
+    public function __construct(private ExecutionOperationStoreInterface $operations)
+    {
+    }
+
     public function handle(Envelope $envelope, StackInterface $stack): Envelope
     {
         $message = $envelope->getMessage();
 
+        if ($message instanceof ExecutionRequest && ExecuteToolCall::class === $message->requestType) {
+            $message = $this->operations->peekRequest($message);
+        }
         if (!$message instanceof ExecuteToolCall) {
             return $stack->next()->handle($envelope, $stack);
         }

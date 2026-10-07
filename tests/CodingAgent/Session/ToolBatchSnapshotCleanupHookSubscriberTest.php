@@ -148,7 +148,7 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
             activeRunContext: $active, eventStore: $eventStore,
             stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()), logger: new TestLogger(),
             toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(),
-            hookDispatcher: new HookDispatcher([new ToolBatchSnapshotCleanupHookSubscriber($this->createStore(), new TestLogger(), $inputStore)]), toolAuthorization: new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore()
+            hookDispatcher: new HookDispatcher([new ToolBatchSnapshotCleanupHookSubscriber($this->createStore(), new TestLogger(), $inputStore)]), executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore()
         );
         $this->expectExceptionMessage('append failed');
         $commit->commit($previous, new RunState('run-1', RunStatus::Running, version: 1, turnNo: 1, model: 'test-model'), [new RunEvent('run-1', 1, 1, RunEventTypeEnum::ToolExecutionEnd->value, ['tool_result' => ['tool_call_id' => 'fork-call']])]);
@@ -188,7 +188,7 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
             stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
             logger: new TestLogger(),
             toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(),
-            hookDispatcher: $hookDispatcher, toolAuthorization: new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore()
+            hookDispatcher: $hookDispatcher, executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore()
         );
     }
 }

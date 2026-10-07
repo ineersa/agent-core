@@ -17,6 +17,7 @@ final readonly class CompleteDeferredToolCallHandler
     public function __construct(
         private DeferredToolCompletionRepositoryInterface $deferredRepository,
         private MessageBusInterface $commandBus,
+        private \Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface $executionOperations,
         private LoggerInterface $logger,
     ) {
     }
@@ -54,16 +55,16 @@ final readonly class CompleteDeferredToolCallHandler
             // If dispatch succeeds but markCompleted fails, a later retry may dispatch again.
             // ToolCallResultHandler and the durable tool-batch state admit the terminal result only once,
             // so a duplicate delivery produces no additional observable pipeline transition.
-            $toolCallResult = ToolCallResultFactory::fromDeferredCorrelationAndCompletion(
-                $correlation,
-                $message->content,
-                $message->details,
-                $message->isError,
-                $message->error,
-            );
-
             try {
-                $this->commandBus->dispatch($toolCallResult);
+                $toolCallResult = ToolCallResultFactory::fromDeferredCorrelationAndCompletion(
+                    $correlation,
+                    $message->content,
+                    $message->details,
+                    $message->isError,
+                    $message->error,
+                );
+                $reference = $this->executionOperations->saveDeferredResult($message->deferredId, $toolCallResult);
+                $this->commandBus->dispatch($reference);
             } catch (ExceptionInterface $exception) {
                 throw new \RuntimeException('Failed to dispatch deferred tool ToolCallResult.', previous: $exception);
             }

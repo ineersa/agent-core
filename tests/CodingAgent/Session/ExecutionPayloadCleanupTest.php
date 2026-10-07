@@ -274,8 +274,8 @@ final class ExecutionPayloadCleanupTest extends IsolatedKernelTestCase
             new \Symfony\Component\Filesystem\Filesystem(),
             $container->get('hatfield.controller.session_owner.lock_factory'),
             $container->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class),
-            $container->get(ToolBatchStoreInterface::class),
             $events,
+            $container->get(\Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface::class),
         );
         $claim = $worker->claim($delivery, $authorization);
         $this->assertIsString($claim);
@@ -342,8 +342,8 @@ final class ExecutionPayloadCleanupTest extends IsolatedKernelTestCase
             $failing,
             $container->get('hatfield.controller.session_owner.lock_factory'),
             $container->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class),
-            $container->get(ToolBatchStoreInterface::class),
             $container->get(PreparedTransitionEventStoreInterface::class),
+            $container->get(\Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface::class),
         );
         $this->assertSame($reference->effectId, $broken->reclaimDisposedPayloads($run, ''), 'Local cleanup degradation advances the page without inventing success.');
         $this->assertDirectoryExists($directory);

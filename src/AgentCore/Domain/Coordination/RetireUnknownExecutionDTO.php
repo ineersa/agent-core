@@ -5,14 +5,13 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Domain\Coordination;
 
 use Ineersa\AgentCore\Domain\Message\ExecutionOutcomeUnknown;
-use Ineersa\AgentCore\Domain\Message\ToolExecutionOutcomeUnknown;
 
 /** Explicit owner repair decision. Retirement preserves the old execution receipt. */
 final readonly class RetireUnknownExecutionDTO
 {
     public const string WARNING = 'Explicit repair retired an unknown execution after worker exclusion. Side effects may already have occurred; another attempt may duplicate them.';
 
-    public function __construct(public ExecutionOutcomeUnknown|ToolExecutionOutcomeUnknown $notice)
+    public function __construct(public ExecutionOutcomeUnknown $notice)
     {
     }
 
@@ -22,7 +21,7 @@ final readonly class RetireUnknownExecutionDTO
             throw new \RuntimeException('Unknown retirement requires an explicit verified owner repair decision.');
         }
         foreach ($transition->work['actions'] ?? [] as $action) {
-            if ($action instanceof self && $action->notice::class === $this->notice::class && (array) $action->notice === (array) $this->notice) {
+            if ($action instanceof self && (array) $action->notice === (array) $this->notice) {
                 return;
             }
         }

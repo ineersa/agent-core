@@ -4,24 +4,22 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Messenger;
 
-use Ineersa\AgentCore\Application\Handler\ExecutionBoundaryContext;
-use Ineersa\AgentCore\Application\Handler\ExecutionOperationMapper;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery;
 use Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface;
-use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
 use Ineersa\AgentCore\Domain\Message\DurableExecutionResult;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Middleware\MiddlewareInterface;
 use Symfony\Component\Messenger\Middleware\StackInterface;
+use Symfony\Component\Messenger\Stamp\HandledStamp;
+use Symfony\Component\Messenger\Stamp\HandlerArgumentsStamp;
 use Symfony\Component\Messenger\Stamp\ReceivedStamp;
 
-/** Seals worker results before notification; unwraps them only at owner consumption. */
+/** Unwraps durable result references only at owner consumption. */
 final readonly class ExecutionResultMiddleware implements MiddlewareInterface
 {
     public function __construct(
         private ExecutionOperationStoreInterface $operations,
-        private ExecutionBoundaryContext $context,
         private PendingTransitionRecovery $recovery,
         private RunLockManager $locks,
     ) {
@@ -30,27 +28,20 @@ final readonly class ExecutionResultMiddleware implements MiddlewareInterface
     public function handle(Envelope $envelope, StackInterface $stack): Envelope
     {
         $message = $envelope->getMessage();
-        if ($message instanceof DurableExecutionResult && null !== $envelope->last(ReceivedStamp::class)) {
-            // Disposition rows can exist while the owning journal is unfinished.
-            // Reconcile under the run lock before treating a duplicate as done.
-            $this->locks->synchronized($message->runId(), function () use ($message): void {
-                $this->recovery->recover($message->runId());
-            });
-            if ($this->operations->isDisposed($message)) {
-                return $envelope->with(new \Symfony\Component\Messenger\Stamp\HandledStamp(null, self::class));
-            }
-            $result = $this->operations->resolveResult($message);
-
-            return $this->context->accepting($message, static fn (): Envelope => $stack->next()->handle(new Envelope($result, array_merge(...array_values($envelope->all()))), $stack));
+        if (!$message instanceof DurableExecutionResult || null === $envelope->last(ReceivedStamp::class)) {
+            return $stack->next()->handle($envelope, $stack);
         }
-        $execution = $this->context->currentExecution();
-        $expected = null !== $execution ? ExecutionOperationMapper::resultType($execution[0]) : null;
-        if (null !== $execution && null !== $expected && $message instanceof AbstractAgentBusMessage && $message instanceof $expected) {
-            $reference = $this->operations->saveResult($execution[0], $execution[1], $execution[2], $message);
-
-            return $stack->next()->handle(new Envelope($reference, array_merge(...array_values($envelope->all()))), $stack);
+        $this->locks->synchronized($message->runId(), function () use ($message): void {
+            $this->recovery->recover($message->runId());
+        });
+        if ($this->operations->isDisposed($message)) {
+            return $envelope->with(new HandledStamp(null, self::class));
         }
+        $result = $this->operations->resolveResult($message);
 
-        return $stack->next()->handle($envelope, $stack);
+        $stamps = array_merge(...array_values($envelope->all()));
+        $stamps[] = new HandlerArgumentsStamp([$message]);
+
+        return $stack->next()->handle(new Envelope($result, $stamps), $stack);
     }
 }

@@ -69,7 +69,6 @@ framework:
                     allow_no_handlers: false
                     allow_no_senders: true
                 middleware:
-                    - Ineersa\AgentCore\Application\Messenger\ExecutionAuthorizationMiddleware
                     # Subagent tool routing: stamps toolName=subagent|agent_resume
                     # with TransportNamesStamp(['agent']) before default YAML routes
                     # ExecuteToolCall to tool. fork stays on tool. Runs before MCP middleware.
@@ -79,6 +78,9 @@ framework:
                     # single mcp consumer instead of the default tool transport.
                     # Runs before Symfony send_message middleware.
                     - Ineersa\CodingAgent\Mcp\Messenger\McpExecuteToolCallRoutingMiddleware
+                    # After catalog/session routing. Stamps remaining ExecutionRequest
+                    # deliveries and claims sealed invocations on receive.
+                    - Ineersa\AgentCore\Application\Messenger\ExecutionAuthorizationMiddleware
 
         transports:
             run_control:
@@ -105,7 +107,6 @@ framework:
         routing:
             Ineersa\AgentCore\Domain\Message\DurableExecutionResult: run_control
             Ineersa\AgentCore\Domain\Message\ExecutionOutcomeUnknown: run_control
-            Ineersa\AgentCore\Domain\Message\ToolExecutionOutcomeUnknown: run_control
             Ineersa\CodingAgent\Application\Message\AttachRun: run_control
             Ineersa\CodingAgent\Application\Message\SelectHistoryPrompt: run_control
             Ineersa\CodingAgent\Application\Message\RepairSession: run_control

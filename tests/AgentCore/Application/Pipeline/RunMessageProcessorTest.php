@@ -67,7 +67,7 @@ final class RunMessageProcessorTest extends TestCase
         });
         $bus = new TestMessageBus();
         $dispatcher = new StepDispatcher($bus, $bus);
-        $commit = new RunCommit($active, $store, $dispatcher, new NullLogger(), new ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestToolExecutionAuthorization(), new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()));
+        $commit = new RunCommit($active, $store, $dispatcher, new NullLogger(), new ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()));
         $processor = new RunMessageProcessor($active, new RunLockManager(new LockFactory(new InMemoryStore())), $commit, [$handler], $discard);
         if ($failAppend) {
             $this->expectException(\RuntimeException::class);

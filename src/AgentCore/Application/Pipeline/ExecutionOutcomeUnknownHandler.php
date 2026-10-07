@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Pipeline;
 
 use Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Coordination\ConsumeExecutionUnknownDTO;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ExecutionOutcomeUnknown;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
@@ -14,8 +16,10 @@ use Ineersa\AgentCore\Domain\Run\ToolBatchIdentity;
 
 final readonly class ExecutionOutcomeUnknownHandler implements RunMessageHandler
 {
-    public function __construct(private ExecutionOperationStoreInterface $operations)
-    {
+    public function __construct(
+        private ExecutionOperationStoreInterface $operations,
+        private ToolBatchStoreInterface $batches,
+    ) {
     }
 
     public function supports(object $message): bool
@@ -43,6 +47,12 @@ final readonly class ExecutionOutcomeUnknownHandler implements RunMessageHandler
                 break;
             }
         }
+        if (!$matches && $state->turnNo === $message->turnNo() && $state->activeStepId === $message->stepId()) {
+            $authorized = $this->currentAuthorizedOrdinaryToolCall($state, $message);
+            if (null !== $authorized && $this->operations->matchesCurrentAuthorizedToolInvocation($message, $authorized)) {
+                $matches = true;
+            }
+        }
         if (!$matches || \in_array($state->status, [RunStatus::Completed, RunStatus::Cancelled], true)) {
             // A delayed old-generation notice must not fail a newer operation.
             return new HandlerResult(nextState: $state, postCommitActions: [$action]);
@@ -51,5 +61,32 @@ final readonly class ExecutionOutcomeUnknownHandler implements RunMessageHandler
         $event = RunEvent::forAppend($state->runId, $state->turnNo, 'agent_end', ['reason' => 'failed', 'error' => ExecutionOutcomeUnknown::ERROR_MESSAGE, 'error_type' => 'execution_outcome_unknown', 'effect_id' => $message->effectId, 'claim_token' => $message->claimToken]);
 
         return new HandlerResult(nextState: $failed, events: [$event], postCommitActions: [$action]);
+    }
+
+    private function currentAuthorizedOrdinaryToolCall(RunState $state, ExecutionOutcomeUnknown $notice): ?ExecuteToolCall
+    {
+        if (null === $state->activeStepId || $state->activeStepId !== $notice->stepId()) {
+            return null;
+        }
+        $batch = $this->batches->load($state->runId, $state->turnNo, $state->activeStepId);
+        if (null === $batch) {
+            return null;
+        }
+        foreach ($state->currentToolCalls as $call) {
+            if ($call->batchId !== ToolBatchIdentity::fromTurnAndStep($notice->turnNo(), $notice->stepId())
+                || !isset($state->pendingToolCalls[$call->toolCallId])
+                || isset($state->pendingShellToolCalls[$call->toolCallId])) {
+                continue;
+            }
+            $authorized = $batch->calls[$call->toolCallId] ?? null;
+            if ($authorized instanceof ExecuteToolCall
+                && $authorized->toolCallId === $call->toolCallId
+                && $authorized->attempt() === $notice->attempt()
+                && $authorized->idempotencyKey() === $notice->idempotencyKey()) {
+                return $authorized;
+            }
+        }
+
+        return null;
     }
 }

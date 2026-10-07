@@ -6,7 +6,6 @@ namespace Ineersa\AgentCore\Tests\Application\Handler;
 
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCoordinationHandler;
-use Ineersa\AgentCore\Application\Handler\ToolExecutionAuthorization;
 use Ineersa\AgentCore\Application\Pipeline\HandlerResult;
 use Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler;

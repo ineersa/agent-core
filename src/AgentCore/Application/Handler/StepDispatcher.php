@@ -50,6 +50,7 @@ final readonly class StepDispatcher
         }
 
         return $effect instanceof RunControlTransitionMessageInterface
+            || $effect instanceof \Ineersa\AgentCore\Domain\Message\ToolCallResult
             ? $this->commandBus
             : $this->executionBus;
     }

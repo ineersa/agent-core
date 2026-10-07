@@ -12,6 +12,7 @@ use Ineersa\AgentCore\Domain\Message\ApplyShellCommand;
 use Ineersa\AgentCore\Domain\Message\CommitSubagentProgress;
 use Ineersa\AgentCore\Domain\Message\CompactionStepResult;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
+use Ineersa\AgentCore\Domain\Message\DurableExecutionResult;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
@@ -94,13 +95,14 @@ final readonly class RunOrchestrator
      * Processes LlmStepResult message to update run state with LLM output.
      */
     #[AsMessageHandler(bus: 'agent.command.bus')]
-    public function onLlmStepResult(LlmStepResult $message): void
+    public function onLlmStepResult(LlmStepResult $message, ?DurableExecutionResult $durableResult = null): void
     {
         $this->dispatch(
             'turn.orchestrator.llm_result',
             self::ScopeLlmResult,
             $message,
             ['run_id' => $message->runId(), 'turn_no' => $message->turnNo(), 'step_id' => $message->stepId()],
+            $durableResult,
         );
     }
 
@@ -110,23 +112,18 @@ final readonly class RunOrchestrator
         $this->runMessageProcessor->process('execution.outcome_unknown', $message);
     }
 
-    #[AsMessageHandler(bus: 'agent.command.bus')]
-    public function onToolExecutionOutcomeUnknown(\Ineersa\AgentCore\Domain\Message\ToolExecutionOutcomeUnknown $message): void
-    {
-        $this->runMessageProcessor->process('tool_execution.outcome_unknown', $message);
-    }
-
     /**
      * Handles ToolCallResult message to process tool execution outcomes.
      */
     #[AsMessageHandler(bus: 'agent.command.bus')]
-    public function onToolCallResult(ToolCallResult $message): void
+    public function onToolCallResult(ToolCallResult $message, ?DurableExecutionResult $durableResult = null): void
     {
         $this->dispatch(
             'turn.orchestrator.tool_result',
             self::ScopeToolResult,
             $message,
             ['run_id' => $message->runId(), 'turn_no' => $message->turnNo(), 'step_id' => $message->stepId(), 'tool_call_id' => $message->toolCallId],
+            $durableResult,
         );
     }
 
@@ -152,13 +149,14 @@ final readonly class RunOrchestrator
      * Processes CompactionStepResult message to finalize compaction.
      */
     #[AsMessageHandler(bus: 'agent.command.bus')]
-    public function onCompactionStepResult(CompactionStepResult $message): void
+    public function onCompactionStepResult(CompactionStepResult $message, ?DurableExecutionResult $durableResult = null): void
     {
         $this->dispatch(
             'result.compaction',
             self::ScopeCompactionResult,
             $message,
             ['run_id' => $message->runId(), 'turn_no' => $message->turnNo(), 'step_id' => $message->stepId()],
+            $durableResult,
         );
     }
 
@@ -183,9 +181,10 @@ final readonly class RunOrchestrator
         string $scope,
         AbstractAgentBusMessage $message,
         ?array $spanAttributes = null,
+        ?DurableExecutionResult $durableResult = null,
     ): void {
-        $this->withLogContext($message->runId(), $eventType, function () use ($scope, $message, $eventType, $spanAttributes): void {
-            $handle = fn () => $this->runMessageProcessor->process($scope, $message);
+        $this->withLogContext($message->runId(), $eventType, function () use ($scope, $message, $eventType, $spanAttributes, $durableResult): void {
+            $handle = fn () => $this->runMessageProcessor->process($scope, $message, durableResult: $durableResult);
 
             if (null === $this->tracer || null === $spanAttributes) {
                 $handle();

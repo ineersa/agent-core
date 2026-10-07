@@ -21,16 +21,9 @@ interface ToolBatchStoreInterface
 
     public function hasUnresolvedExecution(string $runId, ?string $toolCallId = null): bool;
 
-    public function hasOutcomeUnknown(string $runId): bool;
-
-    /** @return list<\Ineersa\AgentCore\Domain\Message\ToolExecutionOutcomeUnknown> */
-    public function unknownExecutionsForRepair(string $runId): array;
-
-    public function recoverResultPublication(string $runId, int $turnNo, string $stepId, string $key, string $claim): void;
-
     /**
-     * Drops completed tool-result bodies after durable Consumed/Stale disposition
-     * and batch finalization. Keeps scalar authorization fences. One snapshot page.
+     * Deletes wholly finished scheduling snapshots once human waits and ordered
+     * result buffering are complete. Scalar invocation fences live in the SQL ledger.
      *
      * @return string next snapshot filename cursor, or empty when exhausted for the run
      */

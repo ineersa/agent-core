@@ -6,6 +6,7 @@ namespace Ineersa\AgentCore\Tests\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Pipeline\ExecutionOutcomeUnknownHandler;
 use Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Coordination\ConsumeExecutionUnknownDTO;
 use Ineersa\AgentCore\Domain\Message\ExecutionOutcomeUnknown;
 use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
@@ -41,7 +42,9 @@ final class ExecutionOutcomeUnknownHandlerTest extends TestCase
         $notice = new ExecutionOutcomeUnknown('1', $turn, $step, $attempt, hash('sha256', '1|'.$call), 'effect', 'claim');
         $store = $this->createMock(ExecutionOperationStoreInterface::class);
         $store->expects($this->once())->method('unknownNoticePending')->with($notice)->willReturn(true);
-        $result = (new ExecutionOutcomeUnknownHandler($store))->handle($notice, $state);
+        $batches = $this->createMock(ToolBatchStoreInterface::class);
+        $batches->expects($this->never())->method('load');
+        $result = (new ExecutionOutcomeUnknownHandler($store, $batches))->handle($notice, $state);
         $this->assertNotNull($result->nextState);
         $this->assertSame($fails ? RunStatus::Failed : RunStatus::Running, $result->nextState->status);
         $this->assertCount($fails ? 1 : 0, $result->events);

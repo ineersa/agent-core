@@ -10,13 +10,15 @@ use Ineersa\AgentCore\Application\Handler\ExecutionOperationMapper;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
-use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Domain\Coordination\ExecutionAuthorizationStamp;
 use Ineersa\AgentCore\Domain\Coordination\ExecutionResultDispositionDTO;
 use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
 use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
 use Ineersa\AgentCore\Domain\Message\DurableExecutionResult;
+use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ExecutionRequest;
+use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
@@ -39,8 +41,8 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
         private Filesystem $filesystem,
         #[Autowire(service: 'hatfield.controller.session_owner.lock_factory')] private LockFactory $claimLockFactory,
         private RunLockManager $runLocks,
-        private ToolBatchStoreInterface $toolBatches,
         private PreparedTransitionEventStoreInterface $transitions,
+        private DeferredToolCompletionRepositoryInterface $deferredRepository,
         private LoggerInterface $logger = new NullLogger(),
     ) {
         $this->instance = bin2hex(random_bytes(32));
@@ -62,13 +64,37 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
         $this->withUnknownExclusion($notice, static fn () => null);
     }
 
+    public function matchesCurrentAuthorizedToolInvocation(\Ineersa\AgentCore\Domain\Message\ExecutionOutcomeUnknown $notice, ExecuteToolCall $authorizedCall): bool
+    {
+        if ($authorizedCall->runId() !== $notice->runId()
+            || $authorizedCall->turnNo() !== $notice->turnNo()
+            || $authorizedCall->stepId() !== $notice->stepId()
+            || '' === $authorizedCall->toolCallId
+            || $authorizedCall->attempt() !== $notice->attempt()
+            || $authorizedCall->idempotencyKey() !== $notice->idempotencyKey()) {
+            return false;
+        }
+
+        $record = $this->connection->fetchAssociative(
+            'SELECT effect_id, claim_token, request_type, logical_tool_call_id, attempt, idempotency_key FROM execution_operation WHERE effect_id = ?',
+            [$notice->effectId],
+        );
+        if (false === $record) {
+            return false;
+        }
+
+        return $record['effect_id'] === $notice->effectId
+            && $record['claim_token'] === $notice->claimToken
+            && ExecuteToolCall::class === $record['request_type']
+            && $record['logical_tool_call_id'] === $authorizedCall->toolCallId
+            && (int) $record['attempt'] === $authorizedCall->attempt()
+            && $record['idempotency_key'] === $authorizedCall->idempotencyKey();
+    }
+
     public function retireUnknownExecution(\Ineersa\AgentCore\Domain\Coordination\RetireUnknownExecutionDTO $action, VerifiedTransitionDTO $transition): void
     {
         $action->verifyTransition($transition);
         $notice = $action->notice;
-        if (!$notice instanceof \Ineersa\AgentCore\Domain\Message\ExecutionOutcomeUnknown) {
-            throw new \RuntimeException('Generic retirement requires a generic execution receipt.');
-        }
         $this->runLocks->synchronized($notice->runId(), function () use ($notice, $transition): void {
             $record = $this->record($notice->effectId);
             if ((array) $this->unknownNotice($record) !== (array) $notice) {
@@ -126,8 +152,8 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
         $bytes = $this->encodeRequest($request);
         $hash = hash('sha256', $bytes);
         $matched = false;
-        foreach ([...($transition->work['effects'] ?? []), ...($transition->work['post_commit_effects'] ?? [])] as $effect) {
-            if ($effect instanceof AbstractAgentBusMessage && $effect::class === $request::class && hash('sha256', $this->encodeRequest($effect)) === $hash) {
+        foreach ($this->authorizedRequests($transition) as $effect) {
+            if ($effect::class === $request::class && hash('sha256', $this->encodeRequest($effect)) === $hash) {
                 $matched = true;
                 break;
             }
@@ -136,11 +162,13 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
             throw new \RuntimeException('Execution request is absent from verified owner work.');
         }
         $id = hash('sha256', $transition->identity.'|'.$hash);
+        $logicalToolCallId = $request instanceof ExecuteToolCall ? $request->toolCallId : null;
         $this->seal($this->path($request->runId(), $id, 'request'), $bytes);
         try {
             $this->connection->insert('execution_operation', [
                 'effect_id' => $id, 'run_id' => $request->runId(), 'turn_no' => $request->turnNo(), 'step_id' => $request->stepId(), 'attempt' => $request->attempt(), 'idempotency_key' => $request->idempotencyKey(),
                 'request_type' => $request::class, 'result_type' => ExecutionOperationMapper::resultType($request), 'request_hash' => $hash, 'request_bytes' => \strlen($bytes), 'owner_generation' => $transition->identity, 'state' => 'Prepared',
+                'logical_tool_call_id' => $logicalToolCallId, 'deferred_id' => null,
             ]);
         } catch (UniqueConstraintViolationException $exception) {
             $existing = $this->record($id);
@@ -185,16 +213,16 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
             )
             SELECT operation.* FROM execution_operation operation
             JOIN owned_runs owned ON owned.run_id = operation.run_id
-            WHERE (operation.state IN ('Armed', 'Running', 'ResultReady') OR (operation.state = 'OutcomeUnknown' AND operation.unknown_notice_transition IS NULL)) AND operation.effect_id > :after
+            WHERE (operation.state IN ('Armed', 'Running', 'Deferred', 'ResultReady') OR (operation.state = 'OutcomeUnknown' AND operation.unknown_notice_transition IS NULL)) AND operation.effect_id > :after
             ORDER BY operation.effect_id LIMIT 32
             SQL, ['owner' => $ownerSessionId, 'after' => $afterEffectId]);
         $deliveries = [];
         foreach ($records as $record) {
             try {
-                if ('Running' === $record['state']) {
+                if ('Running' === $record['state'] || 'Deferred' === $record['state']) {
                     $record = $this->recoverClaim($record);
                 }
-                if ('Running' === $record['state']) {
+                if ('Running' === $record['state'] || 'Deferred' === $record['state']) {
                     $deliveries[$record['effect_id']] = null;
                     continue;
                 }
@@ -235,7 +263,7 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
     public function resolveRequest(ExecutionRequest $reference, ExecutionAuthorizationStamp $authorization, string $claim): AbstractAgentBusMessage
     {
         $record = $this->matchingRequest($reference, $authorization);
-        if ('Running' !== $record['state'] || $record['claim_token'] !== $claim) {
+        if (!\in_array($record['state'], ['Running', 'Deferred'], true) || $record['claim_token'] !== $claim) {
             throw new \RuntimeException('Execution input requires its running claim.');
         }
         $bytes = $this->readSealed($this->path($reference->runId(), $reference->effectId, 'request'), $reference->sha256, $reference->bytes);
@@ -246,6 +274,114 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
         }
 
         return $request;
+    }
+
+    public function peekRequest(ExecutionRequest $reference): AbstractAgentBusMessage
+    {
+        $record = $this->record($reference->effectId);
+        if ($record['request_hash'] !== $reference->sha256 || (int) $record['request_bytes'] !== $reference->bytes || $record['request_type'] !== $reference->requestType
+            || $record['run_id'] !== $reference->runId() || (int) $record['turn_no'] !== $reference->turnNo() || $record['step_id'] !== $reference->stepId()
+            || (int) $record['attempt'] !== $reference->attempt() || $record['idempotency_key'] !== $reference->idempotencyKey()) {
+            throw new \RuntimeException('Execution reference differs from its owner authorization.');
+        }
+        $bytes = $this->readSealed($this->path($reference->runId(), $reference->effectId, 'request'), $reference->sha256, $reference->bytes);
+        $request = (new PhpSerializer())->decode(['body' => $bytes])->getMessage();
+        if (!$request instanceof AbstractAgentBusMessage || !ExecutionOperationMapper::supports($request) || $request::class !== $reference->requestType) {
+            throw new \RuntimeException('Sealed execution request identity mismatch.');
+        }
+
+        return $request;
+    }
+
+    public function transferToDeferred(ExecutionRequest $reference, ExecutionAuthorizationStamp $authorization, string $claim, string $deferredId): void
+    {
+        if ('' === $deferredId) {
+            throw new \InvalidArgumentException('Deferred ownership requires a durable deferred id.');
+        }
+        $this->runLocks->synchronized($reference->runId(), function () use ($reference, $authorization, $claim, $deferredId): void {
+            $record = $this->matchingRequest($reference, $authorization);
+            if ($record['claim_token'] === $claim && $record['deferred_id'] === $deferredId
+                && \in_array($record['state'], ['Deferred', 'ResultReady', 'Consumed', 'Stale'], true)) {
+                // Completion may publish before transfer; the same deferred handoff is a no-op.
+                return;
+            }
+            if ('Running' !== $record['state'] || $record['claim_token'] !== $claim || null !== $record['result_hash']) {
+                throw new \RuntimeException('Deferred transfer requires the running claim without a terminal result.');
+            }
+            $updated = $this->connection->executeStatement(
+                "UPDATE execution_operation SET state = 'Deferred', deferred_id = ? WHERE effect_id = ? AND claim_token = ? AND state = 'Running' AND result_hash IS NULL",
+                [$deferredId, $reference->effectId, $claim],
+            );
+            if (1 !== $updated) {
+                throw new \RuntimeException('Deferred transfer lost its precise claim.');
+            }
+        });
+    }
+
+    public function saveDeferredResult(string $deferredId, AbstractAgentBusMessage $result): DurableExecutionResult
+    {
+        if ('' === $deferredId) {
+            throw new \InvalidArgumentException('Deferred completion requires a durable deferred id.');
+        }
+        $correlation = $this->deferredRepository->findByDeferredId($deferredId);
+        if (null === $correlation) {
+            throw new \RuntimeException('Deferred completion has no durable registration.');
+        }
+        if (!$result instanceof ToolCallResult) {
+            throw new \RuntimeException('Deferred completion requires a tool-call result envelope.');
+        }
+
+        return $this->runLocks->synchronized($correlation->runId, function () use ($correlation, $deferredId, $result): DurableExecutionResult {
+            $records = $this->connection->fetchAllAssociative(
+                'SELECT * FROM execution_operation WHERE run_id = ? AND turn_no = ? AND step_id = ? AND logical_tool_call_id = ? AND attempt = ? AND idempotency_key = ? AND request_type = ? ORDER BY effect_id LIMIT 2',
+                [$correlation->runId, $correlation->turnNo, $correlation->stepId, $correlation->toolCallId, $correlation->attempt, $correlation->idempotencyKey, ExecuteToolCall::class],
+            );
+            if ([] === $records) {
+                throw new \RuntimeException('Deferred completion has no matching deferred invocation.');
+            }
+            if (1 !== \count($records)) {
+                throw new \RuntimeException('Deferred completion has ambiguous deferred ownership.');
+            }
+            $current = $this->record($records[0]['effect_id']);
+            if ($current['run_id'] !== $correlation->runId || (int) $current['turn_no'] !== $correlation->turnNo || $current['step_id'] !== $correlation->stepId
+                || $current['logical_tool_call_id'] !== $correlation->toolCallId || (int) $current['attempt'] !== $correlation->attempt
+                || $current['idempotency_key'] !== $correlation->idempotencyKey || ExecuteToolCall::class !== $current['request_type']) {
+                throw new \RuntimeException('Deferred completion differs from its registered invocation.');
+            }
+            if (null !== $current['deferred_id'] && $current['deferred_id'] !== $deferredId) {
+                throw new \RuntimeException('Deferred completion targets a different deferred ownership generation.');
+            }
+            if ($result->runId() !== $current['run_id'] || $result->turnNo() !== (int) $current['turn_no'] || $result->stepId() !== $current['step_id']
+                || $result->attempt() !== (int) $current['attempt'] || $result->idempotencyKey() !== $current['idempotency_key']
+                || $result->toolCallId !== $current['logical_tool_call_id']) {
+                throw new \RuntimeException('Deferred completion envelope differs from its authorized invocation.');
+            }
+            if (\in_array($current['state'], ['ResultReady', 'Consumed', 'Stale'], true)) {
+                if ($current['deferred_id'] !== $deferredId || !\is_string($current['claim_token'])) {
+                    throw new \RuntimeException('Deferred completion lost its precise ownership.');
+                }
+
+                return $this->replayPublishedResult($current, $result);
+            }
+            if (!\in_array($current['state'], ['Running', 'Deferred'], true) || !\is_string($current['claim_token']) || null !== $current['result_hash']) {
+                throw new \RuntimeException('Deferred completion lost its precise ownership.');
+            }
+            if ('Deferred' === $current['state'] && $current['deferred_id'] !== $deferredId) {
+                throw new \RuntimeException('Deferred completion targets a different deferred ownership generation.');
+            }
+            if ('Running' === $current['state'] || null === $current['deferred_id']) {
+                $linked = $this->connection->executeStatement(
+                    "UPDATE execution_operation SET deferred_id = ?, state = CASE WHEN state = 'Running' THEN 'Deferred' ELSE state END WHERE effect_id = ? AND claim_token = ? AND state IN ('Running', 'Deferred') AND result_hash IS NULL AND (deferred_id IS NULL OR deferred_id = ?)",
+                    [$deferredId, $current['effect_id'], $current['claim_token'], $deferredId],
+                );
+                if (1 !== $linked) {
+                    throw new \RuntimeException('Deferred completion could not attach its durable ownership.');
+                }
+                $current = $this->record($current['effect_id']);
+            }
+
+            return $this->publishResult($current, $current['claim_token'], $result, ['Deferred']);
+        });
     }
 
     public function resultForClaim(ExecutionRequest $reference, ExecutionAuthorizationStamp $authorization, string $claim): DurableExecutionResult
@@ -265,24 +401,14 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
     public function saveResult(AbstractAgentBusMessage $request, ExecutionAuthorizationStamp $authorization, string $claim, AbstractAgentBusMessage $result): DurableExecutionResult
     {
         $record = $this->record($authorization->effectId);
-        if ($record['request_hash'] !== $authorization->requestHash || $record['claim_token'] !== $claim || !\in_array($record['state'], ['Running', 'ResultReady'], true)
-            || $result::class !== $record['result_type'] || $result->runId() !== $request->runId() || $result->turnNo() !== $request->turnNo() || $result->stepId() !== $request->stepId() || $result->attempt() !== $request->attempt() || $result->idempotencyKey() !== $request->idempotencyKey()) {
+        if ($record['request_hash'] !== $authorization->requestHash || $record['claim_token'] !== $claim || !\in_array($record['state'], ['Running', 'ResultReady'], true)) {
             throw new \RuntimeException('Execution result differs from its running authorization.');
         }
-        $body = (new PhpSerializer())->encode(new Envelope($result))['body'];
-        $bytes = json_encode(['schema' => 1, 'effect_id' => $authorization->effectId, 'claim_token' => $claim, 'body' => $body, 'sha256' => hash('sha256', $body), 'bytes' => \strlen($body)], \JSON_THROW_ON_ERROR);
-        $this->checkBound($bytes);
-        $hash = hash('sha256', $bytes);
-        // The deterministic claim file permits later adoption after file publication
-        // but before ResultReady. No missing notification can authorize a second call.
-        $this->seal($this->path($request->runId(), $authorization->effectId, hash('sha256', $claim).'.result'), $bytes);
-        $updated = $this->connection->executeStatement("UPDATE execution_operation SET state = 'ResultReady', result_hash = ?, result_bytes = ? WHERE effect_id = ? AND claim_token = ? AND state = 'Running'", [$hash, \strlen($bytes), $authorization->effectId, $claim]);
-        $current = $this->record($authorization->effectId);
-        if ((1 !== $updated && 'ResultReady' !== $current['state']) || $current['result_hash'] !== $hash || (int) $current['result_bytes'] !== \strlen($bytes)) {
-            throw new \RuntimeException('Conflicting durable execution result.');
+        if ('ResultReady' === $record['state']) {
+            return $this->replayPublishedResult($record, $result);
         }
 
-        return $this->reference($current);
+        return $this->publishResult($record, $claim, $result, ['Running']);
     }
 
     public function resolveResult(DurableExecutionResult $reference): AbstractAgentBusMessage
@@ -417,6 +543,28 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
         }
     }
 
+    /** @return list<AbstractAgentBusMessage> */
+    private function authorizedRequests(VerifiedTransitionDTO $transition): array
+    {
+        $requests = [];
+        foreach ([...($transition->work['effects'] ?? []), ...($transition->work['post_commit_effects'] ?? [])] as $effect) {
+            if ($effect instanceof AbstractAgentBusMessage && ExecutionOperationMapper::supports($effect)) {
+                $requests[] = $effect;
+            }
+        }
+        foreach ($transition->work['actions'] ?? [] as $action) {
+            if ($action instanceof \Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO) {
+                foreach ($action->effects as $effect) {
+                    if ($effect instanceof AbstractAgentBusMessage && ExecutionOperationMapper::supports($effect)) {
+                        $requests[] = $effect;
+                    }
+                }
+            }
+        }
+
+        return $requests;
+    }
+
     private function withUnknownExclusion(\Ineersa\AgentCore\Domain\Message\ExecutionOutcomeUnknown $notice, callable $decision): void
     {
         $this->runLocks->synchronized($notice->runId(), function () use ($notice, $decision): void {
@@ -440,15 +588,31 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
 
     private function claimUnderRunLock(ExecutionRequest $request, ExecutionAuthorizationStamp $authorization): string|DurableExecutionResult|null
     {
+        $this->transitions->assertTransitionReady($request->runId());
         $record = $this->matchingRequest($request, $authorization);
         if ('ResultReady' === $record['state']) {
             return $this->reference($record);
         }
-        if ('Armed' !== $record['state']) {
+        if ('Running' === $record['state'] && $record['worker_instance'] === $this->instance && \is_string($record['claim_token'])) {
+            $path = $this->path($request->runId(), $request->effectId, hash('sha256', $record['claim_token']).'.result');
+            if (is_file($path)) {
+                $bytes = file_get_contents($path, false, null, 0, self::MAX_PAYLOAD_BYTES + 1);
+                if (false === $bytes) {
+                    throw new \RuntimeException('Unable to read sealed execution result.');
+                }
+                $this->checkBound($bytes);
+                $this->decodeResultSeal($bytes, $record);
+                $this->connection->executeStatement("UPDATE execution_operation SET state = 'ResultReady', result_hash = ?, result_bytes = ? WHERE effect_id = ? AND claim_token = ? AND worker_instance = ? AND state = 'Running'", [hash('sha256', $bytes), \strlen($bytes), $request->effectId, $record['claim_token'], $this->instance]);
+                $current = $this->record($authorization->effectId);
+                if ('ResultReady' === $current['state']) {
+                    return $this->reference($current);
+                }
+            }
+
             return null;
         }
-        if ($this->toolBatches->hasOutcomeUnknown($request->runId())) {
-            throw new \RuntimeException(\Ineersa\AgentCore\Domain\Message\ExecutionOutcomeUnknown::ERROR_MESSAGE);
+        if ('Armed' !== $record['state']) {
+            return null;
         }
         // Publish no Running receipt until process-owned, nonexpiring exclusion
         // is held. Retain it for the store/worker lifetime, including exceptions.
@@ -464,6 +628,88 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
         }
 
         return $claim;
+    }
+
+    /**
+     * @param array<string, mixed> $record
+     * @param list<string>         $publishableStates
+     */
+    private function publishResult(array $record, string $claim, AbstractAgentBusMessage $result, array $publishableStates): DurableExecutionResult
+    {
+        if ($record['claim_token'] !== $claim || $result::class !== $record['result_type']
+            || $result->runId() !== $record['run_id'] || $result->turnNo() !== (int) $record['turn_no'] || $result->stepId() !== $record['step_id']
+            || $result->attempt() !== (int) $record['attempt'] || $result->idempotencyKey() !== $record['idempotency_key']) {
+            throw new \RuntimeException('Execution result differs from its running authorization.');
+        }
+        if ('ResultReady' === $record['state']) {
+            return $this->replayPublishedResult($record, $result);
+        }
+        if (!\in_array($record['state'], $publishableStates, true)) {
+            throw new \RuntimeException('Execution result differs from its running authorization.');
+        }
+        $body = (new PhpSerializer())->encode(new Envelope($result))['body'];
+        $bytes = json_encode(['schema' => 1, 'effect_id' => $record['effect_id'], 'claim_token' => $claim, 'body' => $body, 'sha256' => hash('sha256', $body), 'bytes' => \strlen($body)], \JSON_THROW_ON_ERROR);
+        $this->checkBound($bytes);
+        $hash = hash('sha256', $bytes);
+        // The deterministic claim file permits later adoption after file publication
+        // but before ResultReady. No missing notification can authorize a second call.
+        $path = $this->path($record['run_id'], $record['effect_id'], hash('sha256', $claim).'.result');
+        if (is_file($path)) {
+            $existing = file_get_contents($path, false, null, 0, self::MAX_PAYLOAD_BYTES + 1);
+            if (false === $existing) {
+                throw new \RuntimeException('Unable to read sealed execution result.');
+            }
+            $this->checkBound($existing);
+            if (hash('sha256', $existing) !== $hash) {
+                throw new \RuntimeException('Conflicting durable execution result.');
+            }
+        } else {
+            $this->seal($path, $bytes);
+        }
+        $placeholders = implode(', ', array_fill(0, \count($publishableStates), '?'));
+        $updated = $this->connection->executeStatement(
+            "UPDATE execution_operation SET state = 'ResultReady', result_hash = ?, result_bytes = ? WHERE effect_id = ? AND claim_token = ? AND state IN ($placeholders)",
+            [$hash, \strlen($bytes), $record['effect_id'], $claim, ...$publishableStates],
+        );
+        $current = $this->record($record['effect_id']);
+        if (1 === $updated || ('ResultReady' === $current['state'] && $current['result_hash'] === $hash && (int) $current['result_bytes'] === \strlen($bytes) && $current['claim_token'] === $claim)) {
+            return $this->reference($current);
+        }
+        // Surviving claimant: seal exists, DB stayed Running after a previous update failure.
+        if ('Running' === $current['state'] && $current['claim_token'] === $claim && $this->workerLock->isAcquired() && $current['worker_instance'] === $this->instance
+            && \in_array('Running', $publishableStates, true)) {
+            $retry = $this->connection->executeStatement("UPDATE execution_operation SET state = 'ResultReady', result_hash = ?, result_bytes = ? WHERE effect_id = ? AND claim_token = ? AND worker_instance = ? AND state = 'Running'", [$hash, \strlen($bytes), $record['effect_id'], $claim, $this->instance]);
+            $current = $this->record($record['effect_id']);
+            if (1 === $retry || ('ResultReady' === $current['state'] && $current['result_hash'] === $hash && (int) $current['result_bytes'] === \strlen($bytes))) {
+                return $this->reference($current);
+            }
+        }
+        throw new \RuntimeException('Conflicting durable execution result.');
+    }
+
+    /** @param array<string, mixed> $record */
+    private function replayPublishedResult(array $record, AbstractAgentBusMessage $result): DurableExecutionResult
+    {
+        if (!\in_array($record['state'], ['ResultReady', 'Consumed', 'Stale'], true) || !\is_string($record['claim_token']) || !\is_string($record['result_hash'])) {
+            throw new \RuntimeException('Deferred completion lost its precise ownership.');
+        }
+        $reference = $this->reference($record);
+        if ($this->payloadReclaimed($record)) {
+            $body = (new PhpSerializer())->encode(new Envelope($result))['body'];
+            $bytes = json_encode(['schema' => 1, 'effect_id' => $record['effect_id'], 'claim_token' => $record['claim_token'], 'body' => $body, 'sha256' => hash('sha256', $body), 'bytes' => \strlen($body)], \JSON_THROW_ON_ERROR);
+            $this->checkBound($bytes);
+            if (hash('sha256', $bytes) !== $record['result_hash'] || \strlen($bytes) !== (int) $record['result_bytes']) {
+                throw new \RuntimeException('Conflicting durable execution result.');
+            }
+
+            return $reference;
+        }
+        $existing = $this->resolveResult($reference);
+        if ((array) $existing !== (array) $result) {
+            throw new \RuntimeException('Conflicting durable execution result.');
+        }
+
+        return $reference;
     }
 
     /** @return array<string, mixed> */
@@ -521,7 +767,7 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
         }
         try {
             $current = $this->record($record['effect_id']);
-            if ('Running' !== $current['state'] || $current['claim_token'] !== $record['claim_token'] || $current['claim_lock_key'] !== $key) {
+            if ((!\in_array($current['state'], ['Running', 'Deferred'], true)) || $current['claim_token'] !== $record['claim_token'] || $current['claim_lock_key'] !== $key) {
                 return $current;
             }
             $path = $this->path($record['run_id'], $record['effect_id'], hash('sha256', $record['claim_token']).'.result');
@@ -535,8 +781,12 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
                 }
                 $this->checkBound($bytes);
                 $this->decodeResultSeal($bytes, $current);
-                $this->connection->executeStatement("UPDATE execution_operation SET state = 'ResultReady', result_hash = ?, result_bytes = ? WHERE effect_id = ? AND claim_token = ? AND claim_lock_key = ? AND state = 'Running'", [hash('sha256', $bytes), \strlen($bytes), $record['effect_id'], $record['claim_token'], $key]);
+                $this->connection->executeStatement("UPDATE execution_operation SET state = 'ResultReady', result_hash = ?, result_bytes = ? WHERE effect_id = ? AND claim_token = ? AND claim_lock_key = ? AND state IN ('Running', 'Deferred')", [hash('sha256', $bytes), \strlen($bytes), $record['effect_id'], $record['claim_token'], $key]);
             } else {
+                if ('Deferred' === $current['state']) {
+                    // Deferred ownership waits on the durable domain lifecycle, not this worker.
+                    return $current;
+                }
                 $this->connection->executeStatement("UPDATE execution_operation SET state = 'OutcomeUnknown' WHERE effect_id = ? AND claim_token = ? AND claim_lock_key = ? AND state = 'Running'", [$record['effect_id'], $record['claim_token'], $key]);
             }
 

@@ -81,4 +81,10 @@ class ExecutionOperation
 
     #[ORM\Column(name: 'disposition_transition', type: 'string', length: 64, nullable: true)]
     public ?string $dispositionTransition = null;
+
+    #[ORM\Column(name: 'logical_tool_call_id', type: 'string', length: 255, nullable: true)]
+    public ?string $logicalToolCallId = null;
+
+    #[ORM\Column(name: 'deferred_id', type: 'string', length: 255, nullable: true)]
+    public ?string $deferredId = null;
 }

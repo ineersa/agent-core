@@ -19,6 +19,12 @@ interface ExecutionOperationStoreInterface
 
     public function assertUnknownRepairable(\Ineersa\AgentCore\Domain\Message\ExecutionOutcomeUnknown $notice): void;
 
+    /**
+     * True when the notice names the currently authorized ordinary-tool invocation
+     * for its logical tool-call id. Uses scheduling evidence and ledger metadata.
+     */
+    public function matchesCurrentAuthorizedToolInvocation(\Ineersa\AgentCore\Domain\Message\ExecutionOutcomeUnknown $notice, \Ineersa\AgentCore\Domain\Message\ExecuteToolCall $authorizedCall): bool;
+
     public function retireUnknownExecution(\Ineersa\AgentCore\Domain\Coordination\RetireUnknownExecutionDTO $action, VerifiedTransitionDTO $transition): void;
 
     public function repairDelivery(string $runId, \Ineersa\AgentCore\Domain\Run\CurrentOperationDTO $operation, string $requestType): ?\Symfony\Component\Messenger\Envelope;
@@ -37,9 +43,18 @@ interface ExecutionOperationStoreInterface
 
     public function resolveRequest(ExecutionRequest $reference, ExecutionAuthorizationStamp $authorization, string $claim): AbstractAgentBusMessage;
 
+    /** Read a sealed invocation without claiming it. Used for outbound routing only. */
+    public function peekRequest(ExecutionRequest $reference): AbstractAgentBusMessage;
+
     public function resultForClaim(ExecutionRequest $reference, ExecutionAuthorizationStamp $authorization, string $claim): DurableExecutionResult;
 
     public function saveResult(AbstractAgentBusMessage $request, ExecutionAuthorizationStamp $authorization, string $claim, AbstractAgentBusMessage $result): DurableExecutionResult;
+
+    /** Transfer a running ordinary-tool claim to deferred ownership without filling its result. */
+    public function transferToDeferred(ExecutionRequest $reference, ExecutionAuthorizationStamp $authorization, string $claim, string $deferredId): void;
+
+    /** Attach a deferred completion to the exact deferred invocation and return its durable reference. */
+    public function saveDeferredResult(string $deferredId, AbstractAgentBusMessage $result): DurableExecutionResult;
 
     public function resolveResult(DurableExecutionResult $reference): AbstractAgentBusMessage;
 

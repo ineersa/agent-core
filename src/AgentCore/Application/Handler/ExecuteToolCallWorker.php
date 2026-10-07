@@ -20,30 +20,26 @@ use Ineersa\AgentCore\Infrastructure\RunLogContext;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\RunCancellationToken;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
-use Symfony\Component\Messenger\Exception\ExceptionInterface;
-use Symfony\Component\Messenger\MessageBusInterface;
 
 final readonly class ExecuteToolCallWorker
 {
     public function __construct(
         private ToolExecutorInterface $toolExecutor,
-        private MessageBusInterface $commandBus,
         private DeferredToolCompletionRepositoryInterface $deferredToolCompletionRepository,
         private ToolExecutionResultStore $resultStore,
         private RunOperationalStatusReaderInterface $statusReader,
-        private \Ineersa\AgentCore\Contract\Tool\ToolExecutionAuthorizationInterface $toolAuthorization,
         private ?RunTracer $tracer = null,
         private ?EventDispatcherInterface $eventDispatcher = null,
         private ?ToolLaunchInputStoreInterface $launchInputStore = null,
-        private ?ToolBatchCollector $toolBatchCollector = null,
     ) {
     }
 
     /**
-     * handles ExecuteToolCall messages on the agent.execution.bus.
+     * Handles sealed ExecuteToolCall invocations on the agent.execution.bus.
+     * Claim/save/notify belong to ExecutionAuthorizationMiddleware.
      */
     #[AsMessageHandler(bus: 'agent.execution.bus')]
-    public function __invoke(ExecuteToolCall $message): void
+    public function __invoke(ExecuteToolCall $message): ?ToolCallResult
     {
         RunLogContext::enter([
             'run_id' => $message->runId(),
@@ -55,38 +51,22 @@ final readonly class ExecuteToolCallWorker
         ]);
 
         try {
-            $execute = function () use ($message): void {
+            $execute = function () use ($message): ?ToolCallResult {
                 $existing = $this->deferredToolCompletionRepository->findByRunAndToolCall($message->runId(), $message->toolCallId);
                 if (null !== $existing) {
-                    $this->toolAuthorization->transferToDeferred($message, $existing->deferredId);
                     $this->execute($message);
 
-                    return;
+                    return null;
                 }
-                $claim = $this->toolAuthorization->claim($message);
-                if (null === $claim) {
-                    return; // Running work is never automatically repeated.
-                }
-                $outcome = $claim instanceof ToolCallResult ? $claim : $this->execute($message);
-                if (null !== $outcome && \is_string($claim)) {
-                    // This write must succeed before result notification or delivery ACK.
-                    $this->toolAuthorization->saveResult($message, $claim, $outcome);
-                }
+                $outcome = $this->execute($message);
                 if (null === $outcome) {
                     $registration = $this->deferredToolCompletionRepository->findByRunAndToolCall($message->runId(), $message->toolCallId);
                     if (null === $registration) {
                         throw new \RuntimeException('Deferred execution has no durable registration.');
                     }
-                    $this->toolAuthorization->transferToDeferred($message, $registration->deferredId);
                     $this->dispatchDeferredRegistered($registration);
 
-                    return;
-                }
-
-                try {
-                    $this->commandBus->dispatch($outcome);
-                } catch (ExceptionInterface $exception) {
-                    throw new \RuntimeException('Failed to dispatch tool result to command bus.', previous: $exception);
+                    return null;
                 }
 
                 $this->resultStore->releaseCompleted(
@@ -95,15 +75,15 @@ final readonly class ExecuteToolCallWorker
                     $message->toolName,
                     $message->toolIdempotencyKey,
                 );
+
+                return $outcome;
             };
 
             if (null === $this->tracer) {
-                $execute();
-
-                return;
+                return $execute();
             }
 
-            $this->tracer->inSpan('turn.execution.tool_worker', [
+            return $this->tracer->inSpan('turn.execution.tool_worker', [
                 'run_id' => $message->runId(),
                 'turn_no' => $message->turnNo(),
                 'step_id' => $message->stepId(),
@@ -130,20 +110,6 @@ final readonly class ExecuteToolCallWorker
         RunLogContext::enter(['event_type' => 'tool.execute.started']);
 
         try {
-            if (null !== $message->launchContext) {
-                // A synchronous result can already be durable while siblings are
-                // pending and canonical cleanup has removed this launch input.
-                // Durable collector reads release the decoded batch on return.
-                $stored = $this->toolBatchCollector?->getStoredResult($message->runId(), $message->turnNo(), $message->stepId(), $message->toolCallId);
-                if (null !== $stored && !$stored->isHumanInputSuspension()
-                    && $stored->runId() === $message->runId()
-                    && $stored->turnNo() === $message->turnNo()
-                    && $stored->stepId() === $message->stepId()
-                    && $stored->toolCallId === $message->toolCallId) {
-                    return $stored;
-                }
-            }
-
             $launchContext = null;
             if (null !== $message->launchContext) {
                 $reference = $message->launchContext;
@@ -162,15 +128,7 @@ final readonly class ExecuteToolCallWorker
             }
 
             $cancelToken = new RunCancellationToken($this->statusReader, $message->runId());
-
-            $batchToolCallCount = 1;
-            if (\is_array($message->assistantMessage)) {
-                $toolCallsInStep = $message->assistantMessage['tool_calls'] ?? null;
-                if (\is_array($toolCallsInStep) && [] !== $toolCallsInStep) {
-                    $batchToolCallCount = \count($toolCallsInStep);
-                }
-            }
-
+            $batchToolCallCount = max(1, $message->batchToolCallCount);
             $toolCall = new ToolCall(
                 toolCallId: $message->toolCallId,
                 toolName: $message->toolName,
@@ -189,8 +147,6 @@ final readonly class ExecuteToolCallWorker
                     'cancel_token' => $cancelToken,
                     'tools_ref' => $message->toolsRef,
                     'assistant_batch_tool_call_count' => $batchToolCallCount,
-                    // Internal only — never model args. Used by ExtensionToolHookEventSubscriber
-                    // to resume an exact approved call without re-prompting the originating hook.
                     'human_input_answer' => $message->humanInputAnswer,
                     'parent_model' => $message->parentModel,
                     'launch_context' => $launchContext,
@@ -198,7 +154,6 @@ final readonly class ExecuteToolCallWorker
             );
 
             $executeTool = fn () => $this->toolExecutor->execute($toolCall);
-
             $toolResult = null === $this->tracer
                 ? $executeTool()
                 : $this->tracer->inSpan('tool.call', [
@@ -207,13 +162,10 @@ final readonly class ExecuteToolCallWorker
                     'step_id' => $message->stepId(),
                     'tool_call_id' => $message->toolCallId,
                     'tool_name' => $message->toolName,
-                ], $executeTool)
-            ;
+                ], $executeTool);
 
             if ($this->isDeferredOutcome($toolResult)) {
-                $correlation = $this->registerDeferredExecution($message, $toolResult);
-                // The repository is now the durable dedupe source for deferred
-                // re-delivery; retaining the process-local marker would leak it.
+                $this->registerDeferredExecution($message, $toolResult);
                 $this->resultStore->releaseCompleted(
                     $message->runId(),
                     $message->toolCallId,
@@ -228,7 +180,7 @@ final readonly class ExecuteToolCallWorker
         } catch (\Throwable $exception) {
             return ToolCallResultFactory::fromExecuteToolCallAndThrowable($message, $exception);
         } finally {
-            RunLogContext::leave(); // event_type scope
+            RunLogContext::leave();
         }
     }
 
@@ -239,9 +191,7 @@ final readonly class ExecuteToolCallWorker
             return false;
         }
 
-        $raw = $details['raw_result'] ?? null;
-
-        return $raw instanceof DeferredToolCompletionOutcome;
+        return ($details['raw_result'] ?? null) instanceof DeferredToolCompletionOutcome;
     }
 
     private function registerDeferredExecution(ExecuteToolCall $message, ToolResult $toolResult): DeferredToolCompletionCorrelation
@@ -266,7 +216,7 @@ final readonly class ExecuteToolCallWorker
             mode: $message->mode,
             timeoutSeconds: $message->timeoutSeconds,
             maxParallelism: $message->maxParallelism,
-            assistantMessage: $message->assistantMessage,
+            assistantMessage: null,
             argSchema: $message->argSchema,
             toolsRef: $message->toolsRef,
         );
@@ -276,10 +226,6 @@ final readonly class ExecuteToolCallWorker
 
     private function dispatchDeferredRegistered(DeferredToolCompletionCorrelation $correlation): void
     {
-        if (null === $this->eventDispatcher) {
-            return;
-        }
-
-        $this->eventDispatcher->dispatch(new DeferredToolCompletionRegisteredEvent($correlation));
+        $this->eventDispatcher?->dispatch(new DeferredToolCompletionRegisteredEvent($correlation));
     }
 }

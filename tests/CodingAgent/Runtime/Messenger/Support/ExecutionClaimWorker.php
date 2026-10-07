@@ -33,7 +33,7 @@ $container = $kernel->getContainer()->get('test.service_container');
 $connection = $container->get('doctrine.dbal.connection_factory')->createConnection(['driver' => 'pdo_sqlite', 'path' => $database]);
 (new ApplicationMigrationExecutor($connection, new NullLogger()))();
 $paths = $container->get(ToolBatchRunStoragePathsInterface::class);
-$store = new DoctrineExecutionOperationStore($connection, $paths, new Filesystem(), $container->get('hatfield.controller.session_owner.lock_factory'), $container->get(Ineersa\AgentCore\Application\Handler\RunLockManager::class), $container->get(Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class), $container->get(PreparedTransitionEventStoreInterface::class));
+$store = new DoctrineExecutionOperationStore($connection, $paths, new Filesystem(), $container->get('hatfield.controller.session_owner.lock_factory'), $container->get(Ineersa\AgentCore\Application\Handler\RunLockManager::class), $container->get(PreparedTransitionEventStoreInterface::class), $container->get(Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface::class));
 $request = match ($kind) {
     'llm' => new ExecuteLlmStep($run, 1, 'claim', 1, 'original', 'tools'),
     'compaction' => new ExecuteCompactionStep($run, 1, 'claim', 1, 'original', 'test/model', [], [], [], 0, 0, 0, 0, 'manual'),

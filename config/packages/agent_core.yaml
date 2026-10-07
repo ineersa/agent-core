@@ -21,6 +21,3 @@ services:
 
   Ineersa\AgentCore\Contract\CommandStoreInterface:
     alias: Ineersa\AgentCore\Infrastructure\Storage\DoctrineCommandStore
-
-  Ineersa\AgentCore\Contract\Tool\ToolExecutionAuthorizationInterface:
-    alias: Ineersa\AgentCore\Application\Handler\ToolExecutionAuthorization

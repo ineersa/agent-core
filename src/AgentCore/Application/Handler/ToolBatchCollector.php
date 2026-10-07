@@ -283,7 +283,9 @@ final class ToolBatchCollector
                 $next->results[$action->result->toolCallId] = $action->result;
             }
             if (null !== $action->revisedCallId) {
-                $next->calls[$action->revisedCallId] = $next->calls[$action->revisedCallId]->withHumanInputAnswer($action->answer);
+                $next->calls[$action->revisedCallId] = null === $action->answer
+                    ? $next->calls[$action->revisedCallId]->withHumanInputAnswer(null)
+                    : $next->calls[$action->revisedCallId]->withAuthorizedHumanAnswer($action->answer);
             }
             if ($this->coordinationHash($next) !== $action->afterHash) {
                 throw new \RuntimeException('Prepared batch delta does not match its planned decision.');
@@ -440,7 +442,7 @@ final class ToolBatchCollector
             throw new \LogicException(\sprintf('Cannot resume tool-execution human input for call "%s": question_id mismatch (awaiting="%s", answer="%s", expected="%s").', $toolCallId, $awaitingQuestionId, $answer->questionId, $questionId));
         }
 
-        $batch->calls[$toolCallId] = $existingCall->withHumanInputAnswer($answer);
+        $batch->calls[$toolCallId] = $existingCall->withAuthorizedHumanAnswer($answer);
         unset($batch->awaitingHumanInput[$toolCallId]);
 
         // Requeue at the front so capacity-aware dispatch picks this exact call next.

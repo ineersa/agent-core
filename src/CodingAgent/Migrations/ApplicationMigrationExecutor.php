@@ -93,6 +93,7 @@ final class ApplicationMigrationExecutor
         \DoctrineMigrations\Version20261004000200::class,
         \DoctrineMigrations\Version20261004192458::class,
         \DoctrineMigrations\Version20261005000100::class,
+        \DoctrineMigrations\Version20261007000100::class,
     ];
 
     private bool $ran = false;
