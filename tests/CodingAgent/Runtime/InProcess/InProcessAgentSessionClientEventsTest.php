@@ -8,7 +8,6 @@ use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
-use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
 use Ineersa\CodingAgent\Config\ModelResolver;
@@ -71,14 +70,17 @@ final class InProcessAgentSessionClientEventsTest extends IsolatedKernelTestCase
     #[Test]
     public function eventsReturnsNoRepeatedCursorEventsAndDeliversTerminalFollowUp(): void
     {
-        self::$eventStore->replace([
+        $history = [
             new RunEvent(self::RUN_ID, 1, 0, RunEventTypeEnum::RunStarted->value, []),
             new RunEvent(self::RUN_ID, 3, 1, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 1]),
-        ]);
+        ];
+        self::$eventStore->replace($history);
 
         $this->assertSame([], iterator_to_array($this->client()->events(self::RUN_ID, 3)));
+        $this->assertSame(0, self::$eventStore->allForCalls);
 
-        PreparedEventStoreSeeder::append(self::$eventStore, new RunEvent(self::RUN_ID, 5, 1, RunEventTypeEnum::AgentEnd->value, ['status' => 'completed']));
+        $history[] = new RunEvent(self::RUN_ID, 5, 1, RunEventTypeEnum::AgentEnd->value, ['status' => 'completed']);
+        self::$eventStore->replace($history);
         $followUp = iterator_to_array($this->client()->events(self::RUN_ID, 3));
 
         $this->assertSame([5], array_map(static fn (RuntimeEvent $event): int => $event->seq, $followUp));
