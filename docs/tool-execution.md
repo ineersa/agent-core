@@ -21,8 +21,14 @@ File mutation tools are sequential.
 
 There is **no** global `ToolExecutor` timeout that rewrites successful late results.
 Bash and deferred subagent supervision own their deadlines. Registration can declare
-a tool-specific budget, but MCP call-level cancellation and deadlines are not
-enforced by the current integration. MCP connection timeouts are a separate concern.
+a tool-specific budget. MCP calls receive the run cancellation token and the shorter
+of their server timeout and tool budget. STDIO sends a cancellation notification;
+HTTP closes the response body when control returns to the SDK. HTTP protocol
+versions through `2025-11-25` also receive a best-effort cancellation POST,
+which can itself block. Blocking HTTP
+requests and body reads delay cancellation and deadline checks, so the MCP budget
+is not a hard HTTP wall-clock limit. Neither action guarantees that the server stops its work.
+MCP connection timeouts are a separate concern.
 
 Messenger default routing sends `ExecuteToolCall` to the `tool` transport. Overrides:
 

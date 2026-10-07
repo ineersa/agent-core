@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "a000308a9eb962ff1dd58d5f230d820b",
+    "content-hash": "7881806e0bab70f26101a63cebb6416d",
     "packages": [
         {
             "name": "amphp/amp",
@@ -2827,7 +2827,7 @@
         },
         {
             "name": "ineersa/hatfield-extension-api",
-            "version": "dev-task/2026-09-25-upgrade-symfony-ai-to-0-14-and-migrate-memory-store-adapter",
+            "version": "dev-task/add-proper-mcp-tool-call-cancellation",
             "dist": {
                 "type": "path",
                 "url": ".hatfield/extensions/extension-api",
@@ -3548,16 +3548,16 @@
         },
         {
             "name": "mcp/sdk",
-            "version": "v0.8.1",
+            "version": "dev-main",
             "source": {
                 "type": "git",
                 "url": "https://github.com/modelcontextprotocol/php-sdk.git",
-                "reference": "c5dbfb64e5a2a30872ec3927b4cf13a2eb05e10e"
+                "reference": "ae72b2c21046755c9e90baf6d6d9601d3581209a"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/modelcontextprotocol/php-sdk/zipball/c5dbfb64e5a2a30872ec3927b4cf13a2eb05e10e",
-                "reference": "c5dbfb64e5a2a30872ec3927b4cf13a2eb05e10e",
+                "url": "https://api.github.com/repos/modelcontextprotocol/php-sdk/zipball/ae72b2c21046755c9e90baf6d6d9601d3581209a",
+                "reference": "ae72b2c21046755c9e90baf6d6d9601d3581209a",
                 "shasum": ""
             },
             "require": {
@@ -3577,6 +3577,9 @@
                 "psr/log": "^1.0 || ^2.0 || ^3.0",
                 "symfony/deprecation-contracts": "^2.5 || ^3.0",
                 "symfony/uid": "^5.4 || ^6.4 || ^7.3 || ^8.0"
+            },
+            "conflict": {
+                "phpstan/phpstan": "2.3.0"
             },
             "require-dev": {
                 "composer/semver": "^3.0",
@@ -3600,6 +3603,7 @@
             "suggest": {
                 "symfony/finder": "Required for file-based discovery."
             },
+            "default-branch": true,
             "type": "library",
             "autoload": {
                 "psr-4": {
@@ -3627,9 +3631,9 @@
             "description": "Model Context Protocol SDK for Client and Server applications in PHP",
             "support": {
                 "issues": "https://github.com/modelcontextprotocol/php-sdk/issues",
-                "source": "https://github.com/modelcontextprotocol/php-sdk/tree/v0.8.1"
+                "source": "https://github.com/modelcontextprotocol/php-sdk/tree/main"
             },
-            "time": "2026-08-29T23:10:56+00:00"
+            "time": "2026-10-07T20:59:35+00:00"
         },
         {
             "name": "monolog/monolog",
@@ -14192,6 +14196,7 @@
     "stability-flags": {
         "ineersa/hatfield-extension-api": 20,
         "ineersa/symfony-ai-openai-codex-platform": 20,
+        "mcp/sdk": 20,
         "symfony/tui": 20
     },
     "prefer-stable": true,

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Mcp\Client;
 
+use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Tool\DiagnosticMessageSanitizer;
 use Ineersa\CodingAgent\Mcp\Config\McpConfigLoader;
 use Psr\Log\LoggerInterface;
@@ -208,16 +209,10 @@ final class McpConnectionManager implements McpConnectionManagerInterface
     /**
      * {@inheritDoc}
      *
-     * TODO: Per-call timeout and cancellation are not enforced because the
-     * MCP SDK ({@see McpSdkClientAdapter}) has no per-call timeout or
-     * cancellation hook.  Request timeout is fixed at client construction
-     * time ({@see McpSdkClientFactory::createSdkClient()}) and cannot be
-     * capped by {@see \Ineersa\AgentCore\Application\Tool\ToolContext::timeoutSeconds()}
-     * on a per-call basis.  If/when the SDK adds call-level timeout support,
-     * wire it through {@see McpClientInterface::callTool()} and resume
-     * enforcement here.
+     * Caller interruption leaves the connection alive; other failures still
+     * trigger the existing reconnect-on-next-call behavior.
      */
-    public function callTool(string $runId, string $serverName, string $toolName, array $arguments = []): array
+    public function callTool(string $runId, string $serverName, string $toolName, array $arguments = [], ?CancellationTokenInterface $cancellationToken = null, ?int $timeoutSeconds = null): array
     {
         $client = $this->getClient($runId, $serverName);
 
@@ -232,7 +227,11 @@ final class McpConnectionManager implements McpConnectionManagerInterface
         }
 
         try {
-            return $client->callTool($toolName, $arguments);
+            return $client->callTool($toolName, $arguments, $cancellationToken, $timeoutSeconds);
+        } catch (McpClientInterruptedException $e) {
+            // SDK cancellation cleared its pending request; the server and
+            // transport remain available for the next call.
+            throw $e;
         } catch (\Throwable $e) {
             // Log with structured context and sanitized message.
             $this->logger->error('MCP tool call failed', [

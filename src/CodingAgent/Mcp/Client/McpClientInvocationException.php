@@ -17,6 +17,6 @@ namespace Ineersa\CodingAgent\Mcp\Client;
  * This isolation keeps the AppMcpClient layer free of AgentCore
  * imports and respects the Depfile boundary.
  */
-final class McpClientInvocationException extends \RuntimeException
+class McpClientInvocationException extends \RuntimeException
 {
 }

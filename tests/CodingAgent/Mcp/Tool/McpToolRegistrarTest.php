@@ -639,7 +639,7 @@ final class McpToolRegistrarTest extends TestCase
             {
             }
 
-            public function callTool(string $runId, string $serverName, string $toolName, array $arguments = []): array
+            public function callTool(string $runId, string $serverName, string $toolName, array $arguments = [], ?\Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface $cancellationToken = null, ?int $timeoutSeconds = null): array
             {
                 throw new \Ineersa\CodingAgent\Mcp\Client\McpClientInvocationException($this->exception->getMessage(), 0, $this->exception);
             }

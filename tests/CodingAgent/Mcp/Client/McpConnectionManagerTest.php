@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Mcp\Client;
 
+use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
+use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
+use Ineersa\CodingAgent\Mcp\Client\McpClientInterruptedException;
 use Ineersa\CodingAgent\Mcp\Client\McpConnectionManager;
 use Ineersa\CodingAgent\Mcp\Client\McpConnectionManagerInterface;
 use Ineersa\CodingAgent\Mcp\Client\McpSdkClientFactory;
@@ -148,6 +151,70 @@ class McpConnectionManagerTest extends TestCase
 
         // Cleanup
         $this->manager->disconnectAll('test-run');
+    }
+
+    public function testCancelledStdioCallLeavesConnectionUsable(): void
+    {
+        $marker = $this->projectDir.'/cancel-marker';
+        file_put_contents($marker, '');
+        file_put_contents($this->projectDir.'/.hatfield/mcp.json', json_encode([
+            'mcpServers' => [
+                'fixture' => [
+                    'command' => \PHP_BINARY,
+                    'args' => [__DIR__.'/../Fixtures/stdio-cancellation-server.php'],
+                    'env' => ['MCP_FIXTURE_MARKER' => $marker],
+                    'timeoutMs' => 5000,
+                ],
+            ],
+        ], \JSON_THROW_ON_ERROR));
+
+        $this->assertSame('connected', $this->manager->discover('test-run')['fixture']['status']);
+        $token = new class($marker) implements CancellationTokenInterface {
+            public function __construct(private readonly string $marker)
+            {
+            }
+
+            public function isCancellationRequested(): bool
+            {
+                return 'received' === file_get_contents($this->marker);
+            }
+        };
+
+        try {
+            $this->manager->callTool('test-run', 'fixture', 'slow', cancellationToken: $token);
+            $this->fail('The pending MCP call must stop when its token is cancelled.');
+        } catch (McpClientInterruptedException) {
+        }
+
+        $this->assertSame('quick', $this->manager->callTool('test-run', 'fixture', 'fast')['content'][0]['text']);
+        $this->assertMatchesRegularExpression('/^cancelled:\\d+$/', file_get_contents($marker));
+    }
+
+    public function testExpiredStdioDeadlineLeavesConnectionUsable(): void
+    {
+        $marker = $this->projectDir.'/deadline-marker';
+        file_put_contents($marker, '');
+        file_put_contents($this->projectDir.'/.hatfield/mcp.json', json_encode([
+            'mcpServers' => [
+                'fixture' => [
+                    'command' => \PHP_BINARY,
+                    'args' => [__DIR__.'/../Fixtures/stdio-cancellation-server.php'],
+                    'env' => ['MCP_FIXTURE_MARKER' => $marker],
+                    'timeoutMs' => 50,
+                ],
+            ],
+        ], \JSON_THROW_ON_ERROR));
+
+        $this->assertSame('connected', $this->manager->discover('test-run')['fixture']['status']);
+
+        try {
+            $this->manager->callTool('test-run', 'fixture', 'slow');
+            $this->fail('An expired MCP deadline must interrupt the pending call.');
+        } catch (McpClientInterruptedException) {
+        }
+
+        $this->assertMatchesRegularExpression('/^(received|cancelled:\\d+)$/', file_get_contents($marker));
+        $this->assertSame('quick', $this->manager->callTool('test-run', 'fixture', 'fast')['content'][0]['text']);
     }
 
     public function testDiscoverFailedServerReturnsFailedStatus(): void
@@ -326,6 +393,10 @@ class McpConnectionManagerTest extends TestCase
             // Find the add tool
             $addTool = $this->findTool($tools, 'add');
             $this->assertNotNull($addTool, 'Should discover add tool');
+
+            // Exercise the SDK's PSR-18 HTTP transport beyond the discovery handshake.
+            $result = $this->manager->callTool('test-run-http', 'http-fixture', 'hello', ['name' => 'Ada'], new NullCancellationToken(), 2);
+            $this->assertSame('Hello, Ada', $result['content'][0]['text']);
 
             // Verify structured logs — transport should be http
             $infoLogs = array_values(array_filter(
