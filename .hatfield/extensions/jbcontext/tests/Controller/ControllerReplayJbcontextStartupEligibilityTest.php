@@ -51,7 +51,6 @@ final class ControllerReplayJbcontextStartupEligibilityTest extends ControllerRe
         $this->assertTrue($state->eligibilityStarted);
         $this->assertGreaterThanOrEqual(1, $state->checkGeneration);
         $this->assertDirectoryDoesNotExist($this->tempDir.'/.idea');
-        $this->assertDirectoryDoesNotExist($this->tempDir.'/.hatfield/skills/jbcontext-semantic-search');
         $this->assertFileDoesNotExist($this->tempDir.'/.hatfield/agents/scout.md');
     }
 

@@ -1,4 +1,4 @@
-# Application architecture notes
+# Application
 
 Topology map for AgentCore application handlers. Authoritative routing: `config/packages/messenger.yaml`. Domain message list: `../Domain/Message/AGENTS.md`.
 

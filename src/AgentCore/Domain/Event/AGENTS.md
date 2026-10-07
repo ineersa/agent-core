@@ -1,4 +1,4 @@
-# Domain\Event architecture notes
+# Canonical events
 
 `Domain\Event` defines canonical AgentCore event contracts (persisted run stream), not TUI/JSONL runtime events (`CodingAgent\Runtime\Protocol`).
 

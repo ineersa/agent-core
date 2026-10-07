@@ -8,31 +8,16 @@ use Ineersa\HatfieldExt\Jbcontext\State\JbcontextPaths;
 use Psr\Log\LoggerInterface;
 
 /**
- * Installs project skill and scout after eligibility.
- *
- * Skill: create when absent; reinstall when installed frontmatter version is
- * missing or differs from the bundled skill. Existing same-version files stay.
- *
- * Scout: when project scout is absent, copy the user-level scout and add
- * code_search + skill guidance while preserving model/thinking/tools/body.
- * Never invent a fallback scout. Never modify the user-level file. Existing
- * project scout files are left untouched.
+ * Copies a missing project scout from the user definition after eligibility.
+ * Add code_search without changing its model, skills, or instruction body.
+ * Never invent a fallback or overwrite an existing project/user scout.
  */
 final readonly class JbcontextAssetInstaller
 {
-    private const string SKILL_NAME = 'jbcontext-semantic-search';
     private const string CODE_SEARCH_TOOL = 'code_search';
-
-    private const string SCOUT_GUIDANCE = <<<'MD'
-
-## jbcontext semantic search
-
-When the relevant file or subsystem is unknown, use `code_search` and follow the `jbcontext-semantic-search` skill.
-MD;
 
     public function __construct(
         private JbcontextPaths $paths,
-        private string $packageRoot,
         private LoggerInterface $logger,
         private ?string $homeDir = null,
     ) {
@@ -40,55 +25,7 @@ MD;
 
     public function install(): void
     {
-        $this->installSkill();
         $this->installScoutFromUser();
-    }
-
-    private function installSkill(): void
-    {
-        $sourcePath = $this->packageRoot.'/resources/skills/'.self::SKILL_NAME.'/SKILL.md';
-        $destinationPath = $this->paths->skillDestinationDir.'/SKILL.md';
-        $relativePath = '.hatfield/skills/'.self::SKILL_NAME.'/SKILL.md';
-
-        if (!is_file($sourcePath)) {
-            $this->logger->warning('jbcontext.assets.skill_source_missing', [
-                'component' => 'jbcontext',
-                'event_type' => 'jbcontext.assets.skill_source_missing',
-            ]);
-
-            return;
-        }
-
-        $bundled = (string) file_get_contents($sourcePath);
-        $bundledVersion = JbcontextMarkdownFrontmatter::versionOf($bundled);
-        if (null === $bundledVersion) {
-            $this->logger->warning('jbcontext.assets.skill_bundled_version_missing', [
-                'component' => 'jbcontext',
-                'event_type' => 'jbcontext.assets.skill_bundled_version_missing',
-            ]);
-
-            return;
-        }
-
-        if (is_file($destinationPath)) {
-            $installed = (string) @file_get_contents($destinationPath);
-            $installedVersion = JbcontextMarkdownFrontmatter::versionOf($installed);
-            if (!JbcontextMarkdownFrontmatter::isOutdated($installedVersion, $bundledVersion)) {
-                return;
-            }
-        }
-
-        if (!$this->ensureDirectory(\dirname($destinationPath), 'jbcontext.assets.skill_mkdir_failed')) {
-            return;
-        }
-
-        if (false === @file_put_contents($destinationPath, $bundled)) {
-            $this->logger->warning('jbcontext.assets.skill_write_failed', [
-                'component' => 'jbcontext',
-                'event_type' => 'jbcontext.assets.skill_write_failed',
-                'path' => $relativePath,
-            ]);
-        }
     }
 
     private function installScoutFromUser(): void
@@ -126,14 +63,7 @@ MD;
         }
         $frontmatter['tools'] = $tools;
 
-        $skills = $this->stringList($frontmatter['skills'] ?? null);
-        if (!\in_array(self::SKILL_NAME, $skills, true)) {
-            $skills[] = self::SKILL_NAME;
-        }
-        $frontmatter['skills'] = $skills;
-
-        $body = rtrim($parsed['body'])."\n".self::SCOUT_GUIDANCE."\n";
-        $content = JbcontextMarkdownFrontmatter::dump($frontmatter, $body);
+        $content = JbcontextMarkdownFrontmatter::dump($frontmatter, $parsed['body']);
 
         if (!$this->ensureDirectory(\dirname($destinationPath), 'jbcontext.assets.scout_mkdir_failed')) {
             return;

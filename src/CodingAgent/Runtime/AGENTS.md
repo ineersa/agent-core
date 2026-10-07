@@ -1,4 +1,4 @@
-# Runtime model
+# Runtime
 
 - `AgentSessionClient` is the TUI/runtime boundary.
 - `Runtime/Contract` and `Runtime/Protocol` define command/event DTOs for session/runtime protocol surfaces.

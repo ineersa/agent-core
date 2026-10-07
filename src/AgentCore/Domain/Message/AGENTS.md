@@ -1,4 +1,4 @@
-# Domain\Message architecture notes
+# Messages
 
 Immutable bus payloads and owner-local processor messages under `Ineersa\AgentCore\Domain\Message`.
 

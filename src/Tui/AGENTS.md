@@ -1,13 +1,6 @@
-# TUI module
+# TUI
 
-## Architecture
-
-Single-column layout: header → transcript/history → pending → working/status → extension widgets → editor → footer.
-
-Key types: `FooterDataProvider` / `FooterSegmentProvider` / `FooterBarWidget`. Chrome (header, status, pending, loaded resources, compact header, footer) renders via native Symfony TUI `AbstractWidget`s mounted directly by `ChatScreen`.
-
-Themes: `ThemeColorEnum`, `ThemePalette`, `DefaultTheme`, `ThemeRegistry`, YAML under `config/themes/` (no separate `ThemeLoader` class). External extensions use published `ExtensionApi` TUI contracts (`TuiExtensionContextInterface`) via `BridgeTuiExtensionContext`. Hotkeys: `/hotkeys` catalog in `src/Tui/Command/Hotkey/` (display metadata, not input routing). Full design: `docs/tui-architecture.md`.
-
-`StatusPanelWidget` selects status styling by key; keep `setStatus` text plain.
-
-Dependency direction follows `depfile.yaml` / `castor deptrac` (authoritative). TUI may depend on CodingAgent. CodingAgent must not depend on TUI. Prefer direct CodingAgent services for ordinary ownership (for example `PromptTemplateService`, `SkillDiscovery`) rather than inventing Runtime/Contract catalog wrappers solely for Deptrac. Direct TUI dependencies on AgentCore are allowed only where Deptrac explicitly lists them and usually indicate misplaced ownership — do not invent broader bans than the depfile. TUI may consume public ExtensionApi TUI contracts but must not depend on concrete extension implementations.
+- Mount chrome through native Symfony TUI widgets in `ChatScreen`.
+- Keep `StatusPanelWidget::setStatus` text plain; select styling by status key.
+- Use owning CodingAgent services directly where Deptrac allows them.
+- Use public ExtensionApi TUI contracts, never concrete extension implementations.

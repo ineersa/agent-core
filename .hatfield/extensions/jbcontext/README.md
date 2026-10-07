@@ -91,12 +91,9 @@ When eligibility is pending or disabled, the tool returns a TOON unavailable pay
 
 ### Project assets
 
-After eligibility succeeds, the extension may create:
+After eligibility succeeds, the extension copies a missing `.hatfield/agents/scout.md` from the user-level scout and adds `code_search` to its tools. It preserves the model, thinking, skills, and body. Existing project and user definitions remain untouched. If no user scout exists, it logs a sanitized warning and skips installation.
 
-- `.hatfield/skills/jbcontext-semantic-search/SKILL.md` — bundled skill with a `version` frontmatter field. Created when absent; reinstalled when the installed version is missing or differs from the package. Same-version files stay untouched. Host skill discovery ignores unknown keys such as `version`.
-- `.hatfield/agents/scout.md` — created only when absent by copying the user-level scout (`~/.hatfield/agents/scout.md` or `~/.agents/scout.md`), adding `code_search` + the semantic skill while preserving model/thinking/tools/body. If no user scout exists, installation is skipped with a sanitized warning. Existing project scout files are never modified. User-level scout files are never modified. The package does not distribute a scout agent.
-
-Because eligibility is asynchronous after startup discovery, newly installed project assets may take effect on the **next** Hatfield session.
+The copied scout becomes discoverable on the next Hatfield session because eligibility runs after startup discovery.
 
 ## Privacy and security
 
