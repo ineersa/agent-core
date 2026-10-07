@@ -7,7 +7,6 @@ namespace Ineersa\AgentCore\Application\Pipeline;
 use Ineersa\AgentCore\Application\Handler\ExecutionOperationMapper;
 use Ineersa\AgentCore\Application\Handler\HookDispatcher;
 use Ineersa\AgentCore\Application\Handler\RunTracer;
-use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
@@ -20,24 +19,17 @@ use Psr\Log\LoggerInterface;
 
 final readonly class RunCommit
 {
-    private TransitionFinalizer $finalizer;
-
     public function __construct(
         private ActiveRunContextInterface $activeRunContext,
         private PreparedTransitionEventStoreInterface $eventStore,
         private LoggerInterface $logger,
-        private ToolBatchCollector $toolBatchCollector,
         private ExecutionOperationStoreInterface $executionOperations,
         private SourceAcceptance $sourceAcceptance,
+        private TransitionFinalizer $finalizer,
         private ?HookDispatcher $hookDispatcher = null,
         private ?RunTracer $tracer = null,
         private \Ineersa\AgentCore\Application\Handler\CoordinationActionValidator $actionValidator = new \Ineersa\AgentCore\Application\Handler\CoordinationActionValidator(),
-        ?TransitionFinalizer $finalizer = null,
     ) {
-        if (null === $finalizer) {
-            throw new \LogicException('Configured TransitionFinalizer is required for local metadata commits.');
-        }
-        $this->finalizer = $finalizer;
     }
 
     /**
@@ -95,7 +87,6 @@ final readonly class RunCommit
             }
 
             $this->activeRunContext->replaceCurrent($committedState);
-            $this->toolBatchCollector->releaseAfterCommit($committedState, $persistedEvents);
             $this->logCommittedEvents($committedState, $persistedEvents);
 
             $this->finalizer->complete(

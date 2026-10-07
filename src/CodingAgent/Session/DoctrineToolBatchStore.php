@@ -45,7 +45,6 @@ final class DoctrineToolBatchStore implements ToolBatchStoreInterface
         return false === $record ? null : $this->hydrate($record);
     }
 
-
     public function delete(string $runId, int $turnNo, string $stepId): void
     {
         $this->sanitizeRunId($runId);
@@ -85,8 +84,6 @@ final class DoctrineToolBatchStore implements ToolBatchStoreInterface
 
         return false;
     }
-
-
 
     public function applyPrepared(FinalizeToolBatchDTO $action, VerifiedTransitionDTO $transition): void
     {
@@ -225,7 +222,6 @@ final class DoctrineToolBatchStore implements ToolBatchStoreInterface
 
         return $admitted;
     }
-
 
     /**
      * @param array{calls: array<string, array<string, int|string>>, results: array<string, array<string, int|string>>} $refs
@@ -479,7 +475,6 @@ final class DoctrineToolBatchStore implements ToolBatchStoreInterface
 
         return false;
     }
-
 
     /** @param array<string, mixed>|list<mixed> $value */
     private function jsonEncode(array $value): string

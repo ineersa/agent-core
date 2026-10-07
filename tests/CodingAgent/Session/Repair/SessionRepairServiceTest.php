@@ -1126,7 +1126,15 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
             serializer: AttributeSerializerValidatorTestFactory::create()[0],
             executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
             historyReplayFilter: new \Ineersa\CodingAgent\Session\History\HistoryReplayFilter(new \Ineersa\CodingAgent\Session\History\HistoryProjector()),
-            runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit($activeRunContext, $eventStore, new StepDispatcher($coordinationBus, $dispatcherBus), new NullLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()), actionValidator: new \Ineersa\AgentCore\Application\Handler\CoordinationActionValidator([$redriveHandler])),
+            runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
+                activeRunContext: $activeRunContext,
+                eventStore: $eventStore,
+                logger: new NullLogger(),
+                executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
+                sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
+                finalizer: \Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher($coordinationBus, $dispatcherBus)),
+                actionValidator: new \Ineersa\AgentCore\Application\Handler\CoordinationActionValidator([$redriveHandler]),
+            ),
             deferredBatches: self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository::class),
         );
     }

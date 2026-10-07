@@ -6,7 +6,6 @@ namespace Ineersa\CodingAgent\Tests\Session\Repair;
 
 use Doctrine\DBAL\Connection;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
-use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
@@ -444,7 +443,6 @@ final class SessionRepairExecutionRecoveryTest extends PerMethodIsolatedKernelTe
                 activeRunContext: $c->get(ActiveRunContextInterface::class),
                 eventStore: $journal,
                 logger: new \Ineersa\AgentCore\Tests\Support\TestLogger(),
-                toolBatchCollector: $c->get(ToolBatchCollector::class),
                 executionOperations: $c->get(DoctrineExecutionOperationStore::class),
                 sourceAcceptance: $c->get(\Ineersa\AgentCore\Application\Pipeline\SourceAcceptance::class),
                 finalizer: TestTransitionFinalizerFactory::create($journal, new \Ineersa\AgentCore\Application\Handler\StepDispatcher($bus, new \Ineersa\AgentCore\Tests\Support\TestMessageBus()), operations: $c->get(DoctrineExecutionOperationStore::class)),

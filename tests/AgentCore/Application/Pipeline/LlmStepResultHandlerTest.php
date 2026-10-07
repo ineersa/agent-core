@@ -7,7 +7,6 @@ namespace Ineersa\AgentCore\Tests\Application\Orchestrator;
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
-use Ineersa\AgentCore\Tests\Support\TestToolBatchStore;
 use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Application\Pipeline\LlmStepResultHandler;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor;
@@ -28,6 +27,7 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\AgentCore\Tests\Support\InMemoryCommandStore;
 use Ineersa\AgentCore\Tests\Support\SymfonyAiTestMessages;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\AgentCore\Tests\Support\TestToolBatchStore;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Exception\ExceedContextSizeException;
 use Symfony\AI\Platform\Exception\ServerException;
@@ -53,7 +53,7 @@ final class LlmStepResultHandlerTest extends TestCase
             messageNormalizer: new AgentMessageNormalizer(),
 
             normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
-        toolBatchCollector: $coordinationCollector,
+            toolBatchCollector: $coordinationCollector,
         );
 
         $state = new RunState(
@@ -242,7 +242,7 @@ final class LlmStepResultHandlerTest extends TestCase
             messageNormalizer: new AgentMessageNormalizer(),
 
             normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
-        toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
+            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
         );
 
         $existingMessages = [
@@ -328,7 +328,7 @@ final class LlmStepResultHandlerTest extends TestCase
             messageNormalizer: new AgentMessageNormalizer(),
 
             normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
-        toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
+            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
         );
 
         $state = new RunState(
@@ -404,7 +404,7 @@ final class LlmStepResultHandlerTest extends TestCase
             messageNormalizer: new AgentMessageNormalizer(),
 
             normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
-        toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
+            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
         );
 
         $existingMessages = [
@@ -919,7 +919,7 @@ final class LlmStepResultHandlerTest extends TestCase
             messageNormalizer: new AgentMessageNormalizer(),
 
             normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
-        toolBatchCollector: $coordinationCollector,
+            toolBatchCollector: $coordinationCollector,
         );
 
         $state = new RunState(
@@ -998,7 +998,7 @@ final class LlmStepResultHandlerTest extends TestCase
             messageNormalizer: new AgentMessageNormalizer(),
 
             normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
-        toolBatchCollector: $coordinationCollector,
+            toolBatchCollector: $coordinationCollector,
         );
 
         $state = new RunState(

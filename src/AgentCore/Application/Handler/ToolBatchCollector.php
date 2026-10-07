@@ -8,7 +8,6 @@ use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
-use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
@@ -222,17 +221,6 @@ final class ToolBatchCollector
             'Cannot redrive tool-execution human input for unknown batch run=%s turn=%d step=%s.',
             fn (ToolBatchStateDTO $batch): array => $this->applyHumanInputRedriveToBatch($batch, $questionId, $answerValue),
         );
-    }
-
-    /**
-     * Release process-local coordination only after canonical persistence and
-     * state publication succeed. Durable file cleanup is an independent hook.
-     *
-     * @param list<\Ineersa\AgentCore\Domain\Event\RunEvent> $events
-     */
-    public function releaseAfterCommit(RunState $state, array $events): void
-    {
-        // Durable scheduling owns retention. Process-local caches are gone.
     }
 
     /** Capture cancellation settlement without synthesizing new execution work. */
