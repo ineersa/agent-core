@@ -6,6 +6,8 @@ namespace Ineersa\AgentCore\Tests\Domain\Tool;
 
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Domain\Run\HumanInputContinuationKindEnum;
+use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
@@ -24,7 +26,7 @@ final class ToolBatchStateDTOParentModelRoundTripTest extends TestCase
 {
     public function testCanonicalSnapshotRoundTripsTypedNestedObjectsAndPersistsBusIdentity(): void
     {
-        [$serializer, $validator] = AttributeSerializerValidatorTestFactory::create();
+        [$serializer, $validator] = AttributeSerializerValidatorTestFactory::create(withBackedEnumNormalizer: true);
         $answer = new ToolCallHumanInputAnswerDTO(
             questionId: 'q-1',
             answer: ['approved' => true],
@@ -69,6 +71,20 @@ final class ToolBatchStateDTOParentModelRoundTripTest extends TestCase
             error: null,
         );
 
+        $suspension = new ToolCallResult(
+            runId: 'run-1',
+            turnNo: 2,
+            stepId: 'step-a',
+            attempt: 1,
+            idempotencyKey: 'suspension-ik',
+            toolCallId: 'c1',
+            orderIndex: 0,
+            pendingHumanInput: PendingHumanInputRequestDTO::toolCallFromPayload(
+                ['question_id' => 'q-1', 'prompt' => 'Approve command?'],
+                ['run_id' => 'run-1', 'turn_no' => 2, 'step_id' => 'step-a', 'tool_call_id' => 'c1'],
+            ),
+        );
+
         $batch = new ToolBatchStateDTO(
             expectedOrder: ['c1' => 0, 'c2' => 1],
             calls: ['c1' => $call],
@@ -78,6 +94,7 @@ final class ToolBatchStateDTOParentModelRoundTripTest extends TestCase
             finalized: false,
             maxParallelism: 2,
             awaitingHumanInput: ['c1' => 'q-1'],
+            executionResults: ['suspension-receipt' => $suspension],
         );
 
         $envelope = new ToolBatchSnapshotEnvelopeDTO('run-1', 2, 'step-a', $batch);
@@ -93,7 +110,9 @@ final class ToolBatchStateDTOParentModelRoundTripTest extends TestCase
         $this->assertSame('step-a', $batchWire['call_data']['c1']['step_id']);
         $this->assertSame(3, $batchWire['call_data']['c1']['attempt']);
         $this->assertSame('live-ik', $batchWire['call_data']['c1']['idempotency_key']);
-        $this->assertArrayNotHasKey('pending_human_input', $batchWire['result_data']['c2']);
+        $this->assertArrayHasKey('pending_human_input', $batchWire['result_data']['c2']);
+        $this->assertNull($batchWire['result_data']['c2']['pending_human_input']);
+        $this->assertSame('q-1', $batchWire['execution_results']['suspension-receipt']['pending_human_input']['question_id']);
         $this->assertSame('deepseek/deepseek-v4-flash', $batchWire['call_data']['c1']['parent_model']);
         $this->assertTrue(
             !\array_key_exists('launch_context', $batchWire['call_data']['c1'])
@@ -120,6 +139,13 @@ final class ToolBatchStateDTOParentModelRoundTripTest extends TestCase
         $this->assertNull($restored->calls['c1']->launchContext);
         $this->assertSame(['stdout' => 'ok'], $restored->results['c2']->result);
         $this->assertNull($restored->results['c2']->pendingHumanInput);
+        $restoredSuspension = $restored->executionResults['suspension-receipt'];
+        $this->assertTrue($restoredSuspension->isHumanInputSuspension());
+        $this->assertNotNull($restoredSuspension->pendingHumanInput);
+        $this->assertSame('suspension-ik', $restoredSuspension->idempotencyKey());
+        $this->assertSame(HumanInputContinuationKindEnum::ToolCall, $restoredSuspension->pendingHumanInput->continuationKind);
+        $this->assertSame(['question_id' => 'q-1', 'prompt' => 'Approve command?'], $restoredSuspension->pendingHumanInput->payload);
+        $this->assertSame(['run_id' => 'run-1', 'turn_no' => 2, 'step_id' => 'step-a', 'tool_call_id' => 'c1'], $restoredSuspension->pendingHumanInput->continuationRef);
         $this->assertSame('run-1', $restored->calls['c1']->runId());
         $this->assertSame(2, $restored->calls['c1']->turnNo());
         $this->assertSame('step-a', $restored->calls['c1']->stepId());
