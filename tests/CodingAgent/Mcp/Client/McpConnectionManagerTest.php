@@ -215,8 +215,8 @@ class McpConnectionManagerTest extends TestCase
             $this->assertSame('The request deadline expired.', $e->getMessage());
         }
 
-        $this->assertMatchesRegularExpression('/^(received|cancelled:\\d+)$/', file_get_contents($marker));
         $this->assertSame('quick', $this->manager->callTool('test-run', 'fixture', 'fast')['content'][0]['text']);
+        $this->assertMatchesRegularExpression('/^cancelled:\\d+$/', file_get_contents($marker));
     }
 
     public function testDiscoverFailedServerReturnsFailedStatus(): void
