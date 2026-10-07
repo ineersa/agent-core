@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Execution;
 
-use Ineersa\AgentCore\Application\Handler\CommandRouter;
+use Ineersa\AgentCore\Application\Handler\CoordinationActionHandler;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Pipeline\AgentRunner;
 use Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler;
@@ -17,13 +17,13 @@ use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\RunOperationalStatusDTO;
 use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\AgentCore\Domain\Coordination\EnqueueCommandDTO;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
-use Ineersa\AgentCore\Tests\Support\InMemoryCommandStore;
 use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
@@ -130,20 +130,15 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         $this->assertSame($childRunId, $entry->agentRunId);
         $this->assertSame(AgentArtifactStatusEnum::Running, $entry->status);
 
-        $store = new InMemoryCommandStore();
-        $router = new CommandRouter([]);
-        $mailbox = new CommandMailboxPolicy($store, $router);
-        $handler = new ApplyCommandHandler(
-            commandStore: $store,
-            commandRouter: $router,
-            commandMailboxPolicy: $mailbox,
-            eventFactory: new \Ineersa\AgentCore\Domain\Event\EventFactory(),
-            messageNormalizer: new \Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer(),
-            maxPendingCommands: 10,
-            commandBus: $commandBus,
-        );
+        $mailbox = self::getContainer()->get(CommandMailboxPolicy::class);
+        $handler = self::getContainer()->get(ApplyCommandHandler::class);
         $queued = $handler->handle($command, $state);
         $this->assertNotNull($queued->nextState);
+        $enqueues = array_values(array_filter($queued->postCommitActions, static fn (object $action): bool => $action instanceof EnqueueCommandDTO));
+        $this->assertCount(1, $enqueues);
+        $enqueue = $enqueues[0];
+        $this->assertInstanceOf(EnqueueCommandDTO::class, $enqueue);
+        self::getContainer()->get(CoordinationActionHandler::class)->enqueueCommand($enqueue);
         $continued = $mailbox->applyPendingTurnStartCommands($queued->nextState);
         $state = $continued->state;
         $this->assertSame($originalMessages, \array_slice($state->messages, 0, 2));
@@ -606,6 +601,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         $this->assertGreaterThan($terminal->seq, $newWork->seq);
         $runner = $this->createMock(AgentRunnerInterface::class);
         $runner->expects($this->never())->method('followUp');
+        $readLog->records = [];
         try {
             $this->resume($parent, [new AgentResumeTaskDTO(artifact_id: $artifact, task: 'continue')],
                 agentRunner: $runner, operationalStatusReader: $reader, eventStore: $store);
