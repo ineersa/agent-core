@@ -436,14 +436,14 @@ final class WorkerFailedEventSubscriberTest extends IsolatedKernelTestCase
 
         return new WorkerFailedEventSubscriber($context,
             new RunCommit(
-            activeRunContext: $context,
-            eventStore: $store,
-            logger: $logger,
-            toolBatchCollector: new ToolBatchCollector(),
-            executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
-            sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
-            finalizer: TestTransitionFinalizerFactory::create($store, new StepDispatcher($bus, $bus)),
-        ),
+                activeRunContext: $context,
+                eventStore: $store,
+                logger: $logger,
+                toolBatchCollector: new ToolBatchCollector(),
+                executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
+                sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
+                finalizer: TestTransitionFinalizerFactory::create($store, new StepDispatcher($bus, $bus)),
+            ),
             $lockManager ?? new RunLockManager(new LockFactory(new InMemoryStore())), $logger);
     }
 

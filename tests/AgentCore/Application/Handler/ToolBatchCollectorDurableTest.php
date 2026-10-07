@@ -18,7 +18,6 @@ use PHPUnit\Framework\TestCase;
  */
 final class ToolBatchCollectorDurableTest extends TestCase
 {
-
     public function testRepeatedRegistrationPreservesResultsAndDoesNotReadmitExecution(): void
     {
         $store = $this->createStore();

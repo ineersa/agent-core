@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Application\Orchestrator;
 
-use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
@@ -31,17 +30,9 @@ use Ineersa\AgentCore\Tests\Support\Builder\AdvanceRunMessageBuilder;
 use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
 use Ineersa\AgentCore\Tests\Support\Builder\ToolCallResultBuilder;
 use Ineersa\AgentCore\Tests\Support\InMemoryCommandStore;
-use Ineersa\CodingAgent\Config\AppConfig;
-use Ineersa\CodingAgent\Config\LoggingConfig;
-use Ineersa\CodingAgent\Config\TuiConfig;
-use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchStore;
-use Ineersa\CodingAgent\Tests\Session\Support\ParentSessionToolBatchRunStoragePaths;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
-use Psr\Log\NullLogger;
-use Symfony\Component\Lock\LockFactory;
-use Symfony\Component\Lock\Store\FlockStore;
 
 final class ToolCallResultHandlerTest extends TestCase
 {

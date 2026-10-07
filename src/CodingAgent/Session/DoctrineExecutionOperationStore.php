@@ -423,7 +423,15 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
 
     public function applyDisposition(ExecutionResultDispositionDTO $descriptor, VerifiedTransitionDTO $transition): void
     {
-        $this->validateDisposition($descriptor, $transition);
+        $expected = $transition->work['execution_disposition'] ?? null;
+        if (!$expected instanceof ExecutionResultDispositionDTO || $expected->disposition !== $descriptor->disposition || (array) $expected->result !== (array) $descriptor->result || ($transition->work['run_id'] ?? null) !== $descriptor->result->runId()) {
+            throw new \RuntimeException('Execution disposition has no matching verified transition.');
+        }
+        $record = $this->matchingResult($descriptor->result);
+        if ((null !== $record['disposition_transition'] && $record['disposition_transition'] !== $transition->identity)
+            || (\in_array($record['state'], ['Consumed', 'Stale'], true) && $record['state'] !== $descriptor->disposition)) {
+            throw new \RuntimeException('Conflicting execution result disposition.');
+        }
         $updated = $this->connection->executeStatement("UPDATE execution_operation SET state = ?, disposition_transition = ? WHERE effect_id = ? AND claim_token = ? AND result_hash = ? AND state = 'ResultReady'", [$descriptor->disposition, $transition->identity, $descriptor->result->effectId, $descriptor->result->claimToken, $descriptor->result->sha256]);
         if (1 !== $updated) {
             $record = $this->record($descriptor->result->effectId);
@@ -462,6 +470,9 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
                     // Disposition alone is insufficient while owner coordination remains unfinished.
                     $this->transitions->assertTransitionReady($current['run_id']);
                     if ($this->payloadReclaimed($current)) {
+                        return;
+                    }
+                    if ($this->scheduleRetainsPayload($current)) {
                         return;
                     }
                     $this->removePayloadDirectory($current['run_id'], $current['effect_id']);
@@ -519,6 +530,30 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
         }
     }
 
+    public function retireUnstartedPermissions(string $runId, int $turnNo, string $stepId, VerifiedTransitionDTO $transition): void
+    {
+        if (($transition->work['run_id'] ?? null) !== $runId) {
+            throw new \RuntimeException('Unstarted permission retirement requires matching verified transition.');
+        }
+        $this->sanitizeRunId($runId);
+        $rows = $this->connection->fetchAllAssociative(
+            "SELECT effect_id, state FROM execution_operation WHERE run_id = ? AND turn_no = ? AND step_id = ? AND state IN ('Prepared', 'Armed') ORDER BY effect_id",
+            [$runId, $turnNo, $stepId],
+        );
+        foreach ($rows as $row) {
+            $updated = $this->connection->executeStatement(
+                "UPDATE execution_operation SET state = 'Stale', disposition_transition = ? WHERE effect_id = ? AND state IN ('Prepared', 'Armed')",
+                [$transition->identity, $row['effect_id']],
+            );
+            if (1 !== $updated) {
+                $current = $this->record($row['effect_id']);
+                if ('Stale' !== $current['state'] || $current['disposition_transition'] !== $transition->identity) {
+                    throw new \RuntimeException('Unstarted permission retirement lost its precise receipt.');
+                }
+            }
+        }
+    }
+
     /** @return list<AbstractAgentBusMessage> */
     private function authorizedRequests(VerifiedTransitionDTO $transition): array
     {
@@ -559,24 +594,22 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
             throw new \RuntimeException('Execution authorization requires matching verified owner work.');
         }
         $this->sanitizeRunId($request->runId());
-        if ($arm) {
-            $rows = $this->connection->fetchAllAssociative(
-                // Later capacity admission reuses the original Prepared seal. Match the
-                // frozen invocation identity, not the admitting transition generation.
-                "SELECT * FROM execution_operation WHERE run_id = ? AND turn_no = ? AND step_id = ? AND attempt = ? AND idempotency_key = ? AND request_type = ? AND state IN ('Prepared', 'Armed') ORDER BY effect_id LIMIT 2",
-                [$request->runId(), $request->turnNo(), $request->stepId(), $request->attempt(), $request->idempotencyKey(), $request::class],
-            );
-            if (1 !== \count($rows)) {
-                throw new \RuntimeException('Execution arming requires a prepared invocation.');
+        $bytes = $this->encodeRequest($request);
+        $hash = hash('sha256', $bytes);
+        $existing = $this->findInvocationRow($request, $hash);
+        if (null !== $existing) {
+            if ($existing['request_hash'] !== $hash) {
+                throw new \RuntimeException('Conflicting execution authorization.');
             }
-            $existing = $rows[0];
-            $this->connection->executeStatement("UPDATE execution_operation SET state = 'Armed' WHERE effect_id = ? AND state IN ('Prepared', 'Armed')", [$existing['effect_id']]);
+            if ($arm) {
+                return $this->armExisting($existing);
+            }
 
             return new ExecutionAuthorizationStamp($existing['effect_id'], $existing['request_hash']);
         }
-
-        $bytes = $this->encodeRequest($request);
-        $hash = hash('sha256', $bytes);
+        if ($arm) {
+            throw new \RuntimeException('Execution arming requires a prepared invocation.');
+        }
         $matched = false;
         foreach ($this->authorizedRequests($transition) as $effect) {
             if ($effect::class === $request::class && hash('sha256', $this->encodeRequest($effect)) === $hash) {
@@ -587,8 +620,16 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
         if (!$matched) {
             throw new \RuntimeException('Execution request is absent from verified owner work.');
         }
-        $id = hash('sha256', $transition->identity.'|'.$hash);
 
+        $id = hash('sha256', implode('|', [
+            $request->runId(),
+            (string) $request->turnNo(),
+            $request->stepId(),
+            (string) $request->attempt(),
+            $request->idempotencyKey(),
+            $request::class,
+            $hash,
+        ]));
         $logicalToolCallId = $request instanceof ExecuteToolCall ? $request->toolCallId : null;
         $this->seal($this->path($request->runId(), $id, 'request'), $bytes);
         try {
@@ -599,13 +640,99 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
             ]);
         } catch (UniqueConstraintViolationException $exception) {
             $existing = $this->record($id);
-            if ($existing['request_hash'] !== $hash || $existing['owner_generation'] !== $transition->identity) {
+            if ($existing['request_hash'] !== $hash) {
                 throw new \RuntimeException('Conflicting execution authorization.', previous: $exception);
             }
             // Intent recovery repeats the same immutable insertion, never resets a claim.
         }
 
         return new ExecutionAuthorizationStamp($id, $hash);
+    }
+
+    /** @return array<string, mixed>|null */
+    private function findInvocationRow(AbstractAgentBusMessage $request, string $hash): ?array
+    {
+        $rows = $this->connection->fetchAllAssociative(
+            'SELECT * FROM execution_operation WHERE run_id = ? AND turn_no = ? AND step_id = ? AND attempt = ? AND idempotency_key = ? AND request_type = ? ORDER BY effect_id LIMIT 2',
+            [$request->runId(), $request->turnNo(), $request->stepId(), $request->attempt(), $request->idempotencyKey(), $request::class],
+        );
+        if ([] === $rows) {
+            return null;
+        }
+        if (1 !== \count($rows)) {
+            throw new \RuntimeException('Execution authorization has ambiguous invocation evidence.');
+        }
+
+        return $rows[0];
+    }
+
+    /** @param array<string, mixed> $existing */
+    private function armExisting(array $existing): ExecutionAuthorizationStamp
+    {
+        $state = (string) $existing['state'];
+        if ('Prepared' === $state) {
+            $updated = $this->connection->executeStatement(
+                "UPDATE execution_operation SET state = 'Armed' WHERE effect_id = ? AND state = 'Prepared'",
+                [$existing['effect_id']],
+            );
+            if (1 !== $updated) {
+                $current = $this->record($existing['effect_id']);
+                if ('Armed' !== $current['state']) {
+                    throw new \RuntimeException('Execution arming lost its prepared permission.');
+                }
+
+                return new ExecutionAuthorizationStamp($current['effect_id'], $current['request_hash']);
+            }
+
+            return new ExecutionAuthorizationStamp($existing['effect_id'], $existing['request_hash']);
+        }
+        if ('Armed' === $state) {
+            return new ExecutionAuthorizationStamp($existing['effect_id'], $existing['request_hash']);
+        }
+        if (\in_array($state, ['Running', 'Deferred', 'ResultReady', 'Consumed', 'Stale', 'OutcomeUnknown'], true)) {
+            throw new \RuntimeException('Execution arming refuses live or terminal invocation evidence.');
+        }
+
+        throw new \RuntimeException('Execution arming requires a prepared invocation.');
+    }
+
+    /** @param array<string, mixed> $record */
+    private function scheduleRetainsPayload(array $record): bool
+    {
+        $effectId = (string) $record['effect_id'];
+        $rows = $this->connection->fetchAllAssociative(
+            'SELECT calls_json, results_json, finalized, awaiting_human_input_json, pending_queue_json, in_flight_json FROM tool_batch_schedule WHERE run_id = ?',
+            [$record['run_id']],
+        );
+        foreach ($rows as $row) {
+            $calls = json_decode((string) $row['calls_json'], true, 512, \JSON_THROW_ON_ERROR);
+            $results = json_decode((string) $row['results_json'], true, 512, \JSON_THROW_ON_ERROR);
+            if (!\is_array($calls) || !\is_array($results)) {
+                throw new \RuntimeException('Tool batch schedule reference payload is invalid.');
+            }
+            $awaiting = json_decode((string) $row['awaiting_human_input_json'], true, 512, \JSON_THROW_ON_ERROR);
+            $pending = json_decode((string) $row['pending_queue_json'], true, 512, \JSON_THROW_ON_ERROR);
+            $inFlight = json_decode((string) $row['in_flight_json'], true, 512, \JSON_THROW_ON_ERROR);
+            if (!\is_array($awaiting) || !\is_array($pending) || !\is_array($inFlight)) {
+                throw new \RuntimeException('Tool batch schedule retention payload is invalid.');
+            }
+            $active = !(bool) $row['finalized'] || [] !== $awaiting || [] !== $pending || [] !== $inFlight;
+            if (!$active) {
+                continue;
+            }
+            foreach ($calls as $ref) {
+                if (\is_array($ref) && ($ref['effect_id'] ?? null) === $effectId) {
+                    return true;
+                }
+            }
+            foreach ($results as $ref) {
+                if (\is_array($ref) && ($ref['effect_id'] ?? null) === $effectId) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private function withUnknownExclusion(\Ineersa\AgentCore\Domain\Message\ExecutionOutcomeUnknown $notice, callable $decision): void

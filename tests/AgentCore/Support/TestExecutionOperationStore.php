@@ -122,6 +122,11 @@ final class TestExecutionOperationStore implements ExecutionOperationStoreInterf
         return '';
     }
 
+    public function retireUnstartedPermissions(string $runId, int $turnNo, string $stepId, VerifiedTransitionDTO $transition): void
+    {
+        // Dispatch-only fixture has no durable Prepared/Armed permissions.
+    }
+
     public function unknownNoticePending(\Ineersa\AgentCore\Domain\Message\ExecutionOutcomeUnknown $notice): bool
     {
         throw new \LogicException('Dispatch-only fixture has no unknown execution receipts.');

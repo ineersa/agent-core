@@ -44,14 +44,14 @@ final class StartRunProjectionFailureRedeliveryTest extends TestCase
             activeRunContext: $activeRunContext,
             runLockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
             runCommit: new RunCommit(
-            activeRunContext: $activeRunContext,
-            eventStore: $eventStore,
-            logger: new NullLogger(),
-            toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(),
-            executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
-            sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
-            finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher($commandBus, $executionBus)),
-        ),
+                activeRunContext: $activeRunContext,
+                eventStore: $eventStore,
+                logger: new NullLogger(),
+                toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(),
+                executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
+                sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
+                finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher($commandBus, $executionBus)),
+            ),
             handlers: [
                 new StartRunHandler(
                     eventFactory: new EventFactory(),

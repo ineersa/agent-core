@@ -211,6 +211,10 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
             ]);
 
             $postCommitActions = [];
+            $cancelBatch = $this->toolBatchCollector->prepareCancelFinalization($runId, $state->turnNo, $collectorStepId);
+            if (null !== $cancelBatch) {
+                $postCommitActions[] = $cancelBatch;
+            }
             $postCancelAdvance = $this->postCancelAdvanceAction($runId, $state->turnNo);
             if (null !== $postCancelAdvance) {
                 $postCommitActions[] = $postCancelAdvance;

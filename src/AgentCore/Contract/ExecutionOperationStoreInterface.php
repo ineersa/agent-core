@@ -78,6 +78,12 @@ interface ExecutionOperationStoreInterface
      */
     public function reclaimDisposedPayloads(string $ownerSessionId, string $afterEffectId): string;
 
+    /**
+     * Retire Prepared/Armed permissions for a cancelled batch without touching
+     * Running/Deferred/ResultReady evidence.
+     */
+    public function retireUnstartedPermissions(string $runId, int $turnNo, string $stepId, VerifiedTransitionDTO $transition): void;
+
     public function unknownNoticePending(\Ineersa\AgentCore\Domain\Message\ExecutionOutcomeUnknown $notice): bool;
 
     public function consumeUnknownNotice(\Ineersa\AgentCore\Domain\Coordination\ConsumeExecutionUnknownDTO $action, VerifiedTransitionDTO $transition): void;

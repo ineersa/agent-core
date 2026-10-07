@@ -13,7 +13,6 @@ use Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
-use Ineersa\AgentCore\Contract\Tool\ToolExecutionAuthorizationInterface;
 use Ineersa\AgentCore\Domain\Coordination\ConsumeExecutionUnknownDTO;
 use Ineersa\AgentCore\Domain\Coordination\ExecutionAuthorizationStamp;
 use Ineersa\AgentCore\Domain\Message\DurableExecutionResult;
@@ -182,7 +181,7 @@ final class ExecutionClaimRecoveryTest extends IsolatedKernelTestCase
             toolBatchCollector: $container->get(ToolBatchCollector::class),
             executionOperations: $store,
             sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
-            finalizer: TestTransitionFinalizerFactory::create($events, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), new \Ineersa\AgentCore\Tests\Support\TestMessageBus()), operations: $store),
+            finalizer: TestTransitionFinalizerFactory::create($events, new StepDispatcher(new TestMessageBus(), new TestMessageBus()), operations: $store),
         );
         try {
             $commit->commit($state, $result->nextState, $result->events, dispatchAfterTurnHooks: false, postCommitActions: $result->postCommitActions);

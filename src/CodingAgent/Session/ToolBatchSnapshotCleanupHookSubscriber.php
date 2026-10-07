@@ -128,6 +128,12 @@ final class ToolBatchSnapshotCleanupHookSubscriber implements HookSubscriberInte
     private function tryDeleteBatch(string $runId, int $turnNo, string $stepId): void
     {
         try {
+            if ($this->toolBatchStore->hasUnresolvedExecution($runId)) {
+                $batch = $this->toolBatchStore->load($runId, $turnNo, $stepId);
+                if (null !== $batch && (!$batch->finalized || [] !== $batch->awaitingHumanInput || [] !== $batch->pendingQueue || [] !== $batch->inFlight)) {
+                    return;
+                }
+            }
             $this->toolBatchStore->delete($runId, $turnNo, $stepId);
         } catch (\Throwable $throwable) {
             $this->logger->warning('tool_batch.snapshot_delete_failed', [

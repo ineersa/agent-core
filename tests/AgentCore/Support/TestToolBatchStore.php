@@ -185,6 +185,6 @@ final class TestToolBatchStore implements ToolBatchStoreInterface
 
     private function key(string $runId, int $turnNo, string $stepId): string
     {
-        return sprintf('%s|%d|%s', $runId, $turnNo, $stepId);
+        return \sprintf('%s|%d|%s', $runId, $turnNo, $stepId);
     }
 }

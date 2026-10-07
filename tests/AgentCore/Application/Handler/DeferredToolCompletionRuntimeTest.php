@@ -332,14 +332,14 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
             activeRunContext: $activeRunContext,
             runLockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
             runCommit: new RunCommit(
-            activeRunContext: $activeRunContext,
-            eventStore: $eventStore,
-            logger: new NullLogger(),
-            toolBatchCollector: $collector,
-            executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
-            sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
-            finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus())),
-        ),
+                activeRunContext: $activeRunContext,
+                eventStore: $eventStore,
+                logger: new NullLogger(),
+                toolBatchCollector: $collector,
+                executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
+                sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
+                finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus())),
+            ),
             handlers: [
                 new ToolCallResultHandler(
                     toolBatchCollector: $collector,

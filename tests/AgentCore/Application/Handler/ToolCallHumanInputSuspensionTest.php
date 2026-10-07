@@ -385,7 +385,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
                 executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
                 sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
                 finalizer: TestTransitionFinalizerFactory::create($eventStore, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus())),
-                ),
+            ),
             handlers: [$handler],
         );
 
@@ -508,7 +508,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
                 executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
                 sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
                 finalizer: TestTransitionFinalizerFactory::create($eventStore, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(\Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::bus(new TestMessageBus(), $commandStore, $collector), $executionBus)),
-                ),
+            ),
             handlers: [$handler],
         );
 
@@ -621,7 +621,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
                 executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
                 sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
                 finalizer: TestTransitionFinalizerFactory::create($eventStore, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(\Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::bus(new TestMessageBus(), $commandStore, $collector), $executionBus)),
-                ),
+            ),
             handlers: [$handler],
         );
 

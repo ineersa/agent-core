@@ -88,14 +88,14 @@ final class InProcessAttachCancelsDeferredToolHumanTest extends IsolatedKernelTe
             activeRunContext: $active,
             runLockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
             runCommit: new RunCommit(
-            activeRunContext: $active,
-            eventStore: $eventStore,
-            logger: new NullLogger(),
-            toolBatchCollector: $collector,
-            executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
-            sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new InMemoryCommandStore()),
-            finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus())),
-        ),
+                activeRunContext: $active,
+                eventStore: $eventStore,
+                logger: new NullLogger(),
+                toolBatchCollector: $collector,
+                executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
+                sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new InMemoryCommandStore()),
+                finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus())),
+            ),
             handlers: [$applyHandler, new \Ineersa\AgentCore\Application\Pipeline\RefreshRunContextHandler()],
         );
 

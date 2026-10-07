@@ -258,7 +258,16 @@ final class DoctrineToolBatchStore implements ToolBatchStoreInterface
         $admitted = [];
         foreach (array_keys($batch->inFlight) as $toolCallId) {
             $call = $batch->calls[$toolCallId] ?? null;
-            if ($call instanceof ExecuteToolCall && !isset($batch->results[$toolCallId])) {
+            if (!$call instanceof ExecuteToolCall || isset($batch->results[$toolCallId])) {
+                continue;
+            }
+            $state = $this->connection->fetchOne(
+                'SELECT state FROM execution_operation WHERE effect_id = ?',
+                [$this->lookupCallEffectId($call)],
+            );
+            // Live/ready/terminal siblings stay owned by their claim/result. Only
+            // Prepared permissions need activation; Armed may be republished.
+            if (\in_array($state, ['Prepared', 'Armed'], true)) {
                 $admitted[] = $call;
             }
         }

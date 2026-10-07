@@ -10,7 +10,6 @@ use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Application\Pipeline\SourceAcceptance;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
-use Ineersa\AgentCore\Contract\Tool\ToolExecutionAuthorizationInterface;
 use Ineersa\AgentCore\Domain\Coordination\ExecutionResultDispositionDTO;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;

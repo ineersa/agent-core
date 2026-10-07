@@ -167,6 +167,95 @@ final class DoctrineToolBatchStoreTest extends IsolatedKernelTestCase
         $this->assertSame('Armed', $connection->fetchOne('SELECT state FROM execution_operation WHERE idempotency_key = ?', ['key-b']));
         $this->assertEquals($second, $operations->peekRequest($freed[0]));
         $this->assertArrayHasKey($secondEffect, $container->get(DoctrineExecutionOperationStore::class)->pendingDeliveries($run, ''));
+
+        // Producer-shaped postCommitEffects can include an already-frozen Running
+        // sibling. Prepare stays idempotent; arm activates only Prepared permission.
+        $claim = $operations->claim($freed[0], new \Ineersa\AgentCore\Domain\Coordination\ExecutionAuthorizationStamp($secondEffect, $secondHash));
+        $this->assertIsString($claim);
+        $this->assertSame('Running', $connection->fetchOne('SELECT state FROM execution_operation WHERE effect_id = ?', [$secondEffect]));
+        $sealCountBefore = (int) $connection->fetchOne('SELECT COUNT(*) FROM execution_operation WHERE run_id = ?', [$run]);
+        $third = new ExecuteToolCall($run, 1, 'tools', 1, 'key-c', 'call-c', 'echo', ['command' => 'c'], 2, mode: ToolExecutionMode::Parallel->value, maxParallelism: 2, batchToolCallCount: 3);
+        $prepareC = SourceAcceptance::identity(new \Ineersa\AgentCore\Domain\Message\AdvanceRun($run, 1, 'tools', 5, 'advance-prepare-c'));
+        $events->appendTransition([], [
+            'run_id' => $run,
+            'predecessor_seq' => 0,
+            'source' => $prepareC,
+            'effects' => [$third],
+        ]);
+        $preparePending = $events->verifiedPendingTransition($run);
+        $this->assertNotNull($preparePending);
+        $stampC = $operations->prepare($third, $preparePending);
+        $operations->prepare($third, $preparePending); // idempotent exact-hash reuse
+        $events->finalizeVerifiedTransition($run, $preparePending->identity);
+        $thirdEffect = $stampC->effectId;
+        $this->assertSame('Prepared', $connection->fetchOne('SELECT state FROM execution_operation WHERE effect_id = ?', [$thirdEffect]));
+        $this->assertSame($sealCountBefore + 1, (int) $connection->fetchOne('SELECT COUNT(*) FROM execution_operation WHERE run_id = ?', [$run]));
+
+        $schedule = $batches->load($run, 1, 'tools');
+        $this->assertNotNull($schedule);
+        $schedule->calls['call-c'] = $third;
+        $schedule->expectedOrder['call-c'] = 2;
+        $schedule->pendingQueue = ['call-c'];
+        $schedule->inFlight = ['call-b' => true];
+        $batches->save($run, 1, 'tools', $schedule);
+
+        $admitC = new FinalizeToolBatchDTO($run, 1, 'tools', pendingQueue: [], inFlight: ['call-b' => true, 'call-c' => true], awaitingHumanInput: [], finalized: false);
+        $events->appendTransition([], [
+            'run_id' => $run,
+            'predecessor_seq' => 0,
+            'source' => SourceAcceptance::identity(new \Ineersa\AgentCore\Domain\Message\AdvanceRun($run, 1, 'tools', 6, 'advance-admit-c')),
+            'actions' => [$admitC],
+            'effects' => [$second], // producer shape: frozen Running sibling still present
+            'post_commit_effects' => [$second],
+        ]);
+        $admitPending = $events->verifiedPendingTransition($run);
+        $this->assertNotNull($admitPending);
+        [$admitted] = $coordinator->apply($admitPending, [$admitC], [$second]);
+        $events->finalizeVerifiedTransition($run, $admitPending->identity);
+        $this->assertCount(1, $admitted);
+        $this->assertSame('key-c', $admitted[0]->idempotencyKey());
+        $this->assertSame($secondEffect, (string) $connection->fetchOne('SELECT effect_id FROM execution_operation WHERE idempotency_key = ?', ['key-b']));
+        $this->assertSame('Running', $connection->fetchOne('SELECT state FROM execution_operation WHERE effect_id = ?', [$secondEffect]));
+        $this->assertSame('Armed', $connection->fetchOne('SELECT state FROM execution_operation WHERE effect_id = ?', [$thirdEffect]));
+        $this->assertSame($sealCountBefore + 1, (int) $connection->fetchOne('SELECT COUNT(*) FROM execution_operation WHERE run_id = ?', [$run]));
+
+        $result = \Ineersa\AgentCore\Application\Handler\ToolCallResultFactory::fromExecuteToolCallAndToolResult(
+            $second,
+            new \Ineersa\AgentCore\Domain\Tool\ToolResult('echo', 'echo', [['type' => 'text', 'text' => 'b']]),
+        );
+        $reference = $operations->saveResult($second, new \Ineersa\AgentCore\Domain\Coordination\ExecutionAuthorizationStamp($secondEffect, $secondHash), $claim, $result);
+        $descriptor = new \Ineersa\AgentCore\Domain\Coordination\ExecutionResultDispositionDTO($reference, 'Consumed');
+        $consumeAction = new FinalizeToolBatchDTO($run, 1, 'tools', pendingQueue: [], inFlight: ['call-c' => true], awaitingHumanInput: [], finalized: false, result: $result);
+        $events->appendTransition([], [
+            'run_id' => $run,
+            'predecessor_seq' => 0,
+            'source' => SourceAcceptance::identity(new \Ineersa\AgentCore\Domain\Message\AdvanceRun($run, 1, 'tools', 7, 'advance-consume-b')),
+            'execution_disposition' => $descriptor,
+            'actions' => [$consumeAction],
+        ]);
+        $consumePending = $events->verifiedPendingTransition($run);
+        $this->assertNotNull($consumePending);
+        $coordinator->apply($consumePending, [$consumeAction], [], $descriptor);
+        $events->finalizeVerifiedTransition($run, $consumePending->identity);
+        $payloadDir = \dirname($container->get(\Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface::class)->resolveToolBatchesDirectory($run)).'/execution-operations/'.$secondEffect;
+        $this->assertDirectoryExists($payloadDir);
+        $this->assertSame($secondEffect, $operations->reclaimDisposedPayloads($run, ''));
+        $this->assertDirectoryExists($payloadDir, 'Active ordered buffer must retain consumed seal.');
+
+        $cancel = new FinalizeToolBatchDTO($run, 1, 'tools', pendingQueue: [], inFlight: [], awaitingHumanInput: [], finalized: true);
+        $events->appendTransition([], [
+            'run_id' => $run,
+            'predecessor_seq' => 0,
+            'source' => SourceAcceptance::identity(new \Ineersa\AgentCore\Domain\Message\AdvanceRun($run, 1, 'tools', 8, 'advance-cancel')),
+            'actions' => [$cancel],
+        ]);
+        $cancelPending = $events->verifiedPendingTransition($run);
+        $this->assertNotNull($cancelPending);
+        $coordinator->apply($cancelPending, [$cancel]);
+        $events->finalizeVerifiedTransition($run, $cancelPending->identity);
+        $this->assertSame('Stale', $connection->fetchOne('SELECT state FROM execution_operation WHERE effect_id = ?', [$thirdEffect]));
+        $this->assertNull($operations->claim($admitted[0], new \Ineersa\AgentCore\Domain\Coordination\ExecutionAuthorizationStamp($thirdEffect, (string) $connection->fetchOne('SELECT request_hash FROM execution_operation WHERE effect_id = ?', [$thirdEffect]))));
+        $this->assertSame('Consumed', $connection->fetchOne('SELECT state FROM execution_operation WHERE effect_id = ?', [$secondEffect]));
     }
 
     /** @param array<string, int|string> $source */

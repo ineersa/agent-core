@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Handler;
 
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
-use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreMutation;
 use Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO;
 use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
@@ -277,6 +276,22 @@ final class ToolBatchCollector
             return;
         }
         $this->store->applyPrepared($action, $transition);
+    }
+
+    /** Capture cancellation settlement without synthesizing new execution work. */
+    public function prepareCancelFinalization(string $runId, int $turnNo, string $stepId): ?FinalizeToolBatchDTO
+    {
+        $before = $this->loadBatch($runId, $turnNo, $stepId);
+        if (null === $before) {
+            return null;
+        }
+        $after = clone $before;
+        $after->pendingQueue = [];
+        $after->inFlight = [];
+        $after->awaitingHumanInput = [];
+        $after->finalized = true;
+
+        return $this->prepareDelta($runId, $turnNo, $stepId, $before, $after);
     }
 
     /**

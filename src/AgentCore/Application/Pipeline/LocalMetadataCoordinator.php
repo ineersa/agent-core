@@ -54,11 +54,18 @@ final readonly class LocalMetadataCoordinator
         foreach ($this->preparationCandidates($actions, $effects) as $effect) {
             $this->executionOperations->prepare($effect, $transition);
         }
+        if (null !== $executionDisposition) {
+            // Sealed-body verification stays outside the short metadata transaction.
+            $this->executionOperations->validateDisposition($executionDisposition, $transition);
+        }
 
         return $this->transactions->transactional(function () use ($transition, $actions, $effects, $executionDisposition): array {
             foreach ($actions as $action) {
                 if ($action instanceof FinalizeToolBatchDTO) {
                     $this->batches->applyPrepared($action, $transition);
+                    if ($action->finalized) {
+                        $this->executionOperations->retireUnstartedPermissions($action->runId, $action->turnNo, $action->stepId, $transition);
+                    }
                     continue;
                 }
                 if ($action instanceof RegisterToolBatchDTO) {

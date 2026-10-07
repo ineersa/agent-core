@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Support;
 
-use Ineersa\AgentCore\Contract\ApplicationDbTransactionInterface;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Pipeline\LocalMetadataCoordinator;
 use Ineersa\AgentCore\Application\Pipeline\SourceAcceptance;
 use Ineersa\AgentCore\Application\Pipeline\TransitionFinalizer;
+use Ineersa\AgentCore\Contract\ApplicationDbTransactionInterface;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
