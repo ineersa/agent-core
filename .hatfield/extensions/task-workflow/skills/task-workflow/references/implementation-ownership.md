@@ -4,22 +4,22 @@
 
 Main must read the task and applicable instructions, inspect entry points, callers, tests, and boundaries, then identify cohesive slices, unknowns, and validation. Do not replace this pass with a scout report. Stop before designing edits for a slice assigned to a fork.
 
-Keep cohesive, clear work with main. If delegation would cost as much as implementation, main owns it. File count alone does not decide ownership.
-
-Use a fork only when all four conditions hold:
-
-1. Scope and acceptance criteria are clear.
-2. The fork can explore, implement, and validate without product decisions.
-3. Main can review the diff and evidence without relearning the area.
-4. Delegation saves meaningful investigation or context.
+Main coordinates, explores initial scope, and owns transitions. Keep a small one-off implementation that touches 1–2 files with main. Delegate every larger implementation slice to a fork.
 
 Give the fork the goal, criteria, constraints, entry points, ownership boundary, and validation contract, not a completed edit design.
+
+## Roles
+
+- Forks implement bounded slices.
+- Scouts explore the codebase read-only.
+- Reviewers review revisions read-only.
+- Researchers find web information read-only.
+- Do not use scouts, reviewers, or researchers for ownership decisions or implementation.
 
 ## Execution
 
 - Use one owner per slice and one writer per worktree. Parallel writers need separate worktrees and an integration order.
 - Make every ownership change an explicit handoff.
-- Keep scouts, researchers, and reviewers read-only. Use them for bounded unknowns or independent review, not ownership decisions.
 - Batch independent child work; serialize dependent work. Retrieve omitted evidence only when needed.
 - Require independent review before accepting implementation.
 

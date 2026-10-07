@@ -24,6 +24,7 @@
 - Use `startDetached`, `sendLiteral`, `sendKey`, and bounded `waitForTuiReady` or harness predicates.
 - Use positive visible state, events, or artifacts, not stale scrollback absence. Yield in bounded predicate polls; never busy-spin.
 - A required product delay must be documented and minimal. If only an elapsed-time window proves the test and no deterministic barrier exists, delete the case with coverage-loss evidence.
+- Contention and locking proofs need deterministic barriers (locks, pipes, or markers coupled to child liveness). Timing lotteries are unacceptable.
 
 ## Artifacts
 

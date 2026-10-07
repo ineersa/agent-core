@@ -12,3 +12,4 @@
 - ParaTest isolates SQLite and cache by `TEST_TOKEN`; concurrent QA pools additionally require `HATFIELD_QA_LANE`. Do not bypass the bootstrap.
 - Filtered Castor test runs are sequential and use the shared test database.
 - Use `VirtualTuiHarness` in `tests/Tui/Support/` for widget, input, local command, and render assertions.
+- Never add production APIs, settings, or paths solely for tests.

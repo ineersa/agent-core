@@ -11,7 +11,7 @@ Before implementation, read:
 1. Call `move_task(to="IN-PROGRESS")`. This creates the task worktree and branch, copies `vendor/` and `.vera/`, updates parent IDEA exclusions when present, creates minimal worktree `.idea` metadata, and opens that worktree in JetBrains when available.
 2. Perform or refresh the routing pass in the task worktree. Reuse current `task-explain` findings instead of repeating the same research.
 3. Apply the specification-fidelity check and ask the user about unresolved behavior or public API decisions.
-4. Choose ownership with the decision rules in `implementation-ownership.md`. Main owns by default. Record each assigned slice with the required ownership log.
+4. Choose ownership with the decision rules in `implementation-ownership.md`. Keep 1–2 file one-offs with main; delegate larger implementation to forks. Record each assigned slice with the required ownership log.
 5. Implement sequentially under the recorded ownership.
 6. Verify the output, run focused validation, and record each slice as completed or blocked. Include the commit when available.
 7. Stop. Tell the user what was implemented and that `task-to-pr` is the next phase.

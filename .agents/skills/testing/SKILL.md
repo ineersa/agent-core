@@ -12,9 +12,10 @@ description: "Load before test work or runtime, TUI, Messenger, and database val
 - For rare exceptions, document the unique external/process contract, why lower layers cannot prove it, and that the timeout is a safety cap.
 - Delete or demote flaky, soft, duplicate, or timing-window tests. Never fix them with arbitrary sleeps, delayed fixtures, retries, or higher timeouts.
 - Assert positive readiness through bounded predicates, events, or artifacts. Timeouts are safety caps, not synchronization.
+- Contention and locking proofs need deterministic barriers (locks, pipes, or markers coupled to child liveness). Timing lotteries are unacceptable.
 - Own and isolate every process/resource; tear down the owned tree deterministically. Never signal root-owned or `HATFIELD_SESSION_ID` processes.
 - Boot the Symfony kernel and use its test container for database tests. No standalone ORM factories.
-- Keep helpers in tests. Never add production APIs, paths, or constructor bypasses solely for test access.
+- Keep helpers in tests. Never add production APIs, settings, paths, or constructor bypasses solely for test access.
 - Record the removed behavior and exact remaining proof for test deletions/demotions; justify or get approval for uncovered requirements.
 - Do not claim mocked mechanisms were exercised live.
 
@@ -25,7 +26,7 @@ description: "Load before test work or runtime, TUI, Messenger, and database val
 - Provider or LLM-visible changes: [live LLM](references/live-llm.md).
 - Unfamiliar QA commands or full-gate prerequisites: [commands](references/commands.md).
 - Failures, hangs, or parallel flakes: [diagnostics](references/diagnostics.md).
-- Auditing test value or consolidating coverage: [test value](references/value.md).
+- Auditing test value, consolidating coverage, or deleting/demoting a test: [test value](references/value.md).
 
 ## Required gate
 

@@ -67,7 +67,7 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
             $messages,
         ));
         $this->assertSame('user', $roles[array_key_last($roles)]);
-        $this->assertStringContainsString('FORK MODE IS ENABLED', $prepared->startRunInput->systemPrompt);
+        $this->assertStringContainsString('You are the fork child.', $prepared->startRunInput->systemPrompt);
 
         $inheritedUser = array_values(array_filter($messages, static fn (AgentMessage $m): bool => 'user' === $m->role && 'prior user' === ($m->content[0]['text'] ?? '')));
         $this->assertCount(1, $inheritedUser);
@@ -302,13 +302,13 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
 
         $this->assertStringNotContainsString('Artifact ID: artifact-fork-no-contract', $joined);
         $this->assertStringNotContainsString('agent_child_contract', $joined);
-        $this->assertStringContainsString('FORK MODE IS ENABLED', $prepared->startRunInput->systemPrompt);
-        $this->assertStringContainsString('Never emit the handoff in a message that also requests tools', $prepared->startRunInput->systemPrompt);
-        $this->assertStringContainsString('## Status', $joined);
-        $this->assertStringContainsString('## Repository state', $joined);
-        $this->assertStringContainsString('## Result', $joined);
-        $this->assertStringContainsString('## Validation', $joined);
-        $this->assertStringContainsString('Return the semantic delta produced by this fork, not a transcript.', $joined);
+        $this->assertStringContainsString('You are the fork child.', $prepared->startRunInput->systemPrompt);
+        $this->assertStringContainsString('Do not emit progress narration, request tools in the handoff message, or replace it with a later recap.', $prepared->startRunInput->systemPrompt);
+        $this->assertStringContainsString('Outcome: complete | partial | blocked | failed', $joined);
+        $this->assertStringContainsString('Repository:', $joined);
+        $this->assertStringContainsString('Result:', $joined);
+        $this->assertStringContainsString('Validation:', $joined);
+        $this->assertStringContainsString('Report only new information the parent needs to evaluate or continue the work.', $joined);
         $this->assertSame('user', $prepared->startRunInput->messages[array_key_last($prepared->startRunInput->messages)]->role);
     }
 }
