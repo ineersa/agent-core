@@ -122,7 +122,9 @@ final class InProcessSelectHistoryTurnEmitsRunHistoryPositionChangedTest extends
         $result = new \Ineersa\CodingAgent\Runtime\Contract\RepairResult(true, false, 'refused', \Ineersa\CodingAgent\Runtime\Contract\SessionRepairRefusalReasonEnum::ActiveStreaming);
         $repair->expects($this->once())->method('repair')->with(self::RUN_ID, false)->willReturn($result);
         $sink = new InMemoryRuntimeEventSink();
-        $client = $this->client(new InMemoryEventStore(), $this->createStub(HistorySelectionServiceInterface::class), $sink, new TestActiveRunContext(), $repair);
+        $registry = new TestActiveRunContext();
+        $registry->loadRecovered(new RunState(self::RUN_ID, RunStatus::Running, isStreaming: true));
+        $client = $this->client(new InMemoryEventStore(), $this->createStub(HistorySelectionServiceInterface::class), $sink, $registry, $repair);
         $this->assertSame($result, $client->repair(self::RUN_ID, false));
         $events = iterator_to_array($sink->drain(self::RUN_ID));
         $this->assertCount(1, $events);
@@ -138,7 +140,9 @@ final class InProcessSelectHistoryTurnEmitsRunHistoryPositionChangedTest extends
         $repair = $this->createMock(\Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface::class);
         $repair->expects($this->once())->method('repair')->willThrowException(new \RuntimeException('private detail'));
         $sink = new InMemoryRuntimeEventSink();
-        $client = $this->client(new InMemoryEventStore(), $this->createStub(HistorySelectionServiceInterface::class), $sink, new TestActiveRunContext(), $repair);
+        $registry = new TestActiveRunContext();
+        $registry->loadRecovered(new RunState(self::RUN_ID, RunStatus::Running));
+        $client = $this->client(new InMemoryEventStore(), $this->createStub(HistorySelectionServiceInterface::class), $sink, $registry, $repair);
         try {
             $client->repair(self::RUN_ID);
             $this->fail('Owner repair failure must propagate.');
