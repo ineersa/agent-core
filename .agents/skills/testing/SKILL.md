@@ -9,9 +9,10 @@ description: "Load before test work or runtime, TUI, Messenger, and database val
 - Read `tests/AGENTS.md` before test work. Every agent and fork must follow this prerequisite.
 - Prove behavior at the lowest correct layer. Use live LLM or tmux only for contracts unavailable below.
 - Keep cases <=10 seconds under normal load and relevant contention.
-- For rare exceptions, document the unique external/process contract, why lower layers cannot prove it, and that the timeout is a safety cap.
+- For rare exceptions, document in the test the unique external/process contract, why lower layers cannot prove it, and that the timeout is a safety cap.
 - Delete or demote flaky, soft, duplicate, or timing-window tests. Never fix them with arbitrary sleeps, delayed fixtures, retries, or higher timeouts.
 - Assert positive readiness through bounded predicates, events, or artifacts. Timeouts are safety caps, not synchronization.
+- Never busy-spin readiness loops. Yield within bounded predicate polls or block on a real event.
 - Contention and locking proofs need deterministic barriers (locks, pipes, or markers coupled to child liveness). Timing lotteries are unacceptable.
 - Own and isolate every process/resource; tear down the owned tree deterministically. Never signal root-owned or `HATFIELD_SESSION_ID` processes.
 - Boot the Symfony kernel and use its test container for database tests. No standalone ORM factories.
