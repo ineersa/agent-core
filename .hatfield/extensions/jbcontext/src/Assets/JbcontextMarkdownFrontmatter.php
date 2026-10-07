@@ -8,9 +8,6 @@ use Symfony\Component\Yaml\Yaml;
 
 /**
  * Minimal Markdown frontmatter parse/dump for package-local asset install.
- *
- * Host skill discovery ignores unknown keys such as {@code version}; this
- * helper only exists so the extension can compare bundled skill versions.
  */
 final class JbcontextMarkdownFrontmatter
 {
@@ -47,26 +44,5 @@ final class JbcontextMarkdownFrontmatter
         $yaml = trim(Yaml::dump($frontmatter, 4, 2));
 
         return "---\n".$yaml."\n---\n".$body;
-    }
-
-    public static function versionOf(string $raw): ?string
-    {
-        $version = self::parse($raw)['frontmatter']['version'] ?? null;
-        if (!\is_string($version) && !\is_int($version) && !\is_float($version)) {
-            return null;
-        }
-
-        $normalized = trim((string) $version);
-
-        return '' === $normalized ? null : $normalized;
-    }
-
-    public static function isOutdated(?string $installedVersion, string $bundledVersion): bool
-    {
-        if (null === $installedVersion || '' === $installedVersion) {
-            return true;
-        }
-
-        return 0 !== version_compare($installedVersion, $bundledVersion);
     }
 }

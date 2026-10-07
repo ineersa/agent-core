@@ -10,7 +10,6 @@ final readonly class JbcontextPaths
         public string $projectRoot,
         public string $sessionsRoot,
         public string $ideaDir,
-        public string $skillDestinationDir,
         public string $scoutDestinationPath,
     ) {
     }
@@ -23,7 +22,6 @@ final readonly class JbcontextPaths
             projectRoot: $root,
             sessionsRoot: $root.'/.hatfield/extensions-data/jbcontext/sessions',
             ideaDir: $root.'/.idea',
-            skillDestinationDir: $root.'/.hatfield/skills/jbcontext-semantic-search',
             scoutDestinationPath: $root.'/.hatfield/agents/scout.md',
         );
     }

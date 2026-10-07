@@ -10,8 +10,6 @@ tools:
   - view_image
   - ask_human
   - code_search
-skills:
-  - jbcontext-semantic-search
 extensions:
   - Ineersa\HatfieldExt\Jbcontext\JbcontextExtension
 ---

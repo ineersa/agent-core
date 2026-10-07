@@ -10,6 +10,6 @@ This phase is read-only. Do not change task status or metadata, edit files, or l
 2. Perform the routing pass from the ownership guide. Main must inspect the likely code paths itself. Use a read-only scout only for a bounded unknown.
 3. Apply the specification-fidelity check. Bring unresolved behavior or public API decisions to the user.
 4. Present the summary, affected areas, implementation steps, risks, open questions, and suggested validation.
-5. Include a tentative ownership decision. State whether main should implement the work or list the proposed fork slices and why each meets the fork criteria.
+5. Include a tentative ownership decision. Keep 1–2 file one-offs with main; otherwise list the proposed implementation fork slices.
 6. Discuss the plan with the user.
 7. Stop. The user runs `task-start` when ready.

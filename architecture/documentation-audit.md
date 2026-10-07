@@ -157,16 +157,14 @@ Snapshot from the Markdown audit at `9f744008c`. Historical and imported documen
 | `docs/tui-architecture.md` | rewrote |
 | `docs/tui-testing.md` | rewrote |
 | `src/AgentCore/Application/AGENTS.md` | audited-accurate |
-| `src/AgentCore/Domain/AGENTS.md` | audited-accurate |
 | `src/AgentCore/Domain/Event/AGENTS.md` | audited-accurate |
 | `src/AgentCore/Domain/Message/AGENTS.md` | audited-accurate |
-| `src/AgentCore/Infrastructure/Doctrine/AGENTS.md` | audited-accurate |
 | `src/CodingAgent/Resources/agents/architect.md` | audited-accurate |
 | `src/CodingAgent/Resources/agents/browser.md` | audited-accurate |
 | `src/CodingAgent/Resources/agents/researcher.md` | audited-accurate |
 | `src/CodingAgent/Resources/agents/reviewer.md` | audited-accurate |
 | `src/CodingAgent/Resources/agents/scout.md` | audited-accurate |
-| `src/CodingAgent/Resources/skills/subagents/FRONTMATTER.md` | audited-accurate |
+| `src/CodingAgent/Resources/skills/subagents/references/frontmatter.md` | audited-accurate |
 | `src/CodingAgent/Resources/skills/subagents/SKILL.md` | audited-accurate |
 | `src/CodingAgent/Runtime/AGENTS.md` | corrected |
 | `src/CodingAgent/Runtime/Process/AGENTS.md` | audited-accurate |

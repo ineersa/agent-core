@@ -59,7 +59,7 @@ final readonly class ForkChildMessageComposer
         }
 
         // Artifact ID stays parent-only (SubagentChildRunHandoffRenderer). The child
-        // receives FORK MODE + task handoff instructions; no separate agent_child_contract.
+        // receives the fork operating contract + task handoff instructions; no separate agent_child_contract.
 
         $messages[] = new AgentMessage(
             role: 'user',
