@@ -3,8 +3,9 @@
 /**
  * Stateful Streamable HTTP MCP fixture for session-expiry recovery tests.
  *
- * PHP's built-in server is process-per-request, so session validity lives in
- * MCP_FIXTURE_STATE. Creating MCP_FIXTURE_INVALIDATE makes the next
+ * The built-in server process stays up, but request-scoped PHP state resets, so
+ * session validity lives only in MCP_FIXTURE_STATE. Creating
+ * MCP_FIXTURE_INVALIDATE makes the next
  * session-bound request return HTTP 404 with the configured body shape.
  * MCP_FIXTURE_HEADER_LOG records method, inbound session header, and status.
  *
@@ -14,9 +15,6 @@
  */
 
 declare(strict_types=1);
-
-$autoloadPath = __DIR__.'/../../../../vendor/autoload.php';
-require_once $autoloadPath;
 
 $stateFile = getenv('MCP_FIXTURE_STATE');
 $invalidateFile = getenv('MCP_FIXTURE_INVALIDATE');
@@ -33,12 +31,6 @@ if (false === $stateFile || '' === $stateFile) {
 $requestUri = $_SERVER['REQUEST_URI'] ?? '/';
 $path = parse_url($requestUri, \PHP_URL_PATH) ?? '/';
 $sessionHeader = $_SERVER['HTTP_MCP_SESSION_ID'] ?? '';
-
-if ('/health' === $path) {
-    respond(200, 'application/json', json_encode(['status' => 'ok'], \JSON_THROW_ON_ERROR), $headerLog, 'health', $sessionHeader);
-
-    exit(0);
-}
 
 if ('/' !== $path && '/mcp' !== $path) {
     respond(404, 'application/json', json_encode(['error' => 'not found'], \JSON_THROW_ON_ERROR), $headerLog, 'unknown', $sessionHeader);
@@ -61,7 +53,7 @@ try {
     exit(1);
 }
 
-if (!\is_array($request)) {
+if (!is_array($request)) {
     respond(400, 'application/json', json_encode(['jsonrpc' => '2.0', 'error' => ['code' => -32600, 'message' => 'Invalid Request'], 'id' => null], \JSON_THROW_ON_ERROR), $headerLog, 'invalid', $sessionHeader);
 
     exit(1);
@@ -176,9 +168,6 @@ try {
     exit(1);
 }
 
-/**
- * @param resource|false|null $_unused
- */
 function respond(int $status, string $contentType, string $body, string|false $headerLog, string $method, string $sessionHeader, ?string $responseSessionId = null): void
 {
     http_response_code($status);
