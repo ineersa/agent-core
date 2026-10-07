@@ -1085,11 +1085,21 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
 
         $stored = $this->activeRunContext->requireLoaded($runId);
 
+        $actions = $leadingActions;
+        foreach ($effects as $effect) {
+            // Ledger-backed Armed/ResultReady deliveries are republished from
+            // existing operation rows after cut finalization. Only non-ledger
+            // control continuations need a durable outbox obligation.
+            if ($effect instanceof AdvanceRun) {
+                $actions[] = $effect;
+            }
+        }
+
         return new SessionRepairPlan(
             $stored,
             $state->with(['version' => $stored->version]),
             $leadingEvents,
-            [...$leadingActions, new \Ineersa\CodingAgent\Application\Message\RedriveRepairEffectsDTO($runId, $effects)],
+            $actions,
             new RepairResult(false, false, 'Active operation redriven.', activeOperationsRedriven: \count($effects)),
         );
     }

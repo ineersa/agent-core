@@ -6,10 +6,12 @@ namespace Ineersa\CodingAgent\Runtime\Messenger;
 
 use Doctrine\DBAL\Connection;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Pipeline\DurablePendingPublication;
 use Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
 use Ineersa\AgentCore\Domain\Message\DurableExecutionResult;
+use Ineersa\AgentCore\Domain\Message\ExecutionOutcomeUnknown;
 use Ineersa\CodingAgent\Session\DoctrineExecutionOperationStore;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
@@ -29,6 +31,7 @@ final class ExecutionPendingDeliverySubscriber
         private readonly DoctrineExecutionOperationStore $operations,
         private readonly PreparedTransitionEventStoreInterface $transitions,
         private readonly PendingTransitionRecovery $recovery,
+        private readonly DurablePendingPublication $publication,
         private readonly RunLockManager $locks,
         private readonly Connection $connection,
         #[Autowire(service: 'agent.command.bus')]
@@ -78,6 +81,10 @@ final class ExecutionPendingDeliverySubscriber
             }
             $this->pendingRunCursor = $runId;
             if (null === $this->transitions->verifiedPendingTransition($runId)) {
+                // No unfinished intent: flush small control obligations only.
+                // Ledger rows remain on the bounded owned-operations page below.
+                $this->publication->publishControlOutbox($runId);
+
                 return;
             }
             // Acquire the existing run lock. Never steal a live owner's work.
@@ -96,32 +103,27 @@ final class ExecutionPendingDeliverySubscriber
         }
         try {
             $deliveries = $this->operations->pendingDeliveries($this->sessionId, $this->cursor);
+            if ([] === $deliveries) {
+                $this->cursor = '';
+
+                return;
+            }
+            foreach ($deliveries as $effectId => $envelope) {
+                $this->cursor = $effectId;
+                if (null === $envelope) {
+                    continue;
+                }
+                $message = $envelope->getMessage();
+                \assert($message instanceof AbstractAgentBusMessage);
+                try {
+                    $this->transitions->assertTransitionReady($message->runId());
+                    ($message instanceof DurableExecutionResult || $message instanceof ExecutionOutcomeUnknown ? $this->commandBus : $this->executionBus)->dispatch($envelope);
+                } catch (\Throwable $exception) {
+                    $this->logFailure($message->runId(), $exception);
+                }
+            }
         } catch (\Throwable $exception) {
             $this->logFailure($this->sessionId, $exception);
-
-            return;
-        }
-        if ([] === $deliveries) {
-            $this->cursor = '';
-
-            return;
-        }
-        foreach ($deliveries as $effectId => $envelope) {
-            $this->cursor = $effectId;
-            if (null === $envelope) {
-                continue;
-            }
-            $message = $envelope->getMessage();
-            \assert($message instanceof AbstractAgentBusMessage);
-            try {
-                // Armed rows can exist while owner coordination is unfinished.
-                // A sweep must not make those transitions externally executable.
-                $this->transitions->assertTransitionReady($message->runId());
-                ($message instanceof DurableExecutionResult || $message instanceof \Ineersa\AgentCore\Domain\Message\ExecutionOutcomeUnknown ? $this->commandBus : $this->executionBus)->dispatch($envelope);
-            } catch (\Throwable $exception) {
-                // Keep the durable row. Later sweeps retry it with the same identity.
-                $this->logFailure($message->runId(), $exception);
-            }
         }
     }
 

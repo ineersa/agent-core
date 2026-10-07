@@ -9,24 +9,25 @@ use Ineersa\AgentCore\Contract\ApplicationDbTransactionInterface;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
+use Ineersa\AgentCore\Domain\Coordination\ConsumeExecutionUnknownDTO;
 use Ineersa\AgentCore\Domain\Coordination\EnqueueCommandDTO;
-use Ineersa\AgentCore\Domain\Coordination\ExecutionAuthorizationStamp;
 use Ineersa\AgentCore\Domain\Coordination\ExecutionResultDispositionDTO;
 use Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO;
 use Ineersa\AgentCore\Domain\Coordination\MarkCommandAppliedDTO;
 use Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO;
 use Ineersa\AgentCore\Domain\Coordination\RejectCommandDTO;
+use Ineersa\AgentCore\Domain\Coordination\RetireUnknownExecutionDTO;
+use Ineersa\AgentCore\Domain\Coordination\TransitionPlan;
 use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
 use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
-use Ineersa\AgentCore\Domain\Message\ExecutionRequest;
 
 /**
- * Applies captured local mailbox/scheduling/source/disposition metadata in one
+ * Applies captured local mailbox/scheduling/source/disposition/outbox metadata in one
  * short application-DB transaction after verified canonical append.
  *
  * Immutable request sealing happens before this transaction. Transport delivery
- * happens after it. Only owner-admitted tool calls are armed for publication.
+ * happens after outermost owner-lock release. Only owner-admitted tool calls are armed.
  */
 final readonly class LocalMetadataCoordinator
 {
@@ -36,21 +37,17 @@ final readonly class LocalMetadataCoordinator
         private CommandStoreInterface $commands,
         private ExecutionOperationStoreInterface $executionOperations,
         private SourceAcceptance $sourceAcceptance,
+        private DurablePendingPublication $publication,
     ) {
     }
 
-    /**
-     * @param list<object>                  $actions
-     * @param list<AbstractAgentBusMessage> $effects
-     *
-     * @return array{0: list<ExecutionRequest>, 1: array<int, ExecutionAuthorizationStamp>}
-     */
-    public function apply(
-        VerifiedTransitionDTO $transition,
-        array $actions,
-        array $effects = [],
-        ?ExecutionResultDispositionDTO $executionDisposition = null,
-    ): array {
+    public function apply(TransitionPlan $plan): void
+    {
+        $transition = $plan->verified ?? throw new \RuntimeException('Local metadata requires verified transition evidence.');
+        $actions = $plan->localActions;
+        $effects = $plan->gatedEffects;
+        $executionDisposition = $plan->executionDisposition;
+
         foreach ($this->preparationCandidates($actions, $effects) as $effect) {
             $this->executionOperations->prepare($effect, $transition);
         }
@@ -59,7 +56,7 @@ final readonly class LocalMetadataCoordinator
             $this->executionOperations->validateDisposition($executionDisposition, $transition);
         }
 
-        return $this->transactions->transactional(function () use ($transition, $actions, $effects, $executionDisposition): array {
+        $this->transactions->transactional(function () use ($plan, $transition, $actions, $effects, $executionDisposition): void {
             foreach ($actions as $action) {
                 if ($action instanceof FinalizeToolBatchDTO) {
                     $this->batches->applyPrepared($action, $transition);
@@ -84,28 +81,29 @@ final readonly class LocalMetadataCoordinator
                     $this->commands->markRejected($action->runId, $action->idempotencyKey, $action->reason);
                     continue;
                 }
+                if ($action instanceof RetireUnknownExecutionDTO) {
+                    $this->executionOperations->retireUnknownExecution($action, $transition);
+                    continue;
+                }
+                if ($action instanceof ConsumeExecutionUnknownDTO) {
+                    $this->executionOperations->consumeUnknownNotice($action, $transition);
+                    continue;
+                }
                 throw new \RuntimeException('Unsupported local metadata action '.$action::class.'.');
             }
 
-            $toArm = $this->admittedEffects($actions, $effects);
-            $deliveries = [];
-            $stamps = [];
-            foreach ($toArm as $effect) {
+            foreach ($this->admittedEffects($actions, $effects) as $effect) {
                 if (!ExecutionOperationMapper::supports($effect)) {
                     throw new \RuntimeException('Local metadata arming requires a gated execution effect.');
                 }
-                $authorization = $this->executionOperations->arm($effect, $transition);
-                $reference = $this->executionOperations->requestReference($effect, $authorization);
-                $deliveries[] = $reference;
-                $stamps[spl_object_id($reference)] = $authorization;
+                $this->executionOperations->arm($effect, $transition);
             }
 
             if (null !== $executionDisposition) {
                 $this->executionOperations->applyDisposition($executionDisposition, $transition);
             }
             $this->sourceAcceptance->publish($transition);
-
-            return [$deliveries, $stamps];
+            $this->publication->persistControlObligations($plan->runId, $plan->controlActions);
         });
     }
 

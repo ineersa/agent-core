@@ -210,10 +210,8 @@ final class MessengerDoctrineRedeliverTimeoutLeaseTest extends IsolatedKernelTes
             ));
 
             $executionBus = new TestMessageBus();
-            $redrive = new \Ineersa\CodingAgent\Application\Pipeline\RedriveRepairEffectsHandler(new StepDispatcher(new TestMessageBus(), $executionBus), $eventStore);
             $commandBus = new \Symfony\Component\Messenger\MessageBus([
                 new \Symfony\Component\Messenger\Middleware\HandleMessageMiddleware(new \Symfony\Component\Messenger\Handler\HandlersLocator([
-                    \Ineersa\CodingAgent\Application\Message\RedriveRepairEffectsDTO::class => [$redrive],
                 ])),
             ]);
             $repair = new SessionRepairService(

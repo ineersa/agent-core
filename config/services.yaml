@@ -1050,6 +1050,16 @@ services:
       $store: '@Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface'
       $dispatcher: '@Ineersa\AgentCore\Application\Handler\StepDispatcher'
       $localMetadata: '@Ineersa\AgentCore\Application\Pipeline\LocalMetadataCoordinator'
+      $plans: '@Ineersa\AgentCore\Application\Pipeline\TransitionPlanFactory'
+      $publication: '@Ineersa\AgentCore\Application\Pipeline\DurablePendingPublication'
+
+  Ineersa\AgentCore\Contract\ControlMessageOutboxInterface:
+    alias: Ineersa\CodingAgent\Session\DoctrineControlMessageOutbox
+
+  Ineersa\AgentCore\Application\Pipeline\DurablePendingPublication:
+    arguments:
+      $commandBus: '@agent.command.bus'
+      $executionBus: '@agent.execution.bus'
 
   Ineersa\AgentCore\Application\Messenger\ExecutionAuthorizationMiddleware:
     arguments:

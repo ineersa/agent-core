@@ -1108,9 +1108,7 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
             sequenceAllocator: new FileRunSequenceAllocator(),
         );
 
-        $redriveHandler = new \Ineersa\CodingAgent\Application\Pipeline\RedriveRepairEffectsHandler(new StepDispatcher($commandBus, $dispatcherBus), $eventStore);
         $coordinationBus = new \Symfony\Component\Messenger\MessageBus([new \Symfony\Component\Messenger\Middleware\HandleMessageMiddleware(new \Symfony\Component\Messenger\Handler\HandlersLocator([
-            \Ineersa\CodingAgent\Application\Message\RedriveRepairEffectsDTO::class => [$redriveHandler],
         ]))]);
 
         return new SessionRepairService(

@@ -99,40 +99,36 @@ final class SessionRepairExecutionRecoveryTest extends PerMethodIsolatedKernelTe
         $this->assertSame(0, $repair->repair($run, false, \Symfony\Component\Uid\Uuid::v4()->toRfc4122())->activeOperationsRedriven);
         $this->assertSame($before, $journal->latestSequenceFor($run));
         if ($lostAcknowledgement) {
-            $executionBus = $c->get('agent.execution.bus');
+            // Cut and source acceptance finish before broker send. A failed send
+            // leaves the exact Armed ledger obligation for retry without a new authorization.
+            $appliedLost = $repair->repair($run, true, 'original-repair');
+            $this->assertSame(1, $appliedLost->activeOperationsRedriven, $appliedLost->message);
+            $this->assertNull($journal->verifiedPendingTransition($run));
+            $source = \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance::actionIdentity(\Ineersa\CodingAgent\Application\Message\RepairSession::class, $run, 'original-repair');
+            $this->assertTrue($c->get(\Ineersa\AgentCore\Application\Pipeline\SourceAcceptance::class)->identityAlreadyAccepted($source));
             $fail = true;
             $broker = $this->createStub(\Symfony\Component\Messenger\MessageBusInterface::class);
-            $broker->method('dispatch')->willReturnCallback(static function (object $message, array $stamps = []) use ($executionBus, &$fail): \Symfony\Component\Messenger\Envelope {
-                $envelope = $executionBus->dispatch($message, $stamps);
+            $broker->method('dispatch')->willReturnCallback(static function (object $message, array $stamps = []) use (&$fail): \Symfony\Component\Messenger\Envelope {
                 if ($fail) {
                     $fail = false;
                     throw new \RuntimeException('Injected lost broker acknowledgement.');
                 }
 
-                return $envelope;
+                return new \Symfony\Component\Messenger\Envelope($message, $stamps);
             });
-            $c->set(\Ineersa\CodingAgent\Application\Pipeline\RedriveRepairEffectsHandler::class,
-                new \Ineersa\CodingAgent\Application\Pipeline\RedriveRepairEffectsHandler(
-                    new \Ineersa\AgentCore\Application\Handler\StepDispatcher($c->get('agent.command.bus'), $broker), $journal));
-            try {
-                $repair->repair($run, true, 'original-repair');
-                $this->fail('Lost acknowledgement must leave the captured repair unresolved.');
-            } catch (\Symfony\Component\Messenger\Exception\HandlerFailedException $exception) {
-                $this->assertStringContainsString('Injected lost broker acknowledgement.', $exception->getMessage());
-            }
-            $pending = $journal->verifiedPendingTransition($run);
-            $this->assertNotNull($pending);
-            $this->assertCount(1, $pending->work['actions']);
-            $action = $pending->work['actions'][0];
-            $this->assertInstanceOf(\Ineersa\CodingAgent\Application\Message\RedriveRepairEffectsDTO::class, $action);
-            $this->assertEquals($reference, $action->effects[0]->getMessage());
-            $source = \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance::actionIdentity(\Ineersa\CodingAgent\Application\Message\RepairSession::class, $run, 'original-repair');
-            $acceptance = $c->get(\Ineersa\AgentCore\Application\Pipeline\SourceAcceptance::class);
-            $this->assertFalse($acceptance->identityAlreadyAccepted($source));
-            $c->get(\Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery::class)->recover($run);
-            $this->assertTrue($acceptance->identityAlreadyAccepted($source));
-            $this->assertNull($journal->verifiedPendingTransition($run));
-            $this->assertSame(1, (int) $c->get(Connection::class)->fetchOne('SELECT COUNT(*) FROM execution_operation WHERE run_id = ?', [$run]), 'Recovery must not create another authorization.');
+            $publication = new \Ineersa\AgentCore\Application\Pipeline\DurablePendingPublication(
+                $journal,
+                $operations,
+                $c->get(\Ineersa\AgentCore\Contract\ControlMessageOutboxInterface::class),
+                $c->get(RunLockManager::class),
+                $c->get('agent.command.bus'),
+                $broker,
+                new \Ineersa\AgentCore\Tests\Support\TestLogger(),
+            );
+            $publication->publishReady($run);
+            $this->assertNotNull($operations->pendingDeliveriesForRun($run)[$reference->effectId] ?? null);
+            $publication->publishReady($run);
+            $this->assertSame(1, (int) $c->get(Connection::class)->fetchOne('SELECT COUNT(*) FROM execution_operation WHERE run_id = ?', [$run]), 'Retry must not create another authorization.');
         }
         $applied = $repair->repair($run, true, 'original-repair');
         $this->assertSame($lostAcknowledgement ? 0 : 1, $applied->activeOperationsRedriven, $applied->message);
@@ -143,7 +139,7 @@ final class SessionRepairExecutionRecoveryTest extends PerMethodIsolatedKernelTe
         $this->assertSame(1, $repair->repair($run, true, 'fresh-repair')->activeOperationsRedriven);
         $transport = $c->get('messenger.transport.'.($ready ? 'run_control' : ('shell' === $kind ? 'tool' : 'llm')));
         $sent = $transport->getSent();
-        $this->assertCount($lostAcknowledgement ? 3 : 2, $sent);
+        $this->assertCount(2, $sent);
         $this->assertEquals($expected, $sent[0]->getMessage());
         $this->assertEquals($expected, $sent[1]->getMessage());
         $this->assertSame($before, $journal->latestSequenceFor($run));

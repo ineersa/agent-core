@@ -195,24 +195,7 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
         $deliveries = [];
         foreach ($records as $record) {
             try {
-                if ('Running' === $record['state'] || 'Deferred' === $record['state']) {
-                    $record = $this->recoverClaim($record);
-                }
-                if ('Running' === $record['state'] || 'Deferred' === $record['state']) {
-                    $deliveries[$record['effect_id']] = null;
-                    continue;
-                }
-                if ('OutcomeUnknown' === $record['state']) {
-                    $deliveries[$record['effect_id']] = new Envelope($this->unknownNotice($record));
-                    continue;
-                }
-                if ('ResultReady' === $record['state']) {
-                    $deliveries[$record['effect_id']] = new Envelope($this->reference($record));
-                    continue;
-                }
-                $stamp = new ExecutionAuthorizationStamp($record['effect_id'], $record['request_hash']);
-                $request = new ExecutionRequest($record['run_id'], (int) $record['turn_no'], $record['step_id'], (int) $record['attempt'], $record['idempotency_key'], $record['effect_id'], $record['request_type'], $record['request_hash'], (int) $record['request_bytes']);
-                $deliveries[$record['effect_id']] = new Envelope($request, [$stamp]);
+                $deliveries[$record['effect_id']] = $this->deliveryEnvelope($record);
             } catch (\Throwable $exception) {
                 // Keep failed evidence. Advance the page past this row so healthy
                 // owned work is not starved; later sweeps revisit the same identity.
@@ -229,6 +212,54 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
         }
 
         return $deliveries;
+    }
+
+    public function pendingDeliveriesForRun(string $runId): array
+    {
+        $this->sanitizeRunId($runId);
+        $records = $this->connection->fetchAllAssociative(
+            "SELECT * FROM execution_operation WHERE run_id = ? AND (state IN ('Armed', 'Running', 'Deferred', 'ResultReady') OR (state = 'OutcomeUnknown' AND unknown_notice_transition IS NULL)) ORDER BY effect_id",
+            [$runId],
+        );
+        $deliveries = [];
+        foreach ($records as $record) {
+            try {
+                $deliveries[$record['effect_id']] = $this->deliveryEnvelope($record);
+            } catch (\Throwable $exception) {
+                $this->logger->warning('execution.pending_delivery_record_failed', [
+                    'component' => 'execution_operation_store',
+                    'event_type' => 'execution.pending_delivery_record_failed',
+                    'run_id' => $record['run_id'] ?? null,
+                    'effect_id' => $record['effect_id'] ?? null,
+                    'state' => $record['state'] ?? null,
+                    'exception_class' => $exception::class,
+                ]);
+                $deliveries[$record['effect_id']] = null;
+            }
+        }
+
+        return $deliveries;
+    }
+
+    /** @param array<string, mixed> $record */
+    private function deliveryEnvelope(array $record): ?Envelope
+    {
+        if ('Running' === $record['state'] || 'Deferred' === $record['state']) {
+            $record = $this->recoverClaim($record);
+        }
+        if ('Running' === $record['state'] || 'Deferred' === $record['state']) {
+            return null;
+        }
+        if ('OutcomeUnknown' === $record['state']) {
+            return new Envelope($this->unknownNotice($record));
+        }
+        if ('ResultReady' === $record['state']) {
+            return new Envelope($this->reference($record));
+        }
+        $stamp = new ExecutionAuthorizationStamp($record['effect_id'], $record['request_hash']);
+        $request = new ExecutionRequest($record['run_id'], (int) $record['turn_no'], $record['step_id'], (int) $record['attempt'], $record['idempotency_key'], $record['effect_id'], $record['request_type'], $record['request_hash'], (int) $record['request_bytes']);
+
+        return new Envelope($request, [$stamp]);
     }
 
     public function claim(ExecutionRequest $request, ExecutionAuthorizationStamp $authorization): string|DurableExecutionResult|null

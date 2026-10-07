@@ -155,7 +155,9 @@ final class ExecutionPendingDeliverySubscriberTest extends IsolatedKernelTestCas
         $store->appendTransition([], ['run_id' => $run, 'predecessor_seq' => 0, 'effects' => [$request]]);
         $pending = $store->verifiedPendingTransition($run);
         $this->assertNotNull($pending);
-        self::getContainer()->get(DoctrineExecutionOperationStore::class)->arm($request, $pending);
+        $operations = self::getContainer()->get(DoctrineExecutionOperationStore::class);
+        $operations->prepare($request, $pending);
+        $operations->arm($request, $pending);
         $execution = new TestMessageBus();
         $command = new TestMessageBus();
         $worker = $this->worker();
@@ -207,6 +209,7 @@ final class ExecutionPendingDeliverySubscriberTest extends IsolatedKernelTestCas
         $this->assertNotNull($pending);
         $operations = self::getContainer()->get(DoctrineExecutionOperationStore::class);
         foreach ($requests as $request) {
+            $operations->prepare($request, $pending);
             $operations->arm($request, $pending);
         }
         $store->finalizeVerifiedTransition($run, $pending->identity);
@@ -215,11 +218,21 @@ final class ExecutionPendingDeliverySubscriberTest extends IsolatedKernelTestCas
     private function subscriber(string $run, MessageBusInterface $command, MessageBusInterface $execution): ExecutionPendingDeliverySubscriber
     {
         $container = self::getContainer();
+        $publication = new \Ineersa\AgentCore\Application\Pipeline\DurablePendingPublication(
+            $container->get(PreparedTransitionEventStoreInterface::class),
+            $container->get(DoctrineExecutionOperationStore::class),
+            $container->get(\Ineersa\AgentCore\Contract\ControlMessageOutboxInterface::class),
+            $container->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class),
+            $command,
+            $execution,
+            new TestLogger(),
+        );
 
         return new ExecutionPendingDeliverySubscriber(
             $container->get(DoctrineExecutionOperationStore::class),
             $container->get(PreparedTransitionEventStoreInterface::class),
             $container->get(\Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery::class),
+            $publication,
             $container->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class),
             $container->get(\Doctrine\DBAL\Connection::class),
             $command,

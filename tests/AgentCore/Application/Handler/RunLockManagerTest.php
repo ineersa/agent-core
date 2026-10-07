@@ -71,6 +71,22 @@ final class RunLockManagerTest extends TestCase
         $this->assertTrue($innerRan, 'Inner (re-entrant) critical section must execute');
     }
 
+    public function testAfterReleaseRunsOnlyAfterOutermostLockRelease(): void
+    {
+        $manager = new RunLockManager(new LockFactory(new InMemoryStore()));
+        $order = [];
+        $manager->synchronized('publish-run', static function () use ($manager, &$order): void {
+            $manager->afterRelease('publish-run', static function () use (&$order): void {
+                $order[] = 'publish';
+            });
+            $manager->synchronized('publish-run', static function () use (&$order): void {
+                $order[] = 'nested';
+            });
+            $order[] = 'outer';
+        });
+        $this->assertSame(['nested', 'outer', 'publish'], $order);
+    }
+
     /**
      * Different run IDs must still lock independently — the
      * re-entrant guard must not collapse separate locks.

@@ -12,6 +12,9 @@ final class RunLockManager
     /** @var array<string, LockInterface> */
     private array $activeLocks = [];
 
+    /** @var array<string, list<callable(): void>> */
+    private array $afterRelease = [];
+
     public function __construct(
         private LockFactory $lockFactory,
         private float $ttlSeconds = 30.0,
@@ -63,7 +66,30 @@ final class RunLockManager
             if ($lock->isAcquired()) {
                 $lock->release();
             }
+
+            $callbacks = $this->afterRelease[$key] ?? [];
+            unset($this->afterRelease[$key]);
+            foreach ($callbacks as $callback) {
+                $callback();
+            }
         }
+    }
+
+    /**
+     * Runs after this process releases the outermost lock for the run.
+     * Nested synchronized sections must not observe broker side effects early.
+     *
+     * @param callable(): void $callback
+     */
+    public function afterRelease(string $runId, callable $callback): void
+    {
+        $key = $this->lockKey($runId);
+        if (!isset($this->activeLocks[$key])) {
+            $callback();
+
+            return;
+        }
+        $this->afterRelease[$key][] = $callback;
     }
 
     private function lockKey(string $runId): string

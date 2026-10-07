@@ -623,7 +623,6 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
                     $fired->value = true;
                     throw new \RuntimeException('Injected child-maintenance interruption.');
                 }],
-                \Ineersa\CodingAgent\Application\Message\RedriveRepairEffectsDTO::class => [$c->get(\Ineersa\CodingAgent\Application\Pipeline\RedriveRepairEffectsHandler::class)],
             ])),
         ]);
         $commit = new \Ineersa\AgentCore\Application\Pipeline\RunCommit(

@@ -79,6 +79,13 @@ interface ExecutionOperationStoreInterface
     public function reclaimDisposedPayloads(string $ownerSessionId, string $afterEffectId): string;
 
     /**
+     * Pending broker deliveries for one run from existing ledger rows.
+     *
+     * @return array<string, \Symfony\Component\Messenger\Envelope|null>
+     */
+    public function pendingDeliveriesForRun(string $runId): array;
+
+    /**
      * Retire Prepared/Armed permissions for a cancelled batch without touching
      * Running/Deferred/ResultReady evidence.
      */

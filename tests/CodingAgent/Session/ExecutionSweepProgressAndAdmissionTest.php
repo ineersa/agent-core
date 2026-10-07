@@ -81,7 +81,7 @@ final class ExecutionSweepProgressAndAdmissionTest extends IsolatedKernelTestCas
             $container->get(\Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface::class),
             $logger,
         );
-        $subscriber = new ExecutionPendingDeliverySubscriber($store, $events, self::getContainer()->get(\Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery::class), self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class), self::getContainer()->get(\Doctrine\DBAL\Connection::class), $command, $execution, $run, new TestLogger());
+        $subscriber = new ExecutionPendingDeliverySubscriber($store, $events, self::getContainer()->get(\Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery::class), self::getContainer()->get(\Ineersa\AgentCore\Application\Pipeline\DurablePendingPublication::class), self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class), self::getContainer()->get(\Doctrine\DBAL\Connection::class), $command, $execution, $run, new TestLogger());
         $subscriber->onStarted(new WorkerStartedEvent(new Worker(['run_control' => new InMemoryTransport()], new TestMessageBus())));
         $this->assertCount(1, $execution->messages);
         $message = $execution->messages[0]->getMessage();

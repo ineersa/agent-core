@@ -4,15 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Pipeline;
 
-use Ineersa\AgentCore\Application\Handler\CommandMailboxCoordinationFactory;
-use Ineersa\AgentCore\Application\Handler\ExecutionOperationMapper;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Domain\Coordination\ExecutionResultDispositionDTO;
-use Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO;
-use Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO;
+use Ineersa\AgentCore\Domain\Coordination\TransitionPlan;
 use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
-use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
 
 /** One completion path for normal commits, recovery, and event-free dispositions. */
 final readonly class TransitionFinalizer
@@ -21,6 +17,8 @@ final readonly class TransitionFinalizer
         private PreparedTransitionEventStoreInterface $store,
         private StepDispatcher $dispatcher,
         private LocalMetadataCoordinator $localMetadata,
+        private TransitionPlanFactory $plans,
+        private DurablePendingPublication $publication,
     ) {
     }
 
@@ -37,49 +35,22 @@ final readonly class TransitionFinalizer
         array $afterTurnActions = [],
         ?ExecutionResultDispositionDTO $executionDisposition = null,
     ): void {
-        $localActions = [];
-        $remainingActions = [];
-        foreach ($actions as $action) {
-            if ($this->isLocalMetadataAction($action)) {
-                $localActions[] = $action;
-                continue;
-            }
-            $remainingActions[] = $action;
-        }
+        $this->completePlan($this->plans->create($runId, $verified, $effects, $actions, $afterTurnActions, $executionDisposition));
+    }
 
-        // Application lifecycle actions stay outside the local metadata transaction.
-        $this->dispatcher->dispatchCoordinationActions($afterTurnActions);
+    public function completePlan(TransitionPlan $plan): void
+    {
+        // Synchronous App domain coordination finishes before cut publication.
+        $this->dispatcher->dispatchCoordinationActions($plan->syncActions);
 
-        $ordinary = [];
-        /** @var list<AbstractAgentBusMessage> $gated */
-        $gated = [];
-        foreach ($effects as $effect) {
-            if ($effect instanceof AbstractAgentBusMessage && ExecutionOperationMapper::supports($effect)) {
-                $gated[] = $effect;
-                continue;
-            }
-            $ordinary[] = $effect;
-        }
-
-        $this->dispatcher->dispatchEffects($ordinary);
-        $this->dispatcher->dispatchCoordinationActions($remainingActions);
-
-        $deliveries = [];
-        $stamps = [];
-        if (null !== $verified) {
-            [$deliveries, $stamps] = $this->localMetadata->apply($verified, $localActions, $gated, $executionDisposition);
-            $this->store->finalizeVerifiedTransition($runId, $verified->identity);
-        } elseif (null !== $executionDisposition || [] !== $localActions || [] !== $gated) {
+        if (null !== $plan->verified) {
+            $this->localMetadata->apply($plan);
+            $this->store->finalizeVerifiedTransition($plan->runId, $plan->verified->identity);
+        } elseif (null !== $plan->executionDisposition || [] !== $plan->localActions || [] !== $plan->gatedEffects || [] !== $plan->controlActions) {
             throw new \RuntimeException('Execution authorization requires verified transition evidence.');
         }
 
-        $this->dispatcher->dispatchEffects($deliveries, $stamps);
-    }
-
-    private function isLocalMetadataAction(object $action): bool
-    {
-        return $action instanceof FinalizeToolBatchDTO
-            || $action instanceof RegisterToolBatchDTO
-            || CommandMailboxCoordinationFactory::isMailboxAction($action);
+        // Broker sends leave the owner lock through the shared publication path.
+        $this->publication->scheduleAfterOwnerLock($plan->runId);
     }
 }

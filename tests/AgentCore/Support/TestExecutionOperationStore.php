@@ -122,6 +122,11 @@ final class TestExecutionOperationStore implements ExecutionOperationStoreInterf
         return '';
     }
 
+    public function pendingDeliveriesForRun(string $runId): array
+    {
+        return [];
+    }
+
     public function retireUnstartedPermissions(string $runId, int $turnNo, string $stepId, VerifiedTransitionDTO $transition): void
     {
         // Dispatch-only fixture has no durable Prepared/Armed permissions.

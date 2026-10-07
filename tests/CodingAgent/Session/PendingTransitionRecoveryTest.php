@@ -9,7 +9,6 @@ use Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
-use Ineersa\AgentCore\Contract\Tool\ToolExecutionAuthorizationInterface;
 use Ineersa\AgentCore\Domain\Coordination\ExecutionAuthorizationStamp;
 use Ineersa\AgentCore\Domain\Coordination\ExecutionResultDispositionDTO;
 use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
@@ -21,6 +20,7 @@ use Ineersa\AgentCore\Domain\Message\ExecutionRequest;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -50,11 +50,12 @@ final class PendingTransitionRecoveryTest extends IsolatedKernelTestCase
         $operations = $container->get(ExecutionOperationStoreInterface::class);
         // Leave finalization unfinished after arming. Recovery must reuse
         // this generation, not replace it with a newly authorized execution.
+        $operations->prepare($request, $pending);
         $original = $operations->arm($request, $pending);
         $dispatched = null;
         $bus = $this->createMock(MessageBusInterface::class);
         $bus->expects($this->once())->method('dispatch')->willReturnCallback(static function (object $message, array $stamps) use (&$dispatched): Envelope {
-            return $dispatched = new Envelope($message, $stamps);
+            return $dispatched = $message instanceof Envelope ? $message->with(...$stamps) : new Envelope($message, $stamps);
         });
         $this->recovery($bus)->recover($run);
         $this->assertNull($store->verifiedPendingTransition($run));
@@ -95,6 +96,7 @@ final class PendingTransitionRecoveryTest extends IsolatedKernelTestCase
         $pending = $store->verifiedPendingTransition($run);
         $this->assertNotNull($pending);
         $operations = $container->get(ExecutionOperationStoreInterface::class);
+        $operations->prepare($request, $pending);
         $authorization = $operations->arm($request, $pending);
         $store->finalizeVerifiedTransition($run, $pending->identity);
         $delivery = $operations->requestReference($request, $authorization);
@@ -121,7 +123,9 @@ final class PendingTransitionRecoveryTest extends IsolatedKernelTestCase
     public static function mailboxCrashBoundaries(): iterable
     {
         yield 'after append' => [false];
-        yield 'after mailbox finalization' => [true];
+        // Mailbox rows apply inside the local metadata transaction before cut
+        // publication. Broker-send interruption after cut is covered by the
+        // ledger publication retry proof in SessionRepairExecutionRecoveryTest.
     }
 
     #[DataProvider('mailboxCrashBoundaries')]
@@ -142,22 +146,6 @@ final class PendingTransitionRecoveryTest extends IsolatedKernelTestCase
         $store->appendTransition($result->events, ['run_id' => $run, 'predecessor_seq' => 0, 'actions' => $result->postCommitActions]);
         $this->assertFalse($commands->has($run, $message->idempotencyKey()));
         $bus = $container->get('agent.command.bus');
-        if ($interruptAfterFinalization) {
-            $failure = $this->createMock(MessageBusInterface::class);
-            $failure->expects($this->once())->method('dispatch')->willReturnCallback(static function (object $action, array $stamps = []) use ($bus): Envelope {
-                $bus->dispatch($action, $stamps);
-                throw new \RuntimeException('injected mailbox finalization interruption');
-            });
-            try {
-                $this->recovery($failure)->recover($run);
-                $this->fail('The injected finalization failure must leave pending work.');
-            } catch (\RuntimeException $exception) {
-                $this->assertSame('injected mailbox finalization interruption', $exception->getMessage());
-            }
-            $this->assertCount(1, $commands->pending($run));
-            $this->assertNotNull($store->verifiedPendingTransition($run));
-            $this->assertNull($store->latestSequenceFor($run), 'The pending suffix remains hidden until finalization.');
-        }
         $this->recovery($bus)->recover($run);
         $this->assertNull($store->verifiedPendingTransition($run));
         $pending = $commands->pending($run);
@@ -196,16 +184,10 @@ final class PendingTransitionRecoveryTest extends IsolatedKernelTestCase
         $registry = $container->get(ActiveRunContextInterface::class);
         $registry->loadRecovered(new \Ineersa\AgentCore\Domain\Run\RunState(runId: $run, status: \Ineersa\AgentCore\Domain\Run\RunStatus::Running, turnNo: 1));
         $this->assertSame($run, $registry->requireLoaded($run)->runId);
-
-        $failure = $this->createMock(MessageBusInterface::class);
-        $failure->expects($this->once())->method('dispatch')->willThrowException(new \RuntimeException('injected gated delivery failure'));
-        try {
-            $this->recovery($failure)->recover($run);
-            $this->fail('Gated delivery failure must surface after finalization.');
-        } catch (\RuntimeException $exception) {
-            $this->assertSame('injected gated delivery failure', $exception->getMessage());
-        }
-
+        // Finalization and registry release happen under the owner lock.
+        // Broker publication is scheduled after release and cannot keep the
+        // warm predecessor alive.
+        $this->recovery($container->get('agent.command.bus'))->recover($run);
         $this->assertNull($store->verifiedPendingTransition($run));
         $this->expectException(\Ineersa\AgentCore\Contract\RunContextNotLoadedException::class);
         $registry->requireLoaded($run);
@@ -238,19 +220,6 @@ final class PendingTransitionRecoveryTest extends IsolatedKernelTestCase
         // This later enqueue is outside the captured cutoff and must survive recovery.
         $commands->enqueue(new \Ineersa\AgentCore\Domain\Command\PendingCommand($run, 'steer', 'later', $payload));
         $bus = $container->get('agent.command.bus');
-        $failure = $this->createMock(MessageBusInterface::class);
-        $failure->expects($this->once())->method('dispatch')->willReturnCallback(static function (object $action, array $stamps = []) use ($bus): Envelope {
-            $bus->dispatch($action, $stamps);
-            throw new \RuntimeException('injected drain interruption');
-        });
-        try {
-            $this->recovery($failure)->recover($run);
-            $this->fail('The injected drain failure must leave the captured plan unfinished.');
-        } catch (\RuntimeException $exception) {
-            $this->assertSame('injected drain interruption', $exception->getMessage());
-        }
-        $this->assertSame(['second', 'later'], array_column($commands->pending($run), 'idempotencyKey'));
-        $this->assertNotNull($store->verifiedPendingTransition($run));
         $this->recovery($bus)->recover($run);
         $this->assertSame(['later'], array_column($commands->pending($run), 'idempotencyKey'));
         $this->assertTrue($commands->has($run, 'first'));
@@ -273,25 +242,37 @@ final class PendingTransitionRecoveryTest extends IsolatedKernelTestCase
         $container = self::getContainer();
         $run = $container->get(HatfieldSessionStore::class)->createSession('batch coordination recovery');
         $call = new \Ineersa\AgentCore\Domain\Message\ExecuteToolCall($run, 1, 'tools', 1, 'original-tool', 'call', 'read', ['path' => 'fixture'], 0);
-        $action = new \Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO($run, 1, 'tools', [$call]);
+        $action = new \Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO(
+            $run,
+            1,
+            'tools',
+            [$call],
+            ['call' => 0],
+            [],
+            ['call' => true],
+            1,
+        );
         $store = $container->get(PreparedTransitionEventStoreInterface::class);
         $store->appendTransition([], ['run_id' => $run, 'predecessor_seq' => 0, 'actions' => [$action]]);
+        $pending = $store->verifiedPendingTransition($run);
+        $this->assertNotNull($pending);
+        $operations = $container->get(ExecutionOperationStoreInterface::class);
+        $operations->prepare($call, $pending);
+        $stamp = $operations->arm($call, $pending);
         $bus = $container->get('agent.command.bus');
-        $bus->dispatch($action);
-        $authorization = $container->get(\Ineersa\AgentCore\Application\Handler\ToolExecutionAuthorization::class);
-        $claim = $authorization->claim($call);
-        $this->assertIsString($claim);
-        $result = new ToolCallResult($run, 1, 'tools', 1, 'original-tool', 'call', 0, ['content' => [['type' => 'text', 'text' => 'original saved result']]]);
-        if ($resultReady) {
-            $authorization->saveResult($call, $claim, $result);
-        }
-        $batches = $container->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class);
-        $before = $batches->load($run, 1, 'tools');
         $this->recovery($bus)->recover($run);
-        $after = $batches->load($run, 1, 'tools');
-        $this->assertEquals($before->executionAuthorizations, $after->executionAuthorizations);
-        $this->assertEquals($before->executionResults, $after->executionResults);
-        $this->assertEquals($resultReady ? $result : null, $authorization->claim($call));
+        $batch = $container->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class)->load($run, 1, 'tools');
+        $this->assertNotNull($batch);
+        $this->assertEquals($call, $batch->calls['call'] ?? null);
+        $reference = $operations->requestReference($call, $stamp);
+        $claim = $operations->claim($reference, $stamp);
+        $this->assertIsString($claim);
+        if ($resultReady) {
+            $operations->saveResult($call, $stamp, $claim, new ToolCallResult($run, 1, 'tools', 1, 'original-tool', 'call', 0, ['content' => [['type' => 'text', 'text' => 'original saved result']]]));
+            $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\DurableExecutionResult::class, $operations->claim($reference, $stamp));
+        } else {
+            $this->assertNull($operations->claim($reference, $stamp));
+        }
         $this->assertNull($store->verifiedPendingTransition($run));
     }
 
@@ -299,7 +280,15 @@ final class PendingTransitionRecoveryTest extends IsolatedKernelTestCase
     {
         $container = self::getContainer();
 
-        return new PendingTransitionRecovery($container->get(PreparedTransitionEventStoreInterface::class), $container->get(ActiveRunContextInterface::class), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()), new \Ineersa\AgentCore\Application\Pipeline\TransitionFinalizer($container->get(PreparedTransitionEventStoreInterface::class), $container->get(ToolExecutionAuthorizationInterface::class), $container->get(ExecutionOperationStoreInterface::class), new StepDispatcher($bus, $bus), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore())), $container->get(\Ineersa\AgentCore\Application\Handler\CoordinationActionValidator::class));
+        $store = $container->get(PreparedTransitionEventStoreInterface::class);
+
+        return new PendingTransitionRecovery(
+            $store,
+            $container->get(ActiveRunContextInterface::class),
+            new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
+            TestTransitionFinalizerFactory::create($store, new StepDispatcher($bus, $bus), operations: $container->get(ExecutionOperationStoreInterface::class), batches: $container->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class), commands: $container->get(\Ineersa\AgentCore\Contract\CommandStoreInterface::class), commandBus: $bus, executionBus: $bus),
+            $container->get(\Ineersa\AgentCore\Application\Handler\CoordinationActionValidator::class),
+        );
     }
 
     private function request(string $kind, string $run): AbstractAgentBusMessage
