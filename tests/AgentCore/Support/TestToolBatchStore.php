@@ -5,13 +5,11 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Tests\Support;
 
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
-use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreMutation;
 use Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO;
 use Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO;
 use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
-use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 
 /** In-memory scheduling store for collector/finalizer unit proofs. */
 final class TestToolBatchStore implements ToolBatchStoreInterface
@@ -25,11 +23,6 @@ final class TestToolBatchStore implements ToolBatchStoreInterface
     public function load(string $runId, int $turnNo, string $stepId): ?ToolBatchStateDTO
     {
         return $this->batches[$this->key($runId, $turnNo, $stepId)] ?? null;
-    }
-
-    public function save(string $runId, int $turnNo, string $stepId, ToolBatchStateDTO $batchState): void
-    {
-        $this->batches[$this->key($runId, $turnNo, $stepId)] = $batchState;
     }
 
     public function delete(string $runId, int $turnNo, string $stepId): void
@@ -63,24 +56,6 @@ final class TestToolBatchStore implements ToolBatchStoreInterface
         return false;
     }
 
-    public function reclaimDisposedPayloads(string $runId, string $afterFilename): string
-    {
-        return '';
-    }
-
-    public function mutate(string $runId, int $turnNo, string $stepId, callable $callback): mixed
-    {
-        $outcome = $callback($this->load($runId, $turnNo, $stepId));
-        if (!$outcome instanceof ToolBatchStoreMutation) {
-            throw new \LogicException('Tool batch store mutate callback must return ToolBatchStoreMutation.');
-        }
-        if (null !== $outcome->nextState) {
-            $this->save($runId, $turnNo, $stepId, $outcome->nextState);
-        }
-
-        return $outcome->returnValue;
-    }
-
     public function applyPrepared(FinalizeToolBatchDTO $action, VerifiedTransitionDTO $transition): void
     {
         $key = $this->key($action->runId, $action->turnNo, $action->stepId);
@@ -104,7 +79,7 @@ final class TestToolBatchStore implements ToolBatchStoreInterface
                 ? $next->calls[$action->revisedCallId]->withHumanInputAnswer(null)
                 : $next->calls[$action->revisedCallId]->withAuthorizedHumanAnswer($action->answer);
         }
-        $this->save($action->runId, $action->turnNo, $action->stepId, $next);
+        $this->batches[$key] = $next;
         $this->applied[$key] = $transition->identity;
     }
 
@@ -114,55 +89,32 @@ final class TestToolBatchStore implements ToolBatchStoreInterface
         if (($this->applied[$key] ?? null) === $transition->identity) {
             return;
         }
-        $effects = $action->effects;
-        usort($effects, static fn (ExecuteToolCall $left, ExecuteToolCall $right): int => $left->orderIndex <=> $right->orderIndex);
-        $expectedOrder = [];
         $calls = [];
-        $maxParallelism = 1;
-        foreach ($effects as $call) {
-            $expectedOrder[$call->toolCallId] = $call->orderIndex;
+        foreach ($action->effects as $call) {
             $calls[$call->toolCallId] = $call;
-            $maxParallelism = max(1, $call->maxParallelism ?? $maxParallelism);
         }
         $existing = $this->load($action->runId, $action->turnNo, $action->stepId);
         if (null !== $existing) {
+            if ($existing->expectedOrder !== $action->expectedOrder
+                || $existing->pendingQueue !== $action->pendingQueue
+                || $existing->inFlight !== $action->inFlight
+                || $existing->maxParallelism !== $action->maxParallelism) {
+                throw new \LogicException('Conflicting prepared tool batch membership.');
+            }
             $this->applied[$key] = $transition->identity;
 
             return;
         }
-        $batch = new ToolBatchStateDTO(
-            expectedOrder: $expectedOrder,
+        $this->batches[$key] = new ToolBatchStateDTO(
+            expectedOrder: $action->expectedOrder,
             calls: $calls,
-            pendingQueue: array_map(static fn (ExecuteToolCall $call): string => $call->toolCallId, $effects),
-            inFlight: [],
+            pendingQueue: $action->pendingQueue,
+            inFlight: $action->inFlight,
             results: [],
             finalized: false,
-            maxParallelism: max(1, $maxParallelism),
+            maxParallelism: max(1, $action->maxParallelism),
             awaitingHumanInput: [],
         );
-        while ([] !== $batch->pendingQueue) {
-            $nextCallId = $batch->pendingQueue[0];
-            $nextCall = $batch->calls[$nextCallId] ?? null;
-            if (!$nextCall instanceof ExecuteToolCall) {
-                array_shift($batch->pendingQueue);
-                continue;
-            }
-            $mode = ToolExecutionMode::tryFrom((string) ($nextCall->mode ?? ToolExecutionMode::Sequential->value)) ?? ToolExecutionMode::Sequential;
-            if (ToolExecutionMode::Sequential === $mode || ToolExecutionMode::Interrupt === $mode) {
-                if ([] !== $batch->inFlight) {
-                    break;
-                }
-                array_shift($batch->pendingQueue);
-                $batch->inFlight[$nextCallId] = true;
-                break;
-            }
-            if (\count($batch->inFlight) >= $batch->maxParallelism) {
-                break;
-            }
-            array_shift($batch->pendingQueue);
-            $batch->inFlight[$nextCallId] = true;
-        }
-        $this->save($action->runId, $action->turnNo, $action->stepId, $batch);
         $this->applied[$key] = $transition->identity;
     }
 

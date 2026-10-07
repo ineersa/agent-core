@@ -27,6 +27,8 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryCommandStore;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
+use Ineersa\AgentCore\Tests\Support\TestToolBatchStore;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -1504,8 +1506,8 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $collector = new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector();
-        $collector->registerExpectedBatch('run-deferred-cancel', 1, 'step-d', [
+        $collector = new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector($batchStore = new TestToolBatchStore());
+        TestToolBatchRegistration::register($collector, $batchStore, 'run-deferred-cancel', 1, 'step-d', [
             new ExecuteToolCall(
                 'run-deferred-cancel',
                 1,
@@ -1518,7 +1520,7 @@ final class ApplyCommandHandlerTest extends TestCase
                 0,
             ),
         ]);
-        \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, 'run-deferred-cancel', 1, 'step-d', 'call-d', 'q-d');
+        \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, $batchStore, 'run-deferred-cancel', 1, 'step-d', 'call-d', 'q-d');
 
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
@@ -1601,13 +1603,13 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $collector = new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(defaultMaxParallelism: 2);
-        $collector->registerExpectedBatch('run-multi-d', 1, 'step-m', [
+        $collector = new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector($batchStore = new TestToolBatchStore(), 2);
+        TestToolBatchRegistration::register($collector, $batchStore, 'run-multi-d', 1, 'step-m', [
             new ExecuteToolCall('run-multi-d', 1, 'step-m', 1, 'idemp-a', 'call-a', 'bash', ['command' => 'a'], 0),
             new ExecuteToolCall('run-multi-d', 1, 'step-m', 1, 'idemp-b', 'call-b', 'bash', ['command' => 'b'], 1),
         ]);
-        \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, 'run-multi-d', 1, 'step-m', 'call-a', 'q-a');
-        \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, 'run-multi-d', 1, 'step-m', 'call-b', 'q-b');
+        \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, $batchStore, 'run-multi-d', 1, 'step-m', 'call-a', 'q-a');
+        \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, $batchStore, 'run-multi-d', 1, 'step-m', 'call-b', 'q-b');
 
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
@@ -1680,8 +1682,8 @@ final class ApplyCommandHandlerTest extends TestCase
         $serializer = AttributeSerializerValidatorTestFactory::serializer();
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $collector = new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(defaultMaxParallelism: 2);
-        $collector->registerExpectedBatch('run-partial-d', 1, 'step-p', [
+        $collector = new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector($batchStore = new TestToolBatchStore(), 2);
+        TestToolBatchRegistration::register($collector, $batchStore, 'run-partial-d', 1, 'step-p', [
             new ExecuteToolCall('run-partial-d', 1, 'step-p', 1, 'idemp-a', 'call-a', 'bash', ['command' => 'a'], 0),
             new ExecuteToolCall('run-partial-d', 1, 'step-p', 1, 'idemp-b', 'call-b', 'ask_human', ['prompt' => 'B?'], 1),
         ]);
@@ -1714,12 +1716,12 @@ final class ApplyCommandHandlerTest extends TestCase
             isError: false,
             error: null,
         );
-        $accepted = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($collector, $completedA);
+        $accepted = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($collector, $batchStore, $completedA);
         $this->assertTrue($accepted->accepted);
         $this->assertFalse($accepted->complete);
         $this->assertNotNull($collector->getStoredResult('run-partial-d', 1, 'step-p', 'call-a'));
 
-        \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, 'run-partial-d', 1, 'step-p', 'call-b', 'q-b');
+        \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, $batchStore, 'run-partial-d', 1, 'step-p', 'call-b', 'q-b');
 
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
@@ -1881,12 +1883,12 @@ final class ApplyCommandHandlerTest extends TestCase
         $serializer = AttributeSerializerValidatorTestFactory::serializer();
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $collector = new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(defaultMaxParallelism: 2);
-        $collector->registerExpectedBatch('run-missing-store', 1, 'step-m', [
+        $collector = new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector($batchStore = new TestToolBatchStore(), 2);
+        TestToolBatchRegistration::register($collector, $batchStore, 'run-missing-store', 1, 'step-m', [
             new ExecuteToolCall('run-missing-store', 1, 'step-m', 1, 'idemp-a', 'call-a', 'bash', ['command' => 'a'], 0, mode: 'parallel', maxParallelism: 2),
             new ExecuteToolCall('run-missing-store', 1, 'step-m', 1, 'idemp-b', 'call-b', 'ask_human', ['prompt' => 'B?'], 1, mode: 'parallel', maxParallelism: 2),
         ]);
-        \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, 'run-missing-store', 1, 'step-m', 'call-b', 'q-b');
+        \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, $batchStore, 'run-missing-store', 1, 'step-m', 'call-b', 'q-b');
 
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,

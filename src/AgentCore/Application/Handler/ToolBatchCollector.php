@@ -6,9 +6,6 @@ namespace Ineersa\AgentCore\Application\Handler;
 
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO;
-use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
-use Ineersa\AgentCore\Domain\Event\RunEvent;
-use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -17,44 +14,36 @@ use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 
 /**
- * Per-run/per-turn/per-step tool batch execution coordinator.
+ * Per-run/per-turn/per-step tool batch preparation coordinator.
  *
- * Registers expected tool calls from an LLM step, dispatches the initial batch,
- * and collects results as they arrive. With a durable {@see ToolBatchStoreInterface},
- * batch state survives consumer restarts and coordinates across Messenger workers.
+ * Captures scheduling membership for LLM registration, prepares collect/human
+ * deltas, and reads durable scheduling state. Persistence of registration and
+ * deltas belongs to {@see ToolBatchStoreInterface} under verified transitions.
  *
- * Cross-process coordination pipeline (LLM register/persist → parallel tool workers
- * → {@see ToolCallResult} on run_control → collector/store mutation):
- *   1. {@see LlmStepResultHandler} calls {@see registerExpectedBatch()}, which persists
- *      the batch and returns initial dispatchable {@see ExecuteToolCall} messages.
- *   2. Tool workers execute calls and dispatch {@see ToolCallResult} envelopes.
+ * Cross-process coordination pipeline:
+ *   1. {@see LlmStepResultHandler} calls {@see prepareRegistration()} once and journals
+ *      the captured {@see \Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO}.
+ *   2. Local metadata applies that exact membership; later collect/human deltas
+ *      arm subsequent calls through the same store.
  *   3. {@see ToolCallResultHandler} calls {@see prepareCollect()} without publication.
- *      Verified coordination finalizes its delta before subsequent calls are armed.
- *
- * Durable mode reads through the SQL scheduling store without retaining
- * deserialized batches. In-memory batches remain available until RunCommit
- * publishes their canonical completion or terminal cancellation.
  */
 final class ToolBatchCollector
 {
-    /** @var array<string, ToolBatchStateDTO> */
-    private array $batches = [];
-
-    private ?ToolBatchStoreInterface $store = null;
-
     public function __construct(
+        private readonly ToolBatchStoreInterface $store,
         private readonly int $defaultMaxParallelism = 4,
-        ?ToolBatchStoreInterface $store = null,
     ) {
-        $this->store = $store;
     }
 
     /**
-     * @param list<ExecuteToolCall> $toolCalls
+     * Capture initial membership, queue, and in-flight admission once.
      *
-     * @return list<ExecuteToolCall>
+     * Existing durable membership is validated and returned unchanged so
+     * registration replay never resets live batch state.
+     *
+     * @param list<ExecuteToolCall> $toolCalls
      */
-    public function registerExpectedBatch(string $runId, int $turnNo, string $stepId, array $toolCalls, bool $redriveInFlight = false): array
+    public function prepareRegistration(string $runId, int $turnNo, string $stepId, array $toolCalls): \Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO
     {
         usort(
             $toolCalls,
@@ -64,12 +53,12 @@ final class ToolBatchCollector
         $expectedOrder = [];
         $callsById = [];
         $maxParallelism = $this->defaultMaxParallelism;
-
         foreach ($toolCalls as $toolCall) {
             $expectedOrder[$toolCall->toolCallId] = $toolCall->orderIndex;
             $callsById[$toolCall->toolCallId] = $toolCall;
             $maxParallelism = max(1, $toolCall->maxParallelism ?? $maxParallelism);
         }
+        $maxParallelism = max(1, $maxParallelism);
 
         $existing = $this->loadBatch($runId, $turnNo, $stepId);
         if (null !== $existing) {
@@ -85,11 +74,16 @@ final class ToolBatchCollector
                 }
             }
 
-            // Registration is coordination, not permission to re-execute calls.
-            // Keep results, human answers, queue/in-flight state and finalization.
-            // Recover a crash between durable registration and arming/dispatch.
-            // Execution authorization rejects a second Running claim.
-            return $redriveInFlight ? array_values(array_filter($existing->calls, static fn (ExecuteToolCall $call): bool => isset($existing->inFlight[$call->toolCallId]) && !isset($existing->results[$call->toolCallId]))) : [];
+            return new \Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO(
+                $runId,
+                $turnNo,
+                $stepId,
+                array_values($existing->calls),
+                $existing->expectedOrder,
+                array_values($existing->pendingQueue),
+                $existing->inFlight,
+                $existing->maxParallelism,
+            );
         }
 
         $batch = new ToolBatchStateDTO(
@@ -99,14 +93,21 @@ final class ToolBatchCollector
             inFlight: [],
             results: [],
             finalized: false,
-            maxParallelism: max(1, $maxParallelism),
+            maxParallelism: $maxParallelism,
             awaitingHumanInput: [],
         );
+        $this->dispatchableCalls($batch);
 
-        $initialDispatch = $this->dispatchableCalls($batch);
-        $this->saveBatch($runId, $turnNo, $stepId, $batch);
-
-        return $initialDispatch;
+        return new \Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO(
+            $runId,
+            $turnNo,
+            $stepId,
+            array_values($callsById),
+            $expectedOrder,
+            array_values($batch->pendingQueue),
+            $batch->inFlight,
+            $maxParallelism,
+        );
     }
 
     /** Preparation never publishes collection or changes the retained batch. */
@@ -227,55 +228,11 @@ final class ToolBatchCollector
      * Release process-local coordination only after canonical persistence and
      * state publication succeed. Durable file cleanup is an independent hook.
      *
-     * @param list<RunEvent> $events
+     * @param list<\Ineersa\AgentCore\Domain\Event\RunEvent> $events
      */
     public function releaseAfterCommit(RunState $state, array $events): void
     {
-        foreach ($events as $event) {
-            if (RunEventTypeEnum::ToolBatchCommitted->value === $event->type) {
-                $turnNo = $event->payload['turn_no'] ?? null;
-                $stepId = $event->payload['step_id'] ?? null;
-                if (\is_int($turnNo) && \is_string($stepId) && '' !== $stepId) {
-                    unset($this->batches[$this->batchKey($state->runId, $turnNo, $stepId)]);
-                }
-            }
-
-            if (RunEventTypeEnum::AgentEnd->value === $event->type && $state->status->isTerminal()) {
-                $prefix = $state->runId.'|';
-                foreach (array_keys($this->batches) as $key) {
-                    if (str_starts_with($key, $prefix)) {
-                        unset($this->batches[$key]);
-                    }
-                }
-            }
-        }
-    }
-
-    public function finalizePreparedBatch(FinalizeToolBatchDTO $action, VerifiedTransitionDTO $transition): void
-    {
-        if (null === $this->store) {
-            $batch = $this->loadBatch($action->runId, $action->turnNo, $action->stepId);
-            if (null === $batch) {
-                throw new \RuntimeException('Prepared batch evidence is missing.');
-            }
-            $next = clone $batch;
-            $next->pendingQueue = $action->pendingQueue;
-            $next->inFlight = $action->inFlight;
-            $next->awaitingHumanInput = $action->awaitingHumanInput;
-            $next->finalized = $action->finalized;
-            if (null !== $action->result) {
-                $next->results[$action->result->toolCallId] = $action->result;
-            }
-            if (null !== $action->revisedCallId) {
-                $next->calls[$action->revisedCallId] = null === $action->answer
-                    ? $next->calls[$action->revisedCallId]->withHumanInputAnswer(null)
-                    : $next->calls[$action->revisedCallId]->withAuthorizedHumanAnswer($action->answer);
-            }
-            $this->saveBatch($action->runId, $action->turnNo, $action->stepId, $next);
-
-            return;
-        }
-        $this->store->applyPrepared($action, $transition);
+        // Durable scheduling owns retention. Process-local caches are gone.
     }
 
     /** Capture cancellation settlement without synthesizing new execution work. */
@@ -628,28 +585,6 @@ final class ToolBatchCollector
 
     private function loadBatch(string $runId, int $turnNo, string $stepId): ?ToolBatchStateDTO
     {
-        if (null !== $this->store) {
-            return $this->store->load($runId, $turnNo, $stepId);
-        }
-
-        return $this->batches[$this->batchKey($runId, $turnNo, $stepId)] ?? null;
-    }
-
-    private function saveBatch(string $runId, int $turnNo, string $stepId, ToolBatchStateDTO $batch): void
-    {
-        if (null !== $this->store) {
-            // Store-first: durable write must succeed before any in-process view changes
-            // so Messenger retry reloads the last persisted snapshot, not a dirty cache.
-            $this->store->save($runId, $turnNo, $stepId, $batch);
-
-            return;
-        }
-
-        $this->batches[$this->batchKey($runId, $turnNo, $stepId)] = $batch;
-    }
-
-    private function batchKey(string $runId, int $turnNo, string $stepId): string
-    {
-        return \sprintf('%s|%d|%s', $runId, $turnNo, $stepId);
+        return $this->store->load($runId, $turnNo, $stepId);
     }
 }

@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchStore;
 use PHPUnit\Framework\TestCase;
 
@@ -20,17 +21,17 @@ final class ToolBatchCollectorFinalizedRedeliveryTest extends TestCase
     public function testFinalizedSnapshotRedeliveryReplaysAcceptedComplete(): void
     {
         $store = $this->createStore();
-        $collector = new ToolBatchCollector(defaultMaxParallelism: 4, store: $store);
+        $collector = new ToolBatchCollector($store, 4);
 
-        $collector->registerExpectedBatch('run-1', 1, 'step-1', [
+        TestToolBatchRegistration::register($collector, $store, 'run-1', 1, 'step-1', [
             $this->executeToolCall('call-1', 0),
         ]);
 
         $result = $this->toolResult('call-1', 0);
-        $first = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($collector, $result);
+        $first = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($collector, $store, $result);
         $this->assertTrue($first->complete);
 
-        $redelivery = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($collector, $result);
+        $redelivery = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($collector, $store, $result);
         $this->assertTrue($redelivery->accepted);
         $this->assertFalse($redelivery->duplicate);
         $this->assertTrue($redelivery->complete);

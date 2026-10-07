@@ -29,7 +29,7 @@ final class CoordinationActionSerializationTest extends IsolatedKernelTestCase
             $advance,
             $compact,
             new MarkCommandAppliedDTO('run', 'source-key'),
-            new RegisterToolBatchDTO('run', 7, 'step', [$call]),
+            new RegisterToolBatchDTO('run', 7, 'step', [$call], ['call' => 0], [], ['call' => true], 1),
             new ConsumeSubagentProgressDTO('lifecycle', 3, true, false, new \DateTimeImmutable('2026-10-03T18:00:00Z')),
             new ConsumeSubagentProgressDTO('lifecycle', 3, false, true, new \DateTimeImmutable('2026-10-03T18:00:00Z')),
             new DeliverDeferredSubagentBatchLifecycleMessage('lifecycle'),

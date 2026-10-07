@@ -12,7 +12,6 @@ use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
 use Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO;
-use Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
@@ -39,6 +38,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
         private ToolCallExtractor $toolCallExtractor,
         private AgentMessageNormalizer $messageNormalizer,
         private NormalizerInterface $normalizer,
+        private \Ineersa\AgentCore\Application\Handler\ToolBatchCollector $toolBatchCollector,
         private ?ToolSetResolverInterface $toolSetResolver = null,
         private ?ToolboxInterface $toolbox = null,
         private ?RunTracer $tracer = null,
@@ -421,7 +421,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
         ]);
 
         $turnNo = $state->turnNo;
-        $postCommitActions = [new RegisterToolBatchDTO($runId, $turnNo, $message->stepId(), $effects)];
+        $postCommitActions = [$this->toolBatchCollector->prepareRegistration($runId, $turnNo, $message->stepId(), $effects)];
 
         return new HandlerResult(
             nextState: $nextState,

@@ -6,9 +6,7 @@ namespace Ineersa\CodingAgent\Session;
 
 use Doctrine\DBAL\Connection;
 use Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface;
-use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
-use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreMutation;
 use Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO;
 use Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO;
 use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
@@ -17,7 +15,6 @@ use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ExecutionRequest;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
-use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 
@@ -32,7 +29,6 @@ final class DoctrineToolBatchStore implements ToolBatchStoreInterface
 {
     public function __construct(
         private readonly Connection $connection,
-        private readonly PreparedTransitionEventStoreInterface $transitions,
         private readonly ExecutionOperationStoreInterface $operations,
         private readonly LoggerInterface $logger = new NullLogger(),
     ) {
@@ -49,11 +45,6 @@ final class DoctrineToolBatchStore implements ToolBatchStoreInterface
         return false === $record ? null : $this->hydrate($record);
     }
 
-    public function save(string $runId, int $turnNo, string $stepId, ToolBatchStateDTO $batchState): void
-    {
-        $this->sanitizeRunId($runId);
-        $this->upsert($runId, $turnNo, $stepId, $batchState, $this->referencesFromBatch($runId, $turnNo, $stepId, $batchState), appliedTransition: '');
-    }
 
     public function delete(string $runId, int $turnNo, string $stepId): void
     {
@@ -95,44 +86,7 @@ final class DoctrineToolBatchStore implements ToolBatchStoreInterface
         return false;
     }
 
-    public function reclaimDisposedPayloads(string $runId, string $afterFilename): string
-    {
-        $this->sanitizeRunId($runId);
-        $this->transitions->assertTransitionReady($runId);
-        $records = $this->connection->fetchAllAssociative(
-            'SELECT turn_no, step_id, finalized, awaiting_human_input_json, pending_queue_json, in_flight_json FROM tool_batch_schedule WHERE run_id = ? ORDER BY turn_no ASC, step_id ASC LIMIT 64',
-            [$runId],
-        );
-        foreach ($records as $record) {
-            $cursor = $this->cursor((int) $record['turn_no'], (string) $record['step_id']);
-            if (strcmp($cursor, $afterFilename) <= 0) {
-                continue;
-            }
-            if ($this->retainSchedulingEvidence($record)) {
-                return $cursor;
-            }
-            $this->delete($runId, (int) $record['turn_no'], (string) $record['step_id']);
 
-            return $cursor;
-        }
-
-        return '';
-    }
-
-    public function mutate(string $runId, int $turnNo, string $stepId, callable $callback): mixed
-    {
-        $this->sanitizeRunId($runId);
-        $current = $this->load($runId, $turnNo, $stepId);
-        $outcome = $callback($current);
-        if (!$outcome instanceof ToolBatchStoreMutation) {
-            throw new \LogicException('Tool batch store mutate callback must return ToolBatchStoreMutation.');
-        }
-        if (null !== $outcome->nextState) {
-            $this->upsert($runId, $turnNo, $stepId, $outcome->nextState, $this->referencesFromBatch($runId, $turnNo, $stepId, $outcome->nextState), $this->appliedTransition($runId, $turnNo, $stepId));
-        }
-
-        return $outcome->returnValue;
-    }
 
     public function applyPrepared(FinalizeToolBatchDTO $action, VerifiedTransitionDTO $transition): void
     {
@@ -201,20 +155,18 @@ final class DoctrineToolBatchStore implements ToolBatchStoreInterface
             return;
         }
         $effects = $action->effects;
-        usort($effects, static fn (ExecuteToolCall $left, ExecuteToolCall $right): int => $left->orderIndex <=> $right->orderIndex);
-        $expectedOrder = [];
         $callsById = [];
         $callRefs = [];
-        $maxParallelism = 1;
         foreach ($effects as $toolCall) {
-            $expectedOrder[$toolCall->toolCallId] = $toolCall->orderIndex;
             $callsById[$toolCall->toolCallId] = $toolCall;
             $callRefs[$toolCall->toolCallId] = $this->callReference($toolCall, $transition);
-            $maxParallelism = max(1, $toolCall->maxParallelism ?? $maxParallelism);
         }
         $existing = $this->load($action->runId, $action->turnNo, $action->stepId);
         if (null !== $existing) {
-            if ($existing->expectedOrder !== $expectedOrder) {
+            if ($existing->expectedOrder !== $action->expectedOrder
+                || $existing->pendingQueue !== $action->pendingQueue
+                || $existing->inFlight !== $action->inFlight
+                || $existing->maxParallelism !== $action->maxParallelism) {
                 throw new \LogicException('Conflicting prepared tool batch membership.');
             }
             foreach ($callsById as $id => $call) {
@@ -230,16 +182,15 @@ final class DoctrineToolBatchStore implements ToolBatchStoreInterface
             return;
         }
         $batch = new ToolBatchStateDTO(
-            expectedOrder: $expectedOrder,
+            expectedOrder: $action->expectedOrder,
             calls: $callsById,
-            pendingQueue: array_map(static fn (ExecuteToolCall $call): string => $call->toolCallId, $effects),
-            inFlight: [],
+            pendingQueue: $action->pendingQueue,
+            inFlight: $action->inFlight,
             results: [],
             finalized: false,
-            maxParallelism: max(1, $maxParallelism),
+            maxParallelism: max(1, $action->maxParallelism),
             awaitingHumanInput: [],
         );
-        $this->markInitialDispatchable($batch);
         $this->upsert($action->runId, $action->turnNo, $action->stepId, $batch, [
             'calls' => $callRefs,
             'results' => [],
@@ -275,32 +226,6 @@ final class DoctrineToolBatchStore implements ToolBatchStoreInterface
         return $admitted;
     }
 
-    private function markInitialDispatchable(ToolBatchStateDTO $batch): void
-    {
-        while ([] !== $batch->pendingQueue) {
-            $nextCallId = $batch->pendingQueue[0];
-            $nextCall = $batch->calls[$nextCallId] ?? null;
-            if (!$nextCall instanceof ExecuteToolCall) {
-                array_shift($batch->pendingQueue);
-                continue;
-            }
-            $mode = ToolExecutionMode::tryFrom((string) ($nextCall->mode ?? ToolExecutionMode::Sequential->value))
-                ?? ToolExecutionMode::Sequential;
-            if (ToolExecutionMode::Sequential === $mode || ToolExecutionMode::Interrupt === $mode) {
-                if ([] !== $batch->inFlight) {
-                    break;
-                }
-                array_shift($batch->pendingQueue);
-                $batch->inFlight[$nextCallId] = true;
-                break;
-            }
-            if (\count($batch->inFlight) >= $batch->maxParallelism) {
-                break;
-            }
-            array_shift($batch->pendingQueue);
-            $batch->inFlight[$nextCallId] = true;
-        }
-    }
 
     /**
      * @param array{calls: array<string, array<string, int|string>>, results: array<string, array<string, int|string>>} $refs
@@ -555,10 +480,6 @@ final class DoctrineToolBatchStore implements ToolBatchStoreInterface
         return false;
     }
 
-    private function cursor(int $turnNo, string $stepId): string
-    {
-        return \sprintf('%d_%s', $turnNo, hash('sha256', $stepId));
-    }
 
     /** @param array<string, mixed>|list<mixed> $value */
     private function jsonEncode(array $value): string

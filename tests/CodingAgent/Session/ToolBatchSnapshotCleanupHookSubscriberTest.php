@@ -46,8 +46,8 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
     {
         $store = $this->createStore();
         $finalized = new ToolBatchStateDTO([], [], [], [], [], true, 2);
-        $store->save('run-1', 3, 'step-x', $finalized);
-        $store->save('run-1', 3, 'step-other', new ToolBatchStateDTO([], [], [], [], [], false, 2));
+        $this->seedBatch($store, 'run-1', 3, 'step-x', $finalized);
+        $this->seedBatch($store, 'run-1', 3, 'step-other', new ToolBatchStateDTO([], [], [], [], [], false, 2));
 
         $subscriber = new ToolBatchSnapshotCleanupHookSubscriber($store, new TestLogger(), $this->createStub(\Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface::class));
         $subscriber->handleAfterTurnCommit(new AfterTurnCommitHookContext(
@@ -72,8 +72,8 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
     public function testTerminalAgentEndDeletesAllRemainingSnapshots(): void
     {
         $store = $this->createStore();
-        $store->save('run-1', 1, 's1', new ToolBatchStateDTO([], [], [], [], [], true, 2));
-        $store->save('run-1', 2, 's2', new ToolBatchStateDTO([], [], [], [], [], true, 2));
+        $this->seedBatch($store, 'run-1', 1, 's1', new ToolBatchStateDTO([], [], [], [], [], true, 2));
+        $this->seedBatch($store, 'run-1', 2, 's2', new ToolBatchStateDTO([], [], [], [], [], true, 2));
 
         $subscriber = new ToolBatchSnapshotCleanupHookSubscriber($store, new TestLogger(), $this->createStub(\Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface::class));
         $subscriber->handleAfterTurnCommit(new AfterTurnCommitHookContext(
@@ -93,7 +93,7 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
     {
         $store = $this->createStore();
         $finalized = new ToolBatchStateDTO([], [], [], [], [], true, 2);
-        $store->save('run-1', 1, 'step-1', $finalized);
+        $this->seedBatch($store, 'run-1', 1, 'step-1', $finalized);
 
         $activeRunContext = new TestActiveRunContext();
         $prev = RunState::queued('run-1');
@@ -140,7 +140,7 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
             activeRunContext: $active,
             eventStore: $eventStore,
             logger: new TestLogger(),
-            toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(),
+            toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector($this->createStore()),
             executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
             sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
             hookDispatcher: new HookDispatcher([new ToolBatchSnapshotCleanupHookSubscriber($this->createStore(), new TestLogger(), $inputStore)]),
@@ -148,6 +148,53 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
         );
         $this->expectExceptionMessage('append failed');
         $commit->commit($previous, new RunState('run-1', RunStatus::Running, version: 1, turnNo: 1, model: 'test-model'), [new RunEvent('run-1', 1, 1, RunEventTypeEnum::ToolExecutionEnd->value, ['tool_result' => ['tool_call_id' => 'fork-call']])]);
+    }
+
+    private function seedBatch(ToolBatchStoreInterface $store, string $runId, int $turnNo, string $stepId, ToolBatchStateDTO $batch): void
+    {
+        $store->registerPrepared(
+            new \Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO(
+                $runId,
+                $turnNo,
+                $stepId,
+                array_values($batch->calls),
+                $batch->expectedOrder,
+                array_values($batch->pendingQueue),
+                $batch->inFlight,
+                $batch->maxParallelism,
+            ),
+            new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(
+                \Symfony\Component\Uid\Uuid::v7()->toRfc4122(),
+                0,
+                ['run_id' => $runId, 'actions' => []],
+            ),
+        );
+        if ($batch->finalized || [] !== $batch->results || [] !== $batch->awaitingHumanInput || [] !== $batch->pendingQueue || [] !== $batch->inFlight) {
+            $store->applyPrepared(
+                new \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO(
+                    $runId,
+                    $turnNo,
+                    $stepId,
+                    array_values($batch->pendingQueue),
+                    $batch->inFlight,
+                    $batch->awaitingHumanInput,
+                    $batch->finalized,
+                ),
+                new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(
+                    \Symfony\Component\Uid\Uuid::v7()->toRfc4122(),
+                    0,
+                    ['run_id' => $runId, 'actions' => [new \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO(
+                        $runId,
+                        $turnNo,
+                        $stepId,
+                        array_values($batch->pendingQueue),
+                        $batch->inFlight,
+                        $batch->awaitingHumanInput,
+                        $batch->finalized,
+                    )]],
+                ),
+            );
+        }
     }
 
     private function createStore(): ToolBatchStoreInterface
@@ -166,7 +213,7 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
             activeRunContext: $activeRunContext,
             eventStore: $eventStore,
             logger: new TestLogger(),
-            toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(),
+            toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector($this->createStore()),
             executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
             sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
             hookDispatcher: $hookDispatcher,

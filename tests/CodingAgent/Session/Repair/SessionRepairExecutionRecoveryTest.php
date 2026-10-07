@@ -183,12 +183,12 @@ final class SessionRepairExecutionRecoveryTest extends PerMethodIsolatedKernelTe
             RunEvent::forAppend($run, 1, 'turn_advanced', ['turn_no' => 1, 'step_id' => 'step', 'operation_attempt' => 1, 'operation_idempotency_key' => 'model-key']),
             RunEvent::forAppend($run, 1, 'llm_step_completed', ['step_id' => 'step', 'assistant_message' => ['role' => 'assistant', 'content' => [], 'tool_calls' => [['id' => 'call', 'function' => ['name' => 'read', 'arguments' => '{"path":"reconstructed-path"}']]]]]),
             RunEvent::forAppend($run, 1, 'tool_execution_start', ['tool_call_id' => 'call', 'tool' => 'read', 'order_index' => 0, 'attempt' => 2]),
-        ], ['run_id' => $run, 'predecessor_seq' => 0, 'effects' => [$i1], 'actions' => [new RegisterToolBatchDTO($run, 1, 'step', [$i1])]]);
+        ], ['run_id' => $run, 'predecessor_seq' => 0, 'effects' => [$i1], 'actions' => [new RegisterToolBatchDTO($run, 1, 'step', [$i1], [$i1->toolCallId => 0], [], [$i1->toolCallId => true], 1)]]);
         $pending = $journal->verifiedPendingTransition($run);
         $this->assertNotNull($pending);
         $operations = $c->get(DoctrineExecutionOperationStore::class);
         $operations->prepare($i1, $pending);
-        $batches->registerPrepared(new RegisterToolBatchDTO($run, 1, 'step', [$i1]), $pending);
+        $batches->registerPrepared(new RegisterToolBatchDTO($run, 1, 'step', [$i1], [$i1->toolCallId => 0], [], [$i1->toolCallId => true], 1), $pending);
         $this->assertEquals($i1, $batches->load($run, 1, 'step')?->calls['call'] ?? null);
         $stamp = $operations->arm($i1, $pending);
         $reference = $operations->requestReference($i1, $stamp);
@@ -256,11 +256,11 @@ final class SessionRepairExecutionRecoveryTest extends PerMethodIsolatedKernelTe
         );
         $operations->saveResult($i0, $i0Stamp, $i0Claim, (new ToolCallResult($run, 1, 'step', 1, 'i0-key', 'call', 0, null, false, null, $question))->finalized());
 
-        $journal->appendTransition([], ['run_id' => $run, 'predecessor_seq' => $journal->latestSequenceFor($run), 'effects' => [$i1], 'actions' => [new RegisterToolBatchDTO($run, 1, 'step', [$i1])]]);
+        $journal->appendTransition([], ['run_id' => $run, 'predecessor_seq' => $journal->latestSequenceFor($run), 'effects' => [$i1], 'actions' => [new RegisterToolBatchDTO($run, 1, 'step', [$i1], [$i1->toolCallId => 0], [], [$i1->toolCallId => true], 1)]]);
         $pending = $journal->verifiedPendingTransition($run);
         $this->assertNotNull($pending);
         $operations->prepare($i1, $pending);
-        $batches->registerPrepared(new RegisterToolBatchDTO($run, 1, 'step', [$i1]), $pending);
+        $batches->registerPrepared(new RegisterToolBatchDTO($run, 1, 'step', [$i1], [$i1->toolCallId => 0], [], [$i1->toolCallId => true], 1), $pending);
         $this->assertEquals($i1, $batches->load($run, 1, 'step')?->calls['call'] ?? null);
         $i1Stamp = $operations->arm($i1, $pending);
         $i1Reference = $operations->requestReference($i1, $i1Stamp);
@@ -323,12 +323,12 @@ final class SessionRepairExecutionRecoveryTest extends PerMethodIsolatedKernelTe
             RunEvent::forAppend($run, 1, 'turn_advanced', ['turn_no' => 1, 'step_id' => 'step', 'operation_attempt' => 1, 'operation_idempotency_key' => 'model-key']),
             RunEvent::forAppend($run, 1, 'llm_step_completed', ['step_id' => 'step', 'assistant_message' => ['role' => 'assistant', 'content' => [], 'tool_calls' => [['id' => 'call', 'function' => ['name' => 'read', 'arguments' => '{}']]]]]),
             RunEvent::forAppend($run, 1, 'tool_execution_start', ['tool_call_id' => 'call', 'tool' => 'read', 'order_index' => 0, 'attempt' => 1]),
-        ], ['run_id' => $run, 'predecessor_seq' => 0, 'effects' => [$call], 'actions' => [new RegisterToolBatchDTO($run, 1, 'step', [$call])]]);
+        ], ['run_id' => $run, 'predecessor_seq' => 0, 'effects' => [$call], 'actions' => [new RegisterToolBatchDTO($run, 1, 'step', [$call], [$call->toolCallId => 0], [], [$call->toolCallId => true], 1)]]);
         $pending = $journal->verifiedPendingTransition($run);
         $this->assertNotNull($pending);
         $operations = $c->get(DoctrineExecutionOperationStore::class);
         $operations->prepare($call, $pending);
-        $batches->registerPrepared(new RegisterToolBatchDTO($run, 1, 'step', [$call]), $pending);
+        $batches->registerPrepared(new RegisterToolBatchDTO($run, 1, 'step', [$call], [$call->toolCallId => 0], [], [$call->toolCallId => true], 1), $pending);
         $journal->finalizeVerifiedTransition($run, $pending->identity);
         $before = $journal->latestSequenceFor($run);
 

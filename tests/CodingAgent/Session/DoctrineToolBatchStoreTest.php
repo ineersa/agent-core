@@ -32,7 +32,7 @@ final class DoctrineToolBatchStoreTest extends IsolatedKernelTestCase
         $second = new ExecuteToolCall($run, 1, 'tools', 1, 'key-b', 'call-b', 'echo', ['command' => 'b'], 1, mode: ToolExecutionMode::Parallel->value, maxParallelism: 1, batchToolCallCount: 2);
         $mailbox = new EnqueueCommandDTO(new PendingCommand($run, 'follow_up', 'mailbox-admit', ['text' => 'keep']));
         $source = SourceAcceptance::identity(new \Ineersa\AgentCore\Domain\Message\AdvanceRun($run, 1, 'tools', 1, 'advance-admit'));
-        $register = new RegisterToolBatchDTO($run, 1, 'tools', [$first, $second]);
+        $register = new RegisterToolBatchDTO($run, 1, 'tools', [$first, $second], ['call-a' => 0, 'call-b' => 1], ['call-b'], ['call-a' => true], 1);
         $events = $container->get(PreparedTransitionEventStoreInterface::class);
         $operations = $container->get(ExecutionOperationStoreInterface::class);
         $batches = $container->get(ToolBatchStoreInterface::class);
@@ -117,7 +117,7 @@ final class DoctrineToolBatchStoreTest extends IsolatedKernelTestCase
         $rollbackSecond = new ExecuteToolCall($rollbackRun, 1, 'tools', 1, 'roll-b', 'call-b', 'echo', ['command' => 'b'], 1, mode: ToolExecutionMode::Parallel->value, maxParallelism: 1, batchToolCallCount: 2);
         $rollbackMailbox = new EnqueueCommandDTO(new PendingCommand($rollbackRun, 'follow_up', 'mailbox-roll', ['text' => 'rollback']));
         $rollbackSource = SourceAcceptance::identity(new \Ineersa\AgentCore\Domain\Message\AdvanceRun($rollbackRun, 1, 'tools', 1, 'advance-roll'));
-        $rollbackRegister = new RegisterToolBatchDTO($rollbackRun, 1, 'tools', [$rollbackFirst, $rollbackSecond]);
+        $rollbackRegister = new RegisterToolBatchDTO($rollbackRun, 1, 'tools', [$rollbackFirst, $rollbackSecond], ['call-a' => 0, 'call-b' => 1], ['call-b'], ['call-a' => true], 1);
         $events->appendTransition([], [
             'run_id' => $rollbackRun,
             'predecessor_seq' => 0,
@@ -193,11 +193,28 @@ final class DoctrineToolBatchStoreTest extends IsolatedKernelTestCase
 
         $schedule = $batches->load($run, 1, 'tools');
         $this->assertNotNull($schedule);
-        $schedule->calls['call-c'] = $third;
-        $schedule->expectedOrder['call-c'] = 2;
-        $schedule->pendingQueue = ['call-c'];
-        $schedule->inFlight = ['call-b' => true];
-        $batches->save($run, 1, 'tools', $schedule);
+        $batches->delete($run, 1, 'tools');
+        $extended = new RegisterToolBatchDTO(
+            $run,
+            1,
+            'tools',
+            [$first, $second, $third],
+            ['call-a' => 0, 'call-b' => 1, 'call-c' => 2],
+            ['call-c'],
+            ['call-b' => true],
+            2,
+        );
+        $extendPendingSource = SourceAcceptance::identity(new \Ineersa\AgentCore\Domain\Message\AdvanceRun($run, 1, 'tools', 55, 'advance-extend-c'));
+        $events->appendTransition([], [
+            'run_id' => $run,
+            'predecessor_seq' => 0,
+            'source' => $extendPendingSource,
+            'actions' => [$extended],
+        ]);
+        $extendPending = $events->verifiedPendingTransition($run);
+        $this->assertNotNull($extendPending);
+        $batches->registerPrepared($extended, $extendPending);
+        $events->finalizeVerifiedTransition($run, $extendPending->identity);
 
         $admitC = new FinalizeToolBatchDTO($run, 1, 'tools', pendingQueue: [], inFlight: ['call-b' => true, 'call-c' => true], awaitingHumanInput: [], finalized: false);
         $events->appendTransition([], [

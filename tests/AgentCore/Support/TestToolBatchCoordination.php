@@ -6,53 +6,54 @@ namespace Ineersa\AgentCore\Tests\Support;
 
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollectOutcome;
+use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO;
 use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
 use Symfony\Component\Uid\Uuid;
 
-/** Algorithm tests explicitly finalize decisions. Journal proofs use the configured store. */
+/** Algorithm tests explicitly finalize decisions through the store contract. */
 final class TestToolBatchCoordination
 {
-    public static function finalize(ToolBatchCollector $collector, ?FinalizeToolBatchDTO $action): void
+    public static function finalize(ToolBatchStoreInterface $store, ?FinalizeToolBatchDTO $action): void
     {
         if (null !== $action) {
-            $collector->finalizePreparedBatch($action, new VerifiedTransitionDTO(Uuid::v7()->toRfc4122(), 0, ['run_id' => $action->runId, 'actions' => [$action]]));
+            $store->applyPrepared($action, new VerifiedTransitionDTO(Uuid::v7()->toRfc4122(), 0, ['run_id' => $action->runId, 'actions' => [$action]]));
         }
     }
 
-    public static function collect(ToolBatchCollector $collector, ToolCallResult $result): ToolBatchCollectOutcome
+    public static function collect(ToolBatchCollector $collector, ToolBatchStoreInterface $store, ToolCallResult $result): ToolBatchCollectOutcome
     {
         $outcome = $collector->prepareCollect($result);
-        self::finalize($collector, $outcome->action);
+        self::finalize($store, $outcome->action);
 
         return $outcome;
     }
 
     /** @return list<\Ineersa\AgentCore\Domain\Message\ExecuteToolCall> */
-    public static function suspend(ToolBatchCollector $collector, string $runId, int $turnNo, string $stepId, string $toolCallId, string $questionId): array
+    public static function suspend(ToolBatchCollector $collector, ToolBatchStoreInterface $store, string $runId, int $turnNo, string $stepId, string $toolCallId, string $questionId): array
     {
         $prepared = $collector->prepareHumanInputSuspension($runId, $turnNo, $stepId, $toolCallId, $questionId);
-        self::finalize($collector, $prepared->action);
+        self::finalize($store, $prepared->action);
 
         return $prepared->effects;
     }
 
     /** @return list<\Ineersa\AgentCore\Domain\Message\ExecuteToolCall> */
-    public static function resume(ToolBatchCollector $collector, string $runId, int $turnNo, string $stepId, string $toolCallId, string $questionId, ToolCallHumanInputAnswerDTO $answer): array
+    public static function resume(ToolBatchCollector $collector, ToolBatchStoreInterface $store, string $runId, int $turnNo, string $stepId, string $toolCallId, string $questionId, ToolCallHumanInputAnswerDTO $answer): array
     {
         $prepared = $collector->prepareHumanInputAnswer($runId, $turnNo, $stepId, $toolCallId, $questionId, $answer);
-        self::finalize($collector, $prepared->action);
+        self::finalize($store, $prepared->action);
 
         return $prepared->effects;
     }
 
     /** @return list<\Ineersa\AgentCore\Domain\Message\ExecuteToolCall> */
-    public static function redrive(ToolBatchCollector $collector, string $runId, int $turnNo, string $stepId, string $questionId, mixed $answerValue): array
+    public static function redrive(ToolBatchCollector $collector, ToolBatchStoreInterface $store, string $runId, int $turnNo, string $stepId, string $questionId, mixed $answerValue): array
     {
         $prepared = $collector->prepareHumanInputRedrive($runId, $turnNo, $stepId, $questionId, $answerValue);
-        self::finalize($collector, $prepared->action);
+        self::finalize($store, $prepared->action);
 
         return $prepared->effects;
     }
