@@ -248,11 +248,15 @@ final class PreparedTransitionEventStoreTest extends IsolatedKernelTestCase
         });
         $recovery = new \Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery(
             $store,
-            $container->get(\Ineersa\AgentCore\Contract\Tool\ToolExecutionAuthorizationInterface::class),
-            new \Ineersa\AgentCore\Application\Handler\StepDispatcher($failure, $failure, $failure, $failure),
             $container->get(ActiveRunContextInterface::class),
-            $container->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class),
             $container->get(\Ineersa\AgentCore\Application\Pipeline\SourceAcceptance::class),
+            new \Ineersa\AgentCore\Application\Pipeline\TransitionFinalizer(
+                $store,
+                $container->get(\Ineersa\AgentCore\Contract\Tool\ToolExecutionAuthorizationInterface::class),
+                $container->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class),
+                new \Ineersa\AgentCore\Application\Handler\StepDispatcher($failure, $failure, $failure, $failure),
+                $container->get(\Ineersa\AgentCore\Application\Pipeline\SourceAcceptance::class),
+            ),
             $container->get(\Ineersa\AgentCore\Application\Handler\CoordinationActionValidator::class),
         );
         try {

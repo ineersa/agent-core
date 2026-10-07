@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Pipeline;
 
+use Ineersa\AgentCore\Application\Handler\CommandMailboxCoordinationFactory;
+use Ineersa\AgentCore\Application\Handler\ExecutionOperationMapper;
 use Ineersa\AgentCore\Application\Handler\HookDispatcher;
 use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
@@ -17,6 +19,8 @@ use Psr\Log\LoggerInterface;
 
 final readonly class RunCommit
 {
+    private TransitionFinalizer $finalizer;
+
     public function __construct(
         private ActiveRunContextInterface $activeRunContext,
         private PreparedTransitionEventStoreInterface $eventStore,
@@ -30,7 +34,15 @@ final readonly class RunCommit
         private ?RunTracer $tracer = null,
         private \Ineersa\AgentCore\Application\Handler\ExecutionBoundaryContext $executionContext = new \Ineersa\AgentCore\Application\Handler\ExecutionBoundaryContext(),
         private \Ineersa\AgentCore\Application\Handler\CoordinationActionValidator $actionValidator = new \Ineersa\AgentCore\Application\Handler\CoordinationActionValidator(),
+        ?TransitionFinalizer $finalizer = null,
     ) {
+        $this->finalizer = $finalizer ?? new TransitionFinalizer(
+            $eventStore,
+            $toolAuthorization,
+            $executionOperations,
+            $stepDispatcher,
+            $sourceAcceptance,
+        );
     }
 
     /**
@@ -58,7 +70,7 @@ final readonly class RunCommit
         }
         foreach ([...$effects, ...$postCommitEffects] as $effect) {
             if ($effect instanceof \Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage
-                && \Ineersa\AgentCore\Application\Handler\ExecutionOperationMapper::supports($effect)) {
+                && ExecutionOperationMapper::supports($effect)) {
                 $this->executionOperations->assertRequestCapacity($effect);
             }
         }
@@ -66,7 +78,7 @@ final readonly class RunCommit
             /** @var list<RunEvent> $persistedEvents */
             $persistedEvents = [];
             if ([] !== $sourceIdentity || [] !== $events || null !== $resultDisposition || null !== $executionDisposition || [] !== $effects || [] !== $postCommitEffects || [] !== $postCommitActions || [] !== $afterTurnActions) {
-                $persistedEvents = $this->eventStore->appendTransition($events, ['run_id' => $nextState->runId, 'predecessor_seq' => $state->lastSeq, 'source' => $sourceIdentity, 'effects' => $effects, 'post_commit_effects' => $postCommitEffects, 'actions' => $postCommitActions, 'after_turn_actions' => $afterTurnActions, 'after_turn_hooks' => $dispatchAfterTurnHooks, 'result_disposition' => $resultDisposition, 'execution_disposition' => $executionDisposition]);
+                $persistedEvents = $this->eventStore->appendTransition($events, ['run_id' => $nextState->runId, 'predecessor_seq' => $state->lastSeq, 'source' => $sourceIdentity, 'effects' => $effects, 'post_commit_effects' => $postCommitEffects, 'actions' => $postCommitActions, 'after_turn_actions' => $afterTurnActions, 'result_disposition' => $resultDisposition, 'execution_disposition' => $executionDisposition]);
             }
             $verifiedSource = $this->eventStore->verifiedPendingTransition($nextState->runId);
             if (null !== $verifiedSource) {
@@ -103,30 +115,25 @@ final readonly class RunCommit
 
             $this->logCommittedEvents($committedState, $persistedEvents);
 
-            // Required hook delivery precedes mailbox acceptance and continuations.
-            $this->stepDispatcher->dispatchCoordinationActions($afterTurnActions);
-
-            $mailboxActions = array_values(array_filter($postCommitActions, \Ineersa\AgentCore\Application\Handler\CommandMailboxCoordinationFactory::isMailboxAction(...)));
-            $this->stepDispatcher->dispatchCoordinationActions($mailboxActions);
-            $remainingActions = array_values(array_filter($postCommitActions, static fn (object $action): bool => !\Ineersa\AgentCore\Application\Handler\CommandMailboxCoordinationFactory::isMailboxAction($action)));
-
-            $ordinaryEffects = array_values(array_filter($effects, static fn (object $effect): bool => !\Ineersa\AgentCore\Application\Handler\ExecutionOperationMapper::supports($effect)));
-            $gatedEffects = array_values(array_filter($effects, \Ineersa\AgentCore\Application\Handler\ExecutionOperationMapper::supports(...)));
-            if ([] !== $ordinaryEffects) {
-                $this->armTools($ordinaryEffects);
-                $this->stepDispatcher->dispatchEffects($ordinaryEffects);
-            }
-
-            // History maintenance publishes canonical state without scheduling a
-            // completed-turn continuation, matching its former raw-append semantics.
-            if (!$dispatchAfterTurnHooks) {
-                $this->finishTransition($committedState->runId, $persistedEvents, [...$gatedEffects, ...$postCommitEffects], $remainingActions, $resultDisposition, $executionDisposition);
-
-                return $committedState;
-            }
+            $mailboxActions = array_values(array_filter($postCommitActions, CommandMailboxCoordinationFactory::isMailboxAction(...)));
+            $remainingActions = array_values(array_filter($postCommitActions, static fn (object $action): bool => !CommandMailboxCoordinationFactory::isMailboxAction($action)));
+            $ordinaryEffects = array_values(array_filter($effects, static fn (object $effect): bool => !ExecutionOperationMapper::supports($effect)));
+            $gatedEffects = array_values(array_filter($effects, ExecutionOperationMapper::supports(...)));
 
             // Required obligations finish before observer callbacks or cleanup.
-            $this->finishTransition($committedState->runId, $persistedEvents, [...$gatedEffects, ...$postCommitEffects], $remainingActions, $resultDisposition, $executionDisposition);
+            $this->finalizer->complete(
+                $committedState->runId,
+                $verifiedSource,
+                [...$ordinaryEffects, ...$gatedEffects, ...$postCommitEffects],
+                [...$mailboxActions, ...$remainingActions],
+                $afterTurnActions,
+                $resultDisposition,
+                $executionDisposition,
+            );
+
+            if (!$dispatchAfterTurnHooks) {
+                return $committedState;
+            }
 
             try {
                 $this->hookDispatcher?->dispatchAfterTurnCommit(
@@ -186,7 +193,8 @@ final readonly class RunCommit
         $this->assertTransitionReady($descriptor->runId);
         $state = $this->activeRunContext->requireLoaded($descriptor->runId);
         $this->eventStore->appendTransition([], ['run_id' => $descriptor->runId, 'predecessor_seq' => $state->lastSeq, 'source' => ['type' => 'tool_result_disposition', 'result_hash' => $descriptor->resultHash], 'effects' => [], 'post_commit_effects' => $result->postCommitEffects, 'actions' => $result->postCommitActions, 'result_disposition' => $descriptor]);
-        $this->finishTransition($descriptor->runId, [], $result->postCommitEffects, $result->postCommitActions, $descriptor);
+        $verified = $this->eventStore->verifiedPendingTransition($descriptor->runId);
+        $this->finalizer->complete($descriptor->runId, $verified, $result->postCommitEffects, $result->postCommitActions, resultDisposition: $descriptor);
     }
 
     public function assertTransitionReady(string $runId): void
@@ -209,69 +217,6 @@ final readonly class RunCommit
     public function sourceIdentityAlreadyAccepted(array $identity): bool
     {
         return $this->sourceAcceptance->identityAlreadyAccepted($identity);
-    }
-
-    /** @param list<RunEvent> $events
-     * @param list<object> $effects
-     * @param list<object> $actions
-     */
-    private function finishTransition(string $runId, array $events, array $effects, array $actions, ?\Ineersa\AgentCore\Domain\Coordination\ToolResultDispositionDTO $resultDisposition, ?\Ineersa\AgentCore\Domain\Coordination\ExecutionResultDispositionDTO $executionDisposition = null): void
-    {
-        $ordinary = array_values(array_filter($effects, static fn (object $effect): bool => !\Ineersa\AgentCore\Application\Handler\ExecutionOperationMapper::supports($effect)));
-        $gated = array_values(array_filter($effects, \Ineersa\AgentCore\Application\Handler\ExecutionOperationMapper::supports(...)));
-        $verified = $this->eventStore->verifiedPendingTransition($runId);
-        $stamps = [];
-        $deliveries = [];
-        $batchActions = array_values(array_filter($actions, static fn (object $action): bool => $action instanceof \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO));
-        $this->stepDispatcher->dispatchCoordinationActions($batchActions);
-        $actions = array_values(array_filter($actions, static fn (object $action): bool => !$action instanceof \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO));
-        if ([] !== $gated || null !== $resultDisposition || null !== $executionDisposition) {
-            $verified = $this->eventStore->verifiedPendingTransition($runId);
-            if (null === $verified) {
-                throw new \RuntimeException('Execution authorization requires verified transition evidence.');
-            }
-            foreach ($gated as $effect) {
-                if (!$effect instanceof \Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage) {
-                    throw new \LogicException('Invalid execution effect.');
-                }
-                $authorization = $this->executionOperations->arm($effect, $verified);
-                $reference = $this->executionOperations->requestReference($effect, $authorization);
-                $deliveries[] = $reference;
-                $stamps[spl_object_id($reference)] = $authorization;
-            }
-            if (null !== $executionDisposition) {
-                $this->executionOperations->validateDisposition($executionDisposition, $verified);
-            }
-        }
-        $this->armTools($ordinary);
-        $this->stepDispatcher->dispatchEffects($ordinary);
-        $this->stepDispatcher->dispatchCoordinationActions($actions);
-        if (null !== $resultDisposition) {
-            if (null === $verified) {
-                throw new \RuntimeException('Result disposition requires verified transition evidence.');
-            }
-            $this->toolAuthorization->applyDisposition($resultDisposition, $verified);
-        }
-        if (null !== $executionDisposition && null !== $verified) {
-            $this->executionOperations->applyDisposition($executionDisposition, $verified);
-        }
-        if (null !== $verified) {
-            $this->sourceAcceptance->publish($verified);
-            $this->eventStore->finalizeVerifiedTransition($runId, $verified->identity);
-        }
-        // Armed records retain the original request when broker delivery fails.
-        // The execution gate, not an enqueue acknowledgement, grants one claim.
-        $this->stepDispatcher->dispatchEffects($deliveries, $stamps);
-    }
-
-    /** @param list<object> $effects */
-    private function armTools(array $effects): void
-    {
-        foreach ($effects as $effect) {
-            if ($effect instanceof \Ineersa\AgentCore\Domain\Message\ExecuteToolCall) {
-                $this->toolAuthorization->arm($effect);
-            }
-        }
     }
 
     /** @param list<RunEvent> $events */

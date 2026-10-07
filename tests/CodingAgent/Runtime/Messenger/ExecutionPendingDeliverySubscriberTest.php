@@ -160,13 +160,41 @@ final class ExecutionPendingDeliverySubscriberTest extends IsolatedKernelTestCas
         $command = new TestMessageBus();
         $worker = $this->worker();
         $this->subscriber($run, $command, $execution)->onStarted(new WorkerStartedEvent($worker));
-        $this->assertSame([], $execution->messages);
-        $store->finalizeVerifiedTransition($run, $pending->identity);
+        $this->assertNull($store->verifiedPendingTransition($run), 'Idle restart must finish the pending intent before publication.');
+        $this->assertNotEmpty($execution->messages);
         $failing = $this->createMock(MessageBusInterface::class);
         $failing->expects($this->once())->method('dispatch')->willThrowException(new \RuntimeException('transport unavailable'));
+        $execution->messages = [];
         $this->subscriber($run, $command, $failing)->onStarted(new WorkerStartedEvent($worker));
         $this->subscriber($run, $command, $execution)->onStarted(new WorkerStartedEvent($worker));
         $this->assertCount(1, $execution->messages, 'Delivery failure cannot remove or disposition the Armed row.');
+    }
+
+    public function testIdleRestartRecoversPendingIntentWithoutArmedOperation(): void
+    {
+        $container = self::getContainer();
+        $run = $container->get(HatfieldSessionStore::class)->createSession('idle pending intent');
+        $store = $container->get(PreparedTransitionEventStoreInterface::class);
+        $request = $this->request('llm', $run, 'idle');
+        $store->appendTransition([], ['run_id' => $run, 'predecessor_seq' => 0, 'effects' => [$request]]);
+        $this->assertNotNull($store->verifiedPendingTransition($run));
+        $this->assertSame([], $container->get(DoctrineExecutionOperationStore::class)->pendingDeliveries($run, ''));
+
+        $execution = new TestMessageBus();
+        $command = new TestMessageBus();
+        $this->subscriber($run, $command, $execution)->onStarted(new WorkerStartedEvent($this->worker()));
+
+        $this->assertNull($store->verifiedPendingTransition($run));
+        $this->assertNotEmpty($execution->messages);
+        $ids = [];
+        foreach ($execution->messages as $envelope) {
+            $this->assertInstanceOf(Envelope::class, $envelope);
+            $message = $envelope->getMessage();
+            $this->assertInstanceOf(ExecutionRequest::class, $message);
+            $this->assertInstanceOf(ExecutionAuthorizationStamp::class, $envelope->last(ExecutionAuthorizationStamp::class));
+            $ids[] = $message->effectId;
+        }
+        $this->assertCount(1, array_unique($ids), 'Recovery and same-tick rediscovery must reuse one Armed identity.');
     }
 
     /** @param list<AbstractAgentBusMessage> $requests */
@@ -186,7 +214,19 @@ final class ExecutionPendingDeliverySubscriberTest extends IsolatedKernelTestCas
 
     private function subscriber(string $run, MessageBusInterface $command, MessageBusInterface $execution): ExecutionPendingDeliverySubscriber
     {
-        return new ExecutionPendingDeliverySubscriber(self::getContainer()->get(DoctrineExecutionOperationStore::class), self::getContainer()->get(PreparedTransitionEventStoreInterface::class), $command, $execution, $run, new TestLogger());
+        $container = self::getContainer();
+
+        return new ExecutionPendingDeliverySubscriber(
+            $container->get(DoctrineExecutionOperationStore::class),
+            $container->get(PreparedTransitionEventStoreInterface::class),
+            $container->get(\Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery::class),
+            $container->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class),
+            $container->get(\Doctrine\DBAL\Connection::class),
+            $command,
+            $execution,
+            $run,
+            new TestLogger(),
+        );
     }
 
     private function worker(): Worker

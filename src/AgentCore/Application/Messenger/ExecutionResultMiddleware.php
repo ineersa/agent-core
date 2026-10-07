@@ -6,6 +6,8 @@ namespace Ineersa\AgentCore\Application\Messenger;
 
 use Ineersa\AgentCore\Application\Handler\ExecutionBoundaryContext;
 use Ineersa\AgentCore\Application\Handler\ExecutionOperationMapper;
+use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery;
 use Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface;
 use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
 use Ineersa\AgentCore\Domain\Message\DurableExecutionResult;
@@ -17,14 +19,23 @@ use Symfony\Component\Messenger\Stamp\ReceivedStamp;
 /** Seals worker results before notification; unwraps them only at owner consumption. */
 final readonly class ExecutionResultMiddleware implements MiddlewareInterface
 {
-    public function __construct(private ExecutionOperationStoreInterface $operations, private ExecutionBoundaryContext $context)
-    {
+    public function __construct(
+        private ExecutionOperationStoreInterface $operations,
+        private ExecutionBoundaryContext $context,
+        private PendingTransitionRecovery $recovery,
+        private RunLockManager $locks,
+    ) {
     }
 
     public function handle(Envelope $envelope, StackInterface $stack): Envelope
     {
         $message = $envelope->getMessage();
         if ($message instanceof DurableExecutionResult && null !== $envelope->last(ReceivedStamp::class)) {
+            // Disposition rows can exist while the owning journal is unfinished.
+            // Reconcile under the run lock before treating a duplicate as done.
+            $this->locks->synchronized($message->runId(), function () use ($message): void {
+                $this->recovery->recover($message->runId());
+            });
             if ($this->operations->isDisposed($message)) {
                 return $envelope->with(new \Symfony\Component\Messenger\Stamp\HandledStamp(null, self::class));
             }

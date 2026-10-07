@@ -186,6 +186,31 @@ final class PendingTransitionRecoveryTest extends IsolatedKernelTestCase
         $this->assertNotNull($store->verifiedPendingTransition($run));
     }
 
+    public function testWarmRegistryIsReleasedWhenGatedDeliveryFailsAfterFinalization(): void
+    {
+        $container = self::getContainer();
+        $run = $container->get(HatfieldSessionStore::class)->createSession('warm registry invalidation');
+        $request = $this->request('llm', $run);
+        $store = $container->get(PreparedTransitionEventStoreInterface::class);
+        $store->appendTransition([], ['run_id' => $run, 'predecessor_seq' => 0, 'effects' => [$request]]);
+        $registry = $container->get(ActiveRunContextInterface::class);
+        $registry->loadRecovered(new \Ineersa\AgentCore\Domain\Run\RunState(runId: $run, status: \Ineersa\AgentCore\Domain\Run\RunStatus::Running, turnNo: 1));
+        $this->assertSame($run, $registry->requireLoaded($run)->runId);
+
+        $failure = $this->createMock(MessageBusInterface::class);
+        $failure->expects($this->once())->method('dispatch')->willThrowException(new \RuntimeException('injected gated delivery failure'));
+        try {
+            $this->recovery($failure)->recover($run);
+            $this->fail('Gated delivery failure must surface after finalization.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('injected gated delivery failure', $exception->getMessage());
+        }
+
+        $this->assertNull($store->verifiedPendingTransition($run));
+        $this->expectException(\Ineersa\AgentCore\Contract\RunContextNotLoadedException::class);
+        $registry->requireLoaded($run);
+    }
+
     public static function mailboxDecisions(): iterable
     {
         yield 'applied' => [false];
@@ -274,7 +299,7 @@ final class PendingTransitionRecoveryTest extends IsolatedKernelTestCase
     {
         $container = self::getContainer();
 
-        return new PendingTransitionRecovery($container->get(PreparedTransitionEventStoreInterface::class), $container->get(ToolExecutionAuthorizationInterface::class), new StepDispatcher($bus, $bus), $container->get(ActiveRunContextInterface::class), $container->get(ExecutionOperationStoreInterface::class), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()), $container->get(\Ineersa\AgentCore\Application\Handler\CoordinationActionValidator::class));
+        return new PendingTransitionRecovery($container->get(PreparedTransitionEventStoreInterface::class), $container->get(ActiveRunContextInterface::class), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()), new \Ineersa\AgentCore\Application\Pipeline\TransitionFinalizer($container->get(PreparedTransitionEventStoreInterface::class), $container->get(ToolExecutionAuthorizationInterface::class), $container->get(ExecutionOperationStoreInterface::class), new StepDispatcher($bus, $bus), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore())), $container->get(\Ineersa\AgentCore\Application\Handler\CoordinationActionValidator::class));
     }
 
     private function request(string $kind, string $run): AbstractAgentBusMessage

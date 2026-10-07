@@ -4,23 +4,25 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Pipeline;
 
+use Ineersa\AgentCore\Application\Handler\CoordinationActionValidator;
 use Ineersa\AgentCore\Application\Handler\ExecutionOperationMapper;
-use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
-use Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
-use Ineersa\AgentCore\Contract\Tool\ToolExecutionAuthorizationInterface;
 use Ineersa\AgentCore\Domain\Coordination\ExecutionResultDispositionDTO;
 use Ineersa\AgentCore\Domain\Coordination\ToolResultDispositionDTO;
-use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\RunControlTransitionMessageInterface;
 
 /** Owner-only reconciliation. Unsupported execution stays recovery-required. */
 final readonly class PendingTransitionRecovery
 {
-    public function __construct(private PreparedTransitionEventStoreInterface $store, private ToolExecutionAuthorizationInterface $authorization, private StepDispatcher $dispatcher, private ActiveRunContextInterface $registry, private ExecutionOperationStoreInterface $executionOperations, private SourceAcceptance $sourceAcceptance, private \Ineersa\AgentCore\Application\Handler\CoordinationActionValidator $actionValidator = new \Ineersa\AgentCore\Application\Handler\CoordinationActionValidator())
-    {
+    public function __construct(
+        private PreparedTransitionEventStoreInterface $store,
+        private ActiveRunContextInterface $registry,
+        private SourceAcceptance $sourceAcceptance,
+        private TransitionFinalizer $finalizer,
+        private CoordinationActionValidator $actionValidator = new CoordinationActionValidator(),
+    ) {
     }
 
     public function recover(string $runId): void
@@ -48,54 +50,23 @@ final readonly class PendingTransitionRecovery
         if (null !== $disposition && !$disposition instanceof ToolResultDispositionDTO) {
             throw new \RuntimeException('Invalid pending result disposition.');
         }
-        if (null !== $disposition) {
-            $this->authorization->validateDisposition($disposition, $pending);
-        }
         $executionDisposition = $work['execution_disposition'] ?? null;
         if (null !== $executionDisposition && !$executionDisposition instanceof ExecutionResultDispositionDTO) {
             throw new \RuntimeException('Invalid pending execution disposition.');
         }
-        if (null !== $executionDisposition) {
-            $this->executionOperations->validateDisposition($executionDisposition, $pending);
-        }
-        $stamps = [];
-        $batchActions = array_values(array_filter($actions, static fn (object $action): bool => $action instanceof \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO));
-        $this->dispatcher->dispatchCoordinationActions($batchActions);
-        $actions = array_values(array_filter($actions, static fn (object $action): bool => !$action instanceof \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO));
-        $this->dispatcher->dispatchCoordinationActions($afterTurnActions);
-        $mailboxActions = array_values(array_filter($actions, \Ineersa\AgentCore\Application\Handler\CommandMailboxCoordinationFactory::isMailboxAction(...)));
-        $this->dispatcher->dispatchCoordinationActions($mailboxActions);
-        $actions = array_values(array_filter($actions, static fn (object $action): bool => !\Ineersa\AgentCore\Application\Handler\CommandMailboxCoordinationFactory::isMailboxAction($action)));
-        $ordinary = [];
-        $deliveries = [];
-        foreach ($effects as $effect) {
-            if ($effect instanceof ExecuteToolCall) {
-                $this->authorization->arm($effect);
-                $ordinary[] = $effect;
-            } elseif ($effect instanceof AbstractAgentBusMessage && ExecutionOperationMapper::supports($effect)) {
-                $authorization = $this->executionOperations->arm($effect, $pending);
-                $reference = $this->executionOperations->requestReference($effect, $authorization);
-                $deliveries[] = $reference;
-                $stamps[spl_object_id($reference)] = $authorization;
-            } else {
-                $ordinary[] = $effect;
+
+        $finalized = false;
+        try {
+            $this->finalizer->complete($runId, $pending, $effects, $actions, $afterTurnActions, $disposition, $executionDisposition);
+            $finalized = true;
+        } finally {
+            // Cold replay must include the newly published suffix. A warm owner must
+            // not continue using its predecessor after recovered physical append,
+            // including when gated delivery throws after journal finalization.
+            if ($finalized || null === $this->store->verifiedPendingTransition($runId)) {
+                $this->registry->release($runId);
             }
         }
-        $this->dispatcher->dispatchEffects($ordinary);
-        $this->dispatcher->dispatchCoordinationActions($actions);
-        if (null !== $disposition) {
-            $this->authorization->applyDisposition($disposition, $pending);
-        }
-        if (null !== $executionDisposition) {
-            $this->executionOperations->applyDisposition($executionDisposition, $pending);
-        }
-        $this->sourceAcceptance->publish($pending);
-        $this->store->finalizeVerifiedTransition($runId, $pending->identity);
-        // Armed operation/batch authority owns rediscovery after broker failure.
-        $this->dispatcher->dispatchEffects($deliveries, $stamps);
-        // Cold replay must include the newly published suffix. A warm owner must
-        // not continue using its predecessor after recovered physical append.
-        $this->registry->release($runId);
     }
 
     private function requireGated(object $effect): void

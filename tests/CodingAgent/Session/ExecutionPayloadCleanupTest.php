@@ -112,7 +112,7 @@ final class ExecutionPayloadCleanupTest extends IsolatedKernelTestCase
         $this->assertFileExists($livePath.'/request');
         $command = new TestMessageBus();
         $execution = new TestMessageBus();
-        $subscriber = new ExecutionPendingDeliverySubscriber($operations, $events, $command, $execution, $run, new TestLogger());
+        $subscriber = new ExecutionPendingDeliverySubscriber($operations, $events, self::getContainer()->get(\Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery::class), self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class), self::getContainer()->get(\Doctrine\DBAL\Connection::class), $command, $execution, $run, new TestLogger());
         $subscriber->onStarted(new WorkerStartedEvent(new Worker(['run_control' => new InMemoryTransport()], new TestMessageBus())));
         $this->assertCount(1, $execution->messages);
     }

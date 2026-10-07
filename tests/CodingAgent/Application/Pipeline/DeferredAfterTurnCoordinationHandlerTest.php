@@ -165,7 +165,7 @@ final class DeferredAfterTurnCoordinationHandlerTest extends IsolatedKernelTestC
         $this->assertSame(1, $provider->preparations);
         $this->assertSame(0, $observer->observations, 'Cleanup and observers cannot precede required delivery.');
         $sender->fail = false;
-        $recovery = new PendingTransitionRecovery($store, $container->get(ToolExecutionAuthorizationInterface::class), new StepDispatcher($bus, $container->get('agent.execution.bus')), $container->get(ActiveRunContextInterface::class), $container->get(ExecutionOperationStoreInterface::class), $acceptance, $container->get(CoordinationActionValidator::class));
+        $recovery = new PendingTransitionRecovery($store, $container->get(ActiveRunContextInterface::class), $acceptance, new \Ineersa\AgentCore\Application\Pipeline\TransitionFinalizer($store, $container->get(ToolExecutionAuthorizationInterface::class), $container->get(ExecutionOperationStoreInterface::class), new StepDispatcher($bus, $container->get('agent.execution.bus')), $acceptance), $container->get(CoordinationActionValidator::class));
         $recovery->recover($run);
         $this->assertSame(1, $provider->preparations, 'Recovery must not repeat hook decisions.');
         $this->assertTrue($acceptance->alreadyAccepted($source));
