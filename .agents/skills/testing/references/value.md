@@ -1,7 +1,5 @@
 # Test value
 
-Load this reference before adding, retaining, rewriting, deleting, or demoting a test.
-
 Before adding, retaining, or deleting a case, identify a plausible wrong change that its assertion detects and explain why that change matters.
 
 - Assert observable behavior, protocol, persistence, lifecycle, safety, or a known regression.

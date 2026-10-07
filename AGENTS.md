@@ -5,10 +5,7 @@
 - Read the nearest nested `AGENTS.md` before editing an area. Local rules cannot weaken root rules.
 - Implement finalized requirements only. Ask about unresolved product behavior or public APIs.
 - Use the smallest solution. Keep configuration in YAML except `config/bundles.php`. Prefer invokable Symfony commands.
-- Keep AgentCore independent of CodingAgent, TUI, and extensions. Treat `depfile.yaml` and `castor deptrac` as authoritative.
-- Keep CodingAgent independent of TUI except Deptrac-approved bootstrap code. Never depend on concrete extensions.
-- Keep ExtensionApi independent of host internals and concrete extensions.
-- Do not invent Runtime Contract wrappers merely to hide an allowed CodingAgent dependency.
+- Delete dead code and unsupported fallback paths. Add compatibility only when requested or required by a published API.
 - Do not add HTTP controllers, routes, web sessions, or web-serving FrameworkBundle features.
 - Use Hatfield settings for themes. When adding settings, update `.hatfield/settings.yaml` and `docs/settings.md` together.
 - Keep `session_id === run_id`. Use canonical session `events.jsonl`; do not add `metadata.yaml`.
@@ -23,6 +20,14 @@
 - No production APIs or paths solely for tests. No `ReflectionClass::newInstanceWithoutConstructor()`, `Closure::bind()`, or constructor bypass in production. Test helpers stay in tests.
 - Every caught exception must be rethrown/propagated or explicitly logged as intentional local degradation. Empty catch blocks are forbidden.
 - Runtime logs: structured event-style messages with correlation fields (`run_id`, `session_id`, `component`, `event_type`); do not log raw prompts, tool output, env values, API keys, or full session content by default. See `docs/datadog.md`.
+
+## Architecture
+
+- Treat `depfile.yaml` and `castor deptrac` as authoritative. Do not invent stricter blanket dependency bans.
+- Keep AgentCore independent of CodingAgent, TUI, and extensions.
+- Keep CodingAgent independent of TUI except Deptrac-approved bootstrap code. Never depend on concrete extensions; TUI may use owning CodingAgent services within Deptrac rules.
+- Do not invent Runtime Contract wrappers merely to hide an allowed CodingAgent dependency.
+- Keep ExtensionApi independent of host internals and concrete extensions. Concrete extensions use public contracts and explicitly approved vendor APIs only.
 
 ## Validation
 

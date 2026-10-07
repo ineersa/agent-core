@@ -23,10 +23,6 @@ Give the fork the goal, criteria, constraints, entry points, ownership boundary,
 - Batch independent child work; serialize dependent work. Retrieve omitted evidence only when needed.
 - Require independent review before accepting implementation.
 
-## Resuming a tracked fork
-
-Use `agent_resume` when the existing parent-scoped fork context applies. Before edits, name the checkout and resumed scope, require current-state inspection, and record the handoff. The fork must stop and request a missing handoff. Keep these tracked-work rules here, not in global tool prompts.
-
 ## Ownership log
 
 Append this exact record with `update_task(workLog=[...])` on assignment and again on completion or blockage:
