@@ -116,6 +116,12 @@ Child denylist `agents.subagent_excluded_tools` still removes named tools after 
   client stops waiting, so cancellation does not guarantee that a remote tool
   stopped or rolled back its changes.
 
+Hatfield temporarily depends on the `ineersa/php-sdk` branch
+`task/fix-http-session-expiry` at commit `0254b8546ab3a30cea2fe19a08ab82881e7fd13f`
+so expired Streamable HTTP sessions raise a connection failure instead of a
+deadline. Replace that pin after upstream
+[PR #425](https://github.com/modelcontextprotocol/php-sdk/pull/425) lands.
+
 ## Shutdown
 
 Workers perform **best-effort graceful disconnect** on worker stop (`McpWorkerShutdownSubscriber` / connection manager disconnect). STDIO child processes are signaled on shutdown; some grandchildren may still escape if servers spawn unmanaged trees — treat MCP servers as untrusted process boundaries.

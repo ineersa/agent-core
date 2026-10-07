@@ -10,6 +10,10 @@
             "options": {
                 "symlink": true
             }
+        },
+        {
+            "type": "vcs",
+            "url": "https://github.com/ineersa/php-sdk.git"
         }
     ],
     "require": {
@@ -61,7 +65,7 @@
         "symfony/process": "^8.1",
         "league/oauth2-client": "^2.8",
         "symfony/scheduler": "^8.1",
-        "mcp/sdk": "dev-main",
+        "mcp/sdk": "dev-task/fix-http-session-expiry#0254b8546ab3a30cea2fe19a08ab82881e7fd13f",
         "league/commonmark": "^2.8",
         "tempest/highlight": "^2.27",
         "symfony/ai-store": "^0.14",
