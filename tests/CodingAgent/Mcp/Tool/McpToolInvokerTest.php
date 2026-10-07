@@ -26,7 +26,7 @@ final class McpToolInvokerTest extends TestCase
                 return false;
             }
         };
-        $manager = new class($token) implements McpConnectionManagerInterface {
+        $manager = new class implements McpConnectionManagerInterface {
             public ?string $runId = null;
             public ?string $serverName = null;
             public ?string $toolName = null;
@@ -34,10 +34,6 @@ final class McpToolInvokerTest extends TestCase
             public array $arguments = [];
             public mixed $cancellationToken = null;
             public ?int $timeoutSeconds = null;
-
-            public function __construct(private CancellationTokenInterface $expectedToken)
-            {
-            }
 
             public function discover(string $runId, ?callable $onServerDiscovered = null): array
             {

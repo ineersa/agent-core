@@ -2827,7 +2827,7 @@
         },
         {
             "name": "ineersa/hatfield-extension-api",
-            "version": "dev-task/add-proper-mcp-tool-call-cancellation",
+            "version": "dev-task/2026-09-25-upgrade-symfony-ai-to-0-14-and-migrate-memory-store-adapter",
             "dist": {
                 "type": "path",
                 "url": ".hatfield/extensions/extension-api",

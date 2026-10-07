@@ -109,8 +109,6 @@ class McpSdkClientAdapterTest extends TestCase
                 $this->assertFalse($cancellation->isCancellationRequested());
 
                 $token->cancelled = true;
-                $nextPollAt = new \ReflectionProperty($cancellation, 'nextPollAt');
-                $nextPollAt->setValue($cancellation, 0);
                 $this->assertTrue($cancellation->isCancellationRequested());
                 $this->assertTrue($cancellation->isCancellationRequested());
 

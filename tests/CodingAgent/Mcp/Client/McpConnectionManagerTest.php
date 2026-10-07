@@ -183,7 +183,8 @@ class McpConnectionManagerTest extends TestCase
         try {
             $this->manager->callTool('test-run', 'fixture', 'slow', cancellationToken: $token);
             $this->fail('The pending MCP call must stop when its token is cancelled.');
-        } catch (McpClientInterruptedException) {
+        } catch (McpClientInterruptedException $e) {
+            $this->assertSame('The client cancelled the request.', $e->getMessage());
         }
 
         $this->assertSame('quick', $this->manager->callTool('test-run', 'fixture', 'fast')['content'][0]['text']);
@@ -210,7 +211,8 @@ class McpConnectionManagerTest extends TestCase
         try {
             $this->manager->callTool('test-run', 'fixture', 'slow');
             $this->fail('An expired MCP deadline must interrupt the pending call.');
-        } catch (McpClientInterruptedException) {
+        } catch (McpClientInterruptedException $e) {
+            $this->assertSame('The request deadline expired.', $e->getMessage());
         }
 
         $this->assertMatchesRegularExpression('/^(received|cancelled:\\d+)$/', file_get_contents($marker));

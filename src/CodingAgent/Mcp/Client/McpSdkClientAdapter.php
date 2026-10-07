@@ -98,29 +98,13 @@ final class McpSdkClientAdapter implements McpClientInterface
     public function callTool(string $name, array $arguments = [], ?CancellationTokenInterface $cancellationToken = null, ?int $timeoutSeconds = null): array
     {
         $sdkToken = null === $cancellationToken ? null : new class($cancellationToken) implements SdkCancellationTokenInterface {
-            private int $nextPollAt = 0;
-            private bool $cancelled = false;
-
             public function __construct(private readonly CancellationTokenInterface $token)
             {
             }
 
             public function isCancellationRequested(): bool
             {
-                if ($this->cancelled) {
-                    return true;
-                }
-
-                $now = hrtime(true);
-                if ($now < $this->nextPollAt) {
-                    return false;
-                }
-
-                // RunCancellationToken reads persisted status. Do not query it on
-                // every millisecond-long SDK transport tick.
-                $this->nextPollAt = $now + 50_000_000;
-
-                return $this->cancelled = $this->token->isCancellationRequested();
+                return $this->token->isCancellationRequested();
             }
         };
 
