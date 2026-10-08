@@ -8,7 +8,6 @@ use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO;
 use Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO;
 use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
-use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
 
 /** In-memory scheduling store for collector/finalizer unit proofs. */
@@ -67,36 +66,6 @@ final class TestToolBatchStore implements ToolBatchStoreInterface
                 }
             }
         };
-    }
-
-    public function admittedCalls(string $runId, int $turnNo, string $stepId): array
-    {
-        $batch = $this->load($runId, $turnNo, $stepId);
-        if (null === $batch) {
-            return [];
-        }
-        $admitted = [];
-        foreach (array_keys($batch->inFlight) as $toolCallId) {
-            $call = $batch->calls[$toolCallId] ?? null;
-            if ($call instanceof ExecuteToolCall && !isset($batch->results[$toolCallId]) && $this->isAdmissiblePermission($call)) {
-                $admitted[] = $call;
-            }
-        }
-
-        return $admitted;
-    }
-
-    public function admittedCall(string $runId, int $turnNo, string $stepId, string $toolCallId): ?ExecuteToolCall
-    {
-        $batch = $this->load($runId, $turnNo, $stepId);
-        $call = $batch?->calls[$toolCallId] ?? null;
-
-        return $call instanceof ExecuteToolCall ? $call : null;
-    }
-
-    public function isAdmissiblePermission(ExecuteToolCall $call): bool
-    {
-        return true;
     }
 
     private function applyPrepared(FinalizeToolBatchDTO $action, VerifiedTransitionDTO $transition): void
