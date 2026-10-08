@@ -35,6 +35,7 @@ use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
+use Ineersa\AgentCore\Tests\Support\TestToolBatchStore;
 use Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -110,7 +111,13 @@ final class CommandMailboxPolicyTest extends TestCase
 
         $llmSteps = array_values(array_filter(
             $fixture->executionBus->messages,
-            static fn (object $message): bool => $message instanceof \Ineersa\AgentCore\Domain\Message\ExecutionRequest && ExecuteLlmStep::class === $message->requestType,
+            static function (object $message): bool {
+                if ($message instanceof \Symfony\Component\Messenger\Envelope) {
+                    $message = $message->getMessage();
+                }
+
+                return $message instanceof \Ineersa\AgentCore\Domain\Message\ExecutionRequest && ExecuteLlmStep::class === $message->requestType;
+            },
         ));
         $this->assertCount(1, $llmSteps, 'Turn-start must schedule exactly one LLM continuation for the drained batch.');
     }
@@ -417,18 +424,26 @@ final class CommandMailboxPolicyTest extends TestCase
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
-        $toolBatchCollector = new ToolBatchCollector();
+        $toolBatchCollector = new ToolBatchCollector($batchStore = new TestToolBatchStore());
         $stepDispatcher = new StepDispatcher(\Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::bus($commandBus, $commandStore, $toolBatchCollector, new StepDispatcher($commandBus, $executionBus)), $executionBus);
 
+        $operations = new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore();
         $runCommit = new RunCommit(
             activeRunContext: $activeRunContext,
             eventStore: $eventStore,
             logger: new NullLogger(),
-            toolBatchCollector: $toolBatchCollector,
-            executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
+            executionOperations: $operations,
             sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new InMemoryCommandStore()),
             hookDispatcher: null,
-            finalizer: TestTransitionFinalizerFactory::create($eventStore, $stepDispatcher),
+            finalizer: TestTransitionFinalizerFactory::create(
+                $eventStore,
+                $stepDispatcher,
+                batches: $batchStore,
+                commands: $commandStore,
+                operations: $operations,
+                commandBus: $commandBus,
+                executionBus: $executionBus,
+            ),
         );
 
         $runMessageProcessor = new RunMessageProcessor(
@@ -459,6 +474,7 @@ final class CommandMailboxPolicyTest extends TestCase
                     toolCallExtractor: new \Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor(),
                     messageNormalizer: new \Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer(),
                     normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
+                    toolBatchCollector: $toolBatchCollector,
                     commandBus: $commandBus,
                 ),
                 new ToolCallResultHandler(

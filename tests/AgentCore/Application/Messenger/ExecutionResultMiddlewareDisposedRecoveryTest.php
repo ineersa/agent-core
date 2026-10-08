@@ -4,22 +4,20 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Application\Messenger;
 
-use Ineersa\AgentCore\Application\Handler\ExecutionBoundaryContext;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Messenger\ExecutionResultMiddleware;
 use Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery;
 use Ineersa\AgentCore\Application\Pipeline\SourceAcceptance;
-use Ineersa\AgentCore\Application\Pipeline\TransitionFinalizer;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
-use Ineersa\AgentCore\Contract\Tool\ToolExecutionAuthorizationInterface;
 use Ineersa\AgentCore\Domain\Coordination\ExecutionResultDispositionDTO;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Tests\Support\InMemoryCommandStore;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Symfony\Component\Lock\LockFactory;
@@ -41,6 +39,7 @@ final class ExecutionResultMiddlewareDisposedRecoveryTest extends IsolatedKernel
         $store->appendTransition([], ['run_id' => $run, 'predecessor_seq' => 0, 'effects' => [$request]]);
         $pending = $store->verifiedPendingTransition($run);
         $this->assertNotNull($pending);
+        $operations->prepare($request, $pending);
         $authorization = $operations->arm($request, $pending);
         $store->finalizeVerifiedTransition($run, $pending->identity);
         $delivery = $operations->requestReference($request, $authorization);
@@ -59,10 +58,10 @@ final class ExecutionResultMiddlewareDisposedRecoveryTest extends IsolatedKernel
             $store,
             $container->get(ActiveRunContextInterface::class),
             $acceptance,
-            new TransitionFinalizer($store, $container->get(ToolExecutionAuthorizationInterface::class), $operations, new StepDispatcher($bus, $bus), $acceptance),
+            TestTransitionFinalizerFactory::create($store, new StepDispatcher($bus, $bus), operations: $operations, commandBus: $bus, executionBus: $bus),
             $container->get(\Ineersa\AgentCore\Application\Handler\CoordinationActionValidator::class),
         );
-        $middleware = new ExecutionResultMiddleware($operations, new ExecutionBoundaryContext(), $recovery, new RunLockManager(new LockFactory(new InMemoryStore())));
+        $middleware = new ExecutionResultMiddleware($operations, $recovery, new RunLockManager(new LockFactory(new InMemoryStore())));
         $envelope = new Envelope($reference, [new ReceivedStamp('run_control')]);
         $handled = $middleware->handle($envelope, new StackMiddleware());
 

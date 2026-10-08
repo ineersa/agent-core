@@ -6,7 +6,6 @@ namespace Ineersa\AgentCore\Tests\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
-use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Pipeline\HandlerResult;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Application\Pipeline\RunMessageHandler;
@@ -72,7 +71,6 @@ final class RunMessageProcessorTest extends TestCase
             activeRunContext: $active,
             eventStore: $store,
             logger: new NullLogger(),
-            toolBatchCollector: new ToolBatchCollector(),
             executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
             sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
             finalizer: TestTransitionFinalizerFactory::create($store, $dispatcher),

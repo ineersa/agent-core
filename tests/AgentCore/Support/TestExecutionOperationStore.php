@@ -17,6 +17,12 @@ use Symfony\Component\Messenger\Transport\Serialization\PhpSerializer;
 /** Dispatch-only unit fixtures. Execution and durability proofs require the configured store. */
 final class TestExecutionOperationStore implements ExecutionOperationStoreInterface
 {
+    /** @var array<string, array{0: DurableExecutionResult, 1: AbstractAgentBusMessage}> */
+    private array $deferredResults = [];
+
+    /** @var array<string, array{0: AbstractAgentBusMessage, 1: ExecutionAuthorizationStamp}> */
+    private array $armed = [];
+
     public function unknownExecutionsForRepair(string $runId): array
     {
         return [];
@@ -49,12 +55,17 @@ final class TestExecutionOperationStore implements ExecutionOperationStoreInterf
 
     public function prepare(AbstractAgentBusMessage $request, VerifiedTransitionDTO $transition): ExecutionAuthorizationStamp
     {
-        return $this->arm($request, $transition);
+        $stamp = new ExecutionAuthorizationStamp(hash('sha256', $transition->identity.'|'.$request->idempotencyKey()), hash('sha256', $this->encode($request)));
+        $this->armed[$stamp->effectId] = [$request, $stamp];
+
+        return $stamp;
     }
 
     public function arm(AbstractAgentBusMessage $request, VerifiedTransitionDTO $transition): ExecutionAuthorizationStamp
     {
-        return new ExecutionAuthorizationStamp(hash('sha256', $transition->identity.'|'.$request->idempotencyKey()), hash('sha256', $this->encode($request)));
+        $stamp = $this->prepare($request, $transition);
+
+        return $stamp;
     }
 
     public function requestReference(AbstractAgentBusMessage $request, ExecutionAuthorizationStamp $authorization): ExecutionRequest
@@ -94,12 +105,46 @@ final class TestExecutionOperationStore implements ExecutionOperationStoreInterf
 
     public function saveDeferredResult(string $deferredId, AbstractAgentBusMessage $result): DurableExecutionResult
     {
-        throw new \LogicException('Dispatch-only fixture cannot persist deferred results.');
+        if (!$result instanceof \Ineersa\AgentCore\Domain\Message\ToolCallResult) {
+            throw new \RuntimeException('Deferred completion requires a tool-call result envelope.');
+        }
+        $existing = $this->deferredResults[$deferredId] ?? null;
+        if (null !== $existing) {
+            if (serialize($existing[1]) !== serialize($result)) {
+                throw new \RuntimeException('Conflicting durable execution result.');
+            }
+
+            return $existing[0];
+        }
+
+        $reference = new DurableExecutionResult(
+            $result->runId(),
+            $result->turnNo(),
+            $result->stepId(),
+            $result->attempt(),
+            $result->idempotencyKey(),
+            hash('sha256', $deferredId.'|'.$result->idempotencyKey()),
+            'claim-'.$deferredId,
+            hash('sha256', serialize($result)),
+            \strlen(serialize($result)),
+            $result::class,
+        );
+        $this->deferredResults[$deferredId] = [$reference, $result];
+
+        return $reference;
     }
 
     public function resolveResult(DurableExecutionResult $reference): AbstractAgentBusMessage
     {
-        throw new \LogicException('Dispatch-only fixture cannot resolve execution results.');
+        foreach ($this->deferredResults as [$stored, $result]) {
+            if ($stored->effectId === $reference->effectId
+                && $stored->sha256 === $reference->sha256
+                && $stored->bytes === $reference->bytes) {
+                return $result;
+            }
+        }
+
+        throw new \LogicException('Dispatch-only fixture cannot resolve unknown deferred results.');
     }
 
     public function isDisposed(DurableExecutionResult $reference): bool
@@ -124,7 +169,15 @@ final class TestExecutionOperationStore implements ExecutionOperationStoreInterf
 
     public function pendingDeliveriesForRun(string $runId): array
     {
-        return [];
+        $pending = [];
+        foreach ($this->armed as $effectId => [$request, $stamp]) {
+            if ($request->runId() !== $runId) {
+                continue;
+            }
+            $pending[$effectId] = new Envelope($this->requestReference($request, $stamp), [$stamp]);
+        }
+
+        return $pending;
     }
 
     public function retireUnstartedPermissions(string $runId, int $turnNo, string $stepId, VerifiedTransitionDTO $transition): void

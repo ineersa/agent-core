@@ -13,10 +13,10 @@ use Ineersa\AgentCore\Application\Pipeline\TransitionFinalizer;
 use Ineersa\AgentCore\Application\Pipeline\TransitionPlanFactory;
 use Ineersa\AgentCore\Contract\ApplicationDbTransactionInterface;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
+use Ineersa\AgentCore\Contract\ControlMessageOutboxInterface;
 use Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
-use Ineersa\AgentCore\Tests\Support\InMemoryControlMessageOutbox;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\InMemoryStore;
 use Symfony\Component\Messenger\MessageBusInterface;
@@ -34,6 +34,7 @@ final class TestTransitionFinalizerFactory
         ?MessageBusInterface $commandBus = null,
         ?MessageBusInterface $executionBus = null,
         ?RunLockManager $locks = null,
+        ?ControlMessageOutboxInterface $outbox = null,
     ): TransitionFinalizer {
         $commands ??= new InMemoryCommandStore();
         $batches ??= new TestToolBatchStore();
@@ -42,7 +43,7 @@ final class TestTransitionFinalizerFactory
         $commandBus ??= new TestMessageBus();
         $executionBus ??= new TestMessageBus();
         $locks ??= new RunLockManager(new LockFactory(new InMemoryStore()));
-        $outbox = new InMemoryControlMessageOutbox();
+        $outbox ??= new InMemoryControlMessageOutbox();
         $transactions = new class implements ApplicationDbTransactionInterface {
             public function transactional(callable $callback): mixed
             {

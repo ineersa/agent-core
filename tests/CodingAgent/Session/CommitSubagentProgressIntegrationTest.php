@@ -107,8 +107,15 @@ final class CommitSubagentProgressIntegrationTest extends PerMethodIsolatedKerne
         $bus = new \Ineersa\AgentCore\Tests\Support\TestMessageBus();
         $active = self::getContainer()->get(ActiveRunContextInterface::class);
         $dispatcher = new \Ineersa\AgentCore\Application\Handler\StepDispatcher($bus, $bus);
-        $commit = new \Ineersa\AgentCore\Application\Pipeline\RunCommit($active, $store, $dispatcher,
-            new \Ineersa\AgentCore\Tests\Support\TestLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()), actionValidator: self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\CoordinationActionValidator::class));
+        $commit = new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
+            activeRunContext: $active,
+            eventStore: $store,
+            logger: new \Ineersa\AgentCore\Tests\Support\TestLogger(),
+            executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
+            sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
+            finalizer: \Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory::create($store, $dispatcher, commandBus: $bus, executionBus: $bus),
+            actionValidator: self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\CoordinationActionValidator::class),
+        );
         $processor = new \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor($active,
             self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class), $commit,
             [new \Ineersa\CodingAgent\Application\Pipeline\CommitSubagentProgressHandler(self::getContainer()->get(DeferredSubagentBatchRepository::class), $bus)]);

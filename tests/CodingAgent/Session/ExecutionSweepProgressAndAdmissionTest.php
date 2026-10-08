@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Session;
 
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
-use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Application\Pipeline\SourceAcceptance;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
@@ -211,7 +210,6 @@ final class ExecutionSweepProgressAndAdmissionTest extends IsolatedKernelTestCas
             activeRunContext: $active,
             eventStore: $store,
             logger: new TestLogger(),
-            toolBatchCollector: new ToolBatchCollector(),
             executionOperations: $operations,
             sourceAcceptance: new SourceAcceptance(new InMemoryCommandStore()),
             finalizer: TestTransitionFinalizerFactory::create($store, new StepDispatcher($bus, $bus)),

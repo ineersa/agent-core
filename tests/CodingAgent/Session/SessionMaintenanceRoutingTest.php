@@ -30,6 +30,8 @@ use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\AgentCore\Tests\Support\SymfonyAiTestMessages;
+use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
+use Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
@@ -55,6 +57,7 @@ use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
 use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookResultDTO;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Exception\HandlerFailedException;
 use Symfony\Component\Messenger\Stamp\HandledStamp;
 use Symfony\Component\Messenger\Stamp\ReceivedStamp;
@@ -97,8 +100,8 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
 
             return $responses[\count($requests) - 1];
         });
-        $container->set(ExecuteLlmStepWorker::class, new ExecuteLlmStepWorker($platform, $bus));
-        $container->set(ExecuteCompactionStepWorker::class, new ExecuteCompactionStepWorker($platform, $bus));
+        $container->set(ExecuteLlmStepWorker::class, new ExecuteLlmStepWorker($platform));
+        $container->set(ExecuteCompactionStepWorker::class, new ExecuteCompactionStepWorker($platform));
         $consumeOwner = static function () use ($bus, $ownerTransport): void {
             $sent = $ownerTransport->getSent();
             $bus->dispatch($sent[array_key_last($sent)]->with(new ReceivedStamp('run_control')));
@@ -107,19 +110,25 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
             $sent = $llmTransport->getSent();
             $container->get('agent.execution.bus')->dispatch($sent[array_key_last($sent)]->with(new ReceivedStamp('llm')));
         };
-        $resolveTool = static function (ExecuteToolCall $tool) use ($bus, $run): void {
-            $result = new ToolCallResult($run, $tool->turnNo(), $tool->stepId(), 1, $tool->idempotencyKey(), $tool->toolCallId, $tool->orderIndex,
+        $resolveTool = function (Envelope $envelope) use ($run): void {
+            $tool = $this->peekExecutionRequest($envelope);
+            $this->assertInstanceOf(ExecuteToolCall::class, $tool);
+            $this->completeAuthorizedExecution($envelope, new ToolCallResult(
+                $run,
+                $tool->turnNo(),
+                $tool->stepId(),
+                1,
+                $tool->idempotencyKey(),
+                $tool->toolCallId,
+                $tool->orderIndex,
                 result: ['content' => [['type' => 'text', 'text' => str_repeat('Collected tool output. ', 30)]]],
-            );
-            $bus->dispatch($bus->dispatch($result)->with(new ReceivedStamp('run_control')));
+            ));
         };
         $bus->dispatch(new AdvanceRun($run, 0, 'first-advance', 1, 'first-advance'));
         $consumeOwner();
         $consumeLlm();
         $consumeOwner();
-        $firstTool = $toolTransport->getSent()[0]->getMessage();
-        $this->assertInstanceOf(ExecuteToolCall::class, $firstTool);
-        $resolveTool($firstTool);
+        $resolveTool($toolTransport->getSent()[0]);
         $consumeOwner();
         $belowThreshold = $llmTransport->getSent()[1]->getMessage();
         $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\ExecutionRequest::class, $belowThreshold, 'Below threshold, the next tool cycle must run without compaction.');
@@ -127,18 +136,18 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         $consumeLlm();
         $consumeOwner();
         $this->assertCount(3, $toolTransport->getSent());
-        $secondTool = $toolTransport->getSent()[1]->getMessage();
-        $thirdTool = $toolTransport->getSent()[2]->getMessage();
+        $secondTool = $this->peekExecutionRequest($toolTransport->getSent()[1]);
+        $thirdTool = $this->peekExecutionRequest($toolTransport->getSent()[2]);
         $this->assertInstanceOf(ExecuteToolCall::class, $secondTool);
         $this->assertInstanceOf(ExecuteToolCall::class, $thirdTool);
-        $resolveTool($secondTool);
+        $resolveTool($toolTransport->getSent()[1]);
         // Even an early scheduler delivery cannot compact an unresolved batch.
         $state = $registry->requireLoaded($run);
         $bus->dispatch(new AdvanceRun($run, $state->turnNo, 'early-advance', 1, 'early-advance'));
         $consumeOwner();
         $this->assertCount(2, $llmTransport->getSent());
         $this->assertSame([], $this->autoCompactionBusMessages);
-        $resolveTool($thirdTool);
+        $resolveTool($toolTransport->getSent()[2]);
         $consumeOwner();
         $sent = $ownerTransport->getSent();
         $compact = $sent[array_key_last($sent)]->getMessage();
@@ -262,7 +271,7 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
 
                 return new PlatformInvocationResult(SymfonyAiTestMessages::assistantText('Work continued.'));
             });
-            $container->set(ExecuteLlmStepWorker::class, new ExecuteLlmStepWorker($platform, $container->get('agent.command.bus')));
+            $container->set(ExecuteLlmStepWorker::class, new ExecuteLlmStepWorker($platform));
             $container->get('agent.execution.bus')->dispatch($envelopes[0]->with(new ReceivedStamp('llm')));
             $llmTransport->ack($envelopes[0]);
             $this->assertNotContains('agent_command_applied', array_column($store->allFor($run), 'type'), 'Cold continuation must not require another user command.');
@@ -304,17 +313,24 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         );
         $bus->dispatch($bus->dispatch($toolRequest)->with(new ReceivedStamp('run_control')));
         $this->assertCount(1, $toolTransport->getSent());
-        $tool = $toolTransport->getSent()[0]->getMessage();
+        $toolEnvelope = $toolTransport->getSent()[0];
+        $tool = $this->peekExecutionRequest($toolEnvelope);
         $this->assertInstanceOf(ExecuteToolCall::class, $tool);
         $cancel = new ApplyCommand($run, 1, 'cancel', 1, 'cancel-key', CoreCommandKind::Cancel);
         $bus->dispatch($bus->dispatch($cancel)->with(new ReceivedStamp('run_control')));
         $this->assertSame(RunStatus::Cancelling, $registry->requireLoaded($run)->status);
         // Resolve the cancelled worker without executing its read or starting another turn.
-        $cancelledResult = new ToolCallResult($run, 1, $tool->stepId(), 1, $tool->idempotencyKey(), $tool->toolCallId, 0,
+        $this->completeAuthorizedExecution($toolEnvelope, new ToolCallResult(
+            $run,
+            1,
+            $tool->stepId(),
+            1,
+            $tool->idempotencyKey(),
+            $tool->toolCallId,
+            0,
             result: ['content' => [['type' => 'text', 'text' => 'Tool call cancelled.']], 'details' => ['cancelled' => true]],
             isError: true,
-        );
-        $bus->dispatch($bus->dispatch($cancelledResult)->with(new ReceivedStamp('run_control')));
+        ));
         $cancelled = $registry->requireLoaded($run);
         $this->assertSame(RunStatus::Cancelled, $cancelled->status);
         $this->assertNull($cancelled->currentOperation);
@@ -328,7 +344,7 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         $platform = $this->createMock(PlatformInterface::class);
         $platform->expects($this->once())->method('invoke')->with($this->callback(static fn (ModelInvocationRequest $request): bool => !$request->options->toolsEnabled && !$request->options->streamObserverEnabled && $run === $request->input->runId))
             ->willReturn(new PlatformInvocationResult(SymfonyAiTestMessages::assistantText('COMPACTED_HISTORY')));
-        $container->set(ExecuteCompactionStepWorker::class, new ExecuteCompactionStepWorker($platform, $bus));
+        $container->set(ExecuteCompactionStepWorker::class, new ExecuteCompactionStepWorker($platform));
 
         $compact = new ApplyCommand($run, 1, 'manual-compact', 1, 'manual-compact-key', CoreCommandKind::Compact);
         $queued = $bus->dispatch($compact);
@@ -626,14 +642,21 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
             ])),
         ]);
         $commit = new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
-            $registry,
-            $fault,
-            new \Ineersa\AgentCore\Application\Handler\StepDispatcher($coordinationBus, $c->get('agent.execution.bus')),
-            new \Psr\Log\NullLogger(),
-            $c->get(\Ineersa\AgentCore\Application\Handler\ToolBatchCollector::class),
-            $c->get(\Ineersa\AgentCore\Contract\Tool\ToolExecutionAuthorizationInterface::class),
-            $c->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class),
-            $acceptance,
+            activeRunContext: $registry,
+            eventStore: $fault,
+            logger: new \Psr\Log\NullLogger(),
+            executionOperations: $c->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class),
+            sourceAcceptance: $acceptance,
+            finalizer: TestTransitionFinalizerFactory::create(
+                $fault,
+                new \Ineersa\AgentCore\Application\Handler\StepDispatcher($coordinationBus, $c->get('agent.execution.bus')),
+                operations: $c->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class),
+                batches: $c->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
+                commands: $c->get(\Ineersa\AgentCore\Contract\CommandStoreInterface::class),
+                sourceAcceptance: $acceptance,
+                commandBus: $coordinationBus,
+                executionBus: $c->get('agent.execution.bus'),
+            ),
             actionValidator: $c->get(\Ineersa\AgentCore\Application\Handler\CoordinationActionValidator::class),
         );
         $repair = new \Ineersa\CodingAgent\Session\Repair\SessionRepairService(
@@ -650,7 +673,6 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
             runCommit: $commit,
             historyReplayFilter: $c->get(\Ineersa\CodingAgent\Session\History\HistoryReplayFilter::class),
             executionOperations: $c->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class),
-            toolAuthorization: $c->get(\Ineersa\AgentCore\Application\Handler\ToolExecutionAuthorization::class),
             deferredBatches: $c->get(DeferredSubagentBatchRepository::class),
         );
         $handler = new \Ineersa\CodingAgent\Application\Pipeline\SessionMaintenanceHandler(
@@ -746,11 +768,21 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         $c->get('messenger.transport.run_control')->ack($follow);
         $factory = new DeferredSubagentBatchIdentityFactory();
         $newBatchId = $factory->batchLifecycleId($run, 'fork-next');
-        $call = $c->get('messenger.transport.tool')->getSent()[array_key_last($c->get('messenger.transport.tool')->getSent())]->getMessage();
-        $c->get(\Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface::class)->registerPending(new \Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation(
+        $callEnvelope = $c->get('messenger.transport.tool')->getSent()[array_key_last($c->get('messenger.transport.tool')->getSent())];
+        $call = $this->peekExecutionRequest($callEnvelope);
+        $registration = $c->get(\Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface::class)->registerPending(new \Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation(
             $newBatchId, $run, $call->turnNo(), $call->stepId(), $call->attempt(), $call->idempotencyKey(), $call->toolCallId, $call->toolName, $call->args, $call->orderIndex,
-            $call->toolIdempotencyKey, $call->mode, $call->timeoutSeconds, $call->maxParallelism, $call->assistantMessage, $call->argSchema, $call->toolsRef,
+            $call->toolIdempotencyKey, $call->mode, $call->timeoutSeconds, $call->maxParallelism, null, $call->argSchema, $call->toolsRef,
         ));
+        $reference = $callEnvelope->getMessage();
+        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\ExecutionRequest::class, $reference);
+        $authorization = $callEnvelope->last(\Ineersa\AgentCore\Domain\Coordination\ExecutionAuthorizationStamp::class);
+        $this->assertNotNull($authorization);
+        $operations = $c->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class);
+        $claim = $operations->claim($reference, $authorization);
+        $this->assertIsString($claim);
+        $operations->resolveRequest($reference, $authorization, $claim);
+        $operations->transferToDeferred($reference, $authorization, $claim, $registration->deferredId);
         $identity = $factory->childIdentity($run, 'fork-next', 1);
         $newChild = $identity['childRunId'];
         $c->get(AgentArtifactRegistry::class)->create($run, $identity['artifactId'], $newChild, 'fork', AgentArtifactKindEnum::Fork);
@@ -1122,11 +1154,22 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
                 throw new \RuntimeException('Injected maintenance interruption.');
             }
         });
-        $commit = new \Ineersa\AgentCore\Application\Pipeline\RunCommit($registry, $fault,
-            $c->get(\Ineersa\AgentCore\Application\Handler\StepDispatcher::class), new \Psr\Log\NullLogger(),
-            $c->get(\Ineersa\AgentCore\Application\Handler\ToolBatchCollector::class),
-            $c->get(\Ineersa\AgentCore\Contract\Tool\ToolExecutionAuthorizationInterface::class),
-            $c->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class), $acceptance,
+        $commit = new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
+            activeRunContext: $registry,
+            eventStore: $fault,
+            logger: new \Psr\Log\NullLogger(),
+            executionOperations: $c->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class),
+            sourceAcceptance: $acceptance,
+            finalizer: TestTransitionFinalizerFactory::create(
+                $fault,
+                $c->get(\Ineersa\AgentCore\Application\Handler\StepDispatcher::class),
+                operations: $c->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class),
+                batches: $c->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
+                commands: $c->get(\Ineersa\AgentCore\Contract\CommandStoreInterface::class),
+                sourceAcceptance: $acceptance,
+                commandBus: $c->get('agent.command.bus'),
+                executionBus: $c->get('agent.execution.bus'),
+            ),
             actionValidator: $c->get(\Ineersa\AgentCore\Application\Handler\CoordinationActionValidator::class));
         $processor = new \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor($registry,
             $c->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class), $commit,
@@ -1157,7 +1200,7 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         if ($command instanceof AttachRun) {
             try {
                 if ($asyncInterruptedAttach) {
-                    $attachBus->dispatch(new \Symfony\Component\Messenger\Envelope($command, [new ReceivedStamp('run_control')]));
+                    $attachBus->dispatch(new Envelope($command, [new ReceivedStamp('run_control')]));
                 } else {
                     $handler->attach($command);
                 }
@@ -1175,9 +1218,9 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
             // already committed cancel constituent must not reject that input.
             $followUp = new ApplyCommand($run, 0, 'new-input', 1, 'new-input', 'follow_up', ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'New input after interrupted attach']]]]);
             $bus->dispatch($followUp);
-            $bus->dispatch(new \Symfony\Component\Messenger\Envelope($followUp, [new ReceivedStamp('run_control')]));
+            $bus->dispatch(new Envelope($followUp, [new ReceivedStamp('run_control')]));
             $this->assertTrue($c->get(\Ineersa\AgentCore\Contract\CommandStoreInterface::class)->has($run, 'new-input'));
-            $attachBus->dispatch(new \Symfony\Component\Messenger\Envelope($command, [new ReceivedStamp('run_control')]));
+            $attachBus->dispatch(new Envelope($command, [new ReceivedStamp('run_control')]));
             $events = $c->get(PreparedTransitionEventStoreInterface::class)->allFor($run);
             $this->assertCount(1, array_filter($events, static fn (RunEvent $event): bool => 'agent_command_applied' === $event->type && 'cancel' === ($event->payload['kind'] ?? null)));
             $this->assertCount(1, array_filter($events, static fn (RunEvent $event): bool => 'agent_command_queued' === $event->type && 'new-input' === ($event->payload['idempotency_key'] ?? null)));
@@ -1234,9 +1277,18 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         $run = $c->get(HatfieldSessionStore::class)->createSession('revised human suspension');
         $registry = $c->get(ActiveRunContextInterface::class);
         $collector = $c->get(\Ineersa\AgentCore\Application\Handler\ToolBatchCollector::class);
+        $batchStore = $c->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class);
         $call = new ExecuteToolCall(runId: $run, turnNo: 1, stepId: 'tools', attempt: 1, idempotencyKey: 'call-key', toolCallId: 'call', orderIndex: 0, toolName: 'read', args: ['path' => './file']);
-        $collector->registerExpectedBatch($run, 1, 'tools', [$call]);
-        \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, $run, 1, 'tools', 'call', 'old-question');
+        TestToolBatchRegistration::register(
+            $collector,
+            $batchStore,
+            $run,
+            1,
+            'tools',
+            [$call],
+            $c->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class),
+        );
+        \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, $batchStore, $run, 1, 'tools', 'call', 'old-question');
         $request = \Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO::toolCallFromPayload(
             ['question_id' => 'old-question', 'prompt' => 'Allow?'],
             ['run_id' => $run, 'turn_no' => 1, 'step_id' => 'tools', 'tool_call_id' => 'call']);
@@ -1248,8 +1300,11 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
             RunEvent::forAppend($run, 1, 'turn_advanced', ['turn_no' => 1, 'step_id' => 'tools'])], dispatchAfterTurnHooks: false);
         $answer = new ApplyCommand($run, 1, 'answer-step', 1, 'old-answer', 'human_response', ['question_id' => 'old-question', 'answer' => 'yes']);
         $bus = $c->get('agent.command.bus');
-        $bus->dispatch(new \Symfony\Component\Messenger\Envelope($answer, [new ReceivedStamp('run_control')]));
-        \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, $run, 1, 'tools', 'call', 'new-question');
+        $tools = $c->get('messenger.transport.tool');
+        $tools->reset();
+        $bus->dispatch(new Envelope($answer, [new ReceivedStamp('run_control')]));
+        $tools->reset();
+        \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, $batchStore, $run, 1, 'tools', 'call', 'new-question');
         $request = \Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO::toolCallFromPayload(
             ['question_id' => 'new-question', 'prompt' => 'Revised approval?'],
             ['run_id' => $run, 'turn_no' => 1, 'step_id' => 'tools', 'tool_call_id' => 'call']);
@@ -1263,7 +1318,7 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         $this->assertNotFalse($bytes);
         $sent = $c->get('messenger.transport.tool')->getSent();
         $this->assertCount(1, $sent, 'The first accepted answer dispatches its continuation.');
-        $bus->dispatch(new \Symfony\Component\Messenger\Envelope($answer, [new ReceivedStamp('run_control')]));
+        $bus->dispatch(new Envelope($answer, [new ReceivedStamp('run_control')]));
         $this->assertSame($bytes, file_get_contents($this->archivePath($run)));
         $this->assertSame($before, serialize($batchStore->load($run, 1, 'tools')));
         $this->assertSame('new-question', $registry->requireLoaded($run)->pendingHumanInputRequests[0]->questionId);
@@ -1341,18 +1396,37 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         $bus->dispatch($queued->with(new ReceivedStamp('run_control')));
         $container->get('messenger.transport.run_control')->ack($queued);
         if ($completedOrdinaryTool) {
-            $read = $container->get('messenger.transport.tool')->getSent()[0]->getMessage();
-            $result = $bus->dispatch(new ToolCallResult($run, $read->turnNo(), $read->stepId(), $read->attempt(), $read->idempotencyKey(), $read->toolCallId, $read->orderIndex, result: ['content' => [['type' => 'text', 'text' => 'Notes read.']]]));
-            $bus->dispatch($result->with(new ReceivedStamp('run_control')));
-            $container->get('messenger.transport.run_control')->ack($result);
+            $readEnvelope = $container->get('messenger.transport.tool')->getSent()[0];
+            $read = $this->peekExecutionRequest($readEnvelope);
+            $this->assertInstanceOf(ExecuteToolCall::class, $read);
+            $this->completeAuthorizedExecution($readEnvelope, new ToolCallResult(
+                $run,
+                $read->turnNo(),
+                $read->stepId(),
+                $read->attempt(),
+                $read->idempotencyKey(),
+                $read->toolCallId,
+                $read->orderIndex,
+                result: ['content' => [['type' => 'text', 'text' => 'Notes read.']]],
+            ));
         }
         $factory = new DeferredSubagentBatchIdentityFactory();
         $batchId = $factory->batchLifecycleId($run, 'fork-current');
-        $call = $container->get('messenger.transport.tool')->getSent()[$completedOrdinaryTool ? 1 : 0]->getMessage();
-        $container->get(\Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface::class)->registerPending(new \Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation(
+        $callEnvelope = $container->get('messenger.transport.tool')->getSent()[$completedOrdinaryTool ? 1 : 0];
+        $call = $this->peekExecutionRequest($callEnvelope);
+        $registration = $container->get(\Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface::class)->registerPending(new \Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation(
             $batchId, $run, $call->turnNo(), $call->stepId(), $call->attempt(), $call->idempotencyKey(), $call->toolCallId, $call->toolName, $call->args, $call->orderIndex,
-            $call->toolIdempotencyKey, $call->mode, $call->timeoutSeconds, $call->maxParallelism, $call->assistantMessage, $call->argSchema, $call->toolsRef,
+            $call->toolIdempotencyKey, $call->mode, $call->timeoutSeconds, $call->maxParallelism, null, $call->argSchema, $call->toolsRef,
         ));
+        $reference = $callEnvelope->getMessage();
+        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\ExecutionRequest::class, $reference);
+        $authorization = $callEnvelope->last(\Ineersa\AgentCore\Domain\Coordination\ExecutionAuthorizationStamp::class);
+        $this->assertNotNull($authorization);
+        $operations = $container->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class);
+        $claim = $operations->claim($reference, $authorization);
+        $this->assertIsString($claim);
+        $operations->resolveRequest($reference, $authorization, $claim);
+        $operations->transferToDeferred($reference, $authorization, $claim, $registration->deferredId);
         $intents = [];
         $childIds = [];
         for ($i = 0; $i < $children; ++$i) {
@@ -1400,13 +1474,20 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         $toolTransport = $container->get('messenger.transport.tool');
         $envelopes = iterator_to_array($toolTransport->get());
         $this->assertCount(1, $envelopes);
-        $tool = $envelopes[0]->getMessage();
+        $tool = $this->peekExecutionRequest($envelopes[0]);
         $this->assertInstanceOf(ExecuteToolCall::class, $tool);
-        $bus->dispatch(new ToolCallResult($run, $tool->turnNo(), $tool->stepId(), 1, $tool->idempotencyKey(), $tool->toolCallId, $tool->orderIndex,
+        $this->completeAuthorizedExecution($envelopes[0], new ToolCallResult(
+            $run,
+            $tool->turnNo(),
+            $tool->stepId(),
+            1,
+            $tool->idempotencyKey(),
+            $tool->toolCallId,
+            $tool->orderIndex,
             result: ['content' => [['type' => 'text', 'text' => str_repeat('Collected tool output. ', 30)]]],
         ));
         $toolTransport->ack($envelopes[0]);
-        $this->assertInstanceOf(ToolCallResult::class, $this->consumeNextOwnerMessage());
+        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\DurableExecutionResult::class, $this->consumeNextOwnerMessage());
 
         return $run;
     }
@@ -1491,7 +1572,34 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         }
     }
 
-    private function resolveExecutionRequest(\Symfony\Component\Messenger\Envelope $envelope): object
+    private function peekExecutionRequest(Envelope $envelope): object
+    {
+        $reference = $envelope->getMessage();
+        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\ExecutionRequest::class, $reference);
+        $this->assertNotNull($envelope->last(\Ineersa\AgentCore\Domain\Coordination\ExecutionAuthorizationStamp::class));
+        $request = self::getContainer()->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class)->peekRequest($reference);
+        $this->assertIsObject($request);
+
+        return $request;
+    }
+
+    private function completeAuthorizedExecution(Envelope $envelope, \Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage $result): void
+    {
+        $reference = $envelope->getMessage();
+        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\ExecutionRequest::class, $reference);
+        $authorization = $envelope->last(\Ineersa\AgentCore\Domain\Coordination\ExecutionAuthorizationStamp::class);
+        $this->assertNotNull($authorization);
+        $operations = self::getContainer()->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class);
+        $claim = $operations->claim($reference, $authorization);
+        $this->assertIsString($claim);
+        $request = $operations->resolveRequest($reference, $authorization, $claim);
+        $this->assertIsObject($request);
+        $durable = $operations->saveResult($request, $authorization, $claim, $result);
+        $bus = self::getContainer()->get('agent.command.bus');
+        $bus->dispatch($bus->dispatch($durable)->with(new ReceivedStamp('run_control')));
+    }
+
+    private function resolveExecutionRequest(Envelope $envelope): object
     {
         $reference = $envelope->getMessage();
         $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\ExecutionRequest::class, $reference);

@@ -49,7 +49,6 @@ final class RunCommitAfterTurnCommitPersistedSeqTest extends TestCase
             activeRunContext: $activeRunContext,
             eventStore: $eventStore,
             logger: new TestLogger(),
-            toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(),
             executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
             sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
             hookDispatcher: new HookDispatcher([$subscriber]),

@@ -30,6 +30,7 @@ use Ineersa\AgentCore\Tests\Support\Builder\AdvanceRunMessageBuilder;
 use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
 use Ineersa\AgentCore\Tests\Support\Builder\ToolCallResultBuilder;
 use Ineersa\AgentCore\Tests\Support\InMemoryCommandStore;
+use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
@@ -54,7 +55,7 @@ final class ToolCallResultHandlerTest extends TestCase
     public function testStandaloneShellCompletionPreservesAttachedShellAndWakesMailbox(): void
     {
         $handler = new ToolCallResultHandler(
-            toolBatchCollector: new ToolBatchCollector(),
+            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
@@ -160,9 +161,9 @@ final class ToolCallResultHandlerTest extends TestCase
 
     public function testHandleAcceptedPendingResultReturnsPostCommitEffectsForNextToolCall(): void
     {
-        $collector = new ToolBatchCollector();
+        $collector = new ToolBatchCollector($store = new TestToolBatchStore());
 
-        $collector->registerExpectedBatch(
+        TestToolBatchRegistration::register($collector, $store,
             runId: 'run-tool-handler-1',
             turnNo: 1,
             stepId: 'turn-1-step',
@@ -265,7 +266,7 @@ final class ToolCallResultHandlerTest extends TestCase
     public function testUntrackedCurrentTokenRedeliveryIsIdempotentNoOp(): void
     {
         $handler = new ToolCallResultHandler(
-            toolBatchCollector: new ToolBatchCollector(),
+            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
@@ -297,7 +298,7 @@ final class ToolCallResultHandlerTest extends TestCase
     public function testCancellingWithPendingToolCallsSynthesizesToolMessages(): void
     {
         $handler = new ToolCallResultHandler(
-            toolBatchCollector: new ToolBatchCollector(),
+            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
@@ -365,7 +366,7 @@ final class ToolCallResultHandlerTest extends TestCase
     public function testCancellingWithEmptyPendingCallsDoesNotSynthesize(): void
     {
         $handler = new ToolCallResultHandler(
-            toolBatchCollector: new ToolBatchCollector(),
+            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
@@ -413,7 +414,7 @@ final class ToolCallResultHandlerTest extends TestCase
     public function testCancellingWithMultiplePendingToolCallsSynthesizesAll(): void
     {
         $handler = new ToolCallResultHandler(
-            toolBatchCollector: new ToolBatchCollector(),
+            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
@@ -473,8 +474,8 @@ final class ToolCallResultHandlerTest extends TestCase
 
     public function testCancellingWithPartialCompleteClosesAll(): void
     {
-        $collector = new ToolBatchCollector();
-        $collector->registerExpectedBatch(
+        $collector = new ToolBatchCollector($store = new TestToolBatchStore());
+        TestToolBatchRegistration::register($collector, $store,
             runId: 'run-cancel-partial',
             turnNo: 1,
             stepId: 'turn-step-1',
@@ -608,8 +609,8 @@ final class ToolCallResultHandlerTest extends TestCase
 
     public function testCancellingPreserveIncomingProjectsDeferredSiblingMessageOnly(): void
     {
-        $collector = new ToolBatchCollector();
-        $collector->registerExpectedBatch(
+        $collector = new ToolBatchCollector($store = new TestToolBatchStore());
+        TestToolBatchRegistration::register($collector, $store,
             runId: 'run-cancel-preserve',
             turnNo: 1,
             stepId: 'turn-step-1',
@@ -742,7 +743,7 @@ final class ToolCallResultHandlerTest extends TestCase
     public function testCancellingSyntheticMessagesPassValidator(): void
     {
         $handler = new ToolCallResultHandler(
-            toolBatchCollector: new ToolBatchCollector(),
+            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
@@ -806,7 +807,7 @@ final class ToolCallResultHandlerTest extends TestCase
         ]);
 
         $handler = new ToolCallResultHandler(
-            toolBatchCollector: new ToolBatchCollector(),
+            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
@@ -861,9 +862,9 @@ final class ToolCallResultHandlerTest extends TestCase
     public function testFinalizedRedeliveryAfterCanonicalCommitIsIdempotentNoOp(): void
     {
         $store = $this->createSessionToolBatchStore();
-        $collector = new ToolBatchCollector(defaultMaxParallelism: 4, store: $store);
+        $collector = new ToolBatchCollector($store, 4);
 
-        $collector->registerExpectedBatch('run-redeliver-post', 1, 'step-1', [
+        TestToolBatchRegistration::register($collector, $store, 'run-redeliver-post', 1, 'step-1', [
             new ExecuteToolCall(
                 runId: 'run-redeliver-post',
                 turnNo: 1,
@@ -925,9 +926,9 @@ final class ToolCallResultHandlerTest extends TestCase
     public function testFinalizedRedeliveryBeforeCanonicalCommitRecoversOnce(): void
     {
         $store = $this->createSessionToolBatchStore();
-        $collector = new ToolBatchCollector(defaultMaxParallelism: 4, store: $store);
+        $collector = new ToolBatchCollector($store, 4);
 
-        $collector->registerExpectedBatch('run-redeliver-pre', 1, 'step-1', [
+        TestToolBatchRegistration::register($collector, $store, 'run-redeliver-pre', 1, 'step-1', [
             new ExecuteToolCall(
                 runId: 'run-redeliver-pre',
                 turnNo: 1,
@@ -993,7 +994,7 @@ final class ToolCallResultHandlerTest extends TestCase
     public function testCancellingSyntheticUnresolvedToolExecutionEndHasResultAndCancellationMetadata(): void
     {
         $handler = new ToolCallResultHandler(
-            toolBatchCollector: new ToolBatchCollector(),
+            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
@@ -1051,7 +1052,7 @@ final class ToolCallResultHandlerTest extends TestCase
     public function testDurableMixedForkCancellationDoesNotRetainDeserializedLaunchInput(): void
     {
         $store = new CancellationBatchReadObservationStore($this->createSessionToolBatchStore());
-        $collector = new ToolBatchCollector(store: $store);
+        $collector = new ToolBatchCollector($store);
         $runId = 'run-cancel-fork-retention';
         $fork = new ExecuteToolCall(
             runId: $runId, turnNo: 1, stepId: 'tools', attempt: 1,
@@ -1062,7 +1063,7 @@ final class ToolCallResultHandlerTest extends TestCase
                 producingStepId: 'tools', toolCallId: 'fork-call', sha256: str_repeat('a', 64), bytes: 100,
             ),
         );
-        $collector->registerExpectedBatch($runId, 1, 'tools', [
+        TestToolBatchRegistration::register($collector, $store, $runId, 1, 'tools', [
             new ExecuteToolCall(
                 runId: $runId, turnNo: 1, stepId: 'tools', attempt: 1,
                 idempotencyKey: 'read-execution', toolCallId: 'read-call', toolName: 'read',
@@ -1073,7 +1074,7 @@ final class ToolCallResultHandlerTest extends TestCase
         $read = ToolCallResultBuilder::success($runId)->withTurnNo(1)->withStepId('tools')
             ->withToolCallId('read-call')->withOrderIndex(0)
             ->withResult(['tool_name' => 'read', 'content' => [['type' => 'text', 'text' => 'saved read result']]])->build();
-        $this->assertFalse(\Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($collector, $read)->complete);
+        $this->assertFalse(\Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($collector, $store, $read)->complete);
         $handler = new ToolCallResultHandler(
             toolBatchCollector: $collector, eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(), messageNormalizer: new AgentMessageNormalizer(),

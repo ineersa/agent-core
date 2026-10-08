@@ -1409,7 +1409,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $worker($original);
         $this->assertSame(2, $notifications, 'Pending redelivery re-emits registration without reading input.');
         $terminalBus = new TestMessageBus();
-        (new CompleteDeferredToolCallHandler($deferred, $terminalBus, new TestLogger()))($complete);
+        (new CompleteDeferredToolCallHandler($deferred, $terminalBus, new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(), new TestLogger()))($complete);
         $this->assertSame('completed', $deferred->status($lifecycle));
         $this->assertCount(1, $terminalBus->messages);
         $worker($original);
@@ -1483,14 +1483,18 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $this->assertFalse($complete->isError);
 
         $resultBus = new TestMessageBus();
+        $operations = new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore();
         $completionHandler = new CompleteDeferredToolCallHandler(
             $deferred,
             $resultBus,
+            $operations,
             new TestLogger(),
         );
         $completionHandler($complete);
         $this->assertCount(1, $resultBus->messages);
-        $toolCallResult = $resultBus->messages[0];
+        $reference = $resultBus->messages[0];
+        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\DurableExecutionResult::class, $reference);
+        $toolCallResult = $operations->resolveResult($reference);
         $this->assertInstanceOf(ToolCallResult::class, $toolCallResult);
         $this->assertIsArray($toolCallResult->result);
         $this->assertSame('agent_resume', $toolCallResult->result['tool_name']);
@@ -1701,7 +1705,15 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
                     ])),
                 ]);
                 $dispatcher = new \Ineersa\AgentCore\Application\Handler\StepDispatcher($coordinationBus, $bus);
-                $commit = new \Ineersa\AgentCore\Application\Pipeline\RunCommit($active, $this->store, $dispatcher, new TestLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()), actionValidator: new \Ineersa\AgentCore\Application\Handler\CoordinationActionValidator([$coordination]));
+                $commit = new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
+                    activeRunContext: $active,
+                    eventStore: $this->store,
+                    logger: new TestLogger(),
+                    executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
+                    sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
+                    finalizer: \Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory::create($this->store, $dispatcher, commandBus: $coordinationBus, executionBus: $bus),
+                    actionValidator: new \Ineersa\AgentCore\Application\Handler\CoordinationActionValidator([$coordination]),
+                );
                 $processor = new \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor($active, $this->lock, $commit, [$handler]);
                 $processor->process('command.subagent_progress', new \Ineersa\AgentCore\Domain\Message\CommitSubagentProgress(
                     $parentRunId, $parentTurnNo, $lifecycleId, $parentToolCallId, $parentOrderIndex, $revision, $normalized, $interruptionKind,

@@ -21,6 +21,7 @@ use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
@@ -191,6 +192,7 @@ final class MessengerDoctrineRedeliverTimeoutLeaseTest extends IsolatedKernelTes
             $eventStore->appendTransition([], ['run_id' => $runId, 'predecessor_seq' => 2, 'effects' => [$abandoned]]);
             $pending = $eventStore->verifiedPendingTransition($runId);
             $this->assertNotNull($pending);
+            $operations->prepare($abandoned, $pending);
             $authorization = $operations->arm($abandoned, $pending);
             $reference = $operations->requestReference($abandoned, $authorization);
             $eventStore->finalizeVerifiedTransition($runId, $pending->identity);
@@ -229,9 +231,16 @@ final class MessengerDoctrineRedeliverTimeoutLeaseTest extends IsolatedKernelTes
                 toolBatchStore: $this->createStub(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
                 serializer: AttributeSerializerValidatorTestFactory::create()[0],
                 executionOperations: self::getContainer()->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class),
-                toolAuthorization: self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\ToolExecutionAuthorization::class),
                 historyReplayFilter: self::getContainer()->get(\Ineersa\CodingAgent\Session\History\HistoryReplayFilter::class),
-                runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit($active, $eventStore, new StepDispatcher($commandBus, $executionBus), new NullLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(), new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(), new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()), actionValidator: new \Ineersa\AgentCore\Application\Handler\CoordinationActionValidator([$redrive])),
+                runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
+                    activeRunContext: $active,
+                    eventStore: $eventStore,
+                    logger: new NullLogger(),
+                    executionOperations: self::getContainer()->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class),
+                    sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
+                    finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher($commandBus, $executionBus), operations: self::getContainer()->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class), commandBus: $commandBus, executionBus: $executionBus),
+                    actionValidator: new \Ineersa\AgentCore\Application\Handler\CoordinationActionValidator(),
+                ),
                 deferredBatches: self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository::class),
             );
 

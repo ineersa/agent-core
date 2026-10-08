@@ -39,18 +39,18 @@ final class StartRunProjectionFailureRedeliveryTest extends TestCase
         $executionBus = new TestMessageBus();
         $activeRunContext = new FailOnceProjectionActiveRunContext();
         $activeRunContext->createNew('run-start-projection-fail');
+        $locks = new RunLockManager(new LockFactory(new InMemoryStore()));
 
         $processor = new RunMessageProcessor(
             activeRunContext: $activeRunContext,
-            runLockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
+            runLockManager: $locks,
             runCommit: new RunCommit(
                 activeRunContext: $activeRunContext,
                 eventStore: $eventStore,
                 logger: new NullLogger(),
-                toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(),
                 executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
                 sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
-                finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher($commandBus, $executionBus)),
+                finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher($commandBus, $executionBus), locks: $locks),
             ),
             handlers: [
                 new StartRunHandler(
@@ -91,10 +91,12 @@ final class StartRunProjectionFailureRedeliveryTest extends TestCase
 
         $this->assertCount(1, $eventStore->allFor('run-start-projection-fail'), 'Redelivery must not append a second run_started.');
         $this->assertCount(1, $commandBus->messages);
-        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO::class, $commandBus->messages[0]);
-        $this->assertInstanceOf(AdvanceRun::class, $commandBus->messages[0]->message);
-        $this->assertSame('run-start-projection-fail', $commandBus->messages[0]->message->runId());
-        $this->assertStringStartsWith('start-follow-up-', $commandBus->messages[0]->message->stepId());
+        $advance = $commandBus->messages[0] instanceof \Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO
+            ? $commandBus->messages[0]->message
+            : $commandBus->messages[0];
+        $this->assertInstanceOf(AdvanceRun::class, $advance);
+        $this->assertSame('run-start-projection-fail', $advance->runId());
+        $this->assertStringStartsWith('start-follow-up-', $advance->stepId());
     }
 }
 

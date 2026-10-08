@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Contract\RunContextNotLoadedException;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
+use Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory;
 use Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink;
 use Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware;
@@ -250,12 +251,15 @@ final class PreparedTransitionEventStoreTest extends IsolatedKernelTestCase
             $store,
             $container->get(ActiveRunContextInterface::class),
             $container->get(\Ineersa\AgentCore\Application\Pipeline\SourceAcceptance::class),
-            new \Ineersa\AgentCore\Application\Pipeline\TransitionFinalizer(
+            TestTransitionFinalizerFactory::create(
                 $store,
-                $container->get(\Ineersa\AgentCore\Contract\Tool\ToolExecutionAuthorizationInterface::class),
-                $container->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class),
                 new \Ineersa\AgentCore\Application\Handler\StepDispatcher($failure, $failure, $failure, $failure),
-                $container->get(\Ineersa\AgentCore\Application\Pipeline\SourceAcceptance::class),
+                operations: $container->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class),
+                batches: $container->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
+                commands: $container->get(\Ineersa\AgentCore\Contract\CommandStoreInterface::class),
+                sourceAcceptance: $container->get(\Ineersa\AgentCore\Application\Pipeline\SourceAcceptance::class),
+                commandBus: $failure,
+                executionBus: $failure,
             ),
             $container->get(\Ineersa\AgentCore\Application\Handler\CoordinationActionValidator::class),
         );

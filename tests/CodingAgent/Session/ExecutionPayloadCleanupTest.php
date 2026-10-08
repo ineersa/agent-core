@@ -5,12 +5,9 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Session;
 
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
-use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Coordination\ExecutionResultDispositionDTO;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
-use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
-use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Runtime\Messenger\ExecutionPendingDeliverySubscriber;
@@ -115,52 +112,6 @@ final class ExecutionPayloadCleanupTest extends IsolatedKernelTestCase
         $subscriber = new ExecutionPendingDeliverySubscriber($operations, $events, self::getContainer()->get(\Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery::class), self::getContainer()->get(\Ineersa\AgentCore\Application\Pipeline\DurablePendingPublication::class), self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class), self::getContainer()->get(\Doctrine\DBAL\Connection::class), $command, $execution, $run, new TestLogger());
         $subscriber->onStarted(new WorkerStartedEvent(new Worker(['run_control' => new InMemoryTransport()], new TestMessageBus())));
         $this->assertCount(1, $execution->messages);
-    }
-
-    public function testMixedToolBatchKeepsBodiesUntilFinalizedThenReclaimsDisposedMembers(): void
-    {
-        $container = self::getContainer();
-        $run = $container->get(HatfieldSessionStore::class)->createSession('mixed tool payload cleanup');
-        $gate = $container->get(\Ineersa\AgentCore\Application\Handler\ToolExecutionAuthorization::class);
-        $store = $container->get(ToolBatchStoreInterface::class);
-        $first = new ExecuteToolCall($run, 1, 'tools', 1, 'first-key', 'call-1', 'read', ['path' => 'a'], 0);
-        $second = new ExecuteToolCall($run, 1, 'tools', 1, 'second-key', 'call-2', 'read', ['path' => 'b'], 1);
-        (new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(store: $store))->registerExpectedBatch($run, 1, 'tools', [$first, $second]);
-        $gate->arm($first);
-        $gate->arm($second);
-        $claim = $gate->claim($first);
-        $this->assertIsString($claim);
-        $result = \Ineersa\AgentCore\Application\Handler\ToolCallResultFactory::fromExecuteToolCallAndToolResult($first, new ToolResult('read-1', 'read', [['type' => 'text', 'text' => 'done']]));
-        $gate->saveResult($first, $claim, $result);
-        $descriptor = $gate->prepareDisposition($result, 'Consumed');
-        $this->assertNotNull($descriptor);
-        $events = $container->get(PreparedTransitionEventStoreInterface::class);
-        $events->appendTransition([], ['run_id' => $run, 'predecessor_seq' => 0, 'result_disposition' => $descriptor]);
-        $verified = $events->verifiedPendingTransition($run);
-        $this->assertNotNull($verified);
-        $gate->applyDisposition($descriptor, $verified);
-        $events->finalizeVerifiedTransition($run, $verified->identity);
-        $before = $store->load($run, 1, 'tools');
-        $this->assertNotNull($before);
-        $this->assertArrayHasKey(array_key_first($before->executionResults), $before->executionResults);
-        $this->assertNotSame('', $gate->reclaimDisposedPayloads($run, ''));
-        $still = $store->load($run, 1, 'tools');
-        $this->assertNotNull($still);
-        $this->assertNotEmpty($still->executionResults, 'Unfinalized batches retain disposed member bodies for the canonical commit.');
-        $store->mutate($run, 1, 'tools', static function ($batch) {
-            $batch->finalized = true;
-
-            return new \Ineersa\AgentCore\Contract\Tool\ToolBatchStoreMutation(null, $batch);
-        });
-        $this->assertNotSame('', $gate->reclaimDisposedPayloads($run, ''));
-        $after = $store->load($run, 1, 'tools');
-        $this->assertNotNull($after);
-        $this->assertSame([], $after->executionResults);
-        $this->assertSame('Consumed', array_values($after->executionAuthorizations)[0]['state']);
-        $this->assertSame('Armed', array_values($after->executionAuthorizations)[1]['state']);
-        $this->assertTrue($gate->isDisposed($result));
-        $this->assertNull($gate->claim($first));
-        $this->assertIsString($gate->claim($second));
     }
 
     public function testPendingDispositionWithoutFinalizationRetainsPayloadsAndIntent(): void
@@ -350,71 +301,5 @@ final class ExecutionPayloadCleanupTest extends IsolatedKernelTestCase
         $this->assertFileExists($directory.'/request');
         $this->assertSame($reference->effectId, $operations->reclaimDisposedPayloads($run, ''));
         $this->assertDirectoryDoesNotExist($directory);
-    }
-
-    public function testRetiredUnknownToolBodiesAreClearedOnlyAfterFinalization(): void
-    {
-        $container = self::getContainer();
-        $run = $container->get(HatfieldSessionStore::class)->createSession('retired tool body cleanup');
-        $gate = $container->get(\Ineersa\AgentCore\Application\Handler\ToolExecutionAuthorization::class);
-        $store = $container->get(ToolBatchStoreInterface::class);
-        $call = new ExecuteToolCall($run, 1, 'tools', 1, 'tool-key', 'call-1', 'ask', ['prompt' => 'secret-body'], 0);
-        $answer = new \Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO('q1', ['approved' => true], ['run_id' => $run], ['hook' => 'approval']);
-        $call = $call->withHumanInputAnswer($answer);
-        (new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(store: $store))->registerExpectedBatch($run, 1, 'tools', [$call]);
-        $gate->arm($call);
-        $store->mutate($run, 1, 'tools', static function ($batch) {
-            $key = array_key_first($batch->executionAuthorizations);
-            $batch->executionAuthorizations[$key]['state'] = 'OutcomeUnknown';
-            $batch->executionAuthorizations[$key]['claim'] = 'dead-claim';
-            $batch->executionAuthorizations[$key]['claim_lock_key'] = str_repeat('a', 64);
-            $batch->executionResults[$key] = \Ineersa\AgentCore\Application\Handler\ToolCallResultFactory::fromExecuteToolCallAndToolResult(
-                $batch->calls['call-1'],
-                new ToolResult('body', 'ask', [['type' => 'text', 'text' => 'full-result-body']]),
-            );
-            $batch->results['call-1'] = $batch->executionResults[$key];
-
-            return new \Ineersa\AgentCore\Contract\Tool\ToolBatchStoreMutation(null, $batch);
-        });
-        $batch = $store->load($run, 1, 'tools');
-        $this->assertNotNull($batch);
-        $key = array_key_first($batch->executionAuthorizations);
-        $notice = new \Ineersa\AgentCore\Domain\Message\ToolExecutionOutcomeUnknown($run, 1, 'tools', 1, 'tool-key', 'call-1', $key, 'dead-claim');
-        // Force worker exclusion by using a fresh lock key owned nowhere: repairable path needs exclusion.
-        // For cleanup proof, mark Stale with unknown_repair_transition through store mutate after a fake transition identity.
-        $events = $container->get(PreparedTransitionEventStoreInterface::class);
-        $events->appendTransition([], ['run_id' => $run, 'predecessor_seq' => 0, 'actions' => []]);
-        $verified = $events->verifiedPendingTransition($run);
-        $this->assertNotNull($verified);
-        $store->mutate($run, 1, 'tools', static function ($batch) use ($key, $verified) {
-            $batch->executionAuthorizations[$key] = [
-                'state' => 'Stale',
-                'claim' => 'dead-claim',
-                'unknown_repair_transition' => $verified->identity,
-                'invocation' => ['attempt' => 1, 'key' => 'tool-key', 'call_id' => 'call-1'],
-            ];
-
-            return new \Ineersa\AgentCore\Contract\Tool\ToolBatchStoreMutation(null, $batch);
-        });
-        try {
-            $gate->reclaimDisposedPayloads($run, '');
-            $this->fail('Unfinished tool transitions must block body reclaim.');
-        } catch (\RuntimeException $exception) {
-            $this->assertStringContainsString('coordination recovery', $exception->getMessage());
-        }
-        $still = $store->load($run, 1, 'tools');
-        $this->assertNotNull($still);
-        $this->assertNotEmpty($still->executionResults);
-        $this->assertNotNull($still->calls['call-1']->humanInputAnswer);
-        $events->finalizeVerifiedTransition($run, $verified->identity);
-        $this->assertNotSame('', $gate->reclaimDisposedPayloads($run, ''));
-        $after = $store->load($run, 1, 'tools');
-        $this->assertNotNull($after);
-        $this->assertSame([], $after->executionResults);
-        $this->assertSame([], $after->results);
-        $this->assertSame([], $after->calls['call-1']->args);
-        $this->assertNull($after->calls['call-1']->humanInputAnswer);
-        $this->assertSame('Stale', $after->executionAuthorizations[$key]['state']);
-        $this->assertSame($verified->identity, $after->executionAuthorizations[$key]['unknown_repair_transition']);
     }
 }

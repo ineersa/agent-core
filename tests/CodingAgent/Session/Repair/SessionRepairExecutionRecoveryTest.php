@@ -424,24 +424,167 @@ final class SessionRepairExecutionRecoveryTest extends PerMethodIsolatedKernelTe
             }
         }
         if (\in_array($boundary, ['before', 'after'], true)) {
-            $coordination = $c->get(\Ineersa\AgentCore\Application\Handler\RetireUnknownExecutionHandler::class);
-            $bus = $this->createMock(\Symfony\Component\Messenger\MessageBusInterface::class);
-            $bus->expects($this->once())->method('dispatch')->willReturnCallback(static function (object $action) use ($boundary, $coordination): never {
-                if (!$action instanceof \Ineersa\AgentCore\Domain\Coordination\RetireUnknownExecutionDTO) {
-                    throw new \LogicException('Unexpected repair action.');
+            // Retirement is local metadata under the owner transaction, not a bus action.
+            $inner = $c->get(DoctrineExecutionOperationStore::class);
+            $operations = new class($inner, $boundary) implements \Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface {
+                public function __construct(private DoctrineExecutionOperationStore $inner, private string $boundary)
+                {
                 }
-                if ('after' === $boundary) {
-                    $coordination($action);
+
+                public function retireUnknownExecution(\Ineersa\AgentCore\Domain\Coordination\RetireUnknownExecutionDTO $action, \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO $transition): void
+                {
+                    if ('after' === $this->boundary) {
+                        $this->inner->retireUnknownExecution($action, $transition);
+                    }
+                    throw new \RuntimeException('Injected repair interruption.');
                 }
-                throw new \RuntimeException('Injected repair interruption.');
-            });
+
+                public function unknownExecutionsForRepair(string $runId): array
+                {
+                    return $this->inner->unknownExecutionsForRepair($runId);
+                }
+
+                public function assertUnknownRepairable(ExecutionOutcomeUnknown $notice): void
+                {
+                    $this->inner->assertUnknownRepairable($notice);
+                }
+
+                public function matchesCurrentAuthorizedToolInvocation(ExecutionOutcomeUnknown $notice, ExecuteToolCall $authorizedCall): bool
+                {
+                    return $this->inner->matchesCurrentAuthorizedToolInvocation($notice, $authorizedCall);
+                }
+
+                public function repairDelivery(string $runId, \Ineersa\AgentCore\Domain\Run\CurrentOperationDTO $operation, string $requestType): ?\Symfony\Component\Messenger\Envelope
+                {
+                    return $this->inner->repairDelivery($runId, $operation, $requestType);
+                }
+
+                public function assertRequestCapacity(\Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage $request): void
+                {
+                    $this->inner->assertRequestCapacity($request);
+                }
+
+                public function prepare(\Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage $request, \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO $transition): \Ineersa\AgentCore\Domain\Coordination\ExecutionAuthorizationStamp
+                {
+                    return $this->inner->prepare($request, $transition);
+                }
+
+                public function arm(\Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage $request, \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO $transition): \Ineersa\AgentCore\Domain\Coordination\ExecutionAuthorizationStamp
+                {
+                    return $this->inner->arm($request, $transition);
+                }
+
+                public function requestReference(\Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage $request, \Ineersa\AgentCore\Domain\Coordination\ExecutionAuthorizationStamp $authorization): \Ineersa\AgentCore\Domain\Message\ExecutionRequest
+                {
+                    return $this->inner->requestReference($request, $authorization);
+                }
+
+                public function claim(\Ineersa\AgentCore\Domain\Message\ExecutionRequest $request, \Ineersa\AgentCore\Domain\Coordination\ExecutionAuthorizationStamp $authorization): string|DurableExecutionResult|null
+                {
+                    return $this->inner->claim($request, $authorization);
+                }
+
+                public function resolveRequest(\Ineersa\AgentCore\Domain\Message\ExecutionRequest $reference, \Ineersa\AgentCore\Domain\Coordination\ExecutionAuthorizationStamp $authorization, string $claim): \Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage
+                {
+                    return $this->inner->resolveRequest($reference, $authorization, $claim);
+                }
+
+                public function peekRequest(\Ineersa\AgentCore\Domain\Message\ExecutionRequest $reference): \Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage
+                {
+                    return $this->inner->peekRequest($reference);
+                }
+
+                public function resultForClaim(\Ineersa\AgentCore\Domain\Message\ExecutionRequest $reference, \Ineersa\AgentCore\Domain\Coordination\ExecutionAuthorizationStamp $authorization, string $claim): DurableExecutionResult
+                {
+                    return $this->inner->resultForClaim($reference, $authorization, $claim);
+                }
+
+                public function saveResult(\Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage $request, \Ineersa\AgentCore\Domain\Coordination\ExecutionAuthorizationStamp $authorization, string $claim, \Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage $result): DurableExecutionResult
+                {
+                    return $this->inner->saveResult($request, $authorization, $claim, $result);
+                }
+
+                public function transferToDeferred(\Ineersa\AgentCore\Domain\Message\ExecutionRequest $reference, \Ineersa\AgentCore\Domain\Coordination\ExecutionAuthorizationStamp $authorization, string $claim, string $deferredId): void
+                {
+                    $this->inner->transferToDeferred($reference, $authorization, $claim, $deferredId);
+                }
+
+                public function saveDeferredResult(string $deferredId, \Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage $result): DurableExecutionResult
+                {
+                    return $this->inner->saveDeferredResult($deferredId, $result);
+                }
+
+                public function resolveResult(DurableExecutionResult $reference): \Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage
+                {
+                    return $this->inner->resolveResult($reference);
+                }
+
+                public function isDisposed(DurableExecutionResult $reference): bool
+                {
+                    return $this->inner->isDisposed($reference);
+                }
+
+                public function validateDisposition(\Ineersa\AgentCore\Domain\Coordination\ExecutionResultDispositionDTO $descriptor, \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO $transition): void
+                {
+                    $this->inner->validateDisposition($descriptor, $transition);
+                }
+
+                public function applyDisposition(\Ineersa\AgentCore\Domain\Coordination\ExecutionResultDispositionDTO $descriptor, \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO $transition): void
+                {
+                    $this->inner->applyDisposition($descriptor, $transition);
+                }
+
+                public function reclaimDisposedPayloads(string $ownerSessionId, string $afterEffectId): string
+                {
+                    return $this->inner->reclaimDisposedPayloads($ownerSessionId, $afterEffectId);
+                }
+
+                public function pendingDeliveriesForRun(string $runId): array
+                {
+                    return $this->inner->pendingDeliveriesForRun($runId);
+                }
+
+                public function pendingDeliveries(string $ownerSessionId, string $afterEffectId): array
+                {
+                    return $this->inner->pendingDeliveries($ownerSessionId, $afterEffectId);
+                }
+
+                public function retireUnstartedPermissions(string $runId, int $turnNo, string $stepId, \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO $transition): void
+                {
+                    $this->inner->retireUnstartedPermissions($runId, $turnNo, $stepId, $transition);
+                }
+
+                public function unknownNoticePending(ExecutionOutcomeUnknown $notice): bool
+                {
+                    return $this->inner->unknownNoticePending($notice);
+                }
+
+                public function consumeUnknownNotice(\Ineersa\AgentCore\Domain\Coordination\ConsumeExecutionUnknownDTO $action, \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO $transition): void
+                {
+                    $this->inner->consumeUnknownNotice($action, $transition);
+                }
+
+                public function assertNoUnknownExecution(string $runId): void
+                {
+                    $this->inner->assertNoUnknownExecution($runId);
+                }
+            };
+            $finalizer = TestTransitionFinalizerFactory::create(
+                $journal,
+                new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), new \Ineersa\AgentCore\Tests\Support\TestMessageBus()),
+                operations: $operations,
+                batches: $c->get(ToolBatchStoreInterface::class),
+                commands: $c->get(CommandStoreInterface::class),
+                sourceAcceptance: $c->get(\Ineersa\AgentCore\Application\Pipeline\SourceAcceptance::class),
+                outbox: $c->get(\Ineersa\AgentCore\Contract\ControlMessageOutboxInterface::class),
+            );
             $c->set(\Ineersa\AgentCore\Application\Pipeline\RunCommit::class, new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
                 activeRunContext: $c->get(ActiveRunContextInterface::class),
                 eventStore: $journal,
                 logger: new \Ineersa\AgentCore\Tests\Support\TestLogger(),
-                executionOperations: $c->get(DoctrineExecutionOperationStore::class),
+                executionOperations: $operations,
                 sourceAcceptance: $c->get(\Ineersa\AgentCore\Application\Pipeline\SourceAcceptance::class),
-                finalizer: TestTransitionFinalizerFactory::create($journal, new \Ineersa\AgentCore\Application\Handler\StepDispatcher($bus, new \Ineersa\AgentCore\Tests\Support\TestMessageBus()), operations: $c->get(DoctrineExecutionOperationStore::class)),
+                finalizer: $finalizer,
             ));
         }
         $repair = $c->get(SessionRepairService::class);

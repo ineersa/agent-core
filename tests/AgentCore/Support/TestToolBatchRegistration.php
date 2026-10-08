@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Tests\Support;
 
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
+use Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO;
 use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
@@ -26,10 +27,11 @@ final class TestToolBatchRegistration
         int $turnNo,
         string $stepId,
         array $toolCalls,
+        ?ExecutionOperationStoreInterface $operations = null,
     ): array {
         $existing = $store->load($runId, $turnNo, $stepId);
         $action = $collector->prepareRegistration($runId, $turnNo, $stepId, $toolCalls);
-        self::apply($store, $action);
+        self::apply($store, $action, $operations);
         if (null !== $existing) {
             return [];
         }
@@ -37,11 +39,17 @@ final class TestToolBatchRegistration
         return $store->admittedCalls($runId, $turnNo, $stepId);
     }
 
-    public static function apply(ToolBatchStoreInterface $store, RegisterToolBatchDTO $action): void
-    {
-        $store->registerPrepared(
-            $action,
-            new VerifiedTransitionDTO(Uuid::v7()->toRfc4122(), 0, ['run_id' => $action->runId, 'actions' => [$action]]),
-        );
+    public static function apply(
+        ToolBatchStoreInterface $store,
+        RegisterToolBatchDTO $action,
+        ?ExecutionOperationStoreInterface $operations = null,
+    ): void {
+        $transition = new VerifiedTransitionDTO(Uuid::v7()->toRfc4122(), 0, ['run_id' => $action->runId, 'actions' => [$action]]);
+        if (null !== $operations) {
+            foreach ($action->effects as $effect) {
+                $operations->prepare($effect, $transition);
+            }
+        }
+        $store->registerPrepared($action, $transition);
     }
 }

@@ -1131,7 +1131,7 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
                 executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
                 sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
                 finalizer: \Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher($coordinationBus, $dispatcherBus)),
-                actionValidator: new \Ineersa\AgentCore\Application\Handler\CoordinationActionValidator([$redriveHandler]),
+                actionValidator: new \Ineersa\AgentCore\Application\Handler\CoordinationActionValidator(),
             ),
             deferredBatches: self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository::class),
         );

@@ -30,6 +30,8 @@ use Ineersa\AgentCore\Tests\Support\InMemoryCommandStore;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
+use Ineersa\AgentCore\Tests\Support\TestToolBatchStore;
 use Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory;
 use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
 use Ineersa\CodingAgent\Config\ModelResolver;
@@ -64,11 +66,11 @@ final class InProcessAttachCancelsDeferredToolHumanTest extends IsolatedKernelTe
         $active = new TestActiveRunContext();
         $eventStore = new InMemoryEventStore();
 
-        $collector = new ToolBatchCollector();
-        $collector->registerExpectedBatch($runId, 1, 'step-attach', [
+        $collector = new ToolBatchCollector($store = new TestToolBatchStore());
+        TestToolBatchRegistration::register($collector, $store, $runId, 1, 'step-attach', [
             new ExecuteToolCall($runId, 1, 'step-attach', 1, 'idemp-attach', 'call-attach', 'bash', ['command' => 'ls'], 0),
         ]);
-        \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, $runId, 1, 'step-attach', 'call-attach', 'q-attach');
+        \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, $store, $runId, 1, 'step-attach', 'call-attach', 'q-attach');
 
         $commandStore = new InMemoryCommandStore();
         $router = new CommandRouter([]);
@@ -91,11 +93,9 @@ final class InProcessAttachCancelsDeferredToolHumanTest extends IsolatedKernelTe
                 activeRunContext: $active,
                 eventStore: $eventStore,
                 logger: new NullLogger(),
-                toolBatchCollector: $collector,
                 executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
                 sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new InMemoryCommandStore()),
-                finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus())),
-            ),
+                finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus()))),
             handlers: [$applyHandler, new \Ineersa\AgentCore\Application\Pipeline\RefreshRunContextHandler()],
         );
 

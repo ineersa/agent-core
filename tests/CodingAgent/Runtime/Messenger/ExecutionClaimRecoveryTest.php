@@ -7,7 +7,6 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Messenger;
 use Doctrine\DBAL\Connection;
 use Ineersa\AgentCore\Application\Handler\ExecutionUnknownCoordinationHandler;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
-use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Pipeline\ExecutionOutcomeUnknownHandler;
 use Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
@@ -178,7 +177,6 @@ final class ExecutionClaimRecoveryTest extends IsolatedKernelTestCase
             activeRunContext: $active,
             eventStore: $events,
             logger: new TestLogger(),
-            toolBatchCollector: $container->get(ToolBatchCollector::class),
             executionOperations: $store,
             sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
             finalizer: TestTransitionFinalizerFactory::create($events, new StepDispatcher(new TestMessageBus(), new TestMessageBus()), operations: $store),

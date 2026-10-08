@@ -17,26 +17,25 @@ use Ineersa\AgentCore\Tests\Support\Fake\FakePlatform;
 use Ineersa\AgentCore\Tests\Support\Fake\FakeToolExecutor;
 use Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository;
 use Ineersa\AgentCore\Tests\Support\SymfonyAiTestMessages;
-use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Messenger\Envelope;
-use Symfony\Component\Messenger\Exception\TransportException;
-use Symfony\Component\Messenger\Exception\UnrecoverableMessageHandlingException;
-use Symfony\Component\Messenger\MessageBusInterface;
 
+/**
+ * Worker-level typed-result drills.
+ *
+ * Deleted ambient command-bus dispatch-failure cases are retained by:
+ * - ExecutionAuthorizationMiddlewareTest::testReferenceTransportIsSmallAndNotificationFailureReusesDurableResult
+ * - ExecutionAuthorizationMiddlewareTest::testHandlerCannotAcknowledgeWithoutDurableResultAndRunningRedeliveryDoesNotInvokeAgain
+ * - CommandMailboxPolicyTest FIFO drain cases (testTurnStartDrainsAllQueuedSteersFifoWithOneLlmContinuation,
+ *   testStopBoundaryDrainsAllQueuedSteersFifoWithOneAdvanceRun)
+ * - CommandMailboxPolicyTest::testMissingAndMalformedMessageEnvelopesAreRejectedWithExactReasons (cutoff/order)
+ */
 final class ExecutionFailureDrillTest extends TestCase
 {
-    public function testLlmWorkerDispatchCrashIsUnrecoverableAndLaterInvocationCanComplete(): void
+    public function testLlmWorkerReturnsTerminalResultForOwnerDelivery(): void
     {
         $platform = new FakePlatform([
             new PlatformInvocationResult(
                 assistantMessage: SymfonyAiTestMessages::assistantText('first-attempt'),
-                usage: ['total_tokens' => 4],
-                stopReason: 'stop',
-                error: null,
-            ),
-            new PlatformInvocationResult(
-                assistantMessage: SymfonyAiTestMessages::assistantText('retry-attempt'),
                 usage: ['total_tokens' => 4],
                 stopReason: 'stop',
                 error: null,
@@ -52,30 +51,12 @@ final class ExecutionFailureDrillTest extends TestCase
             toolsRef: 'toolset:run:run-failure-worker-1:turn:1',
         );
 
-        $failingWorker = new ExecuteLlmStepWorker(
-            platform: $platform,
-        );
-
-        try {
-            $failingWorker($message);
-            $this->fail('Expected dispatch crash to be marked unrecoverable.');
-        } catch (UnrecoverableMessageHandlingException $exception) {
-            $this->assertSame('Failed to dispatch LLM result to command bus.', $exception->getMessage());
-        }
-
-        $collectingBus = new TestMessageBus();
-        $retryWorker = new ExecuteLlmStepWorker($platform, $collectingBus);
-        $retryWorker($message);
-
-        $this->assertCount(1, $collectingBus->messages);
-        $this->assertInstanceOf(LlmStepResult::class, $collectingBus->messages[0]);
-
-        /** @var LlmStepResult $result */
-        $result = $collectingBus->messages[0];
-        $this->assertSame('retry-attempt', $result->assistantMessage?->asText());
+        $result = (new ExecuteLlmStepWorker(platform: $platform))($message);
+        $this->assertInstanceOf(LlmStepResult::class, $result);
+        $this->assertSame('first-attempt', $result->assistantMessage?->asText());
     }
 
-    public function testToolWorkerCanBeRetriedAfterCommandBusDispatchCrash(): void
+    public function testToolWorkerReturnsTypedResultAfterSuccessfulExecution(): void
     {
         $toolExecutor = new FakeToolExecutor([
             'web_search' => static fn (): ToolResult => new ToolResult(
@@ -113,25 +94,5 @@ final class ExecutionFailureDrillTest extends TestCase
         $this->assertInstanceOf(ToolCallResult::class, $result);
         $this->assertSame('web_search', $result->result['tool_name']);
         $this->assertFalse($result->isError);
-    }
-}
-
-final class FailingOnceMessageBus implements MessageBusInterface
-{
-    private bool $failed = false;
-
-    public function __construct(private readonly TransportException $exception)
-    {
-    }
-
-    public function dispatch(object $message, array $stamps = []): Envelope
-    {
-        if (!$this->failed) {
-            $this->failed = true;
-
-            throw $this->exception;
-        }
-
-        return new Envelope($message, $stamps);
     }
 }

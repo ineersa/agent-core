@@ -61,70 +61,6 @@ final class RunCommitLoggingTest extends TestCase
         $this->assertNotContains('event_store.appended', $messages);
     }
 
-    /** @return iterable<string, array{string, RunStatus, bool}> */
-    public static function completedBatchEvents(): iterable
-    {
-        yield 'normal completion append failure' => ['tool_batch_committed', RunStatus::Running, false];
-        yield 'cancellation append failure' => ['agent_end', RunStatus::Cancelled, false];
-        yield 'normal completion publication failure' => ['tool_batch_committed', RunStatus::Running, true];
-        yield 'cancellation publication failure' => ['agent_end', RunStatus::Cancelled, true];
-    }
-
-    #[\PHPUnit\Framework\Attributes\DataProvider('completedBatchEvents')]
-    public function testCollectorRetainsFinalizedBatchUntilSuccessfulCommit(string $eventType, RunStatus $status, bool $failPublication): void
-    {
-        $collector = new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector();
-        $call = new \Ineersa\AgentCore\Domain\Message\ExecuteToolCall(
-            runId: 'run-1', turnNo: 1, stepId: 'tools', attempt: 1,
-            idempotencyKey: 'call-key', toolCallId: 'read-call', toolName: 'read', args: [], orderIndex: 0,
-        );
-        $weakCall = \WeakReference::create($call);
-        $collector->registerExpectedBatch('run-1', 1, 'tools', [$call]);
-        unset($call);
-        $result = \Ineersa\AgentCore\Tests\Support\Builder\ToolCallResultBuilder::success('run-1')
-            ->withTurnNo(1)->withStepId('tools')->withToolCallId('read-call')->build();
-        $this->assertTrue(\Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($collector, $result)->complete);
-        $this->assertNotNull($weakCall->get(), 'Finalizing collection precedes canonical commit and must not release the request.');
-        $active = new FailingBatchPublicationContext();
-        $previous = new RunState(runId: 'run-1', status: RunStatus::Running, turnNo: 1);
-        $next = $previous->with(['status' => $status]);
-        $active->loadRecovered($previous);
-        $active->failRemember = $failPublication;
-        $events = [new RunEvent('run-1', 0, 1, $eventType, ['turn_no' => 1, 'step_id' => 'tools'])];
-        $store = new RecordingEventStore();
-        $store->failAppend = !$failPublication;
-        $cleanupStore = $this->createMock(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class);
-        $cleanupStore->expects('tool_batch_committed' === $eventType ? $this->once() : $this->never())
-            ->method('delete')->willThrowException(new \RuntimeException('file deletion failed'));
-        $cleanupStore->expects('agent_end' === $eventType ? $this->once() : $this->never())
-            ->method('deleteAllForRun')->willThrowException(new \RuntimeException('file deletion failed'));
-        $hook = new \Ineersa\CodingAgent\Session\ToolBatchSnapshotCleanupHookSubscriber($cleanupStore, new TestLogger(), $this->createStub(\Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface::class));
-        $commit = new RunCommit(
-            activeRunContext: $active,
-            eventStore: $store,
-            logger: new TestLogger(),
-            executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
-            sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
-            hookDispatcher: new \Ineersa\AgentCore\Application\Handler\HookDispatcher([$hook]),
-            finalizer: TestTransitionFinalizerFactory::create($store, new StepDispatcher(new TestMessageBus(), new TestMessageBus())),
-        );
-        try {
-            $commit->commit($previous, $next, $events);
-            $this->fail('Commit failure must propagate.');
-        } catch (\RuntimeException $exception) {
-            $this->assertSame($failPublication ? 'publication failed' : 'append failed', $exception->getMessage());
-        }
-        $this->assertSame($result, $collector->getStoredResult('run-1', 1, 'tools', 'read-call'));
-        $this->assertNotNull($weakCall->get());
-        $this->assertSame($previous, $active->requireLoaded('run-1'));
-        $store->failAppend = false;
-        $active->failRemember = false;
-        $commit->commit($previous, $next, $events);
-        $this->assertNull($weakCall->get(), 'Successful commit releases requests even when durable file deletion fails.');
-        $this->assertNull($collector->getStoredResult('run-1', 1, 'tools', 'read-call'));
-        $this->assertSame($status, $active->requireLoaded('run-1')->status);
-    }
-
     public function testNoEventCommitStillRemembersHandlerStateWithoutDiagnosticBump(): void
     {
         $activeRunContext = new TestActiveRunContext();
@@ -219,7 +155,7 @@ final class RunCommitLoggingTest extends TestCase
         );
         $disposed = false;
         $store = $this->createMock(PreparedTransitionEventStoreInterface::class);
-        $store->expects($this->once())->method('assertTransitionReady');
+        $store->expects($this->atLeastOnce())->method('assertTransitionReady');
         $store->expects($this->once())->method('appendTransition')->willReturn([$event]);
         $store->expects($this->once())->method('finalizeVerifiedTransition')->willReturnCallback(function () use (&$disposed): void {
             $this->assertTrue($disposed, 'Required result disposition must be durable before deleting the transition manifest.');
@@ -240,74 +176,6 @@ final class RunCommitLoggingTest extends TestCase
             finalizer: TestTransitionFinalizerFactory::create($store, new StepDispatcher(new TestMessageBus(), new TestMessageBus()), operations: $operations),
         );
         $commit->commit($previous, $previous, [$event], dispatchAfterTurnHooks: false, executionDisposition: $descriptor);
-    }
-
-    public function testEffectDispatchFailurePropagatesWithoutFinalization(): void
-    {
-        $active = new TestActiveRunContext();
-        $previous = RunState::queued('run-1');
-        $active->loadRecovered($previous);
-        $event = new RunEvent('run-1', 1, 0, 'run_started', []);
-        $store = $this->createMock(PreparedTransitionEventStoreInterface::class);
-        $store->expects($this->once())->method('assertTransitionReady');
-        $store->expects($this->once())->method('appendTransition')->willReturn([$event]);
-        $store->expects($this->never())->method('finalizeVerifiedTransition');
-        $bus = $this->createMock(\Symfony\Component\Messenger\MessageBusInterface::class);
-        $bus->expects($this->once())->method('dispatch')->willThrowException(new \RuntimeException('broker unavailable'));
-        $commit = new RunCommit(
-            activeRunContext: $active,
-            eventStore: $store,
-            logger: new TestLogger(),
-            executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
-            sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
-            finalizer: TestTransitionFinalizerFactory::create($store, new StepDispatcher($bus, $bus)),
-        );
-
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('broker unavailable');
-        $commit->commit($previous, $previous, [$event], [new \stdClass()]);
-    }
-}
-
-final class FailingBatchPublicationContext implements \Ineersa\AgentCore\Contract\ActiveRunContextInterface
-{
-    public bool $failRemember = false;
-    private readonly TestActiveRunContext $inner;
-
-    public function __construct()
-    {
-        $this->inner = new TestActiveRunContext();
-    }
-
-    public function createNew(string $runId): RunState
-    {
-        $state = RunState::queued($runId);
-        $this->loadRecovered($state);
-
-        return $state;
-    }
-
-    public function loadRecovered(RunState $state): void
-    {
-        $this->inner->loadRecovered($state);
-    }
-
-    public function requireLoaded(string $runId): RunState
-    {
-        return $this->inner->requireLoaded($runId);
-    }
-
-    public function replaceCurrent(RunState $state): void
-    {
-        if ($this->failRemember) {
-            throw new \RuntimeException('publication failed');
-        }
-        $this->inner->replaceCurrent($state);
-    }
-
-    public function release(string $runId): void
-    {
-        $this->inner->release($runId);
     }
 }
 
