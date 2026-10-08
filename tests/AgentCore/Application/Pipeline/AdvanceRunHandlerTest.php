@@ -608,7 +608,6 @@ final class AdvanceRunHandlerTest extends TestCase
         $handler = new AdvanceRunHandler(
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
-            commandBus: $commandBus,
         );
 
         $state = RunStateBuilder::create('run-cancel-append-advance')
@@ -721,7 +720,6 @@ final class AdvanceRunHandlerTest extends TestCase
         $handler = new AdvanceRunHandler(
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
-            commandBus: $commandBus,
         );
 
         $state = RunStateBuilder::create('run-cancel-tools-pending')
