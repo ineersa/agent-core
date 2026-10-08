@@ -51,7 +51,7 @@ final class ExecutionFailureDrillTest extends TestCase
             toolsRef: 'toolset:run:run-failure-worker-1:turn:1',
         );
 
-        $result = (new ExecuteLlmStepWorker(platform: $platform))($message);
+        $result = (new ExecuteLlmStepWorker(commandBus: new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), platform: $platform))($message);
         $this->assertInstanceOf(LlmStepResult::class, $result);
         $this->assertSame('first-attempt', $result->assistantMessage?->asText());
     }
@@ -83,7 +83,7 @@ final class ExecutionFailureDrillTest extends TestCase
             orderIndex: 0,
         );
 
-        $worker = new ExecuteToolCallWorker(
+        $worker = new ExecuteToolCallWorker(commandBus: new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), logger: new \Ineersa\AgentCore\Tests\Support\TestLogger(),
             toolExecutor: $toolExecutor,
             deferredToolCompletionRepository: new InMemoryDeferredToolCompletionRepository(),
             resultStore: new ToolExecutionResultStore(),

@@ -9,7 +9,6 @@ use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\CompactionStepResult;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
-use Ineersa\AgentCore\Domain\Message\ExecutionRequest;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
@@ -59,7 +58,7 @@ final class RunResultMessagesRouteToRunControlTest extends IsolatedKernelTestCas
         $this->assertSame($message, $sent[0]->getMessage());
     }
 
-    public function testExecutionReferenceUsesExecutionBusAndLlmTransport(): void
+    public function testOrdinaryRequestUsesExecutionBusAndLlmTransport(): void
     {
         /** @var InMemoryTransport $transport */
         $transport = self::getContainer()->get('messenger.transport.llm');
@@ -67,17 +66,7 @@ final class RunResultMessagesRouteToRunControlTest extends IsolatedKernelTestCas
 
         /** @var MessageBusInterface $executionBus */
         $executionBus = self::getContainer()->get('agent.execution.bus');
-        $message = new ExecutionRequest(
-            runId: 'run-execution-route',
-            turnNo: 1,
-            stepId: 'step-execution',
-            attempt: 1,
-            idempotencyKey: 'key-execution',
-            effectId: 'effect-execution',
-            requestType: ExecuteLlmStep::class,
-            sha256: str_repeat('a', 64),
-            bytes: 128,
-        );
+        $message = new ExecuteLlmStep('run-execution-route', 1, 'step-execution', 1, 'key-execution', 'tools');
         $executionBus->dispatch($message);
 
         $sent = $transport->getSent();

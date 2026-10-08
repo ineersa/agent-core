@@ -139,7 +139,6 @@ final class ToolLaunchContextConfiguredBoundaryTest extends IsolatedKernelTestCa
             4,
             'step-fork',
             [$forkCall, $ordinary],
-            self::getContainer()->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class),
         );
         // Preserve the HITL wait marker on the durable schedule for this boundary.
         \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend(
@@ -162,7 +161,7 @@ final class ToolLaunchContextConfiguredBoundaryTest extends IsolatedKernelTestCa
         $restoredInput = $inputStore->read($restoredFork->launchContext);
         $this->assertCount(2, $restoredInput->forkMessages);
         $this->assertSame('AGENTS.md body', $restoredInput->forkMessages[0]->content[0]['text']);
-        $this->assertSame('q-fork', $restoredFork->humanInputAnswer?->questionId);
+        $this->assertNull($restoredFork->humanInputAnswer, 'A renewed suspension clears the previous approval.');
         $this->assertNull($loaded->calls['bash-1']->launchContext);
         $this->assertSame(['fork-1' => 'q-fork'], $loaded->awaitingHumanInput);
     }

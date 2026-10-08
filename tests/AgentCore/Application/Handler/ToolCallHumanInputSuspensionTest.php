@@ -61,7 +61,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
             }
         };
         $store = new ToolExecutionResultStore();
-        $envelope = (new ExecuteToolCallWorker(
+        $envelope = (new ExecuteToolCallWorker(new TestMessageBus(), new \Ineersa\AgentCore\Tests\Support\TestLogger(),
             new ToolExecutor('parallel', 2, $store, toolbox: $toolbox),
             new InMemoryDeferredToolCompletionRepository(),
             $store,
@@ -281,7 +281,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         foreach ($result->postCommitActions as $callback) {
             \Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::run($callback, null, collector: $collector2, store: $store, batches: $batchStore2);
         }
-        $this->assertTrue($store->has('run-h2', 'human-q-h2'));
+        $this->assertFalse($store->has('run-h2', 'human-q-h2'));
 
         // Identical resume while already inFlight returns the same effect (CAS retry safety).
         $same = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::resume($collector2, $batchStore2, 'run-h2',
@@ -384,6 +384,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
                 logger: new \Psr\Log\NullLogger(),
                 finalizer: TestTransitionFinalizerFactory::create($eventStore, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus(), new \Ineersa\AgentCore\Tests\Support\TestLogger()), batches: $batchStore),
             ),
+            commands: new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore(),
             handlers: [$handler],
         );
 

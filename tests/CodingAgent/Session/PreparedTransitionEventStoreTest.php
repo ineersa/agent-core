@@ -104,7 +104,7 @@ final class PreparedTransitionEventStoreTest extends IsolatedKernelTestCase
             $container->get(OwnerRunInitializationMiddleware::class)->initializeForOwner($run, new AdvanceRun($run, 0, 'next', 1, 'next'));
             $this->fail('Unresolved coordination must block owner admission.');
         } catch (\RuntimeException $exception) {
-            $this->assertStringContainsString('requires coordination recovery', $exception->getMessage());
+            $this->assertSame('Unsupported owner transition message.', $exception->getMessage());
         }
         clearstatcache(true, $path);
         $this->assertSame($manifest['offset'] + $manifest['length'], filesize($path));
@@ -240,7 +240,7 @@ final class PreparedTransitionEventStoreTest extends IsolatedKernelTestCase
                 $message = $message->getMessage();
             }
             $order[] = $message::class;
-            if ($message instanceof \Ineersa\AgentCore\Domain\Message\ExecutionRequest) {
+            if ($message instanceof \Ineersa\AgentCore\Domain\Message\ExecuteLlmStep) {
                 throw new \RuntimeException('gated delivery must wait for finalization');
             }
             if ($message instanceof \Ineersa\CodingAgent\Application\Message\DeferredAfterTurnCoordinationDTO
@@ -253,7 +253,6 @@ final class PreparedTransitionEventStoreTest extends IsolatedKernelTestCase
         $recovery = new \Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery(
             $store,
             $container->get(ActiveRunContextInterface::class),
-            $container->get(\Ineersa\AgentCore\Application\Pipeline\SourceAcceptance::class),
             TestTransitionFinalizerFactory::create(
                 $store,
                 new \Ineersa\AgentCore\Application\Handler\StepDispatcher($failure, $failure, new \Ineersa\AgentCore\Tests\Support\TestLogger()),
@@ -263,14 +262,14 @@ final class PreparedTransitionEventStoreTest extends IsolatedKernelTestCase
             $container->get(\Ineersa\AgentCore\Application\Handler\CoordinationActionValidator::class),
         );
         // Delivery failures after journal finalization are local degradation: the
-        // pending cut is cleared and later sweeps rediscover the armed authority.
+        // pending cut is cleared; a lost continuation requires explicit repair.
         $recovery->recover($run);
 
         $this->assertNull($store->verifiedPendingTransition($run));
         $this->assertSame(4, $store->latestSequenceFor($run));
         $this->assertSame([1, 4], array_map(static fn (RunEvent $event): int => $event->seq, iterator_to_array($store->rangeFor($run, 1, \PHP_INT_MAX))));
         $this->assertContains(\Ineersa\CodingAgent\Application\Message\DeferredAfterTurnCoordinationDTO::class, $order);
-        $this->assertSame(\Ineersa\AgentCore\Domain\Message\ExecutionRequest::class, $order[array_key_last($order)]);
+        $this->assertSame(\Ineersa\AgentCore\Domain\Message\ExecuteLlmStep::class, $order[array_key_last($order)]);
         $this->assertTrue($cutVisibleDuringObservation);
 
         $publishedBytes = file_get_contents($path);

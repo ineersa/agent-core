@@ -38,7 +38,7 @@ final class ExecuteLlmStepWorkerTest extends TestCase
         $thinkingOnly = new AssistantMessage(new Thinking('reasoning...'));
         $platform = $this->createAlternatingPlatform([$thinkingOnly, new AssistantMessage(new Text('should-not-run'))]);
         $testLogger = new TestLogger();
-        $worker = new ExecuteLlmStepWorker($platform, logger: $testLogger);
+        $worker = new ExecuteLlmStepWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), $platform, logger: $testLogger);
 
         $result = $worker(new ExecuteLlmStep(
             runId: 'run-1',
@@ -62,7 +62,7 @@ final class ExecuteLlmStepWorkerTest extends TestCase
         $platform = $this->createAlternatingPlatform([$validResponse]);
         $testLogger = new TestLogger();
 
-        $worker = new ExecuteLlmStepWorker($platform, logger: $testLogger);
+        $worker = new ExecuteLlmStepWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), $platform, logger: $testLogger);
 
         $result = $worker(new ExecuteLlmStep(
             runId: 'run-3',
@@ -96,7 +96,7 @@ final class ExecuteLlmStepWorkerTest extends TestCase
         $platform = $this->createAlternatingPlatform([$errorResult]);
         $testLogger = new TestLogger();
 
-        $worker = new ExecuteLlmStepWorker($platform, logger: $testLogger);
+        $worker = new ExecuteLlmStepWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), $platform, logger: $testLogger);
 
         $result = $worker(new ExecuteLlmStep(
             runId: 'run-4',
@@ -129,7 +129,7 @@ final class ExecuteLlmStepWorkerTest extends TestCase
 
         $platform = $this->createAlternatingPlatform([$aborted]);
         $testLogger = new TestLogger();
-        $worker = new ExecuteLlmStepWorker($platform, logger: $testLogger);
+        $worker = new ExecuteLlmStepWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), $platform, logger: $testLogger);
 
         $result = $worker(new ExecuteLlmStep(
             runId: 'run-aborted-silence',
@@ -170,7 +170,7 @@ final class ExecuteLlmStepWorkerTest extends TestCase
 
         $platform = $this->createAlternatingPlatform([$aborted]);
         $testLogger = new TestLogger();
-        $worker = new ExecuteLlmStepWorker($platform, logger: $testLogger);
+        $worker = new ExecuteLlmStepWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), $platform, logger: $testLogger);
 
         $result = $worker(new ExecuteLlmStep(
             runId: 'run-aborted-thinking',
@@ -204,7 +204,7 @@ final class ExecuteLlmStepWorkerTest extends TestCase
             stopReason: 'stop',
         );
         $platform = $this->createAlternatingPlatform([$ok]);
-        $worker = new ExecuteLlmStepWorker($platform, logger: new TestLogger());
+        $worker = new ExecuteLlmStepWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), $platform, logger: new TestLogger());
 
         $result = $worker(new ExecuteLlmStep(
             runId: 'run-dispatch-fail',
@@ -243,7 +243,7 @@ final class ExecuteLlmStepWorkerTest extends TestCase
         );
 
         $platform = $this->createAlternatingPlatform([$errorResult]);
-        $worker = new ExecuteLlmStepWorker($platform, logger: new TestLogger());
+        $worker = new ExecuteLlmStepWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), $platform, logger: new TestLogger());
 
         $result = $worker(new ExecuteLlmStep(
             runId: 'run-retryable',
@@ -263,7 +263,7 @@ final class ExecuteLlmStepWorkerTest extends TestCase
     public function testForwardsCoordinatorPreparedMessagesToPlatform(): void
     {
         $platform = $this->createAlternatingPlatform([new AssistantMessage(new Text('done'))]);
-        $worker = new ExecuteLlmStepWorker($platform, logger: new TestLogger());
+        $worker = new ExecuteLlmStepWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), $platform, logger: new TestLogger());
         $messages = [new AgentMessage('user', [['type' => 'text', 'text' => 'private coordinator context']])];
 
         $worker(new ExecuteLlmStep(

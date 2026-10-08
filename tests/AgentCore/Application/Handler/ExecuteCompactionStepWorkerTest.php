@@ -34,7 +34,7 @@ final class ExecuteCompactionStepWorkerTest extends TestCase
         $this->assertSame($responseText, $assistantMsg->asText(), 'AssistantMessage::asText() precondition');
 
         $fakePlatform = $this->createFakePlatform($responseText, model: 'openai/gpt-4.1-mini', captureRequest: true);
-        $worker = new ExecuteCompactionStepWorker($fakePlatform);
+        $worker = new ExecuteCompactionStepWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), $fakePlatform);
         $result = $worker(new ExecuteCompactionStep(
             runId: 'run-1',
             turnNo: 5,
@@ -73,7 +73,7 @@ final class ExecuteCompactionStepWorkerTest extends TestCase
     public function testExplicitModelPassedInResult(): void
     {
         $fakePlatform = $this->createFakePlatform('ok', model: 'llama_cpp/flash');
-        $worker = new ExecuteCompactionStepWorker($fakePlatform);
+        $worker = new ExecuteCompactionStepWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), $fakePlatform);
         $result = $worker(new ExecuteCompactionStep(
             runId: 'run-1',
             turnNo: 5,
@@ -98,7 +98,7 @@ final class ExecuteCompactionStepWorkerTest extends TestCase
     {
         $errorPayload = ['type' => 'RuntimeException', 'message' => 'Simulated failure'];
         $fakePlatform = $this->createFakePlatformWithError($errorPayload);
-        $worker = new ExecuteCompactionStepWorker($fakePlatform);
+        $worker = new ExecuteCompactionStepWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), $fakePlatform);
         $result = $worker(new ExecuteCompactionStep(
             runId: 'run-1',
             turnNo: 5,
@@ -124,7 +124,7 @@ final class ExecuteCompactionStepWorkerTest extends TestCase
     public function testPlatformExceptionReturnsErrorResult(): void
     {
         $fakePlatform = $this->createFakePlatformThatThrows(new \RuntimeException('Boom'));
-        $worker = new ExecuteCompactionStepWorker($fakePlatform);
+        $worker = new ExecuteCompactionStepWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), $fakePlatform);
         $result = $worker(new ExecuteCompactionStep(
             runId: 'run-1',
             turnNo: 5,

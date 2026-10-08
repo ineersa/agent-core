@@ -37,7 +37,7 @@ final class ExecutionWorkerTest extends TestCase
             }
         };
 
-        $worker = new ExecuteLlmStepWorker($platform);
+        $worker = new ExecuteLlmStepWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), $platform);
 
         $result = $worker(new ExecuteLlmStep(
             runId: 'run-worker-1',
@@ -65,7 +65,7 @@ final class ExecutionWorkerTest extends TestCase
             }
         };
 
-        $worker = new ExecuteLlmStepWorker($platform);
+        $worker = new ExecuteLlmStepWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), $platform);
 
         $result = $worker(new ExecuteLlmStep(
             runId: 'run-malformed-1',
@@ -99,7 +99,7 @@ final class ExecutionWorkerTest extends TestCase
         $traceLogger = new TestLogger();
         $tracer = new RunTracer($traceLogger);
 
-        $worker = new ExecuteLlmStepWorker($platform, tracer: $tracer);
+        $worker = new ExecuteLlmStepWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), $platform, tracer: $tracer);
 
         $result = $worker(new ExecuteLlmStep(
             runId: 'run-worker-obs-1',
@@ -138,7 +138,7 @@ final class ExecutionWorkerTest extends TestCase
             }
         };
 
-        $worker = new ExecuteToolCallWorker($toolExecutor, new InMemoryDeferredToolCompletionRepository(), new ToolExecutionResultStore(), new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader());
+        $worker = new ExecuteToolCallWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), new TestLogger(), $toolExecutor, new InMemoryDeferredToolCompletionRepository(), new ToolExecutionResultStore(), new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader());
 
         $result = $worker(new ExecuteToolCall(
             runId: 'run-worker-2',
@@ -170,7 +170,7 @@ final class ExecutionWorkerTest extends TestCase
         );
         $store->remember('run-release-1', 'call-release-1', 'web_search', 'tool-release-1', $stored);
 
-        $worker = new ExecuteToolCallWorker(
+        $worker = new ExecuteToolCallWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), new TestLogger(),
             new FakeToolExecutor(),
             new InMemoryDeferredToolCompletionRepository(),
             $store,
@@ -216,7 +216,7 @@ final class ExecutionWorkerTest extends TestCase
             }
         };
 
-        $worker = new ExecuteToolCallWorker(
+        $worker = new ExecuteToolCallWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), new TestLogger(),
             $executor,
             new InMemoryDeferredToolCompletionRepository(),
             $store,
@@ -261,7 +261,7 @@ final class ExecutionWorkerTest extends TestCase
         $testLogger = new TestLogger();
 
         // Non-null logger passed so the worker logs (bypasses NullLogger default).
-        $worker = new ExecuteLlmStepWorker($platform, logger: $testLogger);
+        $worker = new ExecuteLlmStepWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), $platform, logger: $testLogger);
 
         $worker(new ExecuteLlmStep(
             runId: 'run-empty-metrics-1',
@@ -315,7 +315,7 @@ final class ExecutionWorkerTest extends TestCase
             }
         };
 
-        $worker = new ExecuteLlmStepWorker($platform);
+        $worker = new ExecuteLlmStepWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), $platform);
 
         $result = $worker(new ExecuteLlmStep(
             runId: 'run-empty-1',
@@ -355,7 +355,7 @@ final class ExecutionWorkerTest extends TestCase
             }
         };
 
-        $worker = new ExecuteLlmStepWorker($platform);
+        $worker = new ExecuteLlmStepWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), $platform);
 
         $result = $worker(new ExecuteLlmStep(
             runId: 'run-finish-only-1',

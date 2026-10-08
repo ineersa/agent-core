@@ -1311,13 +1311,9 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $reference = $inputStore->publish('fork', $parent, 2, 'turn-2-tools-1', $tool, 'deepseek/deepseek-v4-flash', '', [new AgentMessage('user', [['type' => 'text', 'text' => 'Fork task']])]);
         $original = new \Ineersa\AgentCore\Domain\Message\ExecuteToolCall($parent, 2, 'turn-2-tools-1', 1, 'idem-fork-once', $tool, 'fork', ['task' => 'Fork task'], 0, parentModel: 'deepseek/deepseek-v4-flash', launchContext: $reference);
         $batchStore = self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class);
-        $verified = new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(\Symfony\Component\Uid\Uuid::v7()->toRfc4122(), [
-            'run_id' => $parent,
-            'effects' => [$original],
-            'actions' => [],
-        ]);
-        self::getContainer()->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class)->prepare($original, $verified);
-        $batchStore->prepareChanges([new \Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO($parent, 2, 'turn-2-tools-1', [$original], [$tool => 0], [$tool], [], 1)], $verified)();
+        $register = new \Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO($parent, 2, 'turn-2-tools-1', [$original], [$tool => 0], [$tool], [], 1);
+        $verified = new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(\Symfony\Component\Uid\Uuid::v7()->toRfc4122(), ['run_id' => $parent, 'actions' => [$register]]);
+        $batchStore->prepareChanges([$register], $verified)();
         $original = $batchStore->load($parent, 2, 'turn-2-tools-1')->calls[$tool];
         $paths = self::getContainer()->get(\Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface::class);
         $inputPath = \dirname($paths->resolveToolBatchesDirectory($parent)).'/tool-launch-inputs/'.hash('sha256', $tool).'.jsonl';
@@ -1389,7 +1385,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $events = new \Symfony\Component\EventDispatcher\EventDispatcher();
         $events->addListener(DeferredToolCompletionRegisteredEvent::class, static function () use (&$notifications): void { ++$notifications; });
         $workerBus = new TestMessageBus();
-        $worker = new \Ineersa\AgentCore\Application\Handler\ExecuteToolCallWorker($executor, $deferred, new \Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore(), new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(), eventDispatcher: $events, launchInputStore: $inputStore);
+        $worker = new \Ineersa\AgentCore\Application\Handler\ExecuteToolCallWorker(new TestMessageBus(), new TestLogger(), $executor, $deferred, new \Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore(), new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(), eventDispatcher: $events, launchInputStore: $inputStore);
         $worker($original);
         $this->assertCount(0, $workerBus->messages, json_encode($workerBus->messages, \JSON_THROW_ON_ERROR));
         $this->assertSame('pending', $deferred->status($lifecycle));
@@ -1415,7 +1411,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $worker($original);
         $this->assertSame(2, $notifications, 'Pending redelivery re-emits registration without reading input.');
         $terminalBus = new TestMessageBus();
-        (new CompleteDeferredToolCallHandler($deferred, $terminalBus, new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(), new TestLogger()))($complete);
+        (new CompleteDeferredToolCallHandler($deferred, $terminalBus, self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class), $batchStore, new TestLogger()))($complete);
         $this->assertSame('completed', $deferred->status($lifecycle));
         $this->assertCount(1, $terminalBus->messages);
         $worker($original);
@@ -1489,18 +1485,16 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $this->assertFalse($complete->isError);
 
         $resultBus = new TestMessageBus();
-        $operations = new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore();
         $completionHandler = new CompleteDeferredToolCallHandler(
             $deferred,
             $resultBus,
-            $operations,
+            self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class),
+            self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
             new TestLogger(),
         );
         $completionHandler($complete);
         $this->assertCount(1, $resultBus->messages);
-        $reference = $resultBus->messages[0];
-        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\DurableExecutionResult::class, $reference);
-        $toolCallResult = $operations->resolveResult($reference);
+        $toolCallResult = $resultBus->messages[0];
         $this->assertInstanceOf(ToolCallResult::class, $toolCallResult);
         $this->assertIsArray($toolCallResult->result);
         $this->assertSame('agent_resume', $toolCallResult->result['tool_name']);
@@ -1718,7 +1712,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
                     finalizer: \Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory::create($this->store, $dispatcher),
                     actionValidator: new \Ineersa\AgentCore\Application\Handler\CoordinationActionValidator([$coordination]),
                 );
-                $processor = new \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor($active, $this->lock, $commit, [$handler]);
+                $processor = new \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor($active, $this->lock, $commit, [$handler], new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore());
                 $processor->process('command.subagent_progress', new \Ineersa\AgentCore\Domain\Message\CommitSubagentProgress(
                     $parentRunId, $parentTurnNo, $lifecycleId, $parentToolCallId, $parentOrderIndex, $revision, $normalized, $interruptionKind,
                 ));
