@@ -212,13 +212,14 @@ final class CommandMailboxPolicyTest extends TestCase
         $this->assertCount(1, $appliedFollowUp);
 
         // shouldContinue should have dispatched a follow-up AdvanceRun
-        $advanceCommands = array_values(array_filter(
+        $stopBoundaryAdvances = array_values(array_filter(
             $fixture->commandBus->messages,
-            static fn (object $message): bool => $message instanceof AdvanceRun,
+            static fn (object $message): bool => $message instanceof AdvanceRun
+                && str_starts_with($message->stepId(), 'stop-boundary-follow-up-'),
         ));
-        // Only one from stop-boundary shouldContinue (ApplyCommandHandler no
-        // longer dispatches AdvanceRun while the run is active).
-        $this->assertCount(1, $advanceCommands);
+        // Exactly one stop-boundary continuation. StartRun also schedules an
+        // initial AdvanceRun onto the shared observation bus; ignore that kickoff.
+        $this->assertCount(1, $stopBoundaryAdvances);
     }
 
     public function testStopBoundaryDrainsAllQueuedSteersFifoWithOneAdvanceRun(): void
@@ -281,12 +282,14 @@ final class CommandMailboxPolicyTest extends TestCase
 
         $this->assertSame([], $fixture->commandStore->pending($runId));
 
-        $advanceCommands = array_values(array_filter(
+        $stopBoundaryAdvances = array_values(array_filter(
             $fixture->commandBus->messages,
-            static fn (object $message): bool => $message instanceof AdvanceRun,
+            static fn (object $message): bool => $message instanceof AdvanceRun
+                && str_starts_with($message->stepId(), 'stop-boundary-follow-up-'),
         ));
         // Exactly one stop-boundary continuation for the drained batch.
-        $this->assertCount(1, $advanceCommands);
+        // Ignore StartRun's initial AdvanceRun on the shared observation bus.
+        $this->assertCount(1, $stopBoundaryAdvances);
     }
 
     public function testStopBoundaryReturnsFalseWhenNoCommandsPending(): void
@@ -324,12 +327,14 @@ final class CommandMailboxPolicyTest extends TestCase
         // shouldContinue=false should complete the run
         $this->assertSame(RunStatus::Completed, $state->status);
 
-        // No follow-up AdvanceRun should have been dispatched
-        $advanceCommands = array_values(array_filter(
+        // No stop-boundary follow-up AdvanceRun should have been dispatched.
+        // StartRun still schedules its initial AdvanceRun on the shared observation bus.
+        $stopBoundaryAdvances = array_values(array_filter(
             $fixture->commandBus->messages,
-            static fn (object $message): bool => $message instanceof AdvanceRun,
+            static fn (object $message): bool => $message instanceof AdvanceRun
+                && str_starts_with($message->stepId(), 'stop-boundary-follow-up-'),
         ));
-        $this->assertCount(0, $advanceCommands);
+        $this->assertCount(0, $stopBoundaryAdvances);
     }
 
     public function testMailboxApplicationJoinsMultipartTextWithNewline(): void
@@ -462,7 +467,6 @@ final class CommandMailboxPolicyTest extends TestCase
                     eventFactory: new \Ineersa\AgentCore\Domain\Event\EventFactory(),
                     messageNormalizer: new \Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer(),
                     maxPendingCommands: $maxPendingCommands,
-                    commandBus: $commandBus,
                 ),
                 new AdvanceRunHandler(
                     commandMailboxPolicy: $commandMailboxPolicy,
@@ -475,7 +479,6 @@ final class CommandMailboxPolicyTest extends TestCase
                     messageNormalizer: new \Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer(),
                     normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
                     toolBatchCollector: $toolBatchCollector,
-                    commandBus: $commandBus,
                 ),
                 new ToolCallResultHandler(
                     toolBatchCollector: $toolBatchCollector,

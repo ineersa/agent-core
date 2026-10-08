@@ -37,7 +37,7 @@ final class LlmStepResultHandlerTest extends TestCase
     public function testHandleWithToolCallsReturnsPostCommitBatchRegistrationCallback(): void
     {
         $executionBus = new TestMessageBus();
-        $stepDispatcher = new StepDispatcher(new TestMessageBus());
+        $stepDispatcher = new StepDispatcher($executionBus);
 
         $commandStore = new InMemoryCommandStore();
         $coordinationBatches = new TestToolBatchStore();
@@ -129,7 +129,7 @@ final class LlmStepResultHandlerTest extends TestCase
     public function testAbortedDoesNotAppendAssistantMessageToState(): void
     {
         $executionBus = new TestMessageBus();
-        $stepDispatcher = new StepDispatcher(new TestMessageBus());
+        $stepDispatcher = new StepDispatcher($executionBus);
         $commandBus = new TestMessageBus();
 
         $commandStore = new InMemoryCommandStore();
@@ -147,7 +147,6 @@ final class LlmStepResultHandlerTest extends TestCase
 
             normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
             toolBatchCollector: $coordinationCollector,
-            commandBus: $commandBus,
         );
 
         $existingMessages = [
@@ -229,7 +228,7 @@ final class LlmStepResultHandlerTest extends TestCase
     public function testAbortedWithOnlyTextDoesNotAppendMessage(): void
     {
         $executionBus = new TestMessageBus();
-        $stepDispatcher = new StepDispatcher(new TestMessageBus());
+        $stepDispatcher = new StepDispatcher($executionBus);
 
         $commandStore = new InMemoryCommandStore();
         $handler = new LlmStepResultHandler(
@@ -306,7 +305,7 @@ final class LlmStepResultHandlerTest extends TestCase
     public function testStopBoundaryMailboxEffectsContainPendingCompact(): void
     {
         $executionBus = new TestMessageBus();
-        $stepDispatcher = new StepDispatcher(new TestMessageBus());
+        $stepDispatcher = new StepDispatcher($executionBus);
 
         $commandStore = new InMemoryCommandStore();
 
@@ -391,7 +390,7 @@ final class LlmStepResultHandlerTest extends TestCase
     public function testErrorResultDoesNotAppendAssistantMessage(): void
     {
         $executionBus = new TestMessageBus();
-        $stepDispatcher = new StepDispatcher(new TestMessageBus());
+        $stepDispatcher = new StepDispatcher($executionBus);
 
         $commandStore = new InMemoryCommandStore();
         $handler = new LlmStepResultHandler(
@@ -488,7 +487,7 @@ final class LlmStepResultHandlerTest extends TestCase
     {
         $executionBus = new TestMessageBus();
         $commandBus = new TestMessageBus();
-        $stepDispatcher = new StepDispatcher(new TestMessageBus());
+        $stepDispatcher = new StepDispatcher($executionBus);
         $classifier = new \Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier();
 
         $handler = new LlmStepResultHandler(
@@ -502,7 +501,6 @@ final class LlmStepResultHandlerTest extends TestCase
 
             normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
             toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
-            commandBus: $commandBus,
         );
 
         $state = new RunState(
@@ -557,7 +555,7 @@ final class LlmStepResultHandlerTest extends TestCase
     {
         $executionBus = new TestMessageBus();
         $commandBus = new TestMessageBus();
-        $stepDispatcher = new StepDispatcher(new TestMessageBus());
+        $stepDispatcher = new StepDispatcher($executionBus);
         $classifier = new \Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier();
 
         $coordinationBatches = new TestToolBatchStore();
@@ -574,7 +572,6 @@ final class LlmStepResultHandlerTest extends TestCase
 
             normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
             toolBatchCollector: $coordinationCollector,
-            commandBus: $commandBus,
         );
 
         $error = $classifier->classify([
@@ -660,7 +657,6 @@ final class LlmStepResultHandlerTest extends TestCase
 
             normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
             toolBatchCollector: $coordinationCollector,
-            commandBus: $commandBus,
         );
 
         // Application retry executor marks exhaustion as terminal before LlmStepResultHandler.
@@ -718,7 +714,7 @@ final class LlmStepResultHandlerTest extends TestCase
     public function testParallelToolCallsCarryConfiguredMaxParallelism(): void
     {
         $executionBus = new TestMessageBus();
-        $stepDispatcher = new StepDispatcher(new TestMessageBus());
+        $stepDispatcher = new StepDispatcher($executionBus);
 
         $toolSetResolver = new class implements ToolSetResolverInterface {
             public function resolve(string $toolsRef, ?int $turnNo = null, ?string $runId = null): ActiveToolSet
@@ -796,7 +792,7 @@ final class LlmStepResultHandlerTest extends TestCase
     public function testChildLaunchToolsAttachImmutableLaunchContextAndOrdinaryToolsStayNull(): void
     {
         $executionBus = new TestMessageBus();
-        $stepDispatcher = new StepDispatcher(new TestMessageBus());
+        $stepDispatcher = new StepDispatcher($executionBus);
         $toolSetResolver = new class implements ToolSetResolverInterface {
             public function resolve(string $toolsRef, ?int $turnNo = null, ?string $runId = null): ActiveToolSet
             {
@@ -905,7 +901,7 @@ final class LlmStepResultHandlerTest extends TestCase
     public function testBlankModelFailsOnlyForChildLaunchTools(): void
     {
         $executionBus = new TestMessageBus();
-        $stepDispatcher = new StepDispatcher(new TestMessageBus());
+        $stepDispatcher = new StepDispatcher($executionBus);
         $coordinationBatches = new TestToolBatchStore();
         $coordinationCollector = new ToolBatchCollector($coordinationBatches);
         $coordinationDispatcher = $stepDispatcher;
@@ -984,7 +980,7 @@ final class LlmStepResultHandlerTest extends TestCase
     public function testExecuteToolCallHasNullTimeoutWithoutPerToolOverride(): void
     {
         $executionBus = new TestMessageBus();
-        $stepDispatcher = new StepDispatcher(new TestMessageBus());
+        $stepDispatcher = new StepDispatcher($executionBus);
         $coordinationBatches = new TestToolBatchStore();
         $coordinationCollector = new ToolBatchCollector($coordinationBatches);
         $coordinationDispatcher = $stepDispatcher;

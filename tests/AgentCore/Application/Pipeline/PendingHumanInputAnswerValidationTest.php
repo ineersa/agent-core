@@ -107,7 +107,7 @@ final class PendingHumanInputAnswerValidationTest extends TestCase
     public function testMatchingModelTurnAnswerClearsRequestAndSchedulesAdvance(): void
     {
         $bus = new TestMessageBus();
-        $result = $this->applyHandler($bus)->handle(
+        $result = $this->applyHandler()->handle(
             $this->humanResponse('run-hitl-ok', 'ah_ok', 'yes proceed'),
             $this->waitingState('run-hitl-ok', 'ah_ok'),
         );
@@ -348,7 +348,7 @@ final class PendingHumanInputAnswerValidationTest extends TestCase
         );
     }
 
-    private function applyHandler(?TestMessageBus $bus = null, ?TestLogger $logger = null): ApplyCommandHandler
+    private function applyHandler(?TestLogger $logger = null): ApplyCommandHandler
     {
         $store = new InMemoryCommandStore();
         $router = new CommandRouter([]);
@@ -360,7 +360,6 @@ final class PendingHumanInputAnswerValidationTest extends TestCase
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
-            commandBus: $bus,
             logger: $logger,
             serializer: AttributeSerializerValidatorTestFactory::serializer(),
         );

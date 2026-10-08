@@ -52,7 +52,6 @@ final class ApplyCommandHandlerTest extends TestCase
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
-            commandBus: $commandBus,
         );
 
         $state = new RunState(
@@ -109,7 +108,6 @@ final class ApplyCommandHandlerTest extends TestCase
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
-            commandBus: $commandBus,
         );
 
         $state = new RunState(
@@ -308,8 +306,6 @@ final class ApplyCommandHandlerTest extends TestCase
             commandRouter: $commandRouter,
         );
 
-        $commandBus = new TestMessageBus();
-
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
@@ -317,7 +313,6 @@ final class ApplyCommandHandlerTest extends TestCase
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
-            commandBus: $commandBus,
         );
 
         $state = new RunState(
@@ -369,8 +364,6 @@ final class ApplyCommandHandlerTest extends TestCase
             commandRouter: $commandRouter,
         );
 
-        $commandBus = new TestMessageBus();
-
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
@@ -378,7 +371,6 @@ final class ApplyCommandHandlerTest extends TestCase
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
-            commandBus: $commandBus,
         );
 
         $state = new RunState(
@@ -432,7 +424,6 @@ final class ApplyCommandHandlerTest extends TestCase
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
-            commandBus: $commandBus,
         );
 
         $state = new RunState(
@@ -591,7 +582,6 @@ final class ApplyCommandHandlerTest extends TestCase
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
-            commandBus: $commandBus,
         );
 
         $runtimeText = 'Runtime notification line one';
@@ -669,7 +659,6 @@ final class ApplyCommandHandlerTest extends TestCase
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
-            commandBus: $commandBus,
         );
 
         $runtimeText = 'Queued between cancels';
@@ -838,7 +827,6 @@ final class ApplyCommandHandlerTest extends TestCase
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
-            commandBus: $commandBus,
         );
 
         $state = new RunState(

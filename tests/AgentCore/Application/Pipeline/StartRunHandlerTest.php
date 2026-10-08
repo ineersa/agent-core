@@ -72,7 +72,13 @@ final class StartRunHandlerTest extends TestCase
 
         $this->assertSame([], $result->effects);
         $this->assertSame([], $result->postCommitEffects);
-        $this->assertSame([], $result->postCommitActions);
+        $this->assertCount(1, $result->postCommitActions);
+        $this->assertInstanceOf(
+            \Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO::class,
+            $result->postCommitActions[0],
+        );
+        $this->assertInstanceOf(AdvanceRun::class, $result->postCommitActions[0]->message);
+        $this->assertStringStartsWith('start-follow-up-', $result->postCommitActions[0]->message->stepId());
     }
 
     public function testCompletedShellOnlyStateInitializesOnce(): void
@@ -166,7 +172,6 @@ final class StartRunHandlerTest extends TestCase
         $handler = new StartRunHandler(
             eventFactory: new EventFactory(),
             normalizer: TestSerializerFactory::normalizer(),
-            commandBus: $commandBus,
         );
         $message = StartRunMessageBuilder::create('run-start-duplicate')->build();
         $committed = $handler->handle($message, RunStateBuilder::queued('run-start-duplicate')->withModel(null)->build())->nextState;
@@ -195,7 +200,6 @@ final class StartRunHandlerTest extends TestCase
         $handler = new StartRunHandler(
             eventFactory: new EventFactory(),
             normalizer: TestSerializerFactory::normalizer(),
-            commandBus: $commandBus,
         );
         $message = StartRunMessageBuilder::create('run-start-duplicate-advanced')->build();
         $committed = $handler->handle($message, RunStateBuilder::queued('run-start-duplicate-advanced')->withModel(null)->build())->nextState;
@@ -211,14 +215,13 @@ final class StartRunHandlerTest extends TestCase
         $this->assertSame([], $commandBus->messages);
     }
 
-    public function testHandleSchedulesInitialAdvanceAfterCommitWhenBusIsProvided(): void
+    public function testHandleSchedulesInitialAdvanceAfterCommit(): void
     {
         $commandBus = new TestMessageBus();
 
         $handler = new StartRunHandler(
             eventFactory: new EventFactory(),
             normalizer: TestSerializerFactory::normalizer(),
-            commandBus: $commandBus,
         );
 
         $state = RunStateBuilder::queued('run-start-handler-2')->withModel(null)->build();
