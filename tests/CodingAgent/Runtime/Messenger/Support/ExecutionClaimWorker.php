@@ -45,6 +45,7 @@ $transition = $events->verifiedPendingTransition($run);
 if (null === $transition) {
     throw new RuntimeException('Missing test transition.');
 }
+$store->prepare($request, $transition);
 $authorization = $store->arm($request, $transition);
 $events->finalizeVerifiedTransition($run, $transition->identity);
 $serializer = new PhpSerializer();

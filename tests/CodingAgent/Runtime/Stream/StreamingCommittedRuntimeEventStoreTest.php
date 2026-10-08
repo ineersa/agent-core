@@ -235,7 +235,6 @@ final class RecordingEventStore implements PreparedTransitionEventStoreInterface
         }
         $this->pending[$runId] = new VerifiedTransitionDTO(
             hash('sha256', serialize([$work, $out])),
-            0,
             $work,
             array_map(static fn (RunEvent $event): int => $event->seq, $out),
         );

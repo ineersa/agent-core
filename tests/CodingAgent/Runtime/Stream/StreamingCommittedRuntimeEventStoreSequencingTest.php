@@ -27,7 +27,7 @@ final class StreamingCommittedRuntimeEventStoreSequencingTest extends TestCase
         $inner = $this->createMock(PreparedTransitionEventStoreInterface::class);
         $input = new RunEvent('run-a', 0, 0, RunEventTypeEnum::RunStarted->value, []);
         $persisted = new RunEvent('run-a', 42, 0, RunEventTypeEnum::RunStarted->value, []);
-        $pending = new VerifiedTransitionDTO('transition-a', 0, ['run_id' => 'run-a'], [42]);
+        $pending = new VerifiedTransitionDTO('transition-a', ['run_id' => 'run-a'], [42]);
 
         $inner->expects($this->once())->method('appendTransition')->with([$input], ['run_id' => 'run-a'])->willReturn([$persisted]);
         $inner->expects($this->atLeastOnce())->method('verifiedPendingTransition')->with('run-a')->willReturn($pending);

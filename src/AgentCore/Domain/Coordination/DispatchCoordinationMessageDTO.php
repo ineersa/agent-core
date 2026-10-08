@@ -10,7 +10,7 @@ use Ineersa\AgentCore\Domain\Message\CompactRun;
 
 final readonly class DispatchCoordinationMessageDTO
 {
-    public function __construct(public AdvanceRun|CompactRun|ApplyCommand $message, public string $errorMessage)
+    public function __construct(public AdvanceRun|CompactRun|ApplyCommand $message)
     {
     }
 }

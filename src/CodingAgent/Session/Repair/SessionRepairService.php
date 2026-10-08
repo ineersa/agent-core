@@ -1091,7 +1091,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             // existing operation rows after cut finalization. Only non-ledger
             // control continuations need a durable outbox obligation.
             if ($effect instanceof AdvanceRun) {
-                $actions[] = $effect;
+                $actions[] = new \Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO($effect);
             }
         }
 

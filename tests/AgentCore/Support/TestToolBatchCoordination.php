@@ -26,7 +26,7 @@ final class TestToolBatchCoordination
         if (null === $action) {
             return;
         }
-        $transition = new VerifiedTransitionDTO(Uuid::v7()->toRfc4122(), 0, ['run_id' => $action->runId, 'actions' => [$action]]);
+        $transition = new VerifiedTransitionDTO(Uuid::v7()->toRfc4122(), ['run_id' => $action->runId, 'actions' => [$action]]);
         if (null !== $operations && null !== $action->revisedCallId) {
             $existing = $store->load($action->runId, $action->turnNo, $action->stepId)?->calls[$action->revisedCallId] ?? null;
             if ($existing instanceof ExecuteToolCall) {

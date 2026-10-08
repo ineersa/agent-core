@@ -66,7 +66,7 @@ final class RunMessageProcessorTest extends TestCase
             return new HandlerResult();
         });
         $bus = new TestMessageBus();
-        $dispatcher = new StepDispatcher($bus, $bus);
+        $dispatcher = new StepDispatcher($bus);
         $commit = new RunCommit(
             activeRunContext: $active,
             eventStore: $store,

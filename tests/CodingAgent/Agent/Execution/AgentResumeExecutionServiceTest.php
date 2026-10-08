@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Execution;
 
-use Ineersa\AgentCore\Application\Handler\CoordinationActionHandler;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Pipeline\AgentRunner;
 use Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler;
@@ -138,7 +137,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         $this->assertCount(1, $enqueues);
         $enqueue = $enqueues[0];
         $this->assertInstanceOf(EnqueueCommandDTO::class, $enqueue);
-        self::getContainer()->get(CoordinationActionHandler::class)->enqueueCommand($enqueue);
+        self::getContainer()->get(\Ineersa\AgentCore\Contract\CommandStoreInterface::class)->enqueue($enqueue->command);
         $continued = $mailbox->applyPendingTurnStartCommands($queued->nextState);
         $state = $continued->state;
         $this->assertSame($originalMessages, \array_slice($state->messages, 0, 2));

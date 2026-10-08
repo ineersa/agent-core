@@ -27,7 +27,6 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Platform\Message\AssistantMessage;
 use Symfony\AI\Platform\Tool\Tool;
-use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
 final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandlerLogComponentInterface
@@ -42,7 +41,6 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
         private ?ToolSetResolverInterface $toolSetResolver = null,
         private ?ToolboxInterface $toolbox = null,
         private ?RunTracer $tracer = null,
-        private ?MessageBusInterface $commandBus = null,
         private ?ToolExecutionSettingsInterface $toolExecutionSettings = null,
         private int $maxParallelism = 1,
         private ?ToolLaunchInputStoreInterface $launchInputStore = null,
@@ -154,9 +152,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
             // an already-queued AppendMessage drains after AgentEnd(cancelled).
             $postCommitActions = [];
             $postCancelAdvance = $this->followUpAdvanceAction($runId, $state->turnNo, 'post-cancel-advance');
-            if (null !== $postCancelAdvance) {
-                $postCommitActions[] = $postCancelAdvance;
-            }
+            $postCommitActions[] = $postCancelAdvance;
 
             return new HandlerResult(
                 nextState: $nextState,
@@ -379,9 +375,8 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
 
             $postCommitActions = [];
 
-            $followUpAdvance = $shouldContinue ? $this->followUpAdvanceAction($runId, $state->turnNo, 'stop-boundary-follow-up') : null;
-            if (null !== $followUpAdvance) {
-                $postCommitActions[] = $followUpAdvance;
+            if ($shouldContinue) {
+                $postCommitActions[] = $this->followUpAdvanceAction($runId, $state->turnNo, 'stop-boundary-follow-up');
             }
 
             return new HandlerResult(
@@ -499,13 +494,9 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
         return $schemas;
     }
 
-    private function followUpAdvanceAction(string $runId, int $turnNo, string $prefix): ?DispatchCoordinationMessageDTO
+    private function followUpAdvanceAction(string $runId, int $turnNo, string $prefix): DispatchCoordinationMessageDTO
     {
-        if (null === $this->commandBus) {
-            return null;
-        }
-
-        return AdvanceRunCoordinationFactory::create($runId, $turnNo, $prefix, 'Failed to dispatch follow-up AdvanceRun command.');
+        return AdvanceRunCoordinationFactory::create($runId, $turnNo, $prefix);
     }
 
     /**

@@ -9,7 +9,7 @@ final readonly class VerifiedTransitionDTO
 {
     /** @param array<string, mixed> $work
      * @param list<int> $eventSequences */
-    public function __construct(public string $identity, public int $startOffset, public array $work, public array $eventSequences = [])
+    public function __construct(public string $identity, public array $work, public array $eventSequences = [])
     {
     }
 }

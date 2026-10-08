@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Support;
 
-use Ineersa\AgentCore\Application\Handler\CoordinationActionHandler;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
@@ -29,18 +28,19 @@ final class CoordinationActionTestRunner
         $batches ??= new TestToolBatchStore();
         $collector ??= new ToolBatchCollector($batches);
         $commands = $store ?? new InMemoryCommandStore();
-        $handler = new CoordinationActionHandler($target);
 
         return new \Symfony\Component\Messenger\MessageBus([
             new \Symfony\Component\Messenger\Middleware\HandleMessageMiddleware(new \Symfony\Component\Messenger\Handler\HandlersLocator([
-                DispatchCoordinationMessageDTO::class => [$handler->dispatchMessage(...)],
+                DispatchCoordinationMessageDTO::class => [static fn (DispatchCoordinationMessageDTO $action) => $target->dispatch($action->message)],
                 MarkCommandAppliedDTO::class => [static fn (MarkCommandAppliedDTO $action) => $commands->markApplied($action->runId, $action->idempotencyKey)],
                 EnqueueCommandDTO::class => [static fn (EnqueueCommandDTO $action) => $commands->enqueue($action->command)],
                 RejectCommandDTO::class => [static fn (RejectCommandDTO $action) => $commands->markRejected($action->runId, $action->idempotencyKey, $action->reason)],
                 RegisterToolBatchDTO::class => [static function (RegisterToolBatchDTO $action) use ($batches, $dispatcher): void {
                     TestToolBatchRegistration::apply($batches, $action);
                     if (null !== $dispatcher) {
-                        $dispatcher->dispatchEffects($batches->admittedCalls($action->runId, $action->turnNo, $action->stepId));
+                        foreach ($batches->admittedCalls($action->runId, $action->turnNo, $action->stepId) as $call) {
+                            $dispatcher->dispatchCoordinationActions([$call]);
+                        }
                     }
                 }],
                 FinalizeToolBatchDTO::class => [static fn (FinalizeToolBatchDTO $action) => TestToolBatchCoordination::finalize($batches, $action)],
@@ -59,17 +59,18 @@ final class CoordinationActionTestRunner
         $bus ??= new TestMessageBus();
         $batches ??= new TestToolBatchStore();
         $commands = $store ?? new InMemoryCommandStore();
-        $handler = new CoordinationActionHandler($bus);
         match (true) {
             $action instanceof FinalizeToolBatchDTO => TestToolBatchCoordination::finalize($batches, $action),
-            $action instanceof DispatchCoordinationMessageDTO => $handler->dispatchMessage($action),
+            $action instanceof DispatchCoordinationMessageDTO => $bus->dispatch($action->message),
             $action instanceof MarkCommandAppliedDTO => $commands->markApplied($action->runId, $action->idempotencyKey),
             $action instanceof EnqueueCommandDTO => $commands->enqueue($action->command),
             $action instanceof RejectCommandDTO => $commands->markRejected($action->runId, $action->idempotencyKey, $action->reason),
             $action instanceof RegisterToolBatchDTO => (static function () use ($action, $batches, $dispatcher): void {
                 TestToolBatchRegistration::apply($batches, $action);
                 if (null !== $dispatcher) {
-                    $dispatcher->dispatchEffects($batches->admittedCalls($action->runId, $action->turnNo, $action->stepId));
+                    foreach ($batches->admittedCalls($action->runId, $action->turnNo, $action->stepId) as $call) {
+                        $dispatcher->dispatchCoordinationActions([$call]);
+                    }
                 }
             })(),
             default => throw new \LogicException('Unsupported test coordination action.'),

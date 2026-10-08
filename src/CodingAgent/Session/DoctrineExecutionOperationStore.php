@@ -241,27 +241,6 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
         return $deliveries;
     }
 
-    /** @param array<string, mixed> $record */
-    private function deliveryEnvelope(array $record): ?Envelope
-    {
-        if ('Running' === $record['state'] || 'Deferred' === $record['state']) {
-            $record = $this->recoverClaim($record);
-        }
-        if ('Running' === $record['state'] || 'Deferred' === $record['state']) {
-            return null;
-        }
-        if ('OutcomeUnknown' === $record['state']) {
-            return new Envelope($this->unknownNotice($record));
-        }
-        if ('ResultReady' === $record['state']) {
-            return new Envelope($this->reference($record));
-        }
-        $stamp = new ExecutionAuthorizationStamp($record['effect_id'], $record['request_hash']);
-        $request = new ExecutionRequest($record['run_id'], (int) $record['turn_no'], $record['step_id'], (int) $record['attempt'], $record['idempotency_key'], $record['effect_id'], $record['request_type'], $record['request_hash'], (int) $record['request_bytes']);
-
-        return new Envelope($request, [$stamp]);
-    }
-
     public function claim(ExecutionRequest $request, ExecutionAuthorizationStamp $authorization): string|DurableExecutionResult|null
     {
         return $this->runLocks->synchronized($request->runId(), fn (): string|DurableExecutionResult|null => $this->claimUnderRunLock($request, $authorization));
@@ -583,6 +562,27 @@ final readonly class DoctrineExecutionOperationStore implements ExecutionOperati
                 }
             }
         }
+    }
+
+    /** @param array<string, mixed> $record */
+    private function deliveryEnvelope(array $record): ?Envelope
+    {
+        if ('Running' === $record['state'] || 'Deferred' === $record['state']) {
+            $record = $this->recoverClaim($record);
+        }
+        if ('Running' === $record['state'] || 'Deferred' === $record['state']) {
+            return null;
+        }
+        if ('OutcomeUnknown' === $record['state']) {
+            return new Envelope($this->unknownNotice($record));
+        }
+        if ('ResultReady' === $record['state']) {
+            return new Envelope($this->reference($record));
+        }
+        $stamp = new ExecutionAuthorizationStamp($record['effect_id'], $record['request_hash']);
+        $request = new ExecutionRequest($record['run_id'], (int) $record['turn_no'], $record['step_id'], (int) $record['attempt'], $record['idempotency_key'], $record['effect_id'], $record['request_type'], $record['request_hash'], (int) $record['request_bytes']);
+
+        return new Envelope($request, [$stamp]);
     }
 
     /** @return list<AbstractAgentBusMessage> */

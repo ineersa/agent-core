@@ -25,7 +25,6 @@ use Ineersa\AgentCore\Domain\Message\StartRunPayload;
 use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
 use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
@@ -241,8 +240,20 @@ final class WorkerFailedEventSubscriberTest extends IsolatedKernelTestCase
         $active = self::getContainer()->get(ActiveRunContextInterface::class);
         $active->loadRecovered(new RunState($runId, RunStatus::Running, version: 3, turnNo: 2, model: 'test-model'));
         $batches = self::getContainer()->get(ToolBatchStoreInterface::class);
-        $batches->save($runId, 1, 'older', new ToolBatchStateDTO([], [], [], [], [], false, 2));
-        $batches->save($runId, 2, 'current', new ToolBatchStateDTO([], [], [], [], [], false, 2));
+        $seed = static function (ToolBatchStoreInterface $batches, string $runId, int $turnNo, string $stepId): void {
+            $register = new \Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO($runId, $turnNo, $stepId, [], [], [], [], 2);
+            $batches->registerPrepared(
+                $register,
+                new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(\Symfony\Component\Uid\Uuid::v7()->toRfc4122(), ['run_id' => $runId, 'actions' => []]),
+            );
+            $finalize = new \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO($runId, $turnNo, $stepId, pendingQueue: [], inFlight: [], awaitingHumanInput: [], finalized: true);
+            $batches->applyPrepared(
+                $finalize,
+                new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(\Symfony\Component\Uid\Uuid::v7()->toRfc4122(), ['run_id' => $runId, 'actions' => [$finalize]]),
+            );
+        };
+        $seed($batches, $runId, 1, 'older');
+        $seed($batches, $runId, 2, 'current');
         $inputs = self::getContainer()->get(ToolLaunchInputStoreInterface::class);
         $reference = $inputs->publish('fork', $runId, 2, 'current', 'call', 'test-model', '',
             [new AgentMessage('user', [['type' => 'text', 'text' => 'context']])]);
@@ -356,29 +367,29 @@ final class WorkerFailedEventSubscriberTest extends IsolatedKernelTestCase
         $active->loadRecovered(RunState::queued(self::RUN_ID));
         $collector = new ToolBatchCollector($store = new TestToolBatchStore());
         $request = new ExecuteToolCall(self::RUN_ID, 1, 'step', 1, 'identity', 'call', 'read', [], 0);
-        $reference = \WeakReference::create($request);
         TestToolBatchRegistration::register($collector, $store, self::RUN_ID, 1, 'step', [$request]);
-        unset($request);
-        $this->assertNotNull($reference->get());
+        $this->assertNotNull($store->load(self::RUN_ID, 1, 'step'));
         $hook = $this->createMock(HookSubscriberInterface::class);
-        $hook->expects($this->once())->method('handleAfterTurnCommit')->willReturnCallback(function (AfterTurnCommitHookContext $context) use ($reference, $active): AfterTurnCommitHookContext {
-            $this->assertNull($reference->get());
+        $hook->expects($this->once())->method('handleAfterTurnCommit')->willReturnCallback(function (AfterTurnCommitHookContext $context) use ($store, $active): AfterTurnCommitHookContext {
+            $this->assertNotNull($store->load(self::RUN_ID, 1, 'step'));
             $this->assertSame(RunStatus::Failed, $active->requireLoaded(self::RUN_ID)->status);
             $this->assertSame(1, $context->events[0]->seq);
             throw new \RuntimeException('cleanup unavailable');
         });
-        $store = $this->createMock(PreparedTransitionEventStoreInterface::class);
-        $store->expects($this->once())->method('appendTransition')->willReturnCallback(static fn (array $events): array => [new RunEvent($events[0]->runId, 1, $events[0]->turnNo, $events[0]->type, $events[0]->payload)]);
+        $batches = $store;
+        $eventStore = $this->createMock(PreparedTransitionEventStoreInterface::class);
+        $eventStore->expects($this->once())->method('appendTransition')->willReturnCallback(static fn (array $events): array => [new RunEvent($events[0]->runId, 1, $events[0]->turnNo, $events[0]->type, $events[0]->payload)]);
         $logger = new TestLogger();
         $bus = new TestMessageBus();
         $commit = new RunCommit(
             activeRunContext: $active,
-            eventStore: $store,
+            eventStore: $eventStore,
             logger: $logger,
             executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
             sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
             hookDispatcher: new HookDispatcher([$hook]),
-            finalizer: TestTransitionFinalizerFactory::create($store, new StepDispatcher($bus, $bus)));
+            finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher($bus), batches: $batches),
+        );
         $subscriber = new WorkerFailedEventSubscriber($active, $commit, new RunLockManager(new LockFactory(new InMemoryStore())), $logger);
         $event = $this->createFinalFailedEvent(new \RuntimeException('handler failed'));
         $subscriber->onWorkerMessageFailed($event);
@@ -415,7 +426,8 @@ final class WorkerFailedEventSubscriberTest extends IsolatedKernelTestCase
             executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
             sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
             hookDispatcher: new HookDispatcher([$auto, $cleanup]),
-            finalizer: TestTransitionFinalizerFactory::create($store, new StepDispatcher($bus, $bus)));
+            finalizer: TestTransitionFinalizerFactory::create($store, new StepDispatcher($bus)),
+        );
         $subscriber = new WorkerFailedEventSubscriber($active, $commit, $container->get(RunLockManager::class), new NullLogger());
         $subscriber->onWorkerMessageFailed(new WorkerMessageFailedEvent(new Envelope(new StartRun($run, 0, 'failed-start', 1, 'failed-start', new StartRunPayload('', [], new RunMetadata(model: 'test-model')))), 'run_control', new \RuntimeException('permanent failure')));
         $this->assertSame(RunStatus::Failed, $active->requireLoaded($run)->status);
@@ -439,7 +451,8 @@ final class WorkerFailedEventSubscriberTest extends IsolatedKernelTestCase
                 logger: $logger,
                 executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
                 sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
-                finalizer: TestTransitionFinalizerFactory::create($store, new StepDispatcher($bus, $bus))),
+                finalizer: TestTransitionFinalizerFactory::create($store, new StepDispatcher($bus)),
+            ),
             $lockManager ?? new RunLockManager(new LockFactory(new InMemoryStore())), $logger);
     }
 

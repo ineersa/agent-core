@@ -143,7 +143,7 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
             executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
             sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
             hookDispatcher: new HookDispatcher([new ToolBatchSnapshotCleanupHookSubscriber($this->createStore(), new TestLogger(), $inputStore)]),
-            finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus())),
+            finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus())),
         );
         $this->expectExceptionMessage('append failed');
         $commit->commit($previous, new RunState('run-1', RunStatus::Running, version: 1, turnNo: 1, model: 'test-model'), [new RunEvent('run-1', 1, 1, RunEventTypeEnum::ToolExecutionEnd->value, ['tool_result' => ['tool_call_id' => 'fork-call']])]);
@@ -162,9 +162,7 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
                 $batch->inFlight,
                 $batch->maxParallelism,
             ),
-            new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(
-                \Symfony\Component\Uid\Uuid::v7()->toRfc4122(),
-                0,
+            new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(\Symfony\Component\Uid\Uuid::v7()->toRfc4122(),
                 ['run_id' => $runId, 'actions' => []],
             ),
         );
@@ -179,9 +177,7 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
                     $batch->awaitingHumanInput,
                     $batch->finalized,
                 ),
-                new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(
-                    \Symfony\Component\Uid\Uuid::v7()->toRfc4122(),
-                    0,
+                new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(\Symfony\Component\Uid\Uuid::v7()->toRfc4122(),
                     ['run_id' => $runId, 'actions' => [new \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO(
                         $runId,
                         $turnNo,
@@ -215,7 +211,7 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
             executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
             sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
             hookDispatcher: $hookDispatcher,
-            finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus())),
+            finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus())),
         );
     }
 }
@@ -234,7 +230,6 @@ final class CleanupHookSubscriberNoOpEventStore implements PreparedTransitionEve
         $this->assertTransitionReady($runId);
         $this->pending[$runId] = new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(
             hash('sha256', serialize([$work, $events])),
-            0,
             $work,
             array_map(static fn (RunEvent $event): int => $event->seq, $events),
         );

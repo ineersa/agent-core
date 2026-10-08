@@ -235,8 +235,6 @@ final class ExecutionPendingDeliverySubscriberTest extends IsolatedKernelTestCas
             $publication,
             $container->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class),
             $container->get(\Doctrine\DBAL\Connection::class),
-            $command,
-            $execution,
             $run,
             new TestLogger(),
         );

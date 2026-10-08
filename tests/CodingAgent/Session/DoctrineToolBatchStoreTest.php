@@ -14,6 +14,7 @@ use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Coordination\EnqueueCommandDTO;
 use Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO;
 use Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO;
+use Ineersa\AgentCore\Domain\Coordination\TransitionPlan;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ExecutionRequest;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
@@ -50,7 +51,8 @@ final class DoctrineToolBatchStoreTest extends IsolatedKernelTestCase
         $pending = $events->verifiedPendingTransition($run);
         $this->assertNotNull($pending);
 
-        [$deliveries] = $coordinator->apply($pending, [$register, $mailbox]);
+        $coordinator->apply($this->plan($run, $pending, [$register, $mailbox]));
+        $deliveries = $batches->admittedCalls($run, 1, 'tools');
         $events->finalizeVerifiedTransition($run, $pending->identity);
 
         $schedule = $batches->load($run, 1, 'tools');
@@ -132,9 +134,10 @@ final class DoctrineToolBatchStoreTest extends IsolatedKernelTestCase
             $failingCommands,
             $operations,
             new SourceAcceptance($failingCommands),
+            $container->get(\Ineersa\AgentCore\Application\Pipeline\DurablePendingPublication::class),
         );
         try {
-            $rollbackCoordinator->apply($rollbackPending, [$rollbackRegister, $rollbackMailbox]);
+            $rollbackCoordinator->apply($this->plan($rollbackRun, $rollbackPending, [$rollbackRegister, $rollbackMailbox]));
             $this->fail('Mailbox failure must roll back local metadata.');
         } catch (\RuntimeException $exception) {
             $this->assertSame('Injected mailbox failure.', $exception->getMessage());
@@ -144,7 +147,8 @@ final class DoctrineToolBatchStoreTest extends IsolatedKernelTestCase
         $this->assertSame(2, (int) $connection->fetchOne('SELECT COUNT(*) FROM execution_operation WHERE run_id = ? AND state = ?', [$rollbackRun, 'Prepared']));
         $this->assertFalse($commands->has($rollbackRun, 'mailbox-roll'));
         $this->assertFalse($commands->has($rollbackRun, $this->acceptedSourceKey($rollbackSource)));
-        [$replayDeliveries] = $coordinator->apply($rollbackPending, [$rollbackRegister, $rollbackMailbox]);
+        $coordinator->apply($this->plan($rollbackRun, $rollbackPending, [$rollbackRegister, $rollbackMailbox]));
+        $replayDeliveries = $batches->admittedCalls($rollbackRun, 1, 'tools');
         $events->finalizeVerifiedTransition($rollbackRun, $rollbackPending->identity);
         $this->assertCount(1, $replayDeliveries);
         $this->assertSame('roll-a', $replayDeliveries[0]->idempotencyKey());
@@ -160,17 +164,18 @@ final class DoctrineToolBatchStoreTest extends IsolatedKernelTestCase
         ]);
         $free = $events->verifiedPendingTransition($run);
         $this->assertNotNull($free);
-        [$freed] = $coordinator->apply($free, [$complete]);
+        $coordinator->apply($this->plan($run, $free, [$complete]));
+        $freed = $batches->admittedCalls($run, 1, 'tools');
         $events->finalizeVerifiedTransition($run, $free->identity);
         $this->assertCount(1, $freed);
         $this->assertSame('key-b', $freed[0]->idempotencyKey());
         $this->assertSame('Armed', $connection->fetchOne('SELECT state FROM execution_operation WHERE idempotency_key = ?', ['key-b']));
-        $this->assertEquals($second, $operations->peekRequest($freed[0]));
+        $this->assertEquals($second, $operations->peekRequest(new ExecutionRequest($run, 1, 'tools', 1, 'key-b', $secondEffect, ExecuteToolCall::class, $secondHash, (int) $connection->fetchOne('SELECT request_bytes FROM execution_operation WHERE idempotency_key = ?', ['key-b']))));
         $this->assertArrayHasKey($secondEffect, $container->get(DoctrineExecutionOperationStore::class)->pendingDeliveries($run, ''));
 
         // Producer-shaped postCommitEffects can include an already-frozen Running
         // sibling. Prepare stays idempotent; arm activates only Prepared permission.
-        $claim = $operations->claim($freed[0], new \Ineersa\AgentCore\Domain\Coordination\ExecutionAuthorizationStamp($secondEffect, $secondHash));
+        $claim = $operations->claim(new ExecutionRequest($run, 1, 'tools', 1, 'key-b', $secondEffect, ExecuteToolCall::class, $secondHash, (int) $connection->fetchOne('SELECT request_bytes FROM execution_operation WHERE idempotency_key = ?', ['key-b'])), new \Ineersa\AgentCore\Domain\Coordination\ExecutionAuthorizationStamp($secondEffect, $secondHash));
         $this->assertIsString($claim);
         $this->assertSame('Running', $connection->fetchOne('SELECT state FROM execution_operation WHERE effect_id = ?', [$secondEffect]));
         $sealCountBefore = (int) $connection->fetchOne('SELECT COUNT(*) FROM execution_operation WHERE run_id = ?', [$run]);
@@ -227,7 +232,8 @@ final class DoctrineToolBatchStoreTest extends IsolatedKernelTestCase
         ]);
         $admitPending = $events->verifiedPendingTransition($run);
         $this->assertNotNull($admitPending);
-        [$admitted] = $coordinator->apply($admitPending, [$admitC], [$second]);
+        $coordinator->apply($this->plan($run, $admitPending, [$admitC], [$second]));
+        $admitted = array_values(array_filter($batches->admittedCalls($run, 1, 'tools'), static fn ($c) => 'key-c' === $c->idempotencyKey()));
         $events->finalizeVerifiedTransition($run, $admitPending->identity);
         $this->assertCount(1, $admitted);
         $this->assertSame('key-c', $admitted[0]->idempotencyKey());
@@ -252,7 +258,7 @@ final class DoctrineToolBatchStoreTest extends IsolatedKernelTestCase
         ]);
         $consumePending = $events->verifiedPendingTransition($run);
         $this->assertNotNull($consumePending);
-        $coordinator->apply($consumePending, [$consumeAction], [], $descriptor);
+        $coordinator->apply($this->plan($run, $consumePending, [$consumeAction], [], $descriptor));
         $events->finalizeVerifiedTransition($run, $consumePending->identity);
         $payloadDir = \dirname($container->get(\Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface::class)->resolveToolBatchesDirectory($run)).'/execution-operations/'.$secondEffect;
         $this->assertDirectoryExists($payloadDir);
@@ -268,11 +274,21 @@ final class DoctrineToolBatchStoreTest extends IsolatedKernelTestCase
         ]);
         $cancelPending = $events->verifiedPendingTransition($run);
         $this->assertNotNull($cancelPending);
-        $coordinator->apply($cancelPending, [$cancel]);
+        $coordinator->apply($this->plan($run, $cancelPending, [$cancel]));
         $events->finalizeVerifiedTransition($run, $cancelPending->identity);
         $this->assertSame('Stale', $connection->fetchOne('SELECT state FROM execution_operation WHERE effect_id = ?', [$thirdEffect]));
-        $this->assertNull($operations->claim($admitted[0], new \Ineersa\AgentCore\Domain\Coordination\ExecutionAuthorizationStamp($thirdEffect, (string) $connection->fetchOne('SELECT request_hash FROM execution_operation WHERE effect_id = ?', [$thirdEffect]))));
+        $thirdHash = (string) $connection->fetchOne('SELECT request_hash FROM execution_operation WHERE effect_id = ?', [$thirdEffect]);
+        $this->assertNull($operations->claim(new ExecutionRequest($run, 1, 'tools', 1, 'key-c', $thirdEffect, ExecuteToolCall::class, $thirdHash, (int) $connection->fetchOne('SELECT request_bytes FROM execution_operation WHERE effect_id = ?', [$thirdEffect])), new \Ineersa\AgentCore\Domain\Coordination\ExecutionAuthorizationStamp($thirdEffect, $thirdHash)));
         $this->assertSame('Consumed', $connection->fetchOne('SELECT state FROM execution_operation WHERE effect_id = ?', [$secondEffect]));
+    }
+
+    /**
+     * @param list<object> $actions
+     * @param list<object> $effects
+     */
+    private function plan(string $runId, object $pending, array $actions, array $effects = [], ?\Ineersa\AgentCore\Domain\Coordination\ExecutionResultDispositionDTO $disposition = null): TransitionPlan
+    {
+        return new TransitionPlan($runId, $pending, $actions, [], [], array_values(array_filter($effects, static fn ($e) => $e instanceof \Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage)), $disposition);
     }
 
     /** @param array<string, int|string> $source */

@@ -223,6 +223,16 @@ final class ToolBatchCollectorDurableTest extends TestCase
             {
                 return $this->inner->admittedCalls($runId, $turnNo, $stepId);
             }
+
+            public function admittedCall(string $runId, int $turnNo, string $stepId, string $toolCallId): ?ExecuteToolCall
+            {
+                return $this->inner->admittedCall($runId, $turnNo, $stepId, $toolCallId);
+            }
+
+            public function isAdmissiblePermission(ExecuteToolCall $call): bool
+            {
+                return $this->inner->isAdmissiblePermission($call);
+            }
         };
 
         $collector = new ToolBatchCollector($store, 4);

@@ -47,7 +47,6 @@ final class InMemoryEventStore implements PreparedTransitionEventStoreInterface
         }
         $this->pending[$runId] = new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(
             hash('sha256', serialize([$work, $persisted])),
-            0,
             $work,
             array_map(static fn (RunEvent $event): int => $event->seq, $persisted),
         );

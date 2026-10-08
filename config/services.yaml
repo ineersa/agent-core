@@ -743,13 +743,8 @@ services:
     alias: Ineersa\CodingAgent\Compaction\ModelSelectionActiveModelResolver
 
 
-  Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler:
-    arguments:
-      $commandBus: '@agent.command.bus'
-
   Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler:
     arguments:
-      $commandBus: '@agent.command.bus'
       $serializer: '@serializer'
 
   Ineersa\AgentCore\Application\Pipeline\LlmStepResultHandler:
@@ -1043,7 +1038,7 @@ services:
 
   Ineersa\AgentCore\Application\Handler\StepDispatcher:
     arguments:
-      $executionBus: '@agent.execution.bus'
+      $commandBus: '@agent.command.bus'
 
   Ineersa\AgentCore\Application\Pipeline\TransitionFinalizer:
     arguments:
@@ -1246,10 +1241,6 @@ services:
       $commandBus: '@agent.command.bus'
 
   Ineersa\CodingAgent\Runtime\Controller\CommandHandler\RepairHandler:
-    arguments:
-      $commandBus: '@agent.command.bus'
-
-  Ineersa\AgentCore\Application\Handler\CoordinationActionHandler:
     arguments:
       $commandBus: '@agent.command.bus'
 

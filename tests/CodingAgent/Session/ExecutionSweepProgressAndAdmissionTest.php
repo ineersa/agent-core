@@ -49,7 +49,9 @@ final class ExecutionSweepProgressAndAdmissionTest extends IsolatedKernelTestCas
         $events->appendTransition([], ['run_id' => $run, 'predecessor_seq' => 0, 'effects' => [$first, $second]]);
         $pending = $events->verifiedPendingTransition($run);
         $this->assertNotNull($pending);
+        $operations->prepare($first, $pending);
         $firstAuth = $operations->arm($first, $pending);
+        $operations->prepare($second, $pending);
         $secondAuth = $operations->arm($second, $pending);
         $events->finalizeVerifiedTransition($run, $pending->identity);
         $ordered = [$firstAuth->effectId, $secondAuth->effectId];
@@ -80,7 +82,16 @@ final class ExecutionSweepProgressAndAdmissionTest extends IsolatedKernelTestCas
             $container->get(\Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface::class),
             $logger,
         );
-        $subscriber = new ExecutionPendingDeliverySubscriber($store, $events, self::getContainer()->get(\Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery::class), self::getContainer()->get(\Ineersa\AgentCore\Application\Pipeline\DurablePendingPublication::class), self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class), self::getContainer()->get(\Doctrine\DBAL\Connection::class), $command, $execution, $run, new TestLogger());
+        $publication = new \Ineersa\AgentCore\Application\Pipeline\DurablePendingPublication(
+            $events,
+            $store,
+            self::getContainer()->get(\Ineersa\AgentCore\Contract\ControlMessageOutboxInterface::class),
+            self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class),
+            $command,
+            $execution,
+            $logger,
+        );
+        $subscriber = new ExecutionPendingDeliverySubscriber($store, $events, self::getContainer()->get(\Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery::class), $publication, self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class), self::getContainer()->get(\Doctrine\DBAL\Connection::class), $run, $logger);
         $subscriber->onStarted(new WorkerStartedEvent(new Worker(['run_control' => new InMemoryTransport()], new TestMessageBus())));
         $this->assertCount(1, $execution->messages);
         $message = $execution->messages[0]->getMessage();
@@ -139,6 +150,7 @@ final class ExecutionSweepProgressAndAdmissionTest extends IsolatedKernelTestCas
         $events->appendTransition([], ['run_id' => $parent, 'predecessor_seq' => 0, 'effects' => [$parentRequest]]);
         $parentPending = $events->verifiedPendingTransition($parent);
         $this->assertNotNull($parentPending);
+        $operations->prepare($parentRequest, $parentPending);
         $parentAuth = $operations->arm($parentRequest, $parentPending);
         $events->finalizeVerifiedTransition($parent, $parentPending->identity);
         $parentDelivery = $operations->requestReference($parentRequest, $parentAuth);
@@ -156,6 +168,7 @@ final class ExecutionSweepProgressAndAdmissionTest extends IsolatedKernelTestCas
         $events->appendTransition([], ['run_id' => $child, 'predecessor_seq' => 0, 'effects' => [$childRequest]]);
         $childPending = $events->verifiedPendingTransition($child);
         $this->assertNotNull($childPending);
+        $operations->prepare($childRequest, $childPending);
         $childAuth = $operations->arm($childRequest, $childPending);
         $events->finalizeVerifiedTransition($child, $childPending->identity);
         $childDelivery = $operations->requestReference($childRequest, $childAuth);
@@ -212,7 +225,7 @@ final class ExecutionSweepProgressAndAdmissionTest extends IsolatedKernelTestCas
             logger: new TestLogger(),
             executionOperations: $operations,
             sourceAcceptance: new SourceAcceptance(new InMemoryCommandStore()),
-            finalizer: TestTransitionFinalizerFactory::create($store, new StepDispatcher($bus, $bus)),
+            finalizer: TestTransitionFinalizerFactory::create($store, new StepDispatcher($bus)),
         );
         try {
             $commit->commit($previous, $previous, [$event], [$oversized], dispatchAfterTurnHooks: false);

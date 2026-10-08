@@ -76,8 +76,8 @@ final class DeferredAfterTurnCoordinationHandlerTest extends IsolatedKernelTestC
         $message = new ObserveDeferredSubagentBatchChildTurnMessage('batch', 1, $run, RunStatus::Completed, 1, [new AfterTurnCommitEventSummary(0, 'agent_end', ['status' => 'completed'])]);
         $action = match ($kind) {
             'parent cancellation' => new DeferredAfterTurnCoordinationDTO($run, 0, new \Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Interruption\InterruptDeferredSubagentBatchMessage('batch', \Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum::ParentCancelled)),
-            'automatic compaction' => new \Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO(new \Ineersa\AgentCore\Domain\Message\CompactRun($run, 1, 'compact-prepared', 1, 'prepared-key', trigger: 'auto'), 'delivery failed'),
-            'context reminder' => new \Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO(new \Ineersa\AgentCore\Domain\Message\ApplyCommand($run, 0, \Symfony\Component\Uid\Uuid::v7()->toRfc4122(), 1, 'prepared-reminder-key', \Ineersa\AgentCore\Domain\Command\CoreCommandKind::AppendMessage, ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'prepared reminder']], 'metadata' => ['system_reminder' => true]]]), 'delivery failed'),
+            'automatic compaction' => new \Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO(new \Ineersa\AgentCore\Domain\Message\CompactRun($run, 1, 'compact-prepared', 1, 'prepared-key', trigger: 'auto')),
+            'context reminder' => new \Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO(new \Ineersa\AgentCore\Domain\Message\ApplyCommand($run, 0, \Symfony\Component\Uid\Uuid::v7()->toRfc4122(), 1, 'prepared-reminder-key', \Ineersa\AgentCore\Domain\Command\CoreCommandKind::AppendMessage, ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'prepared reminder']], 'metadata' => ['system_reminder' => true]]])),
             default => new DeferredAfterTurnCoordinationDTO($run, 0, $message),
         };
         $sender = new class($accepted) implements MessageBusInterface {
@@ -101,11 +101,9 @@ final class DeferredAfterTurnCoordinationHandlerTest extends IsolatedKernelTestC
             }
         };
         $handler = new DeferredAfterTurnCoordinationHandler($store, $sender);
-        $coreHandler = new \Ineersa\AgentCore\Application\Handler\CoordinationActionHandler($sender);
-        $bus = new class($handler, $coreHandler, $sender) implements MessageBusInterface {
+        $bus = new class($handler, $sender) implements MessageBusInterface {
             public function __construct(
                 private DeferredAfterTurnCoordinationHandler $handler,
-                private \Ineersa\AgentCore\Application\Handler\CoordinationActionHandler $coreHandler,
                 private MessageBusInterface $sender,
             ) {
             }
@@ -113,7 +111,7 @@ final class DeferredAfterTurnCoordinationHandlerTest extends IsolatedKernelTestC
             public function dispatch(object $message, array $stamps = []): Envelope
             {
                 if ($message instanceof \Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO) {
-                    $this->coreHandler->dispatchMessage($message);
+                    $this->sender->dispatch($message->message, $stamps);
                 } elseif ($message instanceof DeferredAfterTurnCoordinationDTO) {
                     ($this->handler)($message);
                 } else {
@@ -151,7 +149,7 @@ final class DeferredAfterTurnCoordinationHandlerTest extends IsolatedKernelTestC
         $registry = $container->get(ActiveRunContextInterface::class);
         $previous = \Ineersa\AgentCore\Domain\Run\RunState::queued($run);
         $registry->loadRecovered($previous);
-        $dispatcher = new StepDispatcher($bus, $container->get('agent.execution.bus'));
+        $dispatcher = new StepDispatcher($bus);
         $controlOutbox = $container->get(\Ineersa\AgentCore\Contract\ControlMessageOutboxInterface::class);
         $finalizer = TestTransitionFinalizerFactory::create(
             $store,
@@ -232,7 +230,7 @@ final class DeferredAfterTurnCoordinationHandlerTest extends IsolatedKernelTestC
             $acceptance,
             TestTransitionFinalizerFactory::create(
                 $store,
-                new StepDispatcher($bus, $container->get('agent.execution.bus')),
+                new StepDispatcher($bus),
                 operations: $container->get(ExecutionOperationStoreInterface::class),
                 batches: $container->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
                 commands: $container->get(\Ineersa\AgentCore\Contract\CommandStoreInterface::class),

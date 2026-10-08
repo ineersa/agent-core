@@ -571,7 +571,7 @@ final class SessionRepairExecutionRecoveryTest extends PerMethodIsolatedKernelTe
             };
             $finalizer = TestTransitionFinalizerFactory::create(
                 $journal,
-                new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), new \Ineersa\AgentCore\Tests\Support\TestMessageBus()),
+                new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new \Ineersa\AgentCore\Tests\Support\TestMessageBus()),
                 operations: $operations,
                 batches: $c->get(ToolBatchStoreInterface::class),
                 commands: $c->get(CommandStoreInterface::class),

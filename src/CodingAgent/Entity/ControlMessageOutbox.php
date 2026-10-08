@@ -14,7 +14,6 @@ use Doctrine\ORM\Mapping as ORM;
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'control_message_outbox')]
-#[ORM\Index(name: 'idx_control_message_outbox_run', columns: ['run_id'])]
 class ControlMessageOutbox
 {
     #[ORM\Id]

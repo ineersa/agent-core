@@ -36,13 +36,9 @@ final class DoctrineToolBatchStore implements ToolBatchStoreInterface
 
     public function load(string $runId, int $turnNo, string $stepId): ?ToolBatchStateDTO
     {
-        $this->sanitizeRunId($runId);
-        $record = $this->connection->fetchAssociative(
-            'SELECT * FROM tool_batch_schedule WHERE run_id = ? AND turn_no = ? AND step_id = ?',
-            [$runId, $turnNo, $stepId],
-        );
+        $record = $this->scheduleRecord($runId, $turnNo, $stepId);
 
-        return false === $record ? null : $this->hydrate($record);
+        return null === $record ? null : $this->hydrate($record);
     }
 
     public function delete(string $runId, int $turnNo, string $stepId): void
@@ -59,7 +55,7 @@ final class DoctrineToolBatchStore implements ToolBatchStoreInterface
         $this->sanitizeRunId($runId);
         $this->connection->executeStatement(
             'DELETE FROM tool_batch_schedule WHERE run_id = ? AND finalized = 1 AND awaiting_human_input_json = ? AND pending_queue_json = ? AND in_flight_json = ?',
-            [$runId, '{}', '[]', '[]'],
+            [$runId, '[]', '[]', '[]'],
         );
     }
 
@@ -114,32 +110,55 @@ final class DoctrineToolBatchStore implements ToolBatchStoreInterface
         if ($this->appliedTransition($action->runId, $action->turnNo, $action->stepId) === $transition->identity) {
             return;
         }
-        $batch = $this->load($action->runId, $action->turnNo, $action->stepId);
-        if (null === $batch) {
+        $record = $this->scheduleRecord($action->runId, $action->turnNo, $action->stepId);
+        if (null === $record) {
             throw new \RuntimeException('Prepared batch evidence is missing.');
         }
-        $refs = $this->referencesFromBatch($action->runId, $action->turnNo, $action->stepId, $batch);
-        $next = clone $batch;
-        $next->pendingQueue = $action->pendingQueue;
-        $next->inFlight = $action->inFlight;
-        $next->awaitingHumanInput = $action->awaitingHumanInput;
-        $next->finalized = $action->finalized;
+        $refs = [
+            'calls' => $this->jsonDecodeObject($record['calls_json']),
+            'results' => $this->jsonDecodeObject($record['results_json']),
+        ];
         if (null !== $action->result) {
-            $next->results[$action->result->toolCallId] = $action->result;
             $refs['results'][$action->result->toolCallId] = $this->resultReference($action->result);
         }
         if (null !== $action->revisedCallId) {
-            $existing = $next->calls[$action->revisedCallId] ?? null;
-            if (!$existing instanceof ExecuteToolCall) {
+            $existingRef = $refs['calls'][$action->revisedCallId] ?? null;
+            if (!\is_array($existingRef)) {
                 throw new \RuntimeException('Prepared batch revision has no stored invocation.');
             }
-            $revised = null === $action->answer
-                ? $existing->withHumanInputAnswer(null)
-                : $existing->withAuthorizedHumanAnswer($action->answer);
-            $next->calls[$action->revisedCallId] = $revised;
-            $refs['calls'][$action->revisedCallId] = $this->callReference($revised, $transition);
+            // Prefer the already-prepared revised identity when present; otherwise keep
+            // the stored scalar ref. Never hydrate sealed bodies inside this write.
+            if (null !== $action->answer) {
+                $row = $this->connection->fetchAssociative(
+                    'SELECT effect_id, request_hash, attempt, idempotency_key FROM execution_operation WHERE run_id = ? AND turn_no = ? AND step_id = ? AND logical_tool_call_id = ? AND request_type = ? ORDER BY attempt DESC, effect_id DESC LIMIT 1',
+                    [$action->runId, $action->turnNo, $action->stepId, $action->revisedCallId, ExecuteToolCall::class],
+                );
+                if (false === $row) {
+                    throw new \RuntimeException('Prepared batch revision has no durable ledger reference.');
+                }
+                $refs['calls'][$action->revisedCallId] = [
+                    'attempt' => (int) $row['attempt'],
+                    'idempotency_key' => (string) $row['idempotency_key'],
+                    'effect_id' => (string) $row['effect_id'],
+                    'request_hash' => (string) $row['request_hash'],
+                ];
+            } else {
+                $refs['calls'][$action->revisedCallId] = $existingRef;
+            }
         }
-        $this->upsert($action->runId, $action->turnNo, $action->stepId, $next, $refs, $transition->identity);
+        $this->upsertSchedule(
+            $action->runId,
+            $action->turnNo,
+            $action->stepId,
+            max(1, (int) $record['max_parallelism']),
+            $action->finalized,
+            $this->jsonDecodeObject($record['expected_order_json']),
+            $action->pendingQueue,
+            $action->inFlight,
+            $action->awaitingHumanInput,
+            $refs,
+            $transition->identity,
+        );
     }
 
     public function registerPrepared(RegisterToolBatchDTO $action, VerifiedTransitionDTO $transition): void
@@ -151,47 +170,71 @@ final class DoctrineToolBatchStore implements ToolBatchStoreInterface
         if ($this->appliedTransition($action->runId, $action->turnNo, $action->stepId) === $transition->identity) {
             return;
         }
-        $effects = $action->effects;
-        $callsById = [];
         $callRefs = [];
-        foreach ($effects as $toolCall) {
-            $callsById[$toolCall->toolCallId] = $toolCall;
+        foreach ($action->effects as $toolCall) {
             $callRefs[$toolCall->toolCallId] = $this->callReference($toolCall, $transition);
         }
-        $existing = $this->load($action->runId, $action->turnNo, $action->stepId);
+        $existing = $this->scheduleRecord($action->runId, $action->turnNo, $action->stepId);
         if (null !== $existing) {
-            if ($existing->expectedOrder !== $action->expectedOrder
-                || $existing->pendingQueue !== $action->pendingQueue
-                || $existing->inFlight !== $action->inFlight
-                || $existing->maxParallelism !== $action->maxParallelism) {
+            $existingCalls = $this->jsonDecodeObject($existing['calls_json']);
+            $existingPending = $this->jsonDecodeList($existing['pending_queue_json']);
+            $existingInFlightIds = $this->jsonDecodeList($existing['in_flight_json']);
+            $existingInFlight = [];
+            foreach ($existingInFlightIds as $id) {
+                $existingInFlight[$id] = true;
+            }
+            $existingOrder = $this->jsonDecodeObject($existing['expected_order_json']);
+            if ($existingOrder !== $action->expectedOrder
+                || $existingPending !== $action->pendingQueue
+                || $existingInFlight !== $action->inFlight
+                || max(1, (int) $existing['max_parallelism']) !== max(1, $action->maxParallelism)) {
                 throw new \LogicException('Conflicting prepared tool batch membership.');
             }
-            foreach ($callsById as $id => $call) {
-                $stored = $existing->calls[$id] ?? null;
-                if (null === $stored || $stored->runId() !== $call->runId() || $stored->turnNo() !== $call->turnNo()
-                    || $stored->stepId() !== $call->stepId() || $stored->idempotencyKey() !== $call->idempotencyKey()
-                    || $stored->toolName !== $call->toolName || $stored->args !== $call->args || (array) $stored->launchContext !== (array) $call->launchContext) {
+            foreach ($callRefs as $id => $ref) {
+                $stored = $existingCalls[$id] ?? null;
+                if (!\is_array($stored)
+                    || (int) ($stored['attempt'] ?? -1) !== (int) $ref['attempt']
+                    || (string) ($stored['idempotency_key'] ?? '') !== (string) $ref['idempotency_key']
+                    || (string) ($stored['effect_id'] ?? '') !== (string) $ref['effect_id']
+                    || (string) ($stored['request_hash'] ?? '') !== (string) $ref['request_hash']) {
                     throw new \LogicException('Conflicting prepared tool batch invocation.');
                 }
             }
-            $this->upsert($action->runId, $action->turnNo, $action->stepId, $existing, $this->referencesFromBatch($action->runId, $action->turnNo, $action->stepId, $existing), $transition->identity);
+            $this->upsertSchedule(
+                $action->runId,
+                $action->turnNo,
+                $action->stepId,
+                max(1, (int) $existing['max_parallelism']),
+                (bool) $existing['finalized'],
+                $existingOrder,
+                $existingPending,
+                $existingInFlight,
+                $this->jsonDecodeObject($existing['awaiting_human_input_json']),
+                [
+                    'calls' => $existingCalls,
+                    'results' => $this->jsonDecodeObject($existing['results_json']),
+                ],
+                $transition->identity,
+            );
 
             return;
         }
-        $batch = new ToolBatchStateDTO(
-            expectedOrder: $action->expectedOrder,
-            calls: $callsById,
-            pendingQueue: $action->pendingQueue,
-            inFlight: $action->inFlight,
-            results: [],
-            finalized: false,
-            maxParallelism: max(1, $action->maxParallelism),
-            awaitingHumanInput: [],
+        $this->upsertSchedule(
+            $action->runId,
+            $action->turnNo,
+            $action->stepId,
+            max(1, $action->maxParallelism),
+            false,
+            $action->expectedOrder,
+            $action->pendingQueue,
+            $action->inFlight,
+            [],
+            [
+                'calls' => $callRefs,
+                'results' => [],
+            ],
+            $transition->identity,
         );
-        $this->upsert($action->runId, $action->turnNo, $action->stepId, $batch, [
-            'calls' => $callRefs,
-            'results' => [],
-        ], $transition->identity);
     }
 
     /**
@@ -199,23 +242,19 @@ final class DoctrineToolBatchStore implements ToolBatchStoreInterface
      */
     public function admittedCalls(string $runId, int $turnNo, string $stepId): array
     {
-        $batch = $this->load($runId, $turnNo, $stepId);
-        if (null === $batch) {
+        $record = $this->scheduleRecord($runId, $turnNo, $stepId);
+        if (null === $record) {
             return [];
         }
+        $inFlightIds = $this->jsonDecodeList($record['in_flight_json']);
+        $resultRefs = $this->jsonDecodeObject($record['results_json']);
         $admitted = [];
-        foreach (array_keys($batch->inFlight) as $toolCallId) {
-            $call = $batch->calls[$toolCallId] ?? null;
-            if (!$call instanceof ExecuteToolCall || isset($batch->results[$toolCallId])) {
+        foreach ($inFlightIds as $toolCallId) {
+            if (isset($resultRefs[$toolCallId])) {
                 continue;
             }
-            $state = $this->connection->fetchOne(
-                'SELECT state FROM execution_operation WHERE effect_id = ?',
-                [$this->lookupCallEffectId($call)],
-            );
-            // Live/ready/terminal siblings stay owned by their claim/result. Only
-            // Prepared permissions need activation; Armed may be republished.
-            if (\in_array($state, ['Prepared', 'Armed'], true)) {
+            $call = $this->admittedCall($runId, $turnNo, $stepId, $toolCallId);
+            if ($call instanceof ExecuteToolCall && $this->isAdmissiblePermission($call)) {
                 $admitted[] = $call;
             }
         }
@@ -223,22 +262,63 @@ final class DoctrineToolBatchStore implements ToolBatchStoreInterface
         return $admitted;
     }
 
+    public function admittedCall(string $runId, int $turnNo, string $stepId, string $toolCallId): ?ExecuteToolCall
+    {
+        $record = $this->scheduleRecord($runId, $turnNo, $stepId);
+        if (null === $record) {
+            return null;
+        }
+        $ref = $this->jsonDecodeObject($record['calls_json'])[$toolCallId] ?? null;
+        if (!\is_array($ref)) {
+            return null;
+        }
+
+        return $this->resolveCall($runId, $ref);
+    }
+
+    public function isAdmissiblePermission(ExecuteToolCall $call): bool
+    {
+        $state = $this->connection->fetchOne(
+            'SELECT state FROM execution_operation WHERE effect_id = ?',
+            [$this->lookupCallEffectId($call)],
+        );
+
+        // Live/ready/terminal siblings stay owned by their claim/result. Only
+        // Prepared permissions need activation; Armed may be republished.
+        return \in_array($state, ['Prepared', 'Armed'], true);
+    }
+
     /**
      * @param array{calls: array<string, array<string, int|string>>, results: array<string, array<string, int|string>>} $refs
+     * @param array<string, int>                                                                                        $expectedOrder
+     * @param list<string>                                                                                              $pendingQueue
+     * @param array<string, true>                                                                                       $inFlight
+     * @param array<string, string>                                                                                     $awaitingHumanInput
      */
-    private function upsert(string $runId, int $turnNo, string $stepId, ToolBatchStateDTO $batch, array $refs, string $appliedTransition): void
-    {
-        $inFlight = array_keys(array_filter($batch->inFlight, static fn (mixed $value): bool => true === $value));
+    private function upsertSchedule(
+        string $runId,
+        int $turnNo,
+        string $stepId,
+        int $maxParallelism,
+        bool $finalized,
+        array $expectedOrder,
+        array $pendingQueue,
+        array $inFlight,
+        array $awaitingHumanInput,
+        array $refs,
+        string $appliedTransition,
+    ): void {
+        $inFlightIds = array_keys(array_filter($inFlight, static fn (mixed $value): bool => true === $value));
         $params = [
             'run_id' => $runId,
             'turn_no' => $turnNo,
             'step_id' => $stepId,
-            'max_parallelism' => $batch->maxParallelism,
-            'finalized' => $batch->finalized ? 1 : 0,
-            'expected_order_json' => $this->jsonEncode($batch->expectedOrder),
-            'pending_queue_json' => $this->jsonEncode(array_values($batch->pendingQueue)),
-            'in_flight_json' => $this->jsonEncode($inFlight),
-            'awaiting_human_input_json' => $this->jsonEncode($batch->awaitingHumanInput),
+            'max_parallelism' => $maxParallelism,
+            'finalized' => $finalized ? 1 : 0,
+            'expected_order_json' => $this->jsonEncode($expectedOrder),
+            'pending_queue_json' => $this->jsonEncode(array_values($pendingQueue)),
+            'in_flight_json' => $this->jsonEncode($inFlightIds),
+            'awaiting_human_input_json' => $this->jsonEncode($awaitingHumanInput),
             'calls_json' => $this->jsonEncode($refs['calls']),
             'results_json' => $this->jsonEncode($refs['results']),
             'applied_transition' => $appliedTransition,
@@ -288,8 +368,7 @@ final class DoctrineToolBatchStore implements ToolBatchStoreInterface
             if (!\is_array($ref)) {
                 throw new \RuntimeException('Tool batch result reference is invalid.');
             }
-            $resolved = $this->resolveResult((string) $record['run_id'], $ref);
-            $results[(string) $toolCallId] = $resolved;
+            $results[(string) $toolCallId] = $this->resolveResult((string) $record['run_id'], $ref);
         }
 
         return new ToolBatchStateDTO(
@@ -302,28 +381,6 @@ final class DoctrineToolBatchStore implements ToolBatchStoreInterface
             maxParallelism: max(1, (int) $record['max_parallelism']),
             awaitingHumanInput: $awaiting,
         );
-    }
-
-    /**
-     * @return array{calls: array<string, array<string, int|string>>, results: array<string, array<string, int|string>>}
-     */
-    private function referencesFromBatch(string $runId, int $turnNo, string $stepId, ToolBatchStateDTO $batch): array
-    {
-        $callRefs = [];
-        foreach ($batch->calls as $toolCallId => $call) {
-            $callRefs[$toolCallId] = [
-                'attempt' => $call->attempt(),
-                'idempotency_key' => $call->idempotencyKey(),
-                'effect_id' => $this->lookupCallEffectId($call),
-                'request_hash' => $this->lookupCallRequestHash($call),
-            ];
-        }
-        $resultRefs = [];
-        foreach ($batch->results as $toolCallId => $result) {
-            $resultRefs[$toolCallId] = $this->resultReference($result);
-        }
-
-        return ['calls' => $callRefs, 'results' => $resultRefs];
     }
 
     /** @return array<string, int|string> */
@@ -439,6 +496,18 @@ final class DoctrineToolBatchStore implements ToolBatchStoreInterface
         }
 
         return (string) $row['request_hash'];
+    }
+
+    /** @return array<string, mixed>|null */
+    private function scheduleRecord(string $runId, int $turnNo, string $stepId): ?array
+    {
+        $this->sanitizeRunId($runId);
+        $record = $this->connection->fetchAssociative(
+            'SELECT * FROM tool_batch_schedule WHERE run_id = ? AND turn_no = ? AND step_id = ?',
+            [$runId, $turnNo, $stepId],
+        );
+
+        return false === $record ? null : $record;
     }
 
     private function appliedTransition(string $runId, int $turnNo, string $stepId): string

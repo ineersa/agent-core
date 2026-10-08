@@ -15,7 +15,6 @@ use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Symfony\Component\Messenger\MessageBusInterface;
 
 final readonly class AdvanceRunHandler implements RunMessageHandler
 {
@@ -24,7 +23,6 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
         private EventFactory $eventFactory,
         private ?RunTracer $tracer = null,
         private ?PreLlmCompactionGuardInterface $preLlmCompactionGuard = null,
-        private ?MessageBusInterface $commandBus = null,
     ) {
     }
 
@@ -111,9 +109,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
             ]);
 
             $postCommitActions = [];
-            if (null !== $this->commandBus) {
-                $postCommitActions[] = AdvanceRunCoordinationFactory::create($runId, $state->turnNo, 'post-cancel-advance', 'Failed to dispatch AdvanceRun after cancellation terminalized.');
-            }
+            $postCommitActions[] = AdvanceRunCoordinationFactory::create($runId, $state->turnNo, 'post-cancel-advance');
 
             return new HandlerResult(
                 nextState: $nextState,

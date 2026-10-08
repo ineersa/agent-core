@@ -43,7 +43,6 @@ final class JsonlAppendJournalTest extends TestCase
             $verified = $journal->verifiedPending($path);
             $this->assertNotNull($verified);
             $this->assertSame([4, 8], $verified->eventSequences);
-            $this->assertSame(\strlen($predecessor), $verified->startOffset);
             $manifestBytes = file_get_contents($path.'.append.pending.json');
             $handle = fopen($path, 'r+b');
             $this->assertIsResource($handle);

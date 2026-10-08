@@ -1127,11 +1127,6 @@ final class CancellationBatchReadObservationStore implements \Ineersa\AgentCore\
         return $batch;
     }
 
-    public function save(string $runId, int $turnNo, string $stepId, \Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO $batchState): void
-    {
-        $this->inner->save($runId, $turnNo, $stepId, $batchState);
-    }
-
     public function delete(string $runId, int $turnNo, string $stepId): void
     {
         $this->inner->delete($runId, $turnNo, $stepId);
@@ -1142,19 +1137,9 @@ final class CancellationBatchReadObservationStore implements \Ineersa\AgentCore\
         return false;
     }
 
-    public function reclaimDisposedPayloads(string $runId, string $afterFilename): string
-    {
-        return $this->inner->reclaimDisposedPayloads($runId, $afterFilename);
-    }
-
     public function deleteAllForRun(string $runId): void
     {
         $this->inner->deleteAllForRun($runId);
-    }
-
-    public function mutate(string $runId, int $turnNo, string $stepId, callable $callback): mixed
-    {
-        return $this->inner->mutate($runId, $turnNo, $stepId, $callback);
     }
 
     public function applyPrepared(\Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO $action, \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO $transition): void
@@ -1170,5 +1155,15 @@ final class CancellationBatchReadObservationStore implements \Ineersa\AgentCore\
     public function admittedCalls(string $runId, int $turnNo, string $stepId): array
     {
         return $this->inner->admittedCalls($runId, $turnNo, $stepId);
+    }
+
+    public function admittedCall(string $runId, int $turnNo, string $stepId, string $toolCallId): ?ExecuteToolCall
+    {
+        return $this->inner->admittedCall($runId, $turnNo, $stepId, $toolCallId);
+    }
+
+    public function isAdmissiblePermission(ExecuteToolCall $call): bool
+    {
+        return $this->inner->isAdmissiblePermission($call);
     }
 }

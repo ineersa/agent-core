@@ -286,7 +286,7 @@ final class PendingTransitionRecoveryTest extends IsolatedKernelTestCase
             $store,
             $container->get(ActiveRunContextInterface::class),
             new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
-            TestTransitionFinalizerFactory::create($store, new StepDispatcher($bus, $bus), operations: $container->get(ExecutionOperationStoreInterface::class), batches: $container->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class), commands: $container->get(\Ineersa\AgentCore\Contract\CommandStoreInterface::class), commandBus: $bus, executionBus: $bus),
+            TestTransitionFinalizerFactory::create($store, new StepDispatcher($bus), operations: $container->get(ExecutionOperationStoreInterface::class), batches: $container->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class), commands: $container->get(\Ineersa\AgentCore\Contract\CommandStoreInterface::class), commandBus: $bus, executionBus: $bus),
             $container->get(\Ineersa\AgentCore\Application\Handler\CoordinationActionValidator::class),
         );
     }

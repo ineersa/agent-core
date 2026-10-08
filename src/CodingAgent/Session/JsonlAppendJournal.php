@@ -169,7 +169,7 @@ final readonly class JsonlAppendJournal
             throw new \RuntimeException('Invalid prepared coordination descriptor.');
         }
 
-        return new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(hash('sha256', json_encode($manifest, \JSON_THROW_ON_ERROR)), $manifest['offset'], $descriptor->work, $descriptor->work['event_sequences'] ?? []);
+        return new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(hash('sha256', json_encode($manifest, \JSON_THROW_ON_ERROR)), $descriptor->work, $descriptor->work['event_sequences'] ?? []);
     }
 
     /**

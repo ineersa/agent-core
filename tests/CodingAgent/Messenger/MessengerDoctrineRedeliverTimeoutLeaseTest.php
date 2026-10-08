@@ -238,7 +238,7 @@ final class MessengerDoctrineRedeliverTimeoutLeaseTest extends IsolatedKernelTes
                     logger: new NullLogger(),
                     executionOperations: self::getContainer()->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class),
                     sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
-                    finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher($commandBus, $executionBus), operations: self::getContainer()->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class), commandBus: $commandBus, executionBus: $executionBus),
+                    finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher($commandBus), operations: self::getContainer()->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class), commandBus: $commandBus, executionBus: $executionBus),
                     actionValidator: new \Ineersa\AgentCore\Application\Handler\CoordinationActionValidator(),
                 ),
                 deferredBatches: self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository::class),

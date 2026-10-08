@@ -39,4 +39,13 @@ interface ToolBatchStoreInterface
      * @return list<ExecuteToolCall>
      */
     public function admittedCalls(string $runId, int $turnNo, string $stepId): array;
+
+    /** Resolve one scheduled call identity without scanning the whole batch. */
+    public function admittedCall(string $runId, int $turnNo, string $stepId, string $toolCallId): ?ExecuteToolCall;
+
+    /**
+     * True when the ledger still owns a Prepared/Armed permission for this call.
+     * Live/ready/terminal siblings stay owned by their claim or result.
+     */
+    public function isAdmissiblePermission(ExecuteToolCall $call): bool;
 }

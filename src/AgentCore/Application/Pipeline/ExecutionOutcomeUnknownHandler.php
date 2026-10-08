@@ -58,7 +58,7 @@ final readonly class ExecutionOutcomeUnknownHandler implements RunMessageHandler
             return new HandlerResult(nextState: $state, postCommitActions: [$action]);
         }
         $failed = $state->with(['status' => RunStatus::Failed, 'isStreaming' => false, 'streamingMessage' => null, 'errorMessage' => ExecutionOutcomeUnknown::ERROR_MESSAGE]);
-        $event = RunEvent::forAppend($state->runId, $state->turnNo, 'agent_end', ['reason' => 'failed', 'error' => ExecutionOutcomeUnknown::ERROR_MESSAGE, 'error_type' => 'execution_outcome_unknown', 'effect_id' => $message->effectId, 'claim_token' => $message->claimToken]);
+        $event = RunEvent::forAppend($state->runId, $state->turnNo, 'agent_end', ['reason' => 'failed', 'error' => ExecutionOutcomeUnknown::ERROR_MESSAGE, 'error_type' => 'execution_outcome_unknown', 'effect_id' => $message->effectId]);
 
         return new HandlerResult(nextState: $failed, events: [$event], postCommitActions: [$action]);
     }

@@ -425,7 +425,7 @@ final class CommandMailboxPolicyTest extends TestCase
             commandRouter: $commandRouter,
         );
         $toolBatchCollector = new ToolBatchCollector($batchStore = new TestToolBatchStore());
-        $stepDispatcher = new StepDispatcher(\Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::bus($commandBus, $commandStore, $toolBatchCollector, new StepDispatcher($commandBus, $executionBus)), $executionBus);
+        $stepDispatcher = new StepDispatcher(\Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::bus($commandBus));
 
         $operations = new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore();
         $runCommit = new RunCommit(

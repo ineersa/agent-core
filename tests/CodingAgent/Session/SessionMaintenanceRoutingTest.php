@@ -649,7 +649,7 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
             sourceAcceptance: $acceptance,
             finalizer: TestTransitionFinalizerFactory::create(
                 $fault,
-                new \Ineersa\AgentCore\Application\Handler\StepDispatcher($coordinationBus, $c->get('agent.execution.bus')),
+                new \Ineersa\AgentCore\Application\Handler\StepDispatcher($coordinationBus),
                 operations: $c->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class),
                 batches: $c->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
                 commands: $c->get(\Ineersa\AgentCore\Contract\CommandStoreInterface::class),
@@ -930,7 +930,7 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         $sessions->claimReasoningBaseline($run, 'test-model', 'medium');
         $handler = $this->createMock(\Ineersa\AgentCore\Application\Pipeline\RunMessageHandler::class);
         $handler->method('supports')->willReturn(true);
-        $handler->expects($this->once())->method('handle')->willReturn(new \Ineersa\AgentCore\Application\Pipeline\HandlerResult(postCommitActions: [new \Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO(new AdvanceRun($run, 0, 'user-advance', 1, 'user-advance'), 'advance failed')]));
+        $handler->expects($this->once())->method('handle')->willReturn(new \Ineersa\AgentCore\Application\Pipeline\HandlerResult(postCommitActions: [new \Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO(new AdvanceRun($run, 0, 'user-advance', 1, 'user-advance'))]));
         $processor = new \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor(
             $active,
             self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class),

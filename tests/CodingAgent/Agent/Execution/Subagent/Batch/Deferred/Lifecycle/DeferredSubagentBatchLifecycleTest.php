@@ -1311,7 +1311,16 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $reference = $inputStore->publish('fork', $parent, 2, 'turn-2-tools-1', $tool, 'deepseek/deepseek-v4-flash', '', [new AgentMessage('user', [['type' => 'text', 'text' => 'Fork task']])]);
         $original = new \Ineersa\AgentCore\Domain\Message\ExecuteToolCall($parent, 2, 'turn-2-tools-1', 1, 'idem-fork-once', $tool, 'fork', ['task' => 'Fork task'], 0, parentModel: 'deepseek/deepseek-v4-flash', launchContext: $reference);
         $batchStore = self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class);
-        $batchStore->save($parent, 2, 'turn-2-tools-1', new \Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO([$tool => 0], [$tool => $original], [$tool], [], [], false, 1));
+        $verified = new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(\Symfony\Component\Uid\Uuid::v7()->toRfc4122(), [
+            'run_id' => $parent,
+            'effects' => [$original],
+            'actions' => [],
+        ]);
+        self::getContainer()->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class)->prepare($original, $verified);
+        $batchStore->registerPrepared(
+            new \Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO($parent, 2, 'turn-2-tools-1', [$original], [$tool => 0], [$tool], [], 1),
+            $verified,
+        );
         $original = $batchStore->load($parent, 2, 'turn-2-tools-1')->calls[$tool];
         $paths = self::getContainer()->get(\Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface::class);
         $inputPath = \dirname($paths->resolveToolBatchesDirectory($parent)).'/tool-launch-inputs/'.hash('sha256', $tool).'.jsonl';
@@ -1704,7 +1713,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
                         DeliverDeferredSubagentBatchLifecycleMessage::class => [$bus->dispatch(...)],
                     ])),
                 ]);
-                $dispatcher = new \Ineersa\AgentCore\Application\Handler\StepDispatcher($coordinationBus, $bus);
+                $dispatcher = new \Ineersa\AgentCore\Application\Handler\StepDispatcher($coordinationBus);
                 $commit = new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
                     activeRunContext: $active,
                     eventStore: $this->store,

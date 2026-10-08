@@ -11,14 +11,12 @@ use Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Coordination\ConsumeExecutionUnknownDTO;
 use Ineersa\AgentCore\Domain\Coordination\EnqueueCommandDTO;
-use Ineersa\AgentCore\Domain\Coordination\ExecutionResultDispositionDTO;
 use Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO;
 use Ineersa\AgentCore\Domain\Coordination\MarkCommandAppliedDTO;
 use Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO;
 use Ineersa\AgentCore\Domain\Coordination\RejectCommandDTO;
 use Ineersa\AgentCore\Domain\Coordination\RetireUnknownExecutionDTO;
 use Ineersa\AgentCore\Domain\Coordination\TransitionPlan;
-use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
 use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 
@@ -26,8 +24,9 @@ use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
  * Applies captured local mailbox/scheduling/source/disposition/outbox metadata in one
  * short application-DB transaction after verified canonical append.
  *
- * Immutable request sealing happens before this transaction. Transport delivery
- * happens after outermost owner-lock release. Only owner-admitted tool calls are armed.
+ * Immutable request sealing and admitted-call resolution happen before this
+ * transaction. Transport delivery happens after outermost owner-lock release.
+ * Only owner-admitted tool calls are armed.
  */
 final readonly class LocalMetadataCoordinator
 {
@@ -48,15 +47,19 @@ final readonly class LocalMetadataCoordinator
         $effects = $plan->gatedEffects;
         $executionDisposition = $plan->executionDisposition;
 
-        foreach ($this->preparationCandidates($actions, $effects) as $effect) {
+        $preparationCandidates = $this->preparationCandidates($actions, $effects);
+        foreach ($preparationCandidates as $effect) {
             $this->executionOperations->prepare($effect, $transition);
         }
         if (null !== $executionDisposition) {
             // Sealed-body verification stays outside the short metadata transaction.
             $this->executionOperations->validateDisposition($executionDisposition, $transition);
         }
+        // Capture admitted identities before the short metadata transaction so
+        // schedule arming never hydrates sealed request/result bodies under the lock.
+        $admitted = $this->captureAdmittedEffects($actions, $effects, $preparationCandidates);
 
-        $this->transactions->transactional(function () use ($plan, $transition, $actions, $effects, $executionDisposition): void {
+        $this->transactions->transactional(function () use ($plan, $transition, $actions, $admitted, $executionDisposition): void {
             foreach ($actions as $action) {
                 if ($action instanceof FinalizeToolBatchDTO) {
                     $this->batches->applyPrepared($action, $transition);
@@ -92,7 +95,7 @@ final readonly class LocalMetadataCoordinator
                 throw new \RuntimeException('Unsupported local metadata action '.$action::class.'.');
             }
 
-            foreach ($this->admittedEffects($actions, $effects) as $effect) {
+            foreach ($admitted as $effect) {
                 if (!ExecutionOperationMapper::supports($effect)) {
                     throw new \RuntimeException('Local metadata arming requires a gated execution effect.');
                 }
@@ -146,12 +149,16 @@ final readonly class LocalMetadataCoordinator
     }
 
     /**
+     * Resolve the owner-admitted set from captured scheduling decisions and already
+     * prepared identities. Sealed-body reads stay outside the metadata transaction.
+     *
      * @param list<object>                  $actions
      * @param list<AbstractAgentBusMessage> $effects
+     * @param list<AbstractAgentBusMessage> $preparationCandidates
      *
      * @return list<AbstractAgentBusMessage>
      */
-    private function admittedEffects(array $actions, array $effects): array
+    private function captureAdmittedEffects(array $actions, array $effects, array $preparationCandidates): array
     {
         $admitted = [];
         foreach ($effects as $effect) {
@@ -160,26 +167,64 @@ final readonly class LocalMetadataCoordinator
             }
         }
 
+        /** @var array<string, ExecuteToolCall> $preferred */
+        $preferred = [];
+        foreach ($preparationCandidates as $candidate) {
+            if ($candidate instanceof ExecuteToolCall) {
+                $preferred[$candidate->runId().'|'.$candidate->turnNo().'|'.$candidate->stepId().'|'.$candidate->toolCallId] = $candidate;
+            }
+        }
+        foreach ($actions as $action) {
+            if (!$action instanceof RegisterToolBatchDTO) {
+                continue;
+            }
+            foreach ($action->effects as $effect) {
+                if (!$effect instanceof ExecuteToolCall) {
+                    continue;
+                }
+                $key = $effect->runId().'|'.$effect->turnNo().'|'.$effect->stepId().'|'.$effect->toolCallId;
+                $preferred[$key] ??= $effect;
+            }
+        }
+
+        /** @var array<string, RegisterToolBatchDTO|FinalizeToolBatchDTO|null> $batchKeys */
         $batchKeys = [];
         foreach ($actions as $action) {
             if ($action instanceof RegisterToolBatchDTO || $action instanceof FinalizeToolBatchDTO) {
-                $batchKeys[$action->runId.'|'.$action->turnNo.'|'.$action->stepId] = [$action->runId, $action->turnNo, $action->stepId];
+                $batchKeys[$action->runId.'|'.$action->turnNo.'|'.$action->stepId] = $action;
             }
         }
         foreach ($effects as $effect) {
             if ($effect instanceof ExecuteToolCall) {
-                $batchKeys[$effect->runId().'|'.$effect->turnNo().'|'.$effect->stepId()] = [$effect->runId(), $effect->turnNo(), $effect->stepId()];
+                $batchKeys[$effect->runId().'|'.$effect->turnNo().'|'.$effect->stepId()] ??= null;
             }
         }
 
-        $admittedToolKeys = [];
-        foreach ($batchKeys as [$runId, $turnNo, $stepId]) {
-            foreach ($this->batches->admittedCalls($runId, $turnNo, $stepId) as $call) {
-                $key = $call->idempotencyKey();
-                if (isset($admittedToolKeys[$key])) {
-                    continue;
+        foreach ($batchKeys as $batchKey => $action) {
+            if ($action instanceof RegisterToolBatchDTO || $action instanceof FinalizeToolBatchDTO) {
+                $exclude = [];
+                if ($action instanceof FinalizeToolBatchDTO && null !== $action->result) {
+                    $exclude[$action->result->toolCallId] = true;
                 }
-                $admittedToolKeys[$key] = true;
+                foreach (array_keys($action->inFlight) as $toolCallId) {
+                    if (isset($exclude[$toolCallId])) {
+                        continue;
+                    }
+                    $key = $action->runId.'|'.$action->turnNo.'|'.$action->stepId.'|'.$toolCallId;
+                    $call = $preferred[$key] ?? $this->batches->admittedCall($action->runId, $action->turnNo, $action->stepId, $toolCallId);
+                    if (!$call instanceof ExecuteToolCall) {
+                        continue;
+                    }
+                    if (!$this->batches->isAdmissiblePermission($call)) {
+                        continue;
+                    }
+                    $admitted[] = $call;
+                }
+                continue;
+            }
+
+            [$runId, $turnNo, $stepId] = explode('|', $batchKey, 3);
+            foreach ($this->batches->admittedCalls($runId, (int) $turnNo, $stepId) as $call) {
                 $admitted[] = $call;
             }
         }

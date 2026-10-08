@@ -247,7 +247,7 @@ final class AutoCompactionHookSubscriber implements EssentialAfterTurnHookInterf
         return [new \Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO(new CompactRun(
             runId: $runId, turnNo: $runState->turnNo, stepId: $stepId, attempt: 1,
             idempotencyKey: hash('sha256', $runId.'|'.$stepId), trigger: 'auto',
-        ), 'Failed to dispatch automatic compaction.')];
+        ))];
     }
 
     /**

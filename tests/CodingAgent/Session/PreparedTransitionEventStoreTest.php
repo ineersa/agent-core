@@ -35,7 +35,7 @@ final class PreparedTransitionEventStoreTest extends IsolatedKernelTestCase
         $first = PreparedEventStoreSeeder::append($store, new RunEvent($run, 0, 0, 'run_started', []));
         $path = $sessions->resolveSessionsBasePath().'/'.$run.'/events.jsonl';
         $container->get(FileRunSequenceAllocator::class)->allocateBlock(FileRunSequenceAllocator::counterPathForEventsLog($path), 2);
-        $action = \Ineersa\AgentCore\Application\Handler\AdvanceRunCoordinationFactory::create($run, 0, 'prepared', 'failed');
+        $action = \Ineersa\AgentCore\Application\Handler\AdvanceRunCoordinationFactory::create($run, 0, 'prepared');
         $persisted = $store->appendTransition([new RunEvent($run, 0, 0, 'agent_end', ['reason' => 'completed'])], [
             'run_id' => $run, 'predecessor_seq' => $first->seq, 'actions' => [$action], 'effects' => [], 'post_commit_effects' => [], 'after_turn_hooks' => false,
         ]);
@@ -236,6 +236,9 @@ final class PreparedTransitionEventStoreTest extends IsolatedKernelTestCase
         $cutVisibleDuringObservation = null;
         $failure = $this->createMock(MessageBusInterface::class);
         $failure->expects($this->atLeastOnce())->method('dispatch')->willReturnCallback(static function (object $message) use (&$order, &$cutVisibleDuringObservation, $store, $run): \Symfony\Component\Messenger\Envelope {
+            if ($message instanceof \Symfony\Component\Messenger\Envelope) {
+                $message = $message->getMessage();
+            }
             $order[] = $message::class;
             if ($message instanceof \Ineersa\AgentCore\Domain\Message\ExecutionRequest) {
                 throw new \RuntimeException('gated delivery must wait for finalization');
@@ -253,7 +256,7 @@ final class PreparedTransitionEventStoreTest extends IsolatedKernelTestCase
             $container->get(\Ineersa\AgentCore\Application\Pipeline\SourceAcceptance::class),
             TestTransitionFinalizerFactory::create(
                 $store,
-                new \Ineersa\AgentCore\Application\Handler\StepDispatcher($failure, $failure, $failure, $failure),
+                new \Ineersa\AgentCore\Application\Handler\StepDispatcher($failure),
                 operations: $container->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class),
                 batches: $container->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
                 commands: $container->get(\Ineersa\AgentCore\Contract\CommandStoreInterface::class),
@@ -263,12 +266,9 @@ final class PreparedTransitionEventStoreTest extends IsolatedKernelTestCase
             ),
             $container->get(\Ineersa\AgentCore\Application\Handler\CoordinationActionValidator::class),
         );
-        try {
-            $recovery->recover($run);
-            $this->fail('Interrupted gated delivery must leave rediscoverable authority after finalization.');
-        } catch (\RuntimeException $exception) {
-            $this->assertSame('gated delivery must wait for finalization', $exception->getMessage());
-        }
+        // Delivery failures after journal finalization are local degradation: the
+        // pending cut is cleared and later sweeps rediscover the armed authority.
+        $recovery->recover($run);
 
         $this->assertNull($store->verifiedPendingTransition($run));
         $this->assertSame(4, $store->latestSequenceFor($run));

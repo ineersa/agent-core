@@ -33,6 +33,7 @@ final class ExecutionPayloadCleanupTest extends IsolatedKernelTestCase
         $events->appendTransition([], ['run_id' => $run, 'predecessor_seq' => 0, 'effects' => [$request]]);
         $pending = $events->verifiedPendingTransition($run);
         $this->assertNotNull($pending);
+        $operations->prepare($request, $pending);
         $authorization = $operations->arm($request, $pending);
         $events->finalizeVerifiedTransition($run, $pending->identity);
         $delivery = $operations->requestReference($request, $authorization);
@@ -76,6 +77,7 @@ final class ExecutionPayloadCleanupTest extends IsolatedKernelTestCase
             $events->appendTransition([], ['run_id' => $run, 'predecessor_seq' => 0, 'effects' => [$request]]);
             $pending = $events->verifiedPendingTransition($run);
             $this->assertNotNull($pending);
+            $operations->prepare($request, $pending);
             $authorization = $operations->arm($request, $pending);
             $events->finalizeVerifiedTransition($run, $pending->identity);
             $delivery = $operations->requestReference($request, $authorization);
@@ -94,6 +96,7 @@ final class ExecutionPayloadCleanupTest extends IsolatedKernelTestCase
         $events->appendTransition([], ['run_id' => $run, 'predecessor_seq' => 0, 'effects' => [$live]]);
         $pending = $events->verifiedPendingTransition($run);
         $this->assertNotNull($pending);
+        $operations->prepare($live, $pending);
         $liveAuthorization = $operations->arm($live, $pending);
         $events->finalizeVerifiedTransition($run, $pending->identity);
         $paths = $container->get(ToolBatchRunStoragePathsInterface::class);
@@ -109,7 +112,16 @@ final class ExecutionPayloadCleanupTest extends IsolatedKernelTestCase
         $this->assertFileExists($livePath.'/request');
         $command = new TestMessageBus();
         $execution = new TestMessageBus();
-        $subscriber = new ExecutionPendingDeliverySubscriber($operations, $events, self::getContainer()->get(\Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery::class), self::getContainer()->get(\Ineersa\AgentCore\Application\Pipeline\DurablePendingPublication::class), self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class), self::getContainer()->get(\Doctrine\DBAL\Connection::class), $command, $execution, $run, new TestLogger());
+        $publication = new \Ineersa\AgentCore\Application\Pipeline\DurablePendingPublication(
+            $events,
+            $operations,
+            self::getContainer()->get(\Ineersa\AgentCore\Contract\ControlMessageOutboxInterface::class),
+            self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class),
+            $command,
+            $execution,
+            new TestLogger(),
+        );
+        $subscriber = new ExecutionPendingDeliverySubscriber($operations, $events, self::getContainer()->get(\Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery::class), $publication, self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class), self::getContainer()->get(\Doctrine\DBAL\Connection::class), $run, new TestLogger());
         $subscriber->onStarted(new WorkerStartedEvent(new Worker(['run_control' => new InMemoryTransport()], new TestMessageBus())));
         $this->assertCount(1, $execution->messages);
     }
@@ -124,6 +136,7 @@ final class ExecutionPayloadCleanupTest extends IsolatedKernelTestCase
         $events->appendTransition([], ['run_id' => $run, 'predecessor_seq' => 0, 'effects' => [$request]]);
         $pending = $events->verifiedPendingTransition($run);
         $this->assertNotNull($pending);
+        $operations->prepare($request, $pending);
         $authorization = $operations->arm($request, $pending);
         $events->finalizeVerifiedTransition($run, $pending->identity);
         $delivery = $operations->requestReference($request, $authorization);
@@ -183,6 +196,7 @@ final class ExecutionPayloadCleanupTest extends IsolatedKernelTestCase
         $events->appendTransition([], ['run_id' => $run, 'predecessor_seq' => 0, 'effects' => [$request]]);
         $pending = $events->verifiedPendingTransition($run);
         $this->assertNotNull($pending);
+        $operations->prepare($request, $pending);
         $authorization = $operations->arm($request, $pending);
         $events->finalizeVerifiedTransition($run, $pending->identity);
         $delivery = $operations->requestReference($request, $authorization);
@@ -216,6 +230,7 @@ final class ExecutionPayloadCleanupTest extends IsolatedKernelTestCase
         $events->appendTransition([], ['run_id' => $run, 'predecessor_seq' => 0, 'effects' => [$request]]);
         $pending = $events->verifiedPendingTransition($run);
         $this->assertNotNull($pending);
+        $operations->prepare($request, $pending);
         $authorization = $operations->arm($request, $pending);
         $events->finalizeVerifiedTransition($run, $pending->identity);
         $delivery = $operations->requestReference($request, $authorization);
@@ -267,6 +282,7 @@ final class ExecutionPayloadCleanupTest extends IsolatedKernelTestCase
         $events->appendTransition([], ['run_id' => $run, 'predecessor_seq' => 0, 'effects' => [$request]]);
         $pending = $events->verifiedPendingTransition($run);
         $this->assertNotNull($pending);
+        $operations->prepare($request, $pending);
         $authorization = $operations->arm($request, $pending);
         $events->finalizeVerifiedTransition($run, $pending->identity);
         $delivery = $operations->requestReference($request, $authorization);

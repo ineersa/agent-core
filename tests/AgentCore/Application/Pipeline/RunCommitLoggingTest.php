@@ -33,7 +33,7 @@ final class RunCommitLoggingTest extends TestCase
             logger: $logger,
             executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
             sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
-            finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus())),
+            finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus())),
         );
 
         $next = new RunState(
@@ -74,7 +74,7 @@ final class RunCommitLoggingTest extends TestCase
             logger: new TestLogger(),
             executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
             sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
-            finalizer: TestTransitionFinalizerFactory::create(new RecordingEventStore(), new StepDispatcher(new TestMessageBus(), new TestMessageBus())),
+            finalizer: TestTransitionFinalizerFactory::create(new RecordingEventStore(), new StepDispatcher(new TestMessageBus())),
         ))->commit($previous, $next, []);
 
         $this->assertSame($next, $activeRunContext->requireLoaded('run-1'));
@@ -97,7 +97,7 @@ final class RunCommitLoggingTest extends TestCase
             logger: new TestLogger(),
             executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
             sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
-            finalizer: TestTransitionFinalizerFactory::create($store, new StepDispatcher($bus, $bus)),
+            finalizer: TestTransitionFinalizerFactory::create($store, new StepDispatcher($bus)),
         );
 
         try {
@@ -123,7 +123,7 @@ final class RunCommitLoggingTest extends TestCase
         $store->expects($this->once())->method('assertTransitionReady');
         $store->expects($this->once())->method('appendTransition')->willReturn([$event]);
         $store->expects($this->never())->method('finalizeVerifiedTransition');
-        $verified = new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO('transition', 0, ['run_id' => 'run-1', 'execution_disposition' => $descriptor]);
+        $verified = new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO('transition', ['run_id' => 'run-1', 'execution_disposition' => $descriptor]);
         $store->method('verifiedPendingTransition')->willReturn($verified);
         $operations = $this->createMock(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class);
         $operations->expects($this->once())->method('validateDisposition')->with($descriptor, $verified);
@@ -135,7 +135,7 @@ final class RunCommitLoggingTest extends TestCase
             logger: new TestLogger(),
             executionOperations: $operations,
             sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
-            finalizer: TestTransitionFinalizerFactory::create($store, new StepDispatcher(new TestMessageBus(), new TestMessageBus()), operations: $operations),
+            finalizer: TestTransitionFinalizerFactory::create($store, new StepDispatcher(new TestMessageBus()), operations: $operations),
         );
 
         $this->expectException(\RuntimeException::class);
@@ -160,7 +160,7 @@ final class RunCommitLoggingTest extends TestCase
         $store->expects($this->once())->method('finalizeVerifiedTransition')->willReturnCallback(function () use (&$disposed): void {
             $this->assertTrue($disposed, 'Required result disposition must be durable before deleting the transition manifest.');
         });
-        $verified = new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO('transition', 0, ['run_id' => 'run-1', 'execution_disposition' => $descriptor]);
+        $verified = new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO('transition', ['run_id' => 'run-1', 'execution_disposition' => $descriptor]);
         $store->method('verifiedPendingTransition')->willReturn($verified);
         $operations = $this->createMock(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class);
         $operations->expects($this->once())->method('validateDisposition')->with($descriptor, $verified);
@@ -173,7 +173,7 @@ final class RunCommitLoggingTest extends TestCase
             logger: new TestLogger(),
             executionOperations: $operations,
             sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
-            finalizer: TestTransitionFinalizerFactory::create($store, new StepDispatcher(new TestMessageBus(), new TestMessageBus()), operations: $operations),
+            finalizer: TestTransitionFinalizerFactory::create($store, new StepDispatcher(new TestMessageBus()), operations: $operations),
         );
         $commit->commit($previous, $previous, [$event], dispatchAfterTurnHooks: false, executionDisposition: $descriptor);
     }
@@ -211,7 +211,6 @@ final class RecordingEventStore implements PreparedTransitionEventStoreInterface
         }
         $this->pending[$runId] = new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(
             hash('sha256', serialize([$work, $out])),
-            0,
             $work,
             array_map(static fn (RunEvent $event): int => $event->seq, $out),
         );

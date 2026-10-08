@@ -9,7 +9,6 @@ use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
 use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
-use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreMutation;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
@@ -51,31 +50,44 @@ final class SessionToolLaunchInputStoreTest extends IsolatedKernelTestCase
             $this->assertStringNotContainsString('PRIVATE_LAUNCH_BODY', $body);
             $readCall = new ExecuteToolCall($runId, 1, 'step-'.$count, 1, 'read-key', 'read', 'read', ['path' => 'x'], 1);
             $batch = new ToolBatchStateDTO(expectedOrder: [$callId => 0, 'read' => 1], calls: [$callId => $call, 'read' => $readCall], pendingQueue: [$callId], inFlight: [], results: [], finalized: false, maxParallelism: 2);
-            $batchStore->save($runId, 1, 'step-'.$count, $batch);
-            $batchFiles = glob($paths->resolveToolBatchesDirectory($runId).'/*.json');
-            $batchPath = end($batchFiles);
-            // Locate the exact envelope rather than relying on filename order.
-            foreach ($batchFiles as $candidate) {
-                if (str_contains(file_get_contents($candidate), $callId)) {
-                    $batchPath = $candidate;
-                    break;
-                }
-            }
-            $batchBody = file_get_contents($batchPath);
-            $this->assertStringNotContainsString('PRIVATE_LAUNCH_BODY', $batchBody);
-            $sizes[] = [\strlen($body), \strlen($batchBody), $reference->bytes];
+            $verified = new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(\Symfony\Component\Uid\Uuid::v7()->toRfc4122(), [
+                'run_id' => $runId,
+                'effects' => [$call, $readCall],
+                'actions' => [],
+            ]);
+            $operations = self::getContainer()->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class);
+            $operations->prepare($call, $verified);
+            $operations->prepare($readCall, $verified);
+            $batchStore->registerPrepared(
+                new \Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO($runId, 1, 'step-'.$count, [$call, $readCall], $batch->expectedOrder, $batch->pendingQueue, $batch->inFlight, $batch->maxParallelism),
+                $verified,
+            );
+            $schedule = self::getContainer()->get(\Doctrine\DBAL\Connection::class)->fetchAssociative(
+                'SELECT calls_json, pending_queue_json FROM tool_batch_schedule WHERE run_id = ? AND turn_no = ? AND step_id = ?',
+                [$runId, 1, 'step-'.$count],
+            );
+            $this->assertIsArray($schedule);
+            $this->assertStringNotContainsString('PRIVATE_LAUNCH_BODY', (string) $schedule['calls_json']);
+            $sizes[] = [\strlen($body), \strlen((string) $schedule['calls_json']), $reference->bytes];
             $payloadPath = $this->payloadPath($runId, $callId);
             $original = hash_file('sha256', $payloadPath);
-            $readResult = \Ineersa\AgentCore\Tests\Support\Builder\ToolCallResultBuilder::success($runId)->withTurnNo(1)->withStepId('step-'.$count)->withToolCallId('read')->withOrderIndex(1)->build();
-            $batchStore->mutate($runId, 1, 'step-'.$count, static function ($current) use ($readResult): ToolBatchStoreMutation {
-                $current->results['read'] = $readResult;
-
-                return new ToolBatchStoreMutation(null, $current);
-            });
+            // Schedule writes keep sealed launch input untouched.
+            $batchStore->applyPrepared(
+                new \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO($runId, 1, 'step-'.$count, pendingQueue: [$callId], inFlight: [], awaitingHumanInput: [], finalized: false),
+                new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(\Symfony\Component\Uid\Uuid::v7()->toRfc4122(), [
+                    'run_id' => $runId,
+                    'actions' => [new \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO($runId, 1, 'step-'.$count, pendingQueue: [$callId], inFlight: [], awaitingHumanInput: [], finalized: false)],
+                ]),
+            );
             $this->assertSame($original, hash_file('sha256', $payloadPath));
-            // If mutate tried to resolve launch input, this corruption would fail.
             file_put_contents($payloadPath, 'unreadable-as-input');
-            $batchStore->mutate($runId, 1, 'step-'.$count, static fn ($current) => new ToolBatchStoreMutation(null, $current));
+            $batchStore->applyPrepared(
+                new \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO($runId, 1, 'step-'.$count, pendingQueue: [$callId], inFlight: [], awaitingHumanInput: [], finalized: false),
+                new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(\Symfony\Component\Uid\Uuid::v7()->toRfc4122(), [
+                    'run_id' => $runId,
+                    'actions' => [new \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO($runId, 1, 'step-'.$count, pendingQueue: [$callId], inFlight: [], awaitingHumanInput: [], finalized: false)],
+                ]),
+            );
             $this->assertSame('unreadable-as-input', file_get_contents($payloadPath));
             $this->assertNotSame($original, hash_file('sha256', $payloadPath));
             $this->assertNotNull($batchStore->load($runId, 1, 'step-'.$count));
@@ -298,7 +310,7 @@ final class SessionToolLaunchInputStoreTest extends IsolatedKernelTestCase
             executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
             sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
             hookDispatcher: new \Ineersa\AgentCore\Application\Handler\HookDispatcher([self::getContainer()->get(\Ineersa\CodingAgent\Session\ToolBatchSnapshotCleanupHookSubscriber::class)]),
-            finalizer: TestTransitionFinalizerFactory::create($eventStore, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(self::getContainer()->get('agent.command.bus'), new TestMessageBus())),
+            finalizer: TestTransitionFinalizerFactory::create($eventStore, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(self::getContainer()->get('agent.command.bus'))),
         );
         $commit->commit($state, $transition->nextState, $transition->events, $transition->effects, postCommitEffects: $transition->postCommitEffects, postCommitActions: $transition->postCommitActions);
         $this->assertFileDoesNotExist($this->payloadPath($runId, 'fork'));

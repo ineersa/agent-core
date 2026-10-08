@@ -10,7 +10,7 @@ use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 /** Captures the continuation identity before coordination dispatch. */
 final class AdvanceRunCoordinationFactory
 {
-    public static function create(string $runId, int $turnNo, string $prefix, string $errorMessage): DispatchCoordinationMessageDTO
+    public static function create(string $runId, int $turnNo, string $prefix): DispatchCoordinationMessageDTO
     {
         $stepId = \sprintf('%s-%d', $prefix, hrtime(true));
 
@@ -20,6 +20,6 @@ final class AdvanceRunCoordinationFactory
             stepId: $stepId,
             attempt: 1,
             idempotencyKey: hash('sha256', \sprintf('%s|%s', $runId, $stepId)),
-        ), $errorMessage);
+        ));
     }
 }

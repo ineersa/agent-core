@@ -127,12 +127,25 @@ final class TestToolBatchStore implements ToolBatchStoreInterface
         $admitted = [];
         foreach (array_keys($batch->inFlight) as $toolCallId) {
             $call = $batch->calls[$toolCallId] ?? null;
-            if ($call instanceof ExecuteToolCall && !isset($batch->results[$toolCallId])) {
+            if ($call instanceof ExecuteToolCall && !isset($batch->results[$toolCallId]) && $this->isAdmissiblePermission($call)) {
                 $admitted[] = $call;
             }
         }
 
         return $admitted;
+    }
+
+    public function admittedCall(string $runId, int $turnNo, string $stepId, string $toolCallId): ?ExecuteToolCall
+    {
+        $batch = $this->load($runId, $turnNo, $stepId);
+        $call = $batch?->calls[$toolCallId] ?? null;
+
+        return $call instanceof ExecuteToolCall ? $call : null;
+    }
+
+    public function isAdmissiblePermission(ExecuteToolCall $call): bool
+    {
+        return true;
     }
 
     private function key(string $runId, int $turnNo, string $stepId): string

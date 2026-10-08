@@ -22,8 +22,8 @@ final class CoordinationActionSerializationTest extends IsolatedKernelTestCase
     {
         /** @var SerializerInterface $serializer */
         $serializer = self::getContainer()->get('messenger.transport.native_php_serializer');
-        $advance = AdvanceRunCoordinationFactory::create('run', 7, 'follow-up', 'dispatch failed');
-        $compact = new DispatchCoordinationMessageDTO(new CompactRun('run', 7, 'compact-stable', 1, 'compact-key', trigger: 'manual', customInstructions: 'Keep context'), 'compact failed');
+        $advance = AdvanceRunCoordinationFactory::create('run', 7, 'follow-up');
+        $compact = new DispatchCoordinationMessageDTO(new CompactRun('run', 7, 'compact-stable', 1, 'compact-key', trigger: 'manual', customInstructions: 'Keep context'));
         $call = new ExecuteToolCall('run', 7, 'step', 1, 'effect-key', 'call', 'bash', ['command' => 'pwd'], 0);
         $actions = [
             $advance,

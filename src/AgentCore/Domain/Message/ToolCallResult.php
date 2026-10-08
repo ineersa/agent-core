@@ -5,9 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Domain\Message;
 
 use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
-use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolResultText;
-use Symfony\Component\Serializer\Attribute\Groups;
 
 /**
  * Canonical tool-worker → run_control envelope.
@@ -31,17 +29,11 @@ final readonly class ToolCallResult extends AbstractAgentBusMessage
         string $stepId,
         int $attempt,
         string $idempotencyKey,
-        #[Groups([ToolBatchStateDTO::SNAPSHOT_GROUP])]
         public string $toolCallId,
-        #[Groups([ToolBatchStateDTO::SNAPSHOT_GROUP])]
         public int $orderIndex,
-        #[Groups([ToolBatchStateDTO::SNAPSHOT_GROUP])]
         public mixed $result = null,
-        #[Groups([ToolBatchStateDTO::SNAPSHOT_GROUP])]
         public bool $isError = false,
-        #[Groups([ToolBatchStateDTO::SNAPSHOT_GROUP])]
         public ?array $error = null,
-        #[Groups([ToolBatchStateDTO::SNAPSHOT_GROUP])]
         public ?PendingHumanInputRequestDTO $pendingHumanInput = null,
     ) {
         parent::__construct($runId, $turnNo, $stepId, $attempt, $idempotencyKey);

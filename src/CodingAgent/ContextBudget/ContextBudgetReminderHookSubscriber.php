@@ -87,7 +87,7 @@ final readonly class ContextBudgetReminderHookSubscriber implements EssentialAft
                 idempotencyKey: hash('sha256', $context->runId.'|'.$stepId),
                 kind: \Ineersa\AgentCore\Domain\Command\CoreCommandKind::AppendMessage,
                 payload: ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => $wrapped]], 'metadata' => ['system_reminder' => true]]],
-            ), 'Failed to dispatch context-budget reminder.',
+            ),
         )];
     }
 

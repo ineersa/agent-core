@@ -114,7 +114,6 @@ final class HistorySelectionServiceTest extends TestCase
                 }
                 $this->pending[$runId] = new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(
                     hash('sha256', serialize([$work, $out])),
-                    0,
                     $work,
                     array_map(static fn (RunEvent $event): int => $event->seq, $out),
                 );
@@ -174,7 +173,7 @@ final class HistorySelectionServiceTest extends TestCase
                 logger: new NullLogger(),
                 executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
                 sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
-                finalizer: \Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory::create($eventStore, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus())),
+                finalizer: \Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory::create($eventStore, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus())),
             ),
         );
 
@@ -290,7 +289,6 @@ final class HistorySelectionServiceTest extends TestCase
                 }
                 $this->pending[$runId] = new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(
                     hash('sha256', serialize([$work, $out])),
-                    0,
                     $work,
                     array_map(static fn (RunEvent $event): int => $event->seq, $out),
                 );
@@ -350,7 +348,7 @@ final class HistorySelectionServiceTest extends TestCase
                 logger: new NullLogger(),
                 executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
                 sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
-                finalizer: \Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory::create($eventStore, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus())),
+                finalizer: \Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory::create($eventStore, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus())),
             ),
         );
 
@@ -438,7 +436,6 @@ final class HistorySelectionServiceTest extends TestCase
                 }
                 $this->pending[$runId] = new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(
                     hash('sha256', serialize([$work, $events])),
-                    0,
                     $work,
                     array_map(static fn (RunEvent $event): int => $event->seq, $events),
                 );
@@ -491,7 +488,7 @@ final class HistorySelectionServiceTest extends TestCase
                 logger: new NullLogger(),
                 executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
                 sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
-                finalizer: \Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory::create($eventStore, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus())),
+                finalizer: \Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory::create($eventStore, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus())),
             ),
         );
 
@@ -567,7 +564,6 @@ final class HistorySelectionServiceTest extends TestCase
                 }
                 $this->pending[$runId] = new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(
                     hash('sha256', serialize([$work, $events])),
-                    0,
                     $work,
                     array_map(static fn (RunEvent $event): int => $event->seq, $events),
                 );
@@ -623,7 +619,7 @@ final class HistorySelectionServiceTest extends TestCase
                 logger: new NullLogger(),
                 executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
                 sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
-                finalizer: \Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory::create($eventStore, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus())),
+                finalizer: \Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory::create($eventStore, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus())),
             ),
         );
 

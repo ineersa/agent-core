@@ -44,7 +44,7 @@ final class TestToolBatchRegistration
         RegisterToolBatchDTO $action,
         ?ExecutionOperationStoreInterface $operations = null,
     ): void {
-        $transition = new VerifiedTransitionDTO(Uuid::v7()->toRfc4122(), 0, ['run_id' => $action->runId, 'actions' => [$action]]);
+        $transition = new VerifiedTransitionDTO(Uuid::v7()->toRfc4122(), ['run_id' => $action->runId, 'actions' => [$action]]);
         if (null !== $operations) {
             foreach ($action->effects as $effect) {
                 $operations->prepare($effect, $transition);

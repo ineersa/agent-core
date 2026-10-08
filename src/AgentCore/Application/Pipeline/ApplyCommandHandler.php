@@ -29,7 +29,6 @@ use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
 use Psr\Log\LoggerInterface;
-use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
@@ -50,7 +49,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         private EventFactory $eventFactory,
         private AgentMessageNormalizer $messageNormalizer,
         private int $maxPendingCommands = 100,
-        private ?MessageBusInterface $commandBus = null,
         private ?ToolBatchCollector $toolBatchCollector = null,
         private ?LoggerInterface $logger = null,
         private (NormalizerInterface&DenormalizerInterface)|null $serializer = null,
@@ -187,9 +185,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         $isActive = \in_array($state->status, [RunStatus::Running, RunStatus::Cancelling, RunStatus::Compacting], true);
         if (!$isActive && \in_array($message->kind, [CoreCommandKind::Steer, CoreCommandKind::FollowUp, CoreCommandKind::AppendMessage], true)) {
             $followUpAdvance = $this->followUpAdvanceAction($runId, $state->turnNo, $message->kind);
-            if (null !== $followUpAdvance) {
-                $postCommitActions[] = $followUpAdvance;
-            }
+            $postCommitActions[] = $followUpAdvance;
         }
 
         return new HandlerResult(
@@ -290,9 +286,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 $postCommitActions = [];
                 if ($hasPendingAppendMessage) {
                     $followUpAdvance = $this->followUpAdvanceAction($runId, $state->turnNo, 'post-cancel-advance');
-                    if (null !== $followUpAdvance) {
-                        $postCommitActions[] = $followUpAdvance;
-                    }
+                    $postCommitActions[] = $followUpAdvance;
                 }
 
                 return new HandlerResult(
@@ -360,9 +354,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             $postCommitActions = [];
             if ($hasPendingAppendMessage) {
                 $followUpAdvance = $this->followUpAdvanceAction($runId, $state->turnNo, 'post-cancel-advance');
-                if (null !== $followUpAdvance) {
-                    $postCommitActions[] = $followUpAdvance;
-                }
+                $postCommitActions[] = $followUpAdvance;
             }
 
             return new HandlerResult(
@@ -607,9 +599,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         // Model-turn answers schedule AdvanceRun only when no further human requests remain.
         if ([] === $remainingRequests) {
             $followUpAdvance = $this->followUpAdvanceAction($runId, $state->turnNo, 'human-response');
-            if (null !== $followUpAdvance) {
-                $postCommitActions[] = $followUpAdvance;
-            }
+            $postCommitActions[] = $followUpAdvance;
         }
 
         return new HandlerResult(
@@ -866,9 +856,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
 
             $postCommitActions = [];
             $compactAction = $this->compactAction($runId, $state->turnNo, $message->payload['custom_instructions'] ?? null);
-            if (null !== $compactAction) {
-                $postCommitActions[] = $compactAction;
-            }
+            $postCommitActions[] = $compactAction;
 
             return new HandlerResult(
                 nextState: $nextState,
@@ -1060,9 +1048,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         }
         if ($hasPendingAppendMessage) {
             $followUpAdvance = $this->followUpAdvanceAction($runId, $state->turnNo, 'post-cancel-advance');
-            if (null !== $followUpAdvance) {
-                $postCommitActions[] = $followUpAdvance;
-            }
+            $postCommitActions[] = $followUpAdvance;
         }
 
         return new HandlerResult(
@@ -1158,21 +1144,13 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         ]);
     }
 
-    private function followUpAdvanceAction(string $runId, int $turnNo, string $prefix): ?DispatchCoordinationMessageDTO
+    private function followUpAdvanceAction(string $runId, int $turnNo, string $prefix): DispatchCoordinationMessageDTO
     {
-        if (null === $this->commandBus) {
-            return null;
-        }
-
-        return AdvanceRunCoordinationFactory::create($runId, $turnNo, $prefix, 'Failed to dispatch follow-up AdvanceRun command.');
+        return AdvanceRunCoordinationFactory::create($runId, $turnNo, $prefix);
     }
 
-    private function compactAction(string $runId, int $turnNo, ?string $customInstructions = null): ?DispatchCoordinationMessageDTO
+    private function compactAction(string $runId, int $turnNo, ?string $customInstructions = null): DispatchCoordinationMessageDTO
     {
-        if (null === $this->commandBus) {
-            return null;
-        }
-
         $stepId = \sprintf('compact-%d', hrtime(true));
 
         return new DispatchCoordinationMessageDTO(new CompactRun(
@@ -1183,6 +1161,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             idempotencyKey: hash('sha256', \sprintf('%s|%s', $runId, $stepId)),
             trigger: 'manual',
             customInstructions: $customInstructions,
-        ), 'Failed to dispatch CompactRun command.');
+        ));
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Pipeline;
 
+use Ineersa\AgentCore\Application\Handler\ExecutionOperationMapper;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Contract\ControlMessageOutboxInterface;
 use Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface;
@@ -61,14 +62,7 @@ final readonly class DurablePendingPublication
             if (null === $envelope) {
                 continue;
             }
-            $message = $envelope->getMessage();
-            \assert($message instanceof AbstractAgentBusMessage);
-            try {
-                $this->transitions->assertTransitionReady($runId);
-                ($message instanceof DurableExecutionResult || $message instanceof ExecutionOutcomeUnknown ? $this->commandBus : $this->executionBus)->dispatch($envelope);
-            } catch (\Throwable $exception) {
-                $this->logFailure($runId, $exception);
-
+            if (!$this->dispatchDelivery($envelope)) {
                 return;
             }
         }
@@ -101,6 +95,28 @@ final readonly class DurablePendingPublication
     }
 
     /**
+     * Shared hot/idle delivery: assert cut readiness, choose bus, dispatch once.
+     * Returns false when publication must stop for this owner tick.
+     */
+    public function dispatchDelivery(Envelope $envelope): bool
+    {
+        $message = $envelope->getMessage();
+        if (!$message instanceof AbstractAgentBusMessage) {
+            throw new \RuntimeException('Durable delivery requires an agent bus message.');
+        }
+        try {
+            $this->transitions->assertTransitionReady($message->runId());
+            $this->busForDelivery($message)->dispatch($envelope);
+        } catch (\Throwable $exception) {
+            $this->logFailure($message->runId(), $exception);
+
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
      * @param list<object> $controlActions
      */
     public function persistControlObligations(string $runId, array $controlActions): void
@@ -127,6 +143,7 @@ final readonly class DurablePendingPublication
             if (!$action instanceof AbstractAgentBusMessage) {
                 throw new \RuntimeException('Control outbox requires a concrete run-control message.');
             }
+
             return [
                 $this->messageIdentity($action),
                 ControlOutboxDestination::COMMAND,
@@ -142,17 +159,30 @@ final readonly class DurablePendingPublication
                     $action,
                 ];
             }
-            if ($message instanceof AbstractAgentBusMessage) {
+            if ($message instanceof AbstractAgentBusMessage && ExecutionOperationMapper::supports($message)) {
+                throw new \RuntimeException('Envelope-wrapped gated execution requests belong on the invocation ledger, not the control outbox.');
+            }
+            if ($message instanceof DurableExecutionResult || $message instanceof ExecutionOutcomeUnknown) {
                 return [
                     $this->messageIdentity($message),
-                    $message instanceof DurableExecutionResult || $message instanceof ExecutionOutcomeUnknown
-                        ? ControlOutboxDestination::COMMAND
-                        : ControlOutboxDestination::COMMAND,
+                    ControlOutboxDestination::COMMAND,
                     $action,
                 ];
             }
+            if ($message instanceof AbstractAgentBusMessage) {
+                return [
+                    $this->messageIdentity($message),
+                    ControlOutboxDestination::COMMAND,
+                    $action,
+                ];
+            }
+            throw new \RuntimeException('Control outbox rejects unsupported Envelope payloads.');
         }
         if ($action instanceof AbstractAgentBusMessage) {
+            if (ExecutionOperationMapper::supports($action)) {
+                throw new \RuntimeException('Gated execution requests belong on the invocation ledger, not the control outbox.');
+            }
+
             return [
                 $this->messageIdentity($action),
                 ControlOutboxDestination::COMMAND,
@@ -160,7 +190,14 @@ final readonly class DurablePendingPublication
             ];
         }
 
-        return ['control:'.hash('sha256', serialize($action)), ControlOutboxDestination::COMMAND, $action];
+        throw new \RuntimeException('Unsupported control outbox action '.$action::class.'.');
+    }
+
+    private function busForDelivery(AbstractAgentBusMessage $message): MessageBusInterface
+    {
+        return $message instanceof DurableExecutionResult || $message instanceof ExecutionOutcomeUnknown
+            ? $this->commandBus
+            : $this->executionBus;
     }
 
     private function messageIdentity(AbstractAgentBusMessage $message): string

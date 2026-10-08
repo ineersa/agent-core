@@ -9,16 +9,12 @@ use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Pipeline\DurablePendingPublication;
 use Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
-use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
-use Ineersa\AgentCore\Domain\Message\DurableExecutionResult;
-use Ineersa\AgentCore\Domain\Message\ExecutionOutcomeUnknown;
 use Ineersa\CodingAgent\Session\DoctrineExecutionOperationStore;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 use Symfony\Component\Messenger\Event\WorkerRunningEvent;
 use Symfony\Component\Messenger\Event\WorkerStartedEvent;
-use Symfony\Component\Messenger\MessageBusInterface;
 
 /** Republishes one bounded page per owner idle tick, without invoking external work. */
 final class ExecutionPendingDeliverySubscriber
@@ -34,10 +30,6 @@ final class ExecutionPendingDeliverySubscriber
         private readonly DurablePendingPublication $publication,
         private readonly RunLockManager $locks,
         private readonly Connection $connection,
-        #[Autowire(service: 'agent.command.bus')]
-        private readonly MessageBusInterface $commandBus,
-        #[Autowire(service: 'agent.execution.bus')]
-        private readonly MessageBusInterface $executionBus,
         #[Autowire('%env(HATFIELD_SESSION_ID)%')]
         private readonly string $sessionId,
         private readonly LoggerInterface $logger,
@@ -113,14 +105,7 @@ final class ExecutionPendingDeliverySubscriber
                 if (null === $envelope) {
                     continue;
                 }
-                $message = $envelope->getMessage();
-                \assert($message instanceof AbstractAgentBusMessage);
-                try {
-                    $this->transitions->assertTransitionReady($message->runId());
-                    ($message instanceof DurableExecutionResult || $message instanceof ExecutionOutcomeUnknown ? $this->commandBus : $this->executionBus)->dispatch($envelope);
-                } catch (\Throwable $exception) {
-                    $this->logFailure($message->runId(), $exception);
-                }
+                $this->publication->dispatchDelivery($envelope);
             }
         } catch (\Throwable $exception) {
             $this->logFailure($this->sessionId, $exception);

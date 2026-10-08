@@ -58,7 +58,7 @@ final class ExecutionResultMiddlewareDisposedRecoveryTest extends IsolatedKernel
             $store,
             $container->get(ActiveRunContextInterface::class),
             $acceptance,
-            TestTransitionFinalizerFactory::create($store, new StepDispatcher($bus, $bus), operations: $operations, commandBus: $bus, executionBus: $bus),
+            TestTransitionFinalizerFactory::create($store, new StepDispatcher($bus), operations: $operations, commandBus: $bus, executionBus: $bus),
             $container->get(\Ineersa\AgentCore\Application\Handler\CoordinationActionValidator::class),
         );
         $middleware = new ExecutionResultMiddleware($operations, $recovery, new RunLockManager(new LockFactory(new InMemoryStore())));
