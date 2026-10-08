@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Infrastructure\SymfonyAi\Codex;
 
 use Amp\Cancellation;
+use Amp\CancelledException;
 use Amp\DeferredFuture;
 use Amp\TimeoutCancellation;
 use Amp\Websocket\Client\WebsocketConnection;
@@ -31,6 +32,7 @@ use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmInvocationCancelScope;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmStreamCancelledException;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\Codex\CodexRunCancellationListener;
@@ -87,18 +89,22 @@ final class CodexRunCancellationListenerTest extends IsolatedKernelTestCase
         $ready = new DeferredFuture();
         $release = new DeferredFuture();
         $finished = false;
+        $receiveCancellation = null;
         $receives = 0;
         $connection = $this->createMock(WebsocketConnection::class);
         $connection->expects($this->once())->method('sendText');
         $connection->expects($this->once())->method('close');
         $connection->expects($this->exactly($partial ? 2 : 1))->method('receive')->willReturnCallback(
-            static function (?Cancellation $cancellation) use ($partial, &$receives, $ready, $release, &$finished): ?WebsocketMessage {
+            static function (?Cancellation $cancellation) use ($partial, &$receives, $ready, $release, &$finished, &$receiveCancellation): ?WebsocketMessage {
                 if ($partial && 0 === $receives++) {
                     return WebsocketMessage::fromText('{"type":"response.output_text.delta","delta":"partial"}');
                 }
                 $ready->complete();
                 try {
                     $release->getFuture()->await($cancellation);
+                } catch (CancelledException $exception) {
+                    $receiveCancellation = $exception;
+                    throw $exception;
                 } finally {
                     $finished = true;
                 }
@@ -153,6 +159,9 @@ final class CodexRunCancellationListenerTest extends IsolatedKernelTestCase
                 'UPDATE run_operational_state SET status = ? WHERE run_id = ?', ['cancelling', $state->runId],
             );
             $future->await(new TimeoutCancellation(2.0));
+            $this->assertFalse($release->isComplete(), 'Pending receive must not finish through the safety release.');
+            $this->assertInstanceOf(CancelledException::class, $receiveCancellation);
+            $this->assertInstanceOf(LlmStreamCancelledException::class, $receiveCancellation->getPrevious());
             $this->assertTrue($finished);
             $this->assertCount(1, $transport->getAcknowledged());
             $this->assertSame([], $transport->getRejected());
