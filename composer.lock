@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "a000308a9eb962ff1dd58d5f230d820b",
+    "content-hash": "eabb61c2e0c0950b8737c051912f5900",
     "packages": [
         {
             "name": "amphp/amp",
@@ -2827,7 +2827,7 @@
         },
         {
             "name": "ineersa/hatfield-extension-api",
-            "version": "dev-task/2026-09-25-upgrade-symfony-ai-to-0-14-and-migrate-memory-store-adapter",
+            "version": "dev-task/2026-09-30-fix-in-flight-codex-websocket-cancellation",
             "dist": {
                 "type": "path",
                 "url": ".hatfield/extensions/extension-api",
@@ -2854,16 +2854,16 @@
         },
         {
             "name": "ineersa/symfony-ai-openai-codex-platform",
-            "version": "dev-main",
+            "version": "dev-task/2026-09-30-fix-in-flight-codex-websocket-cancellation",
             "source": {
                 "type": "git",
                 "url": "https://github.com/ineersa/symfony-ai-openai-codex-platform.git",
-                "reference": "27e6d2b9c544436c0c54025980fe2c4619318abb"
+                "reference": "e465358679228d929ace1beb7aabaf5a9d7b41f2"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/ineersa/symfony-ai-openai-codex-platform/zipball/27e6d2b9c544436c0c54025980fe2c4619318abb",
-                "reference": "27e6d2b9c544436c0c54025980fe2c4619318abb",
+                "url": "https://api.github.com/repos/ineersa/symfony-ai-openai-codex-platform/zipball/e465358679228d929ace1beb7aabaf5a9d7b41f2",
+                "reference": "e465358679228d929ace1beb7aabaf5a9d7b41f2",
                 "shasum": ""
             },
             "require": {
@@ -2893,7 +2893,6 @@
                 "phpstan/phpstan-phpunit": "^2.0",
                 "phpunit/phpunit": "^13.2"
             },
-            "default-branch": true,
             "type": "library",
             "autoload": {
                 "psr-4": {
@@ -2907,9 +2906,9 @@
             "description": "OpenAI Codex bridge with OAuth login for Symfony AI.",
             "support": {
                 "issues": "https://github.com/ineersa/symfony-ai-openai-codex-platform/issues",
-                "source": "https://github.com/ineersa/symfony-ai-openai-codex-platform/tree/main"
+                "source": "https://github.com/ineersa/symfony-ai-openai-codex-platform/tree/task/2026-09-30-fix-in-flight-codex-websocket-cancellation"
             },
-            "time": "2026-10-06T23:15:24+00:00"
+            "time": "2026-10-08T15:11:53+00:00"
         },
         {
             "name": "kelunik/certificate",
