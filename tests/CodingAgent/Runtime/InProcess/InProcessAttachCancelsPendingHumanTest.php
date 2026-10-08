@@ -135,7 +135,7 @@ final class InProcessAttachCancelsPendingHumanTest extends IsolatedKernelTestCas
             $container->get(\Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink::class),
             false, new \Psr\Log\NullLogger(), $active, $container->get(\Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor::class),
             $container->get(HatfieldSessionStore::class), $container->get(\Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware::class),
-            $container->get(\Ineersa\AgentCore\Application\Pipeline\RunCommit::class), $container->get(\Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery::class),
+            $container->get(\Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery::class),
             $container->get(\Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository::class),
         );
         $ownerAttach->attach($bus->messages[0]);
@@ -241,7 +241,7 @@ final class InProcessAttachCancelsPendingHumanTest extends IsolatedKernelTestCas
             $container->get(\Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink::class),
             false, new \Psr\Log\NullLogger(), $active, $container->get(\Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor::class),
             $container->get(HatfieldSessionStore::class), $container->get(\Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware::class),
-            $container->get(\Ineersa\AgentCore\Application\Pipeline\RunCommit::class), $container->get(\Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery::class),
+            $container->get(\Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery::class),
             $container->get(\Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository::class),
         );
         $ownerAttach->attach($bus->messages[0]);
