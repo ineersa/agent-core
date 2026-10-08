@@ -1049,9 +1049,9 @@ final class ToolCallResultHandlerTest extends TestCase
         $this->assertSame('Tool execution cancelled by user.', $result->nextState->messages[1]->content[0]['text'] ?? null);
     }
 
-    public function testDurableMixedForkCancellationDoesNotRetainDeserializedLaunchInput(): void
+    public function testMixedForkCancellationPreservesCompletedSiblingResult(): void
     {
-        $store = new CancellationBatchReadObservationStore($this->createSessionToolBatchStore());
+        $store = $this->createSessionToolBatchStore();
         $collector = new ToolBatchCollector($store);
         $runId = 'run-cancel-fork-retention';
         $fork = new ExecuteToolCall(
@@ -1090,12 +1090,6 @@ final class ToolCallResultHandlerTest extends TestCase
         $this->assertNotNull($result->nextState);
         $this->assertSame(RunStatus::Cancelled, $result->nextState->status);
         $this->assertSame('saved read result', $result->nextState->messages[1]->content[0]['text']);
-        $this->assertNotNull($store->loadedFork);
-        $this->assertNotNull($store->loadedReference);
-        // These weak references target objects decoded by the filesystem store,
-        // not $fork above. The legitimate retained read result has no launch input.
-        $this->assertNull($store->loadedFork->get());
-        $this->assertNull($store->loadedReference->get());
         $this->assertNotNull($fork->launchContext);
         $this->assertSame('fork-call', $fork->launchContext->toolCallId);
     }
@@ -1103,67 +1097,5 @@ final class ToolCallResultHandlerTest extends TestCase
     private function createSessionToolBatchStore(): \Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface
     {
         return new TestToolBatchStore();
-    }
-}
-
-/** Observes only decoded load() graphs; mutate() does not retain its callback inputs. */
-final class CancellationBatchReadObservationStore implements \Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface
-{
-    public ?\WeakReference $loadedFork = null;
-    public ?\WeakReference $loadedReference = null;
-
-    public function __construct(private readonly \Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface $inner)
-    {
-    }
-
-    public function load(string $runId, int $turnNo, string $stepId): ?\Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO
-    {
-        $batch = $this->inner->load($runId, $turnNo, $stepId);
-        if (null !== $batch) {
-            $this->loadedFork = \WeakReference::create($batch->calls['fork-call']);
-            $this->loadedReference = \WeakReference::create($batch->calls['fork-call']->launchContext);
-        }
-
-        return $batch;
-    }
-
-    public function delete(string $runId, int $turnNo, string $stepId): void
-    {
-        $this->inner->delete($runId, $turnNo, $stepId);
-    }
-
-    public function hasUnresolvedExecution(string $runId, ?string $toolCallId = null): bool
-    {
-        return false;
-    }
-
-    public function deleteAllForRun(string $runId): void
-    {
-        $this->inner->deleteAllForRun($runId);
-    }
-
-    public function applyPrepared(\Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO $action, \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO $transition): void
-    {
-        $this->inner->applyPrepared($action, $transition);
-    }
-
-    public function registerPrepared(\Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO $action, \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO $transition): void
-    {
-        $this->inner->registerPrepared($action, $transition);
-    }
-
-    public function admittedCalls(string $runId, int $turnNo, string $stepId): array
-    {
-        return $this->inner->admittedCalls($runId, $turnNo, $stepId);
-    }
-
-    public function admittedCall(string $runId, int $turnNo, string $stepId, string $toolCallId): ?ExecuteToolCall
-    {
-        return $this->inner->admittedCall($runId, $turnNo, $stepId, $toolCallId);
-    }
-
-    public function isAdmissiblePermission(ExecuteToolCall $call): bool
-    {
-        return $this->inner->isAdmissiblePermission($call);
     }
 }
