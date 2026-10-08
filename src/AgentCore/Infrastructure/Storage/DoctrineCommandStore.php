@@ -61,10 +61,10 @@ final readonly class DoctrineCommandStore implements CommandStoreInterface
     public function pending(string $runId): array
     {
         $query = $this->records($runId)->select('c.idempotencyKey, c.payload, c.payloadHash')
-            ->andWhere('c.status = :status')->setParameter('status', 'pending')->orderBy('c.id', 'ASC')->getQuery();
+            ->orderBy('c.id', 'ASC')->getQuery();
         $pending = [];
-        // Scalar streaming avoids registering commands or terminal history in
-        // Doctrine's identity map. Only the requested pending DTOs survive.
+        // Scalar streaming avoids registering commands in Doctrine's identity
+        // map. Only the requested pending DTOs survive.
         foreach ($query->toIterable([], AbstractQuery::HYDRATE_SCALAR) as $row) {
             $payload = $row['payload'];
             $hash = $row['payloadHash'];
@@ -83,8 +83,7 @@ final readonly class DoctrineCommandStore implements CommandStoreInterface
 
     public function countPending(string $runId): int
     {
-        return (int) $this->records($runId)->select('COUNT(c.id)')->andWhere('c.status = :status')
-            ->setParameter('status', 'pending')->getQuery()->getSingleScalarResult();
+        return (int) $this->records($runId)->select('COUNT(c.id)')->getQuery()->getSingleScalarResult();
     }
 
     public function markApplied(string $runId, string $idempotencyKey): void

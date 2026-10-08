@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Session;
 
 use Doctrine\ORM\EntityManagerInterface;
+use Ineersa\AgentCore\Infrastructure\Doctrine\CommandRecord;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Entity\HatfieldSessionRepository;
+use Ineersa\CodingAgent\Entity\ToolBatchSchedule;
 use Ineersa\CodingAgent\Session\Event\ControllerSessionShutdownEvent;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\Filesystem\Filesystem;
@@ -395,10 +397,32 @@ final class HatfieldSessionStore
             throw new \RuntimeException(\sprintf('Session "%s" not found.', $sessionId));
         }
 
+        // Scope deletion to the DB-issued identity, including numeric aliases.
+        $sessionId = (string) $id;
         $this->dispatcher->dispatch(new ControllerSessionShutdownEvent($sessionId));
 
-        $this->entityManager->remove($entity);
-        $this->entityManager->flush();
+        $connection = $this->entityManager->getConnection();
+        $connection->transactional(function () use ($connection, $sessionId, $entity): void {
+            // The durable child reservation catalog includes nested children,
+            // even when their disposable operational projections are missing.
+            // Only permanent deletion removes pending work; shutdown must retain it.
+            $runIds = $connection->fetchFirstColumn(<<<'SQL'
+                WITH RECURSIVE owned_runs(run_id) AS (
+                    SELECT :owner
+                    UNION
+                    SELECT child.child_run_id FROM deferred_subagent_child child
+                    JOIN deferred_subagent_batch batch ON batch.lifecycle_id = child.batch_lifecycle_id
+                    JOIN owned_runs parent ON parent.run_id = batch.parent_run_id
+                )
+                SELECT run_id FROM owned_runs
+                SQL, ['owner' => $sessionId]);
+            $this->entityManager->createQueryBuilder()->delete(CommandRecord::class, 'c')
+                ->where('c.runId IN (:runs)')->setParameter('runs', $runIds)->getQuery()->execute();
+            $this->entityManager->createQueryBuilder()->delete(ToolBatchSchedule::class, 'b')
+                ->where('b.runId IN (:runs)')->setParameter('runs', $runIds)->getQuery()->execute();
+            $this->entityManager->remove($entity);
+            $this->entityManager->flush();
+        });
 
         $sessionDir = $this->getSessionDir($sessionId);
         (new Filesystem())->remove($sessionDir);

@@ -9,7 +9,7 @@ use Doctrine\ORM\Mapping as ORM;
 #[ORM\Entity]
 #[ORM\Table(name: 'run_command')]
 #[ORM\UniqueConstraint(name: 'uniq_run_command_identity', columns: ['run_id', 'idempotency_key'])]
-#[ORM\Index(name: 'idx_run_command_pending', columns: ['run_id', 'status', 'id'])]
+#[ORM\Index(name: 'idx_run_command_pending', columns: ['run_id', 'id'])]
 class CommandRecord
 {
     #[ORM\Id]
@@ -24,11 +24,8 @@ class CommandRecord
     public string $idempotencyKey = '';
 
     #[ORM\Column(type: 'text')]
-    public string $status = 'pending';
+    public string $payload = '';
 
-    #[ORM\Column(type: 'text', nullable: true)]
-    public ?string $payload = null;
-
-    #[ORM\Column(name: 'payload_hash', length: 64, nullable: true)]
-    public ?string $payloadHash = null;
+    #[ORM\Column(name: 'payload_hash', length: 64)]
+    public string $payloadHash = '';
 }
