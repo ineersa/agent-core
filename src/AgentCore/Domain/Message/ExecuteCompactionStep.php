@@ -7,10 +7,9 @@ namespace Ineersa\AgentCore\Domain\Message;
 /**
  * Async worker request to invoke the summarization model for compaction.
  *
- * The owner seals the typed summarization and retained-tail messages in an
- * immutable request file. Messenger sends only ExecutionRequest to the LLM
- * transport. The authorization gate resolves this input for the winning claim,
- * without reading execution state or rebuilding conversation history.
+ * The owner supplies typed summarization and retained-tail messages directly on
+ * the execution bus. The worker never rebuilds conversation history. Canonical
+ * start evidence preserves this input for explicit repair.
  */
 final readonly class ExecuteCompactionStep extends AbstractAgentBusMessage
 {

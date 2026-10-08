@@ -47,9 +47,7 @@ parameters:
     env(HATFIELD_AGENT_TRANSPORT_DSN): 'sync://'
     env(HATFIELD_MCP_TRANSPORT_DSN): 'in-memory://'
     env(HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN): 'sync://'
-# llm, tool, and run_control use native PHP serialization so sealed ExecutionRequest
-# references keep their authorization stamps. Request bodies stay in immutable files.
-# ExecutionAuthorizationMiddleware routes those references to llm/tool from the type map.
+# Requests carry immutable DTO inputs; child launch inputs remain file references.
 
 framework:
     messenger:
@@ -57,7 +55,6 @@ framework:
         buses:
             agent.command.bus:
                 middleware:
-                    - Ineersa\AgentCore\Application\Messenger\ExecutionResultMiddleware
                     - Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware
                 default_middleware:
                     enabled: true
@@ -78,9 +75,6 @@ framework:
                     # single mcp consumer instead of the default tool transport.
                     # Runs before Symfony send_message middleware.
                     - Ineersa\CodingAgent\Mcp\Messenger\McpExecuteToolCallRoutingMiddleware
-                    # After catalog/session routing. Stamps remaining ExecutionRequest
-                    # deliveries and claims sealed invocations on receive.
-                    - Ineersa\AgentCore\Application\Messenger\ExecutionAuthorizationMiddleware
 
         transports:
             run_control:
@@ -105,8 +99,6 @@ framework:
                 dsn: '%env(HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN)%'
 
         routing:
-            Ineersa\AgentCore\Domain\Message\DurableExecutionResult: run_control
-            Ineersa\AgentCore\Domain\Message\ExecutionOutcomeUnknown: run_control
             Ineersa\CodingAgent\Application\Message\AttachRun: run_control
             Ineersa\CodingAgent\Application\Message\SelectHistoryPrompt: run_control
             Ineersa\CodingAgent\Application\Message\RepairSession: run_control
@@ -129,6 +121,9 @@ framework:
             Ineersa\AgentCore\Domain\Message\AdvanceRun: run_control
             Ineersa\AgentCore\Domain\Message\CompactRun: run_control
             # Default tool transport; subagent is overridden to agent via middleware.
+            Ineersa\AgentCore\Domain\Message\ExecuteLlmStep: llm
+            Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep: llm
+            Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall: tool
             Ineersa\AgentCore\Domain\Message\ExecuteToolCall: tool
             Ineersa\CodingAgent\Mcp\Message\McpInitializeSessionCommand: mcp
             Ineersa\CodingAgent\Mcp\Message\McpRefreshCatalogCommand: mcp

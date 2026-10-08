@@ -11,9 +11,8 @@ use Doctrine\ORM\Mapping as ORM;
  *
  * DoctrineToolBatchStore reads and writes rows through DBAL only. This entity
  * keeps CodingAgent\Entity mapping and migrations aligned; it is not a
- * repository or ownership API. Invocation bodies and sealed results live in
- * the common execution ledger; this table owns membership, queue state, and
- * current invocation/result references only.
+ * repository or ownership API. This row owns the active batch's ordinary calls,
+ * collected results, and scheduling decisions.
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'tool_batch_schedule')]
@@ -55,15 +54,13 @@ class ToolBatchSchedule
     public string $awaitingHumanInputJson = '{}';
 
     /**
-     * JSON object: tool_call_id => {attempt, idempotency_key, effect_id, request_hash}.
-     * Bodies remain sealed on the common invocation ledger.
+     * JSON object: tool_call_id => native Messenger-encoded ExecuteToolCall.
      */
     #[ORM\Column(name: 'calls_json', type: 'text')]
     public string $callsJson = '{}';
 
     /**
-     * JSON object: tool_call_id => {attempt, idempotency_key, effect_id, claim_token, result_hash, bytes}.
-     * Bodies remain sealed on the common invocation ledger.
+     * JSON object: tool_call_id => native Messenger-encoded ToolCallResult.
      */
     #[ORM\Column(name: 'results_json', type: 'text')]
     public string $resultsJson = '{}';

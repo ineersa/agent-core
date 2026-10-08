@@ -7,15 +7,9 @@ namespace Ineersa\AgentCore\Contract\Tool;
 use Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO;
 use Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO;
 use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
-use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
 
-/**
- * Durable scheduling store for tool batch membership and queues.
- *
- * Immutable request/result bodies and claims remain on the invocation ledger.
- * Registration applies the producer-captured membership decision exactly.
- */
+/** Active batch calls, collected results, and captured scheduling decisions. */
 interface ToolBatchStoreInterface
 {
     public function load(string $runId, int $turnNo, string $stepId): ?ToolBatchStateDTO;
@@ -26,26 +20,13 @@ interface ToolBatchStoreInterface
 
     public function hasUnresolvedExecution(string $runId, ?string $toolCallId = null): bool;
 
-    /** Apply a prepared scheduling delta under a verified transition identity. */
-    public function applyPrepared(FinalizeToolBatchDTO $action, VerifiedTransitionDTO $transition): void;
-
-    /** Persist prepared membership under a verified transition identity. */
-    public function registerPrepared(RegisterToolBatchDTO $action, VerifiedTransitionDTO $transition): void;
-
     /**
-     * Current owner-admitted invocations for a batch. Queued or barrier-blocked
-     * membership remains non-executable until it appears here.
+     * Prepare payloads before the metadata transaction. The returned local write
+     * joins that transaction; it is never persisted as transition work.
      *
-     * @return list<ExecuteToolCall>
+     * @param list<RegisterToolBatchDTO|FinalizeToolBatchDTO> $actions
+     *
+     * @return \Closure(): void
      */
-    public function admittedCalls(string $runId, int $turnNo, string $stepId): array;
-
-    /** Resolve one scheduled call identity without scanning the whole batch. */
-    public function admittedCall(string $runId, int $turnNo, string $stepId, string $toolCallId): ?ExecuteToolCall;
-
-    /**
-     * True when the ledger still owns a Prepared/Armed permission for this call.
-     * Live/ready/terminal siblings stay owned by their claim or result.
-     */
-    public function isAdmissiblePermission(ExecuteToolCall $call): bool;
+    public function prepareChanges(array $actions, VerifiedTransitionDTO $transition): \Closure;
 }

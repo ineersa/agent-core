@@ -31,7 +31,6 @@ enum RunEventTypeEnum: string
     case ToolBatchCommitted = 'tool_batch_committed';
     case ModelNotification = 'model_notification';
     case ContextRefreshed = 'context_refreshed';
-    case ExecutionUnknownRetired = 'execution_unknown_retired';
     // ── Compaction events ──────────────────────────────────────────────
     case ContextCompactionRequested = 'context_compaction_requested';
     case ContextCompactionStarted = 'context_compaction_started';

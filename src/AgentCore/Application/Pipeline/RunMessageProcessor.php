@@ -10,7 +10,6 @@ use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Contract\History\HistoryTailDiscardInterface;
 use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
-use Ineersa\AgentCore\Domain\Message\DurableExecutionResult;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
 
 /**
@@ -35,7 +34,7 @@ final readonly class RunMessageProcessor
         $this->handlers = [...$handlers];
     }
 
-    public function process(string $scope, AbstractAgentBusMessage $message, ?DurableExecutionResult $durableResult = null): void
+    public function process(string $scope, AbstractAgentBusMessage $message): void
     {
         $runId = $message->runId();
         RunLogContext::enter([
@@ -46,7 +45,7 @@ final readonly class RunMessageProcessor
         ]);
 
         try {
-            $this->runLockManager->synchronized($runId, function () use ($message, $runId, $durableResult): void {
+            $this->runLockManager->synchronized($runId, function () use ($message, $runId): void {
                 $handler = $this->resolveHandler($message);
                 RunLogContext::enter([
                     'handler' => $handler::class,
@@ -62,15 +61,6 @@ final readonly class RunMessageProcessor
                         return;
                     }
                     $state = $this->activeRunContext->requireLoaded($runId);
-                    if ($this->runCommit->executionResultAlreadyDisposed($durableResult)) {
-                        return;
-                    }
-
-                    if ($message instanceof \Ineersa\AgentCore\Domain\Message\AdvanceRun || $message instanceof \Ineersa\AgentCore\Domain\Message\CompactRun || $message instanceof \Ineersa\AgentCore\Domain\Message\ApplyShellCommand
-                        || ($message instanceof ApplyCommand && \Ineersa\AgentCore\Domain\Command\CoreCommandKind::Cancel !== $message->kind)) {
-                        $this->runCommit->assertNoUnknownExecution($runId);
-                    }
-
                     // A context-mutating action may append history_tail_discarded
                     // before its normal handler transition. Persist this separate
                     // canonical mutation immediately, including no-op handlers.
@@ -84,14 +74,7 @@ final readonly class RunMessageProcessor
                     }
 
                     $result = $handler->handle($message, $state);
-                    $stale = null === $result->nextState || $state->turnNo !== $message->turnNo() || \Ineersa\AgentCore\Domain\Run\RunStatus::Cancelled === $state->status;
-                    $executionDisposition = $this->runCommit->prepareExecutionDisposition($durableResult, $stale);
                     if (null === $result->nextState) {
-                        if (null !== $executionDisposition) {
-                            $this->runCommit->commit($state, $state, [], dispatchAfterTurnHooks: false, postCommitEffects: $result->postCommitEffects, postCommitActions: $result->postCommitActions, executionDisposition: $executionDisposition);
-
-                            return;
-                        }
                         if ([] !== $result->postCommitEffects || [] !== $result->postCommitActions) {
                             $this->runCommit->commit($state, $state, [], dispatchAfterTurnHooks: false, postCommitEffects: $result->postCommitEffects, postCommitActions: $result->postCommitActions);
                         }
@@ -99,7 +82,7 @@ final readonly class RunMessageProcessor
                         return;
                     }
 
-                    $this->runCommit->commit($state, $result->nextState, $result->events, $result->effects, postCommitEffects: $result->postCommitEffects, postCommitActions: $result->postCommitActions, executionDisposition: $executionDisposition);
+                    $this->runCommit->commit($state, $result->nextState, $result->events, $result->effects, postCommitEffects: $result->postCommitEffects, postCommitActions: $result->postCommitActions);
                 } finally {
                     RunLogContext::leave();
                 }

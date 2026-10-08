@@ -11,20 +11,22 @@ use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
+use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
  * Executes a shell tool call on the tool consumer.
  *
  * Canonical tool_execution_start is committed by ApplyShellCommandHandler before
- * this effect is dispatched. The worker returns ToolCallResult to the execution
- * middleware, which persists it and notifies run_control for canonical completion.
+ * this effect is dispatched. The worker posts ToolCallResult to the
+ * command bus for canonical completion.
  */
 #[AsMessageHandler(bus: 'agent.execution.bus')]
 final readonly class ExecuteShellToolCallWorker
 {
     public function __construct(
+        private MessageBusInterface $commandBus,
         private ToolExecutorInterface $toolExecutor,
-        private ?LoggerInterface $logger = null,
+        private LoggerInterface $logger,
     ) {
     }
 
@@ -40,7 +42,20 @@ final readonly class ExecuteShellToolCallWorker
         ]);
 
         try {
-            return $this->execute($message);
+            $result = $this->execute($message);
+            try {
+                $this->commandBus->dispatch($result);
+            } catch (\Throwable $exception) {
+                $this->logger->warning('runtime.result_send_failed', [
+                    'run_id' => $message->runId(),
+                    'session_id' => $message->runId(),
+                    'component' => 'shell_worker',
+                    'event_type' => 'runtime.result_send_failed',
+                    'exception_class' => $exception::class,
+                ]);
+            }
+
+            return $result;
         } finally {
             RunLogContext::leave();
         }
@@ -57,10 +72,10 @@ final readonly class ExecuteShellToolCallWorker
             runId: $message->runId(),
         ));
 
-        $this->logger?->info('shell.tool_result_dispatched', [
+        $this->logger->info('shell.tool_result_ready', [
             'run_id' => $message->runId(),
             'component' => 'tool.shell',
-            'event_type' => 'shell.tool_result_dispatched',
+            'event_type' => 'shell.tool_result_ready',
             'tool_call_id' => $message->toolCallId,
             'is_error' => $result->isError,
         ]);

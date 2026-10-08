@@ -18,12 +18,16 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\RunCancellationToken;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
+use Symfony\Component\Messenger\MessageBusInterface;
 
 final readonly class ExecuteToolCallWorker
 {
     public function __construct(
+        private MessageBusInterface $commandBus,
+        private LoggerInterface $logger,
         private ToolExecutorInterface $toolExecutor,
         private DeferredToolCompletionRepositoryInterface $deferredToolCompletionRepository,
         private ToolExecutionResultStore $resultStore,
@@ -35,8 +39,7 @@ final readonly class ExecuteToolCallWorker
     }
 
     /**
-     * Handles sealed ExecuteToolCall invocations on the agent.execution.bus.
-     * Claim/save/notify belong to ExecutionAuthorizationMiddleware.
+     * Executes the ordinary request and posts its result to the command bus.
      */
     #[AsMessageHandler(bus: 'agent.execution.bus')]
     public function __invoke(ExecuteToolCall $message): ?ToolCallResult
@@ -69,21 +72,10 @@ final readonly class ExecuteToolCallWorker
                     return null;
                 }
 
-                $this->resultStore->releaseCompleted(
-                    $message->runId(),
-                    $message->toolCallId,
-                    $message->toolName,
-                    $message->toolIdempotencyKey,
-                );
-
                 return $outcome;
             };
 
-            if (null === $this->tracer) {
-                return $execute();
-            }
-
-            return $this->tracer->inSpan('turn.execution.tool_worker', [
+            $result = null === $this->tracer ? $execute() : $this->tracer->inSpan('turn.execution.tool_worker', [
                 'run_id' => $message->runId(),
                 'turn_no' => $message->turnNo(),
                 'step_id' => $message->stepId(),
@@ -91,6 +83,25 @@ final readonly class ExecuteToolCallWorker
                 'tool_name' => $message->toolName,
                 'worker' => 'tool',
             ], $execute, root: true);
+            if (null === $result) {
+                return null;
+            }
+            try {
+                $this->commandBus->dispatch($result);
+            } catch (\Throwable $exception) {
+                $this->logger->warning('runtime.result_send_failed', [
+                    'run_id' => $message->runId(),
+                    'session_id' => $message->runId(),
+                    'component' => 'execution_worker',
+                    'event_type' => 'runtime.result_send_failed',
+                    'exception_class' => $exception::class,
+                ]);
+
+                return $result;
+            }
+            $this->resultStore->releaseCompleted($message->runId(), $message->toolCallId, $message->toolName, $message->toolIdempotencyKey);
+
+            return $result;
         } finally {
             RunLogContext::leave();
         }

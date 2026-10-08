@@ -28,17 +28,24 @@ final readonly class DoctrineCommandStore implements CommandStoreInterface
 
     public function enqueue(PendingCommand $command): bool
     {
-        return $this->withRunLock($command->runId, function () use ($command): bool {
+        return ($this->prepareEnqueue($command))();
+    }
+
+    public function prepareEnqueue(PendingCommand $command): \Closure
+    {
+        // Preserve native PHP DTO semantics without serializing under the DB lock.
+        $payload = $this->serializer->encode(new Envelope($command))['body'];
+        $hash = hash('sha256', $payload);
+
+        return fn (): bool => $this->withRunLock($command->runId, function () use ($command, $payload, $hash): bool {
             if ($this->has($command->runId, $command->idempotencyKey)) {
                 return false;
             }
             $record = new CommandRecord();
             $record->runId = $command->runId;
             $record->idempotencyKey = $command->idempotencyKey;
-            // Keep the existing native PHP DTO semantics, including typed
-            // nested payload values, without a second hand-written codec.
-            $record->payload = $this->serializer->encode(new Envelope($command))['body'];
-            $record->payloadHash = hash('sha256', $record->payload);
+            $record->payload = $payload;
+            $record->payloadHash = $hash;
             $this->insert($record);
 
             return true;

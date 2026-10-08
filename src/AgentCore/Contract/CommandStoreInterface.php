@@ -10,6 +10,11 @@ interface CommandStoreInterface
 {
     public function enqueue(PendingCommand $command): bool;
 
+    /** Prepare serialization before joining the owner's metadata transaction.
+     * @return \Closure(): bool
+     */
+    public function prepareEnqueue(PendingCommand $command): \Closure;
+
     public function has(string $runId, string $idempotencyKey): bool;
 
     /**

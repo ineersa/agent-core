@@ -12,8 +12,8 @@ use Symfony\Component\Validator\Constraints as Assert;
 /**
  * Runtime and SQL scheduling state for one (run, turn, step).
  *
- * In-process maps hold typed bus messages. Durable stores persist scalar
- * membership/queue refs and hydrate sealed bodies from the invocation ledger.
+ * The active SQL batch owns typed calls and collected sibling results alongside
+ * membership, FIFO queue, in-flight work, and human-input waits.
  */
 final class ToolBatchStateDTO
 {

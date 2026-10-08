@@ -9,7 +9,6 @@ use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
-use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 
 final readonly class CompleteDeferredToolCallHandler
@@ -17,7 +16,8 @@ final readonly class CompleteDeferredToolCallHandler
     public function __construct(
         private DeferredToolCompletionRepositoryInterface $deferredRepository,
         private MessageBusInterface $commandBus,
-        private \Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface $executionOperations,
+        private RunLockManager $locks,
+        private \Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface $batches,
         private LoggerInterface $logger,
     ) {
     }
@@ -50,26 +50,33 @@ final readonly class CompleteDeferredToolCallHandler
                 return;
             }
 
-            // Dispatch first while status remains pending so Messenger retries can re-dispatch
-            // after transport/handler failures. Mark completed only after dispatch succeeds.
-            // If dispatch succeeds but markCompleted fails, a later retry may dispatch again.
-            // ToolCallResultHandler and the durable tool-batch state admit the terminal result only once,
-            // so a duplicate delivery produces no additional observable pipeline transition.
-            try {
-                $toolCallResult = ToolCallResultFactory::fromDeferredCorrelationAndCompletion(
-                    $correlation,
-                    $message->content,
-                    $message->details,
-                    $message->isError,
-                    $message->error,
-                );
-                $reference = $this->executionOperations->saveDeferredResult($message->deferredId, $toolCallResult);
-                $this->commandBus->dispatch($reference);
-            } catch (ExceptionInterface $exception) {
-                throw new \RuntimeException('Failed to dispatch deferred tool ToolCallResult.', previous: $exception);
-            }
-
-            $this->deferredRepository->markCompleted($message->deferredId);
+            $toolCallResult = ToolCallResultFactory::fromDeferredCorrelationAndCompletion(
+                $correlation,
+                $message->content,
+                $message->details,
+                $message->isError,
+                $message->error,
+            );
+            // Keep the existing pending correlation until sending succeeds. A
+            // transport loss needs explicit repair, not another publication queue.
+            $this->locks->afterRelease($correlation->runId, function () use ($message, $correlation, $toolCallResult): void {
+                try {
+                    $this->commandBus->dispatch($toolCallResult);
+                    $this->deferredRepository->markCompleted($message->deferredId);
+                    // Synchronous delivery may have retained the finalized batch
+                    // while its deferred correlation was still pending.
+                    $this->batches->delete($correlation->runId, $correlation->turnNo, $correlation->stepId);
+                } catch (\Throwable $exception) {
+                    $this->logger->warning('deferred_tool_completion.delivery_failed', [
+                        'run_id' => $correlation->runId,
+                        'session_id' => $correlation->runId,
+                        'component' => 'deferred_tool_completion',
+                        'event_type' => 'deferred_tool_completion.delivery_failed',
+                        'deferred_id' => $message->deferredId,
+                        'exception_class' => $exception::class,
+                    ]);
+                }
+            });
         } finally {
             RunLogContext::leave();
         }

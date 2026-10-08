@@ -17,6 +17,7 @@ final readonly class SessionRepairPlan
     /**
      * @param list<RunEvent> $events
      * @param list<object>   $actions
+     * @param list<object>   $effects
      */
     public function __construct(
         public RunState $previousState,
@@ -24,6 +25,7 @@ final readonly class SessionRepairPlan
         public array $events,
         public array $actions,
         public RepairResult $result,
+        public array $effects = [],
     ) {
     }
 }

@@ -15,13 +15,11 @@ use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
-use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
-use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -56,7 +54,6 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         private NormalizerInterface&DenormalizerInterface $serializer,
         private RunCommit $runCommit,
         private \Ineersa\CodingAgent\Session\History\HistoryReplayFilter $historyReplayFilter,
-        private \Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface $executionOperations,
         private DeferredSubagentBatchRepository $deferredBatches,
     ) {
         $this->toolExecutionEndPayloadCodec = new ToolExecutionEndPayloadCodec($this->serializer);
@@ -75,6 +72,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
                         $decision->nextState,
                         $decision->events,
                         dispatchAfterTurnHooks: false,
+                        postCommitEffects: $decision->effects,
                         postCommitActions: $decision->actions,
                     );
                     if ([] !== $decision->events) {
@@ -146,70 +144,16 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         ]);
     }
 
-    private function matchesUnknownExecution(RunState $state, \Ineersa\AgentCore\Domain\Message\ExecutionOutcomeUnknown $notice): bool
-    {
-        if ($state->currentOperation?->matchesMessage($notice)) {
-            return true;
-        }
-        // Attached shells deliberately do not replace the active model token.
-        // Match their own pending call, as the normal unknown-notice handler does.
-        foreach ($state->currentToolCalls as $call) {
-            if ($state->turnNo === $notice->turnNo()
-                && $call->batchId === \Ineersa\AgentCore\Domain\Run\ToolBatchIdentity::fromTurnAndStep($notice->turnNo(), $notice->stepId())
-                && $call->attempt === $notice->attempt()
-                && isset($state->pendingShellToolCalls[$call->toolCallId])
-                && hash('sha256', $state->runId.'|'.$call->toolCallId) === $notice->idempotencyKey()) {
-                return true;
-            }
-        }
-        $authorized = $this->currentAuthorizedOrdinaryToolCall($state, $notice);
-
-        return null !== $authorized && $this->executionOperations->matchesCurrentAuthorizedToolInvocation($notice, $authorized);
-    }
-
-    private function currentAuthorizedOrdinaryToolCall(RunState $state, \Ineersa\AgentCore\Domain\Message\ExecutionOutcomeUnknown $notice): ?ExecuteToolCall
-    {
-        if ($state->turnNo !== $notice->turnNo() || $state->activeStepId !== $notice->stepId()) {
-            return null;
-        }
-        $batch = $this->toolBatchStore->load($state->runId, $state->turnNo, $notice->stepId());
-        if (null === $batch) {
-            return null;
-        }
-        foreach ($state->currentToolCalls as $call) {
-            if ($call->batchId !== \Ineersa\AgentCore\Domain\Run\ToolBatchIdentity::fromTurnAndStep($notice->turnNo(), $notice->stepId())
-                || !isset($state->pendingToolCalls[$call->toolCallId])
-                || isset($state->pendingShellToolCalls[$call->toolCallId])) {
-                continue;
-            }
-            $authorized = $batch->calls[$call->toolCallId] ?? null;
-            if ($authorized instanceof ExecuteToolCall
-                && $authorized->toolCallId === $call->toolCallId
-                && $authorized->attempt() === $notice->attempt()
-                && $authorized->idempotencyKey() === $notice->idempotencyKey()) {
-                return $authorized;
-            }
-        }
-
-        return null;
-    }
-
-    /** @param list<RunEvent> $leadingEvents
+    /**
      * @param list<object> $leadingActions
      */
-    private function doRepair(string $runId, bool $apply, string $commandId, array $leadingEvents = [], array $leadingActions = []): RepairResult|SessionRepairPlan
+    private function doRepair(string $runId, bool $apply, string $commandId, array $leadingActions = []): RepairResult|SessionRepairPlan
     {
         $sorted = $this->canonicalHistory($runId);
         if ($sorted instanceof RepairResult) {
             return $sorted;
         }
 
-        // Prepare the remaining repair before publishing retirement. One intent
-        // retains both decisions, so recovery never regenerates the second one.
-        $maxSeq = $this->replayEventPreparer->maxSequence($sorted);
-        foreach ($leadingEvents as $offset => $event) {
-            $sorted[] = new RunEvent($event->runId, $maxSeq + $offset + 1, $event->turnNo, $event->type, $event->payload, $event->createdAt);
-        }
         $storedState = $this->activeRunContext->requireLoaded($runId);
 
         if ($storedState->isStreaming) {
@@ -225,51 +169,6 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
 
         $replayed = $this->retainedReplay($runId, $sorted);
 
-        $unknown = [] === $leadingEvents ? $this->executionOperations->unknownExecutionsForRepair($runId) : [];
-        if ([] !== $unknown) {
-            foreach ($unknown as $notice) {
-                $this->executionOperations->assertUnknownRepairable($notice);
-            }
-            $warning = \Ineersa\AgentCore\Domain\Coordination\RetireUnknownExecutionDTO::WARNING;
-            if (!$apply) {
-                return new RepairResult(true, false, 'Unknown execution repair available. '.$warning);
-            }
-            $actions = [...$leadingActions, ...array_map(static fn ($notice) => new \Ineersa\AgentCore\Domain\Coordination\RetireUnknownExecutionDTO($notice), $unknown)];
-            $event = RunEvent::forAppend($runId, $replayed->turnNo, RunEventTypeEnum::ExecutionUnknownRetired->value, ['warning' => $warning, 'execution_ids' => array_map(static fn ($notice) => $notice->effectId, $unknown)]);
-            $events = [$event];
-            $nextState = $storedState;
-            foreach ($unknown as $notice) {
-                if ($this->matchesUnknownExecution($replayed, $notice) && !\in_array($replayed->status, [RunStatus::Failed, RunStatus::Completed, RunStatus::Cancelled], true)) {
-                    $events[] = RunEvent::forAppend($runId, $replayed->turnNo, RunEventTypeEnum::AgentEnd->value, ['reason' => 'failed', 'error' => $warning, 'error_type' => 'execution_outcome_unknown']);
-                    $nextState = $storedState->with(['status' => RunStatus::Failed, 'isStreaming' => false, 'streamingMessage' => null, 'errorMessage' => $warning]);
-                    break;
-                }
-            }
-            // Decide the nested repair before admitting retirement or child actions.
-            $nested = $this->doRepair($runId, true, $commandId, $events, $actions);
-            if ($nested instanceof RepairResult) {
-                if (null !== $nested->refusalReason) {
-                    return $nested;
-                }
-
-                return new SessionRepairPlan(
-                    $storedState,
-                    $nextState,
-                    $events,
-                    $actions,
-                    new RepairResult(true, true, $warning.' '.$nested->message, $nested->refusalReason, $nested->activeOperationsRedriven),
-                );
-            }
-
-            return new SessionRepairPlan(
-                $nested->previousState,
-                $nested->nextState,
-                $nested->events,
-                $nested->actions,
-                new RepairResult(true, true, $warning.' '.$nested->result->message, $nested->result->refusalReason, $nested->result->activeOperationsRedriven),
-            );
-        }
-
         if ($this->hasTerminalAgentEnd($sorted)) {
             if ($this->terminalReasonIs($sorted, $replayed, RunStatus::Failed, 'failed')) {
                 return $this->repairTerminalFailedMalformedBatch(
@@ -278,7 +177,6 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
                     sorted: $sorted,
                     replayed: $replayed,
                     storedState: $storedState,
-                    leadingEvents: $leadingEvents,
                     leadingActions: $leadingActions,
                 );
             }
@@ -289,13 +187,12 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
                 sorted: $sorted,
                 replayed: $replayed,
                 storedState: $storedState,
-                leadingEvents: $leadingEvents,
                 leadingActions: $leadingActions,
             );
         }
 
         if (RunStatus::Cancelling !== $replayed->status) {
-            $redrive = $this->currentOperationRedrive($runId, $apply, $sorted, $replayed, $leadingEvents, $leadingActions);
+            $redrive = $this->currentOperationRedrive($runId, $apply, $sorted, $replayed, $leadingActions);
             if (null !== $redrive) {
                 return $redrive;
             }
@@ -387,7 +284,6 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             storedState: $storedState,
             successMessage: 'Stale non-terminal cancellation repaired.',
             requiredStatus: RunStatus::Cancelled,
-            leadingEvents: $leadingEvents,
             leadingActions: $leadingActions,
         );
     }
@@ -400,7 +296,6 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
      * messages only — never a second agent_end or tool_batch_committed.
      *
      * @param list<RunEvent> $sorted
-     * @param list<RunEvent> $leadingEvents
      * @param list<object>   $leadingActions
      */
     private function repairTerminalCancelledMalformedBatch(
@@ -409,7 +304,6 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         array $sorted,
         RunState $replayed,
         RunState $storedState,
-        array $leadingEvents,
         array $leadingActions,
     ): RepairResult|SessionRepairPlan {
         if (!$this->hasCancellationContext($sorted)) {
@@ -430,7 +324,6 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             successMessage: 'Terminal cancelled session repaired: missing tool messages appended.',
             requiredStatus: RunStatus::Cancelled,
             stepIdPrefix: 'repair-cancel',
-            leadingEvents: $leadingEvents,
             leadingActions: $leadingActions,
         );
     }
@@ -441,7 +334,6 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
      * unavailable result so a resumed session has a valid assistant/tool pair.
      *
      * @param list<RunEvent> $sorted
-     * @param list<RunEvent> $leadingEvents
      * @param list<object>   $leadingActions
      */
     private function repairTerminalFailedMalformedBatch(
@@ -450,7 +342,6 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         array $sorted,
         RunState $replayed,
         RunState $storedState,
-        array $leadingEvents,
         array $leadingActions,
     ): RepairResult|SessionRepairPlan {
         return $this->repairTerminalMalformedBatch(
@@ -463,14 +354,12 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             successMessage: 'Failed session repaired: missing tool messages appended.',
             requiredStatus: RunStatus::Failed,
             stepIdPrefix: 'repair-failed',
-            leadingEvents: $leadingEvents,
             leadingActions: $leadingActions,
         );
     }
 
     /**
      * @param list<RunEvent> $sorted
-     * @param list<RunEvent> $leadingEvents
      * @param list<object>   $leadingActions
      */
     private function repairTerminalMalformedBatch(
@@ -483,7 +372,6 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         string $successMessage,
         RunStatus $requiredStatus,
         string $stepIdPrefix,
-        array $leadingEvents,
         array $leadingActions,
     ): RepairResult|SessionRepairPlan {
         $missingIds = $this->missingToolResultIds($replayed->messages);
@@ -566,7 +454,6 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             storedState: $storedState,
             successMessage: $successMessage,
             requiredStatus: $requiredStatus,
-            leadingEvents: $leadingEvents,
             leadingActions: $leadingActions,
             requireValidToolCallSequence: true,
         );
@@ -575,7 +462,6 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
     /**
      * @param list<array{type: string, payload: array<string, mixed>}> $eventSpecs
      * @param list<RunEvent>                                           $sorted
-     * @param list<RunEvent>                                           $leadingEvents
      * @param list<object>                                             $leadingActions
      */
     private function appendProposedRepairEvents(
@@ -588,7 +474,6 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         string $successMessage,
         RunStatus $requiredStatus,
         bool $requireValidToolCallSequence = false,
-        array $leadingEvents = [],
         array $leadingActions = [],
     ): RepairResult|SessionRepairPlan {
         $proposedEvents = $this->eventFactory->eventsFromSpecs($runId, $turnNo, $maxSeq + 1, $eventSpecs);
@@ -643,7 +528,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         return new SessionRepairPlan(
             $storedState,
             $persisted,
-            [...$leadingEvents, ...$proposedEvents],
+            $proposedEvents,
             $leadingActions,
             new RepairResult(
                 repairableStaleCancellationDetected: true,
@@ -948,159 +833,72 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
     }
 
     /**
-     * A manual /repair is explicit authorization to resend a bounded current
-     * operation. It never appends a synthetic completion event: workers and
+     * A manual /repair explicitly requests the current operation again. It never appends a synthetic completion event: workers and
      * result handlers remain the authoritative completion path.
      *
      * @param list<RunEvent> $events
-     * @param list<RunEvent> $leadingEvents
      * @param list<object>   $leadingActions
      */
-    private function currentOperationRedrive(string $runId, bool $apply, array $events, RunState $state, array $leadingEvents, array $leadingActions): RepairResult|SessionRepairPlan|null
+    private function currentOperationRedrive(string $runId, bool $apply, array $events, RunState $state, array $leadingActions): RepairResult|SessionRepairPlan|null
     {
         $events = $this->historyReplayFilter->filter($events);
         $effects = [];
         $operation = $state->currentOperation;
-
-        // Validate shell reconstruction before collecting any LLM effect. A
-        // historical shell event without standalone evidence is ambiguous; in
-        // particular, it must not cause a legacy shell-seeded turn to be
-        // redriven as a fabricated LLM operation.
-        $shellEffects = [];
         $standaloneShellOperation = false;
         foreach ($state->pendingShellToolCalls as $toolCallId => $_) {
             $shell = $this->shellEffectFromEvents($runId, $toolCallId, $events);
             if (null === $shell) {
-                return $this->refusalResult($runId, 'Session repair refused: current shell command cannot be reconstructed safely.', SessionRepairRefusalReasonEnum::AmbiguousPendingWork);
+                return $this->refusalResult($runId, 'Session repair refused: current shell command cannot be reconstructed.', SessionRepairRefusalReasonEnum::AmbiguousPendingWork);
             }
-            // Leading unknown retirement already owns this receipt. Do not ask
-            // redrive for Armed/ResultReady evidence that OutcomeUnknown cannot supply.
-            if ($this->leadingActionsRetireInvocation($leadingActions, $shell)) {
-                continue;
-            }
-            $shellEffects[] = $shell;
-            $standaloneShellOperation = $standaloneShellOperation
-                || (null !== $operation && $this->isStandaloneShellOperation($operation, $toolCallId, $events));
+            $effects[] = $shell;
+            $standaloneShellOperation = $standaloneShellOperation || (null !== $operation && $this->isStandaloneShellOperation($operation, $toolCallId, $events));
         }
-
         if (RunStatus::Compacting === $state->status) {
-            if (null === $operation) {
-                return $this->refusalResult($runId, 'Session repair refused: current compaction identity cannot be reconstructed safely.', SessionRepairRefusalReasonEnum::AmbiguousPendingWork);
+            $request = null;
+            foreach (array_reverse($events) as $event) {
+                if (RunEventTypeEnum::ContextCompactionStarted->value !== $event->type || !\is_array($event->payload['worker_request'] ?? null)) {
+                    continue;
+                }
+                $candidate = $this->serializer->denormalize($event->payload['worker_request'], ExecuteCompactionStep::class);
+                if ($candidate instanceof ExecuteCompactionStep && $candidate->runId() === $runId && $operation?->matchesMessage($candidate)) {
+                    $request = $candidate;
+                    break;
+                }
             }
-
-            $compaction = $this->executionOperations->repairDelivery($runId, $operation, ExecuteCompactionStep::class);
-            if (null === $compaction) {
-                return $this->refusalResult($runId, 'Session repair refused: current compaction authorization is missing.', SessionRepairRefusalReasonEnum::AmbiguousPendingWork);
+            if (null === $request) {
+                return $this->refusalResult($runId, 'Session repair refused: current compaction input cannot be reconstructed.', SessionRepairRefusalReasonEnum::AmbiguousPendingWork);
             }
-            $effects[] = $compaction;
+            $effects[] = $request;
         } elseif (null !== $operation && !$standaloneShellOperation) {
-            $delivery = $this->executionOperations->repairDelivery($runId, $operation, ExecuteLlmStep::class);
-            if (null === $delivery) {
-                return $this->refusalResult($runId, 'Session repair refused: current LLM authorization is missing.', SessionRepairRefusalReasonEnum::AmbiguousPendingWork);
-            }
-            $effects[] = $delivery;
+            $effects[] = new ExecuteLlmStep($runId, $operation->turnNo, $operation->stepId, $operation->attempt, $operation->idempotencyKey, \sprintf('toolset:run:%s:turn:%d', $runId, $operation->turnNo), $state->messages);
         }
-        foreach ($shellEffects as $shell) {
-            $delivery = $this->executionOperations->repairDelivery($runId, new CurrentOperationDTO($shell->turnNo(), $shell->stepId(), $shell->attempt(), $shell->idempotencyKey()), ExecuteShellToolCall::class);
-            if (null === $delivery) {
-                return $this->refusalResult($runId, 'Session repair refused: current shell authorization is missing.', SessionRepairRefusalReasonEnum::AmbiguousPendingWork);
-            }
-            $effects[] = $delivery;
-        }
-
         if (null !== $state->activeStepId && [] !== $state->pendingToolCalls) {
             $batch = $this->toolBatchStore->load($runId, $state->turnNo, $state->activeStepId);
             if (null !== $batch && !$batch->finalized && [] === $batch->awaitingHumanInput) {
-                $pendingIds = [...$batch->pendingQueue, ...array_keys($batch->inFlight)];
-                foreach ($state->currentToolCalls as $call) {
-                    if (!\in_array($call->toolCallId, $pendingIds, true) || !isset($state->pendingToolCalls[$call->toolCallId])) {
+                foreach ($batch->inFlight as $id => $_) {
+                    if (($state->pendingToolCalls[$id] ?? true) || $this->isDeferredChildCall($state, $id)) {
                         continue;
                     }
-                    // A launched fork/subagent is already durable. Replaying its
-                    // launch only returns the pending handle; maintenance must
-                    // repair the existing child's operation instead.
-                    if ($this->isDeferredChildCall($state, $call->toolCallId)) {
-                        continue;
-                    }
-                    $authorized = $batch->calls[$call->toolCallId] ?? null;
-                    if (!$authorized instanceof ExecuteToolCall) {
-                        return $this->refusalResult($runId, 'Session repair refused: current tool authorization is missing.', SessionRepairRefusalReasonEnum::AmbiguousPendingWork);
-                    }
-                    $delivery = $this->executionOperations->repairDelivery(
-                        $runId,
-                        new CurrentOperationDTO(
-                            $authorized->turnNo(),
-                            $authorized->stepId(),
-                            $authorized->attempt(),
-                            $authorized->idempotencyKey(),
-                        ),
-                        ExecuteToolCall::class,
-                    );
-                    if (null === $delivery) {
-                        return $this->refusalResult($runId, 'Session repair refused: current tool authorization is missing.', SessionRepairRefusalReasonEnum::AmbiguousPendingWork);
-                    }
-                    $effects[] = $delivery;
+                    // Collected siblings are reused, not re-executed. Queued calls
+                    // remain behind the collector's capacity and sequential barriers.
+                    $effects[] = $batch->results[$id] ?? $batch->calls[$id] ?? throw new \RuntimeException('Stored tool batch call is missing.');
                 }
             }
         }
-
         if ([] === $effects && null === $operation && RunStatus::Running === $state->status && [] === $state->pendingToolCalls && [] === $state->pendingShellToolCalls) {
-            $effects[] = new AdvanceRun(
-                runId: $runId,
-                turnNo: $state->turnNo,
-                stepId: \sprintf('repair-advance-%d', $state->turnNo),
-                attempt: 1,
-                idempotencyKey: hash('sha256', \sprintf('%s|repair-advance|%d|%d', $runId, $state->turnNo, $state->lastSeq)),
-            );
+            $effects[] = new AdvanceRun($runId, $state->turnNo, \sprintf('repair-advance-%d', $state->turnNo), 1, hash('sha256', \sprintf('%s|repair-advance|%d|%d', $runId, $state->turnNo, $state->lastSeq)));
         }
-
         if ([] === $effects) {
             return null;
         }
-
         if (!$apply) {
-            return new RepairResult(false, false, 'Active operation repair available.');
+            return new RepairResult(false, false, 'Active operation repair available. External effects may already have occurred.');
         }
-
         $stored = $this->activeRunContext->requireLoaded($runId);
 
-        $actions = $leadingActions;
-        foreach ($effects as $effect) {
-            // Ledger-backed Armed/ResultReady deliveries are republished from
-            // existing operation rows after cut finalization. Only non-ledger
-            // control continuations need a durable outbox obligation.
-            if ($effect instanceof AdvanceRun) {
-                $actions[] = new \Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO($effect);
-            }
-        }
-
-        return new SessionRepairPlan(
-            $stored,
-            $state->with(['version' => $stored->version]),
-            $leadingEvents,
-            $actions,
-            new RepairResult(false, false, 'Active operation redriven.', activeOperationsRedriven: \count($effects)),
-        );
-    }
-
-    /** @param list<object> $leadingActions */
-    private function leadingActionsRetireInvocation(array $leadingActions, AbstractAgentBusMessage $invocation): bool
-    {
-        foreach ($leadingActions as $action) {
-            if (!$action instanceof \Ineersa\AgentCore\Domain\Coordination\RetireUnknownExecutionDTO) {
-                continue;
-            }
-            $notice = $action->notice;
-            if ($notice->runId() === $invocation->runId()
-                && $notice->turnNo() === $invocation->turnNo()
-                && $notice->stepId() === $invocation->stepId()
-                && $notice->attempt() === $invocation->attempt()
-                && $notice->idempotencyKey() === $invocation->idempotencyKey()) {
-                return true;
-            }
-        }
-
-        return false;
+        // Explicit repair authorizes these ordinary sends. Canonical start events
+        // establish identity and input, not whether an external tool already acted.
+        return new SessionRepairPlan($stored, $state->with(['version' => $stored->version]), [], $leadingActions, new RepairResult(false, false, 'Active operation redriven. External effects may already have occurred.', activeOperationsRedriven: \count($effects)), $effects);
     }
 
     private function hasOnlyDeferredChildWork(RunState $state): bool

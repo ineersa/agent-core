@@ -1039,6 +1039,23 @@ services:
   Ineersa\AgentCore\Application\Handler\StepDispatcher:
     arguments:
       $commandBus: '@agent.command.bus'
+      $executionBus: '@agent.execution.bus'
+
+  Ineersa\AgentCore\Application\Handler\ExecuteLlmStepWorker:
+    arguments:
+      $commandBus: '@agent.command.bus'
+
+  Ineersa\AgentCore\Application\Handler\ExecuteCompactionStepWorker:
+    arguments:
+      $commandBus: '@agent.command.bus'
+
+  Ineersa\AgentCore\Application\Handler\ExecuteToolCallWorker:
+    arguments:
+      $commandBus: '@agent.command.bus'
+
+  Ineersa\CodingAgent\Runtime\Controller\CommandHandler\ExecuteShellToolCallWorker:
+    arguments:
+      $commandBus: '@agent.command.bus'
 
   Ineersa\AgentCore\Application\Pipeline\TransitionFinalizer:
     arguments:
@@ -1046,24 +1063,6 @@ services:
       $dispatcher: '@Ineersa\AgentCore\Application\Handler\StepDispatcher'
       $localMetadata: '@Ineersa\AgentCore\Application\Pipeline\LocalMetadataCoordinator'
       $plans: '@Ineersa\AgentCore\Application\Pipeline\TransitionPlanFactory'
-      $publication: '@Ineersa\AgentCore\Application\Pipeline\DurablePendingPublication'
-
-  Ineersa\AgentCore\Contract\ControlMessageOutboxInterface:
-    alias: Ineersa\CodingAgent\Session\DoctrineControlMessageOutbox
-
-  Ineersa\AgentCore\Application\Pipeline\DurablePendingPublication:
-    arguments:
-      $commandBus: '@agent.command.bus'
-      $executionBus: '@agent.execution.bus'
-
-  Ineersa\AgentCore\Application\Messenger\ExecutionAuthorizationMiddleware:
-    arguments:
-      $commandBus: '@agent.command.bus'
-      $requestTransports:
-        Ineersa\AgentCore\Domain\Message\ExecuteLlmStep: llm
-        Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep: llm
-        Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall: tool
-        Ineersa\AgentCore\Domain\Message\ExecuteToolCall: tool
 
   Ineersa\AgentCore\Application\Handler\CommandRouter:
     arguments:

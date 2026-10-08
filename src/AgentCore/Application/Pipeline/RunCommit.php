@@ -4,16 +4,12 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Pipeline;
 
-use Ineersa\AgentCore\Application\Handler\ExecutionOperationMapper;
 use Ineersa\AgentCore\Application\Handler\HookDispatcher;
 use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
-use Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
-use Ineersa\AgentCore\Domain\Coordination\ExecutionResultDispositionDTO;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
-use Ineersa\AgentCore\Domain\Message\DurableExecutionResult;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Psr\Log\LoggerInterface;
 
@@ -23,7 +19,6 @@ final readonly class RunCommit
         private ActiveRunContextInterface $activeRunContext,
         private PreparedTransitionEventStoreInterface $eventStore,
         private LoggerInterface $logger,
-        private ExecutionOperationStoreInterface $executionOperations,
         private TransitionFinalizer $finalizer,
         private ?HookDispatcher $hookDispatcher = null,
         private ?RunTracer $tracer = null,
@@ -41,7 +36,7 @@ final readonly class RunCommit
      * @param list<object>   $postCommitEffects
      * @param list<object>   $postCommitActions
      */
-    public function commit(RunState $state, RunState $nextState, array $events, array $effects = [], bool $dispatchAfterTurnHooks = true, array $postCommitEffects = [], array $postCommitActions = [], ?ExecutionResultDispositionDTO $executionDisposition = null): RunState
+    public function commit(RunState $state, RunState $nextState, array $events, array $effects = [], bool $dispatchAfterTurnHooks = true, array $postCommitEffects = [], array $postCommitActions = []): RunState
     {
         $this->assertTransitionReady($state->runId);
         $afterTurnActions = [];
@@ -53,17 +48,11 @@ final readonly class RunCommit
         foreach ([...$postCommitActions, ...$afterTurnActions] as $action) {
             $this->actionValidator->validate($action);
         }
-        foreach ([...$effects, ...$postCommitEffects] as $effect) {
-            if ($effect instanceof \Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage
-                && ExecutionOperationMapper::supports($effect)) {
-                $this->executionOperations->assertRequestCapacity($effect);
-            }
-        }
-        $persist = function () use ($state, $nextState, $events, $effects, $afterTurnActions, $dispatchAfterTurnHooks, $postCommitEffects, $postCommitActions, $executionDisposition): RunState {
+        $persist = function () use ($state, $nextState, $events, $effects, $afterTurnActions, $dispatchAfterTurnHooks, $postCommitEffects, $postCommitActions): RunState {
             /** @var list<RunEvent> $persistedEvents */
             $persistedEvents = [];
-            if ([] !== $events || null !== $executionDisposition || [] !== $effects || [] !== $postCommitEffects || [] !== $postCommitActions || [] !== $afterTurnActions) {
-                $persistedEvents = $this->eventStore->appendTransition($events, ['run_id' => $nextState->runId, 'predecessor_seq' => $state->lastSeq, 'effects' => $effects, 'post_commit_effects' => $postCommitEffects, 'actions' => $postCommitActions, 'after_turn_actions' => $afterTurnActions, 'execution_disposition' => $executionDisposition]);
+            if ([] !== $events || [] !== $effects || [] !== $postCommitEffects || [] !== $postCommitActions || [] !== $afterTurnActions) {
+                $persistedEvents = $this->eventStore->appendTransition($events, ['run_id' => $nextState->runId, 'predecessor_seq' => $state->lastSeq, 'effects' => $effects, 'post_commit_effects' => $postCommitEffects, 'actions' => $postCommitActions, 'after_turn_actions' => $afterTurnActions]);
             }
             $verifiedSource = $this->eventStore->verifiedPendingTransition($nextState->runId);
             if (null !== $verifiedSource) {
@@ -92,7 +81,6 @@ final readonly class RunCommit
                 [...$effects, ...$postCommitEffects],
                 $postCommitActions,
                 $afterTurnActions,
-                $executionDisposition,
             );
 
             if (!$dispatchAfterTurnHooks) {
@@ -128,24 +116,9 @@ final readonly class RunCommit
         ], $persist);
     }
 
-    public function executionResultAlreadyDisposed(?DurableExecutionResult $reference): bool
-    {
-        return null !== $reference && $this->executionOperations->isDisposed($reference);
-    }
-
-    public function prepareExecutionDisposition(?DurableExecutionResult $reference, bool $stale): ?ExecutionResultDispositionDTO
-    {
-        return null === $reference ? null : new ExecutionResultDispositionDTO($reference, $stale ? 'Stale' : 'Consumed');
-    }
-
     public function assertTransitionReady(string $runId): void
     {
         $this->eventStore->assertTransitionReady($runId);
-    }
-
-    public function assertNoUnknownExecution(string $runId): void
-    {
-        $this->executionOperations->assertNoUnknownExecution($runId);
     }
 
     /** @param list<RunEvent> $events */

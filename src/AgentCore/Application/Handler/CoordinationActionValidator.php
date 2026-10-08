@@ -5,14 +5,12 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Handler;
 
 use Ineersa\AgentCore\Contract\CoordinationActionValidatorInterface;
-use Ineersa\AgentCore\Domain\Coordination\ConsumeExecutionUnknownDTO;
 use Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO;
 use Ineersa\AgentCore\Domain\Coordination\EnqueueCommandDTO;
 use Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO;
 use Ineersa\AgentCore\Domain\Coordination\MarkCommandAppliedDTO;
 use Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO;
 use Ineersa\AgentCore\Domain\Coordination\RejectCommandDTO;
-use Ineersa\AgentCore\Domain\Coordination\RetireUnknownExecutionDTO;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Symfony\Component\DependencyInjection\Attribute\AutowireIterator;
 
@@ -67,8 +65,7 @@ final readonly class CoordinationActionValidator
 
             return;
         }
-        if ($action instanceof MarkCommandAppliedDTO || $action instanceof EnqueueCommandDTO || $action instanceof RejectCommandDTO
-            || $action instanceof ConsumeExecutionUnknownDTO || $action instanceof RetireUnknownExecutionDTO) {
+        if ($action instanceof MarkCommandAppliedDTO || $action instanceof EnqueueCommandDTO || $action instanceof RejectCommandDTO) {
             return;
         }
         foreach ($this->validators as $validator) {
