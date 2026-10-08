@@ -2827,7 +2827,7 @@
         },
         {
             "name": "ineersa/hatfield-extension-api",
-            "version": "dev-task/2026-09-25-upgrade-symfony-ai-to-0-14-and-migrate-memory-store-adapter",
+            "version": "dev-task/2026-09-30-fix-in-flight-codex-websocket-cancellation",
             "dist": {
                 "type": "path",
                 "url": ".hatfield/extensions/extension-api",
@@ -2858,12 +2858,12 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/ineersa/symfony-ai-openai-codex-platform.git",
-                "reference": "27e6d2b9c544436c0c54025980fe2c4619318abb"
+                "reference": "7ae521f9269ddb365013fd0943a25ac2d22c8727"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/ineersa/symfony-ai-openai-codex-platform/zipball/27e6d2b9c544436c0c54025980fe2c4619318abb",
-                "reference": "27e6d2b9c544436c0c54025980fe2c4619318abb",
+                "url": "https://api.github.com/repos/ineersa/symfony-ai-openai-codex-platform/zipball/7ae521f9269ddb365013fd0943a25ac2d22c8727",
+                "reference": "7ae521f9269ddb365013fd0943a25ac2d22c8727",
                 "shasum": ""
             },
             "require": {
@@ -2909,7 +2909,7 @@
                 "issues": "https://github.com/ineersa/symfony-ai-openai-codex-platform/issues",
                 "source": "https://github.com/ineersa/symfony-ai-openai-codex-platform/tree/main"
             },
-            "time": "2026-10-06T23:15:24+00:00"
+            "time": "2026-10-08T15:46:36+00:00"
         },
         {
             "name": "kelunik/certificate",
