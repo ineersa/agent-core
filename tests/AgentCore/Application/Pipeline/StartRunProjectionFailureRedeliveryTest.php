@@ -50,7 +50,7 @@ final class StartRunProjectionFailureRedeliveryTest extends TestCase
                 logger: new NullLogger(),
                 executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
                 sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
-                finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher($commandBus, $executionBus), locks: $locks),
+                finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher($commandBus, $executionBus), commandBus: $commandBus, executionBus: $executionBus, locks: $locks),
             ),
             handlers: [
                 new StartRunHandler(
