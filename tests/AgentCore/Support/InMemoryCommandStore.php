@@ -12,62 +12,38 @@ final class InMemoryCommandStore implements CommandStoreInterface
     /** @var array<string, array<string, PendingCommand>> */
     private array $commandsByRun = [];
 
-    /** @var array<string, array<string, string>> */
-    private array $statusesByRun = [];
-
-    /** @var array<string, list<string>> */
-    private array $orderByRun = [];
-
     public function enqueue(PendingCommand $command): bool
     {
         if ($this->has($command->runId, $command->idempotencyKey)) {
             return false;
         }
-
         $this->commandsByRun[$command->runId][$command->idempotencyKey] = $command;
-        $this->statusesByRun[$command->runId][$command->idempotencyKey] = 'pending';
-        $this->orderByRun[$command->runId][] = $command->idempotencyKey;
 
         return true;
     }
 
     public function has(string $runId, string $idempotencyKey): bool
     {
-        return isset($this->statusesByRun[$runId][$idempotencyKey]);
+        return isset($this->commandsByRun[$runId][$idempotencyKey]);
     }
 
     public function pending(string $runId): array
     {
-        $pending = [];
-
-        foreach ($this->orderByRun[$runId] ?? [] as $idempotencyKey) {
-            if ('pending' !== ($this->statusesByRun[$runId][$idempotencyKey] ?? null)) {
-                continue;
-            }
-
-            $command = $this->commandsByRun[$runId][$idempotencyKey] ?? null;
-            if (null === $command) {
-                continue;
-            }
-
-            $pending[] = $command;
-        }
-
-        return $pending;
+        return array_values($this->commandsByRun[$runId] ?? []);
     }
 
     public function countPending(string $runId): int
     {
-        return \count($this->pending($runId));
+        return \count($this->commandsByRun[$runId] ?? []);
     }
 
     public function markApplied(string $runId, string $idempotencyKey): void
     {
-        $this->statusesByRun[$runId][$idempotencyKey] = 'applied';
+        unset($this->commandsByRun[$runId][$idempotencyKey]);
     }
 
     public function markRejected(string $runId, string $idempotencyKey, string $reason): void
     {
-        $this->statusesByRun[$runId][$idempotencyKey] = 'rejected: '.$reason;
+        unset($this->commandsByRun[$runId][$idempotencyKey]);
     }
 }

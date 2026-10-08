@@ -35,12 +35,41 @@ final class RunMessageProcessorTest extends TestCase
         $this->exerciseDiscard(true);
     }
 
+    public function testPendingDuplicateStopsBeforeHistoryMutationButCompletedIdentityCanRunAgain(): void
+    {
+        $active = new TestActiveRunContext();
+        $active->loadRecovered(RunState::queued('run'));
+        $store = $this->createMock(PreparedTransitionEventStoreInterface::class);
+        $store->expects($this->never())->method('appendTransition');
+        $commands = new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore();
+        $commands->enqueue(new \Ineersa\AgentCore\Domain\Command\PendingCommand('run', 'follow_up', 'same'));
+        $discard = $this->createMock(HistoryTailDiscardInterface::class);
+        $discard->expects($this->once())->method('isContextMutatingMessage')->willReturn(false);
+        $discard->expects($this->never())->method('prepareForwardTailDiscard');
+        $handler = $this->createMock(RunMessageHandler::class);
+        $handler->method('supports')->willReturn(true);
+        $handler->expects($this->once())->method('handle')->willReturn(new HandlerResult());
+        $dispatcher = new StepDispatcher(new TestMessageBus());
+        $commit = new RunCommit(
+            activeRunContext: $active,
+            eventStore: $store,
+            logger: new NullLogger(),
+            executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
+            finalizer: TestTransitionFinalizerFactory::create($store, $dispatcher, commands: $commands),
+        );
+        $processor = new RunMessageProcessor($active, new RunLockManager(new LockFactory(new InMemoryStore())), $commit, [$handler], $commands, $discard);
+        $message = new \Ineersa\AgentCore\Domain\Message\ApplyCommand('run', 0, 'step', 1, 'same', 'follow_up', []);
+        $processor->process('test', $message);
+        $commands->markApplied('run', 'same');
+        $processor->process('test', $message);
+    }
+
     private function exerciseDiscard(bool $failAppend): void
     {
         $active = new TestActiveRunContext();
         $active->loadRecovered(RunState::queued('run'));
         $store = $this->createMock(PreparedTransitionEventStoreInterface::class);
-        $store->expects($failAppend ? $this->once() : $this->exactly(2))->method('appendTransition')->willReturnCallback(static function (array $events) use ($failAppend): array {
+        $store->expects($this->once())->method('appendTransition')->willReturnCallback(static function (array $events) use ($failAppend): array {
             if ([] === $events) {
                 return [];
             }
@@ -72,10 +101,9 @@ final class RunMessageProcessorTest extends TestCase
             eventStore: $store,
             logger: new NullLogger(),
             executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
-            sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
             finalizer: TestTransitionFinalizerFactory::create($store, $dispatcher),
         );
-        $processor = new RunMessageProcessor($active, new RunLockManager(new LockFactory(new InMemoryStore())), $commit, [$handler], $discard);
+        $processor = new RunMessageProcessor($active, new RunLockManager(new LockFactory(new InMemoryStore())), $commit, [$handler], new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore(), $discard);
         if ($failAppend) {
             $this->expectException(\RuntimeException::class);
             $this->expectExceptionMessage('append failed');

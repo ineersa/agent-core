@@ -6,8 +6,10 @@ namespace Ineersa\AgentCore\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
+use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Contract\History\HistoryTailDiscardInterface;
 use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
+use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Message\DurableExecutionResult;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
 
@@ -27,16 +29,15 @@ final readonly class RunMessageProcessor
         private RunLockManager $runLockManager,
         private RunCommit $runCommit,
         iterable $handlers,
+        private CommandStoreInterface $commands,
         private ?HistoryTailDiscardInterface $historyTailDiscard = null,
     ) {
         $this->handlers = [...$handlers];
     }
 
-    /** @param array<string, int|string>|null $sourceIdentity Owner-local constituent of a producer-captured action. */
-    public function process(string $scope, AbstractAgentBusMessage $message, ?array $sourceIdentity = null, ?DurableExecutionResult $durableResult = null): void
+    public function process(string $scope, AbstractAgentBusMessage $message, ?DurableExecutionResult $durableResult = null): void
     {
         $runId = $message->runId();
-        $sourceIdentity ??= SourceAcceptance::identity($message);
         RunLogContext::enter([
             'run_id' => $runId,
             'scope' => $scope,
@@ -45,7 +46,7 @@ final readonly class RunMessageProcessor
         ]);
 
         try {
-            $this->runLockManager->synchronized($runId, function () use ($message, $runId, $sourceIdentity, $durableResult): void {
+            $this->runLockManager->synchronized($runId, function () use ($message, $runId, $durableResult): void {
                 $handler = $this->resolveHandler($message);
                 RunLogContext::enter([
                     'handler' => $handler::class,
@@ -55,7 +56,9 @@ final readonly class RunMessageProcessor
                 ]);
                 try {
                     $this->runCommit->assertTransitionReady($runId);
-                    if ($this->runCommit->sourceAlreadyAccepted($message) || $this->runCommit->sourceIdentityAlreadyAccepted($sourceIdentity)) {
+                    // A duplicate pending command cannot discard selected history.
+                    // Completed IDs are absent and may be submitted again.
+                    if ($message instanceof ApplyCommand && $this->commands->has($runId, $message->idempotencyKey())) {
                         return;
                     }
                     $state = $this->activeRunContext->requireLoaded($runId);
@@ -64,7 +67,7 @@ final readonly class RunMessageProcessor
                     }
 
                     if ($message instanceof \Ineersa\AgentCore\Domain\Message\AdvanceRun || $message instanceof \Ineersa\AgentCore\Domain\Message\CompactRun || $message instanceof \Ineersa\AgentCore\Domain\Message\ApplyShellCommand
-                        || ($message instanceof \Ineersa\AgentCore\Domain\Message\ApplyCommand && \Ineersa\AgentCore\Domain\Command\CoreCommandKind::Cancel !== $message->kind)) {
+                        || ($message instanceof ApplyCommand && \Ineersa\AgentCore\Domain\Command\CoreCommandKind::Cancel !== $message->kind)) {
                         $this->runCommit->assertNoUnknownExecution($runId);
                     }
 
@@ -85,18 +88,18 @@ final readonly class RunMessageProcessor
                     $executionDisposition = $this->runCommit->prepareExecutionDisposition($durableResult, $stale);
                     if (null === $result->nextState) {
                         if (null !== $executionDisposition) {
-                            $this->runCommit->commit($state, $state, [], dispatchAfterTurnHooks: false, postCommitEffects: $result->postCommitEffects, postCommitActions: $result->postCommitActions, sourceIdentity: $sourceIdentity, executionDisposition: $executionDisposition);
+                            $this->runCommit->commit($state, $state, [], dispatchAfterTurnHooks: false, postCommitEffects: $result->postCommitEffects, postCommitActions: $result->postCommitActions, executionDisposition: $executionDisposition);
 
                             return;
                         }
-                        if ([] !== $sourceIdentity || [] !== $result->postCommitEffects || [] !== $result->postCommitActions) {
-                            $this->runCommit->commit($state, $state, [], dispatchAfterTurnHooks: false, postCommitEffects: $result->postCommitEffects, postCommitActions: $result->postCommitActions, sourceIdentity: $sourceIdentity);
+                        if ([] !== $result->postCommitEffects || [] !== $result->postCommitActions) {
+                            $this->runCommit->commit($state, $state, [], dispatchAfterTurnHooks: false, postCommitEffects: $result->postCommitEffects, postCommitActions: $result->postCommitActions);
                         }
 
                         return;
                     }
 
-                    $this->runCommit->commit($state, $result->nextState, $result->events, $result->effects, postCommitEffects: $result->postCommitEffects, postCommitActions: $result->postCommitActions, sourceIdentity: $sourceIdentity, executionDisposition: $executionDisposition);
+                    $this->runCommit->commit($state, $result->nextState, $result->events, $result->effects, postCommitEffects: $result->postCommitEffects, postCommitActions: $result->postCommitActions, executionDisposition: $executionDisposition);
                 } finally {
                     RunLogContext::leave();
                 }

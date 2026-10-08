@@ -18,7 +18,6 @@ final readonly class PendingTransitionRecovery
     public function __construct(
         private PreparedTransitionEventStoreInterface $store,
         private ActiveRunContextInterface $registry,
-        private SourceAcceptance $sourceAcceptance,
         private TransitionFinalizer $finalizer,
         private CoordinationActionValidator $actionValidator = new CoordinationActionValidator(),
     ) {
@@ -34,7 +33,6 @@ final readonly class PendingTransitionRecovery
         if (($work['run_id'] ?? null) !== $runId) {
             throw new \RuntimeException('Pending transition run identity mismatch.');
         }
-        $this->sourceAcceptance->validate($pending);
         $effects = [...($work['effects'] ?? []), ...($work['post_commit_effects'] ?? [])];
         $actions = $work['actions'] ?? [];
         $afterTurnActions = $work['after_turn_actions'] ?? [];

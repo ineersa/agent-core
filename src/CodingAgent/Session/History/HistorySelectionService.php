@@ -51,12 +51,8 @@ final readonly class HistorySelectionService implements HistorySelectionServiceI
      */
     public function selectPrompt(string $runId, int $targetPromptTurnNo, string $commandId): array
     {
-        return $this->lockManager->synchronized($runId, function () use ($runId, $targetPromptTurnNo, $commandId): array {
-            $source = \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance::actionIdentity(\Ineersa\CodingAgent\Application\Message\SelectHistoryPrompt::class, $runId, $commandId);
+        return $this->lockManager->synchronized($runId, function () use ($runId, $targetPromptTurnNo): array {
             $this->runCommit->assertTransitionReady($runId);
-            if ($this->runCommit->sourceIdentityAlreadyAccepted($source)) {
-                throw new \LogicException('History selection delivery was already accepted.');
-            }
             $events = $this->eventStore->allFor($runId);
 
             if ([] === $events) {
@@ -100,7 +96,7 @@ final readonly class HistorySelectionService implements HistorySelectionServiceI
 
             $rebuiltState = $replayResult->rebuiltState;
             $rebuiltState = $rebuiltState->with(['turnNo' => $positionTurnNo, 'version' => $state->version]);
-            $rebuiltState = $this->runCommit->commit($state, $rebuiltState, [$positionEvent], dispatchAfterTurnHooks: false, sourceIdentity: $source);
+            $rebuiltState = $this->runCommit->commit($state, $rebuiltState, [$positionEvent], dispatchAfterTurnHooks: false);
             $newSeq = $rebuiltState->lastSeq;
 
             $this->logger->info('run_history.selected', [

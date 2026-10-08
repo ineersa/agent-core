@@ -8,7 +8,6 @@ use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Pipeline\DurablePendingPublication;
 use Ineersa\AgentCore\Application\Pipeline\LocalMetadataCoordinator;
-use Ineersa\AgentCore\Application\Pipeline\SourceAcceptance;
 use Ineersa\AgentCore\Application\Pipeline\TransitionFinalizer;
 use Ineersa\AgentCore\Application\Pipeline\TransitionPlanFactory;
 use Ineersa\AgentCore\Contract\ApplicationDbTransactionInterface;
@@ -30,7 +29,6 @@ final class TestTransitionFinalizerFactory
         ?ToolBatchStoreInterface $batches = null,
         ?CommandStoreInterface $commands = null,
         ?ExecutionOperationStoreInterface $operations = null,
-        ?SourceAcceptance $sourceAcceptance = null,
         ?MessageBusInterface $commandBus = null,
         ?MessageBusInterface $executionBus = null,
         ?RunLockManager $locks = null,
@@ -39,7 +37,6 @@ final class TestTransitionFinalizerFactory
         $commands ??= new InMemoryCommandStore();
         $batches ??= new TestToolBatchStore();
         $operations ??= new TestExecutionOperationStore();
-        $sourceAcceptance ??= new SourceAcceptance($commands);
         $commandBus ??= new TestMessageBus();
         $executionBus ??= new TestMessageBus();
         $locks ??= new RunLockManager(new LockFactory(new InMemoryStore()));
@@ -68,7 +65,6 @@ final class TestTransitionFinalizerFactory
                 $batches,
                 $commands,
                 $operations,
-                $sourceAcceptance,
                 $publication,
             ),
             new TransitionPlanFactory(),

@@ -21,7 +21,7 @@ use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 
 /**
- * Applies captured local mailbox/scheduling/source/disposition/outbox metadata in one
+ * Applies captured local mailbox/scheduling/disposition/outbox metadata in one
  * short application-DB transaction after verified canonical append.
  *
  * Immutable request sealing and admitted-call resolution happen before this
@@ -35,7 +35,6 @@ final readonly class LocalMetadataCoordinator
         private ToolBatchStoreInterface $batches,
         private CommandStoreInterface $commands,
         private ExecutionOperationStoreInterface $executionOperations,
-        private SourceAcceptance $sourceAcceptance,
         private DurablePendingPublication $publication,
     ) {
     }
@@ -105,7 +104,6 @@ final readonly class LocalMetadataCoordinator
             if (null !== $executionDisposition) {
                 $this->executionOperations->applyDisposition($executionDisposition, $transition);
             }
-            $this->sourceAcceptance->publish($transition);
             $this->publication->persistControlObligations($plan->runId, $plan->controlActions);
         });
     }

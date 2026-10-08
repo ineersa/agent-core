@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Application\Pipeline;
 
-use Ineersa\AgentCore\Application\Pipeline\SourceAcceptance;
 use Ineersa\AgentCore\Contract\History\HistorySelectionServiceInterface;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchStatusEnum;
@@ -40,7 +39,6 @@ final readonly class SessionMaintenanceHandler
         private \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor $processor,
         private \Ineersa\CodingAgent\Session\HatfieldSessionStore $sessions,
         private \Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware $initialization,
-        private \Ineersa\AgentCore\Application\Pipeline\RunCommit $runCommit,
         private \Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery $recovery,
         private DeferredSubagentBatchRepository $deferredBatches,
     ) {
@@ -49,17 +47,13 @@ final readonly class SessionMaintenanceHandler
     #[AsMessageHandler(bus: 'agent.command.bus')]
     public function attach(\Ineersa\CodingAgent\Application\Message\AttachRun $command): void
     {
-        $source = SourceAcceptance::actionIdentity($command::class, $command->runId, $command->commandId);
-        if ($this->runCommit->sourceIdentityAlreadyAccepted($source)) {
-            return;
-        }
         $state = $this->registry->requireLoaded($command->runId);
         if (RunStatus::WaitingHuman === $state->status || [] !== $state->pendingHumanInputRequests) {
             $step = 'attach-cancel-'.$command->commandId;
-            $this->processor->process('attach', new \Ineersa\AgentCore\Domain\Message\ApplyCommand($command->runId, $state->turnNo, $step, 1, $step, 'cancel', ['reason' => 'Outstanding human questions cancelled on session attach.']), SourceAcceptance::actionIdentity($command::class, $command->runId, $command->commandId, 'cancel'));
+            $this->processor->process('attach', new \Ineersa\AgentCore\Domain\Message\ApplyCommand($command->runId, $state->turnNo, $step, 1, $step, 'cancel', ['reason' => 'Outstanding human questions cancelled on session attach.']));
         }
         $this->sessions->resetReasoningBaseline($command->runId);
-        $this->processor->process('attach', new \Ineersa\AgentCore\Domain\Message\RefreshRunContext($command->runId, $command->messages), $source);
+        $this->processor->process('attach', new \Ineersa\AgentCore\Domain\Message\RefreshRunContext($command->runId, $command->messages));
     }
 
     #[AsMessageHandler(bus: 'agent.command.bus')]
@@ -67,12 +61,6 @@ final readonly class SessionMaintenanceHandler
     {
         try {
             $this->initialization->initializeForOwner($command->runId, $command);
-            if ($this->runCommit->sourceIdentityAlreadyAccepted(SourceAcceptance::actionIdentity($command::class, $command->runId, $command->commandId))) {
-                $event = new RuntimeEvent(RuntimeEventTypeEnum::CommandAck->value, $command->runId, 0, ['commandId' => $command->commandId, 'commandType' => 'select_history_turn', 'status' => 'accepted']);
-                $this->emit($event);
-
-                return $event;
-            }
             $result = $this->history->selectPrompt($command->runId, $command->turnNo, $command->commandId);
             $event = RunHistoryPositionChangedEventFactory::create($command->runId, $result['positionEventSeq'], $result['rebuiltState']->turnNo, $result['selectedPromptTurnNo'], $result['editorPromptText']);
         } catch (\Throwable $exception) {
@@ -94,23 +82,17 @@ final readonly class SessionMaintenanceHandler
             $result = $this->repair->integrityRefusal($command->runId);
             if (null === $result) {
                 $this->initialization->initializeForOwner($command->runId, $command);
-                $source = SourceAcceptance::actionIdentity(RepairSession::class, $command->runId, $command->commandId);
-                if ($command->apply && $this->runCommit->sourceIdentityAlreadyAccepted($source)) {
-                    // Accepted root repair must not reevaluate newer children.
-                    $result = $this->repair->repair($command->runId, true, $command->commandId);
+                $plan = $this->prepareDeferredChildMaintenance($command);
+                if ($plan instanceof RepairResult) {
+                    $result = $plan;
                 } else {
-                    $plan = $this->prepareDeferredChildMaintenance($command);
-                    if ($plan instanceof RepairResult) {
-                        $result = $plan;
-                    } else {
-                        $actions = [];
-                        if ($command->apply && [] !== $plan['obligations']) {
-                            $actions[] = new RepairDeferredChildrenDTO($command->runId, $command->commandId, $plan['obligations']);
-                        }
-                        $result = $this->repair->repair($command->runId, $command->apply, $command->commandId, $actions);
-                        if (null === $result->refusalReason) {
-                            $result = $this->mergeDeferredChildPlan($result, $plan);
-                        }
+                    $actions = [];
+                    if ($command->apply && [] !== $plan['obligations']) {
+                        $actions[] = new RepairDeferredChildrenDTO($command->runId, $command->commandId, $plan['obligations']);
+                    }
+                    $result = $this->repair->repair($command->runId, $command->apply, $command->commandId, $actions);
+                    if (null === $result->refusalReason) {
+                        $result = $this->mergeDeferredChildPlan($result, $plan);
                     }
                 }
             }

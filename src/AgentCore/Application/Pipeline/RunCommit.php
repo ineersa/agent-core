@@ -24,7 +24,6 @@ final readonly class RunCommit
         private PreparedTransitionEventStoreInterface $eventStore,
         private LoggerInterface $logger,
         private ExecutionOperationStoreInterface $executionOperations,
-        private SourceAcceptance $sourceAcceptance,
         private TransitionFinalizer $finalizer,
         private ?HookDispatcher $hookDispatcher = null,
         private ?RunTracer $tracer = null,
@@ -37,13 +36,12 @@ final readonly class RunCommit
      * context are replaced only after their append has completed, before any
      * effect or extension hook can observe the transition.
      *
-     * @param list<RunEvent>            $events
-     * @param list<object>              $effects
-     * @param list<object>              $postCommitEffects
-     * @param list<object>              $postCommitActions
-     * @param array<string, int|string> $sourceIdentity
+     * @param list<RunEvent> $events
+     * @param list<object>   $effects
+     * @param list<object>   $postCommitEffects
+     * @param list<object>   $postCommitActions
      */
-    public function commit(RunState $state, RunState $nextState, array $events, array $effects = [], bool $dispatchAfterTurnHooks = true, array $postCommitEffects = [], array $postCommitActions = [], array $sourceIdentity = [], ?ExecutionResultDispositionDTO $executionDisposition = null): RunState
+    public function commit(RunState $state, RunState $nextState, array $events, array $effects = [], bool $dispatchAfterTurnHooks = true, array $postCommitEffects = [], array $postCommitActions = [], ?ExecutionResultDispositionDTO $executionDisposition = null): RunState
     {
         $this->assertTransitionReady($state->runId);
         $afterTurnActions = [];
@@ -61,15 +59,14 @@ final readonly class RunCommit
                 $this->executionOperations->assertRequestCapacity($effect);
             }
         }
-        $persist = function () use ($state, $nextState, $events, $effects, $afterTurnActions, $dispatchAfterTurnHooks, $postCommitEffects, $postCommitActions, $sourceIdentity, $executionDisposition): RunState {
+        $persist = function () use ($state, $nextState, $events, $effects, $afterTurnActions, $dispatchAfterTurnHooks, $postCommitEffects, $postCommitActions, $executionDisposition): RunState {
             /** @var list<RunEvent> $persistedEvents */
             $persistedEvents = [];
-            if ([] !== $sourceIdentity || [] !== $events || null !== $executionDisposition || [] !== $effects || [] !== $postCommitEffects || [] !== $postCommitActions || [] !== $afterTurnActions) {
-                $persistedEvents = $this->eventStore->appendTransition($events, ['run_id' => $nextState->runId, 'predecessor_seq' => $state->lastSeq, 'source' => $sourceIdentity, 'effects' => $effects, 'post_commit_effects' => $postCommitEffects, 'actions' => $postCommitActions, 'after_turn_actions' => $afterTurnActions, 'execution_disposition' => $executionDisposition]);
+            if ([] !== $events || null !== $executionDisposition || [] !== $effects || [] !== $postCommitEffects || [] !== $postCommitActions || [] !== $afterTurnActions) {
+                $persistedEvents = $this->eventStore->appendTransition($events, ['run_id' => $nextState->runId, 'predecessor_seq' => $state->lastSeq, 'effects' => $effects, 'post_commit_effects' => $postCommitEffects, 'actions' => $postCommitActions, 'after_turn_actions' => $afterTurnActions, 'execution_disposition' => $executionDisposition]);
             }
             $verifiedSource = $this->eventStore->verifiedPendingTransition($nextState->runId);
             if (null !== $verifiedSource) {
-                $this->sourceAcceptance->validate($verifiedSource);
                 $postCommitActions = $verifiedSource->work['actions'] ?? [];
                 $afterTurnActions = $verifiedSource->work['after_turn_actions'] ?? [];
                 foreach ([...$postCommitActions, ...$afterTurnActions] as $action) {
@@ -149,17 +146,6 @@ final readonly class RunCommit
     public function assertNoUnknownExecution(string $runId): void
     {
         $this->executionOperations->assertNoUnknownExecution($runId);
-    }
-
-    public function sourceAlreadyAccepted(\Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage $message): bool
-    {
-        return $this->sourceAcceptance->alreadyAccepted($message);
-    }
-
-    /** @param array<string, int|string> $identity */
-    public function sourceIdentityAlreadyAccepted(array $identity): bool
-    {
-        return $this->sourceAcceptance->identityAlreadyAccepted($identity);
     }
 
     /** @param list<RunEvent> $events */

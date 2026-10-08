@@ -15,7 +15,7 @@ use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Transport\Serialization\SerializerInterface;
 
-/** Durable command identities outlive payloads and disposable caches. */
+/** Pending commands survive worker restarts; completed commands leave no rows. */
 final readonly class DoctrineCommandStore implements CommandStoreInterface
 {
     public function __construct(
@@ -82,32 +82,22 @@ final readonly class DoctrineCommandStore implements CommandStoreInterface
 
     public function markApplied(string $runId, string $idempotencyKey): void
     {
-        $this->markStatus($runId, $idempotencyKey, 'applied');
+        $this->removePending($runId, $idempotencyKey);
     }
 
     public function markRejected(string $runId, string $idempotencyKey, string $reason): void
     {
-        $this->markStatus($runId, $idempotencyKey, 'rejected: '.$reason);
+        $this->removePending($runId, $idempotencyKey);
     }
 
-    private function markStatus(string $runId, string $idempotencyKey, string $status): void
+    private function removePending(string $runId, string $idempotencyKey): void
     {
-        $this->withRunLock($runId, function () use ($runId, $idempotencyKey, $status): void {
-            if (!$this->has($runId, $idempotencyKey)) {
-                // Finalization may precede enqueue, including recovery of an
-                // accepted source command. Its identity must still reject reuse.
-                $record = new CommandRecord();
-                $record->runId = $runId;
-                $record->idempotencyKey = $idempotencyKey;
-                $record->status = $status;
-                $this->insert($record);
-
-                return;
-            }
-            $this->records($runId)->update(CommandRecord::class, 'c')
-                ->set('c.status', ':status')->set('c.payload', 'NULL')->set('c.payloadHash', 'NULL')
+        $this->withRunLock($runId, function () use ($runId, $idempotencyKey): void {
+            // Recovery can repeat finalization or finalize an immediate command
+            // that was never queued. Neither case creates an identity marker.
+            $this->records($runId)->delete(CommandRecord::class, 'c')
                 ->andWhere('c.idempotencyKey = :key')->setParameter('key', $idempotencyKey)
-                ->setParameter('status', $status)->getQuery()->execute();
+                ->getQuery()->execute();
         });
     }
 

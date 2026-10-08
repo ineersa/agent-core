@@ -17,7 +17,7 @@ use Symfony\Component\Messenger\Transport\Serialization\SerializerInterface;
 
 final class DoctrineCommandStoreTest extends IsolatedKernelTestCase
 {
-    public function testConfiguredStoreSharesFifoPendingCommandsAndTerminalIdentities(): void
+    public function testConfiguredStoreSharesFifoPendingCommandsAndDeletesCompletedRows(): void
     {
         $store = self::getContainer()->get(CommandStoreInterface::class);
         $this->assertInstanceOf(DoctrineCommandStore::class, $store);
@@ -36,14 +36,14 @@ final class DoctrineCommandStoreTest extends IsolatedKernelTestCase
         $store->markRejected('fifo', 'second', 'superseded');
         $this->assertSame([], $other->pending('fifo'));
         $this->assertSame(0, $other->countPending('fifo'));
-        $this->assertTrue($other->has('fifo', 'first'));
-        $this->assertTrue($other->has('fifo', 'second'));
-        $this->assertFalse($other->enqueue($first));
-        $this->assertFalse($other->enqueue($second));
+        $this->assertFalse($other->has('fifo', 'first'));
+        $this->assertFalse($other->has('fifo', 'second'));
+        $this->assertTrue($other->enqueue($first));
+        $this->assertTrue($other->enqueue($second));
         $this->assertFalse($other->has('other-run', 'first'));
     }
 
-    public function testFinalizationWithoutEnqueuePreventsLaterRecreation(): void
+    public function testFinalizationWithoutEnqueueLeavesNoIdentityMarkers(): void
     {
         $store = self::getContainer()->get(CommandStoreInterface::class);
         $store->markApplied('finalized', 'applied');
@@ -52,14 +52,15 @@ final class DoctrineCommandStoreTest extends IsolatedKernelTestCase
         $store->markRejected('finalized', 'rejected', 'refused');
         $other = $this->freshStore();
         foreach (['applied', 'rejected'] as $key) {
-            $this->assertTrue($other->has('finalized', $key));
-            $this->assertFalse($other->enqueue(new PendingCommand('finalized', 'continue', $key)));
+            $this->assertFalse($other->has('finalized', $key));
         }
         $this->assertSame([], $other->pending('finalized'));
         $this->assertSame(0, $other->countPending('finalized'));
+        $this->assertSame(0, (int) self::getContainer()->get(Connection::class)->fetchOne('SELECT COUNT(*) FROM run_command WHERE run_id = ?', ['finalized']));
+        $this->assertTrue($other->enqueue(new PendingCommand('finalized', 'continue', 'applied')));
     }
 
-    public function testCacheClearAndKernelRestartPreservePendingAndAcceptedIdentities(): void
+    public function testCacheClearAndKernelRestartPreserveOnlyPendingCommands(): void
     {
         $store = self::getContainer()->get(CommandStoreInterface::class);
         $command = new PendingCommand('cache-clear', 'follow_up', 'pending', ['text' => 'kept']);
@@ -72,8 +73,8 @@ final class DoctrineCommandStoreTest extends IsolatedKernelTestCase
         $this->assertNotSame($store, $fresh);
         $this->assertEquals([$command], $fresh->pending('cache-clear'));
         $this->assertSame(1, $fresh->countPending('cache-clear'));
-        $this->assertTrue($fresh->has('cache-clear', 'accepted'));
-        $this->assertFalse($fresh->enqueue(new PendingCommand('cache-clear', 'continue', 'accepted')));
+        $this->assertFalse($fresh->has('cache-clear', 'accepted'));
+        $this->assertTrue($fresh->enqueue(new PendingCommand('cache-clear', 'continue', 'accepted')));
     }
 
     public function testRetiredLargePayloadsAreRemovedAndNeverDecodedByIndexedReads(): void
@@ -86,14 +87,14 @@ final class DoctrineCommandStoreTest extends IsolatedKernelTestCase
             $store->markApplied('history', $key);
         }
         $connection = self::getContainer()->get(Connection::class);
-        $this->assertSame(128, (int) $connection->fetchOne('SELECT COUNT(*) FROM run_command WHERE run_id = ? AND payload IS NULL AND payload_hash IS NULL', ['history']));
+        $this->assertSame(0, (int) $connection->fetchOne('SELECT COUNT(*) FROM run_command WHERE run_id = ?', ['history']));
         $current = new PendingCommand('history', 'steer', 'current', ['text' => 'now']);
         $store->enqueue($current);
         $realSerializer = self::getContainer()->get('messenger.transport.native_php_serializer');
         $serializer = $this->createMock(SerializerInterface::class);
         $serializer->expects($this->once())->method('decode')->willReturnCallback($realSerializer->decode(...));
         $fresh = $this->freshStore($serializer);
-        $this->assertTrue($fresh->has('history', 'old-127'));
+        $this->assertFalse($fresh->has('history', 'old-127'));
         $this->assertSame(1, $fresh->countPending('history'));
         $this->assertEquals([$current], $fresh->pending('history'));
         $this->assertFalse($fresh->has('history', 'missing'));
@@ -117,7 +118,7 @@ final class DoctrineCommandStoreTest extends IsolatedKernelTestCase
         $command = new PendingCommand('failure', 'continue', 'key');
         $store->enqueue($command);
         $connection = self::getContainer()->get(Connection::class);
-        $connection->executeStatement("CREATE TRIGGER command_failure BEFORE UPDATE ON run_command WHEN OLD.run_id = 'failure' BEGIN SELECT RAISE(ABORT, 'command write refused'); END");
+        $connection->executeStatement("CREATE TRIGGER command_failure BEFORE DELETE ON run_command WHEN OLD.run_id = 'failure' BEGIN SELECT RAISE(ABORT, 'command write refused'); END");
         try {
             try {
                 $store->markApplied('failure', 'key');
@@ -134,7 +135,7 @@ final class DoctrineCommandStoreTest extends IsolatedKernelTestCase
         }
         $this->freshStore()->markApplied('failure', 'key');
         $this->assertSame([], $store->pending('failure'));
-        $this->assertTrue($store->has('failure', 'key'));
+        $this->assertFalse($store->has('failure', 'key'));
     }
 
     private function freshStore(?SerializerInterface $serializer = null): DoctrineCommandStore

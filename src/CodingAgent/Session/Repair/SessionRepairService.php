@@ -66,21 +66,16 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
     public function repair(string $runId, bool $apply, string $commandId, array $postCommitActions = []): RepairResult
     {
         return $this->lockManager->synchronized($runId, function () use ($runId, $apply, $commandId, $postCommitActions): RepairResult {
-            $source = \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance::actionIdentity(\Ineersa\CodingAgent\Application\Message\RepairSession::class, $runId, $commandId);
             $this->runCommit->assertTransitionReady($runId);
-            if ($apply && $this->runCommit->sourceIdentityAlreadyAccepted($source)) {
-                return $this->noRepairResult('Repair delivery was already accepted.');
-            }
             $decision = $this->doRepair($runId, $apply, $commandId, leadingActions: $postCommitActions);
             if ($decision instanceof SessionRepairPlan) {
-                if ($apply && !$this->runCommit->sourceIdentityAlreadyAccepted($source)) {
+                if ($apply) {
                     $this->runCommit->commit(
                         $decision->previousState,
                         $decision->nextState,
                         $decision->events,
                         dispatchAfterTurnHooks: false,
                         postCommitActions: $decision->actions,
-                        sourceIdentity: $this->repairSource($runId, $commandId, $decision->actions),
                     );
                     if ([] !== $decision->events) {
                         $this->logger->info('session_repair.completed', [
@@ -95,12 +90,11 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
                 return $decision->result;
             }
             // Refused repairs must not execute captured mutation actions such as
-            // deferred-child cancellation. Acceptance-only commits are limited to
-            // outcomes that leave history untouched.
-            if ($apply && null === $decision->refusalReason
-                && !$this->runCommit->sourceIdentityAlreadyAccepted($source)) {
+            // deferred-child cancellation. Coordination-only commits require an
+            // admitted decision and captured actions; no source marker is stored.
+            if ($apply && null === $decision->refusalReason && [] !== $postCommitActions) {
                 $state = $this->activeRunContext->requireLoaded($runId);
-                $this->runCommit->commit($state, $state, [], dispatchAfterTurnHooks: false, postCommitActions: $postCommitActions, sourceIdentity: $this->repairSource($runId, $commandId, $postCommitActions));
+                $this->runCommit->commit($state, $state, [], dispatchAfterTurnHooks: false, postCommitActions: $postCommitActions);
             }
 
             return $decision;
@@ -198,21 +192,6 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         }
 
         return null;
-    }
-
-    /** @param list<object> $actions
-     * @return array<string, int|string>
-     */
-    private function repairSource(string $runId, string $commandId, array $actions): array
-    {
-        $source = \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance::actionIdentity(\Ineersa\CodingAgent\Application\Message\RepairSession::class, $runId, $commandId);
-        foreach ($actions as $action) {
-            if ($action instanceof \Ineersa\AgentCore\Domain\Coordination\RetireUnknownExecutionDTO) {
-                $source['command_type'] = \Ineersa\AgentCore\Domain\Coordination\RetireUnknownExecutionDTO::class;
-            }
-        }
-
-        return $source;
     }
 
     /** @param list<RunEvent> $leadingEvents
