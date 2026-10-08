@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "8bc2c6324ed2965378f6674cc227c8a9",
+    "content-hash": "10741bf62602ea17d28ad21ed6c74e2e",
     "packages": [
         {
             "name": "amphp/amp",
@@ -3552,12 +3552,12 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/ineersa/php-sdk.git",
-                "reference": "0254b8546ab3a30cea2fe19a08ab82881e7fd13f"
+                "reference": "b5fd2ddee5e6e5d704be6e01ed90887af2dc6d41"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/ineersa/php-sdk/zipball/0254b8546ab3a30cea2fe19a08ab82881e7fd13f",
-                "reference": "0254b8546ab3a30cea2fe19a08ab82881e7fd13f",
+                "url": "https://api.github.com/repos/ineersa/php-sdk/zipball/b5fd2ddee5e6e5d704be6e01ed90887af2dc6d41",
+                "reference": "b5fd2ddee5e6e5d704be6e01ed90887af2dc6d41",
                 "shasum": ""
             },
             "require": {
@@ -3658,7 +3658,7 @@
             "support": {
                 "source": "https://github.com/ineersa/php-sdk/tree/task/fix-http-session-expiry"
             },
-            "time": "2026-10-07T23:34:18+00:00"
+            "time": "2026-10-08T01:49:35+00:00"
         },
         {
             "name": "monolog/monolog",

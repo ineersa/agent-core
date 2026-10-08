@@ -5,9 +5,15 @@
  *
  * The built-in server process stays up, but request-scoped PHP state resets, so
  * session validity lives only in MCP_FIXTURE_STATE. Creating
- * MCP_FIXTURE_INVALIDATE makes the next
- * session-bound request return HTTP 404 with the configured body shape.
- * MCP_FIXTURE_HEADER_LOG records method, inbound session header, and status.
+ * MCP_FIXTURE_INVALIDATE makes the next session-bound request return HTTP 404
+ * with the configured body shape. MCP_FIXTURE_HEADER_LOG records method,
+ * inbound session header, and status. MCP_FIXTURE_RECEIVED marks when a slow
+ * tools/call has been accepted.
+ *
+ * Post-initialize calls require a non-empty matching Mcp-Session-Id. A missing
+ * session header returns HTTP 400 so a sessionless retry cannot false-pass.
+ * When MCP_FIXTURE_EXPIRE_ON_CANCEL is set, notifications/cancelled clears the
+ * session and returns HTTP 404.
  *
  * Usage:
  *   MCP_FIXTURE_STATE=... MCP_FIXTURE_INVALIDATE=... MCP_FIXTURE_HEADER_LOG=... \
@@ -19,6 +25,9 @@ declare(strict_types=1);
 $stateFile = getenv('MCP_FIXTURE_STATE');
 $invalidateFile = getenv('MCP_FIXTURE_INVALIDATE');
 $headerLog = getenv('MCP_FIXTURE_HEADER_LOG');
+$receivedFile = getenv('MCP_FIXTURE_RECEIVED');
+$expireOnCancel = getenv('MCP_FIXTURE_EXPIRE_ON_CANCEL');
+$slowMs = getenv('MCP_FIXTURE_SLOW_MS');
 $expiredContentType = getenv('MCP_FIXTURE_404_CONTENT_TYPE');
 $expiredBody = getenv('MCP_FIXTURE_404_BODY');
 if (false === $stateFile || '' === $stateFile) {
@@ -77,6 +86,12 @@ if ('' !== $sessionHeader
     exit(0);
 }
 
+if ('initialize' !== $method && '' === $sessionHeader) {
+    respond(400, 'text/plain', 'Missing Mcp-Session-Id', $headerLog, $method, $sessionHeader);
+
+    exit(0);
+}
+
 if ('' !== $sessionHeader && ('' === $currentSession || $sessionHeader !== $currentSession)) {
     respond(404, 'text/plain', 'Unknown session', $headerLog, $method, $sessionHeader);
 
@@ -112,6 +127,19 @@ try {
         exit(0);
     }
 
+    if ('notifications/cancelled' === $method) {
+        if (false !== $expireOnCancel && '' !== $expireOnCancel) {
+            file_put_contents($stateFile, '');
+            respond(404, 'text/plain', 'Session expired', $headerLog, $method, $sessionHeader);
+
+            exit(0);
+        }
+
+        respond(204, '', '', $headerLog, $method, $sessionHeader);
+
+        exit(0);
+    }
+
     if ('tools/list' === $method) {
         $payload = json_encode([
             'jsonrpc' => '2.0',
@@ -132,6 +160,15 @@ try {
                             'required' => ['name'],
                         ],
                     ],
+                    [
+                        'name' => 'slow',
+                        'description' => 'Marks receipt and may delay before answering.',
+                        'inputSchema' => [
+                            'type' => 'object',
+                            'properties' => (object) [],
+                            'required' => [],
+                        ],
+                    ],
                 ],
             ],
         ], \JSON_THROW_ON_ERROR);
@@ -148,6 +185,30 @@ try {
             'result' => [
                 'content' => [
                     ['type' => 'text', 'text' => 'Hello, '.$name],
+                ],
+            ],
+        ], \JSON_THROW_ON_ERROR);
+        respond(200, 'application/json', $payload, $headerLog, $method, $sessionHeader);
+
+        exit(0);
+    }
+
+    if ('tools/call' === $method && 'slow' === ($request['params']['name'] ?? null)) {
+        if (false !== $receivedFile && '' !== $receivedFile) {
+            file_put_contents($receivedFile, 'received');
+        }
+
+        $delayMs = false === $slowMs || '' === $slowMs ? 0 : max(0, (int) $slowMs);
+        if ($delayMs > 0) {
+            usleep($delayMs * 1000);
+        }
+
+        $payload = json_encode([
+            'jsonrpc' => '2.0',
+            'id' => $rawId,
+            'result' => [
+                'content' => [
+                    ['type' => 'text', 'text' => 'slow-complete'],
                 ],
             ],
         ], \JSON_THROW_ON_ERROR);

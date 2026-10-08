@@ -105,8 +105,10 @@ Child denylist `agents.subagent_excluded_tools` still removes named tools after 
 - MCP-backed `ExecuteToolCall` messages route to the dedicated `mcp` transport (one consumer per session). Repository maintainers: see unmarked `docs/async-runtime-architecture.md`.
 - MCP calls use the run's cancellation token. The call deadline is the shorter of
   the server's `timeoutMs` and the tool execution budget. When the SDK observes
-  cancellation or deadline expiry, Hatfield stops waiting but keeps the MCP connection for the
-  next call. STDIO sends `notifications/cancelled` for the pending request;
+  cancellation or deadline expiry, Hatfield stops waiting and keeps a still-connected
+  MCP client for the next call. If interruption leaves the SDK disconnected, Hatfield
+  evicts that client so the next call reconnects. STDIO sends `notifications/cancelled`
+  for the pending request;
   HTTP closes its active response body. For protocol versions through
   `2025-11-25`, HTTP also sends a best-effort `notifications/cancelled` POST,
   which can itself block. From `2026-07-28`, HTTP uses stream closure alone.
@@ -117,9 +119,10 @@ Child denylist `agents.subagent_excluded_tools` still removes named tools after 
   stopped or rolled back its changes.
 
 Hatfield temporarily depends on the `ineersa/php-sdk` branch
-`task/fix-http-session-expiry` at commit `0254b8546ab3a30cea2fe19a08ab82881e7fd13f`
+`task/fix-http-session-expiry` at commit `b5fd2ddee5e6e5d704be6e01ed90887af2dc6d41`
 so expired Streamable HTTP sessions raise a connection failure instead of a
-deadline. Replace that pin after upstream
+deadline, and so a cancellation notification that hits session expiry invalidates
+the SDK connection. Replace that pin after upstream
 [PR #425](https://github.com/modelcontextprotocol/php-sdk/pull/425) lands.
 
 ## Shutdown

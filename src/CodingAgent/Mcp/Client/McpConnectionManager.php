@@ -209,8 +209,9 @@ final class McpConnectionManager implements McpConnectionManagerInterface
     /**
      * {@inheritDoc}
      *
-     * Caller interruption leaves the connection alive; other failures still
-     * trigger the existing reconnect-on-next-call behavior.
+     * Caller interruption preserves a still-connected client. If interruption
+     * leaves the SDK disconnected, the client is evicted like other failures
+     * so the next call reconnects. Other failures still disconnect.
      */
     public function callTool(string $runId, string $serverName, string $toolName, array $arguments = [], ?CancellationTokenInterface $cancellationToken = null, ?int $timeoutSeconds = null): array
     {
@@ -229,8 +230,10 @@ final class McpConnectionManager implements McpConnectionManagerInterface
         try {
             return $client->callTool($toolName, $arguments, $cancellationToken, $timeoutSeconds);
         } catch (McpClientInterruptedException $e) {
-            // SDK cancellation cleared its pending request; the server and
-            // transport remain available for the next call.
+            if (!$client->isConnected()) {
+                $this->disconnectServer($runId, $serverName);
+            }
+
             throw $e;
         } catch (\Throwable $e) {
             // Log with structured context and sanitized message.

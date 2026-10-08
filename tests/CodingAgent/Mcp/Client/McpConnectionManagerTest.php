@@ -596,6 +596,205 @@ class McpConnectionManagerTest extends TestCase
         }
     }
 
+    /** @return iterable<string, array{string, ?int}> */
+    public static function cancellationPostExpiryProvider(): iterable
+    {
+        yield 'token cancel' => ['token', null];
+        yield 'deadline expiry' => ['deadline', 1];
+    }
+
+    #[DataProvider('cancellationPostExpiryProvider')]
+    public function testCancellationNotificationExpiryReconnectsWithoutOldSessionId(string $mode, ?int $timeoutSeconds): void
+    {
+        $port = $this->findAvailablePort();
+        $this->assertNotNull($port, 'No available port found for HTTP fixture');
+
+        $stateFile = $this->projectDir.'/http-cancel-session-state';
+        $headerLog = $this->projectDir.'/http-cancel-session-headers.jsonl';
+        $receivedFile = $this->projectDir.'/http-cancel-session-received';
+        file_put_contents($stateFile, '');
+        file_put_contents($headerLog, '');
+        file_put_contents($receivedFile, '');
+
+        $fixtureScript = __DIR__.'/../Fixtures/http-stateful-session-server.php';
+        $host = '127.0.0.1';
+        $env = [
+            'MCP_FIXTURE_STATE' => $stateFile,
+            'MCP_FIXTURE_HEADER_LOG' => $headerLog,
+            'MCP_FIXTURE_RECEIVED' => $receivedFile,
+            'MCP_FIXTURE_EXPIRE_ON_CANCEL' => '1',
+            'MCP_FIXTURE_404_CONTENT_TYPE' => 'text/plain',
+            'MCP_FIXTURE_404_BODY' => 'Session expired',
+            // Delay the JSON body past the interruption point. Token cancel flips
+            // during the POST; deadline expiry is observed when send() returns.
+            'MCP_FIXTURE_SLOW_MS' => 'token' === $mode ? '200' : '1500',
+        ];
+
+        $process = proc_open(
+            [\PHP_BINARY, '-S', $host.':'.$port, $fixtureScript],
+            [
+                0 => ['pipe', 'r'],
+                1 => ['pipe', 'w'],
+                2 => ['pipe', 'w'],
+            ],
+            $pipes,
+            null,
+            $env,
+        );
+        $this->assertIsResource($process, 'Failed to start stateful HTTP fixture server');
+
+        $cleanup = static function () use ($process, $pipes): void {
+            foreach ($pipes as $pipe) {
+                if (\is_resource($pipe)) {
+                    @fclose($pipe);
+                }
+            }
+            if (\is_resource($process)) {
+                @proc_terminate($process, \SIGTERM);
+                @proc_close($process);
+            }
+        };
+
+        try {
+            $ready = false;
+            $deadline = microtime(true) + 5.0;
+            while (microtime(true) < $deadline) {
+                $status = proc_get_status($process);
+                if (!$status['running']) {
+                    $stderr = stream_get_contents($pipes[2]) ?: '';
+                    $this->fail('Stateful HTTP fixture exited before listen readiness: '.$stderr);
+                }
+                $socket = @stream_socket_client(\sprintf('tcp://%s:%d', $host, $port), $errno, $errstr, 0.05);
+                if (false !== $socket) {
+                    fclose($socket);
+                    $ready = true;
+                    break;
+                }
+                usleep(5_000);
+            }
+            $this->assertTrue($ready, 'Stateful HTTP fixture did not accept TCP connections within 5s');
+
+            file_put_contents(
+                $this->projectDir.'/.hatfield/mcp.json',
+                json_encode([
+                    'mcpServers' => [
+                        'http-session' => [
+                            'url' => \sprintf('http://%s:%d/mcp', $host, $port),
+                            'timeoutMs' => 1000,
+                        ],
+                    ],
+                ], \JSON_THROW_ON_ERROR),
+            );
+
+            $results = $this->manager->discover('test-run-http-session');
+            $this->assertSame('connected', $results['http-session']['status']);
+
+            $firstSession = trim((string) file_get_contents($stateFile));
+            $this->assertNotSame('', $firstSession);
+
+            $token = null;
+            if ('token' === $mode) {
+                $token = new class($receivedFile) implements CancellationTokenInterface {
+                    public function __construct(private readonly string $marker)
+                    {
+                    }
+
+                    public function isCancellationRequested(): bool
+                    {
+                        return 'received' === file_get_contents($this->marker);
+                    }
+                };
+            }
+
+            try {
+                $this->manager->callTool(
+                    'test-run-http-session',
+                    'http-session',
+                    'slow',
+                    [],
+                    $token,
+                    $timeoutSeconds,
+                );
+                $this->fail('Cancellation that expires the HTTP session must interrupt the pending call.');
+            } catch (McpClientInterruptedException $e) {
+                $this->assertContains($e->getMessage(), [
+                    'The client cancelled the request.',
+                    'The request deadline expired.',
+                ]);
+            }
+
+            $entries = array_values(array_filter(array_map(
+                static function (string $line): ?array {
+                    $line = trim($line);
+                    if ('' === $line) {
+                        return null;
+                    }
+
+                    /** @var array{method: string, session: string, status: int, response_session: ?string} $decoded */
+                    $decoded = json_decode($line, true, 512, \JSON_THROW_ON_ERROR);
+
+                    return $decoded;
+                },
+                explode("\n", (string) file_get_contents($headerLog)),
+            )));
+
+            $cancelNotification = null;
+            foreach ($entries as $entry) {
+                if ('notifications/cancelled' === $entry['method'] && $firstSession === $entry['session'] && 404 === $entry['status']) {
+                    $cancelNotification = $entry;
+                    break;
+                }
+            }
+            $this->assertNotNull($cancelNotification, 'Legacy HTTP cancellation must POST notifications/cancelled and receive HTTP 404.');
+
+            $recovered = $this->manager->callTool(
+                'test-run-http-session',
+                'http-session',
+                'hello',
+                ['name' => 'Bob'],
+                new NullCancellationToken(),
+                1,
+            );
+            $this->assertSame('Hello, Bob', $recovered['content'][0]['text']);
+
+            $secondSession = trim((string) file_get_contents($stateFile));
+            $this->assertNotSame('', $secondSession);
+            $this->assertNotSame($firstSession, $secondSession);
+
+            $entries = array_values(array_filter(array_map(
+                static function (string $line): ?array {
+                    $line = trim($line);
+                    if ('' === $line) {
+                        return null;
+                    }
+
+                    /** @var array{method: string, session: string, status: int, response_session: ?string} $decoded */
+                    $decoded = json_decode($line, true, 512, \JSON_THROW_ON_ERROR);
+
+                    return $decoded;
+                },
+                explode("\n", (string) file_get_contents($headerLog)),
+            )));
+            $freshInitialize = null;
+            $sessionlessPostInit = null;
+            foreach ($entries as $entry) {
+                if ('initialize' === $entry['method'] && '' === $entry['session'] && 200 === $entry['status'] && $secondSession === ($entry['response_session'] ?? null)) {
+                    $freshInitialize = $entry;
+                }
+                if ('' === $entry['session'] && 'initialize' !== $entry['method'] && 400 === $entry['status']) {
+                    $sessionlessPostInit = $entry;
+                }
+            }
+
+            $this->assertNotNull($freshInitialize, 'Recovery must initialize a new session without the old id.');
+            $this->assertNull($sessionlessPostInit, 'A sessionless post-init call would be rejected with HTTP 400 and must not appear.');
+
+            $this->manager->disconnectAll('test-run-http-session');
+        } finally {
+            $cleanup();
+        }
+    }
+
     public function testCallbackFailureAfterConnectedServerDoesNotCorruptResults(): void
     {
         // Write an mcp.json with the fixture STDIO server
