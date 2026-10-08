@@ -27,7 +27,6 @@ $invalidateFile = getenv('MCP_FIXTURE_INVALIDATE');
 $headerLog = getenv('MCP_FIXTURE_HEADER_LOG');
 $receivedFile = getenv('MCP_FIXTURE_RECEIVED');
 $expireOnCancel = getenv('MCP_FIXTURE_EXPIRE_ON_CANCEL');
-$slowMs = getenv('MCP_FIXTURE_SLOW_MS');
 $expiredContentType = getenv('MCP_FIXTURE_404_CONTENT_TYPE');
 $expiredBody = getenv('MCP_FIXTURE_404_BODY');
 if (false === $stateFile || '' === $stateFile) {
@@ -162,7 +161,7 @@ try {
                     ],
                     [
                         'name' => 'slow',
-                        'description' => 'Marks receipt and may delay before answering.',
+                        'description' => 'Marks receipt and leaves the call pending until interrupted.',
                         'inputSchema' => [
                             'type' => 'object',
                             'properties' => (object) [],
@@ -198,21 +197,9 @@ try {
             file_put_contents($receivedFile, 'received');
         }
 
-        $delayMs = false === $slowMs || '' === $slowMs ? 0 : max(0, (int) $slowMs);
-        if ($delayMs > 0) {
-            usleep($delayMs * 1000);
-        }
-
-        $payload = json_encode([
-            'jsonrpc' => '2.0',
-            'id' => $rawId,
-            'result' => [
-                'content' => [
-                    ['type' => 'text', 'text' => 'slow-complete'],
-                ],
-            ],
-        ], \JSON_THROW_ON_ERROR);
-        respond(200, 'application/json', $payload, $headerLog, $method, $sessionHeader);
+        // An SSE comment is not a result. Leave the SDK request pending without
+        // blocking body reads or delaying the fixture to force interruption.
+        respond(200, 'text/event-stream', ": pending\n\n", $headerLog, $method, $sessionHeader);
 
         exit(0);
     }

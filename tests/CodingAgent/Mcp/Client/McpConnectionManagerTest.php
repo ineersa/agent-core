@@ -625,9 +625,6 @@ class McpConnectionManagerTest extends TestCase
             'MCP_FIXTURE_EXPIRE_ON_CANCEL' => '1',
             'MCP_FIXTURE_404_CONTENT_TYPE' => 'text/plain',
             'MCP_FIXTURE_404_BODY' => 'Session expired',
-            // Delay the JSON body past the interruption point. Token cancel flips
-            // during the POST; deadline expiry is observed when send() returns.
-            'MCP_FIXTURE_SLOW_MS' => 'token' === $mode ? '200' : '1500',
         ];
 
         $process = proc_open(
@@ -717,10 +714,10 @@ class McpConnectionManagerTest extends TestCase
                 );
                 $this->fail('Cancellation that expires the HTTP session must interrupt the pending call.');
             } catch (McpClientInterruptedException $e) {
-                $this->assertContains($e->getMessage(), [
-                    'The client cancelled the request.',
-                    'The request deadline expired.',
-                ]);
+                $this->assertSame(
+                    'token' === $mode ? 'The client cancelled the request.' : 'The request deadline expired.',
+                    $e->getMessage(),
+                );
             }
 
             $entries = array_values(array_filter(array_map(
