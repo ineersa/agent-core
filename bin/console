@@ -11,7 +11,7 @@ use Symfony\Component\Console\Input\ArgvInput;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Dotenv\Dotenv;
 
-ini_set('memory_limit', '256M');
+ini_set('memory_limit', '512M');
 
 // Detect PHAR mode early. Box uses an internal PHAR alias (not Phar::running())
 // so we check __FILE__ for the phar:// scheme instead.
