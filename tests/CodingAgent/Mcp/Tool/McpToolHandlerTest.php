@@ -127,7 +127,7 @@ final class McpToolHandlerTest extends TestCase
             {
             }
 
-            public function callTool(string $runId, string $serverName, string $toolName, array $arguments = []): array
+            public function callTool(string $runId, string $serverName, string $toolName, array $arguments = [], ?\Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface $cancellationToken = null, ?int $timeoutSeconds = null): array
             {
                 return [
                     'content' => [['type' => 'text', 'text' => $this->fakeResult]],
@@ -160,7 +160,7 @@ final class McpToolHandlerTest extends TestCase
             {
             }
 
-            public function callTool(string $runId, string $serverName, string $toolName, array $arguments = []): array
+            public function callTool(string $runId, string $serverName, string $toolName, array $arguments = [], ?\Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface $cancellationToken = null, ?int $timeoutSeconds = null): array
             {
                 throw new McpClientInvocationException($this->exception->getMessage(), 0, $this->exception);
             }

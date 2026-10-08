@@ -50,7 +50,7 @@ final class McpSdkClientFactory
         $transport = $this->createTransport($server);
         $client = $this->createSdkClient($server);
 
-        return new McpSdkClientAdapter($client, $transport);
+        return new McpSdkClientAdapter($client, $transport, $server->timeoutMs / 1000);
     }
 
     private function createTransport(McpServerDefinitionDTO $server): TransportInterface

@@ -103,7 +103,27 @@ Child denylist `agents.subagent_excluded_tools` still removes named tools after 
 - Tool names are namespaced/unique per registry rules to avoid collisions with built-ins.
 - Invocations use the MCP client session for the active run; transient disconnects may reconnect according to client manager policy.
 - MCP-backed `ExecuteToolCall` messages route to the dedicated `mcp` transport (one consumer per session). Repository maintainers: see unmarked `docs/async-runtime-architecture.md`.
-- Per-call timeout/cancellation beyond SDK and connection-manager behavior is limited; do not assume Hatfield can hard-abort an arbitrary in-flight MCP tool the way it cancels local bash.
+- MCP calls use the run's cancellation token. The call deadline is the shorter of
+  the server's `timeoutMs` and the tool execution budget. When the SDK observes
+  cancellation or deadline expiry, Hatfield stops waiting and keeps a still-connected
+  MCP client for the next call. If interruption leaves the SDK disconnected, Hatfield
+  evicts that client so the next call reconnects. STDIO sends `notifications/cancelled`
+  for the pending request;
+  HTTP closes its active response body. For protocol versions through
+  `2025-11-25`, HTTP also sends a best-effort `notifications/cancelled` POST,
+  which can itself block. From `2026-07-28`, HTTP uses stream closure alone.
+  HTTP cancellation is cooperative and
+  cannot interrupt blocking requests or body reads. The deadline is not a hard
+  HTTP wall-clock limit. Servers can still continue work after the
+  client stops waiting, so cancellation does not guarantee that a remote tool
+  stopped or rolled back its changes.
+
+Hatfield temporarily depends on the `ineersa/php-sdk` branch
+`task/fix-http-session-expiry` at commit `b5fd2ddee5e6e5d704be6e01ed90887af2dc6d41`
+so expired Streamable HTTP sessions raise a connection failure instead of a
+deadline, and so a cancellation notification that hits session expiry invalidates
+the SDK connection. Replace that pin after upstream
+[PR #425](https://github.com/modelcontextprotocol/php-sdk/pull/425) lands.
 
 ## Shutdown
 

@@ -1,0 +1,46 @@
+{
+  "$schema": "Controller replay \u2014 MCP slow tool blocker for cancel/follow-up",
+  "model": "llama_cpp_test/test",
+  "provider_id": "llama_cpp_test",
+  "reasoning": "off",
+  "recorded_at": "2026-10-07T00:00:00+00:00",
+  "recording_source": "manual",
+  "input": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Call cancel_fixture_slow once. Do not call any other tool."
+      }
+    ]
+  },
+  "usage": {
+    "input_tokens": 10,
+    "output_tokens": 30,
+    "total_tokens": 40
+  },
+  "stop_reason": "tool_call",
+  "expected_text": "",
+  "deltas": [
+    {
+      "type": "tool_call_start",
+      "id": "call_mcp_slow_1",
+      "name": "cancel_fixture_slow"
+    },
+    {
+      "type": "tool_input_delta",
+      "id": "call_mcp_slow_1",
+      "name": "cancel_fixture_slow",
+      "partial_json": "{}"
+    },
+    {
+      "type": "tool_call_complete",
+      "tool_calls": [
+        {
+          "id": "call_mcp_slow_1",
+          "name": "cancel_fixture_slow",
+          "arguments": {}
+        }
+      ]
+    }
+  ]
+}

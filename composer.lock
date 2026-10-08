@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "a000308a9eb962ff1dd58d5f230d820b",
+    "content-hash": "10741bf62602ea17d28ad21ed6c74e2e",
     "packages": [
         {
             "name": "amphp/amp",
@@ -3548,16 +3548,16 @@
         },
         {
             "name": "mcp/sdk",
-            "version": "v0.8.1",
+            "version": "dev-task/fix-http-session-expiry",
             "source": {
                 "type": "git",
-                "url": "https://github.com/modelcontextprotocol/php-sdk.git",
-                "reference": "c5dbfb64e5a2a30872ec3927b4cf13a2eb05e10e"
+                "url": "https://github.com/ineersa/php-sdk.git",
+                "reference": "b5fd2ddee5e6e5d704be6e01ed90887af2dc6d41"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/modelcontextprotocol/php-sdk/zipball/c5dbfb64e5a2a30872ec3927b4cf13a2eb05e10e",
-                "reference": "c5dbfb64e5a2a30872ec3927b4cf13a2eb05e10e",
+                "url": "https://api.github.com/repos/ineersa/php-sdk/zipball/b5fd2ddee5e6e5d704be6e01ed90887af2dc6d41",
+                "reference": "b5fd2ddee5e6e5d704be6e01ed90887af2dc6d41",
                 "shasum": ""
             },
             "require": {
@@ -3578,6 +3578,9 @@
                 "symfony/deprecation-contracts": "^2.5 || ^3.0",
                 "symfony/uid": "^5.4 || ^6.4 || ^7.3 || ^8.0"
             },
+            "conflict": {
+                "phpstan/phpstan": "2.3.0"
+            },
             "require-dev": {
                 "composer/semver": "^3.0",
                 "ext-openssl": "*",
@@ -3590,6 +3593,7 @@
                 "phpdocumentor/shim": "^3",
                 "phpstan/phpstan": "^2.1",
                 "phpunit/phpunit": "^10.5",
+                "psr/cache": "^1.0 || ^2.0 || ^3.0",
                 "psr/simple-cache": "^2.0 || ^3.0",
                 "symfony/cache": "^5.4 || ^6.4 || ^7.3 || ^8.0",
                 "symfony/console": "^5.4 || ^6.4 || ^7.3 || ^8.0",
@@ -3598,6 +3602,8 @@
                 "symfony/process": "^5.4 || ^6.4 || ^7.3 || ^8.0"
             },
             "suggest": {
+                "firebase/php-jwt": "Required for the JwtTokenValidator.",
+                "psr/cache-implementation": "Required for JwtTokenValidator::fromIssuer() to cache metadata and keys.",
                 "symfony/finder": "Required for file-based discovery."
             },
             "type": "library",
@@ -3606,7 +3612,31 @@
                     "Mcp\\": "src/"
                 }
             },
-            "notification-url": "https://packagist.org/downloads/",
+            "autoload-dev": {
+                "psr-4": {
+                    "Mcp\\Example\\Server\\CachedDiscovery\\": "examples/server/cached-discovery/",
+                    "Mcp\\Example\\Server\\ClientCommunication\\": "examples/server/client-communication/",
+                    "Mcp\\Example\\Server\\ClientLogging\\": "examples/server/client-logging/",
+                    "Mcp\\Example\\Server\\CombinedRegistration\\": "examples/server/combined-registration/",
+                    "Mcp\\Example\\Server\\Elicitation\\": "examples/server/elicitation/",
+                    "Mcp\\Example\\Server\\ComplexToolSchema\\": "examples/server/complex-tool-schema/",
+                    "Mcp\\Example\\Server\\Conformance\\": "examples/server/conformance/",
+                    "Mcp\\Example\\Server\\CustomDependencies\\": "examples/server/custom-dependencies/",
+                    "Mcp\\Example\\Server\\CustomMethodHandlers\\": "examples/server/custom-method-handlers/",
+                    "Mcp\\Example\\Server\\DiscoveryCalculator\\": "examples/server/discovery-calculator/",
+                    "Mcp\\Example\\Server\\DiscoveryUserProfile\\": "examples/server/discovery-userprofile/",
+                    "Mcp\\Example\\Server\\EnvVariables\\": "examples/server/env-variables/",
+                    "Mcp\\Example\\Server\\ExplicitRegistration\\": "examples/server/explicit-registration/",
+                    "Mcp\\Example\\Server\\McpApps\\": "examples/server/mcp-apps/",
+                    "Mcp\\Example\\Server\\OAuthKeycloak\\": "examples/server/oauth-keycloak/",
+                    "Mcp\\Example\\Server\\OAuthMicrosoft\\": "examples/server/oauth-microsoft/",
+                    "Mcp\\Example\\Server\\SchemaShowcase\\": "examples/server/schema-showcase/",
+                    "Mcp\\Tests\\": "tests/"
+                },
+                "classmap": [
+                    "tests/Unit/Capability/Discovery/Fixtures/AlternativeFileNameToolHandler.class.inc"
+                ]
+            },
             "license": [
                 "Apache-2.0"
             ],
@@ -3626,10 +3656,9 @@
             ],
             "description": "Model Context Protocol SDK for Client and Server applications in PHP",
             "support": {
-                "issues": "https://github.com/modelcontextprotocol/php-sdk/issues",
-                "source": "https://github.com/modelcontextprotocol/php-sdk/tree/v0.8.1"
+                "source": "https://github.com/ineersa/php-sdk/tree/task/fix-http-session-expiry"
             },
-            "time": "2026-08-29T23:10:56+00:00"
+            "time": "2026-10-08T01:49:35+00:00"
         },
         {
             "name": "monolog/monolog",
@@ -14192,6 +14221,7 @@
     "stability-flags": {
         "ineersa/hatfield-extension-api": 20,
         "ineersa/symfony-ai-openai-codex-platform": 20,
+        "mcp/sdk": 20,
         "symfony/tui": 20
     },
     "prefer-stable": true,
