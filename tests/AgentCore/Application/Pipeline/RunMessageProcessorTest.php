@@ -49,12 +49,11 @@ final class RunMessageProcessorTest extends TestCase
         $handler = $this->createMock(RunMessageHandler::class);
         $handler->method('supports')->willReturn(true);
         $handler->expects($this->once())->method('handle')->willReturn(new HandlerResult());
-        $dispatcher = new StepDispatcher(new TestMessageBus());
+        $dispatcher = new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new \Ineersa\AgentCore\Tests\Support\TestLogger());
         $commit = new RunCommit(
             activeRunContext: $active,
             eventStore: $store,
             logger: new NullLogger(),
-            executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
             finalizer: TestTransitionFinalizerFactory::create($store, $dispatcher, commands: $commands),
         );
         $processor = new RunMessageProcessor($active, new RunLockManager(new LockFactory(new InMemoryStore())), $commit, [$handler], $commands, $discard);
@@ -95,12 +94,11 @@ final class RunMessageProcessorTest extends TestCase
             return new HandlerResult();
         });
         $bus = new TestMessageBus();
-        $dispatcher = new StepDispatcher($bus);
+        $dispatcher = new StepDispatcher($bus, $bus, new \Ineersa\AgentCore\Tests\Support\TestLogger());
         $commit = new RunCommit(
             activeRunContext: $active,
             eventStore: $store,
             logger: new NullLogger(),
-            executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
             finalizer: TestTransitionFinalizerFactory::create($store, $dispatcher),
         );
         $processor = new RunMessageProcessor($active, new RunLockManager(new LockFactory(new InMemoryStore())), $commit, [$handler], new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore(), $discard);

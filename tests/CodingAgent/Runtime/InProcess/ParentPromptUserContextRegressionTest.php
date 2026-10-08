@@ -187,10 +187,8 @@ final class ParentRegressionCapturingRunner implements AgentRunnerInterface
             activeRunContext: $activeRunContext,
             eventStore: $eventStore,
             logger: new NullLogger(),
-            executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
-            sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
             hookDispatcher: null,
-            finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus())),
+            finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new \Ineersa\AgentCore\Tests\Support\TestLogger())),
         );
         $processor = new RunMessageProcessor(
             activeRunContext: $activeRunContext,

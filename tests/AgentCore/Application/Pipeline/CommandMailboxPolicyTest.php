@@ -116,7 +116,7 @@ final class CommandMailboxPolicyTest extends TestCase
                     $message = $message->getMessage();
                 }
 
-                return $message instanceof \Ineersa\AgentCore\Domain\Message\ExecutionRequest && ExecuteLlmStep::class === $message->requestType;
+                return $message instanceof ExecuteLlmStep;
             },
         ));
         $this->assertCount(1, $llmSteps, 'Turn-start must schedule exactly one LLM continuation for the drained batch.');
@@ -430,24 +430,18 @@ final class CommandMailboxPolicyTest extends TestCase
             commandRouter: $commandRouter,
         );
         $toolBatchCollector = new ToolBatchCollector($batchStore = new TestToolBatchStore());
-        $stepDispatcher = new StepDispatcher(\Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::bus($commandBus));
+        $stepDispatcher = new StepDispatcher($commandBus, $executionBus, new \Ineersa\AgentCore\Tests\Support\TestLogger());
 
-        $operations = new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore();
         $runCommit = new RunCommit(
             activeRunContext: $activeRunContext,
             eventStore: $eventStore,
             logger: new NullLogger(),
-            executionOperations: $operations,
-            sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new InMemoryCommandStore()),
             hookDispatcher: null,
             finalizer: TestTransitionFinalizerFactory::create(
                 $eventStore,
                 $stepDispatcher,
                 batches: $batchStore,
                 commands: $commandStore,
-                operations: $operations,
-                commandBus: $commandBus,
-                executionBus: $executionBus,
             ),
         );
 
@@ -455,6 +449,7 @@ final class CommandMailboxPolicyTest extends TestCase
             activeRunContext: $activeRunContext,
             runLockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
             runCommit: $runCommit,
+            commands: $commandStore,
             handlers: [
                 new StartRunHandler(
                     eventFactory: new \Ineersa\AgentCore\Domain\Event\EventFactory(),

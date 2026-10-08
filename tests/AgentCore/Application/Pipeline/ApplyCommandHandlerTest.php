@@ -1024,10 +1024,7 @@ final class ApplyCommandHandlerTest extends TestCase
         );
     }
 
-    /**
-     * Idempotency: compact applied call with same idempotencyKey is no-op.
-     */
-    public function testCompactTerminalIdempotency(): void
+    public function testCompletedCompactCommandIdCanBeReused(): void
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
@@ -1068,12 +1065,10 @@ final class ApplyCommandHandlerTest extends TestCase
         $result1 = $handler->handle($message, $state);
         $this->assertNotNull($result1->nextState);
 
-        // Second call — idempotent no-op
         $this->finalizeMailbox($result1, $commandStore);
+        $this->assertFalse($commandStore->has($state->runId, $message->idempotencyKey()));
         $result2 = $handler->handle($message, $result1->nextState ?? $state);
-        $this->assertNull($result2->nextState,
-            'Second compact with same idempotency key must be a no-op.',
-        );
+        $this->assertNotNull($result2->nextState);
     }
 
     /**

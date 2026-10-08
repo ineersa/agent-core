@@ -56,10 +56,7 @@ final class SessionToolLaunchInputStoreTest extends IsolatedKernelTestCase
             $operations = self::getContainer()->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class);
             $operations->prepare($call, $verified);
             $operations->prepare($readCall, $verified);
-            $batchStore->registerPrepared(
-                new \Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO($runId, 1, 'step-'.$count, [$call, $readCall], $batch->expectedOrder, $batch->pendingQueue, $batch->inFlight, $batch->maxParallelism),
-                $verified,
-            );
+            $batchStore->prepareChanges([new \Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO($runId, 1, 'step-'.$count, [$call, $readCall], $batch->expectedOrder, $batch->pendingQueue, $batch->inFlight, $batch->maxParallelism)], $verified)();
             $schedule = self::getContainer()->get(\Doctrine\DBAL\Connection::class)->fetchAssociative(
                 'SELECT calls_json, pending_queue_json FROM tool_batch_schedule WHERE run_id = ? AND turn_no = ? AND step_id = ?',
                 [$runId, 1, 'step-'.$count],
@@ -70,22 +67,16 @@ final class SessionToolLaunchInputStoreTest extends IsolatedKernelTestCase
             $payloadPath = $this->payloadPath($runId, $callId);
             $original = hash_file('sha256', $payloadPath);
             // Schedule writes keep sealed launch input untouched.
-            $batchStore->applyPrepared(
-                new \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO($runId, 1, 'step-'.$count, pendingQueue: [$callId], inFlight: [], awaitingHumanInput: [], finalized: false),
-                new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(\Symfony\Component\Uid\Uuid::v7()->toRfc4122(), [
-                    'run_id' => $runId,
-                    'actions' => [new \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO($runId, 1, 'step-'.$count, pendingQueue: [$callId], inFlight: [], awaitingHumanInput: [], finalized: false)],
-                ]),
-            );
+            $batchStore->prepareChanges([new \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO($runId, 1, 'step-'.$count, pendingQueue: [$callId], inFlight: [], awaitingHumanInput: [], finalized: false)], new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(\Symfony\Component\Uid\Uuid::v7()->toRfc4122(), [
+                'run_id' => $runId,
+                'actions' => [new \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO($runId, 1, 'step-'.$count, pendingQueue: [$callId], inFlight: [], awaitingHumanInput: [], finalized: false)],
+            ]))();
             $this->assertSame($original, hash_file('sha256', $payloadPath));
             file_put_contents($payloadPath, 'unreadable-as-input');
-            $batchStore->applyPrepared(
-                new \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO($runId, 1, 'step-'.$count, pendingQueue: [$callId], inFlight: [], awaitingHumanInput: [], finalized: false),
-                new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(\Symfony\Component\Uid\Uuid::v7()->toRfc4122(), [
-                    'run_id' => $runId,
-                    'actions' => [new \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO($runId, 1, 'step-'.$count, pendingQueue: [$callId], inFlight: [], awaitingHumanInput: [], finalized: false)],
-                ]),
-            );
+            $batchStore->prepareChanges([new \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO($runId, 1, 'step-'.$count, pendingQueue: [$callId], inFlight: [], awaitingHumanInput: [], finalized: false)], new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(\Symfony\Component\Uid\Uuid::v7()->toRfc4122(), [
+                'run_id' => $runId,
+                'actions' => [new \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO($runId, 1, 'step-'.$count, pendingQueue: [$callId], inFlight: [], awaitingHumanInput: [], finalized: false)],
+            ]))();
             $this->assertSame('unreadable-as-input', file_get_contents($payloadPath));
             $this->assertNotSame($original, hash_file('sha256', $payloadPath));
             $this->assertNotNull($batchStore->load($runId, 1, 'step-'.$count));

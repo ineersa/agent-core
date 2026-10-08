@@ -5,7 +5,7 @@ declare(strict_types=1);
 /**
  * Test-only run_control worker subprocess for idle-owner pending-intent recovery.
  *
- * Creates an unfinished captured transition with no armed invocation, then boots a
+ * Creates an unfinished captured transition without a wake command, then boots a
  * fresh test kernel with HATFIELD_SESSION_ID set and runs the configured Messenger
  * Worker (receiver locator + event dispatcher). No user command is injected.
  * The WorkerStartedEvent path must recover, publish, and stop naturally.
@@ -15,15 +15,10 @@ declare(strict_types=1);
 require dirname(__DIR__, 5).'/vendor/autoload.php';
 
 use DAMA\DoctrineTestBundle\Doctrine\DBAL\StaticDriver;
-use Ineersa\AgentCore\Application\Pipeline\SourceAcceptance;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
-use Ineersa\AgentCore\Domain\Coordination\ExecutionAuthorizationStamp;
-use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
-use Ineersa\AgentCore\Domain\Message\ExecutionRequest;
 use Ineersa\CodingAgent\Kernel;
 use Ineersa\CodingAgent\Migrations\StartupDatabaseMigrator;
-use Ineersa\CodingAgent\Session\DoctrineExecutionOperationStore;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\JsonlAppendJournal;
 use Symfony\Component\Messenger\Event\WorkerStartedEvent;
@@ -75,16 +70,12 @@ $boot = static function (): array {
 $sessions = $setup->get(HatfieldSessionStore::class);
 $run = $sessions->createSession('idle owner pending transition');
 $events = $setup->get(PreparedTransitionEventStoreInterface::class);
-$operations = $setup->get(DoctrineExecutionOperationStore::class);
-$acceptance = $setup->get(SourceAcceptance::class);
-$source = new AdvanceRun($run, 1, 'idle-source', 1, 'idle-source-key');
 $request = new ExecuteLlmStep($run, 1, 'idle', 1, 'idle-request', 'tools');
 $path = $sessions->resolveSessionsBasePath().'/'.$run.'/events.jsonl';
 
 $events->appendTransition([], [
     'run_id' => $run,
     'predecessor_seq' => 0,
-    'source' => SourceAcceptance::identity($source),
     'effects' => [$request],
 ]);
 $pending = $events->verifiedPendingTransition($run);
@@ -101,18 +92,10 @@ $cut = (new JsonlAppendJournal())->readableOffset($path, $physical);
 if ($cut !== $manifest['offset']) {
     throw new RuntimeException('Archive cut must remain capped at the unfinished intent offset.');
 }
-if ([] !== $operations->pendingDeliveries($run, '')) {
-    throw new RuntimeException('No invocation may be armed before idle-owner recovery.');
-}
-if ($acceptance->alreadyAccepted($source)) {
-    throw new RuntimeException('Source identity must stay unpublished before recovery.');
-}
 file_put_contents($marker.'.before', json_encode([
     'run_id' => $run,
     'pending_identity' => $pendingIdentity,
     'cut' => $cut,
-    'armed' => false,
-    'source_accepted' => false,
 ], \JSON_THROW_ON_ERROR)."\n");
 $setupKernel->shutdown();
 
@@ -146,12 +129,8 @@ if (!$started) {
 }
 
 $events = $container->get(PreparedTransitionEventStoreInterface::class);
-$acceptance = $container->get(SourceAcceptance::class);
 if (null !== $events->verifiedPendingTransition($run)) {
     throw new RuntimeException('Pending intent must be finished after actual worker startup.');
-}
-if (!$acceptance->alreadyAccepted($source)) {
-    throw new RuntimeException('Original source identity must be accepted after recovery.');
 }
 if (!is_file($path) || is_file($path.'.append.pending.json')) {
     throw new RuntimeException('Committed cut must publish and remove the pending intent files.');
@@ -161,32 +140,16 @@ $sent = $llm->getSent();
 if ([] === $sent) {
     throw new RuntimeException('Original continuation must be published on the execution bus.');
 }
-$ids = [];
-$authorization = null;
-$delivery = null;
 foreach ($sent as $envelope) {
-    $message = $envelope->getMessage();
-    $stamp = $envelope->last(ExecutionAuthorizationStamp::class);
-    if (!$message instanceof ExecutionRequest || !$stamp instanceof ExecutionAuthorizationStamp) {
-        throw new RuntimeException('Published continuation must retain the original ExecutionRequest identity.');
+    if ($envelope->getMessage() != $request) {
+        throw new RuntimeException('Recovery must send the captured request unchanged.');
     }
-    if ($message->runId() !== $run || 'idle' !== $message->stepId() || 'idle-request' !== $message->idempotencyKey()) {
-        throw new RuntimeException('Published continuation diverged from the captured request identity.');
-    }
-    $ids[] = $message->effectId;
-    $delivery = $message;
-    $authorization = $stamp;
-}
-if (1 !== count(array_unique($ids))) {
-    throw new RuntimeException('Recovery and same-tick rediscovery must reuse one Armed identity.');
 }
 
 file_put_contents($marker, json_encode([
     'ok' => true,
     'run_id' => $run,
     'pending_identity' => $pendingIdentity,
-    'effect_id' => $delivery->effectId,
-    'request_hash' => $authorization->requestHash,
     'delivery_count' => count($sent),
     'cut' => filesize($path),
     'worker_started' => true,

@@ -22,6 +22,11 @@ final class InMemoryCommandStore implements CommandStoreInterface
         return true;
     }
 
+    public function prepareEnqueue(PendingCommand $command): \Closure
+    {
+        return fn (): bool => $this->enqueue($command);
+    }
+
     public function has(string $runId, string $idempotencyKey): bool
     {
         return isset($this->commandsByRun[$runId][$idempotencyKey]);

@@ -242,15 +242,9 @@ final class WorkerFailedEventSubscriberTest extends IsolatedKernelTestCase
         $batches = self::getContainer()->get(ToolBatchStoreInterface::class);
         $seed = static function (ToolBatchStoreInterface $batches, string $runId, int $turnNo, string $stepId): void {
             $register = new \Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO($runId, $turnNo, $stepId, [], [], [], [], 2);
-            $batches->registerPrepared(
-                $register,
-                new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(\Symfony\Component\Uid\Uuid::v7()->toRfc4122(), ['run_id' => $runId, 'actions' => []]),
-            );
+            $batches->prepareChanges([$register], new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(\Symfony\Component\Uid\Uuid::v7()->toRfc4122(), ['run_id' => $runId, 'actions' => [$register]]))();
             $finalize = new \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO($runId, $turnNo, $stepId, pendingQueue: [], inFlight: [], awaitingHumanInput: [], finalized: true);
-            $batches->applyPrepared(
-                $finalize,
-                new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(\Symfony\Component\Uid\Uuid::v7()->toRfc4122(), ['run_id' => $runId, 'actions' => [$finalize]]),
-            );
+            $batches->prepareChanges([$finalize], new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(\Symfony\Component\Uid\Uuid::v7()->toRfc4122(), ['run_id' => $runId, 'actions' => [$finalize]]))();
         };
         $seed($batches, $runId, 1, 'older');
         $seed($batches, $runId, 2, 'current');
@@ -385,10 +379,8 @@ final class WorkerFailedEventSubscriberTest extends IsolatedKernelTestCase
             activeRunContext: $active,
             eventStore: $eventStore,
             logger: $logger,
-            executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
-            sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
             hookDispatcher: new HookDispatcher([$hook]),
-            finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher($bus), batches: $batches),
+            finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher($bus, $bus, new TestLogger()), batches: $batches),
         );
         $subscriber = new WorkerFailedEventSubscriber($active, $commit, new RunLockManager(new LockFactory(new InMemoryStore())), $logger);
         $event = $this->createFinalFailedEvent(new \RuntimeException('handler failed'));
@@ -423,10 +415,8 @@ final class WorkerFailedEventSubscriberTest extends IsolatedKernelTestCase
             activeRunContext: $active,
             eventStore: $store,
             logger: new NullLogger(),
-            executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
-            sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
             hookDispatcher: new HookDispatcher([$auto, $cleanup]),
-            finalizer: TestTransitionFinalizerFactory::create($store, new StepDispatcher($bus)),
+            finalizer: TestTransitionFinalizerFactory::create($store, new StepDispatcher($bus, $bus, new TestLogger())),
         );
         $subscriber = new WorkerFailedEventSubscriber($active, $commit, $container->get(RunLockManager::class), new NullLogger());
         $subscriber->onWorkerMessageFailed(new WorkerMessageFailedEvent(new Envelope(new StartRun($run, 0, 'failed-start', 1, 'failed-start', new StartRunPayload('', [], new RunMetadata(model: 'test-model')))), 'run_control', new \RuntimeException('permanent failure')));
@@ -449,9 +439,7 @@ final class WorkerFailedEventSubscriberTest extends IsolatedKernelTestCase
                 activeRunContext: $context,
                 eventStore: $store,
                 logger: $logger,
-                executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
-                sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
-                finalizer: TestTransitionFinalizerFactory::create($store, new StepDispatcher($bus)),
+                finalizer: TestTransitionFinalizerFactory::create($store, new StepDispatcher($bus, $bus, new TestLogger())),
             ),
             $lockManager ?? new RunLockManager(new LockFactory(new InMemoryStore())), $logger);
     }

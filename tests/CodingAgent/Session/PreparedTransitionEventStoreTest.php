@@ -256,13 +256,9 @@ final class PreparedTransitionEventStoreTest extends IsolatedKernelTestCase
             $container->get(\Ineersa\AgentCore\Application\Pipeline\SourceAcceptance::class),
             TestTransitionFinalizerFactory::create(
                 $store,
-                new \Ineersa\AgentCore\Application\Handler\StepDispatcher($failure),
-                operations: $container->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class),
+                new \Ineersa\AgentCore\Application\Handler\StepDispatcher($failure, $failure, new \Ineersa\AgentCore\Tests\Support\TestLogger()),
                 batches: $container->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
                 commands: $container->get(\Ineersa\AgentCore\Contract\CommandStoreInterface::class),
-                sourceAcceptance: $container->get(\Ineersa\AgentCore\Application\Pipeline\SourceAcceptance::class),
-                commandBus: $failure,
-                executionBus: $failure,
             ),
             $container->get(\Ineersa\AgentCore\Application\Handler\CoordinationActionValidator::class),
         );

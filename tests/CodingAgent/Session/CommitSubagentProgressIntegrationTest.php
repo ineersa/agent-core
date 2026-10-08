@@ -106,14 +106,12 @@ final class CommitSubagentProgressIntegrationTest extends PerMethodIsolatedKerne
         $store->expects($this->once())->method('appendTransition')->willThrowException(new \RuntimeException('canonical append failed'));
         $bus = new \Ineersa\AgentCore\Tests\Support\TestMessageBus();
         $active = self::getContainer()->get(ActiveRunContextInterface::class);
-        $dispatcher = new \Ineersa\AgentCore\Application\Handler\StepDispatcher($bus);
+        $dispatcher = new \Ineersa\AgentCore\Application\Handler\StepDispatcher($bus, $bus, new \Ineersa\AgentCore\Tests\Support\TestLogger());
         $commit = new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
             activeRunContext: $active,
             eventStore: $store,
             logger: new \Ineersa\AgentCore\Tests\Support\TestLogger(),
-            executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
-            sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
-            finalizer: \Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory::create($store, $dispatcher, commandBus: $bus, executionBus: $bus),
+            finalizer: \Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory::create($store, $dispatcher),
             actionValidator: self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\CoordinationActionValidator::class),
         );
         $processor = new \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor($active,

@@ -149,24 +149,18 @@ final class DeferredAfterTurnCoordinationHandlerTest extends IsolatedKernelTestC
         $registry = $container->get(ActiveRunContextInterface::class);
         $previous = \Ineersa\AgentCore\Domain\Run\RunState::queued($run);
         $registry->loadRecovered($previous);
-        $dispatcher = new StepDispatcher($bus);
+        $dispatcher = new StepDispatcher($bus, $bus, new \Ineersa\AgentCore\Tests\Support\TestLogger());
         $controlOutbox = $container->get(\Ineersa\AgentCore\Contract\ControlMessageOutboxInterface::class);
         $finalizer = TestTransitionFinalizerFactory::create(
             $store,
             $dispatcher,
-            operations: $container->get(ExecutionOperationStoreInterface::class),
             batches: $container->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
             commands: $container->get(\Ineersa\AgentCore\Contract\CommandStoreInterface::class),
-            commandBus: $bus,
-            executionBus: $container->get('agent.execution.bus'),
-            outbox: $controlOutbox,
         );
         $commit = new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
             activeRunContext: $registry,
             eventStore: $store,
             logger: new \Ineersa\AgentCore\Tests\Support\TestLogger(),
-            executionOperations: $container->get(ExecutionOperationStoreInterface::class),
-            sourceAcceptance: $acceptance,
             finalizer: $finalizer,
             hookDispatcher: new \Ineersa\AgentCore\Application\Handler\HookDispatcher([$provider, $observer]),
             actionValidator: $container->get(CoordinationActionValidator::class),
@@ -230,13 +224,9 @@ final class DeferredAfterTurnCoordinationHandlerTest extends IsolatedKernelTestC
             $acceptance,
             TestTransitionFinalizerFactory::create(
                 $store,
-                new StepDispatcher($bus),
-                operations: $container->get(ExecutionOperationStoreInterface::class),
+                new StepDispatcher($bus, $bus, new \Ineersa\AgentCore\Tests\Support\TestLogger()),
                 batches: $container->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
                 commands: $container->get(\Ineersa\AgentCore\Contract\CommandStoreInterface::class),
-                commandBus: $bus,
-                executionBus: $container->get('agent.execution.bus'),
-                outbox: $controlOutbox,
             ),
             $container->get(CoordinationActionValidator::class),
         );

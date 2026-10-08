@@ -1317,10 +1317,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             'actions' => [],
         ]);
         self::getContainer()->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class)->prepare($original, $verified);
-        $batchStore->registerPrepared(
-            new \Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO($parent, 2, 'turn-2-tools-1', [$original], [$tool => 0], [$tool], [], 1),
-            $verified,
-        );
+        $batchStore->prepareChanges([new \Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO($parent, 2, 'turn-2-tools-1', [$original], [$tool => 0], [$tool], [], 1)], $verified)();
         $original = $batchStore->load($parent, 2, 'turn-2-tools-1')->calls[$tool];
         $paths = self::getContainer()->get(\Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface::class);
         $inputPath = \dirname($paths->resolveToolBatchesDirectory($parent)).'/tool-launch-inputs/'.hash('sha256', $tool).'.jsonl';
@@ -1713,14 +1710,12 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
                         DeliverDeferredSubagentBatchLifecycleMessage::class => [$bus->dispatch(...)],
                     ])),
                 ]);
-                $dispatcher = new \Ineersa\AgentCore\Application\Handler\StepDispatcher($coordinationBus);
+                $dispatcher = new \Ineersa\AgentCore\Application\Handler\StepDispatcher($coordinationBus, $coordinationBus, new TestLogger());
                 $commit = new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
                     activeRunContext: $active,
                     eventStore: $this->store,
                     logger: new TestLogger(),
-                    executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
-                    sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
-                    finalizer: \Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory::create($this->store, $dispatcher, commandBus: $coordinationBus, executionBus: $bus),
+                    finalizer: \Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory::create($this->store, $dispatcher),
                     actionValidator: new \Ineersa\AgentCore\Application\Handler\CoordinationActionValidator([$coordination]),
                 );
                 $processor = new \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor($active, $this->lock, $commit, [$handler]);

@@ -12,7 +12,7 @@ use Symfony\Component\Process\Process;
 
 /**
  * Process regression: a fresh actual run_control Messenger worker recovers an
- * unfinished captured transition when no invocation is armed and no new user
+ * unfinished captured transition when no new user
  * command exists. Lower layers call subscriber callbacks directly; this case
  * drives the configured Worker + dispatcher startup path instead.
  *
@@ -20,9 +20,9 @@ use Symfony\Component\Process\Process;
  * process. Timeout is only a safety cap; natural stop owns completion.
  */
 #[Group('process')]
-final class ExecutionPendingDeliveryIdleOwnerRestartTest extends TestCase
+final class PendingTransitionIdleOwnerRestartTest extends TestCase
 {
-    public function testFreshRunControlWorkerRecoversUnarmedPendingIntentWithoutUserCommand(): void
+    public function testFreshRunControlWorkerRecoversPendingIntentWithoutUserCommand(): void
     {
         $directory = TestDirectoryIsolation::createProjectTempDir('idle-owner-pending');
         TestDirectoryIsolation::createHatfieldTree($directory, withSessions: true);
@@ -48,14 +48,11 @@ final class ExecutionPendingDeliveryIdleOwnerRestartTest extends TestCase
             $this->assertSame("worker_started\n", file_get_contents($marker.'.started'));
             $before = json_decode((string) file_get_contents($marker.'.before'), true, flags: \JSON_THROW_ON_ERROR);
             $after = json_decode((string) file_get_contents($marker), true, flags: \JSON_THROW_ON_ERROR);
-            $this->assertFalse($before['armed']);
-            $this->assertFalse($before['source_accepted']);
             $this->assertSame($before['run_id'], $after['run_id']);
             $this->assertSame($before['pending_identity'], $after['pending_identity']);
             $this->assertTrue($after['ok']);
+            $this->assertSame(1, $after['delivery_count']);
             $this->assertTrue($after['worker_started']);
-            $this->assertNotSame('', $after['effect_id']);
-            $this->assertNotSame('', $after['request_hash']);
             $this->assertGreaterThanOrEqual($before['cut'], $after['cut']);
             $this->assertSame(0, $process->getExitCode());
             $this->assertFalse($process->isRunning(), 'Owned worker must exit naturally after the startup stop marker.');

@@ -205,33 +205,17 @@ final class ToolBatchCollectorDurableTest extends TestCase
                 $this->inner->deleteAllForRun($runId);
             }
 
-            public function applyPrepared(\Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO $action, \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO $transition): void
+            public function prepareChanges(array $actions, \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO $transition): \Closure
             {
-                if ($this->failNextMutate) {
-                    $this->failNextMutate = false;
-                    throw new \RuntimeException('Simulated durable write failure.');
-                }
-                $this->inner->applyPrepared($action, $transition);
-            }
+                $apply = $this->inner->prepareChanges($actions, $transition);
 
-            public function registerPrepared(\Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO $action, \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO $transition): void
-            {
-                $this->inner->registerPrepared($action, $transition);
-            }
-
-            public function admittedCalls(string $runId, int $turnNo, string $stepId): array
-            {
-                return $this->inner->admittedCalls($runId, $turnNo, $stepId);
-            }
-
-            public function admittedCall(string $runId, int $turnNo, string $stepId, string $toolCallId): ?ExecuteToolCall
-            {
-                return $this->inner->admittedCall($runId, $turnNo, $stepId, $toolCallId);
-            }
-
-            public function isAdmissiblePermission(ExecuteToolCall $call): bool
-            {
-                return $this->inner->isAdmissiblePermission($call);
+                return function () use ($apply): void {
+                    if ($this->failNextMutate) {
+                        $this->failNextMutate = false;
+                        throw new \RuntimeException('Simulated durable write failure.');
+                    }
+                    $apply();
+                };
             }
         };
 

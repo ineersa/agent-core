@@ -56,7 +56,50 @@ final class TestToolBatchStore implements ToolBatchStoreInterface
         return false;
     }
 
-    public function applyPrepared(FinalizeToolBatchDTO $action, VerifiedTransitionDTO $transition): void
+    public function prepareChanges(array $actions, VerifiedTransitionDTO $transition): \Closure
+    {
+        return function () use ($actions, $transition): void {
+            foreach ($actions as $action) {
+                if ($action instanceof RegisterToolBatchDTO) {
+                    $this->registerPrepared($action, $transition);
+                } else {
+                    $this->applyPrepared($action, $transition);
+                }
+            }
+        };
+    }
+
+    public function admittedCalls(string $runId, int $turnNo, string $stepId): array
+    {
+        $batch = $this->load($runId, $turnNo, $stepId);
+        if (null === $batch) {
+            return [];
+        }
+        $admitted = [];
+        foreach (array_keys($batch->inFlight) as $toolCallId) {
+            $call = $batch->calls[$toolCallId] ?? null;
+            if ($call instanceof ExecuteToolCall && !isset($batch->results[$toolCallId]) && $this->isAdmissiblePermission($call)) {
+                $admitted[] = $call;
+            }
+        }
+
+        return $admitted;
+    }
+
+    public function admittedCall(string $runId, int $turnNo, string $stepId, string $toolCallId): ?ExecuteToolCall
+    {
+        $batch = $this->load($runId, $turnNo, $stepId);
+        $call = $batch?->calls[$toolCallId] ?? null;
+
+        return $call instanceof ExecuteToolCall ? $call : null;
+    }
+
+    public function isAdmissiblePermission(ExecuteToolCall $call): bool
+    {
+        return true;
+    }
+
+    private function applyPrepared(FinalizeToolBatchDTO $action, VerifiedTransitionDTO $transition): void
     {
         $key = $this->key($action->runId, $action->turnNo, $action->stepId);
         if (($this->applied[$key] ?? null) === $transition->identity) {
@@ -83,7 +126,7 @@ final class TestToolBatchStore implements ToolBatchStoreInterface
         $this->applied[$key] = $transition->identity;
     }
 
-    public function registerPrepared(RegisterToolBatchDTO $action, VerifiedTransitionDTO $transition): void
+    private function registerPrepared(RegisterToolBatchDTO $action, VerifiedTransitionDTO $transition): void
     {
         $key = $this->key($action->runId, $action->turnNo, $action->stepId);
         if (($this->applied[$key] ?? null) === $transition->identity) {
@@ -116,36 +159,6 @@ final class TestToolBatchStore implements ToolBatchStoreInterface
             awaitingHumanInput: [],
         );
         $this->applied[$key] = $transition->identity;
-    }
-
-    public function admittedCalls(string $runId, int $turnNo, string $stepId): array
-    {
-        $batch = $this->load($runId, $turnNo, $stepId);
-        if (null === $batch) {
-            return [];
-        }
-        $admitted = [];
-        foreach (array_keys($batch->inFlight) as $toolCallId) {
-            $call = $batch->calls[$toolCallId] ?? null;
-            if ($call instanceof ExecuteToolCall && !isset($batch->results[$toolCallId]) && $this->isAdmissiblePermission($call)) {
-                $admitted[] = $call;
-            }
-        }
-
-        return $admitted;
-    }
-
-    public function admittedCall(string $runId, int $turnNo, string $stepId, string $toolCallId): ?ExecuteToolCall
-    {
-        $batch = $this->load($runId, $turnNo, $stepId);
-        $call = $batch?->calls[$toolCallId] ?? null;
-
-        return $call instanceof ExecuteToolCall ? $call : null;
-    }
-
-    public function isAdmissiblePermission(ExecuteToolCall $call): bool
-    {
-        return true;
     }
 
     private function key(string $runId, int $turnNo, string $stepId): string

@@ -140,10 +140,8 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
             activeRunContext: $active,
             eventStore: $eventStore,
             logger: new TestLogger(),
-            executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
-            sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
             hookDispatcher: new HookDispatcher([new ToolBatchSnapshotCleanupHookSubscriber($this->createStore(), new TestLogger(), $inputStore)]),
-            finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus())),
+            finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger())),
         );
         $this->expectExceptionMessage('append failed');
         $commit->commit($previous, new RunState('run-1', RunStatus::Running, version: 1, turnNo: 1, model: 'test-model'), [new RunEvent('run-1', 1, 1, RunEventTypeEnum::ToolExecutionEnd->value, ['tool_result' => ['tool_call_id' => 'fork-call']])]);
@@ -151,24 +149,29 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
 
     private function seedBatch(ToolBatchStoreInterface $store, string $runId, int $turnNo, string $stepId, ToolBatchStateDTO $batch): void
     {
-        $store->registerPrepared(
-            new \Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO(
+        $store->prepareChanges([new \Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO(
+            $runId,
+            $turnNo,
+            $stepId,
+            array_values($batch->calls),
+            $batch->expectedOrder,
+            array_values($batch->pendingQueue),
+            $batch->inFlight,
+            $batch->maxParallelism,
+        )], new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(\Symfony\Component\Uid\Uuid::v7()->toRfc4122(),
+            ['run_id' => $runId, 'actions' => []],
+        ))();
+        if ($batch->finalized || [] !== $batch->results || [] !== $batch->awaitingHumanInput || [] !== $batch->pendingQueue || [] !== $batch->inFlight) {
+            $store->prepareChanges([new \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO(
                 $runId,
                 $turnNo,
                 $stepId,
-                array_values($batch->calls),
-                $batch->expectedOrder,
                 array_values($batch->pendingQueue),
                 $batch->inFlight,
-                $batch->maxParallelism,
-            ),
-            new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(\Symfony\Component\Uid\Uuid::v7()->toRfc4122(),
-                ['run_id' => $runId, 'actions' => []],
-            ),
-        );
-        if ($batch->finalized || [] !== $batch->results || [] !== $batch->awaitingHumanInput || [] !== $batch->pendingQueue || [] !== $batch->inFlight) {
-            $store->applyPrepared(
-                new \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO(
+                $batch->awaitingHumanInput,
+                $batch->finalized,
+            )], new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(\Symfony\Component\Uid\Uuid::v7()->toRfc4122(),
+                ['run_id' => $runId, 'actions' => [new \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO(
                     $runId,
                     $turnNo,
                     $stepId,
@@ -176,19 +179,8 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
                     $batch->inFlight,
                     $batch->awaitingHumanInput,
                     $batch->finalized,
-                ),
-                new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(\Symfony\Component\Uid\Uuid::v7()->toRfc4122(),
-                    ['run_id' => $runId, 'actions' => [new \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO(
-                        $runId,
-                        $turnNo,
-                        $stepId,
-                        array_values($batch->pendingQueue),
-                        $batch->inFlight,
-                        $batch->awaitingHumanInput,
-                        $batch->finalized,
-                    )]],
-                ),
-            );
+                )]],
+            ))();
         }
     }
 
@@ -208,10 +200,8 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
             activeRunContext: $activeRunContext,
             eventStore: $eventStore,
             logger: new TestLogger(),
-            executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
-            sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
             hookDispatcher: $hookDispatcher,
-            finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus())),
+            finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger())),
         );
     }
 }

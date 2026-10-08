@@ -645,17 +645,11 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
             activeRunContext: $registry,
             eventStore: $fault,
             logger: new \Psr\Log\NullLogger(),
-            executionOperations: $c->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class),
-            sourceAcceptance: $acceptance,
             finalizer: TestTransitionFinalizerFactory::create(
                 $fault,
-                new \Ineersa\AgentCore\Application\Handler\StepDispatcher($coordinationBus),
-                operations: $c->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class),
+                new \Ineersa\AgentCore\Application\Handler\StepDispatcher($coordinationBus, $coordinationBus, new \Ineersa\AgentCore\Tests\Support\TestLogger()),
                 batches: $c->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
                 commands: $c->get(\Ineersa\AgentCore\Contract\CommandStoreInterface::class),
-                sourceAcceptance: $acceptance,
-                commandBus: $coordinationBus,
-                executionBus: $c->get('agent.execution.bus'),
             ),
             actionValidator: $c->get(\Ineersa\AgentCore\Application\Handler\CoordinationActionValidator::class),
         );
@@ -672,7 +666,6 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
             serializer: $c->get('serializer'),
             runCommit: $commit,
             historyReplayFilter: $c->get(\Ineersa\CodingAgent\Session\History\HistoryReplayFilter::class),
-            executionOperations: $c->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class),
             deferredBatches: $c->get(DeferredSubagentBatchRepository::class),
         );
         $handler = new \Ineersa\CodingAgent\Application\Pipeline\SessionMaintenanceHandler(
@@ -1158,17 +1151,11 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
             activeRunContext: $registry,
             eventStore: $fault,
             logger: new \Psr\Log\NullLogger(),
-            executionOperations: $c->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class),
-            sourceAcceptance: $acceptance,
             finalizer: TestTransitionFinalizerFactory::create(
                 $fault,
                 $c->get(\Ineersa\AgentCore\Application\Handler\StepDispatcher::class),
-                operations: $c->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class),
                 batches: $c->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
                 commands: $c->get(\Ineersa\AgentCore\Contract\CommandStoreInterface::class),
-                sourceAcceptance: $acceptance,
-                commandBus: $c->get('agent.command.bus'),
-                executionBus: $c->get('agent.execution.bus'),
             ),
             actionValidator: $c->get(\Ineersa\AgentCore\Application\Handler\CoordinationActionValidator::class));
         $processor = new \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor($registry,

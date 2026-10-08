@@ -15,7 +15,7 @@ final class StepDispatcherTest extends TestCase
     public function testDispatchesCoordinationActionsOnCommandBusInOrder(): void
     {
         $commandBus = new TestMessageBus();
-        $dispatcher = new StepDispatcher($commandBus);
+        $dispatcher = new StepDispatcher($commandBus, $commandBus, new \Ineersa\AgentCore\Tests\Support\TestLogger());
 
         $advance = new AdvanceRun('run-1', 1, 'advance-1', 1, 'advance-key');
         $compact = new CompactRun('run-1', 1, 'compact-1', 1, 'compact-key');
