@@ -29,7 +29,7 @@
         "ext-tokenizer": "*",
         "ext-xml": "*",
         "ineersa/hatfield-extension-api": "@dev",
-        "ineersa/symfony-ai-openai-codex-platform": "dev-task/2026-09-30-fix-in-flight-codex-websocket-cancellation#e465358679228d929ace1beb7aabaf5a9d7b41f2",
+        "ineersa/symfony-ai-openai-codex-platform": "dev-main",
         "symfony/console": "^8.1",
         "symfony/dependency-injection": "^8.1",
         "symfony/config": "^8.1",
