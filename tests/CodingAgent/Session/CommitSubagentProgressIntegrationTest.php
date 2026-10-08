@@ -116,7 +116,8 @@ final class CommitSubagentProgressIntegrationTest extends PerMethodIsolatedKerne
         );
         $processor = new \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor($active,
             self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class), $commit,
-            [new \Ineersa\CodingAgent\Application\Pipeline\CommitSubagentProgressHandler(self::getContainer()->get(DeferredSubagentBatchRepository::class), $bus)]);
+            [new \Ineersa\CodingAgent\Application\Pipeline\CommitSubagentProgressHandler(self::getContainer()->get(DeferredSubagentBatchRepository::class), $bus)],
+            self::getContainer()->get(\Ineersa\AgentCore\Contract\CommandStoreInterface::class));
         $this->expectExceptionMessage('canonical append failed');
         try {
             $processor->process('command.subagent_progress', $this->command(1));

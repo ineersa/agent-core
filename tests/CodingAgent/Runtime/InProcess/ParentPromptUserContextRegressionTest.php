@@ -194,6 +194,7 @@ final class ParentRegressionCapturingRunner implements AgentRunnerInterface
             activeRunContext: $activeRunContext,
             runLockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
             runCommit: $runCommit,
+            commands: new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore(),
             handlers: [
                 new StartRunHandler(new EventFactory(), TestSerializerFactory::normalizer()),
             ],
