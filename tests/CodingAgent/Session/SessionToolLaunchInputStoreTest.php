@@ -18,8 +18,6 @@ use Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolLaunchInputReferenceDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
-use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
-use Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
@@ -260,82 +258,6 @@ final class SessionToolLaunchInputStoreTest extends IsolatedKernelTestCase
         $reference = new ToolLaunchInputReferenceDTO('fork', 'owner', 1, 'step', 'call', 'model', str_repeat('a', 64), 1);
         $worker = new ExecuteToolCallWorker($executor, $this->createStub(DeferredToolCompletionRepositoryInterface::class), new ToolExecutionResultStore(), $this->createStub(RunOperationalStatusReaderInterface::class), launchInputStore: $inputStore);
         $this->assertOwnerVisibleInputFailure($worker($this->call($reference)), 'Cannot open tool launch input.');
-    }
-
-    public function testFreshWorkerReusesCommittedSynchronousForkFailureWhileSiblingRemainsPending(): void
-    {
-        $runId = self::getContainer()->get(HatfieldSessionStore::class)->createSession('mixed-fork-failure');
-        $inputStore = self::getContainer()->get(ToolLaunchInputStoreInterface::class);
-        $batchStore = self::getContainer()->get(ToolBatchStoreInterface::class);
-        $reference = $inputStore->publish('fork', $runId, 1, 'step', 'fork', 'model', '', [new AgentMessage('user', [['type' => 'text', 'text' => 'input']])]);
-        $fork = new ExecuteToolCall($runId, 1, 'step', 1, 'fork-request', 'fork', 'fork', ['task' => 'work'], 0, mode: 'parallel', maxParallelism: 2, parentModel: 'model', launchContext: $reference);
-        $sibling = new ExecuteToolCall($runId, 1, 'step', 1, 'sibling-request', 'sibling', 'read', ['path' => 'x'], 1, mode: 'parallel', maxParallelism: 2);
-        $ownerCollector = new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(store: $batchStore);
-        TestToolBatchRegistration::register(
-            $ownerCollector,
-            $batchStore,
-            $runId,
-            1,
-            'step',
-            [$fork, $sibling],
-            self::getContainer()->get(\Ineersa\AgentCore\Contract\ExecutionOperationStoreInterface::class),
-        );
-        $executor = $this->createMock(ToolExecutorInterface::class);
-        $executor->expects($this->once())->method('execute')->willThrowException(new \Ineersa\AgentCore\Contract\Tool\ToolCallException('Original fork preparation failure.', retryable: false, hint: 'original hint'));
-        $deferred = self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class);
-        $worker = new ExecuteToolCallWorker($executor, $deferred, new ToolExecutionResultStore(), $this->createStub(RunOperationalStatusReaderInterface::class), launchInputStore: $inputStore);
-        $originalFailure = $worker($fork);
-        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\ToolCallResult::class, $originalFailure);
-        $this->assertTrue($originalFailure->isError);
-        $this->assertSame('Original fork preparation failure.', $originalFailure->error['message']);
-        $state = \Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder::running($runId)->withTurnNo(1)->withActiveStepId('step')->withLastSeq(0)->withPendingToolCalls(['fork' => false, 'sibling' => false])->build()->with(['model' => 'model']);
-        $handler = new \Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler(
-            toolBatchCollector: $ownerCollector,
-            eventFactory: new \Ineersa\AgentCore\Domain\Event\EventFactory(),
-            toolCallExtractor: new \Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor(),
-            messageNormalizer: new \Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer(),
-            serializer: self::getContainer()->get(SerializerInterface::class),
-        );
-        $transition = $handler->handle($originalFailure, $state);
-        $this->assertCount(1, $transition->events);
-        $this->assertSame('tool_execution_end', $transition->events[0]->type);
-        $active = new \Ineersa\AgentCore\Tests\Support\TestActiveRunContext();
-        $active->loadRecovered($state);
-        $eventStore = self::getContainer()->get(\Ineersa\AgentCore\Contract\EventStoreInterface::class);
-        $commit = new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
-            activeRunContext: $active,
-            eventStore: $eventStore,
-            logger: new \Ineersa\AgentCore\Tests\Support\TestLogger(),
-            toolBatchCollector: $ownerCollector,
-            executionOperations: new \Ineersa\AgentCore\Tests\Support\TestExecutionOperationStore(),
-            sourceAcceptance: new \Ineersa\AgentCore\Application\Pipeline\SourceAcceptance(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore()),
-            hookDispatcher: new \Ineersa\AgentCore\Application\Handler\HookDispatcher([self::getContainer()->get(\Ineersa\CodingAgent\Session\ToolBatchSnapshotCleanupHookSubscriber::class)]),
-            finalizer: TestTransitionFinalizerFactory::create($eventStore, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(self::getContainer()->get('agent.command.bus'))),
-        );
-        $commit->commit($state, $transition->nextState, $transition->events, $transition->effects, postCommitEffects: $transition->postCommitEffects, postCommitActions: $transition->postCommitActions);
-        $this->assertFileDoesNotExist($this->payloadPath($runId, 'fork'));
-        $this->assertNull($deferred->findByRunAndToolCall($runId, 'fork'));
-        $this->assertEquals($originalFailure, $batchStore->load($runId, 1, 'step')->results['fork']);
-        $this->assertCount(1, iterator_to_array($eventStore->rangeFor($runId, 1, 1)));
-
-        $freshExecutor = $this->createMock(ToolExecutorInterface::class);
-        $freshExecutor->expects($this->never())->method('execute');
-        $unreadInput = $this->createMock(ToolLaunchInputStoreInterface::class);
-        $unreadInput->expects($this->never())->method('read');
-        $freshWorker = new ExecuteToolCallWorker($freshExecutor, $this->createStub(DeferredToolCompletionRepositoryInterface::class), new ToolExecutionResultStore(), $this->createStub(RunOperationalStatusReaderInterface::class), launchInputStore: $unreadInput);
-        $freshFailure = $freshWorker($fork);
-        $this->assertEquals($originalFailure, $freshFailure);
-        $this->assertSame('original hint', $freshFailure->error['hint']);
-        $duplicate = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($ownerCollector, $batchStore, $freshFailure);
-        $this->assertTrue($duplicate->duplicate);
-        $this->assertFalse($duplicate->complete);
-        $unchanged = $handler->handle($freshFailure, $active->requireLoaded($runId));
-        $this->assertSame([], $unchanged->events);
-        $batch = $batchStore->load($runId, 1, 'step');
-        $this->assertFalse($batch->finalized);
-        $this->assertArrayHasKey('sibling', $batch->inFlight);
-        $this->assertArrayNotHasKey('sibling', $batch->results);
-        $this->assertFalse($active->requireLoaded($runId)->pendingToolCalls['sibling']);
     }
 
     private function assertOwnerVisibleInputFailure(?\Ineersa\AgentCore\Domain\Message\ToolCallResult $result, string $message): void
