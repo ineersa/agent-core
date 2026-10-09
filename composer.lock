@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "50f9a68dbc5b55de4e8799f3572de652",
+    "content-hash": "c9cd46872449fdfdee9bebb3c8209270",
     "packages": [
         {
             "name": "centamiv/vektor",
@@ -1755,7 +1755,7 @@
             "dist": {
                 "type": "path",
                 "url": "/home/ineersa/projects/symfony-ai-openai-chatgpt-platform-worktrees/chatgpt-subscription-http",
-                "reference": "9d21515559b77b729cf6c1555edfdeef1976b6e1"
+                "reference": "5c2a555fc4b4494b630661e8c78ffef4b991f0ee"
             },
             "require": {
                 "ext-openssl": "*",

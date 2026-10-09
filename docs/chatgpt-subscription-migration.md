@@ -17,7 +17,7 @@ There are no WebSockets, cached continuation, reasoning baselines, `configuratio
 This worktree uses an unpublished Composer path dependency:
 
 - Package: `ineersa/symfony-ai-openai-chatgpt-platform`.
-- Constraint: `dev-task/chatgpt-subscription-http#9d21515559b77b729cf6c1555edfdeef1976b6e1`.
+- Constraint: `dev-task/chatgpt-subscription-http#5c2a555fc4b4494b630661e8c78ffef4b991f0ee`.
 - Source: `/home/ineersa/projects/symfony-ai-openai-chatgpt-platform-worktrees/chatgpt-subscription-http`.
 - Composer mirrors the package into `vendor`; after package changes, update the dependency and reinstall it.
 
