@@ -98,6 +98,11 @@ final class SessionRunEventStore implements \Ineersa\AgentCore\Contract\Prepared
         return new RunHistorySourceDTO($this->eventLog, $this->eventsPath($runId));
     }
 
+    public function hasForwardTail(string $runId, int $positionTurnNo): bool
+    {
+        return $this->eventLog->hasForwardTail($this->eventsPath($runId), $runId, $positionTurnNo);
+    }
+
     public function firstFor(string $runId): ?RunEvent
     {
         foreach ($this->streamDecodedEvents($runId, 'firstFor') as $event) {

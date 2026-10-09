@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Session\History;
 
-use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -14,8 +13,8 @@ use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Ineersa\CodingAgent\Session\History\HistoryProjector;
 use Ineersa\CodingAgent\Session\History\HistoryTailDiscardService;
+use Ineersa\CodingAgent\Tests\Support\HistoryEventStoreFactory;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Psr\Log\NullLogger;
@@ -93,13 +92,8 @@ final class HistoryTailDiscardClearsReasoningBaselineTest extends IsolatedKernel
             ]),
         ];
 
-        $eventStore = $this->createMock(PreparedTransitionEventStoreInterface::class);
-        $eventStore->method('allFor')->willReturn($events);
-        $eventStore->expects($this->never())->method('appendTransition');
-
         $service = new HistoryTailDiscardService(
-            $eventStore,
-            new HistoryProjector(),
+            HistoryEventStoreFactory::create($sessionStore, $events),
             $sessionStore,
             new NullLogger(),
         );
@@ -170,13 +164,8 @@ final class HistoryTailDiscardClearsReasoningBaselineTest extends IsolatedKernel
             $this->event($sessionId, 2, 1, RunEventTypeEnum::HistoryPositionSet->value, ['position_turn_no' => 1]),
         ];
 
-        $eventStore = $this->createMock(PreparedTransitionEventStoreInterface::class);
-        $eventStore->method('allFor')->willReturn($events);
-        $eventStore->expects($this->never())->method('appendTransition');
-
         $service = new HistoryTailDiscardService(
-            $eventStore,
-            new HistoryProjector(),
+            HistoryEventStoreFactory::create($sessionStore, $events),
             $sessionStore,
             new NullLogger(),
         );

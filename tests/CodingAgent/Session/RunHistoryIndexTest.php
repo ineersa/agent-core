@@ -62,6 +62,30 @@ final class RunHistoryIndexTest extends IsolatedKernelTestCase
         }
     }
 
+    public function testForwardTailUsesStableRetainedOrderAndOnlyValidatesBoundaryWhenWarm(): void
+    {
+        $index = new RunHistoryIndex(static::getContainer()->get(LockFactory::class), $this->logger);
+        $this->assertFalse($index->hasForwardTail($this->log, $this->path, 'indexed', 0));
+        $this->write(3, 100, 'turn_advanced');
+        $this->write(9, 4, 'turn_advanced');
+        $boundaryBytes = $this->write(15, 100, 'history_position_set', ['position_turn_no' => 100]);
+        $this->assertTrue($index->hasForwardTail($this->log, $this->path, 'indexed', 100));
+        $this->logger->records = [];
+        $this->assertTrue($index->hasForwardTail($this->log, $this->path, 'indexed', 0));
+        $this->assertFalse($index->hasForwardTail($this->log, $this->path, 'indexed', 4));
+        $this->assertFalse($index->hasForwardTail($this->log, $this->path, 'indexed', 99));
+        $this->assertFalse($index->hasForwardTail($this->log, $this->path, 'indexed', -1));
+        $this->assertSame(3 * $boundaryBytes, $this->readBytes('index_boundary_validation'));
+        $this->assertSame(0, $this->readBytes('index_cold_rebuild'));
+        $this->assertSame(0, $this->readBytes('sequence_range'));
+        $this->write(21, 100, 'history_tail_discarded', ['after_turn_no' => 100]);
+        $this->assertFalse($index->hasForwardTail($this->log, $this->path, 'indexed', 100));
+        $this->assertFalse($index->hasForwardTail($this->log, $this->path, 'indexed', 4));
+        $this->write(27, 4, 'turn_advanced');
+        $this->assertTrue($index->hasForwardTail($this->log, $this->path, 'indexed', 100));
+        $this->assertFalse($index->hasForwardTail($this->log, $this->path, 'indexed', 4));
+    }
+
     public function testOnlyVerifiedFinalizationPublishesIndexAndFailureDegradesLocally(): void
     {
         $this->log->appendMany($this->path, [RunEvent::forAppend('indexed', 0, 'run_started')], work: ['run_id' => 'indexed', 'predecessor_seq' => 0]);

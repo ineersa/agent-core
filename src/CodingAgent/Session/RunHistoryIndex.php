@@ -65,6 +65,31 @@ final readonly class RunHistoryIndex
         }
     }
 
+    /** Scalar retained-order evidence; displayed turn numbers are not an ordering. */
+    public function hasForwardTail(JsonlRunEventLog $log, string $path, string $runId, int $positionTurnNo): bool
+    {
+        if ($positionTurnNo < 0 || !is_file($path)) {
+            return false;
+        }
+        $lock = $this->locks->createLock('hatfield-run-'.$runId);
+        $lock->acquire(true);
+        try {
+            $db = $this->synchronize($log, $path, $runId);
+            $anchor = $this->anchorForTurn($db, $positionTurnNo);
+            // A stale/non-retained state must not discard surviving history.
+            if ($positionTurnNo > 0 && 0 === $anchor) {
+                return false;
+            }
+
+            return false !== $db->fetchOne('SELECT anchor FROM turn_anchor WHERE retained = 1 AND anchor > ? LIMIT 1', [$anchor]);
+        } finally {
+            if (isset($db)) {
+                $db->close();
+            }
+            $lock->release();
+        }
+    }
+
     /** Lookup within the index already validated by this owner's selected replay. */
     public function isLatestCommand(string $path, string $runId, string $key, int $sequence): bool
     {

@@ -467,6 +467,11 @@ final class JsonlRunEventLog
         return $this->historyIndex->cut($this, $path, $runId, $positionTurnNo);
     }
 
+    public function hasForwardTail(string $path, string $runId, int $positionTurnNo): bool
+    {
+        return $this->historyIndex->hasForwardTail($this, $path, $runId, $positionTurnNo);
+    }
+
     public function isLatestCommand(string $path, string $runId, string $key, int $sequence): bool
     {
         return $this->historyIndex->isLatestCommand($path, $runId, $key, $sequence);
