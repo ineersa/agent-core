@@ -17,11 +17,11 @@ There are no WebSockets, cached continuation, reasoning baselines, `configuratio
 This worktree uses the public GitHub Composer VCS repository:
 
 - Package: `ineersa/symfony-ai-openai-chatgpt-platform`.
-- Constraint: `dev-task/chatgpt-subscription-http#7699eda0152f074683856838d5fda2a2724a5c9e`.
+- Constraint: `dev-task/chatgpt-subscription-http#f017c91e19a8580b586dfb37aeb053a277bcadb3`.
 - Source: [ChatGPT platform repository](https://github.com/ineersa/symfony-ai-openai-chatgpt-platform).
 - Package review: [pull request 1](https://github.com/ineersa/symfony-ai-openai-chatgpt-platform/pull/1).
 
-Composer installs the pinned public archive without a local package checkout. The branch is published, but the package has no stable release tag yet.
+The repository URL is public, but this new source commit is not published yet. Implementation validation installs it through Composer's Git driver with a command-scoped URL rewrite to the package worktree. The lock records the public Git source URL and exact commit, not an absolute path repository. A fresh installation without that mirror remains blocked until package review and publication. The package has no stable release tag yet.
 
 ## Manual validation
 
@@ -53,6 +53,8 @@ The tracked project override selects `type: chatgpt` and the new reasoning forma
 Automated host proof covers fresh provider construction without a grant, real host/package tool and encrypted-reasoning replay through mocked HTTP, forbidden fields, interrupted unfinished tools, permanent usage errors, durable child cache identity, HTTP cancellation, Grok credential preservation, and virtual `/usage` routing/rendering. It does not establish real account eligibility, model access, OAuth server acceptance, or a successful live model turn.
 
 HTTP and terminal SSE subscription-policy and quota errors are nonretryable even with an available retry budget. Generic authentication and bad-request retry behavior is unchanged. An invalid subscriber context does not trigger an automatic OAuth loop; terminal refresh-token failure is handled by the package under its storage lock.
+
+Native reasoning, tool-call slots, and signed assistant messages survive canonical JSONL save and cold reconstruction into the next mocked HTTP request. Tests retain empty reasoning summaries, encrypted identities, distinct identical-text message boundaries, commentary/final phases, and empty signed messages. Text signatures are stripped for a foreign target model. Cache-preserving reasoning configuration updates still require host restoration and validation.
 
 The task remains in progress until manual account validation, independent review, and the workflow's full Castor gate complete. No real credentials, production workers, or session archives are test fixtures.
 

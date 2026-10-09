@@ -189,6 +189,77 @@ final class ChatGPTSymfonyAiProviderBuilderTest extends TestCase
         $this->assertTrue($token->requested, 'The transport-wait barrier must request cancellation.');
     }
 
+    #[DataProvider('nativeMessageBoundaryProvider')]
+    public function testNativeItemsSurviveCanonicalEventSaveAndColdReplay(bool $terminalMessages): void
+    {
+        $reasoning = static fn (string $id): array => ['type' => 'reasoning', 'id' => $id, 'encrypted_content' => 'encrypted-'.$id, 'summary' => []];
+        $call = static fn (string $id): array => ['arguments' => '{}', 'call_id' => $id, 'name' => 'read_file', 'type' => 'function_call', 'id' => 'fc_'.$id];
+        $message = static fn (string $id, string $phase, string $text): array => ['type' => 'message', 'id' => $id, 'role' => 'assistant', 'phase' => $phase, 'content' => [['type' => 'output_text', 'text' => $text, 'annotations' => []], ['type' => 'output_text', 'text' => '', 'annotations' => []]]];
+        $expected = [$message('msg_prefix', 'commentary', 'same'), $reasoning('rs_one'), $call('call_one'), $reasoning('rs_two'), $call('call_two'), $message('msg_one', 'commentary', 'same'), $message('msg_two', 'commentary', 'same'), $message('msg_final', 'final_answer', 'same'), $message('msg_empty', 'final_answer', '')];
+        $events = [];
+        foreach ($expected as $index => $item) {
+            if ($terminalMessages && 'message' === $item['type']) {
+                continue;
+            }
+            $events[] = ['type' => 'response.output_item.added', 'output_index' => $index, 'item' => $item];
+            if ('message' === $item['type'] && 'msg_empty' !== $item['id']) {
+                $events[] = ['type' => 'response.output_text.delta', 'delta' => 'same'];
+            }
+            $events[] = ['type' => 'response.output_item.done', 'output_index' => $index, 'item' => $item];
+        }
+        $events[] = ['type' => 'response.completed', 'response' => ['status' => 'completed', 'output' => $terminalMessages ? $expected : []]];
+        $bodies = [];
+        $client = new MockHttpClient(static function (string $method, string $url, array $options) use (&$bodies, $events): MockResponse {
+            $bodies[] = json_decode($options['body'], true, flags: \JSON_THROW_ON_ERROR);
+
+            return self::response(1 === \count($bodies) ? $events : [['type' => 'response.output_text.delta', 'delta' => 'done'], ['type' => 'response.completed', 'response' => ['status' => 'completed', 'output' => []]]]);
+        });
+        $user = new AgentMessage('user', [['type' => 'text', 'text' => 'Read local fixtures']]);
+        $result = $this->adapter($client)->invoke(new ModelInvocationRequest('openai-codex/gpt-6.1-sol', new ModelInvocationInput(messages: [$user])));
+        $this->assertNull($result->error);
+        $this->assertNotNull($result->assistantMessage);
+        $directory = \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::createProjectTempDir('chatgpt-cold-replay');
+        try {
+            $createStore = function () use ($directory): \Ineersa\CodingAgent\Session\SessionRunEventStore {
+                $sessions = new \Ineersa\CodingAgent\Session\HatfieldSessionStore(
+                    new \Ineersa\CodingAgent\Config\AppConfig(new \Ineersa\CodingAgent\Config\TuiConfig('default'), new \Ineersa\CodingAgent\Config\LoggingConfig(), cwd: $directory),
+                    $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+                    new \Symfony\Component\EventDispatcher\EventDispatcher(),
+                );
+
+                return new \Ineersa\CodingAgent\Session\SessionRunEventStore($sessions, new \Ineersa\AgentCore\Schema\EventPayloadNormalizer(), new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()), new NullLogger(), new \Ineersa\CodingAgent\Session\FileRunSequenceAllocator());
+            };
+            $payload = (new AgentMessageNormalizer())->assistantMessagePayload($result->assistantMessage);
+            \Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder::append($createStore(), \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend(runId: 'fixture', turnNo: 1, type: 'llm_step_completed', payload: ['assistant_message' => $payload, 'model' => 'openai-codex/gpt-6.1-sol']));
+            $this->assertFileExists($directory.'/.hatfield/sessions/fixture/events.jsonl');
+            $event = $createStore()->allFor('fixture')[0];
+            $assistant = (new \Ineersa\AgentCore\Application\Replay\ReplayAssistantMessageFactory())->create($event->payload['assistant_message'] + ['model' => $event->payload['model']]);
+            $this->assertNotNull($assistant);
+            $tools = [];
+            foreach (['call_one', 'call_two'] as $id) {
+                $tools[] = new AgentMessage('tool', [['type' => 'text', 'text' => 'contents']], toolCallId: $id.'|fc_'.$id, toolName: 'read_file');
+            }
+            $next = $this->adapter($client)->invoke(new ModelInvocationRequest('openai-codex/gpt-6.1-sol', new ModelInvocationInput(messages: [$user, $assistant, ...$tools])));
+            $this->assertNull($next->error);
+            $native = array_values(array_filter($bodies[1]['input'], static fn (array $item): bool => \in_array($item['type'] ?? null, ['reasoning', 'function_call', 'message'], true) && 'user' !== ($item['role'] ?? null)));
+            $this->assertSame($expected, $native);
+            $foreign = (new AgentMessageConverter())->toMessageBagForTarget([$assistant], 'foreign/model')->getMessages()[0];
+            $this->assertInstanceOf(\Symfony\AI\Platform\Message\AssistantMessage::class, $foreign);
+            foreach ($foreign->getContent() as $part) {
+                if ($part instanceof \Symfony\AI\Platform\Message\Content\Text) {
+                    $this->assertNull($part->getSignature());
+                }
+            }
+        } finally {
+            \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::removeDirectory($directory);
+        }
+    }
+
+    public static function nativeMessageBoundaryProvider(): array
+    {
+        return ['streamed' => [false], 'terminal-only' => [true]];
+    }
+
     private function config(): AiProviderConfig
     {
         return new AiProviderConfig('openai-codex', type: 'chatgpt', models: ['gpt-6.1-sol' => new AiModelDefinition('gpt-6.1-sol', toolCalling: true, reasoning: true)]);

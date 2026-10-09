@@ -5,8 +5,8 @@
     "description": "Monorepo for the agent-core ecosystem, consolidated into a single modular monolith.",
     "repositories": [
         {
-            "type": "vcs",
-            "url": "https://github.com/ineersa/symfony-ai-openai-chatgpt-platform"
+            "type": "git",
+            "url": "https://github.com/ineersa/symfony-ai-openai-chatgpt-platform.git"
         },
         {
             "type": "path",
@@ -71,7 +71,7 @@
         "symfony/ai-sqlite-store": "^0.14",
         "symfony/ai-vektor-store": "^0.14",
         "centamiv/vektor": "^2.0",
-        "ineersa/symfony-ai-openai-chatgpt-platform": "dev-task/chatgpt-subscription-http#7699eda0152f074683856838d5fda2a2724a5c9e"
+        "ineersa/symfony-ai-openai-chatgpt-platform": "dev-task/chatgpt-subscription-http#f017c91e19a8580b586dfb37aeb053a277bcadb3"
     },
     "require-dev": {
         "friendsofphp/php-cs-fixer": "^3.94",

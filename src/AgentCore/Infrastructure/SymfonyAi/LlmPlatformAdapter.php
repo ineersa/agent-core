@@ -29,20 +29,13 @@ use Symfony\AI\Platform\Exception\ServerException;
 use Symfony\AI\Platform\FinishReason\FinishReason;
 use Symfony\AI\Platform\FinishReason\FinishReasonCase;
 use Symfony\AI\Platform\Message\AssistantMessage;
-use Symfony\AI\Platform\Message\Content\ContentInterface;
-use Symfony\AI\Platform\Message\Content\Text;
-use Symfony\AI\Platform\Message\Content\Thinking;
 use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\AI\Platform\PlatformInterface as SymfonyPlatformInterface;
 use Symfony\AI\Platform\Result\DeferredResult;
 use Symfony\AI\Platform\Result\RawHttpResult;
 use Symfony\AI\Platform\Result\Stream\Delta\DeltaInterface;
-use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
 use Symfony\AI\Platform\Result\Stream\Delta\ThinkingComplete;
 use Symfony\AI\Platform\Result\Stream\Delta\ThinkingDelta;
-use Symfony\AI\Platform\Result\Stream\Delta\ThinkingSignature;
-use Symfony\AI\Platform\Result\Stream\Delta\ToolCallComplete;
-use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\AI\Platform\TokenUsage\TokenUsageInterface;
 use Symfony\AI\Platform\Tool\Tool;
 use Symfony\Component\Clock\ClockInterface;
@@ -463,6 +456,9 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
                     }
 
                     if ($delta instanceof DeltaInterface) {
+                        // Preserve native segment completions for framework reconstruction;
+                        // only live observers need cumulative thinking for display.
+                        $deltas[] = $delta;
                         if ($delta instanceof ThinkingDelta) {
                             $thinkingSegmentStart ??= \strlen($accumulatedThinking);
                             $accumulatedThinking .= $delta->getThinking();
@@ -478,7 +474,6 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
                             $delta = new ThinkingComplete($accumulatedThinking, $delta->getSignature());
                         }
 
-                        $deltas[] = $delta;
                         if ($streamObserverEnabled) {
                             $this->notifyDelta($runId, $stepId, $delta);
                         }
@@ -831,93 +826,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
      */
     private function buildAssistantMessage(array $deltas): ?AssistantMessage
     {
-        /** @var list<ContentInterface|ToolCall> $contentParts */
-        $contentParts = [];
-        $pendingText = '';
-        $pendingThinking = '';
-        $pendingThinkingSignature = null;
-        $lastCumulativeThinking = '';
-        $completedToolCalls = null;
-
-        foreach ($deltas as $delta) {
-            if ($delta instanceof TextDelta) {
-                if ('' !== $pendingThinking || null !== $pendingThinkingSignature) {
-                    $contentParts[] = new Thinking($pendingThinking, $pendingThinkingSignature);
-                    $pendingThinking = '';
-                    $pendingThinkingSignature = null;
-                }
-                $pendingText .= $delta->getText();
-                continue;
-            }
-
-            if ($delta instanceof ThinkingDelta) {
-                if ('' !== $pendingText) {
-                    $contentParts[] = new Text($pendingText);
-                    $pendingText = '';
-                }
-                $pendingThinking .= $delta->getThinking();
-                continue;
-            }
-
-            if ($delta instanceof ThinkingSignature) {
-                if ('' !== $pendingText) {
-                    $contentParts[] = new Text($pendingText);
-                    $pendingText = '';
-                }
-                $pendingThinkingSignature = $delta->getSignature();
-                continue;
-            }
-
-            if ($delta instanceof ThinkingComplete) {
-                if ('' !== $pendingText) {
-                    $contentParts[] = new Text($pendingText);
-                    $pendingText = '';
-                }
-                $signature = $delta->getSignature() ?? $pendingThinkingSignature;
-                if (\is_string($signature) && '' !== $signature) {
-                    $cumulative = $delta->getThinking();
-                    $segment = $cumulative;
-                    if ('' !== $lastCumulativeThinking && str_starts_with($cumulative, $lastCumulativeThinking)) {
-                        $segment = substr($cumulative, \strlen($lastCumulativeThinking));
-                    }
-                    $contentParts[] = new Thinking($segment, $signature);
-                    $lastCumulativeThinking = $cumulative;
-                    $pendingThinking = '';
-                    $pendingThinkingSignature = null;
-                } else {
-                    // Unsigned thinking stays aggregated for display; providers that
-                    // finalize multiple signature-less segments still expose one part.
-                    $pendingThinking = $delta->getThinking();
-                    $pendingThinkingSignature = null;
-                }
-                continue;
-            }
-
-            if ($delta instanceof ToolCallComplete) {
-                $completedToolCalls = $delta->getToolCalls();
-            }
-        }
-
-        // Input deltas are UI progress, not a completed executable call. Never
-        // synthesize tools from an interrupted or cancelled argument stream.
-        $toolCalls = $completedToolCalls ?? [];
-
-        if ('' !== $pendingText) {
-            $contentParts[] = new Text($pendingText);
-        } elseif ('' !== $pendingThinking || null !== $pendingThinkingSignature) {
-            $contentParts[] = new Thinking($pendingThinking, $pendingThinkingSignature);
-        }
-
-        foreach ($toolCalls as $toolCall) {
-            $contentParts[] = $toolCall;
-        }
-
-        if ([] === $contentParts) {
-            return null;
-        }
-
-        // ToolCall implements ContentInterface for AssistantMessage composition.
-        return new AssistantMessage(...$contentParts);
+        return (new AssistantStreamMessageBuilder())->build($deltas);
     }
 
     private function resolveStopReason(?AssistantMessage $assistantMessage, DeferredResult $deferredResult): ?string

@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "522f3ade72dd1f2370795366e92a4e5d",
+    "content-hash": "a3a9f0ba46118eb047333158f71676ab",
     "packages": [
         {
             "name": "centamiv/vektor",
@@ -1755,13 +1755,7 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/ineersa/symfony-ai-openai-chatgpt-platform.git",
-                "reference": "7699eda0152f074683856838d5fda2a2724a5c9e"
-            },
-            "dist": {
-                "type": "zip",
-                "url": "https://api.github.com/repos/ineersa/symfony-ai-openai-chatgpt-platform/zipball/7699eda0152f074683856838d5fda2a2724a5c9e",
-                "reference": "7699eda0152f074683856838d5fda2a2724a5c9e",
-                "shasum": ""
+                "reference": "f017c91e19a8580b586dfb37aeb053a277bcadb3"
             },
             "require": {
                 "ext-openssl": "*",
@@ -1771,6 +1765,7 @@
                 "psr/log": "^3.0",
                 "symfony/ai-open-responses-platform": "^0.14",
                 "symfony/ai-platform": "^0.14",
+                "symfony/cache": "^8.0",
                 "symfony/clock": "^8.0",
                 "symfony/console": "^8.1",
                 "symfony/filesystem": "^8.0",
@@ -1785,6 +1780,7 @@
                 "phpstan/phpstan-phpunit": "^2.0",
                 "phpunit/phpunit": "^13.2"
             },
+            "default-branch": true,
             "type": "library",
             "autoload": {
                 "psr-4": {
@@ -1800,11 +1796,7 @@
                 "MIT"
             ],
             "description": "Single-account Sign in with ChatGPT OAuth and HTTP Responses bridge for Symfony AI.",
-            "support": {
-                "source": "https://github.com/ineersa/symfony-ai-openai-chatgpt-platform/tree/task/chatgpt-subscription-http",
-                "issues": "https://github.com/ineersa/symfony-ai-openai-chatgpt-platform/issues"
-            },
-            "time": "2026-10-09T19:08:32+00:00"
+            "time": "2026-10-09T20:41:00+00:00"
         },
         {
             "name": "league/commonmark",

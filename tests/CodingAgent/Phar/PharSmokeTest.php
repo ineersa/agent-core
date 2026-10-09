@@ -131,6 +131,7 @@ final class PharSmokeTest extends TestCase
         $this->assertNotNull($output);
         $this->assertStringContainsString('auth:chatgpt', $output);
         $this->assertStringContainsString('login, refresh or disconnect', $output);
+        $this->assertStringContainsString('--consent', $output);
     }
 
     /**
