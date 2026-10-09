@@ -34,7 +34,9 @@ require_once __DIR__.'/CodingAgent/Support/ParaTestWorkerIsolation.php';
 
 use Ineersa\CodingAgent\Tests\Support\ParaTestWorkerIsolation;
 
-$token = getenv('TEST_TOKEN') ?: '0';
+// PHPUnit subprocesses inherit TEST_TOKEN, but cannot share the parent's
+// active DAMA transaction. Namespace the paired DBs and cache by process too.
+$token = (getenv('TEST_TOKEN') ?: '0').'-P'.getmypid();
 $qaRunId = getenv('HATFIELD_QA_RUN_ID') ?: '';
 $lane = getenv('HATFIELD_QA_LANE') ?: '';
 
