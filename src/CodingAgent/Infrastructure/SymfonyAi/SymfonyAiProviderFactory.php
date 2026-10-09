@@ -135,6 +135,10 @@ class SymfonyAiProviderFactory
             }
         }
 
+        if ('generic' !== $provider->type) {
+            throw new \RuntimeException(\sprintf('Unsupported provider type "%s" for "%s". Configure a supported type; ChatGPT uses chatgpt.', $provider->type, $provider->id));
+        }
+
         return $this->buildGenericCompletionsProvider($provider, $httpClient);
     }
 

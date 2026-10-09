@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Infrastructure\SymfonyAi;
 
-use Amp\CancelledException;
 use Ineersa\AgentCore\Contract\Tool\DiagnosticMessageSanitizer;
+use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Exception\SubscriptionLimitException;
 use Symfony\AI\Platform\Exception\AuthenticationException;
 use Symfony\AI\Platform\Exception\BadRequestException;
 use Symfony\AI\Platform\Exception\ContentFilterException;
@@ -90,8 +90,8 @@ final class LlmProviderErrorClassifier
     /** @return array{string, bool, string}|null */
     private function classifyPermanentException(string $type): ?array
     {
-        if (is_a($type, CancelledException::class, true)) {
-            return [self::CATEGORY_UNKNOWN, false, 'LLM request was cancelled.'];
+        if (is_a($type, SubscriptionLimitException::class, true)) {
+            return [self::CATEGORY_RATE_LIMIT, false, 'ChatGPT subscription limit reached. Manage usage at https://chatgpt.com/settings/usage.'];
         }
 
         if (is_a($type, \Error::class, true)

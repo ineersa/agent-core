@@ -1,0 +1,19 @@
+services:
+  _defaults:
+    autowire: true
+    autoconfigure: true
+
+  Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\AuthFileStore:
+    arguments:
+      $path: '@=service("Ineersa\\CodingAgent\\Config\\SettingsPathResolver").getHomeDir() ~ "/.hatfield/chatgpt-auth.json"'
+      $lockFactory: '@Symfony\Component\Lock\LockFactory'
+
+  Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\AuthStorageInterface: '@Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\AuthFileStore'
+
+  Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\OAuthConfig:
+    arguments:
+      $appName: 'Hatfield'
+
+  Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\IdTokenVerifier: ~
+  Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\OAuthService: ~
+  Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\AuthCommand: ~

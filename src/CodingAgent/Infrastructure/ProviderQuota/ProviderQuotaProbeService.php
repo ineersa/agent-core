@@ -8,20 +8,17 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Runtime\Contract\ProviderQuotaReportDTO;
 use Ineersa\CodingAgent\Runtime\Contract\ProviderQuotaSectionDTO;
 use Psr\Log\LoggerInterface;
-use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexAuthFileStore;
-use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexOAuthConfig;
+use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\OAuthConfig;
 use Symfony\Contracts\HttpClient\Exception\TransportExceptionInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 use Symfony\Contracts\HttpClient\ResponseInterface;
 
-/** App-owned `/usage` probe for configured OpenAI Codex and z.ai only. */
+/** App-owned `/usage` probe for configured ChatGPT management links and z.ai quota. */
 final class ProviderQuotaProbeService
 {
-    private const string OPENAI_USAGE = 'https://chatgpt.com/backend-api/wham/usage';
     private const string ZAI_QUOTA = 'https://api.z.ai/api/monitor/usage/quota/limit';
 
     public function __construct(
-        private readonly CodexAuthFileStore $codexAuthStorage,
         private readonly AppConfig $appConfig,
         private readonly HttpClientInterface $httpClient,
         private readonly LoggerInterface $logger,
@@ -31,37 +28,16 @@ final class ProviderQuotaProbeService
     public function probe(): ProviderQuotaReportDTO
     {
         $sections = [];
-        $openAiCfg = $this->appConfig->catalog?->getProvider(CodexOAuthConfig::PROVIDER_KEY);
-        $openAi = null !== $openAiCfg && $openAiCfg->enabled ? $openAiCfg : null;
-        $zaiCfg = $this->appConfig->catalog?->getProvider('zai');
-        $zai = null !== $zaiCfg && $zaiCfg->enabled ? $zaiCfg : null;
-
-        // Dispatch configured requests first so Symfony HttpClient can run them concurrently.
-        $openAiResponse = null;
-        $openAiEarly = null;
-        if (null !== $openAi) {
-            try {
-                $record = $this->codexAuthStorage->loadCredentials();
-            } catch (\Throwable $e) {
-                $this->logger->warning('Provider quota probe degraded', [
-                    'component' => 'provider_quota_probe', 'event_type' => 'credential_load_failed',
-                    'provider' => 'openai', 'exception_class' => $e::class,
+        foreach ($this->appConfig->catalog?->config()->providers ?? [] as $provider) {
+            if ($provider->enabled && 'chatgpt' === $provider->type) {
+                $sections[] = new ProviderQuotaSectionDTO('ChatGPT', [
+                    '- Plan-backed usage. No numerical quota is available here.',
+                    '- Manage usage: '.OAuthConfig::USAGE_URL,
                 ]);
-                $record = null;
-            }
-            if (null === $record || '' === trim($record->access)) {
-                $openAiEarly = new ProviderQuotaSectionDTO('OpenAI Codex', ['- Error: '.\sprintf(
-                    'Auth token unavailable/expired (run: %s).',
-                    'bin/console auth:codex',
-                )]);
-            } else {
-                $headers = ['Authorization' => 'Bearer '.trim($record->access), 'Accept' => 'application/json'];
-                if ('' !== $record->accountId) {
-                    $headers['ChatGPT-Account-ID'] = $record->accountId;
-                }
-                $openAiResponse = $this->httpClient->request('GET', self::OPENAI_USAGE, ['headers' => $headers]);
             }
         }
+        $zaiCfg = $this->appConfig->catalog?->getProvider('zai');
+        $zai = null !== $zaiCfg && $zaiCfg->enabled ? $zaiCfg : null;
 
         $zaiResponse = null;
         $zaiEarly = null;
@@ -90,13 +66,6 @@ final class ProviderQuotaProbeService
             }
         }
 
-        // Early sections win; otherwise response is non-null by construction above.
-        if (null !== $openAiEarly) {
-            $sections[] = $openAiEarly;
-        } elseif (null !== $openAiResponse) {
-            $sections[] = $this->openAi($openAiResponse);
-        }
-
         if (null !== $zaiEarly) {
             $sections[] = $zaiEarly;
         } elseif (null !== $zaiResponse) {
@@ -104,50 +73,6 @@ final class ProviderQuotaProbeService
         }
 
         return new ProviderQuotaReportDTO($sections);
-    }
-
-    private function openAi(ResponseInterface $response): ProviderQuotaSectionDTO
-    {
-        [$status, $payload] = $this->read($response, 'openai');
-        if (null === $status) {
-            return new ProviderQuotaSectionDTO('OpenAI Codex', ['- Error: OpenAI usage probe failed.']);
-        }
-        if (401 === $status) {
-            return new ProviderQuotaSectionDTO('OpenAI Codex', ['- Error: '.\sprintf(
-                'OpenAI auth token expired — run %s.',
-                'bin/console auth:codex',
-            )]);
-        }
-        if ($status < 200 || $status >= 300 || null === $payload) {
-            $msg = null === $payload && $status >= 200 && $status < 300
-                ? 'OpenAI usage response was malformed.'
-                : \sprintf('OpenAI usage endpoint returned %d.', $status);
-
-            return new ProviderQuotaSectionDTO('OpenAI Codex', ['- Error: '.$msg]);
-        }
-
-        $lines = [];
-        $window = \is_array($payload['rate_limit']['primary_window'] ?? null) ? $payload['rate_limit']['primary_window'] : null;
-        $used = null === $window ? null : $this->num($window['used_percent'] ?? null);
-        if (null !== $used) {
-            $suffix = $this->windowLabel($this->num($window['limit_window_seconds'] ?? null));
-            $lines[] = \sprintf(
-                '- Codex (%s): %.0f%% left%s',
-                $suffix,
-                max(0.0, min(100.0, 100.0 - $used)),
-                $this->resetSuffix($window['reset_after_seconds'] ?? null),
-            );
-        }
-        foreach (['plan_type' => 'Plan', 'email' => 'Account'] as $field => $label) {
-            $value = $payload[$field] ?? null;
-            if (\is_string($value) && '' !== $value) {
-                $lines[] = \sprintf('- %s: %s', $label, $value);
-            }
-        }
-
-        return [] === $lines
-            ? new ProviderQuotaSectionDTO('OpenAI Codex', ['- Error: OpenAI response did not include window data.'])
-            : new ProviderQuotaSectionDTO('OpenAI Codex', $lines);
     }
 
     private function zai(ResponseInterface $response): ProviderQuotaSectionDTO
@@ -231,28 +156,6 @@ final class ProviderQuotaProbeService
 
             return [$status, null];
         }
-    }
-
-    private function windowLabel(?float $seconds): string
-    {
-        if (null === $seconds || $seconds <= 0) {
-            return 'primary';
-        }
-
-        $sec = (int) round($seconds);
-        if (0 === $sec % 3600) {
-            $hours = intdiv($sec, 3600);
-            if (0 === $hours % 24) {
-                return intdiv($hours, 24).'d';
-            }
-
-            return $hours.'h';
-        }
-        if (0 === $sec % 60) {
-            return intdiv($sec, 60).'m';
-        }
-
-        return $sec.'s';
     }
 
     private function resetSuffix(mixed $seconds): string

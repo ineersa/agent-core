@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Fork;
 
-use Amp\Websocket\Client\WebsocketConnection;
-use Amp\Websocket\WebsocketMessage;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
@@ -53,11 +51,7 @@ use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\Group;
 use Psr\Log\NullLogger;
-use Symfony\AI\Platform\Bridge\OpenAICodex\CodexModel;
-use Symfony\AI\Platform\Bridge\OpenAICodex\CodexTransportEnum;
-use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketConnectionCache;
-use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketConnectorInterface;
-use Symfony\AI\Platform\Bridge\OpenAICodex\Factory as CodexFactory;
+use Symfony\AI\Platform\Bridge\OpenResponses\ResponsesModel;
 use Symfony\AI\Platform\Platform;
 use Symfony\AI\Platform\ProviderInterface;
 
@@ -98,46 +92,15 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
         PreparedEventStoreSeeder::append($store, RunEvent::forAppend($child->childRunId, 1, 'run_started', ['payload' => ['metadata' => $metadata]]));
 
         $frames = [];
-        $connector = $this->createMock(CodexWebSocketConnectorInterface::class);
-        $connector->expects($this->exactly(3))->method('connect')->willReturnCallback(
-            function () use (&$frames): WebsocketConnection {
-                $received = true;
-                $deltaSent = false;
-                $responseId = '';
-                $connection = $this->createMock(WebsocketConnection::class);
-                $connection->expects($this->once())->method('close');
-                $connection->method('sendText')->willReturnCallback(static function (string $frame) use (&$frames, &$received, &$responseId, &$deltaSent): void {
-                    $frames[] = json_decode($frame, true, flags: \JSON_THROW_ON_ERROR);
-                    $received = false;
-                    $deltaSent = false;
-                    $responseId = 'resp_'.\count($frames);
-                });
-                $connection->method('receive')->willReturnCallback(static function () use (&$received, &$responseId, &$deltaSent): WebsocketMessage {
-                    if ($received) {
-                        throw new \LogicException('WebSocket response fixture exhausted before the next request.');
-                    }
-                    if (!$deltaSent) {
-                        $deltaSent = true;
+        $httpClient = new \Symfony\Component\HttpClient\MockHttpClient(static function (string $method, string $url, array $options) use (&$frames): \Symfony\Component\HttpClient\Response\MockResponse {
+            self::assertSame('POST', $method);
+            self::assertSame('https://api.openai.com/v1/responses', $url);
+            $frames[] = json_decode($options['body'], true, flags: \JSON_THROW_ON_ERROR);
 
-                        return WebsocketMessage::fromText('{"type":"response.output_text.delta","delta":"ok"}');
-                    }
-                    $received = true;
-
-                    return WebsocketMessage::fromText(json_encode([
-                        'type' => 'response.completed',
-                        'response' => ['id' => $responseId, 'status' => 'completed', 'output' => [[
-                            'type' => 'message', 'role' => 'assistant', 'content' => [['type' => 'output_text', 'text' => 'ok']],
-                        ]]],
-                    ], \JSON_THROW_ON_ERROR));
-                });
-
-                return $connection;
-            },
-        );
-        $cache = new CodexWebSocketConnectionCache();
-        $workerCache = new CodexWebSocketConnectionCache();
+            return new \Symfony\Component\HttpClient\Response\MockResponse('data: {"type":"response.output_text.delta","delta":"ok"}'."\n\n".'data: {"type":"response.completed","response":{"id":"resp_test","status":"completed","output":[]}}'."\n\n", ['response_headers' => ['content-type: text/event-stream']]);
+        });
         try {
-            $adapter = $this->forkProviderAdapter($this->cachedProvider($connector, $cache));
+            $adapter = $this->forkProviderAdapter($this->httpProvider($httpClient));
             $messages = [new AgentMessage('user', [['type' => 'text', 'text' => 'first']])];
             $first = $adapter->invoke(new ModelInvocationRequest('fallback/unused', new ModelInvocationInput(runId: $child->childRunId, messages: $messages)));
             $this->assertNotNull($first->assistantMessage);
@@ -147,14 +110,12 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
             $this->assertNotNull($second->assistantMessage);
             $this->assertSame($container->get(DeferredSubagentChildRepository::class)->findProviderCacheKey($child->childRunId), $frames[0]['prompt_cache_key']);
             $this->assertSame($frames[0]['prompt_cache_key'], $frames[1]['prompt_cache_key']);
-            $this->assertSame('resp_1', $frames[1]['previous_response_id']);
-            $this->assertCount(1, $frames[1]['input']);
-            $cache->closeAll();
+            $this->assertArrayNotHasKey('previous_response_id', $frames[1]);
+            $this->assertCount(3, $frames[1]['input']);
 
-            // A worker owns its socket. Recreate the resolver/adapter and provider
-            // cache, then require the same durable key but a full-context frame.
+            // Worker recreation must retain the durable key and send full history.
             $container->get('doctrine.orm.default_entity_manager')->clear();
-            $adapter = $this->forkProviderAdapter($this->cachedProvider($connector, $workerCache));
+            $adapter = $this->forkProviderAdapter($this->httpProvider($httpClient));
             $messages[] = new AgentMessage('assistant', [['type' => 'text', 'text' => $second->assistantMessage->asText()]]);
             $messages[] = new AgentMessage('user', [['type' => 'text', 'text' => 'recreated worker']]);
             $third = $adapter->invoke(new ModelInvocationRequest('fallback/unused', new ModelInvocationInput(runId: $child->childRunId, messages: $messages)));
@@ -190,8 +151,7 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
             $this->assertCount(5, $frames);
             $this->assertNotSame($frames[0]['prompt_cache_key'], $frames[4]['prompt_cache_key']);
         } finally {
-            $cache->closeAll();
-            $workerCache->closeAll();
+            $httpClient->reset();
         }
     }
 
@@ -328,14 +288,16 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
         }
     }
 
-    private function cachedProvider(CodexWebSocketConnectorInterface $connector, CodexWebSocketConnectionCache $cache): ProviderInterface
+    private function httpProvider(\Symfony\Contracts\HttpClient\HttpClientInterface $client): ProviderInterface
     {
-        return CodexFactory::createProvider(
-            accessToken: 'test-access', accountId: 'test-account',
-            modelCatalog: new ProjectedSymfonyModelCatalog(['gpt-5.5' => new AiModelDefinition(id: 'gpt-5.5')], CodexModel::class, 'openai-codex'),
-            transport: CodexTransportEnum::WebsocketCached, websocketConnector: $connector, websocketConnectionCache: $cache,
-            originator: 'hatfield', userAgent: 'hatfield',
-            internalOptions: ['hatfield_run_id', 'hatfield_model_ref'],
+        $record = \Ineersa\CodingAgent\Tests\Support\ChatGPTAuthFixture::record();
+        $storage = $this->createStub(\Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\AuthStorageInterface::class);
+        $storage->method('update')->willReturnCallback(static fn (callable $update) => $update($record));
+
+        return \Symfony\AI\Platform\Bridge\OpenAIChatGPT\Factory::createProvider(
+            \Ineersa\CodingAgent\Tests\Support\ChatGPTAuthFixture::service($storage, $client), $client,
+            new ProjectedSymfonyModelCatalog(['gpt-5.5' => new AiModelDefinition(id: 'gpt-5.5')], ResponsesModel::class, 'openai-codex'),
+            name: 'openai-codex',
         );
     }
 
@@ -343,7 +305,7 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
     {
         $container = self::getContainer();
         $catalog = new HatfieldModelCatalog(new AiConfig(defaultModel: 'openai-codex/gpt-5.5', providers: [
-            'openai-codex' => new AiProviderConfig(id: 'openai-codex', type: 'codex', enabled: true,
+            'openai-codex' => new AiProviderConfig(id: 'openai-codex', type: 'chatgpt', enabled: true,
                 models: ['gpt-5.5' => new AiModelDefinition(id: 'gpt-5.5')]),
         ]));
         $config = new AppConfig(new TuiConfig(theme: 'default'), new LoggingConfig(), catalog: $catalog);

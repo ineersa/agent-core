@@ -9,7 +9,7 @@ namespace Ineersa\AgentCore\Domain\Model;
  *
  * Internal Hatfield control data never belongs in providerOptions. The resolver
  * maps only values intentionally supported by the selected provider, such as a
- * Codex prompt_cache_key.
+ * ChatGPT prompt_cache_key.
  */
 final readonly class ResolvedModel
 {

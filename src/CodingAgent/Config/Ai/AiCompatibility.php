@@ -51,7 +51,6 @@ final readonly class AiCompatibility
         public ?string $thinkingFormat = null,
         public bool $zaiToolStream = false,
         public bool $requiresReasoningContentOnAssistantMessages = false,
-        public bool $supportsReasoningConfigurationUpdates = false,
         public bool $pinContextWindow = false,
     ) {
     }
@@ -73,7 +72,6 @@ final readonly class AiCompatibility
             thinkingFormat: isset($data['thinking_format']) && \is_string($data['thinking_format']) ? $data['thinking_format'] : null,
             zaiToolStream: self::boolOrDefault($data['zai_tool_stream'] ?? null, false),
             requiresReasoningContentOnAssistantMessages: self::boolOrDefault($data['requires_reasoning_content_on_assistant_messages'] ?? null, false),
-            supportsReasoningConfigurationUpdates: self::boolOrDefault($data['supports_reasoning_configuration_updates'] ?? null, false),
             pinContextWindow: self::boolOrDefault($data['pin_context_window'] ?? null, false),
         );
     }

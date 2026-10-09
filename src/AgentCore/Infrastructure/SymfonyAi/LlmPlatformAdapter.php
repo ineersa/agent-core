@@ -25,8 +25,6 @@ use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryExecutor;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Agent\Input;
-use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketContinuationMismatchException;
-use Symfony\AI\Platform\Bridge\OpenAICodex\Result\CancellableRawResultInterface;
 use Symfony\AI\Platform\Exception\ServerException;
 use Symfony\AI\Platform\FinishReason\FinishReason;
 use Symfony\AI\Platform\FinishReason\FinishReasonCase;
@@ -44,8 +42,6 @@ use Symfony\AI\Platform\Result\Stream\Delta\ThinkingComplete;
 use Symfony\AI\Platform\Result\Stream\Delta\ThinkingDelta;
 use Symfony\AI\Platform\Result\Stream\Delta\ThinkingSignature;
 use Symfony\AI\Platform\Result\Stream\Delta\ToolCallComplete;
-use Symfony\AI\Platform\Result\Stream\Delta\ToolCallStart;
-use Symfony\AI\Platform\Result\Stream\Delta\ToolInputDelta;
 use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\AI\Platform\TokenUsage\TokenUsageInterface;
 use Symfony\AI\Platform\Tool\Tool;
@@ -160,7 +156,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
 
         $effectiveModel = $resolvedModel->model;
 
-        // Provider transport can fail synchronously during invoke (e.g. Codex WS
+        // Provider transport can fail synchronously during invoke (e.g. HTTP
         // send_failure before asStream()). Classify here so bounded LLM retry sees
         // a retryable PlatformInvocationResult instead of a generic worker exception.
         LlmInvocationCancelScope::enter($cancelToken, $request->input->runId);
@@ -193,8 +189,6 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
                         availableToolsSchemaTokensEstimate: $availableToolsSnapshot['schema_tokens_estimate'],
                     );
                 }
-
-                $this->logContinuationMismatch($exception, $request->input->runId ?? '', $request->input->stepId);
 
                 return $this->errorResult(
                     deltas: [],
@@ -799,36 +793,11 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         );
     }
 
-    private function logContinuationMismatch(\Throwable $exception, string $runId, ?string $stepId): void
-    {
-        if (!$exception instanceof CodexWebSocketContinuationMismatchException) {
-            return;
-        }
-
-        try {
-            $diagnostics = CodexContinuationDiagnosticFormatter::format($exception->diagnostics);
-        } catch (\JsonException $captureFailure) {
-            // Diagnostic serialization must not replace the original failure.
-            $diagnostics = ['capture_failed' => true, 'capture_error_type' => $captureFailure::class];
-        }
-
-        $this->logger->error('llm.provider.continuation_mismatch', [
-            ...$diagnostics,
-            'event_type' => 'llm.provider.continuation_mismatch',
-            'component' => 'llm_platform_adapter',
-            'run_id' => $runId,
-            'session_id' => $runId,
-            'step_id' => $stepId,
-        ]);
-    }
-
     private function abortConnection(DeferredResult $deferredResult): void
     {
         try {
             $rawResult = $deferredResult->getRawResult();
-            if ($rawResult instanceof CancellableRawResultInterface) {
-                $rawResult->abort();
-            } elseif ($rawResult instanceof RawHttpResult) {
+            if ($rawResult instanceof RawHttpResult) {
                 $rawResult->getObject()->cancel();
             }
         } catch (\Throwable $e) {
@@ -869,10 +838,6 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         $pendingThinkingSignature = null;
         $lastCumulativeThinking = '';
         $completedToolCalls = null;
-
-        /** @var array<string, array{name: string, partial_json: string, order_index: int}> $partialToolCalls */
-        $partialToolCalls = [];
-        $toolOrderCursor = 0;
 
         foreach ($deltas as $delta) {
             if ($delta instanceof TextDelta) {
@@ -928,30 +893,14 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
                 continue;
             }
 
-            if ($delta instanceof ToolCallStart) {
-                $partialToolCalls[$delta->getId()] ??= [
-                    'name' => $delta->getName(),
-                    'partial_json' => '',
-                    'order_index' => $toolOrderCursor++,
-                ];
-                continue;
-            }
-
-            if ($delta instanceof ToolInputDelta) {
-                $partialToolCalls[$delta->getId()] = [
-                    'name' => $delta->getName(),
-                    'partial_json' => ($partialToolCalls[$delta->getId()]['partial_json'] ?? '').$delta->getPartialJson(),
-                    'order_index' => $partialToolCalls[$delta->getId()]['order_index'] ?? $toolOrderCursor++,
-                ];
-                continue;
-            }
-
             if ($delta instanceof ToolCallComplete) {
                 $completedToolCalls = $delta->getToolCalls();
             }
         }
 
-        $toolCalls = $completedToolCalls ?? $this->buildPartialToolCalls($partialToolCalls);
+        // Input deltas are UI progress, not a completed executable call. Never
+        // synthesize tools from an interrupted or cancelled argument stream.
+        $toolCalls = $completedToolCalls ?? [];
 
         if ('' !== $pendingText) {
             $contentParts[] = new Text($pendingText);
@@ -990,30 +939,6 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             FinishReasonCase::STOP_SEQUENCE => $finishReason->getRaw(),
             FinishReasonCase::OTHER => $finishReason->getRaw(),
         };
-    }
-
-    /**
-     * @param array<string, array{name: string, partial_json: string, order_index: int}> $partialToolCalls
-     *
-     * @return list<ToolCall>
-     */
-    private function buildPartialToolCalls(array $partialToolCalls): array
-    {
-        uasort(
-            $partialToolCalls,
-            static fn (array $left, array $right): int => $left['order_index'] <=> $right['order_index'],
-        );
-
-        $toolCalls = [];
-        foreach ($partialToolCalls as $toolCallId => $toolCall) {
-            $toolCalls[] = new ToolCall(
-                $toolCallId,
-                $toolCall['name'],
-                $this->parseArguments($toolCall['partial_json'], (string) $toolCallId),
-            );
-        }
-
-        return $toolCalls;
     }
 
     /**
@@ -1057,31 +982,6 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         }
 
         return $usage;
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function parseArguments(string $json, string $toolCallId = ''): array
-    {
-        if ('' === $json) {
-            return [];
-        }
-
-        try {
-            $decoded = json_decode($json, true, flags: \JSON_THROW_ON_ERROR);
-        } catch (\JsonException $exception) {
-            $this->logger->warning('LLM tool-call arguments JSON decode failed — using empty arguments.', [
-                'component' => 'llm_platform_adapter',
-                'event_type' => 'llm.tool_call_args_decode_failed',
-                'tool_call_id' => $toolCallId,
-                'error_class' => $exception::class,
-            ]);
-
-            return [];
-        }
-
-        return \is_array($decoded) ? $decoded : [];
     }
 
     private function notifyStreamStart(string $runId, ?string $stepId): void

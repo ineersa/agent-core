@@ -113,8 +113,7 @@ final class SessionCacheInspectCommandTest extends IsolatedKernelTestCase
             providers: [
                 'openai-codex' => new AiProviderConfig(
                     id: 'openai-codex',
-                    type: 'codex',
-                    transport: 'websocket',
+                    type: 'chatgpt',
                     models: ['gpt-5.6' => new AiModelDefinition(id: 'gpt-5.6', name: 'gpt-5.6')],
                 ),
                 'deepseek' => new AiProviderConfig(
@@ -205,7 +204,7 @@ final class SessionCacheInspectCommandTest extends IsolatedKernelTestCase
         $this->assertSame(Command::SUCCESS, $exit);
         $this->assertStringContainsString('Per-family summary (not combined)', $display);
         $this->assertStringContainsString('openai-codex', $display);
-        $this->assertStringContainsString('websocket', $display);
+        $this->assertStringContainsString('http', $display);
         $this->assertStringContainsString('deepseek', $display);
         $this->assertStringContainsString('subagent', $display);
         $this->assertStringContainsString('Prefix attribution unavailable', $display);

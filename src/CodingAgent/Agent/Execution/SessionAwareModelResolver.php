@@ -17,7 +17,6 @@ use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\CodingAgent\Config\ReasoningOptionsResolver;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Symfony\AI\Platform\Bridge\OpenAICodex\CodexRequestBodyFactory;
 use Symfony\Component\Uid\Uuid;
 use Symfony\Component\Uid\UuidV7;
 
@@ -97,41 +96,6 @@ final class SessionAwareModelResolver implements ModelResolverInterface
             $compatFeatures = $this->resolveCompatFeatures($modelRef);
             $reasoningOptions = $this->resolveReasoningOptions($modelRef, $reasoning);
 
-            // Explicit model/thinking overrides belong to separate operations such
-            // as compaction. They must not claim or mutate the chat baseline.
-            if (null === $explicitModel && null === $explicitReasoning
-                && 'codex' === $this->catalog->getProvider($modelRef->providerId)?->type
-                && true === $this->catalog->getModel($modelRef)?->compatibility?->supportsReasoningConfigurationUpdates
-                && $hasConversationMessages
-                && \is_string($reasoningOptions['reasoning']['effort'] ?? null)) {
-                $effort = $reasoningOptions['reasoning']['effort'];
-                $baseline = $this->sessionMetadataStore->claimReasoningBaseline($sessionId, $modelRef->toString(), $effort);
-                if (null !== $baseline) {
-                    $reasoningOptions['reasoning']['effort'] = $baseline['baseline'];
-                    if (\is_string($baseline['update'] ?? null) && '' !== $baseline['update']) {
-                        $reasoningOptions[CodexRequestBodyFactory::REASONING_UPDATE] = $baseline['update'];
-                        if ('' !== $sessionId) {
-                            $reasoningOptions['hatfield_run_id'] = $sessionId;
-                        }
-                        $reasoningOptions['hatfield_model_ref'] = $modelRef->toString();
-                    }
-                } else {
-                    $reasoningOptions[CodexRequestBodyFactory::REASONING_RESET] = true;
-                }
-            }
-
-            // Summarization uses a separate socket without changing the chat baseline.
-            // After accepted compaction, the stored generation resets every worker's
-            // chat continuation before the next turn.
-            if ('codex' === $this->catalog->getProvider($modelRef->providerId)?->type) {
-                if (false === ($options->values['toolsEnabled'] ?? null)) {
-                    $reasoningOptions[CodexRequestBodyFactory::CONTINUATION_RESET] = true;
-                }
-                if ('' !== $sessionId && 0 < ($generation = $this->sessionMetadataStore->continuationGeneration($sessionId) ?? 0)) {
-                    $reasoningOptions[CodexRequestBodyFactory::CONTINUATION_GENERATION] = $generation;
-                }
-            }
-
             // Pass 'reasoning' compat when options are present (z.ai off sends disabled thinking).
             if ([] !== $reasoningOptions && !\in_array(ReasoningOptionsFeatureShaper::FEATURE, $compatFeatures, true)) {
                 $compatFeatures[] = ReasoningOptionsFeatureShaper::FEATURE;
@@ -169,7 +133,7 @@ final class SessionAwareModelResolver implements ModelResolverInterface
             return ['prompt_cache_key' => $sessionId];
         }
 
-        if ('codex' !== $provider->type) {
+        if ('chatgpt' !== $provider->type) {
             return [];
         }
 

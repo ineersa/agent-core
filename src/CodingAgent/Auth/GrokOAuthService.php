@@ -5,18 +5,17 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Auth;
 
 use League\OAuth2\Client\Provider\Exception\IdentityProviderException;
-use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\BrowserLauncher;
-use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexOAuthProvider;
-use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexOAuthService;
-use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\LocalCallbackServer;
-use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\ManualCodeParser;
+use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\BrowserLauncher;
+use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\LocalCallbackServer;
+use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\ManualCodeParser;
+use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\PublicOAuthProvider;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
 /**
  * Orchestrates the xAI Grok CLI OAuth PKCE login flow.
  *
- * Same UX as {@see CodexOAuthService}: browser loopback + manual paste.
- * Uses {@see CodexOAuthProvider} against auth.x.ai (approval_prompt strip +
+ * Same UX as ChatGPT OAuth: browser loopback + manual paste.
+ * Uses {@see PublicOAuthProvider} against auth.x.ai (approval_prompt strip +
  * empty client_secret omit are provider-agnostic).
  */
 final class GrokOAuthService
@@ -146,12 +145,12 @@ final class GrokOAuthService
     }
 
     /**
-     * Reuses CodexOAuthProvider: league's GenericProvider injects approval_prompt
+     * Reuses PublicOAuthProvider: league's GenericProvider injects approval_prompt
      * and an empty client_secret; both break xAI token exchange the same way they
      * break OpenAI Hydra. Do not clone — the two fixes are provider-agnostic.
      */
-    private function createProvider(int $port = GrokOAuthConfig::DEFAULT_PORT): CodexOAuthProvider
+    private function createProvider(int $port = GrokOAuthConfig::DEFAULT_PORT): PublicOAuthProvider
     {
-        return new CodexOAuthProvider(GrokOAuthConfig::providerOptions($port));
+        return new PublicOAuthProvider(GrokOAuthConfig::providerOptions($port));
     }
 }

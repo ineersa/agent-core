@@ -37,7 +37,6 @@ final readonly class SessionMaintenanceHandler
         private \Psr\Log\LoggerInterface $logger,
         private \Ineersa\AgentCore\Contract\ActiveRunContextInterface $registry,
         private \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor $processor,
-        private \Ineersa\CodingAgent\Session\HatfieldSessionStore $sessions,
         private \Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware $initialization,
         private \Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery $recovery,
         private DeferredSubagentBatchRepository $deferredBatches,
@@ -52,7 +51,6 @@ final readonly class SessionMaintenanceHandler
             $step = 'attach-cancel-'.$command->commandId;
             $this->processor->process('attach', new \Ineersa\AgentCore\Domain\Message\ApplyCommand($command->runId, $state->turnNo, $step, 1, $step, 'cancel', ['reason' => 'Outstanding human questions cancelled on session attach.']));
         }
-        $this->sessions->resetReasoningBaseline($command->runId);
         $this->processor->process('attach', new \Ineersa\AgentCore\Domain\Message\RefreshRunContext($command->runId, $command->messages));
     }
 

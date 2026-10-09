@@ -49,6 +49,8 @@ Related focused references:
 |---|---|
 | `~/.hatfield/ai-catalog.yaml` | User AI catalog (see [ai-catalog.md](ai-catalog.md)) |
 | `~/.hatfield/settings.yaml` | User overrides |
+| `~/.hatfield/chatgpt-auth.json` | Single-account verified ChatGPT grant; use `auth:chatgpt login` |
+| `~/.hatfield/auth.json` | Grok credentials and retained legacy records; not used for ChatGPT |
 | `<cwd>/.hatfield/settings.yaml` | Project overrides |
 | `<cwd>/.hatfield/sessions/` | Session storage (ignored by git) |
 | `<cwd>/.hatfield/tmp/` | Tool/output-cap/bg temp data |

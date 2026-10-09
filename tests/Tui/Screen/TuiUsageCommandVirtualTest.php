@@ -25,12 +25,8 @@ use Ineersa\Tui\Transcript\TranscriptBlockFactory;
 use Ineersa\Tui\Transcript\TranscriptBlockWidgetFactory;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
-use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexAuthFileStore;
-use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexAuthRecord;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
-use Symfony\Component\Lock\LockFactory;
-use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Tui\Widget\MarkdownWidget;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
@@ -43,17 +39,12 @@ final class TuiUsageCommandVirtualTest extends TestCase
     use TuiRuntimeContextBuilderTrait;
 
     private string $tmpDir;
-    private CodexAuthFileStore $authStorage;
 
     protected function setUp(): void
     {
         parent::setUp();
         $this->tmpDir = TestDirectoryIsolation::createProjectTempDir('usage-virtual');
         TestDirectoryIsolation::ensureDirectory($this->tmpDir.'/.hatfield');
-        $this->authStorage = new CodexAuthFileStore(
-            $this->tmpDir.'/.hatfield/auth.json',
-            new LockFactory(new FlockStore($this->tmpDir)),
-        );
     }
 
     protected function tearDown(): void
@@ -66,25 +57,8 @@ final class TuiUsageCommandVirtualTest extends TestCase
     #[Test]
     public function testUsageRoutesAndRendersProviderAndSessionSections(): void
     {
-        $this->authStorage->saveCredentials(new CodexAuthRecord(
-            access: 'test-access-token',
-            refresh: 'test-refresh',
-            expires: time() + 3600,
-            accountId: 'acct_123',
-        ));
         putenv('ZAI_API_KEY=secret-zai-key');
 
-        $openaiBody = json_encode([
-            'plan_type' => 'pro',
-            'email' => 'user@example.com',
-            'rate_limit' => [
-                'primary_window' => [
-                    'used_percent' => 17,
-                    'limit_window_seconds' => 18000,
-                    'reset_after_seconds' => 7200,
-                ],
-            ],
-        ], \JSON_THROW_ON_ERROR);
         $zaiBody = json_encode([
             'success' => true,
             'code' => 200,
@@ -99,11 +73,8 @@ final class TuiUsageCommandVirtualTest extends TestCase
             ],
         ], \JSON_THROW_ON_ERROR);
 
-        $probe = $this->probe(new MockHttpClient(static function (string $method, string $url) use ($openaiBody, $zaiBody): MockResponse {
+        $probe = $this->probe(new MockHttpClient(static function (string $method, string $url) use ($zaiBody): MockResponse {
             self::assertSame('GET', $method);
-            if (str_contains($url, '/wham/usage')) {
-                return new MockResponse($openaiBody, ['http_code' => 200]);
-            }
             if (str_contains($url, '/quota/limit')) {
                 return new MockResponse($zaiBody, ['http_code' => 200]);
             }
@@ -150,8 +121,8 @@ final class TuiUsageCommandVirtualTest extends TestCase
         $this->assertInstanceOf(TranscriptMessage::class, $result);
         $this->assertSame('markdown', $result->style);
         $this->assertStringContainsString('## Provider usage / quota status', $result->text);
-        $this->assertStringContainsString('### OpenAI Codex', $result->text);
-        $this->assertStringContainsString('Codex (5h): 83% left, resets in 2h', $result->text);
+        $this->assertStringContainsString('### ChatGPT', $result->text);
+        $this->assertStringContainsString('https://chatgpt.com/settings/usage', $result->text);
         $this->assertStringContainsString('### z.ai', $result->text);
         $this->assertStringContainsString('Tokens (250/1,000): 75% left', $result->text);
         $this->assertStringNotContainsString('Models visible', $result->text);
@@ -166,7 +137,7 @@ final class TuiUsageCommandVirtualTest extends TestCase
         $this->assertInstanceOf(MarkdownWidget::class, (new TranscriptBlockWidgetFactory())->buildWidget($block, $harness->screen()->theme()));
         $harness->screen()->setTranscriptBlocks([$block]);
         $screen = $harness->plainScreenText();
-        $this->assertStringContainsString('OpenAI Codex', $screen);
+        $this->assertStringContainsString('ChatGPT', $screen);
         $this->assertStringContainsString('Session totals', $screen);
         $this->assertStringContainsString('12,345', $screen);
     }
@@ -194,7 +165,7 @@ final class TuiUsageCommandVirtualTest extends TestCase
         $result = (new SubmissionRouter(new CommandParser(), $context->sessionServices->commandRegistry))->route('/usage');
         $this->assertInstanceOf(TranscriptMessage::class, $result);
         $this->assertStringNotContainsString('No configured providers', $result->text);
-        $this->assertStringNotContainsString('### OpenAI Codex', $result->text);
+        $this->assertStringNotContainsString('### ChatGPT', $result->text);
         $this->assertStringNotContainsString('### z.ai', $result->text);
         $this->assertStringContainsString('## Provider usage / quota status', $result->text);
         $this->assertStringContainsString('### Session totals', $result->text);
@@ -211,12 +182,7 @@ final class TuiUsageCommandVirtualTest extends TestCase
         $tui = $harness->tui();
 
         $workingDuringProbe = null;
-        $this->authStorage->saveCredentials(new CodexAuthRecord(
-            access: 'test-access-token',
-            refresh: 'test-refresh',
-            expires: time() + 3600,
-            accountId: 'acct_123',
-        ));
+        putenv('ZAI_API_KEY=synthetic-key');
         // Force an HTTP request so the callback can observe the working indicator
         // that UsageCommandHandler paints before probe() returns.
         $probe = $this->probe(new MockHttpClient(static function () use (&$workingDuringProbe, $screen): MockResponse {
@@ -232,7 +198,7 @@ final class TuiUsageCommandVirtualTest extends TestCase
                     ],
                 ],
             ], \JSON_THROW_ON_ERROR), ['http_code' => 200]);
-        }), both: true, openAiOnly: true);
+        }), both: true);
 
         (new UsageCommandRegistrar($probe, new TestLogger()))->registerCatalog($catalog);
         $context = $this->buildTuiContext()
@@ -252,16 +218,11 @@ final class TuiUsageCommandVirtualTest extends TestCase
     #[Test]
     public function testUsageKeepsSessionTotalsWhenProviderProbeThrows(): void
     {
-        $this->authStorage->saveCredentials(new CodexAuthRecord(
-            access: 'test-access-token',
-            refresh: 'test-refresh',
-            expires: time() + 3600,
-            accountId: 'acct_123',
-        ));
-        // Throw from the MockHttpClient factory so probe() escapes before intentional degradation.
+        // The remaining numerical quota probe is z.ai; its failure must not hide session totals.
+        putenv('ZAI_API_KEY=synthetic-key');
         $probe = $this->probe(new MockHttpClient(static function (): MockResponse {
             throw new \RuntimeException("boom\nsecret-line");
-        }), both: true, openAiOnly: true);
+        }), both: true);
 
         $catalog = new SlashCommandCatalog();
         $state = new TuiSessionState('usage-virtual-fail');
@@ -293,9 +254,9 @@ final class TuiUsageCommandVirtualTest extends TestCase
         if ($both || $openAiOnly) {
             $providers['openai-codex'] = new AiProviderConfig(
                 id: 'openai-codex',
-                type: 'openai-codex',
+                type: 'chatgpt',
                 enabled: true,
-                baseUrl: 'https://chatgpt.com/backend-api',
+                baseUrl: 'https://api.openai.com',
             );
         }
         if ($both && !$openAiOnly) {
@@ -317,7 +278,6 @@ final class TuiUsageCommandVirtualTest extends TestCase
         );
 
         return new ProviderQuotaProbeService(
-            $this->authStorage,
             $appConfig,
             $http,
             new TestLogger(),

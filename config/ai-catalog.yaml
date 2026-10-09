@@ -8,7 +8,7 @@
 # Refresh: hatfield providers:update
 # Interactive setup: bin/console providers:setup (see providers-setup-command task)
 
-version: 12
+version: 13
 
 providers:
     deepseek:
@@ -73,7 +73,7 @@ providers:
                 tool_calling: true
                 reasoning: true
                 thinking_level_map: { minimal: minimal, low: low, medium: medium, high: high, xhigh: xhigh }
-                compatibility: { thinking_format: codex }
+                compatibility: { thinking_format: chatgpt }
                 cost: { input: 0.10, output: 0.20, cache_read: 0.002 }
             space-bunny-free:
                 name: Space Bunny Free
@@ -131,30 +131,26 @@ providers:
                 cost: { input: 0.075, output: 0.25, cache_read: 0.015, cache_write: 0 }
 
     openai-codex:
-        label: 'OpenAI Codex'
+        label: 'ChatGPT'
         kind: oauth
-        type: codex
+        type: chatgpt
         enabled: false
-        base_url: https://chatgpt.com/backend-api
+        base_url: https://api.openai.com
         api: openai-responses
-        completions_path: /codex/responses
+        completions_path: /v1/responses
         supports_completions: true
         supports_embeddings: false
         supports_thinking_levels: true
-        transport: websocket
-        websocket_cache_idle_ttl_seconds: 60
-        websocket_cache_max_age_seconds: 3300
         compatibility:
-            supports_developer_role: false
+            supports_developer_role: true
             supports_reasoning_effort: false
-            thinking_format: codex
-        auth_command: 'auth:codex'
+            thinking_format: chatgpt
+        auth_command: 'auth:chatgpt'
         models:
             gpt-6.1-sol:
                 name: GPT-6.1 Sol
                 reasoning: true
                 compatibility:
-                    supports_reasoning_configuration_updates: true
                     # Pinned to the 272k cheap pricing tier; see gpt-6-astra below.
                     pin_context_window: true
                 thinking_level_map: { minimal: null, low: low, medium: medium, high: high, xhigh: xhigh, max: max }
@@ -167,7 +163,6 @@ providers:
                 name: GPT-6 Astra
                 reasoning: true
                 compatibility:
-                    supports_reasoning_configuration_updates: true
                     # 272k is the cheap pricing tier boundary on the Codex backend;
                     # models.dev reports the raw 1.05M window. Keep the curated cap.
                     pin_context_window: true
@@ -181,7 +176,6 @@ providers:
                 name: GPT-6 Sol
                 reasoning: true
                 compatibility:
-                    supports_reasoning_configuration_updates: true
                     # Pinned to the 272k cheap pricing tier; see gpt-6-astra above.
                     pin_context_window: true
                 thinking_level_map: { off: none, minimal: low, low: low, medium: medium, high: high, xhigh: xhigh, max: max }
@@ -194,7 +188,6 @@ providers:
                 name: GPT-6 Luna
                 reasoning: true
                 compatibility:
-                    supports_reasoning_configuration_updates: true
                     # Pinned to the 272k cheap pricing tier; see gpt-6-astra above.
                     pin_context_window: true
                 thinking_level_map: { off: none, minimal: low, low: low, medium: medium, high: high, xhigh: xhigh, max: max }

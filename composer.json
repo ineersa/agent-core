@@ -6,6 +6,16 @@
     "repositories": [
         {
             "type": "path",
+            "url": "/home/ineersa/projects/symfony-ai-openai-chatgpt-platform-worktrees/chatgpt-subscription-http",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "ineersa/symfony-ai-openai-chatgpt-platform": "dev-task/chatgpt-subscription-http"
+                }
+            }
+        },
+        {
+            "type": "path",
             "url": ".hatfield/extensions/extension-api",
             "options": {
                 "symlink": true
@@ -29,7 +39,6 @@
         "ext-tokenizer": "*",
         "ext-xml": "*",
         "ineersa/hatfield-extension-api": "@dev",
-        "ineersa/symfony-ai-openai-codex-platform": "dev-main",
         "symfony/console": "^8.1",
         "symfony/dependency-injection": "^8.1",
         "symfony/config": "^8.1",
@@ -67,7 +76,8 @@
         "symfony/ai-store": "^0.14",
         "symfony/ai-sqlite-store": "^0.14",
         "symfony/ai-vektor-store": "^0.14",
-        "centamiv/vektor": "^2.0"
+        "centamiv/vektor": "^2.0",
+        "ineersa/symfony-ai-openai-chatgpt-platform": "dev-task/chatgpt-subscription-http#9d21515559b77b729cf6c1555edfdeef1976b6e1"
     },
     "require-dev": {
         "friendsofphp/php-cs-fixer": "^3.94",

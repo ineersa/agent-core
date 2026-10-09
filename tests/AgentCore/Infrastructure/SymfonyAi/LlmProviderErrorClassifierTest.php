@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Infrastructure\SymfonyAi;
 
-use Amp\CancelledException;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Exception\SubscriptionLimitException;
 use Symfony\AI\Platform\Exception\AuthenticationException;
 use Symfony\AI\Platform\Exception\BadRequestException;
 use Symfony\AI\Platform\Exception\RateLimitExceededException;
@@ -37,10 +37,9 @@ final class LlmProviderErrorClassifierTest extends TestCase
     public static function permanentExceptionProvider(): array
     {
         return [
-            [CancelledException::class, LlmProviderErrorClassifier::CATEGORY_UNKNOWN],
+            [SubscriptionLimitException::class, LlmProviderErrorClassifier::CATEGORY_RATE_LIMIT],
             [\TypeError::class, LlmProviderErrorClassifier::CATEGORY_UNKNOWN],
             [\LogicException::class, LlmProviderErrorClassifier::CATEGORY_UNKNOWN],
-            [\Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketContinuationMismatchException::class, LlmProviderErrorClassifier::CATEGORY_UNKNOWN],
         ];
     }
 
