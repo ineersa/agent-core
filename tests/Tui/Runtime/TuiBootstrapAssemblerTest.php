@@ -23,6 +23,8 @@ use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 
 #[AllowMockObjectsWithoutExpectations]
 final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
@@ -31,6 +33,10 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
 
     private TestLogger $logger;
 
+    // This fixture owns run()/stop(). Other TUI tests suspend the shared driver,
+    // which remains running after their UI returns and cannot be swapped safely.
+    #[RunInSeparateProcess]
+    #[PreserveGlobalState(false)]
     public function testStoredToolQuestionSurvivesBootstrapUntilLiveUiDelivery(): void
     {
         $container = static::getContainer();
