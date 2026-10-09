@@ -63,17 +63,18 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
         $poll = new \ReflectionMethod($poller, 'poll');
         $watchers = [];
         $hits = [];
+        $requestId = \Symfony\Component\Uid\Uuid::v7()->toRfc4122();
         try {
             $delivery->begin($run, 'cancelled-request');
-            $questions->create(\Ineersa\CodingAgent\Entity\ToolQuestion::create('bootstrap-question', $run, 'bash-call', 'bash',
+            $questions->create(\Ineersa\CodingAgent\Entity\ToolQuestion::create($requestId, $run, 'bash-call', 'bash',
                 12345, '/tmp/owned-question.log', 'echo test', 'Move this command to the background?'));
-            $assertPending = function () use ($questions, $poll, $poller, &$hits): void {
+            $assertPending = function () use ($questions, $poll, $poller, $requestId, &$hits): void {
                 $poll->invoke($poller);
                 $pending = $questions->findUnemittedPendingQuestions();
                 $this->assertCount(1, $pending);
-                $this->assertSame('bootstrap-question', $pending[0]->requestId);
+                $this->assertSame($requestId, $pending[0]->requestId);
                 $this->assertNull($pending[0]->emittedAt);
-                $this->assertNull($questions->pollAnswer('bootstrap-question'));
+                $this->assertNull($questions->pollAnswer($requestId));
                 $this->assertSame([], $hits);
             };
             $assertPending();
@@ -162,7 +163,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
 
             $this->assertTrue($state->sessionReady);
             $this->assertCount(1, $hits);
-            $this->assertSame('bootstrap-question', $hits[0]->payload['request_id']);
+            $this->assertSame($requestId, $hits[0]->payload['request_id']);
             $this->assertSame(0, $hits[0]->seq);
             $this->assertNotContains('assistant.text_delta', $types);
             $this->assertLessThan(array_search('tool_question.requested', $types, true), array_search('session.ready', $types, true));
@@ -177,8 +178,8 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
             $container->get(\Ineersa\CodingAgent\Runtime\Controller\CommandHandler\AnswerToolQuestionHandler::class)(
                 new \Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent(
                     new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand('answer', 'answer_tool_question', $run,
-                        ['request_id' => 'bootstrap-question', 'answer' => true]), $emitter->emit(...)));
-            $this->assertTrue($questions->pollAnswer('bootstrap-question'), 'The existing worker wait predicate now resolves.');
+                        ['request_id' => $requestId, 'answer' => true]), $emitter->emit(...)));
+            $this->assertTrue($questions->pollAnswer($requestId), 'The existing worker wait predicate now resolves.');
         } finally {
             foreach ($watchers as $watcher) {
                 \Revolt\EventLoop::cancel($watcher);

@@ -47,6 +47,8 @@ use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Theme\ThemeRegistry;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\AbstractLogger;
 use Psr\Log\NullLogger;
@@ -61,9 +63,12 @@ use Symfony\Component\Tui\Event\QuitEvent;
  * InteractiveMode mount / tick / switch / reload wiring through the real
  * InteractiveMode::run() path. Uses the production Tui constructor (no
  * test-only TerminalInterface injection).
+ * Each case owns the suspension-based loop, without a preceding fixture's driver.
  */
 #[CoversClass(InteractiveMode::class)]
 #[CoversClass(ProcessMemorySnapshotLogger::class)]
+#[RunTestsInSeparateProcesses]
+#[PreserveGlobalState(false)]
 final class InteractiveModeMemoryCheckpointWiringTest extends TestCase
 {
     /** @var list<string> */
