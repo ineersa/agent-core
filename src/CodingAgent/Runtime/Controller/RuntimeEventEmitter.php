@@ -68,15 +68,25 @@ final class RuntimeEventEmitter
      */
     public function emit(RuntimeEvent $event): void
     {
+        $this->tryEmit($event);
+    }
+
+    /**
+     * Returns true only for a completed live write. Filtered, queued, or
+     * unavailable output must not acknowledge separately persisted questions.
+     */
+    public function tryEmit(RuntimeEvent $event): bool
+    {
         if (null !== $this->bootstrapFilter && ($this->bootstrapFilter)($event)) {
-            return;
+            return false;
         }
         if ($this->bootstrapOutput) {
             $this->emitTransfer($event);
 
-            return;
+            return false;
         }
-        $this->emitInternal($event);
+
+        return $this->emitInternal($event);
     }
 
     /** @param (\Closure(RuntimeEvent): bool)|null $filter */
@@ -217,7 +227,7 @@ final class RuntimeEventEmitter
 
     private function emitInternal(RuntimeEvent $event): bool
     {
-        if (null === $this->stdout) {
+        if (null === $this->stdout || $this->shuttingDown) {
             return false;
         }
 

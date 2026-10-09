@@ -34,12 +34,12 @@ final class RuntimeEventEmitterTest extends TestCase
     {
         $emitter = $this->createEmitter();
 
-        $emitter->emit(new RuntimeEvent(
+        $this->assertFalse($emitter->tryEmit(new RuntimeEvent(
             type: RuntimeEventTypeEnum::RuntimeReady->value,
             runId: '',
             seq: 0,
             payload: [],
-        ));
+        )));
 
         $this->assertFalse($emitter->isShuttingDown());
     }
@@ -51,6 +51,7 @@ final class RuntimeEventEmitterTest extends TestCase
 
         $emitter->shutdown();
         $this->assertTrue($emitter->isShuttingDown());
+        $this->assertFalse($emitter->tryEmit(new RuntimeEvent(RuntimeEventTypeEnum::ToolQuestionRequested->value, 'run', 0, [])));
     }
 
     public function testEmitWritesJsonlToStdout(): void
@@ -59,12 +60,12 @@ final class RuntimeEventEmitterTest extends TestCase
         $emitter->openStdout();
         $this->replaceStdoutWithMemory($emitter);
 
-        $emitter->emit(new RuntimeEvent(
+        $this->assertTrue($emitter->tryEmit(new RuntimeEvent(
             type: RuntimeEventTypeEnum::RunStarted->value,
             runId: 'stdout-run-1',
             seq: 1,
             payload: [],
-        ));
+        )));
 
         $stdout = $this->stdoutHandle($emitter);
         rewind($stdout);
@@ -100,7 +101,7 @@ final class RuntimeEventEmitterTest extends TestCase
             $this->assertSame(0, $reflection->getProperty('pendingBytes')->getValue($emitter));
             $this->assertNull($reflection->getProperty('writeWatcher')->getValue($emitter));
             $this->assertNull($weak->get());
-            $emitter->emit(new RuntimeEvent(RuntimeEventTypeEnum::RunStarted->value, 'run', 99, []));
+            $this->assertFalse($emitter->tryEmit(new RuntimeEvent(RuntimeEventTypeEnum::RunStarted->value, 'run', 99, [])));
             $this->assertSame(0, $reflection->getProperty('pendingBytes')->getValue($emitter), 'A cancelled view remains detached.');
         } finally {
             $emitter->shutdown();

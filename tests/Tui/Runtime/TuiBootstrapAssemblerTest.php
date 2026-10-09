@@ -31,6 +31,159 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
 
     private TestLogger $logger;
 
+    public function testStoredToolQuestionSurvivesBootstrapUntilLiveUiDelivery(): void
+    {
+        $container = static::getContainer();
+        $run = $container->get(\Ineersa\CodingAgent\Session\HatfieldSessionStore::class)->createSession('Operational question bootstrap');
+        $events = $container->get(\Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface::class);
+        \Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder::appendMany($events, [
+            \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($run, 0, 'run_started', ['payload' => [
+                'metadata' => ['model' => 'llama_cpp_test/test', 'session' => []],
+                'messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Original conversation']]]],
+            ]]),
+            \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($run, 1, 'turn_advanced', ['turn_no' => 1]),
+            \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($run, 1, 'agent_end', ['reason' => 'completed']),
+        ]);
+        [$state, $harness, $uiPoller] = $this->scope($run);
+        $questions = $container->get(\Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface::class);
+        $emitter = new \Ineersa\CodingAgent\Runtime\Controller\RuntimeEventEmitter($this->logger);
+        [$writer, $reader] = stream_socket_pair(\STREAM_PF_UNIX, \STREAM_SOCK_STREAM, \STREAM_IPPROTO_IP);
+        (new \ReflectionProperty($emitter, 'stdout'))->setValue($emitter, $writer);
+        stream_set_blocking($reader, false);
+        $delivery = new \Ineersa\CodingAgent\Runtime\Controller\SessionBootstrapDelivery(
+            $container->get(\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapSpoolStore::class),
+            $container->get(\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapTransfer::class), $emitter, $this->logger);
+        $poller = new \Ineersa\CodingAgent\Runtime\Controller\ToolQuestionPoller($questions, $emitter, $this->logger);
+        $poll = new \ReflectionMethod($poller, 'poll');
+        $watchers = [];
+        $hits = [];
+        try {
+            $delivery->begin($run, 'cancelled-request');
+            $questions->create(\Ineersa\CodingAgent\Entity\ToolQuestion::create('bootstrap-question', $run, 'bash-call', 'bash',
+                12345, '/tmp/owned-question.log', 'echo test', 'Move this command to the background?'));
+            $assertPending = function () use ($questions, $poll, $poller, &$hits): void {
+                $poll->invoke($poller);
+                $pending = $questions->findUnemittedPendingQuestions();
+                $this->assertCount(1, $pending);
+                $this->assertSame('bootstrap-question', $pending[0]->requestId);
+                $this->assertNull($pending[0]->emittedAt);
+                $this->assertNull($questions->pollAnswer('bootstrap-question'));
+                $this->assertSame([], $hits);
+            };
+            $assertPending();
+            $delivery->cancel();
+            $assertPending();
+            $delivery->begin($run, 'failed-request');
+            $delivery->expect('failed-request');
+            // A malformed descriptor exercises the real failure/detach filter.
+            $emitter->emit(new RuntimeEvent('bootstrap.available', $run, 0, ['request_id' => 'failed-request']));
+            $assertPending();
+            $delivery->begin($run, 'superseded-request');
+            $delivery->begin($run, 'request');
+            $delivery->expect('request');
+            $assertPending();
+
+            $producer = $container->get(\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapProducer::class);
+            $producer->prepare($run);
+            $cut = $producer->seal();
+            $this->assertSame(3, $cut->canonicalSeq, 'Creating the operational question did not append to JSONL.');
+            $emitter->emit(new RuntimeEvent('bootstrap.available', $run, 0, $cut->toArray() + ['request_id' => 'request']));
+            $emitter->emit(new RuntimeEvent('assistant.text_delta', $run, 0, ['text' => 'Drop transient text']));
+            $assertPending();
+            \Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder::appendMany($events, [
+                \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($run, 1, 'llm_step_completed', [
+                    'step_id' => 'step', 'stop_reason' => 'stop',
+                    'assistant_message' => ['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'Committed while transferring']]],
+                ]),
+            ]);
+            $suffix = iterator_to_array($container->get(\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapTransfer::class)->catchUp($cut));
+            $this->assertNotContains('tool_question.requested', array_column($suffix, 'type'), 'Operational questions have no canonical suffix event.');
+            $this->assertGreaterThan($cut->canonicalSeq, $suffix[array_key_last($suffix)]->payload['canonical_seq']);
+
+            $incoming = [];
+            $client = $this->createMock(AgentSessionClient::class);
+            $client->method('events')->willReturnCallback(static function () use (&$incoming): array {
+                $batch = $incoming;
+                $incoming = [];
+
+                return $batch;
+            });
+            $client->expects($this->once())->method('acknowledgeBootstrap')->with($cut->toArray())->willReturnCallback(
+                static function (array $ack) use ($delivery, $assertPending): void {
+                    $assertPending();
+                    $delivery->acknowledge(SessionBootstrapDescriptorDTO::fromArray($ack));
+                    $assertPending();
+                });
+            $buffer = '';
+            $types = [];
+            $watchers[] = \Revolt\EventLoop::onReadable($reader, function () use ($reader, &$buffer, &$incoming, &$types, &$hits, $state, $client, $uiPoller, $harness): void {
+                $buffer .= fread($reader, 65536);
+                while (false !== ($newline = strpos($buffer, "\n"))) {
+                    $event = \Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec::decodeEvent(substr($buffer, 0, $newline));
+                    $buffer = substr($buffer, $newline + 1);
+                    $types[] = $event->type;
+                    if ('bootstrap.suffix' === $event->type) {
+                        // This controlled sink unwraps the fixture's single-frame
+                        // record before invoking the ordinary TUI polling boundary.
+                        $this->assertTrue($event->payload['last']);
+                        $event = \Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec::decodeEvent(base64_decode($event->payload['data'], true));
+                    }
+                    $incoming[] = $event;
+                }
+                $state->lastPoll = 0;
+                $changes = $uiPoller->poll($state, $client,
+                    onToolQuestionRequested: function (RuntimeEvent $question) use ($state, &$hits): void {
+                        $this->assertTrue($state->sessionReady);
+                        $hits[] = $question;
+                    },
+                    onBootstrapMounted: function () use ($state, $harness): void {
+                        $this->assertFalse($state->sessionReady);
+                        $harness->screen()->setTranscriptBlocks($state->transcript);
+                    });
+                if (null !== $changes) {
+                    $harness->screen()->applyTranscriptChangeSet($changes);
+                }
+                $this->assertNull($state->bootstrapError);
+                if ([] !== $hits) {
+                    \Revolt\EventLoop::getDriver()->stop();
+                }
+            });
+            $watchers[] = \Revolt\EventLoop::delay(3, static function (): void { throw new \RuntimeException('Question bootstrap never reached live delivery.'); });
+            $before = \Revolt\EventLoop::getIdentifiers();
+            $poller->startPollLoop();
+            $watchers = array_merge($watchers, array_diff(\Revolt\EventLoop::getIdentifiers(), $before));
+            \Revolt\EventLoop::run();
+
+            $this->assertTrue($state->sessionReady);
+            $this->assertCount(1, $hits);
+            $this->assertSame('bootstrap-question', $hits[0]->payload['request_id']);
+            $this->assertSame(0, $hits[0]->seq);
+            $this->assertNotContains('assistant.text_delta', $types);
+            $this->assertLessThan(array_search('tool_question.requested', $types, true), array_search('session.ready', $types, true));
+            $this->assertContains('bootstrap.suffix', $types);
+            $this->assertStringContainsString('Committed while transferring', $harness->plainScreenText());
+            $this->assertGreaterThan($cut->canonicalSeq, $state->lastSeq);
+            $pending = $questions->findPendingQuestionsForRun($run);
+            $this->assertNotNull($pending[0]->emittedAt);
+            $poll->invoke($poller);
+            $poll->invoke($poller);
+            $this->assertSame('', stream_get_contents($reader), 'Subsequent polls cannot redeliver the acknowledged question.');
+            $container->get(\Ineersa\CodingAgent\Runtime\Controller\CommandHandler\AnswerToolQuestionHandler::class)(
+                new \Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent(
+                    new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand('answer', 'answer_tool_question', $run,
+                        ['request_id' => 'bootstrap-question', 'answer' => true]), $emitter->emit(...)));
+            $this->assertTrue($questions->pollAnswer('bootstrap-question'), 'The existing worker wait predicate now resolves.');
+        } finally {
+            foreach ($watchers as $watcher) {
+                \Revolt\EventLoop::cancel($watcher);
+            }
+            $delivery->cancel();
+            $emitter->shutdown();
+            fclose($writer);
+            fclose($reader);
+        }
+    }
+
     #[DataProvider('recoveryOrigins')]
     public function testOwnedPipeRestartRemountsThroughProductionPolling(bool $attached): void
     {
