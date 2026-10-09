@@ -12,7 +12,6 @@ use Amp\Websocket\Client\WebsocketConnection;
 use Amp\Websocket\WebsocketMessage;
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Handler\ExecuteLlmStepWorker;
-use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Application\Pipeline\LlmStepResultHandler;
@@ -27,12 +26,12 @@ use Ineersa\AgentCore\Domain\Model\ResolvedModel;
 use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmInvocationCancelScope;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmStreamCancelledException;
+use Ineersa\AgentCore\Tests\Support\InMemoryCommandStore;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\Codex\CodexRunCancellationListener;
@@ -133,7 +132,7 @@ final class CodexRunCancellationListenerTest extends IsolatedKernelTestCase
             logger: $logger, denormalizer: $serializer, modelResolver: $resolver,
         );
         $results = new TestMessageBus();
-        $handler = new ExecuteLlmStepWorker($adapter, $results, logger: $logger);
+        $handler = new ExecuteLlmStepWorker($results, $adapter, logger: $logger);
         $transport = new InMemoryTransport();
         $transport->send(new Envelope($message));
         $dispatcher = new EventDispatcher();
@@ -204,11 +203,10 @@ final class CodexRunCancellationListenerTest extends IsolatedKernelTestCase
         $this->assertInstanceOf(NormalizerInterface::class, $serializer);
 
         return new LlmStepResultHandler(
-            toolBatchCollector: new ToolBatchCollector(),
+            toolBatchCollector: self::getContainer()->get(ToolBatchCollector::class),
             commandMailboxPolicy: new CommandMailboxPolicy(new InMemoryCommandStore(), new CommandRouter([])),
             eventFactory: new EventFactory(), toolCallExtractor: new ToolCallExtractor(),
-            messageNormalizer: new AgentMessageNormalizer(), stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
-            normalizer: $serializer, commandBus: new TestMessageBus(),
+            messageNormalizer: new AgentMessageNormalizer(), normalizer: $serializer,
         );
     }
 }
