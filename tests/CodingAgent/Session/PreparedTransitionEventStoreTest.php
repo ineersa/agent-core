@@ -67,7 +67,7 @@ final class PreparedTransitionEventStoreTest extends IsolatedKernelTestCase
         $child = 'child-prepared';
         $store = $container->get(AgentChildRunEventStoreFactory::class)->create($parent, $child, 'artifact-prepared');
         $sink = new InMemoryRuntimeEventSink();
-        $stream = new StreamingCommittedRuntimeEventStore($store, $container->get(RuntimeEventMapper::class), $sink, true);
+        $stream = new StreamingCommittedRuntimeEventStore($store, $container->get(RuntimeEventMapper::class), $sink, true, $container->get('event_dispatcher'));
         PreparedEventStoreSeeder::append($store, new RunEvent($child, 0, 0, 'run_started', []));
         $this->assertCount(0, iterator_to_array($sink->drain($child)), 'Seeding the inner store does not emit streaming events.');
         $stream->appendTransition([new RunEvent($child, 0, 0, 'agent_end', ['reason' => 'completed'])], ['run_id' => $child, 'predecessor_seq' => 1]);

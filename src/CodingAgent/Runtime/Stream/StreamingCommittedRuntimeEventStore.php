@@ -19,6 +19,7 @@ final class StreamingCommittedRuntimeEventStore implements \Ineersa\AgentCore\Co
         private readonly RuntimeEventMapper $mapper,
         private readonly RuntimeEventSinkInterface $stdoutSink,
         private readonly bool $streamCommittedEventsToStdout,
+        private readonly \Symfony\Component\EventDispatcher\EventDispatcherInterface $dispatcher,
     ) {
     }
 
@@ -83,6 +84,7 @@ final class StreamingCommittedRuntimeEventStore implements \Ineersa\AgentCore\Co
         $store->finalizeVerifiedTransition($runId, $identity);
         unset($this->pendingEvents[$runId]);
         foreach ($hotBatch as $event) {
+            $this->dispatcher->dispatch(new \Ineersa\CodingAgent\Session\Event\RunEventPublishedEvent($event));
             $this->emitMapped($event);
         }
     }

@@ -180,7 +180,7 @@ final class CommitSubagentProgressIntegrationTest extends PerMethodIsolatedKerne
         self::getContainer()->set(RunStateRebuilderInterface::class, $rebuilder);
         $this->sink = new RecordingProgressRuntimeEventSink();
         self::getContainer()->set(StreamingCommittedRuntimeEventStore::class, new StreamingCommittedRuntimeEventStore(
-            self::getContainer()->get(ChildAwareEventStore::class), self::getContainer()->get(RuntimeEventMapper::class), $this->sink, true,
+            self::getContainer()->get(ChildAwareEventStore::class), self::getContainer()->get(RuntimeEventMapper::class), $this->sink, true, self::getContainer()->get('event_dispatcher'),
         ));
     }
 

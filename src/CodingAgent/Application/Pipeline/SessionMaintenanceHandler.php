@@ -41,19 +41,33 @@ final readonly class SessionMaintenanceHandler
         private \Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware $initialization,
         private \Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery $recovery,
         private DeferredSubagentBatchRepository $deferredBatches,
+        private \Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapProducer $bootstrap,
+        private \Ineersa\AgentCore\Application\Handler\RunLockManager $locks,
     ) {
     }
 
     #[AsMessageHandler(bus: 'agent.command.bus')]
     public function attach(\Ineersa\CodingAgent\Application\Message\AttachRun $command): void
     {
-        $state = $this->registry->requireLoaded($command->runId);
-        if (RunStatus::WaitingHuman === $state->status || [] !== $state->pendingHumanInputRequests) {
-            $step = 'attach-cancel-'.$command->commandId;
-            $this->processor->process('attach', new \Ineersa\AgentCore\Domain\Message\ApplyCommand($command->runId, $state->turnNo, $step, 1, $step, 'cancel', ['reason' => 'Outstanding human questions cancelled on session attach.']));
-        }
-        $this->sessions->resetReasoningBaseline($command->runId);
-        $this->processor->process('attach', new \Ineersa\AgentCore\Domain\Message\RefreshRunContext($command->runId, $command->messages));
+        $this->locks->synchronized($command->runId, function () use ($command): void {
+            try {
+                $state = $this->bootstrap->prepare($command->runId);
+                if (RunStatus::WaitingHuman === $state->status || [] !== $state->pendingHumanInputRequests) {
+                    $step = 'attach-cancel-'.$command->commandId;
+                    $this->processor->process('attach', new \Ineersa\AgentCore\Domain\Message\ApplyCommand($command->runId, $state->turnNo, $step, 1, $step, 'cancel', ['reason' => 'Outstanding human questions cancelled on session attach.']));
+                }
+                // Do not retain the old context beside the refreshed owner state.
+                unset($state);
+                $this->sessions->resetReasoningBaseline($command->runId);
+                $this->processor->process('attach', new \Ineersa\AgentCore\Domain\Message\RefreshRunContext($command->runId, $command->messages));
+                $descriptor = $this->bootstrap->seal();
+                // A slow controller must never hold the owner transition lock while
+                // receiving the token. The body remains in the private bounded spool.
+                $this->locks->afterRelease($command->runId, fn () => $this->emit(new RuntimeEvent(type: RuntimeEventTypeEnum::BootstrapAvailable->value, runId: $command->runId, seq: 0, payload: $descriptor->toArray())));
+            } finally {
+                $this->bootstrap->release();
+            }
+        });
     }
 
     #[AsMessageHandler(bus: 'agent.command.bus')]

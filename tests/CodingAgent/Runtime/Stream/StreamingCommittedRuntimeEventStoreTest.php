@@ -196,7 +196,7 @@ final class StreamingCommittedRuntimeEventStoreTest extends TestCase
             new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()),
         ));
 
-        return new StreamingCommittedRuntimeEventStore($inner, $mapper, $sink, $stream);
+        return new StreamingCommittedRuntimeEventStore($inner, $mapper, $sink, $stream, new EventDispatcher());
     }
 }
 

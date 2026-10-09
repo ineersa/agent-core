@@ -114,6 +114,7 @@ enum RuntimeEventTypeEnum: string
     // ── Runtime lifecycle (controller process) ─────────────────────────────
 
     case RuntimeReady = 'runtime.ready';
+    case BootstrapAvailable = 'bootstrap.available';
     case ProtocolError = 'protocol.error';
     case RunResumed = 'run.resumed';
     case RunHistoryPositionChanged = 'run.history_position_changed';

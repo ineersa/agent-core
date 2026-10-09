@@ -48,7 +48,7 @@ final class StreamingCommittedRuntimeEventStoreSequencingTest extends TestCase
             new EventDispatcher(),
             new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()),
         ));
-        $store = new StreamingCommittedRuntimeEventStore($inner, $mapper, $sink, true);
+        $store = new StreamingCommittedRuntimeEventStore($inner, $mapper, $sink, true, new EventDispatcher());
 
         $returned = $store->appendTransition([$input], ['run_id' => 'run-a'])[0];
         $this->assertCount(0, $sink->emitted);

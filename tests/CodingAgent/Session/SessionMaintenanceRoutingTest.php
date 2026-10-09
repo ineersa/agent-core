@@ -883,6 +883,8 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
             $container->get(\Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware::class),
             $container->get(\Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery::class),
             $container->get(DeferredSubagentBatchRepository::class),
+            $container->get(\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapProducer::class),
+            $container->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class),
         ));
     }
 

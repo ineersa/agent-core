@@ -74,6 +74,42 @@ final readonly class SessionReplayCoordinator
         }
     }
 
+    /** Warm attach projects history without reconstructing or replacing the owner's state. */
+    public function display(RunState $current): SessionReplayResultDTO
+    {
+        $source = $this->eventStore->historySource($current->runId);
+        $cut = $source->log->historyCut($source->path, $current->runId);
+        if (null === $cut || $current->lastSeq !== $cut['sequence']) {
+            throw new \RuntimeException('Warm bootstrap requires the current canonical owner state.');
+        }
+        $this->projector->reset();
+        try {
+            foreach ($this->projectAlongside($source->log->selectedEvents($source->path, $current->runId, $cut['sequence'], $cut['anchor'])) as $event) {
+                unset($event);
+            }
+
+            return new SessionReplayResultDTO($current, $this->projector->blocks(), $cut['end_offset'], $cut['anchor']);
+        } finally {
+            $this->projector->reset();
+        }
+    }
+
+    /** @param list<TranscriptBlock> $blocks
+     * @return list<TranscriptBlock> */
+    public function extendDisplay(array $blocks, RunEvent $committed): array
+    {
+        $this->projector->replaceProjectedBlocks($blocks);
+        try {
+            foreach ($this->projectAlongside([$committed]) as $event) {
+                unset($event);
+            }
+
+            return $this->projector->blocks();
+        } finally {
+            $this->projector->reset();
+        }
+    }
+
     /** @param iterable<RunEvent> $events
      * @return \Generator<int, RunEvent>
      */
