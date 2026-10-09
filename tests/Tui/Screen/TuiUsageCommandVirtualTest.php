@@ -189,14 +189,9 @@ final class TuiUsageCommandVirtualTest extends TestCase
             $workingDuringProbe = $screen->workingMessage();
 
             return new MockResponse(json_encode([
-                'plan_type' => 'pro',
-                'rate_limit' => [
-                    'primary_window' => [
-                        'used_percent' => 10,
-                        'limit_window_seconds' => 3600,
-                        'reset_after_seconds' => 60,
-                    ],
-                ],
+                'success' => true,
+                'code' => 200,
+                'data' => ['limits' => []],
             ], \JSON_THROW_ON_ERROR), ['http_code' => 200]);
         }), both: true);
 
@@ -248,18 +243,16 @@ final class TuiUsageCommandVirtualTest extends TestCase
         $this->assertStringContainsString('10 in / 5 out', $result->text);
     }
 
-    private function probe(HttpClientInterface $http, bool $both, bool $openAiOnly = false): ProviderQuotaProbeService
+    private function probe(HttpClientInterface $http, bool $both): ProviderQuotaProbeService
     {
         $providers = [];
-        if ($both || $openAiOnly) {
+        if ($both) {
             $providers['openai-codex'] = new AiProviderConfig(
                 id: 'openai-codex',
                 type: 'chatgpt',
                 enabled: true,
                 baseUrl: 'https://api.openai.com',
             );
-        }
-        if ($both && !$openAiOnly) {
             $providers['zai'] = new AiProviderConfig(
                 id: 'zai',
                 type: 'generic',
