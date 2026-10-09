@@ -33,9 +33,9 @@ final readonly class RunStateReducer
     }
 
     /**
-     * @param list<RunEvent> $events
+     * @param iterable<RunEvent> $events chronological canonical events; callers own history selection
      */
-    public function replay(RunState $existingState, array $events): RunState
+    public function replay(RunState $existingState, iterable $events): RunState
     {
         $state = new RunState(
             runId: $existingState->runId,
