@@ -93,6 +93,11 @@ final class SessionRunEventStore implements \Ineersa\AgentCore\Contract\Prepared
         return null;
     }
 
+    public function historySource(string $runId): RunHistorySourceDTO
+    {
+        return new RunHistorySourceDTO($this->eventLog, $this->eventsPath($runId));
+    }
+
     public function firstFor(string $runId): ?RunEvent
     {
         foreach ($this->streamDecodedEvents($runId, 'firstFor') as $event) {

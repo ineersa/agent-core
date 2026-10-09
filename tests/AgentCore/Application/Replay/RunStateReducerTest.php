@@ -22,8 +22,8 @@ final class RunStateReducerTest extends TestCase
                 $reference = \WeakReference::create($event);
                 yield $event;
                 unset($event);
-                // foreach retains its current value until the next assignment.
-                // A small record separates that lifetime from the release assertion.
+                // Generator::current retains the yielded value until its next yield.
+                // Advance with a small record before asserting the large body is released.
                 yield new RunEvent('streaming', $seq + 3, 0, 'ignored', []);
                 self::assertNull($reference->get());
             }

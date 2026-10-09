@@ -694,6 +694,22 @@ services:
   Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface:
     alias: Ineersa\CodingAgent\Session\Replay\SessionRunStateReplayService
 
+  owner.replay.projection_state:
+    class: Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState
+
+  owner.replay.transcript_projector:
+    class: Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector
+    arguments:
+      $eventDispatcher: '@event_dispatcher'
+      $state: '@owner.replay.projection_state'
+
+  Ineersa\CodingAgent\Session\Replay\SessionReplayCoordinator:
+    arguments:
+      $projector: '@owner.replay.transcript_projector'
+
+  Ineersa\CodingAgent\Session\Contract\RunHistorySourceProviderInterface:
+    alias: Ineersa\CodingAgent\Agent\Artifact\ChildAwareEventStore
+
   Ineersa\AgentCore\Contract\ActiveRunContextInterface:
     alias: Ineersa\CodingAgent\Agent\Artifact\ActiveRunContext
 

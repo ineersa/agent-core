@@ -7,8 +7,6 @@ namespace Ineersa\CodingAgent\Tests\Session\Replay;
 use Ineersa\AgentCore\Application\Handler\RunStateDuplicateSequenceReplayException;
 use Ineersa\AgentCore\Application\Handler\RunStateReplayException;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
-use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
-use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
@@ -16,34 +14,24 @@ use Ineersa\AgentCore\Domain\Run\RunOperationalToolCallStatusEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Run\ToolBatchIdentity;
+use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
-use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
-use Ineersa\CodingAgent\Session\History\HistoryProjector;
-use Ineersa\CodingAgent\Session\History\HistoryReplayFilter;
 use Ineersa\CodingAgent\Session\Replay\SessionRunStateReplayService;
-use PHPUnit\Framework\TestCase;
-use Psr\Log\NullLogger;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Symfony\Component\Filesystem\Filesystem;
 
-final class SessionRunStateReplayServiceTest extends TestCase
+final class SessionRunStateReplayServiceTest extends IsolatedKernelTestCase
 {
-    private InMemoryEventStore $eventStore;
     private SessionRunStateReplayService $service;
-    private RunStateReducer $reducer;
-    private HistoryReplayFilter $historyFilter;
     private string $runId = 'run-replay-test';
+    private string $path;
 
     protected function setUp(): void
     {
-        $this->eventStore = new InMemoryEventStore();
-        $this->historyFilter = new HistoryReplayFilter(new HistoryProjector());
-        $this->reducer = new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()));
-        $this->service = new SessionRunStateReplayService(
-            $this->eventStore,
-            new NullLogger(),
-            $this->reducer,
-            new ReplayEventPreparer(),
-            $this->historyFilter,
-        );
+        parent::setUp();
+        $this->service = static::getContainer()->get(SessionRunStateReplayService::class);
+        $this->path = getcwd().'/.hatfield/sessions/'.$this->runId.'/events.jsonl';
+        (new Filesystem())->mkdir(\dirname($this->path));
     }
 
     public function testNoEventsReturnsNoEventsResult(): void
@@ -67,8 +55,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
 
         $result = $this->service->rebuildIfStale($state, $this->runId);
         $this->assertNull($result->rebuiltState);
-        $this->assertSame(1, $this->eventStore->latestSequenceForCalls);
-        $this->assertSame(0, $this->eventStore->allForCalls);
+        $this->assertFileDoesNotExist(\dirname($this->path).'/history-index.sqlite');
     }
 
     public function testStaleStateIsRebuilt(): void
@@ -87,8 +74,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
         $this->assertNotNull($result->rebuiltState);
         $this->assertSame(RunStatus::Running, $result->rebuiltState->status);
         $this->assertSame(1, $result->rebuiltState->lastSeq);
-        $this->assertSame(1, $this->eventStore->latestSequenceForCalls);
-        $this->assertSame(1, $this->eventStore->allForCalls);
+        $this->assertFileExists(\dirname($this->path).'/history-index.sqlite');
     }
 
     public function testMissingStateWithEventsIsRebuilt(): void
@@ -1981,7 +1967,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
      */
     private function appendEvent(string $type, int $seq, array $payload): void
     {
-        $this->eventStore->seed(new RunEvent(
+        $this->seed(new RunEvent(
             runId: $this->runId,
             seq: $seq,
             turnNo: 0,
@@ -1998,7 +1984,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
      */
     private function appendEventWithTurn(string $type, int $seq, int $turnNo, array $payload): void
     {
-        $this->eventStore->seed(new RunEvent(
+        $this->seed(new RunEvent(
             runId: $this->runId,
             seq: $seq,
             turnNo: $turnNo,
@@ -2006,5 +1992,11 @@ final class SessionRunStateReplayServiceTest extends TestCase
             payload: $payload,
             createdAt: new \DateTimeImmutable(),
         ));
+    }
+
+    private function seed(RunEvent $event): void
+    {
+        $record = static::getContainer()->get(EventPayloadNormalizer::class)->normalizeRunEvent($event);
+        file_put_contents($this->path, json_encode($record, \JSON_THROW_ON_ERROR)."\n", \FILE_APPEND);
     }
 }

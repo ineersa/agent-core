@@ -34,8 +34,47 @@ final readonly class RunHistoryIndex
         }
     }
 
+    /** @return array{sequence: int, end_offset: int, anchor: int}|null */
+    public function cut(JsonlRunEventLog $log, string $path, string $runId, ?int $positionTurnNo = null): ?array
+    {
+        if (null !== $positionTurnNo && $positionTurnNo < 0) {
+            throw new \InvalidArgumentException('History position must be non-negative.');
+        }
+        if (!is_file($path)) {
+            return null;
+        }
+        $lock = $this->locks->createLock('hatfield-run-'.$runId);
+        $lock->acquire(true);
+        try {
+            $db = $this->synchronize($log, $path, $runId);
+            $meta = $db->fetchAssociative('SELECT * FROM index_meta');
+            if (false === $meta || 0 === (int) $meta['last_seq']) {
+                return null;
+            }
+            $anchor = null === $positionTurnNo ? (int) $meta['selected_anchor'] : $this->anchorForTurn($db, $positionTurnNo);
+            if (null !== $positionTurnNo && $positionTurnNo > 0 && 0 === $anchor) {
+                throw new \InvalidArgumentException('Requested history position is not retained.');
+            }
+
+            return ['sequence' => (int) $meta['last_seq'], 'end_offset' => (int) $meta['end_offset'], 'anchor' => $anchor];
+        } finally {
+            if (isset($db)) {
+                $db->close();
+            }
+            $lock->release();
+        }
+    }
+
     /** @return \Generator<int, string> */
     public function records(JsonlRunEventLog $log, string $path, string $runId, int $startSeq, int $endSeq, ?int $anchor = null, bool $retained = false): \Generator
+    {
+        foreach ($this->locatedRecords($log, $path, $runId, $startSeq, $endSeq, $anchor, $retained) as [$line]) {
+            yield $line;
+        }
+    }
+
+    /** @return \Generator<int, array{string, array<string, mixed>}> */
+    public function locatedRecords(JsonlRunEventLog $log, string $path, string $runId, int $startSeq, int $endSeq, ?int $anchor = null, bool $retained = false): \Generator
     {
         if (!is_file($path)) {
             return;
@@ -86,8 +125,8 @@ final readonly class RunHistoryIndex
                 if (!\is_array($record) || ($record['run_id'] ?? null) !== $runId || ($record['seq'] ?? null) !== (int) $expected['seq'] || ($record['type'] ?? null) !== $expected['type']) {
                     throw new \RuntimeException('Indexed location does not match its canonical event.');
                 }
-                unset($record);
-                yield $line;
+                yield [$line, $record];
+                unset($record, $line);
             }
         } catch (\Throwable $exception) {
             $this->logger->warning('history_index.record_read_failed', $this->context($runId) + ['exception_class' => $exception::class]);
@@ -214,6 +253,10 @@ final readonly class RunHistoryIndex
                         throw new \RuntimeException('Canonical index rebuild found an incomplete record.');
                     }
                     $record = $log->decodeLine($location['line']);
+                    if (\is_array($record) && \is_int($record['seq'] ?? null) && $record['seq'] <= $lastSeq
+                        && false !== $db->fetchOne('SELECT seq FROM event_location WHERE seq = ?', [$record['seq']])) {
+                        throw new \Ineersa\AgentCore\Application\Handler\RunStateDuplicateSequenceReplayException('Canonical history requires unique increasing sequences: duplicate sequence.');
+                    }
                     if (!\is_array($record) || ($record['run_id'] ?? null) !== $runId || !\is_int($record['seq'] ?? null)
                         || $record['seq'] <= $lastSeq || !\is_string($record['type'] ?? null) || !\is_int($record['turn_no'] ?? null)
                         || !\is_array($record['payload'] ?? null)) {

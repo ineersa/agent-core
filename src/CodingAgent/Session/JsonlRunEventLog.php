@@ -36,7 +36,7 @@ final class JsonlRunEventLog
         private readonly LockFactory $lockFactory,
         private readonly RunSequenceAllocatorInterface $sequenceAllocator,
         private readonly EventLogMaxSeqBootstrapReader $bootstrapReader,
-        \Psr\Log\LoggerInterface $logger,
+        private readonly \Psr\Log\LoggerInterface $logger,
     ) {
         $this->historyIndex = new RunHistoryIndex($lockFactory, $logger);
     }
@@ -453,6 +453,39 @@ final class JsonlRunEventLog
     public function indexedLines(string $path, string $runId, int $startSeq, int $endSeq): iterable
     {
         return $this->historyIndex->records($this, $path, $runId, $startSeq, $endSeq);
+    }
+
+    /** @return array{sequence: int, end_offset: int, anchor: int}|null */
+    public function historyCut(string $path, string $runId, ?int $positionTurnNo = null): ?array
+    {
+        return $this->historyIndex->cut($this, $path, $runId, $positionTurnNo);
+    }
+
+    /** @return \Generator<int, RunEvent> */
+    public function selectedEvents(string $path, string $runId, int $sequence, int $anchor): \Generator
+    {
+        $decoded = false;
+        foreach ($this->historyIndex->locatedRecords($this, $path, $runId, 1, $sequence, $anchor, true) as [, $record]) {
+            if ($this->isIncompatibleSchemaVersion($record)) {
+                $this->logger->warning('session_replay.incompatible_schema_record', [
+                    'run_id' => $runId, 'session_id' => $runId, 'component' => 'session_replay',
+                    'event_type' => 'session_replay.incompatible_schema_record', 'sequence' => $record['seq'],
+                ]);
+                unset($record);
+                continue;
+            }
+            $event = $this->denormalizeRunEvent($record);
+            if (null === $event) {
+                throw new \RuntimeException('Canonical replay record cannot be decoded.');
+            }
+            $decoded = true;
+            unset($record);
+            yield $event;
+            unset($event);
+        }
+        if (!$decoded) {
+            throw new \RuntimeException('Known canonical history has no compatible replay records.');
+        }
     }
 
     /**

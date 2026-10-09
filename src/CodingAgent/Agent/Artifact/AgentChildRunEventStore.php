@@ -157,6 +157,11 @@ final class AgentChildRunEventStore implements \Ineersa\AgentCore\Contract\Prepa
         $this->eventLog->assertTransitionReady($this->eventsPath(), $runId);
     }
 
+    public function historySource(): \Ineersa\CodingAgent\Session\RunHistorySourceDTO
+    {
+        return new \Ineersa\CodingAgent\Session\RunHistorySourceDTO($this->eventLog, $this->eventsPath());
+    }
+
     public function latestSequenceFor(string $runId): ?int
     {
         foreach ($this->reverseFor($runId) as $event) {

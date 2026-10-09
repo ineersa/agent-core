@@ -17,7 +17,7 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
  *
  * Child run location uses AgentChildRunDirectory.
  */
-final class ChildAwareEventStore implements \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface
+final class ChildAwareEventStore implements \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface, \Ineersa\CodingAgent\Session\Contract\RunHistorySourceProviderInterface
 {
     /** @var array<string, AgentChildRunEventStore> agentRunId → store */
     private array $childStores = [];
@@ -75,6 +75,19 @@ final class ChildAwareEventStore implements \Ineersa\AgentCore\Contract\Prepared
             throw new \LogicException('Configured canonical store lacks transition preparation.');
         }
         $store->assertTransitionReady($runId);
+    }
+
+    public function historySource(string $runId): \Ineersa\CodingAgent\Session\RunHistorySourceDTO
+    {
+        $child = $this->resolveChildStore($runId);
+        if (null !== $child) {
+            return $child->historySource();
+        }
+        if (!$this->parentStore instanceof \Ineersa\CodingAgent\Session\SessionRunEventStore) {
+            throw new \LogicException('Indexed replay requires the configured canonical session store.');
+        }
+
+        return $this->parentStore->historySource($runId);
     }
 
     public function latestSequenceFor(string $runId): ?int
