@@ -7,6 +7,7 @@ namespace Ineersa\AgentCore\Tests\Infrastructure\SymfonyAi;
 use Ineersa\AgentCore\Contract\Hook\BeforeProviderRequestHookInterface;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Hook\ConvertToLlmHookInterface;
+use Ineersa\AgentCore\Contract\Hook\LlmStreamObserverInterface;
 use Ineersa\AgentCore\Contract\Hook\TransformContextHookInterface;
 use Ineersa\AgentCore\Contract\Model\ModelResolverInterface;
 use Ineersa\AgentCore\Contract\RunOperationalStatusDTO;
@@ -613,8 +614,15 @@ final class PlatformIntegrationTest extends TestCase
         $this->assertNull($result->assistantMessage);
     }
 
-    public function testRepeatedThinkingSegmentsRemainCumulativeInStreamAndCanonicalMessage(): void
+    public function testRepeatedThinkingSegmentsPreserveNativePartsAndCumulativeObserverText(): void
     {
+        $observedCompletions = [];
+        $observer = $this->createMock(LlmStreamObserverInterface::class);
+        $observer->expects($this->exactly(7))->method('onDelta')->willReturnCallback(static function (string $runId, ?string $stepId, DeltaInterface $delta) use (&$observedCompletions): void {
+            if ($delta instanceof ThinkingComplete) {
+                $observedCompletions[] = $delta->getThinking();
+            }
+        });
         $adapter = $this->createAdapter(streamFactory: static fn (): iterable => [
             new ThinkingStart(),
             new ThinkingDelta("First reasoning summary.\n"),
@@ -624,9 +632,9 @@ final class PlatformIntegrationTest extends TestCase
             new ThinkingDelta("First reasoning summary.\nRefined independently."),
             new ThinkingComplete("First reasoning summary.\nRefined independently."),
             // Final text keeps this out of the thinking-only retry path while still
-            // proving cumulative ThinkingComplete rewriting above.
+            // proving native reconstruction and cumulative observer completions.
             new TextDelta('done'),
-        ]);
+        ], streamObserver: $observer);
 
         $response = $adapter->invoke(new ModelInvocationRequest(
             model: 'gpt-test',
@@ -642,12 +650,17 @@ final class PlatformIntegrationTest extends TestCase
         ));
         $this->assertCount(2, $completions);
         $this->assertSame("First reasoning summary.\n", $completions[0]->getThinking());
+        $this->assertSame("First reasoning summary.\nRefined independently.", $completions[1]->getThinking());
         $expectedThinking = "First reasoning summary.\nFirst reasoning summary.\nRefined independently.";
-        $this->assertSame($expectedThinking, $completions[1]->getThinking());
+        $this->assertSame(["First reasoning summary.\n", $expectedThinking], $observedCompletions);
 
         $thinking = $response->assistantMessage?->getThinking() ?? [];
-        $this->assertCount(1, $thinking);
-        $this->assertSame($expectedThinking, $thinking[0]->getContent());
+        $this->assertCount(2, $thinking);
+        $this->assertSame("First reasoning summary.\n", $thinking[0]->getContent());
+        $this->assertSame("First reasoning summary.\nRefined independently.", $thinking[1]->getContent());
+        $this->assertNotNull($response->assistantMessage);
+        $normalized = (new AgentMessageNormalizer())->assistantMessage($response->assistantMessage);
+        $this->assertSame($expectedThinking, $normalized->details['thinking'] ?? null);
     }
 
     public function testTwoFinalizedReasoningItemsReplayInFullHistory(): void
@@ -672,6 +685,7 @@ final class PlatformIntegrationTest extends TestCase
         $this->assertSame([
             ['type' => 'thinking', 'text' => 'first', 'thinking_signature' => json_encode($first, \JSON_THROW_ON_ERROR)],
             ['type' => 'thinking', 'text' => 'second', 'thinking_signature' => json_encode($second, \JSON_THROW_ON_ERROR)],
+            ['type' => 'tool_call', 'tool_call_index' => 0],
         ], $assistant->content);
 
         $assistant = AgentMessage::fromPayload($assistant->toArray());
@@ -748,6 +762,7 @@ final class PlatformIntegrationTest extends TestCase
             ['type' => 'thinking', 'text' => 'first', 'thinking_signature' => json_encode($first, \JSON_THROW_ON_ERROR)],
             ['type' => 'text', 'text' => 'commentary'],
             ['type' => 'thinking', 'text' => 'second', 'thinking_signature' => json_encode($second, \JSON_THROW_ON_ERROR)],
+            ['type' => 'tool_call', 'tool_call_index' => 0],
         ], $assistant->content);
 
         $assistant = AgentMessage::fromPayload($assistant->toArray());
@@ -1180,6 +1195,7 @@ final class PlatformIntegrationTest extends TestCase
         ?\Closure $streamFactory = null,
         iterable $transformHooks = [],
         iterable $convertHooks = [],
+        ?LlmStreamObserverInterface $streamObserver = null,
     ): LlmPlatformAdapter {
         $modelClient = new FakeSymfonyModelClient(new FakeTokenUsage());
         $platform = $this->createSymfonyPlatform($modelClient, $streamFactory ?? static function (): \Generator {
@@ -1210,7 +1226,7 @@ final class PlatformIntegrationTest extends TestCase
             platform: $platform,
             transformContextHooks: $transformHooks,
             convertToLlmHooks: $convertHooks,
-            streamObserver: null,
+            streamObserver: $streamObserver,
             costCalculator: null,
             modelResolver: null,
             logger: new NullLogger(),
