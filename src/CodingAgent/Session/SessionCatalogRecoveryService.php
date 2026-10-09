@@ -84,8 +84,7 @@ final class SessionCatalogRecoveryService
             // Event read/denormalization may fail for corrupt orphans — local degradation.
             // DB insert stays outside this catch so infrastructure failures hard-fail startup.
             try {
-                $events = $this->eventStore->allFor($sessionId);
-                $meta = $this->deriveMetadata($events);
+                $meta = $this->deriveMetadata($this->eventStore->rangeFor($sessionId, 1, \PHP_INT_MAX));
             } catch (\Throwable $e) {
                 $this->logger->warning('session_catalog_recovery.orphan_skipped', [
                     'component' => 'session_catalog_recovery',
@@ -176,7 +175,7 @@ final class SessionCatalogRecoveryService
     }
 
     /**
-     * @param list<RunEvent> $events
+     * @param iterable<RunEvent> $events
      *
      * @return array{
      *     cwd: string,
@@ -192,7 +191,7 @@ final class SessionCatalogRecoveryService
      *     updated_at: \DateTimeImmutable
      * }
      */
-    private function deriveMetadata(array $events): array
+    private function deriveMetadata(iterable $events): array
     {
         $prompt = null;
         $model = null;
