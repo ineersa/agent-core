@@ -395,10 +395,17 @@ final class HatfieldSessionStore
             throw new \RuntimeException(\sprintf('Session "%s" not found.', $sessionId));
         }
 
-        $this->dispatcher->dispatch(new ControllerSessionShutdownEvent($sessionId));
+        // Scope deletion to the DB-issued identity, including numeric aliases.
+        $sessionId = (string) $id;
 
-        $this->entityManager->remove($entity);
-        $this->entityManager->flush();
+        $connection = $this->entityManager->getConnection();
+        $connection->transactional(function () use ($sessionId, $entity): void {
+            // Permanent-deletion listeners remove pending SQL work before other
+            // shutdown listeners dispose child ownership evidence. Ordinary shutdown retains it.
+            $this->dispatcher->dispatch(new ControllerSessionShutdownEvent($sessionId, permanentDeletion: true));
+            $this->entityManager->remove($entity);
+            $this->entityManager->flush();
+        });
 
         $sessionDir = $this->getSessionDir($sessionId);
         (new Filesystem())->remove($sessionDir);

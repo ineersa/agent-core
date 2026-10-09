@@ -224,16 +224,6 @@ final class CountingEventStore implements EventStoreInterface
         $this->inner = $inner;
     }
 
-    public function append(RunEvent $event): RunEvent
-    {
-        return $this->inner->append($event);
-    }
-
-    public function appendMany(array $events): array
-    {
-        return $this->inner->appendMany($events);
-    }
-
     public function latestSequenceFor(string $runId): ?int
     {
         return $this->inner->latestSequenceFor($runId);

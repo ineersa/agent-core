@@ -26,7 +26,6 @@ use Symfony\AI\Platform\Result\ToolCall as SymfonyToolCall;
 use Symfony\AI\Platform\Tool\Tool;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Transport\Serialization\Serializer as MessengerSerializer;
-use Symfony\Component\Serializer\Normalizer\AbstractNormalizer;
 use Symfony\Component\Serializer\SerializerInterface;
 
 /**
@@ -132,7 +131,25 @@ final class ToolLaunchContextConfiguredBoundaryTest extends IsolatedKernelTestCa
 
         /** @var ToolBatchStoreInterface $store */
         $store = self::getContainer()->get(ToolBatchStoreInterface::class);
-        $store->save($runId, 4, 'step-fork', $batch);
+        $collector = self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\ToolBatchCollector::class);
+        \Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration::register(
+            $collector,
+            $store,
+            $runId,
+            4,
+            'step-fork',
+            [$forkCall, $ordinary],
+        );
+        // Preserve the HITL wait marker on the durable schedule for this boundary.
+        \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend(
+            $collector,
+            $store,
+            $runId,
+            4,
+            'step-fork',
+            'fork-1',
+            'q-fork',
+        );
         $loaded = $store->load($runId, 4, 'step-fork');
         $this->assertNotNull($loaded);
         $restoredFork = $loaded->calls['fork-1'];
@@ -144,13 +161,9 @@ final class ToolLaunchContextConfiguredBoundaryTest extends IsolatedKernelTestCa
         $restoredInput = $inputStore->read($restoredFork->launchContext);
         $this->assertCount(2, $restoredInput->forkMessages);
         $this->assertSame('AGENTS.md body', $restoredInput->forkMessages[0]->content[0]['text']);
-        $this->assertSame('q-fork', $restoredFork->humanInputAnswer?->questionId);
+        $this->assertNull($restoredFork->humanInputAnswer, 'A renewed suspension clears the previous approval.');
         $this->assertNull($loaded->calls['bash-1']->launchContext);
-
-        $this->assertSame(
-            $serializer->normalize($batch, null, [AbstractNormalizer::GROUPS => [ToolBatchStateDTO::SNAPSHOT_GROUP]]),
-            $serializer->normalize($loaded, null, [AbstractNormalizer::GROUPS => [ToolBatchStateDTO::SNAPSHOT_GROUP]]),
-        );
+        $this->assertSame(['fork-1' => 'q-fork'], $loaded->awaitingHumanInput);
     }
 
     public function testMismatchedLaunchContextFailsClosedBeforeToolboxExecution(): void

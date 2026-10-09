@@ -37,16 +37,6 @@ final class ExtensionSessionEventReaderTest extends TestCase
     public function testMapsRangeReadFailureToPublicException(): void
     {
         $reader = new ExtensionSessionEventReader(new class implements EventStoreInterface {
-            public function append(RunEvent $event): RunEvent
-            {
-                throw new \LogicException('not used');
-            }
-
-            public function appendMany(array $events): array
-            {
-                throw new \LogicException('not used');
-            }
-
             public function latestSequenceFor(string $runId): ?int
             {
                 throw new \LogicException('not used');

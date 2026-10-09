@@ -6,10 +6,8 @@ namespace Ineersa\AgentCore\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Handler\HookDispatcher;
 use Ineersa\AgentCore\Application\Handler\RunTracer;
-use Ineersa\AgentCore\Application\Handler\StepDispatcher;
-use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
-use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -19,12 +17,12 @@ final readonly class RunCommit
 {
     public function __construct(
         private ActiveRunContextInterface $activeRunContext,
-        private EventStoreInterface $eventStore,
-        private StepDispatcher $stepDispatcher,
+        private PreparedTransitionEventStoreInterface $eventStore,
         private LoggerInterface $logger,
-        private ToolBatchCollector $toolBatchCollector,
+        private TransitionFinalizer $finalizer,
         private ?HookDispatcher $hookDispatcher = null,
         private ?RunTracer $tracer = null,
+        private \Ineersa\AgentCore\Application\Handler\CoordinationActionValidator $actionValidator = new \Ineersa\AgentCore\Application\Handler\CoordinationActionValidator(),
     ) {
     }
 
@@ -35,53 +33,56 @@ final readonly class RunCommit
      *
      * @param list<RunEvent> $events
      * @param list<object>   $effects
+     * @param list<object>   $postCommitEffects
+     * @param list<object>   $postCommitActions
      */
-    public function commit(RunState $state, RunState $nextState, array $events, array $effects = [], bool $dispatchAfterTurnHooks = true): RunState
+    public function commit(RunState $state, RunState $nextState, array $events, array $effects = [], bool $dispatchAfterTurnHooks = true, array $postCommitEffects = [], array $postCommitActions = []): RunState
     {
-        $persist = function () use ($nextState, $events, $effects, $dispatchAfterTurnHooks): RunState {
+        $this->assertTransitionReady($state->runId);
+        $afterTurnActions = [];
+        if ($dispatchAfterTurnHooks) {
+            $afterTurnActions = $this->hookDispatcher?->prepareAfterTurnCommit(
+                AfterTurnCommitHookContext::fromRunState($nextState, $events, \count($effects)), $state->lastSeq,
+            ) ?? [];
+        }
+        foreach ([...$postCommitActions, ...$afterTurnActions] as $action) {
+            $this->actionValidator->validate($action);
+        }
+        $persist = function () use ($state, $nextState, $events, $effects, $afterTurnActions, $dispatchAfterTurnHooks, $postCommitEffects, $postCommitActions): RunState {
             /** @var list<RunEvent> $persistedEvents */
             $persistedEvents = [];
-            if ([] !== $events) {
-                $persistedEvents = 1 === \count($events)
-                    ? [$this->eventStore->append($events[0])]
-                    : $this->eventStore->appendMany($events);
+            if ([] !== $events || [] !== $effects || [] !== $postCommitEffects || [] !== $postCommitActions || [] !== $afterTurnActions) {
+                $persistedEvents = $this->eventStore->appendTransition($events, ['run_id' => $nextState->runId, 'predecessor_seq' => $state->lastSeq, 'effects' => $effects, 'post_commit_effects' => $postCommitEffects, 'actions' => $postCommitActions, 'after_turn_actions' => $afterTurnActions]);
+            }
+            $verifiedSource = $this->eventStore->verifiedPendingTransition($nextState->runId);
+            if (null !== $verifiedSource) {
+                $postCommitActions = $verifiedSource->work['actions'] ?? [];
+                $afterTurnActions = $verifiedSource->work['after_turn_actions'] ?? [];
+                foreach ([...$postCommitActions, ...$afterTurnActions] as $action) {
+                    $this->actionValidator->validate($action);
+                }
             }
 
             $committedState = $nextState;
             if ([] !== $persistedEvents) {
                 $lastPersisted = $persistedEvents[array_key_last($persistedEvents)];
                 $committedState = $nextState->with([
-                    // This is a bounded diagnostic/projection counter only;
-                    // session-owner serialization replaces CAS authority.
                     'version' => $nextState->version + 1,
                     'lastSeq' => $lastPersisted->seq,
                 ]);
             }
 
-            // replaceCurrent() persists the narrow projection before publishing the
-            // full state in memory and invalidates memory if persistence fails.
             $this->activeRunContext->replaceCurrent($committedState);
-
-            $this->toolBatchCollector->releaseAfterCommit($committedState, $persistedEvents);
-
             $this->logCommittedEvents($committedState, $persistedEvents);
 
-            if ([] !== $effects) {
-                try {
-                    $this->stepDispatcher->dispatchEffects($effects);
-                } catch (\Throwable $exception) {
-                    $this->logger->warning('Effect dispatch failed after successful commit (best-effort)', [
-                        'run_id' => $committedState->runId,
-                        'turn_no' => $committedState->turnNo,
-                        'step_id' => $committedState->activeStepId,
-                        'effects_count' => \count($effects),
-                        'exception' => $exception,
-                    ]);
-                }
-            }
+            $this->finalizer->complete(
+                $committedState->runId,
+                $verifiedSource,
+                [...$effects, ...$postCommitEffects],
+                $postCommitActions,
+                $afterTurnActions,
+            );
 
-            // History maintenance publishes canonical state without scheduling a
-            // completed-turn continuation, matching its former raw-append semantics.
             if (!$dispatchAfterTurnHooks) {
                 return $committedState;
             }
@@ -113,6 +114,11 @@ final readonly class RunCommit
             'event_count' => \count($events),
             'effects_count' => \count($effects),
         ], $persist);
+    }
+
+    public function assertTransitionReady(string $runId): void
+    {
+        $this->eventStore->assertTransitionReady($runId);
     }
 
     /** @param list<RunEvent> $events */

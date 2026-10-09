@@ -10,7 +10,6 @@ use Ineersa\AgentCore\Domain\Message\CompactionStepResult;
 use Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
-use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Message\AssistantMessage;
 use Symfony\AI\Platform\Message\Content\Text;
@@ -20,8 +19,8 @@ use Symfony\AI\Platform\Message\Content\Text;
  *
  * Theses:
  *  - Invokes PlatformInterface with toolsEnabled:false, streamObserverEnabled:false, and explicit model+modelOptions.
- *  - Dispatches CompactionStepResult with summary text on success.
- *  - Dispatches CompactionStepResult with error on model failure.
+ *  - Returns CompactionStepResult with summary text on success.
+ *  - Returns CompactionStepResult with error on model failure.
  *  - Passes explicit model string through to the returned result.
  */
 final class ExecuteCompactionStepWorkerTest extends TestCase
@@ -35,10 +34,8 @@ final class ExecuteCompactionStepWorkerTest extends TestCase
         $this->assertSame($responseText, $assistantMsg->asText(), 'AssistantMessage::asText() precondition');
 
         $fakePlatform = $this->createFakePlatform($responseText, model: 'openai/gpt-4.1-mini', captureRequest: true);
-        $testBus = new TestMessageBus();
-
-        $worker = new ExecuteCompactionStepWorker($fakePlatform, $testBus);
-        $worker(new ExecuteCompactionStep(
+        $worker = new ExecuteCompactionStepWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), $fakePlatform);
+        $result = $worker(new ExecuteCompactionStep(
             runId: 'run-1',
             turnNo: 5,
             stepId: 'step-compact-1',
@@ -55,11 +52,6 @@ final class ExecuteCompactionStepWorkerTest extends TestCase
             trigger: 'manual',
         ));
 
-        // Dispatched one message to the command bus.
-        $this->assertCount(1, $testBus->messages);
-
-        /** @var CompactionStepResult $result */
-        $result = $testBus->messages[0];
         $this->assertInstanceOf(CompactionStepResult::class, $result);
         $this->assertSame('summary text', $result->summaryText);
         $this->assertNull($result->error);
@@ -81,10 +73,8 @@ final class ExecuteCompactionStepWorkerTest extends TestCase
     public function testExplicitModelPassedInResult(): void
     {
         $fakePlatform = $this->createFakePlatform('ok', model: 'llama_cpp/flash');
-        $testBus = new TestMessageBus();
-
-        $worker = new ExecuteCompactionStepWorker($fakePlatform, $testBus);
-        $worker(new ExecuteCompactionStep(
+        $worker = new ExecuteCompactionStepWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), $fakePlatform);
+        $result = $worker(new ExecuteCompactionStep(
             runId: 'run-1',
             turnNo: 5,
             stepId: 'step-2',
@@ -100,23 +90,16 @@ final class ExecuteCompactionStepWorkerTest extends TestCase
             tokenEstimateBefore: 0,
             trigger: 'manual',
         ));
-
-        $this->assertCount(1, $testBus->messages);
-
-        /** @var CompactionStepResult $result */
-        $result = $testBus->messages[0];
         $this->assertSame('llama_cpp/flash', $result->model);
         $this->assertSame([], $result->modelOptions);
     }
 
-    public function testModelErrorDispatchesResultWithError(): void
+    public function testModelErrorReturnsResultWithError(): void
     {
         $errorPayload = ['type' => 'RuntimeException', 'message' => 'Simulated failure'];
         $fakePlatform = $this->createFakePlatformWithError($errorPayload);
-        $testBus = new TestMessageBus();
-
-        $worker = new ExecuteCompactionStepWorker($fakePlatform, $testBus);
-        $worker(new ExecuteCompactionStep(
+        $worker = new ExecuteCompactionStepWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), $fakePlatform);
+        $result = $worker(new ExecuteCompactionStep(
             runId: 'run-1',
             turnNo: 5,
             stepId: 'step-3',
@@ -132,24 +115,17 @@ final class ExecuteCompactionStepWorkerTest extends TestCase
             tokenEstimateBefore: 0,
             trigger: 'manual',
         ));
-
-        $this->assertCount(1, $testBus->messages);
-
-        /** @var CompactionStepResult $result */
-        $result = $testBus->messages[0];
         $this->assertNull($result->summaryText);
         $this->assertNotNull($result->error);
         $this->assertSame('RuntimeException', $result->error['type']);
         $this->assertSame('Simulated failure', $result->error['message']);
     }
 
-    public function testPlatformExceptionDispatchesErrorResult(): void
+    public function testPlatformExceptionReturnsErrorResult(): void
     {
         $fakePlatform = $this->createFakePlatformThatThrows(new \RuntimeException('Boom'));
-        $testBus = new TestMessageBus();
-
-        $worker = new ExecuteCompactionStepWorker($fakePlatform, $testBus);
-        $worker(new ExecuteCompactionStep(
+        $worker = new ExecuteCompactionStepWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), $fakePlatform);
+        $result = $worker(new ExecuteCompactionStep(
             runId: 'run-1',
             turnNo: 5,
             stepId: 'step-4',
@@ -165,11 +141,6 @@ final class ExecuteCompactionStepWorkerTest extends TestCase
             tokenEstimateBefore: 0,
             trigger: 'manual',
         ));
-
-        $this->assertCount(1, $testBus->messages);
-
-        /** @var CompactionStepResult $result */
-        $result = $testBus->messages[0];
         $this->assertNull($result->summaryText);
         $this->assertNotNull($result->error);
         $this->assertSame(\RuntimeException::class, $result->error['type']);

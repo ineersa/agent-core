@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Migrations;
 use DoctrineMigrations\Version20261004192458;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Recovery\DeferredSubagentBatchRecoveryService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
@@ -85,11 +86,11 @@ final class Version20261004192458Test extends IsolatedKernelTestCase
             'agentName' => 'fork', 'task' => 'old task', 'launchModel' => 'test/model', 'launchReasoning' => 'medium',
         ]]);
         $store = $container->get(AgentChildRunEventStoreFactory::class)->create('migration-parent', $childId, 'agent_resume');
-        $store->append(RunEvent::forAppend($childId, 1, 'llm_step_completed', [
+        PreparedEventStoreSeeder::append($store, RunEvent::forAppend($childId, 1, 'llm_step_completed', [
             'usage' => ['input_tokens' => 100, 'output_tokens' => 10, 'total_tokens' => 110, 'cost' => 0.1],
             'assistant_message' => ['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'old result']]],
         ]));
-        $terminal = $store->append(RunEvent::forAppend($childId, 1, 'agent_end', ['reason' => 'completed']));
+        $terminal = PreparedEventStoreSeeder::append($store, RunEvent::forAppend($childId, 1, 'agent_end', ['reason' => 'completed']));
         $legacy = new DeferredChildRunLifecycleProjectionDTO(
             RunStatus::Completed, 1, $terminal->seq, 'test/model', 'medium',
             assistantResultText: 'old result', llmStepCount: 1, inputTokens: 100,
@@ -102,8 +103,8 @@ final class Version20261004192458Test extends IsolatedKernelTestCase
         $repository->rebindExistingChildToResumeBatch('resume-batch', 1, $childId, 'agent_resume', 'fork', 'resume task', 'test/model', 'medium');
         $recovery = $container->get(DeferredSubagentBatchRecoveryService::class);
         if ($resultCommitted) {
-            $store->append(RunEvent::forAppend($childId, 2, 'agent_command_queued', ['kind' => \Ineersa\AgentCore\Domain\Command\CoreCommandKind::FollowUp]));
-            $store->append(RunEvent::forAppend($childId, 2, 'llm_step_completed', [
+            PreparedEventStoreSeeder::append($store, RunEvent::forAppend($childId, 2, 'agent_command_queued', ['kind' => \Ineersa\AgentCore\Domain\Command\CoreCommandKind::FollowUp]));
+            PreparedEventStoreSeeder::append($store, RunEvent::forAppend($childId, 2, 'llm_step_completed', [
                 'usage' => ['input_tokens' => 20, 'output_tokens' => 2, 'total_tokens' => 22, 'cost' => 0.02, 'cache_read_tokens' => 18],
                 'assistant_message' => ['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'resumed result']]],
             ]));

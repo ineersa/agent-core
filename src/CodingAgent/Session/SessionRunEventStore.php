@@ -18,7 +18,7 @@ use Symfony\Component\Lock\LockFactory;
  * .hatfield/sessions/<runId>/events.jsonl.
  *
  * Sequence allocation uses a per-run {@see FileRunSequenceAllocator::COUNTER_BASENAME} file.
- * events.jsonl is never scanned during normal append (only bootstrap when cursor is missing).
+ * events.jsonl is never scanned during normal prepared transition append (only bootstrap when cursor is missing).
  *
  * Append/sequence/bootstrap mechanics and the decode/denormalize/schema/sort
  * primitives are delegated to {@see JsonlRunEventLog}; this class owns the
@@ -31,7 +31,7 @@ use Symfony\Component\Lock\LockFactory;
  * this process, and retaining every decoded body after resume kept obsolete
  * pre-compaction payloads hot for the TUI lifetime.
  */
-final class SessionRunEventStore implements EventStoreInterface
+final class SessionRunEventStore implements \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface
 {
     private readonly string $sessionsBasePath;
     private readonly JsonlRunEventLog $eventLog;
@@ -48,29 +48,40 @@ final class SessionRunEventStore implements EventStoreInterface
         $this->eventLog = new JsonlRunEventLog($eventPayloadNormalizer, $lockFactory, $sequenceAllocator, $bootstrapReader);
     }
 
-    public function append(RunEvent $event): RunEvent
-    {
-        $path = $this->eventsPath($event->runId);
-
-        return $this->eventLog->appendMany($path, events: [$event])[0];
-    }
-
-    public function appendMany(array $events): array
+    public function appendTransition(array $events, array $work): array
     {
         if ([] === $events) {
-            return [];
+            if (!\is_string($work['run_id'] ?? null)) {
+                throw new \InvalidArgumentException('Prepared decision requires run identity.');
+            }
         }
-
-        $runId = $events[0]->runId;
         foreach ($events as $event) {
-            if ($event->runId !== $runId) {
-                throw new \InvalidArgumentException('appendMany requires all events to share the same runId.');
+            if ($event->runId !== $events[0]->runId) {
+                throw new \InvalidArgumentException('Transition events have inconsistent run identity.');
             }
         }
 
-        $path = $this->eventsPath($runId);
+        return $this->eventLog->appendMany($this->eventsPath($events[0]->runId ?? $work['run_id']), $events, work: $work);
+    }
 
-        return $this->eventLog->appendMany($path, $events);
+    public function verifiedPendingTransition(string $runId): ?\Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO
+    {
+        return $this->eventLog->verifiedPendingTransition($this->eventsPath($runId), $runId);
+    }
+
+    public function verifiedPendingBatch(string $runId, string $identity): array
+    {
+        return $this->eventLog->verifiedPendingBatch($this->eventsPath($runId), $runId, $identity);
+    }
+
+    public function finalizeVerifiedTransition(string $runId, string $identity): void
+    {
+        $this->eventLog->finalizeVerifiedTransition($this->eventsPath($runId), $runId, $identity);
+    }
+
+    public function assertTransitionReady(string $runId): void
+    {
+        $this->eventLog->assertTransitionReady($this->eventsPath($runId), $runId);
     }
 
     public function latestSequenceFor(string $runId): ?int

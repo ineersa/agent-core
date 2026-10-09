@@ -29,12 +29,14 @@ use Ineersa\AgentCore\Domain\Message\StartRunPayload;
 use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
+use Ineersa\AgentCore\Tests\Support\InMemoryCommandStore;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
+use Ineersa\AgentCore\Tests\Support\TestToolBatchStore;
+use Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
@@ -109,7 +111,13 @@ final class CommandMailboxPolicyTest extends TestCase
 
         $llmSteps = array_values(array_filter(
             $fixture->executionBus->messages,
-            static fn (object $message): bool => $message instanceof ExecuteLlmStep,
+            static function (object $message): bool {
+                if ($message instanceof \Symfony\Component\Messenger\Envelope) {
+                    $message = $message->getMessage();
+                }
+
+                return $message instanceof ExecuteLlmStep;
+            },
         ));
         $this->assertCount(1, $llmSteps, 'Turn-start must schedule exactly one LLM continuation for the drained batch.');
     }
@@ -204,13 +212,14 @@ final class CommandMailboxPolicyTest extends TestCase
         $this->assertCount(1, $appliedFollowUp);
 
         // shouldContinue should have dispatched a follow-up AdvanceRun
-        $advanceCommands = array_values(array_filter(
+        $stopBoundaryAdvances = array_values(array_filter(
             $fixture->commandBus->messages,
-            static fn (object $message): bool => $message instanceof AdvanceRun,
+            static fn (object $message): bool => $message instanceof AdvanceRun
+                && str_starts_with($message->stepId(), 'stop-boundary-follow-up-'),
         ));
-        // Only one from stop-boundary shouldContinue (ApplyCommandHandler no
-        // longer dispatches AdvanceRun while the run is active).
-        $this->assertCount(1, $advanceCommands);
+        // Exactly one stop-boundary continuation. StartRun also schedules an
+        // initial AdvanceRun onto the shared observation bus; ignore that kickoff.
+        $this->assertCount(1, $stopBoundaryAdvances);
     }
 
     public function testStopBoundaryDrainsAllQueuedSteersFifoWithOneAdvanceRun(): void
@@ -273,12 +282,14 @@ final class CommandMailboxPolicyTest extends TestCase
 
         $this->assertSame([], $fixture->commandStore->pending($runId));
 
-        $advanceCommands = array_values(array_filter(
+        $stopBoundaryAdvances = array_values(array_filter(
             $fixture->commandBus->messages,
-            static fn (object $message): bool => $message instanceof AdvanceRun,
+            static fn (object $message): bool => $message instanceof AdvanceRun
+                && str_starts_with($message->stepId(), 'stop-boundary-follow-up-'),
         ));
         // Exactly one stop-boundary continuation for the drained batch.
-        $this->assertCount(1, $advanceCommands);
+        // Ignore StartRun's initial AdvanceRun on the shared observation bus.
+        $this->assertCount(1, $stopBoundaryAdvances);
     }
 
     public function testStopBoundaryReturnsFalseWhenNoCommandsPending(): void
@@ -316,12 +327,14 @@ final class CommandMailboxPolicyTest extends TestCase
         // shouldContinue=false should complete the run
         $this->assertSame(RunStatus::Completed, $state->status);
 
-        // No follow-up AdvanceRun should have been dispatched
-        $advanceCommands = array_values(array_filter(
+        // No stop-boundary follow-up AdvanceRun should have been dispatched.
+        // StartRun still schedules its initial AdvanceRun on the shared observation bus.
+        $stopBoundaryAdvances = array_values(array_filter(
             $fixture->commandBus->messages,
-            static fn (object $message): bool => $message instanceof AdvanceRun,
+            static fn (object $message): bool => $message instanceof AdvanceRun
+                && str_starts_with($message->stepId(), 'stop-boundary-follow-up-'),
         ));
-        $this->assertCount(0, $advanceCommands);
+        $this->assertCount(0, $stopBoundaryAdvances);
     }
 
     public function testMailboxApplicationJoinsMultipartTextWithNewline(): void
@@ -391,7 +404,7 @@ final class CommandMailboxPolicyTest extends TestCase
         $this->assertSame('Invalid command payload: missing message envelope.', $rejected[0]['payload']['reason']);
         $this->assertSame('env-malformed', $rejected[1]['payload']['idempotency_key']);
         $this->assertSame('Invalid command payload: malformed message envelope.', $rejected[1]['payload']['reason']);
-        $this->assertSame([], $commandStore->pending($runId), 'Both commands are marked rejected, not left pending.');
+        $this->assertCount(2, $commandStore->pending($runId), 'Preparation must retain commands until canonical acceptance.');
     }
 
     private function currentTurnNo(CommandMailboxFixture $fixture, string $runId): int
@@ -411,28 +424,32 @@ final class CommandMailboxPolicyTest extends TestCase
         $commandBus = new TestMessageBus();
         $executionBus = new TestMessageBus();
 
-        $stepDispatcher = new StepDispatcher(new TestMessageBus(), $executionBus);
         $commandRouter = new CommandRouter([]);
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
-        $toolBatchCollector = new ToolBatchCollector();
+        $toolBatchCollector = new ToolBatchCollector($batchStore = new TestToolBatchStore());
+        $stepDispatcher = new StepDispatcher($commandBus, $executionBus, new \Ineersa\AgentCore\Tests\Support\TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher());
 
         $runCommit = new RunCommit(
             activeRunContext: $activeRunContext,
             eventStore: $eventStore,
-            stepDispatcher: $stepDispatcher,
             logger: new NullLogger(),
-            toolBatchCollector: $toolBatchCollector,
             hookDispatcher: null,
+            finalizer: TestTransitionFinalizerFactory::create(
+                $eventStore,
+                $stepDispatcher,
+                batches: $batchStore,
+                commands: $commandStore,
+            ),
         );
 
         $runMessageProcessor = new RunMessageProcessor(
             activeRunContext: $activeRunContext,
             runLockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
             runCommit: $runCommit,
-            stepDispatcher: $stepDispatcher,
+            commands: $commandStore,
             handlers: [
                 new StartRunHandler(
                     eventFactory: new \Ineersa\AgentCore\Domain\Event\EventFactory(),
@@ -445,21 +462,18 @@ final class CommandMailboxPolicyTest extends TestCase
                     eventFactory: new \Ineersa\AgentCore\Domain\Event\EventFactory(),
                     messageNormalizer: new \Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer(),
                     maxPendingCommands: $maxPendingCommands,
-                    commandBus: $commandBus,
                 ),
                 new AdvanceRunHandler(
                     commandMailboxPolicy: $commandMailboxPolicy,
                     eventFactory: new \Ineersa\AgentCore\Domain\Event\EventFactory(),
                 ),
                 new LlmStepResultHandler(
-                    toolBatchCollector: $toolBatchCollector,
                     commandMailboxPolicy: $commandMailboxPolicy,
                     eventFactory: new \Ineersa\AgentCore\Domain\Event\EventFactory(),
                     toolCallExtractor: new \Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor(),
                     messageNormalizer: new \Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer(),
-                    stepDispatcher: $stepDispatcher,
                     normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
-                    commandBus: $commandBus,
+                    toolBatchCollector: $toolBatchCollector,
                 ),
                 new ToolCallResultHandler(
                     toolBatchCollector: $toolBatchCollector,

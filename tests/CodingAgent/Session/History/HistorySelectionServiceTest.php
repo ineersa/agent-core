@@ -8,7 +8,6 @@ use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\RunStateDuplicateSequenceReplayException;
 use Ineersa\AgentCore\Application\Handler\RunStateReplayException;
 use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
-use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -54,7 +53,10 @@ final class HistorySelectionServiceTest extends TestCase
         ];
 
         $appended = [];
-        $eventStore = new class($events, $appended) implements EventStoreInterface {
+        $eventStore = new class($events, $appended) implements \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface {
+            /** @var array<string, \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO> */
+            private array $pending = [];
+
             /** @param list<RunEvent> $events */
             public function __construct(private array $events, private array &$appended)
             {
@@ -93,27 +95,57 @@ final class HistorySelectionServiceTest extends TestCase
                 return $this->events;
             }
 
-            public function append(RunEvent $event): RunEvent
-            {
-                $max = 0;
-                foreach ($this->events as $existing) {
-                    $max = max($max, $existing->seq);
-                }
-                $persisted = new RunEvent($event->runId, $max + 1, $event->turnNo, $event->type, $event->payload, $event->createdAt);
-                $this->events[] = $persisted;
-                $this->appended[] = $persisted;
-
-                return $persisted;
-            }
-
-            public function appendMany(array $events): array
+            public function appendTransition(array $events, array $work): array
             {
                 $out = [];
                 foreach ($events as $event) {
-                    $out[] = $this->append($event);
+                    $max = 0;
+                    foreach ($this->events as $existing) {
+                        $max = max($max, $existing->seq);
+                    }
+                    $persisted = new RunEvent($event->runId, $max + 1, $event->turnNo, $event->type, $event->payload, $event->createdAt);
+                    $this->events[] = $persisted;
+                    $this->appended[] = $persisted;
+                    $out[] = $persisted;
                 }
+                $runId = $work['run_id'] ?? ($out[0]->runId ?? null);
+                if (!\is_string($runId) || '' === $runId) {
+                    throw new \InvalidArgumentException('Prepared transition requires run identity.');
+                }
+                $this->pending[$runId] = new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(
+                    hash('sha256', serialize([$work, $out])),
+                    $work,
+                    array_map(static fn (RunEvent $event): int => $event->seq, $out),
+                );
 
                 return $out;
+            }
+
+            public function assertTransitionReady(string $runId): void
+            {
+            }
+
+            public function verifiedPendingTransition(string $runId): ?\Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO
+            {
+                return $this->pending[$runId] ?? null;
+            }
+
+            public function verifiedPendingBatch(string $runId, string $identity): array
+            {
+                $pending = $this->verifiedPendingTransition($runId);
+                if (null === $pending || $pending->identity !== $identity) {
+                    throw new \RuntimeException('Fixture transition identity mismatch.');
+                }
+
+                return [];
+            }
+
+            public function finalizeVerifiedTransition(string $runId, string $identity): void
+            {
+                if (($this->pending[$runId]->identity ?? null) !== $identity) {
+                    throw new \RuntimeException('Fixture transition identity mismatch.');
+                }
+                unset($this->pending[$runId]);
             }
         };
 
@@ -135,10 +167,15 @@ final class HistorySelectionServiceTest extends TestCase
             logger: new NullLogger(),
             historyProjector: new HistoryProjector(),
             replayEventPreparer: new ReplayEventPreparer(),
-            runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit($activeRunContext, $eventStore, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus()), new NullLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector()),
+            runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
+                activeRunContext: $activeRunContext,
+                eventStore: $eventStore,
+                logger: new NullLogger(),
+                finalizer: \Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory::create($eventStore, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus(), new \Ineersa\AgentCore\Tests\Support\TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher())),
+            ),
         );
 
-        $result = $service->selectPrompt($runId, 1);
+        $result = $service->selectPrompt($runId, 1, \Symfony\Component\Uid\Uuid::v4()->toRfc4122());
         $this->assertSame(0, $result['rebuiltState']->turnNo);
         $this->assertSame(1, $result['selectedPromptTurnNo']);
         $this->assertSame('First prompt', $result['editorPromptText']);
@@ -189,7 +226,10 @@ final class HistorySelectionServiceTest extends TestCase
         ];
 
         $appended = [];
-        $eventStore = new class($events, $appended) implements EventStoreInterface {
+        $eventStore = new class($events, $appended) implements \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface {
+            /** @var array<string, \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO> */
+            private array $pending = [];
+
             /** @param list<RunEvent> $events */
             public function __construct(private array $events, private array &$appended)
             {
@@ -228,27 +268,57 @@ final class HistorySelectionServiceTest extends TestCase
                 return $this->events;
             }
 
-            public function append(RunEvent $event): RunEvent
-            {
-                $max = 0;
-                foreach ($this->events as $existing) {
-                    $max = max($max, $existing->seq);
-                }
-                $persisted = new RunEvent($event->runId, $max + 1, $event->turnNo, $event->type, $event->payload, $event->createdAt);
-                $this->events[] = $persisted;
-                $this->appended[] = $persisted;
-
-                return $persisted;
-            }
-
-            public function appendMany(array $events): array
+            public function appendTransition(array $events, array $work): array
             {
                 $out = [];
                 foreach ($events as $event) {
-                    $out[] = $this->append($event);
+                    $max = 0;
+                    foreach ($this->events as $existing) {
+                        $max = max($max, $existing->seq);
+                    }
+                    $persisted = new RunEvent($event->runId, $max + 1, $event->turnNo, $event->type, $event->payload, $event->createdAt);
+                    $this->events[] = $persisted;
+                    $this->appended[] = $persisted;
+                    $out[] = $persisted;
                 }
+                $runId = $work['run_id'] ?? ($out[0]->runId ?? null);
+                if (!\is_string($runId) || '' === $runId) {
+                    throw new \InvalidArgumentException('Prepared transition requires run identity.');
+                }
+                $this->pending[$runId] = new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(
+                    hash('sha256', serialize([$work, $out])),
+                    $work,
+                    array_map(static fn (RunEvent $event): int => $event->seq, $out),
+                );
 
                 return $out;
+            }
+
+            public function assertTransitionReady(string $runId): void
+            {
+            }
+
+            public function verifiedPendingTransition(string $runId): ?\Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO
+            {
+                return $this->pending[$runId] ?? null;
+            }
+
+            public function verifiedPendingBatch(string $runId, string $identity): array
+            {
+                $pending = $this->verifiedPendingTransition($runId);
+                if (null === $pending || $pending->identity !== $identity) {
+                    throw new \RuntimeException('Fixture transition identity mismatch.');
+                }
+
+                return [];
+            }
+
+            public function finalizeVerifiedTransition(string $runId, string $identity): void
+            {
+                if (($this->pending[$runId]->identity ?? null) !== $identity) {
+                    throw new \RuntimeException('Fixture transition identity mismatch.');
+                }
+                unset($this->pending[$runId]);
             }
         };
 
@@ -270,10 +340,15 @@ final class HistorySelectionServiceTest extends TestCase
             logger: new NullLogger(),
             historyProjector: new HistoryProjector(),
             replayEventPreparer: new ReplayEventPreparer(),
-            runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit($activeRunContext, $eventStore, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus()), new NullLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector()),
+            runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
+                activeRunContext: $activeRunContext,
+                eventStore: $eventStore,
+                logger: new NullLogger(),
+                finalizer: \Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory::create($eventStore, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus(), new \Ineersa\AgentCore\Tests\Support\TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher())),
+            ),
         );
 
-        $result = $service->selectPrompt($runId, 2);
+        $result = $service->selectPrompt($runId, 2, \Symfony\Component\Uid\Uuid::v4()->toRfc4122());
         $this->assertSame(1, $result['rebuiltState']->turnNo);
         $this->assertSame(2, $result['selectedPromptTurnNo']);
         $this->assertSame('Middle prompt', $result['editorPromptText']);
@@ -307,7 +382,10 @@ final class HistorySelectionServiceTest extends TestCase
             new RunEvent($runId, 5, 3, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 3]),
         ];
 
-        $eventStore = new class($events) implements EventStoreInterface {
+        $eventStore = new class($events) implements \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface {
+            /** @var array<string, \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO> */
+            private array $pending = [];
+
             /** @param list<RunEvent> $events */
             public function __construct(private array $events)
             {
@@ -346,14 +424,46 @@ final class HistorySelectionServiceTest extends TestCase
                 return $this->events;
             }
 
-            public function append(RunEvent $event): RunEvent
+            public function appendTransition(array $events, array $work): array
             {
-                throw new \RuntimeException('append should not be called');
+                $runId = $work['run_id'] ?? ($events[0]->runId ?? null);
+                if (!\is_string($runId) || '' === $runId) {
+                    throw new \InvalidArgumentException('Prepared transition requires run identity.');
+                }
+                $this->pending[$runId] = new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(
+                    hash('sha256', serialize([$work, $events])),
+                    $work,
+                    array_map(static fn (RunEvent $event): int => $event->seq, $events),
+                );
+
+                return $events;
             }
 
-            public function appendMany(array $events): array
+            public function assertTransitionReady(string $runId): void
             {
-                throw new \RuntimeException('appendMany should not be called');
+            }
+
+            public function verifiedPendingTransition(string $runId): ?\Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO
+            {
+                return $this->pending[$runId] ?? null;
+            }
+
+            public function verifiedPendingBatch(string $runId, string $identity): array
+            {
+                $pending = $this->verifiedPendingTransition($runId);
+                if (null === $pending || $pending->identity !== $identity) {
+                    throw new \RuntimeException('Fixture transition identity mismatch.');
+                }
+
+                return [];
+            }
+
+            public function finalizeVerifiedTransition(string $runId, string $identity): void
+            {
+                if (($this->pending[$runId]->identity ?? null) !== $identity) {
+                    throw new \RuntimeException('Fixture transition identity mismatch.');
+                }
+                unset($this->pending[$runId]);
             }
         };
 
@@ -368,12 +478,17 @@ final class HistorySelectionServiceTest extends TestCase
             logger: new NullLogger(),
             historyProjector: new HistoryProjector(),
             replayEventPreparer: new ReplayEventPreparer(),
-            runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit($activeRunContext, $eventStore, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus()), new NullLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector()),
+            runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
+                activeRunContext: $activeRunContext,
+                eventStore: $eventStore,
+                logger: new NullLogger(),
+                finalizer: \Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory::create($eventStore, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus(), new \Ineersa\AgentCore\Tests\Support\TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher())),
+            ),
         );
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('not a selectable human prompt');
-        $service->selectPrompt($runId, 2);
+        $service->selectPrompt($runId, 2, \Symfony\Component\Uid\Uuid::v4()->toRfc4122());
     }
 
     public function testSelectPromptRejectsDuplicateSequences(): void
@@ -393,7 +508,10 @@ final class HistorySelectionServiceTest extends TestCase
             ]),
         ];
 
-        $eventStore = new class($events) implements EventStoreInterface {
+        $eventStore = new class($events) implements \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface {
+            /** @var array<string, \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO> */
+            private array $pending = [];
+
             /** @param list<RunEvent> $events */
             public function __construct(private array $events)
             {
@@ -432,14 +550,46 @@ final class HistorySelectionServiceTest extends TestCase
                 return $this->events;
             }
 
-            public function append(RunEvent $event): RunEvent
+            public function appendTransition(array $events, array $work): array
             {
-                throw new \LogicException('not expected');
+                $runId = $work['run_id'] ?? ($events[0]->runId ?? null);
+                if (!\is_string($runId) || '' === $runId) {
+                    throw new \InvalidArgumentException('Prepared transition requires run identity.');
+                }
+                $this->pending[$runId] = new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(
+                    hash('sha256', serialize([$work, $events])),
+                    $work,
+                    array_map(static fn (RunEvent $event): int => $event->seq, $events),
+                );
+
+                return $events;
             }
 
-            public function appendMany(array $events): array
+            public function assertTransitionReady(string $runId): void
             {
-                throw new \LogicException('not expected');
+            }
+
+            public function verifiedPendingTransition(string $runId): ?\Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO
+            {
+                return $this->pending[$runId] ?? null;
+            }
+
+            public function verifiedPendingBatch(string $runId, string $identity): array
+            {
+                $pending = $this->verifiedPendingTransition($runId);
+                if (null === $pending || $pending->identity !== $identity) {
+                    throw new \RuntimeException('Fixture transition identity mismatch.');
+                }
+
+                return [];
+            }
+
+            public function finalizeVerifiedTransition(string $runId, string $identity): void
+            {
+                if (($this->pending[$runId]->identity ?? null) !== $identity) {
+                    throw new \RuntimeException('Fixture transition identity mismatch.');
+                }
+                unset($this->pending[$runId]);
             }
         };
 
@@ -457,11 +607,16 @@ final class HistorySelectionServiceTest extends TestCase
             logger: new NullLogger(),
             historyProjector: new HistoryProjector(),
             replayEventPreparer: new ReplayEventPreparer(),
-            runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit($activeRunContext, $eventStore, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus()), new NullLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector()),
+            runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
+                activeRunContext: $activeRunContext,
+                eventStore: $eventStore,
+                logger: new NullLogger(),
+                finalizer: \Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory::create($eventStore, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus(), new \Ineersa\AgentCore\Tests\Support\TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher())),
+            ),
         );
 
         try {
-            $service->selectPrompt($runId, 1);
+            $service->selectPrompt($runId, 1, \Symfony\Component\Uid\Uuid::v4()->toRfc4122());
             $this->fail('Expected RunStateReplayException');
         } catch (RunStateReplayException $exception) {
             $this->assertInstanceOf(RunStateDuplicateSequenceReplayException::class, $exception);

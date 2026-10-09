@@ -24,9 +24,10 @@ use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
-use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
+use Ineersa\AgentCore\Tests\Support\InMemoryCommandStore;
 use Ineersa\AgentCore\Tests\Support\SymfonyAiTestMessages;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\AgentCore\Tests\Support\TestToolBatchStore;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Exception\ExceedContextSizeException;
 use Symfony\AI\Platform\Exception\ServerException;
@@ -36,11 +37,13 @@ final class LlmStepResultHandlerTest extends TestCase
     public function testHandleWithToolCallsReturnsPostCommitBatchRegistrationCallback(): void
     {
         $executionBus = new TestMessageBus();
-        $stepDispatcher = new StepDispatcher(new TestMessageBus(), $executionBus);
+        $stepDispatcher = new StepDispatcher($executionBus, $executionBus, new \Ineersa\AgentCore\Tests\Support\TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher());
 
         $commandStore = new InMemoryCommandStore();
+        $coordinationBatches = new TestToolBatchStore();
+        $coordinationCollector = new ToolBatchCollector($coordinationBatches);
+        $coordinationDispatcher = $stepDispatcher;
         $handler = new LlmStepResultHandler(
-            toolBatchCollector: new ToolBatchCollector(),
             commandMailboxPolicy: new CommandMailboxPolicy(
                 commandStore: $commandStore,
                 commandRouter: new CommandRouter([]),
@@ -48,8 +51,9 @@ final class LlmStepResultHandlerTest extends TestCase
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
-            stepDispatcher: $stepDispatcher,
+
             normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
+            toolBatchCollector: $coordinationCollector,
         );
 
         $state = new RunState(
@@ -112,9 +116,9 @@ final class LlmStepResultHandlerTest extends TestCase
 
         $this->assertSame([], $result->effects);
         $this->assertSame([], $result->postCommitEffects);
-        $this->assertCount(1, $result->postCommit);
+        $this->assertCount(1, $result->postCommitActions);
 
-        ($result->postCommit[0])();
+        \Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::run($result->postCommitActions[0], null, $coordinationCollector, $coordinationDispatcher, batches: $coordinationBatches);
 
         $this->assertCount(1, $executionBus->messages);
         $this->assertInstanceOf(ExecuteToolCall::class, $executionBus->messages[0]);
@@ -125,12 +129,14 @@ final class LlmStepResultHandlerTest extends TestCase
     public function testAbortedDoesNotAppendAssistantMessageToState(): void
     {
         $executionBus = new TestMessageBus();
-        $stepDispatcher = new StepDispatcher(new TestMessageBus(), $executionBus);
+        $stepDispatcher = new StepDispatcher($executionBus, $executionBus, new \Ineersa\AgentCore\Tests\Support\TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher());
         $commandBus = new TestMessageBus();
 
         $commandStore = new InMemoryCommandStore();
+        $coordinationBatches = new TestToolBatchStore();
+        $coordinationCollector = new ToolBatchCollector($coordinationBatches);
+        $coordinationDispatcher = $stepDispatcher;
         $handler = new LlmStepResultHandler(
-            toolBatchCollector: new ToolBatchCollector(),
             commandMailboxPolicy: new CommandMailboxPolicy(
                 commandStore: $commandStore,
                 commandRouter: new CommandRouter([]),
@@ -138,9 +144,9 @@ final class LlmStepResultHandlerTest extends TestCase
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
-            stepDispatcher: $stepDispatcher,
+
             normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
-            commandBus: $commandBus,
+            toolBatchCollector: $coordinationCollector,
         );
 
         $existingMessages = [
@@ -212,8 +218,8 @@ final class LlmStepResultHandlerTest extends TestCase
 
         // Match ToolCallResultHandler / immediate-cancel: wake AdvanceRun so a
         // queued AppendMessage can drain after AgentEnd(cancelled).
-        $this->assertCount(1, $result->postCommit);
-        ($result->postCommit[0])();
+        $this->assertCount(1, $result->postCommitActions);
+        \Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::run($result->postCommitActions[0], $commandBus, $coordinationCollector, $coordinationDispatcher, batches: $coordinationBatches);
         $this->assertCount(1, $commandBus->messages);
         $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\AdvanceRun::class, $commandBus->messages[0]);
         $this->assertStringStartsWith('post-cancel-advance-', $commandBus->messages[0]->stepId());
@@ -222,11 +228,10 @@ final class LlmStepResultHandlerTest extends TestCase
     public function testAbortedWithOnlyTextDoesNotAppendMessage(): void
     {
         $executionBus = new TestMessageBus();
-        $stepDispatcher = new StepDispatcher(new TestMessageBus(), $executionBus);
+        $stepDispatcher = new StepDispatcher($executionBus, $executionBus, new \Ineersa\AgentCore\Tests\Support\TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher());
 
         $commandStore = new InMemoryCommandStore();
         $handler = new LlmStepResultHandler(
-            toolBatchCollector: new ToolBatchCollector(),
             commandMailboxPolicy: new CommandMailboxPolicy(
                 commandStore: $commandStore,
                 commandRouter: new CommandRouter([]),
@@ -234,8 +239,9 @@ final class LlmStepResultHandlerTest extends TestCase
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
-            stepDispatcher: $stepDispatcher,
+
             normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
+            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
         );
 
         $existingMessages = [
@@ -299,7 +305,7 @@ final class LlmStepResultHandlerTest extends TestCase
     public function testStopBoundaryMailboxEffectsContainPendingCompact(): void
     {
         $executionBus = new TestMessageBus();
-        $stepDispatcher = new StepDispatcher(new TestMessageBus(), $executionBus);
+        $stepDispatcher = new StepDispatcher($executionBus, $executionBus, new \Ineersa\AgentCore\Tests\Support\TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher());
 
         $commandStore = new InMemoryCommandStore();
 
@@ -312,7 +318,6 @@ final class LlmStepResultHandlerTest extends TestCase
         ));
 
         $handler = new LlmStepResultHandler(
-            toolBatchCollector: new ToolBatchCollector(),
             commandMailboxPolicy: new CommandMailboxPolicy(
                 commandStore: $commandStore,
                 commandRouter: new CommandRouter([]),
@@ -320,8 +325,9 @@ final class LlmStepResultHandlerTest extends TestCase
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
-            stepDispatcher: $stepDispatcher,
+
             normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
+            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
         );
 
         $state = new RunState(
@@ -371,6 +377,10 @@ final class LlmStepResultHandlerTest extends TestCase
             'Stop-boundary effects must include the CompactRun dispatched from the mailbox drain.',
         );
 
+        foreach ($result->postCommitActions as $action) {
+            \Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::run($action, store: $commandStore, batches: new TestToolBatchStore());
+        }
+
         // Compact command should be marked applied in the store
         $this->assertCount(0, $commandStore->pending('run-stop-boundary-compact'),
             'Compact command must be drained (marked applied) from the store.',
@@ -380,11 +390,10 @@ final class LlmStepResultHandlerTest extends TestCase
     public function testErrorResultDoesNotAppendAssistantMessage(): void
     {
         $executionBus = new TestMessageBus();
-        $stepDispatcher = new StepDispatcher(new TestMessageBus(), $executionBus);
+        $stepDispatcher = new StepDispatcher($executionBus, $executionBus, new \Ineersa\AgentCore\Tests\Support\TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher());
 
         $commandStore = new InMemoryCommandStore();
         $handler = new LlmStepResultHandler(
-            toolBatchCollector: new ToolBatchCollector(),
             commandMailboxPolicy: new CommandMailboxPolicy(
                 commandStore: $commandStore,
                 commandRouter: new CommandRouter([]),
@@ -392,8 +401,9 @@ final class LlmStepResultHandlerTest extends TestCase
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
-            stepDispatcher: $stepDispatcher,
+
             normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
+            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
         );
 
         $existingMessages = [
@@ -477,11 +487,10 @@ final class LlmStepResultHandlerTest extends TestCase
     {
         $executionBus = new TestMessageBus();
         $commandBus = new TestMessageBus();
-        $stepDispatcher = new StepDispatcher(new TestMessageBus(), $executionBus);
+        $stepDispatcher = new StepDispatcher($executionBus, $executionBus, new \Ineersa\AgentCore\Tests\Support\TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher());
         $classifier = new \Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier();
 
         $handler = new LlmStepResultHandler(
-            toolBatchCollector: new ToolBatchCollector(),
             commandMailboxPolicy: new CommandMailboxPolicy(
                 commandStore: new InMemoryCommandStore(),
                 commandRouter: new CommandRouter([]),
@@ -489,9 +498,9 @@ final class LlmStepResultHandlerTest extends TestCase
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
-            stepDispatcher: $stepDispatcher,
+
             normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
-            commandBus: $commandBus,
+            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
         );
 
         $state = new RunState(
@@ -538,7 +547,7 @@ final class LlmStepResultHandlerTest extends TestCase
         );
         $this->assertFalse($result->events[0]->payload['retryable'] ?? true);
         $this->assertSame('failed', $result->events[1]->payload['reason'] ?? null);
-        $this->assertSame([], $result->postCommit);
+        $this->assertSame([], $result->postCommitActions);
         $this->assertSame([], $commandBus->messages);
     }
 
@@ -546,11 +555,13 @@ final class LlmStepResultHandlerTest extends TestCase
     {
         $executionBus = new TestMessageBus();
         $commandBus = new TestMessageBus();
-        $stepDispatcher = new StepDispatcher(new TestMessageBus(), $executionBus);
+        $stepDispatcher = new StepDispatcher($executionBus, $executionBus, new \Ineersa\AgentCore\Tests\Support\TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher());
         $classifier = new \Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier();
 
+        $coordinationBatches = new TestToolBatchStore();
+        $coordinationCollector = new ToolBatchCollector($coordinationBatches);
+        $coordinationDispatcher = $stepDispatcher;
         $handler = new LlmStepResultHandler(
-            toolBatchCollector: new ToolBatchCollector(),
             commandMailboxPolicy: new CommandMailboxPolicy(
                 commandStore: new InMemoryCommandStore(),
                 commandRouter: new CommandRouter([]),
@@ -558,9 +569,9 @@ final class LlmStepResultHandlerTest extends TestCase
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
-            stepDispatcher: $stepDispatcher,
+
             normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
-            commandBus: $commandBus,
+            toolBatchCollector: $coordinationCollector,
         );
 
         $error = $classifier->classify([
@@ -615,8 +626,8 @@ final class LlmStepResultHandlerTest extends TestCase
         $this->assertNotNull($failed, 'Context overflow must emit the normal LlmStepFailed event.');
         $this->assertFalse($failed->payload['retryable'] ?? true);
 
-        foreach ($result->postCommit as $callback) {
-            $callback();
+        foreach ($result->postCommitActions as $callback) {
+            \Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::run($callback, $commandBus, $coordinationCollector, $coordinationDispatcher, batches: $coordinationBatches);
         }
         foreach ($commandBus->messages as $dispatched) {
             $this->assertNotInstanceOf(CompactRun::class, $dispatched,
@@ -632,8 +643,10 @@ final class LlmStepResultHandlerTest extends TestCase
         $commandBus = new TestMessageBus();
         $classifier = new \Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier();
 
+        $coordinationBatches = new TestToolBatchStore();
+        $coordinationCollector = new ToolBatchCollector($coordinationBatches);
+        $coordinationDispatcher = new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new \Ineersa\AgentCore\Tests\Support\TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher());
         $handler = new LlmStepResultHandler(
-            toolBatchCollector: new ToolBatchCollector(),
             commandMailboxPolicy: new CommandMailboxPolicy(
                 commandStore: new InMemoryCommandStore(),
                 commandRouter: new CommandRouter([]),
@@ -641,9 +654,9 @@ final class LlmStepResultHandlerTest extends TestCase
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
-            stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
+
             normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
-            commandBus: $commandBus,
+            toolBatchCollector: $coordinationCollector,
         );
 
         // Application retry executor marks exhaustion as terminal before LlmStepResultHandler.
@@ -692,8 +705,8 @@ final class LlmStepResultHandlerTest extends TestCase
         );
         $this->assertSame('failed', $result->events[1]->payload['reason'] ?? null);
 
-        foreach ($result->postCommit as $callback) {
-            $callback();
+        foreach ($result->postCommitActions as $callback) {
+            \Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::run($callback, $commandBus, $coordinationCollector, $coordinationDispatcher, batches: $coordinationBatches);
         }
         $this->assertCount(0, $commandBus->messages);
     }
@@ -701,7 +714,7 @@ final class LlmStepResultHandlerTest extends TestCase
     public function testParallelToolCallsCarryConfiguredMaxParallelism(): void
     {
         $executionBus = new TestMessageBus();
-        $stepDispatcher = new StepDispatcher(new TestMessageBus(), $executionBus);
+        $stepDispatcher = new StepDispatcher($executionBus, $executionBus, new \Ineersa\AgentCore\Tests\Support\TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher());
 
         $toolSetResolver = new class implements ToolSetResolverInterface {
             public function resolve(string $toolsRef, ?int $turnNo = null, ?string $runId = null): ActiveToolSet
@@ -714,8 +727,10 @@ final class LlmStepResultHandlerTest extends TestCase
             }
         };
 
+        $coordinationBatches = new TestToolBatchStore();
+        $coordinationCollector = new ToolBatchCollector($coordinationBatches);
+        $coordinationDispatcher = $stepDispatcher;
         $handler = new LlmStepResultHandler(
-            toolBatchCollector: new ToolBatchCollector(),
             commandMailboxPolicy: new CommandMailboxPolicy(
                 commandStore: new InMemoryCommandStore(),
                 commandRouter: new CommandRouter([]),
@@ -723,8 +738,9 @@ final class LlmStepResultHandlerTest extends TestCase
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
-            stepDispatcher: $stepDispatcher,
+
             normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
+            toolBatchCollector: $coordinationCollector,
             toolSetResolver: $toolSetResolver,
             maxParallelism: 4,
         );
@@ -760,7 +776,7 @@ final class LlmStepResultHandlerTest extends TestCase
         );
 
         $result = $handler->handle($message, $state);
-        ($result->postCommit[0])();
+        \Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::run($result->postCommitActions[0], null, $coordinationCollector, $coordinationDispatcher, batches: $coordinationBatches);
 
         $this->assertCount(2, $executionBus->messages);
         foreach ($executionBus->messages as $dispatched) {
@@ -776,7 +792,7 @@ final class LlmStepResultHandlerTest extends TestCase
     public function testChildLaunchToolsAttachImmutableLaunchContextAndOrdinaryToolsStayNull(): void
     {
         $executionBus = new TestMessageBus();
-        $stepDispatcher = new StepDispatcher(new TestMessageBus(), $executionBus);
+        $stepDispatcher = new StepDispatcher($executionBus, $executionBus, new \Ineersa\AgentCore\Tests\Support\TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher());
         $toolSetResolver = new class implements ToolSetResolverInterface {
             public function resolve(string $toolsRef, ?int $turnNo = null, ?string $runId = null): ActiveToolSet
             {
@@ -805,8 +821,10 @@ final class LlmStepResultHandlerTest extends TestCase
                 return new \Ineersa\AgentCore\Domain\Tool\ToolLaunchInputReferenceDTO($kind, $runId, $turnNo, $stepId, $toolCallId, $model, str_repeat('a', 64), 100);
             },
         );
+        $coordinationBatches = new TestToolBatchStore();
+        $coordinationCollector = new ToolBatchCollector($coordinationBatches);
+        $coordinationDispatcher = $stepDispatcher;
         $handler = new LlmStepResultHandler(
-            toolBatchCollector: new ToolBatchCollector(),
             commandMailboxPolicy: new CommandMailboxPolicy(
                 commandStore: new InMemoryCommandStore(),
                 commandRouter: new CommandRouter([]),
@@ -814,8 +832,9 @@ final class LlmStepResultHandlerTest extends TestCase
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
-            stepDispatcher: $stepDispatcher,
+
             normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
+            toolBatchCollector: $coordinationCollector,
             toolSetResolver: $toolSetResolver,
             maxParallelism: 3,
             launchInputStore: $inputStore,
@@ -856,7 +875,7 @@ final class LlmStepResultHandlerTest extends TestCase
         );
 
         $result = $handler->handle($message, $state);
-        ($result->postCommit[0])();
+        \Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::run($result->postCommitActions[0], null, $coordinationCollector, $coordinationDispatcher, batches: $coordinationBatches);
         $this->assertCount(3, $executionBus->messages);
         $this->assertStringNotContainsString('OWNED_AGENTS', json_encode($result->events, \JSON_THROW_ON_ERROR));
 
@@ -882,9 +901,11 @@ final class LlmStepResultHandlerTest extends TestCase
     public function testBlankModelFailsOnlyForChildLaunchTools(): void
     {
         $executionBus = new TestMessageBus();
-        $stepDispatcher = new StepDispatcher(new TestMessageBus(), $executionBus);
+        $stepDispatcher = new StepDispatcher($executionBus, $executionBus, new \Ineersa\AgentCore\Tests\Support\TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher());
+        $coordinationBatches = new TestToolBatchStore();
+        $coordinationCollector = new ToolBatchCollector($coordinationBatches);
+        $coordinationDispatcher = $stepDispatcher;
         $handler = new LlmStepResultHandler(
-            toolBatchCollector: new ToolBatchCollector(),
             commandMailboxPolicy: new CommandMailboxPolicy(
                 commandStore: new InMemoryCommandStore(),
                 commandRouter: new CommandRouter([]),
@@ -892,8 +913,9 @@ final class LlmStepResultHandlerTest extends TestCase
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
-            stepDispatcher: $stepDispatcher,
+
             normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
+            toolBatchCollector: $coordinationCollector,
         );
 
         $state = new RunState(
@@ -921,7 +943,7 @@ final class LlmStepResultHandlerTest extends TestCase
             model: '',
         );
         $ordinaryResult = $handler->handle($ordinary, $state);
-        ($ordinaryResult->postCommit[0])();
+        \Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::run($ordinaryResult->postCommitActions[0], null, $coordinationCollector, $coordinationDispatcher, batches: $coordinationBatches);
         $this->assertInstanceOf(ExecuteToolCall::class, $executionBus->messages[0]);
         $this->assertNull($executionBus->messages[0]->launchContext);
         $this->assertSame('', $executionBus->messages[0]->parentModel);
@@ -958,9 +980,11 @@ final class LlmStepResultHandlerTest extends TestCase
     public function testExecuteToolCallHasNullTimeoutWithoutPerToolOverride(): void
     {
         $executionBus = new TestMessageBus();
-        $stepDispatcher = new StepDispatcher(new TestMessageBus(), $executionBus);
+        $stepDispatcher = new StepDispatcher($executionBus, $executionBus, new \Ineersa\AgentCore\Tests\Support\TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher());
+        $coordinationBatches = new TestToolBatchStore();
+        $coordinationCollector = new ToolBatchCollector($coordinationBatches);
+        $coordinationDispatcher = $stepDispatcher;
         $handler = new LlmStepResultHandler(
-            toolBatchCollector: new ToolBatchCollector(),
             commandMailboxPolicy: new CommandMailboxPolicy(
                 commandStore: new InMemoryCommandStore(),
                 commandRouter: new CommandRouter([]),
@@ -968,8 +992,9 @@ final class LlmStepResultHandlerTest extends TestCase
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
-            stepDispatcher: $stepDispatcher,
+
             normalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
+            toolBatchCollector: $coordinationCollector,
         );
 
         $state = new RunState(
@@ -997,8 +1022,8 @@ final class LlmStepResultHandlerTest extends TestCase
         );
 
         $result = $handler->handle($message, $state);
-        $this->assertCount(1, $result->postCommit);
-        ($result->postCommit[0])();
+        $this->assertCount(1, $result->postCommitActions);
+        \Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::run($result->postCommitActions[0], null, $coordinationCollector, $coordinationDispatcher, batches: $coordinationBatches);
 
         $this->assertCount(1, $executionBus->messages);
         $execute = $executionBus->messages[0];

@@ -14,8 +14,6 @@ use Ineersa\AgentCore\Infrastructure\RunLogContext;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
-use Symfony\Component\Messenger\Exception\ExceptionInterface;
-use Symfony\Component\Messenger\Exception\UnrecoverableMessageHandlingException;
 use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
@@ -28,8 +26,8 @@ use Symfony\Component\Messenger\MessageBusInterface;
 final readonly class ExecuteLlmStepWorker
 {
     public function __construct(
-        private PlatformInterface $platform,
         private MessageBusInterface $commandBus,
+        private PlatformInterface $platform,
         private ?RunTracer $tracer = null,
         private LoggerInterface $logger = new NullLogger(),
     ) {
@@ -39,7 +37,7 @@ final readonly class ExecuteLlmStepWorker
      * Handles ExecuteLlmStep message by delegating to execute method.
      */
     #[AsMessageHandler(bus: 'agent.execution.bus')]
-    public function __invoke(ExecuteLlmStep $message): void
+    public function __invoke(ExecuteLlmStep $message): LlmStepResult
     {
         RunLogContext::enter([
             'run_id' => $message->runId(),
@@ -50,30 +48,31 @@ final readonly class ExecuteLlmStepWorker
         ]);
 
         try {
-            $execute = function () use ($message): void {
-                $result = $this->execute($message);
-
-                try {
-                    $this->commandBus->dispatch($result);
-                } catch (ExceptionInterface $exception) {
-                    // Local command-bus delivery failure is not a provider-operation
-                    // retry signal. Do not let Messenger redeliver ExecuteLlmStep.
-                    throw new UnrecoverableMessageHandlingException('Failed to dispatch LLM result to command bus.', previous: $exception);
-                }
+            $execute = function () use ($message): LlmStepResult {
+                return $this->execute($message);
             };
 
-            if (null === $this->tracer) {
-                $execute();
-
-                return;
-            }
-
-            $this->tracer->inSpan('turn.execution.llm_worker', [
+            $result = null === $this->tracer ? $execute() : $this->tracer->inSpan('turn.execution.llm_worker', [
                 'run_id' => $message->runId(),
                 'turn_no' => $message->turnNo(),
                 'step_id' => $message->stepId(),
                 'worker' => 'llm',
             ], $execute, root: true);
+            try {
+                $this->commandBus->dispatch($result);
+            } catch (\Throwable $exception) {
+                $this->logger->warning('runtime.result_send_failed', [
+                    'run_id' => $message->runId(),
+                    'session_id' => $message->runId(),
+                    'component' => 'execution_worker',
+                    'event_type' => 'runtime.result_send_failed',
+                    'exception_class' => $exception::class,
+                ]);
+
+                return $result;
+            }
+
+            return $result;
         } finally {
             RunLogContext::leave();
         }

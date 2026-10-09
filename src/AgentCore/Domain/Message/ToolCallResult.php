@@ -5,9 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Domain\Message;
 
 use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
-use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolResultText;
-use Symfony\Component\Serializer\Attribute\Groups;
 
 /**
  * Canonical tool-worker → run_control envelope.
@@ -17,8 +15,8 @@ use Symfony\Component\Serializer\Attribute\Groups;
  * human-input suspension: it must not be collected as a finished tool result
  * and must not append a tool message or mark pendingToolCalls complete.
  *
- * `$pendingHumanInput` has no snapshot group and is omitted from tool-batch session
- * files (run_control uses PhpSerializer, so bus transport is unaffected).
+ * Pending human input is included in durable worker results so redelivery
+ * preserves suspension semantics.
  */
 final readonly class ToolCallResult extends AbstractAgentBusMessage
 {
@@ -31,15 +29,10 @@ final readonly class ToolCallResult extends AbstractAgentBusMessage
         string $stepId,
         int $attempt,
         string $idempotencyKey,
-        #[Groups([ToolBatchStateDTO::SNAPSHOT_GROUP])]
         public string $toolCallId,
-        #[Groups([ToolBatchStateDTO::SNAPSHOT_GROUP])]
         public int $orderIndex,
-        #[Groups([ToolBatchStateDTO::SNAPSHOT_GROUP])]
         public mixed $result = null,
-        #[Groups([ToolBatchStateDTO::SNAPSHOT_GROUP])]
         public bool $isError = false,
-        #[Groups([ToolBatchStateDTO::SNAPSHOT_GROUP])]
         public ?array $error = null,
         public ?PendingHumanInputRequestDTO $pendingHumanInput = null,
     ) {

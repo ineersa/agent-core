@@ -61,10 +61,16 @@ services:
     Ineersa\AgentCore\Application\Pipeline\RunMessageHandler:
       tags: ['agent_core.run_message_handler']
 
+    Ineersa\AgentCore\Contract\CoordinationActionValidatorInterface:
+      tags: ['agent_core.coordination_action_validator']
+
     Ineersa\AgentCore\Contract\Extension\CommandHandlerInterface:
       tags: ['agent_core.command_handler']
 
     Ineersa\AgentCore\Contract\Extension\HookSubscriberInterface:
+      tags: ['agent_core.hook_subscriber']
+
+    Ineersa\AgentCore\Contract\Extension\EssentialAfterTurnHookInterface:
       tags: ['agent_core.hook_subscriber']
 
     Ineersa\AgentCore\Contract\Hook\TransformContextHookInterface:
@@ -574,14 +580,6 @@ services:
     arguments:
       $commandBus: '@agent.command.bus'
 
-  # Standalone shell worker wakes run_control after AgentEnd so a follow_up
-  # queued while the shell still looked Running is drained (issue #183).
-  # $commandBus must bind agent.command.bus, not the execution bus this
-  # handler itself consumes.
-  Ineersa\CodingAgent\Runtime\Controller\CommandHandler\ExecuteShellToolCallWorker:
-    arguments:
-      $commandBus: '@agent.command.bus'
-
   # Explicit wiring overrides Ineersa\CodingAgent\ resource autowire (bool $streamCommittedEventsToStdout).
   Ineersa\CodingAgent\Runtime\Stream\StreamingCommittedRuntimeEventStore:
     arguments:
@@ -745,13 +743,8 @@ services:
     alias: Ineersa\CodingAgent\Compaction\ModelSelectionActiveModelResolver
 
 
-  Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler:
-    arguments:
-      $commandBus: '@agent.command.bus'
-
   Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler:
     arguments:
-      $commandBus: '@agent.command.bus'
       $serializer: '@serializer'
 
   Ineersa\AgentCore\Application\Pipeline\LlmStepResultHandler:
@@ -782,13 +775,8 @@ services:
     alias: Ineersa\CodingAgent\Compaction\CompactionService
 
   # Compaction worker: async model invocation for summarization.
+  # Returns CompactionStepResult for ledger notification.
   # @see ExecuteLlmStepWorker for the parallel LLM-step pattern.
-  # $commandBus is explicitly bound to agent.command.bus so the worker
-  # dispatches CompactionStepResult back to the orchestrator within the
-  # same consumer process.
-  Ineersa\AgentCore\Application\Handler\ExecuteCompactionStepWorker:
-    arguments:
-      $commandBus: '@agent.command.bus'
 
   # ─── Compaction auto-trigger (COMP-06) ───
 
@@ -802,16 +790,8 @@ services:
   Ineersa\CodingAgent\Config\ContextBudgetReminderConfig:
     factory: ['Ineersa\CodingAgent\Config\ContextBudgetReminderConfig', 'fromAppConfig']
 
-  # ContextBudgetReminderHookSubscriber is auto-tagged via
-  # _instanceof HookSubscriberInterface — no explicit registration.
-
-  # Auto-compaction after-turn hook subscriber.
-  # Tagged automatically via _instanceof HookSubscriberInterface.
-  # $commandBus is bound to agent.command.bus so CompactRun dispatch
-  # targets the correct bus.
-  Ineersa\CodingAgent\Compaction\AutoCompactionHookSubscriber:
-    arguments:
-      $commandBus: '@agent.command.bus'
+  # Reminder and auto-compaction preparation are auto-tagged through
+  # EssentialAfterTurnHookInterface. Their captured actions use the command bus.
 
   # ToolRegistry — concrete CodingAgent registry for permanent/dynamic tools.
   # Tagged built-in providers are seeded during registry construction.
@@ -1034,12 +1014,15 @@ services:
   Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface:
     alias: Ineersa\CodingAgent\Session\SessionToolLaunchInputStore
 
-  # Durable tool batch store — session-scoped atomic JSON snapshots (transient recovery).
+  # Durable tool-batch scheduling lives in application SQLite; payload paths remain for launch/execution files.
   Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface:
     alias: Ineersa\CodingAgent\Agent\Artifact\ChildAwareToolBatchRunStoragePaths
 
   Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface:
-    alias: Ineersa\CodingAgent\Session\SessionToolBatchStore
+    alias: Ineersa\CodingAgent\Session\DoctrineToolBatchStore
+
+  Ineersa\AgentCore\Contract\ApplicationDbTransactionInterface:
+    alias: Ineersa\CodingAgent\Session\DoctrineApplicationDbTransaction
 
   # ─── AI-10 Per-turn model/reasoning routing ───
 
@@ -1055,7 +1038,31 @@ services:
 
   Ineersa\AgentCore\Application\Handler\StepDispatcher:
     arguments:
+      $commandBus: '@agent.command.bus'
       $executionBus: '@agent.execution.bus'
+
+  Ineersa\AgentCore\Application\Handler\ExecuteLlmStepWorker:
+    arguments:
+      $commandBus: '@agent.command.bus'
+
+  Ineersa\AgentCore\Application\Handler\ExecuteCompactionStepWorker:
+    arguments:
+      $commandBus: '@agent.command.bus'
+
+  Ineersa\AgentCore\Application\Handler\ExecuteToolCallWorker:
+    arguments:
+      $commandBus: '@agent.command.bus'
+
+  Ineersa\CodingAgent\Runtime\Controller\CommandHandler\ExecuteShellToolCallWorker:
+    arguments:
+      $commandBus: '@agent.command.bus'
+
+  Ineersa\AgentCore\Application\Pipeline\TransitionFinalizer:
+    arguments:
+      $store: '@Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface'
+      $dispatcher: '@Ineersa\AgentCore\Application\Handler\StepDispatcher'
+      $localMetadata: '@Ineersa\AgentCore\Application\Pipeline\LocalMetadataCoordinator'
+      $plans: '@Ineersa\AgentCore\Application\Pipeline\TransitionPlanFactory'
 
   Ineersa\AgentCore\Application\Handler\CommandRouter:
     arguments:
@@ -1203,15 +1210,11 @@ services:
 
   # ─── AGENT-05 Subagent tool storage routing ─────────────────────────
 
-  # ChildAwareEventStore — delegates EventStoreInterface between parent-scoped
+  # ChildAwareEventStore — delegates prepared transitions between parent-scoped
   # SessionRunEventStore (parent runs) and AgentChildRunEventStore (child runs).
 
   Ineersa\CodingAgent\Session\Contract\RunSequenceAllocatorInterface:
     alias: Ineersa\CodingAgent\Session\FileRunSequenceAllocator
-
-  Ineersa\CodingAgent\Application\Pipeline\CommitSubagentProgressHandler:
-    arguments:
-      $commandBus: '@agent.command.bus'
 
   Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface:
     alias: Ineersa\CodingAgent\Session\Repair\SessionRepairService
@@ -1237,5 +1240,9 @@ services:
       $commandBus: '@agent.command.bus'
 
   Ineersa\CodingAgent\Runtime\Controller\CommandHandler\RepairHandler:
+    arguments:
+      $commandBus: '@agent.command.bus'
+
+  Ineersa\CodingAgent\Application\Pipeline\SubagentProgressCoordinationHandler:
     arguments:
       $commandBus: '@agent.command.bus'

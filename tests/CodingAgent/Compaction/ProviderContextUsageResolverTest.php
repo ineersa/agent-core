@@ -41,6 +41,34 @@ final class ProviderContextUsageResolverTest extends TestCase
         $this->assertSame(30755, $this->resolver->getLatestEligibleInputTokens('run-1'));
     }
 
+    public function testOwnerBatchMeasurementDoesNotReadUnfinalizedArchive(): void
+    {
+        $this->eventStore->expects($this->never())->method('reverseFor');
+        $summary = new \Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary(
+            seq: 6,
+            type: RunEventTypeEnum::LlmStepCompleted->value,
+            payload: ['usage' => ['input_tokens' => 45000]],
+            turnNo: 1,
+            createdAt: '2026-10-03T00:00:00+00:00',
+        );
+
+        $this->assertSame(45000, $this->resolver->getLatestEligibleInputTokens('run-1', [$summary]));
+    }
+
+    public function testOwnerBatchAutoAttemptFencesPredecessorMeasurement(): void
+    {
+        $this->mockBoundedReverseEvents([$this->makeLlmStepCompleted(5, 45000)]);
+        $summary = new \Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary(
+            seq: 6,
+            type: RunEventTypeEnum::ContextCompactionStarted->value,
+            payload: ['trigger' => 'auto'],
+            turnNo: 1,
+            createdAt: '2026-10-03T00:00:00+00:00',
+        );
+
+        $this->assertNull($this->resolver->getLatestEligibleInputTokens('run-1', [$summary]));
+    }
+
     /**
      * Thesis: when latest auto started seq is AFTER the latest provider
      * measurement, the measurement is INELIGIBLE.  This catches the

@@ -90,7 +90,12 @@ final class InProcessSelectHistoryTurnEmitsRunHistoryPositionChangedTest extends
             logger: new NullLogger(),
             historyProjector: new HistoryProjector(),
             replayEventPreparer: new ReplayEventPreparer(),
-            runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit($activeRunContext, $eventStore, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus()), new NullLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector()),
+            runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
+                activeRunContext: $activeRunContext,
+                eventStore: $eventStore,
+                logger: new NullLogger(),
+                finalizer: \Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory::create($eventStore, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus(), new \Ineersa\AgentCore\Tests\Support\TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher())),
+            ),
         );
         $sink = new InMemoryRuntimeEventSink();
 
@@ -122,7 +127,9 @@ final class InProcessSelectHistoryTurnEmitsRunHistoryPositionChangedTest extends
         $result = new \Ineersa\CodingAgent\Runtime\Contract\RepairResult(true, false, 'refused', \Ineersa\CodingAgent\Runtime\Contract\SessionRepairRefusalReasonEnum::ActiveStreaming);
         $repair->expects($this->once())->method('repair')->with(self::RUN_ID, false)->willReturn($result);
         $sink = new InMemoryRuntimeEventSink();
-        $client = $this->client(new InMemoryEventStore(), $this->createStub(HistorySelectionServiceInterface::class), $sink, new TestActiveRunContext(), $repair);
+        $registry = new TestActiveRunContext();
+        $registry->loadRecovered(new RunState(self::RUN_ID, RunStatus::Running, isStreaming: true));
+        $client = $this->client(new InMemoryEventStore(), $this->createStub(HistorySelectionServiceInterface::class), $sink, $registry, $repair);
         $this->assertSame($result, $client->repair(self::RUN_ID, false));
         $events = iterator_to_array($sink->drain(self::RUN_ID));
         $this->assertCount(1, $events);
@@ -138,7 +145,9 @@ final class InProcessSelectHistoryTurnEmitsRunHistoryPositionChangedTest extends
         $repair = $this->createMock(\Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface::class);
         $repair->expects($this->once())->method('repair')->willThrowException(new \RuntimeException('private detail'));
         $sink = new InMemoryRuntimeEventSink();
-        $client = $this->client(new InMemoryEventStore(), $this->createStub(HistorySelectionServiceInterface::class), $sink, new TestActiveRunContext(), $repair);
+        $registry = new TestActiveRunContext();
+        $registry->loadRecovered(new RunState(self::RUN_ID, RunStatus::Running));
+        $client = $this->client(new InMemoryEventStore(), $this->createStub(HistorySelectionServiceInterface::class), $sink, $registry, $repair);
         try {
             $client->repair(self::RUN_ID);
             $this->fail('Owner repair failure must propagate.');
@@ -184,7 +193,7 @@ final class InProcessSelectHistoryTurnEmitsRunHistoryPositionChangedTest extends
     ): InProcessAgentSessionClient {
         $container = self::getContainer();
 
-        $handler = new \Ineersa\CodingAgent\Application\Pipeline\SessionMaintenanceHandler($historySelectionService, $repair ?? $this->createStub(\Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface::class), $sink, $container->get(\Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink::class), false, new NullLogger(), $activeRunContext, $container->get(\Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor::class), $container->get(HatfieldSessionStore::class), $container->get(\Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware::class), $container->get(\Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository::class), $container->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Recovery\DeferredSubagentBatchRecoveryService::class));
+        $handler = new \Ineersa\CodingAgent\Application\Pipeline\SessionMaintenanceHandler($historySelectionService, $repair ?? $this->createStub(\Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface::class), $sink, $container->get(\Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink::class), false, new NullLogger(), $activeRunContext, $container->get(\Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor::class), $container->get(HatfieldSessionStore::class), $container->get(\Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware::class), $container->get(\Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery::class), $container->get(\Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository::class));
         $bus = new \Symfony\Component\Messenger\MessageBus([new \Symfony\Component\Messenger\Middleware\HandleMessageMiddleware(new \Symfony\Component\Messenger\Handler\HandlersLocator([
             \Ineersa\CodingAgent\Application\Message\SelectHistoryPrompt::class => [[$handler, 'select']],
             \Ineersa\CodingAgent\Application\Message\RepairSession::class => [[$handler, 'repair']],

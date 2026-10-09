@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Session;
 
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
+use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
@@ -53,16 +54,16 @@ final class SessionRunEventStoreSequencingTest extends TestCase
         TestDirectoryIsolation::removeDirectory($this->projectDir);
     }
 
-    public function testAppendWithNextSeqFromExistingCursorDoesNotReadEventsJsonl(): void
+    public function testAppendUsesExistingCursorBeyondCanonicalPredecessor(): void
     {
         $runId = 'run-'.bin2hex(random_bytes(4));
         $eventsPath = $this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl';
         TestDirectoryIsolation::ensureDirectory(\dirname($eventsPath));
         file_put_contents($eventsPath, '{"schema_version":"1.0","run_id":"'.$runId.'","seq":99,"turn_no":0,"type":"run_started","payload":[]}'."\n");
         $counterPath = FileRunSequenceAllocator::counterPathForEventsLog($eventsPath);
-        file_put_contents($counterPath, "5\n");
+        file_put_contents($counterPath, "105\n");
 
-        $persisted = $this->store->append(new RunEvent(
+        $persisted = PreparedEventStoreSeeder::append($this->store, new RunEvent(
             runId: $runId,
             seq: 0,
             turnNo: 1,
@@ -70,11 +71,31 @@ final class SessionRunEventStoreSequencingTest extends TestCase
             payload: [],
         ));
 
-        $this->assertSame(6, $persisted->seq);
-        $this->assertSame("6\n", file_get_contents($counterPath));
+        $this->assertSame(106, $persisted->seq);
+        $this->assertSame("106\n", file_get_contents($counterPath));
         $lines = file($eventsPath) ?: [];
         $this->assertCount(2, $lines);
-        $this->assertStringContainsString('"seq":6', $lines[1]);
+        $this->assertStringContainsString('"seq":106', $lines[1]);
+    }
+
+    public function testCursorBehindCanonicalHistoryCannotAppend(): void
+    {
+        $runId = 'run-'.bin2hex(random_bytes(4));
+        $eventsPath = $this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl';
+        TestDirectoryIsolation::ensureDirectory(\dirname($eventsPath));
+        $canonical = '{"schema_version":"1.0","run_id":"'.$runId.'","seq":99,"turn_no":0,"type":"run_started","payload":[]}'."\n";
+        file_put_contents($eventsPath, $canonical);
+        file_put_contents(FileRunSequenceAllocator::counterPathForEventsLog($eventsPath), "5\n");
+
+        try {
+            PreparedEventStoreSeeder::append($this->store, RunEvent::forAppend($runId, 1, 'turn_advanced'));
+            $this->fail('Allocation behind canonical history must be refused.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('Staged event has no allocated sequence.', $exception->getMessage());
+        }
+
+        $this->assertSame($canonical, file_get_contents($eventsPath));
+        $this->assertNull($this->store->verifiedPendingTransition($runId));
     }
 
     public function testMissingCursorBootstrapsFromMaxSeqInLogOnce(): void
@@ -86,12 +107,12 @@ final class SessionRunEventStoreSequencingTest extends TestCase
         $counterPath = FileRunSequenceAllocator::counterPathForEventsLog($eventsPath);
         $this->assertFileDoesNotExist($counterPath);
 
-        $first = $this->store->append(new RunEvent($runId, 0, 2, 'tool_execution_start', []));
+        $first = PreparedEventStoreSeeder::append($this->store, new RunEvent($runId, 0, 2, 'tool_execution_start', []));
         $this->assertSame(9, $first->seq);
         $this->assertFileExists($counterPath);
         $this->assertSame("9\n", file_get_contents($counterPath));
 
-        $second = $this->store->append(new RunEvent($runId, 0, 2, 'tool_execution_end', []));
+        $second = PreparedEventStoreSeeder::append($this->store, new RunEvent($runId, 0, 2, 'tool_execution_end', []));
         $this->assertSame(10, $second->seq);
     }
 
@@ -102,7 +123,7 @@ final class SessionRunEventStoreSequencingTest extends TestCase
         TestDirectoryIsolation::ensureDirectory(\dirname($eventsPath));
         file_put_contents(FileRunSequenceAllocator::counterPathForEventsLog($eventsPath), "2\n");
 
-        $persisted = $this->store->appendMany([
+        $persisted = PreparedEventStoreSeeder::appendMany($this->store, [
             new RunEvent($runId, 0, 1, 'tool_execution_start', []),
             new RunEvent($runId, 0, 1, 'tool_execution_update', []),
             new RunEvent($runId, 0, 1, 'tool_execution_end', []),

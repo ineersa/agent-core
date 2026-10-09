@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Domain\Tool;
 
-use Symfony\Component\Serializer\Attribute\Groups;
 use Symfony\Component\Validator\Constraints as Assert;
 
 /**
@@ -21,14 +20,10 @@ final readonly class ToolCallHumanInputAnswerDTO
      * @param array<string, mixed> $requestPayload  original waiting_human payload (hook identity + approval_context)
      */
     public function __construct(
-        #[Groups([ToolBatchStateDTO::SNAPSHOT_GROUP])]
         #[Assert\NotBlank]
         public string $questionId,
-        #[Groups([ToolBatchStateDTO::SNAPSHOT_GROUP])]
         public mixed $answer,
-        #[Groups([ToolBatchStateDTO::SNAPSHOT_GROUP])]
         public array $continuationRef,
-        #[Groups([ToolBatchStateDTO::SNAPSHOT_GROUP])]
         public array $requestPayload,
     ) {
     }

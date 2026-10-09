@@ -219,21 +219,6 @@ final class ProgressAppendInputRecordingEventStore implements EventStoreInterfac
     {
     }
 
-    public function append(RunEvent $event): RunEvent
-    {
-        return $this->inner->append($event);
-    }
-
-    public function appendMany(array $events): array
-    {
-        $out = [];
-        foreach ($events as $event) {
-            $out[] = $this->append($event);
-        }
-
-        return $out;
-    }
-
     public function latestSequenceFor(string $runId): ?int
     {
         $events = $this->allFor($runId);

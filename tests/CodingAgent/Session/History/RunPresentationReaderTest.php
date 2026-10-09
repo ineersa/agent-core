@@ -12,6 +12,7 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\History\RunPresentationReader;
@@ -25,7 +26,7 @@ final class RunPresentationReaderTest extends IsolatedKernelTestCase
         $run = self::getContainer()->get(HatfieldSessionStore::class)->createSession('presentation');
         $events = self::getContainer()->get(EventStoreInterface::class);
         $append = static function (int $turn, string $type, array $payload = []) use ($run, $events): void {
-            $events->append(RunEvent::forAppend($run, $turn, $type, $payload));
+            PreparedEventStoreSeeder::append($events, RunEvent::forAppend($run, $turn, $type, $payload));
         };
         $append(0, 'run_started', ['payload' => ['messages' => [$this->message('system', 'SYSTEM_SECRET'), $this->message('user', 'initial')]]]);
         $append(2, 'turn_advanced', ['turn_no' => 2]);
@@ -64,7 +65,7 @@ final class RunPresentationReaderTest extends IsolatedKernelTestCase
     {
         $run = self::getContainer()->get(HatfieldSessionStore::class)->createSession('stale presentation');
         $events = self::getContainer()->get(EventStoreInterface::class);
-        $events->append(RunEvent::forAppend($run, 0, 'run_started', ['payload' => ['messages' => []]]));
+        PreparedEventStoreSeeder::append($events, RunEvent::forAppend($run, 0, 'run_started', ['payload' => ['messages' => []]]));
         self::getContainer()->get(RunOperationalProjectionRepository::class)->replace(new RunState(runId: $run, status: RunStatus::Completed, lastSeq: 0));
         $product = self::getContainer()->get(RunPresentationReader::class)->read($run, 1, 240);
         $this->assertSame(RunStatus::Running, $product->status);
@@ -78,17 +79,17 @@ final class RunPresentationReaderTest extends IsolatedKernelTestCase
     {
         $run = self::getContainer()->get(HatfieldSessionStore::class)->createSession('terminal presentation');
         $events = self::getContainer()->get(EventStoreInterface::class);
-        $events->append(RunEvent::forAppend($run, 0, 'run_started', ['payload' => ['messages' => []]]));
+        PreparedEventStoreSeeder::append($events, RunEvent::forAppend($run, 0, 'run_started', ['payload' => ['messages' => []]]));
         $assistant = $this->message('assistant', 'Partial work');
         $assistant['tool_calls'] = [['id' => 'pending_call', 'function' => ['name' => 'read', 'arguments' => '{}']]];
-        $events->append(RunEvent::forAppend($run, 0, 'llm_step_completed', ['assistant_message' => $assistant]));
+        PreparedEventStoreSeeder::append($events, RunEvent::forAppend($run, 0, 'llm_step_completed', ['assistant_message' => $assistant]));
         $codec = self::getContainer()->get(ToolExecutionEndPayloadCodec::class);
-        $events->append(RunEvent::forAppend($run, 0, 'tool_execution_end', $codec->toEventPayload(new ToolCallResult($run, 0, 'old-step', 1, 'old-result', 'pending_call', 0, ['tool_name' => 'read', 'output' => 'old uncommitted result']))));
+        PreparedEventStoreSeeder::append($events, RunEvent::forAppend($run, 0, 'tool_execution_end', $codec->toEventPayload(new ToolCallResult($run, 0, 'old-step', 1, 'old-result', 'pending_call', 0, ['tool_name' => 'read', 'output' => 'old uncommitted result']))));
         $reader = self::getContainer()->get(RunPresentationReader::class);
         $before = $reader->read($run, 0, 800);
         $this->assertNotNull($before);
         $this->assertSame(1, $before->pendingToolCallCount);
-        $events->append(RunEvent::forAppend($run, 0, $type, $payload));
+        PreparedEventStoreSeeder::append($events, RunEvent::forAppend($run, 0, $type, $payload));
         $execution = self::getContainer()->get(\Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface::class)->rebuildIfStale(RunState::queued($run), $run)->rebuiltState;
         $this->assertNotNull($execution);
         $this->assertSame(['pending_call' => true], $execution->pendingToolCalls);
@@ -104,13 +105,13 @@ final class RunPresentationReaderTest extends IsolatedKernelTestCase
 
         // Execution replay retains the completed-result accumulator across a
         // terminal event. Presentation must preserve this inherited count quirk.
-        $events->append(RunEvent::forAppend($run, 1, 'turn_advanced', ['turn_no' => 1, 'step_id' => 'new-step']));
-        $events->append(RunEvent::forAppend($run, 1, 'agent_command_applied', ['kind' => 'follow_up', 'message' => $this->message('user', 'Continue')]));
+        PreparedEventStoreSeeder::append($events, RunEvent::forAppend($run, 1, 'turn_advanced', ['turn_no' => 1, 'step_id' => 'new-step']));
+        PreparedEventStoreSeeder::append($events, RunEvent::forAppend($run, 1, 'agent_command_applied', ['kind' => 'follow_up', 'message' => $this->message('user', 'Continue')]));
         $next = $this->message('assistant', 'New work');
         $next['tool_calls'] = [['id' => 'new_call', 'function' => ['name' => 'read', 'arguments' => '{}']]];
-        $events->append(RunEvent::forAppend($run, 1, 'llm_step_completed', ['assistant_message' => $next]));
-        $events->append(RunEvent::forAppend($run, 1, 'tool_execution_end', $codec->toEventPayload(new ToolCallResult($run, 1, 'new-step', 1, 'new-result', 'new_call', 0, ['tool_name' => 'read', 'output' => 'new result']))));
-        $events->append(RunEvent::forAppend($run, 1, 'tool_batch_committed'));
+        PreparedEventStoreSeeder::append($events, RunEvent::forAppend($run, 1, 'llm_step_completed', ['assistant_message' => $next]));
+        PreparedEventStoreSeeder::append($events, RunEvent::forAppend($run, 1, 'tool_execution_end', $codec->toEventPayload(new ToolCallResult($run, 1, 'new-step', 1, 'new-result', 'new_call', 0, ['tool_name' => 'read', 'output' => 'new result']))));
+        PreparedEventStoreSeeder::append($events, RunEvent::forAppend($run, 1, 'tool_batch_committed'));
         $resumedExecution = self::getContainer()->get(\Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface::class)->rebuildIfStale(RunState::queued($run), $run)->rebuiltState;
         $this->assertNotNull($resumedExecution);
         $this->assertCount(5, $resumedExecution->messages);
@@ -137,7 +138,7 @@ final class RunPresentationReaderTest extends IsolatedKernelTestCase
         // Physical archive fixtures do not need live runtime event publication.
         $events = self::getContainer()->get(SessionRunEventStore::class);
         for ($i = 0; $i < 12; ++$i) {
-            $events->append(RunEvent::forAppend($run, 0, 'run_started', ['payload' => ['messages' => [$this->message('user', str_repeat('x', 1024 * 1024))]]]));
+            PreparedEventStoreSeeder::append($events, RunEvent::forAppend($run, 0, 'run_started', ['payload' => ['messages' => [$this->message('user', str_repeat('x', 1024 * 1024))]]]));
         }
         $cut = $events->latestSequenceFor($run);
         self::getContainer()->get(RunOperationalProjectionRepository::class)->replace(new RunState(runId: $run, status: RunStatus::Completed, lastSeq: $cut));
@@ -167,13 +168,13 @@ final class RunPresentationReaderTest extends IsolatedKernelTestCase
     {
         $run = self::getContainer()->get(HatfieldSessionStore::class)->createSession('tool presentation');
         $events = self::getContainer()->get(SessionRunEventStore::class);
-        $events->append(RunEvent::forAppend($run, 0, 'run_started', ['payload' => ['messages' => [$this->message('system', 'secret'), $this->message('user', 'prompt')]]]));
-        $events->append(RunEvent::forAppend($run, 0, 'llm_step_completed', ['assistant_message' => ['role' => 'assistant', 'content' => null, 'tool_calls' => [['id' => 'call']]]]));
+        PreparedEventStoreSeeder::append($events, RunEvent::forAppend($run, 0, 'run_started', ['payload' => ['messages' => [$this->message('system', 'secret'), $this->message('user', 'prompt')]]]));
+        PreparedEventStoreSeeder::append($events, RunEvent::forAppend($run, 0, 'llm_step_completed', ['assistant_message' => ['role' => 'assistant', 'content' => null, 'tool_calls' => [['id' => 'call']]]]));
         $codec = self::getContainer()->get(ToolExecutionEndPayloadCodec::class);
-        $events->append(RunEvent::forAppend($run, 0, 'tool_execution_end', $codec->toEventPayload(new ToolCallResult(runId: $run, turnNo: 0, stepId: 'step', attempt: 1, idempotencyKey: 'result', toolCallId: 'call', orderIndex: 0, result: ['tool_name' => 'read', 'output' => 'TOOL_SECRET']))));
-        $events->append(RunEvent::forAppend($run, 0, 'tool_batch_committed'));
-        $events->append(RunEvent::forAppend($run, 0, 'llm_step_completed', ['assistant_message' => ['role' => 'assistant', 'content' => null, 'details' => ['thinking' => 'REASONING_SECRET']]]));
-        $events->append(RunEvent::forAppend($run, 0, 'agent_end', ['reason' => 'completed']));
+        PreparedEventStoreSeeder::append($events, RunEvent::forAppend($run, 0, 'tool_execution_end', $codec->toEventPayload(new ToolCallResult(runId: $run, turnNo: 0, stepId: 'step', attempt: 1, idempotencyKey: 'result', toolCallId: 'call', orderIndex: 0, result: ['tool_name' => 'read', 'output' => 'TOOL_SECRET']))));
+        PreparedEventStoreSeeder::append($events, RunEvent::forAppend($run, 0, 'tool_batch_committed'));
+        PreparedEventStoreSeeder::append($events, RunEvent::forAppend($run, 0, 'llm_step_completed', ['assistant_message' => ['role' => 'assistant', 'content' => null, 'details' => ['thinking' => 'REASONING_SECRET']]]));
+        PreparedEventStoreSeeder::append($events, RunEvent::forAppend($run, 0, 'agent_end', ['reason' => 'completed']));
         $product = self::getContainer()->get(RunPresentationReader::class)->read($run, 2, 240);
         $this->assertSame(4, $product->messageCount);
         $this->assertSame(2, $product->eligibleMessageCount);

@@ -18,8 +18,10 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
+use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
@@ -142,7 +144,7 @@ final class MessengerDoctrineRedeliverTimeoutLeaseTest extends IsolatedKernelTes
 
     public function testRepairRedriveEnqueuesFreshReceivableEnvelopeWithoutClearingClaimedRow(): void
     {
-        $runId = 'repair-claim-'.bin2hex(random_bytes(3));
+        $runId = self::getContainer()->get(HatfieldSessionStore::class)->createSession('repair claim lease');
         $stepId = 'advance-after-tools-repair';
         $key = hash('sha256', $runId.'|llm|1|'.$stepId);
         $queueName = 'llm_'.$runId;
@@ -151,10 +153,6 @@ final class MessengerDoctrineRedeliverTimeoutLeaseTest extends IsolatedKernelTes
 
         try {
             $abandoned = new ExecuteLlmStep($runId, 1, $stepId, 1, $key, \sprintf('toolset:run:%s:turn:1', $runId));
-            $transport->send(new Envelope($abandoned));
-            $claimed = iterator_to_array($transport->get());
-            $this->assertCount(1, $claimed);
-            $abandonedId = $this->envelopeId($claimed[0]);
 
             $projectDir = $this->isolatedCwd();
             $appConfig = new AppConfig(
@@ -187,8 +185,13 @@ final class MessengerDoctrineRedeliverTimeoutLeaseTest extends IsolatedKernelTes
                     'operation_idempotency_key' => $key,
                 ]],
             ]) as $event) {
-                $eventStore->append($event);
+                PreparedEventStoreSeeder::append($eventStore, $event);
             }
+
+            $transport->send(new Envelope($abandoned));
+            $claimed = iterator_to_array($transport->get());
+            $this->assertCount(1, $claimed);
+            $abandonedId = $this->envelopeId($claimed[0]);
 
             $active = new TestActiveRunContext();
             $active->loadRecovered(new RunState(
@@ -201,7 +204,10 @@ final class MessengerDoctrineRedeliverTimeoutLeaseTest extends IsolatedKernelTes
             ));
 
             $executionBus = new TestMessageBus();
-            $commandBus = new TestMessageBus();
+            $commandBus = new \Symfony\Component\Messenger\MessageBus([
+                new \Symfony\Component\Messenger\Middleware\HandleMessageMiddleware(new \Symfony\Component\Messenger\Handler\HandlersLocator([
+                ])),
+            ]);
             $repair = new SessionRepairService(
                 eventStore: $eventStore,
                 activeRunContext: $active,
@@ -214,15 +220,20 @@ final class MessengerDoctrineRedeliverTimeoutLeaseTest extends IsolatedKernelTes
                 toolCallSequenceValidator: new AgentMessageToolCallSequenceValidator(),
                 lockManager: new RunLockManager(new LockFactory(new FlockStore($lockDir))),
                 logger: new NullLogger(),
-                stepDispatcher: new StepDispatcher($commandBus, $executionBus),
                 toolBatchStore: $this->createStub(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
                 serializer: AttributeSerializerValidatorTestFactory::create()[0],
                 historyReplayFilter: self::getContainer()->get(\Ineersa\CodingAgent\Session\History\HistoryReplayFilter::class),
-                runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit($active, $eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus()), new NullLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector()),
+                runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
+                    activeRunContext: $active,
+                    eventStore: $eventStore,
+                    logger: new NullLogger(),
+                    finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher($commandBus, $executionBus, new \Ineersa\AgentCore\Tests\Support\TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher())),
+                    actionValidator: new \Ineersa\AgentCore\Application\Handler\CoordinationActionValidator(),
+                ),
                 deferredBatches: self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository::class),
             );
 
-            $result = $repair->repair($runId, true);
+            $result = $repair->repair($runId, true, \Symfony\Component\Uid\Uuid::v4()->toRfc4122());
             $this->assertSame(1, $result->activeOperationsRedriven);
             $this->assertCount(1, $executionBus->messages);
             $this->assertInstanceOf(ExecuteLlmStep::class, $executionBus->messages[0]);
@@ -240,6 +251,7 @@ final class MessengerDoctrineRedeliverTimeoutLeaseTest extends IsolatedKernelTes
             $redrivenId = $this->envelopeId($redriven[0]);
             $this->assertNotSame($abandonedId, $redrivenId);
             $this->assertInstanceOf(ExecuteLlmStep::class, $redriven[0]->getMessage());
+            $this->assertEquals($executionBus->messages[0], $redriven[0]->getMessage());
             $this->assertSame($key, $redriven[0]->getMessage()->idempotencyKey());
 
             $transport->ack($redriven[0]);

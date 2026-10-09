@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Compaction;
 
 use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
-use Ineersa\AgentCore\Contract\Extension\HookSubscriberInterface;
+use Ineersa\AgentCore\Contract\Extension\EssentialAfterTurnHookInterface;
 use Ineersa\AgentCore\Contract\Model\RunModelResolverInterface;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
@@ -14,8 +14,6 @@ use Ineersa\CodingAgent\Config\CompactionConfig;
 use Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
-use Symfony\Component\Messenger\Exception\ExceptionInterface;
-use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
  * After-turn hook that triggers auto-compaction when the latest provider-
@@ -26,9 +24,8 @@ use Symfony\Component\Messenger\MessageBusInterface;
  * No provider measurement = no auto-compaction (fresh runs wait for the
  * first LLM call to produce a measurement).
  *
- * Registered as a HookSubscriberInterface (auto-tagged agent_core.hook_subscriber).
- * Runs synchronously inside RunCommit::commit() so the dispatch is a fire-and-
- * forget send to agent.command.bus — it never blocks the commit.
+ * Prepares a stable CompactRun descriptor before owner intent publication.
+ * Failed delivery retains the journal for recovery.
  *
  * Guards:
  *  - Agent child runs (fork/subagent; session.kind=agent_child) via
@@ -40,33 +37,28 @@ use Symfony\Component\Messenger\MessageBusInterface;
  *    for post-tool AdvanceRun, so effectsCount is 0 but the turn will continue;
  *    the scheduler owns pre-LLM compaction with continuation intent)
  *  - Provider context tokens < threshold (or no provider measurement)
- *  - In-process dedup per run (prevents double dispatch within a single process
- *    between async compaction dispatch and lifecycle commit)
+ *  - Stable request identity per settled model generation
  *  - Commits containing AgentCommandQueued or AgentCommandApplied
  *    (races pending follow-up command with auto-compaction)
  */
-final class AutoCompactionHookSubscriber implements HookSubscriberInterface
+final class AutoCompactionHookSubscriber implements EssentialAfterTurnHookInterface
 {
-    /** @var array<string, true> Run IDs with an in-flight auto dispatch (in-process dedup) */
-    private array $inFlight = [];
-
     public function __construct(
         private readonly ProviderContextUsageResolver $providerUsageResolver,
         private readonly CompactionConfig $compactionConfig,
         private readonly RunModelResolverInterface $modelResolver,
-        private readonly MessageBusInterface $commandBus,
         private readonly CompactionServiceInterface $compactionService,
         private readonly RunRelationshipReaderInterface $relationshipReader,
         private readonly LoggerInterface $logger = new NullLogger(),
     ) {
     }
 
-    public function handleAfterTurnCommit(AfterTurnCommitHookContext $context): AfterTurnCommitHookContext
+    public function prepareAfterTurnCommit(AfterTurnCommitHookContext $context, int $predecessorSequence): array
     {
         // A failed execution cannot be revived by automatic model work.
         // Other after-turn subscribers still receive the failure for cleanup.
         if (\Ineersa\AgentCore\Domain\Run\RunStatus::Failed === $context->runState->status) {
-            return $context;
+            return [];
         }
         $runId = $context->runId;
 
@@ -75,7 +67,7 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
         // Missing operational identity fails closed (skip auto-compaction).
         try {
             if ($this->relationshipReader->isAgentChild($runId)) {
-                return $context;
+                return [];
             }
         } catch (\RuntimeException $e) {
             $this->logger->warning('Auto-compaction skipped because operational run relationship is unavailable.', [
@@ -87,7 +79,7 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
                 'error_message' => $e->getMessage(),
             ]);
 
-            return $context;
+            return [];
         }
 
         // Guard: fresh user turn — skip evaluation.  StartRun commits
@@ -95,7 +87,7 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
         // the turn completes (effectsCount=0) or via the pre-LLM guard,
         // never at the start of a new turn.
         if ($this->containsEventType($context, RunEventTypeEnum::RunStarted->value)) {
-            return $context;
+            return [];
         }
 
         // Guard: compaction lifecycle events (context_compaction_started /
@@ -104,11 +96,7 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
         // run BEFORE the effectsCount check — otherwise lifecycle
         // commits with effects never set compactionResolved.
         if ($this->containsCompactionLifecycle($context)) {
-            // Clear the in-process dedup flag — lifecycle commit signals
-            // the async compaction has resolved.
-            unset($this->inFlight[$runId]);
-
-            return $context;
+            return [];
         }
 
         // Guard: skip commits that contain tool_execution_start.
@@ -120,7 +108,7 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
         // it sets status=Compacting and the postCommit tool dispatch
         // is swallowed, same class of bug as ToolBatchCommitted.
         if ($this->containsEventType($context, RunEventTypeEnum::ToolExecutionStart->value)) {
-            return $context;
+            return [];
         }
 
         // Guard: skip commits where there are unresolved tool calls.
@@ -142,7 +130,7 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
 
         foreach ($runState->pendingToolCalls as $completed) {
             if (true !== $completed) {
-                return $context;
+                return [];
             }
         }
 
@@ -161,7 +149,7 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
         // the next LLM step if token pressure warrants; that is
         // semantically correct and preserves continuation.
         if ($this->containsEventType($context, RunEventTypeEnum::ToolBatchCommitted->value)) {
-            return $context;
+            return [];
         }
 
         // Guard: skip commits that produced outbound effects (AdvanceRun,
@@ -173,7 +161,7 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
         // on successive intermediate commits).  Only evaluate on stable
         // turn-level commits with no pending outbound work.
         if ($context->effectsCount > 0) {
-            return $context;
+            return [];
         }
 
         // Guard: skip commits that contain AgentCommandQueued or
@@ -189,7 +177,7 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
         // with continueAfterCompaction=true if token pressure warrants
         // before the next LLM step; that preserves the user turn.
         if ($this->containsUserCommandCommit($context)) {
-            return $context;
+            return [];
         }
 
         // Prefer canonical RunState.model; session/default is config-only fallback.
@@ -199,21 +187,14 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
         $runtimeSettings = $this->compactionConfig->resolveRuntimeSettings($activeModel);
 
         if (!$runtimeSettings->autoEnabled) {
-            return $context;
+            return [];
         }
 
         // Guard: skip when a compaction is already in flight.
         // activeStepId is set to e.g. 'compact-1234567890' by
         // CompactRunHandler before the lifecycle events are committed.
         if (null !== $runState->activeStepId && str_starts_with($runState->activeStepId, 'compact-')) {
-            return $context;
-        }
-
-        // Guard: in-process dedup — prevent double dispatch between the
-        // hook call that dispatches CompactRun and the async worker
-        // processing it (which sets activeStepId in a separate commit).
-        if (isset($this->inFlight[$runId])) {
-            return $context;
+            return [];
         }
 
         // Resolve context token count from latest provider measurement.
@@ -222,10 +203,10 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
         // is NOT used as the trigger baseline — it undercounts real
         // provider context by omitting tool schemas, JSON envelope,
         // and provider-specific overhead.
-        $effectiveTokens = $this->providerUsageResolver->getLatestEligibleInputTokens($runId);
+        $effectiveTokens = $this->providerUsageResolver->getLatestEligibleInputTokens($runId, $context->events);
 
         if (null === $effectiveTokens || $effectiveTokens < $runtimeSettings->compactAfterTokens) {
-            return $context;
+            return [];
         }
 
         // Dispatch auto compaction.
@@ -251,18 +232,22 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
         $prepareResult = $this->compactionService->prepare($runState->messages);
 
         if (!$prepareResult->isReady()) {
-            return $context;
+            return [];
         }
 
         // Detect summary-only: priorSummaryPresent and ALL messages
         // in the summarize partition carry the compact_summary flag.
         if ($prepareResult->priorSummaryPresent && $this->isSummaryOnlyPartition($prepareResult->messagesToSummarize)) {
-            return $context;
+            return [];
         }
 
-        $this->dispatchAutoCompaction($runId, $runState->turnNo);
+        // The same settled model generation prepares the same compaction request.
+        $stepId = 'compact-auto-'.hash('sha256', $runId.'|'.$runState->turnNo.'|'.$runState->activeStepId.'|'.$runState->lastAppliedAdvanceKey);
 
-        return $context;
+        return [new \Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO(new CompactRun(
+            runId: $runId, turnNo: $runState->turnNo, stepId: $stepId, attempt: 1,
+            idempotencyKey: hash('sha256', $runId.'|'.$stepId), trigger: 'auto',
+        ))];
     }
 
     /**
@@ -282,30 +267,6 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
         }
 
         return true;
-    }
-
-    private function dispatchAutoCompaction(string $runId, int $turnNo): void
-    {
-        $this->inFlight[$runId] = true;
-
-        $stepId = \sprintf('compact-%d', hrtime(true));
-
-        try {
-            $this->commandBus->dispatch(new CompactRun(
-                runId: $runId,
-                turnNo: $turnNo,
-                stepId: $stepId,
-                attempt: 1,
-                idempotencyKey: hash('sha256', \sprintf('%s|%s', $runId, $stepId)),
-                trigger: 'auto',
-            ));
-        } catch (ExceptionInterface $exception) {
-            // Clear the dedup flag on failure so a future hook call
-            // can retry.
-            unset($this->inFlight[$runId]);
-
-            throw new \RuntimeException(\sprintf('Failed to dispatch auto-compaction CompactRun for run %s.', $runId), previous: $exception);
-        }
     }
 
     private function containsCompactionLifecycle(AfterTurnCommitHookContext $context): bool

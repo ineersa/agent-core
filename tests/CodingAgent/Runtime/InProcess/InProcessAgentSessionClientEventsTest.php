@@ -70,14 +70,17 @@ final class InProcessAgentSessionClientEventsTest extends IsolatedKernelTestCase
     #[Test]
     public function eventsReturnsNoRepeatedCursorEventsAndDeliversTerminalFollowUp(): void
     {
-        self::$eventStore->replace([
+        $history = [
             new RunEvent(self::RUN_ID, 1, 0, RunEventTypeEnum::RunStarted->value, []),
             new RunEvent(self::RUN_ID, 3, 1, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 1]),
-        ]);
+        ];
+        self::$eventStore->replace($history);
 
         $this->assertSame([], iterator_to_array($this->client()->events(self::RUN_ID, 3)));
+        $this->assertSame(0, self::$eventStore->allForCalls);
 
-        self::$eventStore->append(new RunEvent(self::RUN_ID, 5, 1, RunEventTypeEnum::AgentEnd->value, ['status' => 'completed']));
+        $history[] = new RunEvent(self::RUN_ID, 5, 1, RunEventTypeEnum::AgentEnd->value, ['status' => 'completed']);
+        self::$eventStore->replace($history);
         $followUp = iterator_to_array($this->client()->events(self::RUN_ID, 3));
 
         $this->assertSame([5], array_map(static fn (RuntimeEvent $event): int => $event->seq, $followUp));
@@ -197,22 +200,6 @@ final class ReverseOnlyEventStore implements EventStoreInterface
         $this->allForCalls = 0;
         $this->reverseForCalls = 0;
         $this->reverseForYieldedEvents = 0;
-    }
-
-    public function append(RunEvent $event): RunEvent
-    {
-        $this->events[] = $event;
-
-        return $event;
-    }
-
-    public function appendMany(array $events): array
-    {
-        foreach ($events as $event) {
-            $this->append($event);
-        }
-
-        return $events;
     }
 
     public function latestSequenceFor(string $runId): ?int

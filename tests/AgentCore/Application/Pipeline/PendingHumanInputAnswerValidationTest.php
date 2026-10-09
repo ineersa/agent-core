@@ -20,11 +20,12 @@ use Ineersa\AgentCore\Domain\Run\HumanInputContinuationKindEnum;
 use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
+use Ineersa\AgentCore\Tests\Support\InMemoryCommandStore;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -67,7 +68,7 @@ final class PendingHumanInputAnswerValidationTest extends TestCase
 
         $this->assertNull($result->nextState);
         $this->assertSame([], $result->events);
-        $this->assertSame([], $result->postCommit);
+        $this->assertSame([], $result->postCommitActions);
     }
 
     public function testNonHeadPendingQuestionIdIsRejected(): void
@@ -99,13 +100,14 @@ final class PendingHumanInputAnswerValidationTest extends TestCase
         $this->assertCount(1, $result->events);
         $this->assertSame(RunEventTypeEnum::AgentCommandRejected->value, $result->events[0]->type);
         $this->assertStringContainsString('question_id', (string) $result->nextState?->errorMessage);
-        $this->assertSame([], $result->postCommit);
+        $this->assertCount(1, $result->postCommitActions);
+        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Coordination\RejectCommandDTO::class, $result->postCommitActions[0]);
     }
 
     public function testMatchingModelTurnAnswerClearsRequestAndSchedulesAdvance(): void
     {
         $bus = new TestMessageBus();
-        $result = $this->applyHandler($bus)->handle(
+        $result = $this->applyHandler()->handle(
             $this->humanResponse('run-hitl-ok', 'ah_ok', 'yes proceed'),
             $this->waitingState('run-hitl-ok', 'ah_ok'),
         );
@@ -117,8 +119,8 @@ final class PendingHumanInputAnswerValidationTest extends TestCase
         $this->assertCount(1, $result->events);
         $this->assertSame(RunEventTypeEnum::AgentCommandApplied->value, $result->events[0]->type);
         $this->assertSame('ah_ok', $result->events[0]->payload['question_id'] ?? null);
-        foreach ($result->postCommit as $callback) {
-            $callback();
+        foreach ($result->postCommitActions as $callback) {
+            \Ineersa\AgentCore\Tests\Support\CoordinationActionTestRunner::run($callback, $bus);
         }
         $this->assertInstanceOf(AdvanceRun::class, $bus->messages[0] ?? null);
         $this->assertSame('run-hitl-ok', $bus->messages[0]->runId());
@@ -139,7 +141,7 @@ final class PendingHumanInputAnswerValidationTest extends TestCase
 
         $this->assertNull($result->nextState);
         $this->assertSame([], $result->events);
-        $this->assertSame([], $result->postCommit);
+        $this->assertSame([], $result->postCommitActions);
     }
 
     public function testCancelWhileWaitingClearsPendingHumanRequests(): void
@@ -249,11 +251,11 @@ final class PendingHumanInputAnswerValidationTest extends TestCase
 
     public function testCancelDeferredToolContinuationTerminalizesNotCancelling(): void
     {
-        $collector = new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector();
-        $collector->registerExpectedBatch('run-tool-cancel', 1, 'step-t', [
+        $collector = new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector($store = new \Ineersa\AgentCore\Tests\Support\TestToolBatchStore());
+        TestToolBatchRegistration::register($collector, $store, 'run-tool-cancel', 1, 'step-t', [
             new \Ineersa\AgentCore\Domain\Message\ExecuteToolCall('run-tool-cancel', 1, 'step-t', 1, 'idemp-t', 'call-t', 'bash', ['command' => 'ls'], 0),
         ]);
-        $collector->admitHumanInputSuspension('run-tool-cancel', 1, 'step-t', 'call-t', 'q-t');
+        \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, $store, 'run-tool-cancel', 1, 'step-t', 'call-t', 'q-t');
 
         $store = new InMemoryCommandStore();
         $router = new CommandRouter([]);
@@ -346,7 +348,7 @@ final class PendingHumanInputAnswerValidationTest extends TestCase
         );
     }
 
-    private function applyHandler(?TestMessageBus $bus = null, ?TestLogger $logger = null): ApplyCommandHandler
+    private function applyHandler(?TestLogger $logger = null): ApplyCommandHandler
     {
         $store = new InMemoryCommandStore();
         $router = new CommandRouter([]);
@@ -358,7 +360,6 @@ final class PendingHumanInputAnswerValidationTest extends TestCase
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
-            commandBus: $bus,
             logger: $logger,
             serializer: AttributeSerializerValidatorTestFactory::serializer(),
         );

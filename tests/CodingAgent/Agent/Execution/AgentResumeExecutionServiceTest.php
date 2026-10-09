@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Execution;
 
-use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Pipeline\AgentRunner;
 use Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler;
@@ -17,13 +16,14 @@ use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\RunOperationalStatusDTO;
 use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\AgentCore\Domain\Coordination\EnqueueCommandDTO;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
+use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
@@ -129,20 +129,15 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         $this->assertSame($childRunId, $entry->agentRunId);
         $this->assertSame(AgentArtifactStatusEnum::Running, $entry->status);
 
-        $store = new InMemoryCommandStore();
-        $router = new CommandRouter([]);
-        $mailbox = new CommandMailboxPolicy($store, $router);
-        $handler = new ApplyCommandHandler(
-            commandStore: $store,
-            commandRouter: $router,
-            commandMailboxPolicy: $mailbox,
-            eventFactory: new \Ineersa\AgentCore\Domain\Event\EventFactory(),
-            messageNormalizer: new \Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer(),
-            maxPendingCommands: 10,
-            commandBus: $commandBus,
-        );
+        $mailbox = self::getContainer()->get(CommandMailboxPolicy::class);
+        $handler = self::getContainer()->get(ApplyCommandHandler::class);
         $queued = $handler->handle($command, $state);
         $this->assertNotNull($queued->nextState);
+        $enqueues = array_values(array_filter($queued->postCommitActions, static fn (object $action): bool => $action instanceof EnqueueCommandDTO));
+        $this->assertCount(1, $enqueues);
+        $enqueue = $enqueues[0];
+        $this->assertInstanceOf(EnqueueCommandDTO::class, $enqueue);
+        self::getContainer()->get(\Ineersa\AgentCore\Contract\CommandStoreInterface::class)->enqueue($enqueue->command);
         $continued = $mailbox->applyPendingTurnStartCommands($queued->nextState);
         $state = $continued->state;
         $this->assertSame($originalMessages, \array_slice($state->messages, 0, 2));
@@ -593,18 +588,19 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         for ($turn = 1; $turn <= 100; ++$turn) {
             $history[] = RunEvent::forAppend($child, $turn, 'turn_advanced');
         }
-        $store->appendMany($history);
-        $terminal = $store->append(RunEvent::forAppend($child, 101, 'agent_end', ['status' => 'completed']));
+        PreparedEventStoreSeeder::appendMany($store, $history);
+        $terminal = PreparedEventStoreSeeder::append($store, RunEvent::forAppend($child, 101, 'agent_end', ['status' => 'completed']));
         $repository = self::getContainer()->get(RunOperationalProjectionRepository::class);
         $repository->replace(new RunState($child, RunStatus::Completed, parentRunId: $parent, lastSeq: $terminal->seq));
         // Fault boundary: the next canonical append succeeds, but projection
         // publication never happens. Artifact and narrow status remain terminal.
-        $newWork = $store->append(RunEvent::forAppend($child, 2, 'turn_advanced'));
+        $newWork = PreparedEventStoreSeeder::append($store, RunEvent::forAppend($child, 2, 'turn_advanced'));
         $reader = self::getContainer()->get(RunOperationalStatusReaderInterface::class);
         $this->assertSame(RunStatus::Completed, $reader->findOperationalStatus($child)?->status);
         $this->assertGreaterThan($terminal->seq, $newWork->seq);
         $runner = $this->createMock(AgentRunnerInterface::class);
         $runner->expects($this->never())->method('followUp');
+        $readLog->records = [];
         try {
             $this->resume($parent, [new AgentResumeTaskDTO(artifact_id: $artifact, task: 'continue')],
                 agentRunner: $runner, operationalStatusReader: $reader, eventStore: $store);
@@ -633,11 +629,11 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         $artifact = 'agent_allocation_holes';
         $this->seedTerminalChild($parent, $artifact, $child, latestInputTokens: 10, contextWindow: 200_000);
         $store = self::getContainer()->get(AgentChildRunEventStoreFactory::class)->create($parent, $child, $artifact);
-        $first = $store->append(RunEvent::forAppend($child, 1, 'run_started'));
+        $first = PreparedEventStoreSeeder::append($store, RunEvent::forAppend($child, 1, 'run_started'));
         $path = self::getContainer()->get(SessionAgentArtifactPathResolver::class)->eventsPath($parent, $artifact);
         $allocator = new FileRunSequenceAllocator();
         $allocator->allocateBlock(FileRunSequenceAllocator::counterPathForEventsLog($path), 5);
-        $terminal = $store->append(RunEvent::forAppend($child, 1, 'agent_end', ['status' => 'completed']));
+        $terminal = PreparedEventStoreSeeder::append($store, RunEvent::forAppend($child, 1, 'agent_end', ['status' => 'completed']));
         $this->assertSame($first->seq + 6, $terminal->seq);
         $allocated = $allocator->allocateBlock(FileRunSequenceAllocator::counterPathForEventsLog($path), 3);
         $this->assertGreaterThan($terminal->seq, $allocated[0]);

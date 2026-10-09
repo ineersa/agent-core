@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Session;
 
-use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Application\Handler\HookDispatcher;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
-use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
@@ -16,22 +16,14 @@ use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
-use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
-use Ineersa\CodingAgent\Config\AppConfig;
-use Ineersa\CodingAgent\Config\LoggingConfig;
-use Ineersa\CodingAgent\Config\TuiConfig;
-use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Ineersa\CodingAgent\Session\SessionToolBatchStore;
+use Ineersa\AgentCore\Tests\Support\TestToolBatchStore;
+use Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory;
 use Ineersa\CodingAgent\Session\ToolBatchSnapshotCleanupHookSubscriber;
-use Ineersa\CodingAgent\Tests\Session\Support\ParentSessionToolBatchRunStoragePaths;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
-use Psr\Log\NullLogger;
-use Symfony\Component\Lock\LockFactory;
-use Symfony\Component\Lock\Store\FlockStore;
 
 final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
 {
@@ -54,8 +46,8 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
     {
         $store = $this->createStore();
         $finalized = new ToolBatchStateDTO([], [], [], [], [], true, 2);
-        $store->save('run-1', 3, 'step-x', $finalized);
-        $store->save('run-1', 3, 'step-other', new ToolBatchStateDTO([], [], [], [], [], false, 2));
+        $this->seedBatch($store, 'run-1', 3, 'step-x', $finalized);
+        $this->seedBatch($store, 'run-1', 3, 'step-other', new ToolBatchStateDTO([], [], [], [], [], false, 2));
 
         $subscriber = new ToolBatchSnapshotCleanupHookSubscriber($store, new TestLogger(), $this->createStub(\Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface::class));
         $subscriber->handleAfterTurnCommit(new AfterTurnCommitHookContext(
@@ -80,8 +72,8 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
     public function testTerminalAgentEndDeletesAllRemainingSnapshots(): void
     {
         $store = $this->createStore();
-        $store->save('run-1', 1, 's1', new ToolBatchStateDTO([], [], [], [], [], false, 2));
-        $store->save('run-1', 2, 's2', new ToolBatchStateDTO([], [], [], [], [], false, 2));
+        $this->seedBatch($store, 'run-1', 1, 's1', new ToolBatchStateDTO([], [], [], [], [], true, 2));
+        $this->seedBatch($store, 'run-1', 2, 's2', new ToolBatchStateDTO([], [], [], [], [], true, 2));
 
         $subscriber = new ToolBatchSnapshotCleanupHookSubscriber($store, new TestLogger(), $this->createStub(\Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface::class));
         $subscriber->handleAfterTurnCommit(new AfterTurnCommitHookContext(
@@ -101,7 +93,7 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
     {
         $store = $this->createStore();
         $finalized = new ToolBatchStateDTO([], [], [], [], [], true, 2);
-        $store->save('run-1', 1, 'step-1', $finalized);
+        $this->seedBatch($store, 'run-1', 1, 'step-1', $finalized);
 
         $activeRunContext = new TestActiveRunContext();
         $prev = RunState::queued('run-1');
@@ -139,69 +131,127 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
         $inputStore = $this->createMock(\Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface::class);
         $inputStore->expects($this->never())->method('delete');
         $inputStore->expects($this->never())->method('deleteAllForRun');
-        $eventStore = $this->createStub(EventStoreInterface::class);
-        $eventStore->method('append')->willThrowException(new \RuntimeException('append failed'));
+        $eventStore = $this->createStub(PreparedTransitionEventStoreInterface::class);
+        $eventStore->method('appendTransition')->willThrowException(new \RuntimeException('append failed'));
         $active = new TestActiveRunContext();
         $previous = RunState::queued('run-1');
         $active->loadRecovered($previous);
         $commit = new RunCommit(
-            activeRunContext: $active, eventStore: $eventStore,
-            stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()), logger: new TestLogger(),
-            toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(),
+            activeRunContext: $active,
+            eventStore: $eventStore,
+            logger: new TestLogger(),
             hookDispatcher: new HookDispatcher([new ToolBatchSnapshotCleanupHookSubscriber($this->createStore(), new TestLogger(), $inputStore)]),
+            finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher())),
         );
         $this->expectExceptionMessage('append failed');
         $commit->commit($previous, new RunState('run-1', RunStatus::Running, version: 1, turnNo: 1, model: 'test-model'), [new RunEvent('run-1', 1, 1, RunEventTypeEnum::ToolExecutionEnd->value, ['tool_result' => ['tool_call_id' => 'fork-call']])]);
     }
 
-    private function createStore(): SessionToolBatchStore
+    private function seedBatch(ToolBatchStoreInterface $store, string $runId, int $turnNo, string $stepId, ToolBatchStateDTO $batch): void
     {
-        $entityManager = $this->createStub(EntityManagerInterface::class);
-        $appConfig = new AppConfig(
-            tui: new TuiConfig(theme: 'default'),
-            logging: new LoggingConfig(),
-            cwd: $this->projectDir,
-        );
-        $hatfield = new HatfieldSessionStore($appConfig, $entityManager, new \Symfony\Component\EventDispatcher\EventDispatcher());
-
-        [$serializer, $validator] = AttributeSerializerValidatorTestFactory::create();
-
-        return new SessionToolBatchStore(
-            new ParentSessionToolBatchRunStoragePaths($hatfield),
-            new LockFactory(new FlockStore()),
-            new NullLogger(),
-            $serializer,
-            $validator,
-        );
+        $store->prepareChanges([new \Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO(
+            $runId,
+            $turnNo,
+            $stepId,
+            array_values($batch->calls),
+            $batch->expectedOrder,
+            array_values($batch->pendingQueue),
+            $batch->inFlight,
+            $batch->maxParallelism,
+        )], new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(\Symfony\Component\Uid\Uuid::v7()->toRfc4122(),
+            ['run_id' => $runId, 'actions' => []],
+        ))();
+        if ($batch->finalized || [] !== $batch->results || [] !== $batch->awaitingHumanInput || [] !== $batch->pendingQueue || [] !== $batch->inFlight) {
+            $store->prepareChanges([new \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO(
+                $runId,
+                $turnNo,
+                $stepId,
+                array_values($batch->pendingQueue),
+                $batch->inFlight,
+                $batch->awaitingHumanInput,
+                $batch->finalized,
+            )], new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(\Symfony\Component\Uid\Uuid::v7()->toRfc4122(),
+                ['run_id' => $runId, 'actions' => [new \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO(
+                    $runId,
+                    $turnNo,
+                    $stepId,
+                    array_values($batch->pendingQueue),
+                    $batch->inFlight,
+                    $batch->awaitingHumanInput,
+                    $batch->finalized,
+                )]],
+            ))();
+        }
     }
 
-    private function createRunCommit(SessionToolBatchStore $store, TestActiveRunContext $activeRunContext): RunCommit
+    private function createStore(): ToolBatchStoreInterface
+    {
+        return new TestToolBatchStore();
+    }
+
+    private function createRunCommit(ToolBatchStoreInterface $store, TestActiveRunContext $activeRunContext): RunCommit
     {
         $hookDispatcher = new HookDispatcher([
             new ToolBatchSnapshotCleanupHookSubscriber($store, new TestLogger(), $this->createStub(\Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface::class)),
         ]);
+        $eventStore = new CleanupHookSubscriberNoOpEventStore();
 
         return new RunCommit(
             activeRunContext: $activeRunContext,
-            eventStore: new CleanupHookSubscriberNoOpEventStore(),
-            stepDispatcher: new StepDispatcher(new TestMessageBus(), new TestMessageBus()),
+            eventStore: $eventStore,
             logger: new TestLogger(),
-            toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(),
             hookDispatcher: $hookDispatcher,
+            finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher())),
         );
     }
 }
 
-final class CleanupHookSubscriberNoOpEventStore implements EventStoreInterface
+final class CleanupHookSubscriberNoOpEventStore implements PreparedTransitionEventStoreInterface
 {
-    public function append(RunEvent $event): RunEvent
+    /** @var array<string, \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO> */
+    private array $pending = [];
+
+    public function appendTransition(array $events, array $work): array
     {
-        return $event;
+        $runId = $events[0]->runId ?? $work['run_id'] ?? null;
+        if (!\is_string($runId) || '' === $runId) {
+            throw new \InvalidArgumentException('Prepared transition requires run identity.');
+        }
+        $this->assertTransitionReady($runId);
+        $this->pending[$runId] = new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(
+            hash('sha256', serialize([$work, $events])),
+            $work,
+            array_map(static fn (RunEvent $event): int => $event->seq, $events),
+        );
+
+        return $events;
     }
 
-    public function appendMany(array $events): array
+    public function assertTransitionReady(string $runId): void
     {
-        return $events;
+    }
+
+    public function verifiedPendingTransition(string $runId): ?\Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO
+    {
+        return $this->pending[$runId] ?? null;
+    }
+
+    public function verifiedPendingBatch(string $runId, string $identity): array
+    {
+        $pending = $this->verifiedPendingTransition($runId);
+        if (null === $pending || $pending->identity !== $identity) {
+            throw new \RuntimeException('Fixture transition identity mismatch.');
+        }
+
+        return [];
+    }
+
+    public function finalizeVerifiedTransition(string $runId, string $identity): void
+    {
+        if (($this->pending[$runId]->identity ?? null) !== $identity) {
+            throw new \RuntimeException('Fixture transition identity mismatch.');
+        }
+        unset($this->pending[$runId]);
     }
 
     public function latestSequenceFor(string $runId): ?int

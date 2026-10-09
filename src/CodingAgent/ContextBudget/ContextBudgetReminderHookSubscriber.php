@@ -4,14 +4,12 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\ContextBudget;
 
-use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
-use Ineersa\AgentCore\Contract\Extension\HookSubscriberInterface;
+use Ineersa\AgentCore\Contract\Extension\EssentialAfterTurnHookInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
-use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ContextBudgetReminderConfig;
@@ -21,48 +19,47 @@ use Ineersa\CodingAgent\Config\ContextBudgetReminderConfig;
  * usage crosses context-budget thresholds.
  *
  * Uses only existing AgentCore surfaces (AfterTurnCommit, EventStore,
- * AgentRunner::appendMessage). No AgentCore reminder DTOs, markers, or
+ * prepared ApplyCommand descriptors). No AgentCore reminder DTOs, markers, or
  * provider-injection fields.
  */
-final readonly class ContextBudgetReminderHookSubscriber implements HookSubscriberInterface
+final readonly class ContextBudgetReminderHookSubscriber implements EssentialAfterTurnHookInterface
 {
     public const string EARLY_TEXT = 'Context usage is already very high. Stop further exploration and do not start new delegated work. Finish now with the best concise final answer or handoff, including concrete findings, incomplete work, and next steps.';
     public const string URGENT_TEXT = 'Context is nearly exhausted. Stop further exploration and do not start new delegated work. Finish now with the best concise final answer or handoff, including concrete findings, incomplete work, and next steps.';
 
     public function __construct(
         private EventStoreInterface $eventStore,
-        private AgentRunnerInterface $agentRunner,
         private ContextBudgetReminderConfig $config,
         private AppConfig $appConfig,
     ) {
     }
 
-    public function handleAfterTurnCommit(AfterTurnCommitHookContext $context): AfterTurnCommitHookContext
+    public function prepareAfterTurnCommit(AfterTurnCommitHookContext $context, int $predecessorSequence): array
     {
         $completion = $this->latestLlmStepCompletedInBatch($context->events);
         if (null === $completion) {
-            return $context;
+            return [];
         }
 
         $inputTokens = $this->positivePromptInputTokens($completion->payload['usage'] ?? null);
         if (null === $inputTokens) {
-            return $context;
+            return [];
         }
 
         $runStarted = $this->eventStore->firstFor($context->runId);
         if ($this->remindersDisabledForRun($runStarted)) {
-            return $context;
+            return [];
         }
 
         $contextWindow = $this->resolveContextWindow($context, $runStarted);
         if (null === $contextWindow) {
-            return $context;
+            return [];
         }
 
         $remaining = $contextWindow - $inputTokens;
         if ($inputTokens < $this->config->earlyInputTokens
             && $remaining >= $this->config->urgentRemainingTokens) {
-            return $context;
+            return [];
         }
 
         $issued = $this->issuedReminderKeysAfterLatestCompaction($context->runId);
@@ -75,23 +72,23 @@ final readonly class ContextBudgetReminderHookSubscriber implements HookSubscrib
             && !\in_array('urgent', $issued, true);
 
         if (!$earlyEligible && !$urgentEligible) {
-            return $context;
+            return [];
         }
 
         // Both eligible on one response: send only urgent prose.
         $text = $urgentEligible ? self::URGENT_TEXT : self::EARLY_TEXT;
         $wrapped = self::wrapSystemReminder($text);
 
-        $this->agentRunner->appendMessage(
-            $context->runId,
-            new AgentMessage(
-                role: 'user',
-                content: [['type' => 'text', 'text' => $wrapped]],
-                metadata: ['system_reminder' => true],
-            ),
-        );
+        $stepId = 'append_message-'.\Symfony\Component\Uid\Uuid::v7()->toRfc4122();
 
-        return $context;
+        return [new \Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO(
+            new \Ineersa\AgentCore\Domain\Message\ApplyCommand(
+                runId: $context->runId, turnNo: 0, stepId: $stepId, attempt: 1,
+                idempotencyKey: hash('sha256', $context->runId.'|'.$stepId),
+                kind: \Ineersa\AgentCore\Domain\Command\CoreCommandKind::AppendMessage,
+                payload: ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => $wrapped]], 'metadata' => ['system_reminder' => true]]],
+            ),
+        )];
     }
 
     public static function wrapSystemReminder(string $text): string

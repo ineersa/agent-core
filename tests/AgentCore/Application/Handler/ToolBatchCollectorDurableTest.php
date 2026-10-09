@@ -4,52 +4,62 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Application\Handler;
 
-use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
-use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
-use Ineersa\CodingAgent\Config\AppConfig;
-use Ineersa\CodingAgent\Config\LoggingConfig;
-use Ineersa\CodingAgent\Config\TuiConfig;
-use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Ineersa\CodingAgent\Session\SessionToolBatchStore;
-use Ineersa\CodingAgent\Tests\Session\Support\ParentSessionToolBatchRunStoragePaths;
-use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
+use Ineersa\AgentCore\Tests\Support\TestToolBatchStore;
 use PHPUnit\Framework\TestCase;
-use Psr\Log\NullLogger;
-use Symfony\Component\Lock\LockFactory;
-use Symfony\Component\Lock\Store\FlockStore;
 
 /**
- * Durable coordination proofs use the real filesystem SessionToolBatchStore.
+ * Durable coordination proofs use the in-memory SQL-shaped scheduling store.
  */
 final class ToolBatchCollectorDurableTest extends TestCase
 {
-    private string $projectDir = '';
-
-    protected function setUp(): void
+    public function testRepeatedRegistrationPreservesResultsAndDoesNotReadmitExecution(): void
     {
-        parent::setUp();
-        $this->projectDir = TestDirectoryIsolation::createOsTempDir('tool-batch-collector-durable');
-        TestDirectoryIsolation::createHatfieldTree($this->projectDir, withSessions: true);
+        $store = $this->createStore();
+        $calls = [
+            $this->executeToolCall('run-register', 'step-register', 'call-1', 0, 'sequential'),
+            $this->executeToolCall('run-register', 'step-register', 'call-2', 1, 'sequential'),
+        ];
+        $collector = new ToolBatchCollector($store);
+        $this->assertCount(1, TestToolBatchRegistration::register($collector, $store, 'run-register', 1, 'step-register', $calls));
+        \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($collector, $store, $this->toolResult('run-register', 'step-register', 'call-1', 0));
+        $before = $store->load('run-register', 1, 'step-register');
+        $restored = new ToolBatchCollector($store);
+        $this->assertSame([], TestToolBatchRegistration::register($restored, $store, 'run-register', 1, 'step-register', $calls));
+        $this->assertEquals($before, $store->load('run-register', 1, 'step-register'));
+        \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($restored, $store, $this->toolResult('run-register', 'step-register', 'call-2', 1));
+        $this->assertSame([], TestToolBatchRegistration::register($restored, $store, 'run-register', 1, 'step-register', $calls));
+        $this->assertTrue($store->load('run-register', 1, 'step-register')->finalized);
+        $this->assertCount(2, $store->load('run-register', 1, 'step-register')->results);
     }
 
-    protected function tearDown(): void
+    public function testConflictingRegistrationCannotReplaceExistingBatch(): void
     {
-        TestDirectoryIsolation::removeDirectory($this->projectDir);
-        parent::tearDown();
+        $store = $this->createStore();
+        $collector = new ToolBatchCollector($store);
+        TestToolBatchRegistration::register($collector, $store, 'run-conflict', 1, 'step-conflict', [$this->executeToolCall('run-conflict', 'step-conflict', 'call', 0, 'sequential')]);
+        $before = $store->load('run-conflict', 1, 'step-conflict');
+        try {
+            TestToolBatchRegistration::register($collector, $store, 'run-conflict', 1, 'step-conflict', [$this->executeToolCall('run-conflict', 'step-conflict', 'different-call', 0, 'sequential')]);
+            $this->fail('Conflicting prepared membership must be rejected.');
+        } catch (\LogicException $exception) {
+            $this->assertStringContainsString('Conflicting prepared', $exception->getMessage());
+        }
+        $this->assertEquals($before, $store->load('run-conflict', 1, 'step-conflict'));
     }
 
     public function testRegisterAndCollectWithStore(): void
     {
         $store = $this->createStore();
-        $collector = new ToolBatchCollector(defaultMaxParallelism: 4, store: $store);
+        $collector = new ToolBatchCollector($store, 4);
 
-        $initial = $collector->registerExpectedBatch('run-1', 1, 'step-1', [
+        $initial = TestToolBatchRegistration::register($collector, $store, 'run-1', 1, 'step-1', [
             $this->executeToolCall('run-1', 'step-1', 'call-1', 0, 'sequential'),
             $this->executeToolCall('run-1', 'step-1', 'call-2', 1, 'sequential'),
         ]);
@@ -57,7 +67,7 @@ final class ToolBatchCollectorDurableTest extends TestCase
         $this->assertCount(1, $initial);
         $this->assertSame('call-1', $initial[0]->toolCallId);
 
-        $firstOutcome = $collector->collect($this->toolResult('run-1', 'step-1', 'call-1', 0));
+        $firstOutcome = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($collector, $store, $this->toolResult('run-1', 'step-1', 'call-1', 0));
         $this->assertTrue($firstOutcome->accepted);
         $this->assertFalse($firstOutcome->complete);
         $this->assertCount(1, $firstOutcome->effectsToDispatch);
@@ -68,7 +78,7 @@ final class ToolBatchCollectorDurableTest extends TestCase
         $this->assertFalse($loaded->finalized);
         $this->assertCount(1, $loaded->results);
 
-        $secondOutcome = $collector->collect($this->toolResult('run-1', 'step-1', 'call-2', 1));
+        $secondOutcome = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($collector, $store, $this->toolResult('run-1', 'step-1', 'call-2', 1));
         $this->assertTrue($secondOutcome->accepted);
         $this->assertTrue($secondOutcome->complete);
 
@@ -80,22 +90,22 @@ final class ToolBatchCollectorDurableTest extends TestCase
     public function testCrossProcessRecoveryWithStore(): void
     {
         $store = $this->createStore();
-        $registrar = new ToolBatchCollector(defaultMaxParallelism: 4, store: $store);
+        $registrar = new ToolBatchCollector($store, 4);
 
-        $initial = $registrar->registerExpectedBatch('run-2', 1, 'step-1', [
+        $initial = TestToolBatchRegistration::register($registrar, $store, 'run-2', 1, 'step-1', [
             $this->executeToolCall('run-2', 'step-1', 'call-1', 0, 'parallel', maxParallelism: 2),
             $this->executeToolCall('run-2', 'step-1', 'call-2', 1, 'parallel', maxParallelism: 2),
         ]);
         $this->assertCount(2, $initial);
         unset($registrar);
 
-        $recovering = new ToolBatchCollector(defaultMaxParallelism: 4, store: $store);
-        $firstOutcome = $recovering->collect($this->toolResult('run-2', 'step-1', 'call-1', 0));
+        $recovering = new ToolBatchCollector($store, 4);
+        $firstOutcome = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($recovering, $store, $this->toolResult('run-2', 'step-1', 'call-1', 0));
         $this->assertTrue($firstOutcome->accepted);
         $this->assertFalse($firstOutcome->complete);
         $this->assertEmpty($firstOutcome->effectsToDispatch);
 
-        $secondOutcome = $recovering->collect($this->toolResult('run-2', 'step-1', 'call-2', 1));
+        $secondOutcome = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($recovering, $store, $this->toolResult('run-2', 'step-1', 'call-2', 1));
         $this->assertTrue($secondOutcome->accepted);
         $this->assertTrue($secondOutcome->complete);
     }
@@ -103,9 +113,9 @@ final class ToolBatchCollectorDurableTest extends TestCase
     public function testCrossProcessRecoveryDispatchesPendingCalls(): void
     {
         $store = $this->createStore();
-        $registrar = new ToolBatchCollector(defaultMaxParallelism: 2, store: $store);
+        $registrar = new ToolBatchCollector($store, 2);
 
-        $initial = $registrar->registerExpectedBatch('run-3', 1, 'step-1', [
+        $initial = TestToolBatchRegistration::register($registrar, $store, 'run-3', 1, 'step-1', [
             $this->executeToolCall('run-3', 'step-1', 'call-1', 0, 'parallel', maxParallelism: 2),
             $this->executeToolCall('run-3', 'step-1', 'call-2', 1, 'parallel', maxParallelism: 2),
             $this->executeToolCall('run-3', 'step-1', 'call-3', 2, 'parallel', maxParallelism: 2),
@@ -113,8 +123,8 @@ final class ToolBatchCollectorDurableTest extends TestCase
         $this->assertCount(2, $initial);
         unset($registrar);
 
-        $recovering = new ToolBatchCollector(defaultMaxParallelism: 2, store: $store);
-        $firstOutcome = $recovering->collect($this->toolResult('run-3', 'step-1', 'call-1', 0));
+        $recovering = new ToolBatchCollector($store, 2);
+        $firstOutcome = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($recovering, $store, $this->toolResult('run-3', 'step-1', 'call-1', 0));
         $this->assertTrue($firstOutcome->accepted);
         $this->assertFalse($firstOutcome->complete);
         $this->assertCount(1, $firstOutcome->effectsToDispatch);
@@ -123,8 +133,9 @@ final class ToolBatchCollectorDurableTest extends TestCase
 
     public function testRejectedWhenStoreIsEmpty(): void
     {
-        $collector = new ToolBatchCollector(store: $this->createStore());
-        $outcome = $collector->collect($this->toolResult('run-nonexistent', 'step-1', 'call-1', 0));
+        $store = $this->createStore();
+        $collector = new ToolBatchCollector($store);
+        $outcome = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($collector, $store, $this->toolResult('run-nonexistent', 'step-1', 'call-1', 0));
         $this->assertFalse($outcome->accepted);
         $this->assertFalse($outcome->duplicate);
     }
@@ -132,15 +143,15 @@ final class ToolBatchCollectorDurableTest extends TestCase
     public function testDuplicateResultWithStore(): void
     {
         $store = $this->createStore();
-        $collector = new ToolBatchCollector(defaultMaxParallelism: 4, store: $store);
-        $collector->registerExpectedBatch('run-4', 1, 'step-1', [
+        $collector = new ToolBatchCollector($store, 4);
+        TestToolBatchRegistration::register($collector, $store, 'run-4', 1, 'step-1', [
             $this->executeToolCall('run-4', 'step-1', 'call-1', 0, 'sequential'),
         ]);
 
-        $firstOutcome = $collector->collect($this->toolResult('run-4', 'step-1', 'call-1', 0));
+        $firstOutcome = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($collector, $store, $this->toolResult('run-4', 'step-1', 'call-1', 0));
         $this->assertTrue($firstOutcome->accepted);
 
-        $dupOutcome = $collector->collect($this->toolResult('run-4', 'step-1', 'call-1', 0));
+        $dupOutcome = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($collector, $store, $this->toolResult('run-4', 'step-1', 'call-1', 0));
         $this->assertTrue($dupOutcome->accepted);
         $this->assertFalse($dupOutcome->duplicate);
         $this->assertTrue($dupOutcome->complete);
@@ -149,8 +160,8 @@ final class ToolBatchCollectorDurableTest extends TestCase
     public function testCrossProcessParallelDispatchRecovery(): void
     {
         $store = $this->createStore();
-        $registrar = new ToolBatchCollector(defaultMaxParallelism: 4, store: $store);
-        $initial = $registrar->registerExpectedBatch('run-5', 1, 'step-1', [
+        $registrar = new ToolBatchCollector($store, 4);
+        $initial = TestToolBatchRegistration::register($registrar, $store, 'run-5', 1, 'step-1', [
             $this->executeToolCall('run-5', 'step-1', 'call-1', 0, 'sequential'),
             $this->executeToolCall('run-5', 'step-1', 'call-2', 1, 'parallel', maxParallelism: 4),
             $this->executeToolCall('run-5', 'step-1', 'call-3', 2, 'parallel', maxParallelism: 4),
@@ -158,8 +169,8 @@ final class ToolBatchCollectorDurableTest extends TestCase
         $this->assertCount(1, $initial);
         unset($registrar);
 
-        $recovering = new ToolBatchCollector(defaultMaxParallelism: 4, store: $store);
-        $firstOutcome = $recovering->collect($this->toolResult('run-5', 'step-1', 'call-1', 0));
+        $recovering = new ToolBatchCollector($store, 4);
+        $firstOutcome = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($recovering, $store, $this->toolResult('run-5', 'step-1', 'call-1', 0));
         $this->assertTrue($firstOutcome->accepted);
         $this->assertFalse($firstOutcome->complete);
         $this->assertCount(2, $firstOutcome->effectsToDispatch);
@@ -168,7 +179,7 @@ final class ToolBatchCollectorDurableTest extends TestCase
     public function testFailedDurableSaveDoesNotDirtyInMemoryCache(): void
     {
         $store = new class($this->createStore()) implements ToolBatchStoreInterface {
-            public function __construct(private readonly SessionToolBatchStore $inner)
+            public function __construct(private readonly ToolBatchStoreInterface $inner)
             {
             }
 
@@ -179,14 +190,14 @@ final class ToolBatchCollectorDurableTest extends TestCase
                 return $this->inner->load($runId, $turnNo, $stepId);
             }
 
-            public function save(string $runId, int $turnNo, string $stepId, ToolBatchStateDTO $batchState): void
-            {
-                $this->inner->save($runId, $turnNo, $stepId, $batchState);
-            }
-
             public function delete(string $runId, int $turnNo, string $stepId): void
             {
                 $this->inner->delete($runId, $turnNo, $stepId);
+            }
+
+            public function hasUnresolvedExecution(string $runId, ?string $toolCallId = null): bool
+            {
+                return false;
             }
 
             public function deleteAllForRun(string $runId): void
@@ -194,32 +205,35 @@ final class ToolBatchCollectorDurableTest extends TestCase
                 $this->inner->deleteAllForRun($runId);
             }
 
-            public function mutate(string $runId, int $turnNo, string $stepId, callable $callback): mixed
+            public function prepareChanges(array $actions, \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO $transition): \Closure
             {
-                if ($this->failNextMutate) {
-                    $this->failNextMutate = false;
-                    throw new \RuntimeException('Simulated durable write failure.');
-                }
+                $apply = $this->inner->prepareChanges($actions, $transition);
 
-                return $this->inner->mutate($runId, $turnNo, $stepId, $callback);
+                return function () use ($apply): void {
+                    if ($this->failNextMutate) {
+                        $this->failNextMutate = false;
+                        throw new \RuntimeException('Simulated durable write failure.');
+                    }
+                    $apply();
+                };
             }
         };
 
-        $collector = new ToolBatchCollector(defaultMaxParallelism: 4, store: $store);
-        $collector->registerExpectedBatch('run-6', 1, 'step-1', [
+        $collector = new ToolBatchCollector($store, 4);
+        TestToolBatchRegistration::register($collector, $store, 'run-6', 1, 'step-1', [
             $this->executeToolCall('run-6', 'step-1', 'call-1', 0, 'sequential'),
         ]);
 
         $store->failNextMutate = true;
 
         try {
-            $collector->collect($this->toolResult('run-6', 'step-1', 'call-1', 0));
+            \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($collector, $store, $this->toolResult('run-6', 'step-1', 'call-1', 0));
             $this->fail('Expected simulated durable write failure.');
         } catch (\RuntimeException $e) {
             $this->assertSame('Simulated durable write failure.', $e->getMessage());
         }
 
-        $retryOutcome = $collector->collect($this->toolResult('run-6', 'step-1', 'call-1', 0));
+        $retryOutcome = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($collector, $store, $this->toolResult('run-6', 'step-1', 'call-1', 0));
         $this->assertTrue($retryOutcome->accepted);
         $this->assertFalse($retryOutcome->duplicate);
         $this->assertTrue($retryOutcome->complete);
@@ -228,13 +242,13 @@ final class ToolBatchCollectorDurableTest extends TestCase
     public function testDurableHumanInputAdmitResumeRedrivePersistsThroughMutate(): void
     {
         $store = $this->createStore();
-        $collector = new ToolBatchCollector(defaultMaxParallelism: 1, store: $store);
-        $collector->registerExpectedBatch('run-hi', 1, 'step-hi', [
+        $collector = new ToolBatchCollector($store, 1);
+        TestToolBatchRegistration::register($collector, $store, 'run-hi', 1, 'step-hi', [
             $this->executeToolCall('run-hi', 'step-hi', 'call-1', 0, 'sequential'),
         ]);
 
         // Admit through the shared durable mutate path.
-        $this->assertSame([], $collector->admitHumanInputSuspension('run-hi', 1, 'step-hi', 'call-1', 'q-1'));
+        $this->assertSame([], \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, $store, 'run-hi', 1, 'step-hi', 'call-1', 'q-1'));
         $stored = $store->load('run-hi', 1, 'step-hi');
         $this->assertNotNull($stored);
         $this->assertSame('q-1', $stored->awaitingHumanInput['call-1'] ?? null);
@@ -246,7 +260,7 @@ final class ToolBatchCollectorDurableTest extends TestCase
             continuationRef: ['run_id' => 'run-hi', 'turn_no' => 1, 'step_id' => 'step-hi', 'tool_call_id' => 'call-1'],
             requestPayload: ['question_id' => 'q-1', 'prompt' => 'Allow?'],
         );
-        $resumed = $collector->resumeHumanInputAnswer('run-hi', 1, 'step-hi', 'call-1', 'q-1', $answer);
+        $resumed = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::resume($collector, $store, 'run-hi', 1, 'step-hi', 'call-1', 'q-1', $answer);
         $this->assertCount(1, $resumed);
         $this->assertSame('call-1', $resumed[0]->toolCallId);
 
@@ -256,22 +270,23 @@ final class ToolBatchCollectorDurableTest extends TestCase
         $this->assertSame('✅ Allow', $stored->calls['call-1']?->humanInputAnswer?->answer);
 
         // Redrive through the shared durable mutate path.
-        $redriven = $collector->redriveHumanInputAnswer('run-hi', 1, 'step-hi', 'q-1', '✅ Allow');
+        $redriven = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::redrive($collector, $store, 'run-hi', 1, 'step-hi', 'q-1', '✅ Allow');
         $this->assertCount(1, $redriven);
         $this->assertSame('call-1', $redriven[0]->toolCallId);
     }
 
     public function testDurableHumanInputMissingBatchPreservesExactErrors(): void
     {
-        $collector = new ToolBatchCollector(defaultMaxParallelism: 1, store: $this->createStore());
+        $store = $this->createStore();
+        $collector = new ToolBatchCollector($store, 1);
 
         $cases = [
             [
-                static fn (): array => $collector->admitHumanInputSuspension('run-missing', 1, 'step-missing', 'call-1', 'q-1'),
+                static fn (): array => \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, $store, 'run-missing', 1, 'step-missing', 'call-1', 'q-1'),
                 'Cannot admit tool-execution suspension for unknown batch run=run-missing turn=1 step=step-missing.',
             ],
             [
-                static fn (): array => $collector->resumeHumanInputAnswer('run-missing', 1, 'step-missing', 'call-1', 'q-1', new ToolCallHumanInputAnswerDTO(
+                static fn (): array => \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::resume($collector, $store, 'run-missing', 1, 'step-missing', 'call-1', 'q-1', new ToolCallHumanInputAnswerDTO(
                     questionId: 'q-1',
                     answer: '✅ Allow',
                     continuationRef: [],
@@ -280,7 +295,7 @@ final class ToolBatchCollectorDurableTest extends TestCase
                 'Cannot resume tool-execution human input for unknown batch run=run-missing turn=1 step=step-missing.',
             ],
             [
-                static fn (): array => $collector->redriveHumanInputAnswer('run-missing', 1, 'step-missing', 'q-1', '✅ Allow'),
+                static fn (): array => \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::redrive($collector, $store, 'run-missing', 1, 'step-missing', 'q-1', '✅ Allow'),
                 'Cannot redrive tool-execution human input for unknown batch run=run-missing turn=1 step=step-missing.',
             ],
         ];
@@ -295,25 +310,9 @@ final class ToolBatchCollectorDurableTest extends TestCase
         }
     }
 
-    private function createStore(): SessionToolBatchStore
+    private function createStore(): ToolBatchStoreInterface
     {
-        $entityManager = $this->createStub(EntityManagerInterface::class);
-        $appConfig = new AppConfig(
-            tui: new TuiConfig(theme: 'default'),
-            logging: new LoggingConfig(),
-            cwd: $this->projectDir,
-        );
-        $hatfield = new HatfieldSessionStore($appConfig, $entityManager, new \Symfony\Component\EventDispatcher\EventDispatcher());
-
-        [$serializer, $validator] = AttributeSerializerValidatorTestFactory::create();
-
-        return new SessionToolBatchStore(
-            new ParentSessionToolBatchRunStoragePaths($hatfield),
-            new LockFactory(new FlockStore()),
-            new NullLogger(),
-            $serializer,
-            $validator,
-        );
+        return new TestToolBatchStore();
     }
 
     private function executeToolCall(

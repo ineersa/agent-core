@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Session\History;
 
 use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
@@ -43,9 +44,9 @@ final class HistoryTailDiscardServiceTest extends TestCase
             ]),
         ];
 
-        $store = $this->createMock(EventStoreInterface::class);
+        $store = $this->createMock(PreparedTransitionEventStoreInterface::class);
         $store->method('allFor')->willReturn($events);
-        $store->expects($this->never())->method('append');
+        $store->expects($this->never())->method('appendTransition');
 
         $service = new HistoryTailDiscardService(
             $store,
@@ -79,9 +80,9 @@ final class HistoryTailDiscardServiceTest extends TestCase
             $this->event($runId, 2, 1, RunEventTypeEnum::HistoryPositionSet->value, ['position_turn_no' => 1]),
         ];
 
-        $store = $this->createMock(EventStoreInterface::class);
+        $store = $this->createMock(PreparedTransitionEventStoreInterface::class);
         $store->method('allFor')->willReturn($events);
-        $store->expects($this->never())->method('append');
+        $store->expects($this->never())->method('appendTransition');
 
         $service = new HistoryTailDiscardService(
             $store,

@@ -13,10 +13,9 @@ use Ineersa\AgentCore\Domain\Tool\ToolResult;
 /**
  * Maps tool execution outcomes to the canonical ToolCallResult envelope.
  *
- * Suspension then terminal completion for one tool call are two valid sequential
- * run_control messages, distinguished and admitted by durable tool-batch state.
- * Their generated keys merely provide stable, distinct deterministic envelope
- * identities (avoiding a stuck run after Allow).
+ * Each outcome retains its authorized invocation identity. A suspension settles
+ * that invocation; a human answer authorizes a new invocation for the same
+ * logical tool call, so its later outcome cannot collide with the suspension.
  */
 final class ToolCallResultFactory
 {
@@ -52,7 +51,7 @@ final class ToolCallResultFactory
             turnNo: $message->turnNo(),
             stepId: $message->stepId(),
             attempt: $message->attempt(),
-            idempotencyKey: self::terminalResultIdempotencyKey($message->runId(), $message->stepId(), $message->toolCallId),
+            idempotencyKey: $message->idempotencyKey(),
             toolCallId: $message->toolCallId,
             orderIndex: $message->orderIndex,
             result: [
@@ -76,7 +75,7 @@ final class ToolCallResultFactory
      * (run/turn/step/toolCall) lives on the envelope; `$pendingHumanInput` alone marks the
      * non-terminal variant for ToolCallResultHandler admission.
      *
-     * questionId gives each suspension/question a distinct deterministic envelope identity.
+     * The question identity stays in the typed request; the envelope identifies its invocation.
      */
     public static function fromExecuteToolCallAndHumanInputSuspension(
         ExecuteToolCall $message,
@@ -87,12 +86,7 @@ final class ToolCallResultFactory
             turnNo: $message->turnNo(),
             stepId: $message->stepId(),
             attempt: $message->attempt(),
-            idempotencyKey: self::suspensionIdempotencyKey(
-                $message->runId(),
-                $message->stepId(),
-                $message->toolCallId,
-                $suspension->request->questionId,
-            ),
+            idempotencyKey: $message->idempotencyKey(),
             toolCallId: $message->toolCallId,
             orderIndex: $message->orderIndex,
             result: null,
@@ -128,9 +122,7 @@ final class ToolCallResultFactory
             turnNo: $message->turnNo(),
             stepId: $message->stepId(),
             attempt: $message->attempt(),
-            // Throwable is a terminal tool outcome; share terminal result identity so
-            // duplicate terminal delivery (result vs throwable race) still dedups.
-            idempotencyKey: self::terminalResultIdempotencyKey($message->runId(), $message->stepId(), $message->toolCallId),
+            idempotencyKey: $message->idempotencyKey(),
             toolCallId: $message->toolCallId,
             orderIndex: $message->orderIndex,
             result: [
@@ -171,8 +163,8 @@ final class ToolCallResultFactory
             turnNo: $correlation->turnNo,
             stepId: $correlation->stepId,
             attempt: $correlation->attempt,
-            // Deferred completion is a terminal tool outcome for the original call.
-            idempotencyKey: self::terminalResultIdempotencyKey($correlation->runId, $correlation->stepId, $correlation->toolCallId),
+            // Publish against the authorized invocation identity captured at deferred registration.
+            idempotencyKey: $correlation->idempotencyKey,
             toolCallId: $correlation->toolCallId,
             orderIndex: $correlation->orderIndex,
             result: [
@@ -186,25 +178,5 @@ final class ToolCallResultFactory
             isError: $isError,
             error: $error,
         ))->finalized();
-    }
-
-    private static function terminalResultIdempotencyKey(string $runId, string $stepId, string $toolCallId): string
-    {
-        return hash('sha256', \sprintf('tool_call_result|terminal|%s|%s|%s', $runId, $stepId, $toolCallId));
-    }
-
-    private static function suspensionIdempotencyKey(
-        string $runId,
-        string $stepId,
-        string $toolCallId,
-        string $questionId,
-    ): string {
-        return hash('sha256', \sprintf(
-            'tool_call_result|suspension|%s|%s|%s|%s',
-            $runId,
-            $stepId,
-            $toolCallId,
-            $questionId,
-        ));
     }
 }

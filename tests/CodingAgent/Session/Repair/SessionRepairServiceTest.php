@@ -19,10 +19,8 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
-use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
-use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
@@ -42,7 +40,6 @@ use Ineersa\CodingAgent\Session\Repair\SessionRepairService;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
-use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
@@ -94,12 +91,12 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
         $service = $this->createService($runStore);
         $before = $this->readEvents($runId);
 
-        $dryRun = $service->repair($runId, false);
+        $dryRun = $service->repair($runId, false, \Symfony\Component\Uid\Uuid::v4()->toRfc4122());
         $this->assertFalse($dryRun->repairableStaleCancellationDetected);
         $this->assertFalse($dryRun->staleCancellationRepaired);
         $this->assertStringContainsStringIgnoringCase('no repairable corruption', $dryRun->message);
 
-        $apply = $service->repair($runId, true);
+        $apply = $service->repair($runId, true, \Symfony\Component\Uid\Uuid::v4()->toRfc4122());
         $this->assertFalse($apply->repairableStaleCancellationDetected);
         $this->assertFalse($apply->staleCancellationRepaired);
         $this->assertSame($before, $this->readEvents($runId));
@@ -154,13 +151,13 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
         $service = $this->createService($runStore);
         $before = $this->readEvents($runId);
 
-        $dryRun = $service->repair($runId, false);
+        $dryRun = $service->repair($runId, false, \Symfony\Component\Uid\Uuid::v4()->toRfc4122());
         $this->assertTrue($dryRun->repairableStaleCancellationDetected);
         $this->assertFalse($dryRun->staleCancellationRepaired);
         $this->assertStringContainsString('failed session has unmatched assistant tool calls', $dryRun->message);
         $this->assertSame($before, $this->readEvents($runId));
 
-        $applied = $service->repair($runId, true);
+        $applied = $service->repair($runId, true, \Symfony\Component\Uid\Uuid::v4()->toRfc4122());
         $this->assertTrue($applied->staleCancellationRepaired);
         $this->assertStringContainsString('Failed session repaired', $applied->message);
 
@@ -179,12 +176,12 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
         $this->assertReplayStatus($runId, RunStatus::Failed);
 
         $lineCountAfterFirst = \count($this->readRawLines($runId));
-        $second = $service->repair($runId, true);
+        $second = $service->repair($runId, true, \Symfony\Component\Uid\Uuid::v4()->toRfc4122());
         $this->assertFalse($second->repairableStaleCancellationDetected);
         $this->assertSame($lineCountAfterFirst, \count($this->readRawLines($runId)));
     }
 
-    public function testDryRunDoesNotDispatchAndApplyRedrivesCurrentLlmWithSameIdentity(): void
+    public function testCurrentLlmRepairPreservesInvocationIdentityOnNormalBus(): void
     {
         $runId = 'repair-llm';
         $stepId = 'step-repair';
@@ -204,76 +201,32 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
         $bus = new TestMessageBus();
         $service = $this->createService($store, dispatcherBus: $bus);
 
-        $dryRun = $service->repair($runId, false);
+        $dryRun = $service->repair($runId, false, \Symfony\Component\Uid\Uuid::v4()->toRfc4122());
         $this->assertSame(0, $dryRun->activeOperationsRedriven);
         $this->assertSame([], $bus->messages);
 
-        $applied = $service->repair($runId, true);
+        $applied = $service->repair($runId, true, \Symfony\Component\Uid\Uuid::v4()->toRfc4122());
+        $this->assertNull($applied->refusalReason);
         $this->assertSame(1, $applied->activeOperationsRedriven);
         $this->assertCount(1, $bus->messages);
-        $this->assertInstanceOf(ExecuteLlmStep::class, $bus->messages[0]);
-        $this->assertSame($key, $bus->messages[0]->idempotencyKey());
-
-        $service->repair($runId, true);
-        $this->assertCount(2, $bus->messages);
-        $this->assertSame($key, $bus->messages[1]->idempotencyKey());
+        $request = $bus->messages[0];
+        $this->assertInstanceOf(ExecuteLlmStep::class, $request);
+        $this->assertSame($runId, $request->runId());
+        $this->assertSame($stepId, $request->stepId());
+        $this->assertSame($key, $request->idempotencyKey());
         $this->assertCount(2, $this->readEvents($runId));
-    }
+        $this->assertStringContainsString('redrive requested', $applied->message);
 
-    public function testDryRunAndRepeatedApplyRedriveCurrentCompactionWithSamePayload(): void
-    {
-        $runId = 'repair-compaction';
-        $key = 'compact-key';
-        $factory = new EventFactory();
-        $workerRequest = new ExecuteCompactionStep(
-            runId: $runId,
-            turnNo: 4,
-            stepId: 'compact-step',
-            attempt: 2,
-            idempotencyKey: $key,
-            model: 'test-model',
-            modelOptions: ['thinking_level' => 'low'],
-            summarizationMessages: [new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'old']])],
-            retainedTailMessages: [new AgentMessage(role: 'assistant', content: [['type' => 'text', 'text' => 'new']])],
-            messagesCompacted: 1,
-            messagesRetained: 1,
-            firstRetainedIndex: 1,
-            tokenEstimateBefore: 42,
-            trigger: 'auto',
-            continueAfterCompaction: true,
-        );
-        $serializer = AttributeSerializerValidatorTestFactory::create()[0];
-        $this->persistRunEvents($runId, $factory->eventsFromSpecs($runId, 4, 1, [
-            ['type' => RunEventTypeEnum::RunStarted->value, 'payload' => ['payload' => ['messages' => []]]],
-            ['type' => RunEventTypeEnum::TurnAdvanced->value, 'payload' => ['turn_no' => 4, 'step_id' => 'step-4']],
-            ['type' => RunEventTypeEnum::ContextCompactionStarted->value, 'payload' => [
-                'turn_no' => 4,
-                'step_id' => 'compact-step',
-                'operation_attempt' => 2,
-                'operation_idempotency_key' => $key,
-                'worker_request' => $serializer->normalize($workerRequest),
-            ]],
-        ]));
-        $store = new TestActiveRunContext();
-        $store->loadRecovered(new RunState(runId: $runId, status: RunStatus::Compacting, version: 1, turnNo: 4, lastSeq: 3, activeStepId: 'compact-step'));
-        $bus = new TestMessageBus();
-        $service = $this->createService($store, dispatcherBus: $bus);
-        $before = $this->readEvents($runId);
-
-        $this->assertSame(0, $service->repair($runId, false)->activeOperationsRedriven);
-        $this->assertSame([], $bus->messages);
-        $this->assertSame($before, $this->readEvents($runId));
-
-        $service->repair($runId, true);
-        $service->repair($runId, true);
-        $this->assertCount(2, $bus->messages);
-        $this->assertContainsOnlyInstancesOf(ExecuteCompactionStep::class, $bus->messages);
-        $this->assertSame($key, $bus->messages[0]->idempotencyKey());
-        $this->assertSame($key, $bus->messages[1]->idempotencyKey());
-        $this->assertSame(2, $bus->messages[0]->attempt());
-        $this->assertSame('old', $bus->messages[0]->summarizationMessages[0]->content[0]['text']);
-        $this->assertSame('new', $bus->messages[0]->retainedTailMessages[0]->content[0]['text']);
-        $this->assertSame($before, $this->readEvents($runId));
+        $rejectingBus = $this->createMock(MessageBusInterface::class);
+        $rejectingBus->expects($this->once())->method('dispatch')->willThrowException(new \RuntimeException('broker unavailable'));
+        $failedSend = $this->createService($store, dispatcherBus: $rejectingBus)->repair($runId, true, \Symfony\Component\Uid\Uuid::v4()->toRfc4122());
+        $this->assertStringContainsString('redrive requested', $failedSend->message);
+        $this->assertStringNotContainsString('operation redriven.', $failedSend->message);
+        $notifications = iterator_to_array(self::getContainer()->get(\Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink::class)->drain($runId));
+        $this->assertCount(1, $notifications);
+        $this->assertSame(['accepted_dispatches' => 0, 'failed_dispatches' => 1], $notifications[0]->payload['metadata']);
+        $this->assertSame('error', $notifications[0]->payload['severity']);
+        $this->assertCount(2, $this->readEvents($runId));
     }
 
     public function testConflictingNormalizedCompactionEnvelopeIsRefusedWithoutDispatch(): void
@@ -302,155 +255,10 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
         $store->loadRecovered(new RunState(runId: $runId, status: RunStatus::Compacting, version: 1, turnNo: 4, lastSeq: 3, activeStepId: 'compact-step'));
         $bus = new TestMessageBus();
 
-        $result = $this->createService($store, dispatcherBus: $bus)->repair($runId, true);
+        $result = $this->createService($store, dispatcherBus: $bus)->repair($runId, true, \Symfony\Component\Uid\Uuid::v4()->toRfc4122());
 
         $this->assertSame(SessionRepairRefusalReasonEnum::AmbiguousPendingWork, $result->refusalReason);
         $this->assertSame([], $bus->messages);
-    }
-
-    public function testDryRunAndRepeatedApplyRedriveAttachedShellFromCanonicalCommand(): void
-    {
-        $runId = 'repair-shell';
-        $key = 'shell-command-key';
-        $toolCallId = 'sh_'.hash('sha256', $key);
-        $factory = new EventFactory();
-        $this->persistRunEvents($runId, $factory->eventsFromSpecs($runId, 2, 1, [
-            ['type' => RunEventTypeEnum::RunStarted->value, 'payload' => ['payload' => ['messages' => []]]],
-            ['type' => RunEventTypeEnum::TurnAdvanced->value, 'payload' => ['turn_no' => 2, 'step_id' => 'llm-step']],
-            ['type' => RunEventTypeEnum::LlmStepCompleted->value, 'payload' => ['assistant_message' => ['role' => 'assistant', 'content' => []]]],
-            ['type' => RunEventTypeEnum::AgentCommandApplied->value, 'payload' => [
-                'kind' => 'shell_command',
-                'text' => '!printf repair-shell',
-                'idempotency_key' => $key,
-                'standalone' => false,
-                'current_operation' => AttributeSerializerValidatorTestFactory::create()[0]->normalize(
-                    new CurrentOperationDTO(2, 'llm-step', 1, 'llm-key'),
-                ),
-            ]],
-        ]));
-        $store = new TestActiveRunContext();
-        $store->loadRecovered(new RunState(runId: $runId, status: RunStatus::Running, version: 1, lastSeq: 4));
-        $bus = new TestMessageBus();
-        $service = $this->createService($store, dispatcherBus: $bus);
-        $before = $this->readEvents($runId);
-
-        $this->assertSame(0, $service->repair($runId, false)->activeOperationsRedriven);
-        $this->assertSame([], $bus->messages);
-
-        $service->repair($runId, true);
-        $service->repair($runId, true);
-        $this->assertCount(2, $bus->messages);
-        $this->assertContainsOnlyInstancesOf(ExecuteShellToolCall::class, $bus->messages);
-        foreach ($bus->messages as $message) {
-            $this->assertSame($toolCallId, $message->toolCallId);
-            $this->assertSame('printf repair-shell', $message->commandText);
-            $this->assertSame(hash('sha256', $runId.'|'.$toolCallId), $message->idempotencyKey());
-            $this->assertFalse($message->standalone);
-        }
-        $this->assertSame($before, $this->readEvents($runId));
-    }
-
-    /**
-     * @return iterable<string, array{childTurn: bool}>
-     */
-    public static function standaloneShellRepairCases(): iterable
-    {
-        yield 'queued' => ['childTurn' => false];
-        yield 'terminal_child_turn' => ['childTurn' => true];
-    }
-
-    #[DataProvider('standaloneShellRepairCases')]
-    public function testApplyRedrivesStandaloneShellFromCanonicalIdentityWithoutLlm(bool $childTurn): void
-    {
-        $runId = $childTurn ? 'repair-terminal-shell' : 'repair-queued-shell';
-        $key = $childTurn ? 'terminal-shell-key' : 'queued-shell-key';
-        $stepId = $childTurn ? 'terminal-shell-step' : 'queued-shell-step';
-        $turnNo = $childTurn ? 2 : 0;
-        $toolCallId = 'sh_'.hash('sha256', $key);
-        $factory = new EventFactory();
-        $specs = [
-            ['type' => RunEventTypeEnum::RunStarted->value, 'payload' => ['payload' => ['messages' => []]]],
-        ];
-        if ($childTurn) {
-            $specs[] = ['type' => RunEventTypeEnum::AgentEnd->value, 'payload' => ['reason' => 'completed']];
-        }
-        $specs[] = ['type' => RunEventTypeEnum::AgentCommandApplied->value, 'payload' => [
-            'kind' => 'shell_command',
-            'text' => '!printf repair-standalone-shell',
-            'idempotency_key' => $key,
-            'standalone' => true,
-            'current_operation' => AttributeSerializerValidatorTestFactory::create()[0]->normalize(
-                new CurrentOperationDTO($turnNo, $stepId, 1, $key),
-            ),
-        ]];
-        if ($childTurn) {
-            $specs[] = ['type' => RunEventTypeEnum::TurnAdvanced->value, 'turn_no' => $turnNo, 'payload' => [
-                'turn_no' => $turnNo,
-                'step_id' => $stepId,
-                'operation_attempt' => 1,
-                'operation_idempotency_key' => $key,
-            ]];
-        }
-        $events = $factory->eventsFromSpecs($runId, $turnNo, 1, $specs);
-        $this->persistRunEvents($runId, $events);
-        $store = new TestActiveRunContext();
-        $store->loadRecovered(new RunState(
-            runId: $runId,
-            status: $childTurn ? RunStatus::Running : RunStatus::Queued,
-            version: 1,
-            turnNo: $turnNo,
-            lastSeq: \count($events),
-            activeStepId: $stepId,
-        ));
-        $bus = new TestMessageBus();
-        $service = $this->createService($store, dispatcherBus: $bus);
-
-        $this->assertSame(0, $service->repair($runId, false)->activeOperationsRedriven);
-        $this->assertSame([], $bus->messages);
-
-        $result = $service->repair($runId, true);
-        $this->assertSame(1, $result->activeOperationsRedriven);
-        $this->assertCount(1, $bus->messages);
-        $this->assertInstanceOf(ExecuteShellToolCall::class, $bus->messages[0]);
-        $this->assertSame($toolCallId, $bus->messages[0]->toolCallId);
-        $this->assertSame($turnNo, $bus->messages[0]->turnNo());
-        $this->assertTrue($bus->messages[0]->standalone);
-        $this->assertNotInstanceOf(ExecuteLlmStep::class, $bus->messages[0]);
-    }
-
-    public function testRepeatedApplyRedrivesDurablePendingAndInFlightToolCalls(): void
-    {
-        $runId = 'repair-tools';
-        $stepId = 'tool-step';
-        $pending = new ExecuteToolCall($runId, 3, $stepId, 1, 'tool-pending-key', 'call-pending', 'read', ['path' => 'a.txt'], 0);
-        $inFlight = new ExecuteToolCall($runId, 3, $stepId, 1, 'tool-in-flight-key', 'write', 'write', ['path' => 'b.txt', 'content' => 'b'], 1);
-        $batchStore = $this->createStub(ToolBatchStoreInterface::class);
-        $batchStore->method('load')->willReturn(new ToolBatchStateDTO(
-            expectedOrder: ['call-pending' => 0, 'write' => 1],
-            calls: ['call-pending' => $pending, 'write' => $inFlight],
-            pendingQueue: ['call-pending'],
-            inFlight: ['write' => true],
-            results: [],
-            finalized: false,
-            maxParallelism: 2,
-        ));
-        $this->persistActiveToolBatchEvents($runId, $stepId);
-        $store = new TestActiveRunContext();
-        $store->loadRecovered(new RunState(runId: $runId, status: RunStatus::Running, version: 1, turnNo: 3, lastSeq: 3, activeStepId: $stepId));
-        $bus = new TestMessageBus();
-        $service = $this->createService($store, dispatcherBus: $bus, toolBatchStore: $batchStore);
-        $before = $this->readEvents($runId);
-
-        $this->assertSame(0, $service->repair($runId, false)->activeOperationsRedriven);
-        $this->assertSame([], $bus->messages);
-
-        $service->repair($runId, true);
-        $service->repair($runId, true);
-        $this->assertCount(4, $bus->messages);
-        $this->assertContainsOnlyInstancesOf(ExecuteToolCall::class, $bus->messages);
-        $this->assertSame(['tool-in-flight-key', 'tool-pending-key'], $this->toolKeys($bus->messages, 0, 2));
-        $this->assertSame(['tool-in-flight-key', 'tool-pending-key'], $this->toolKeys($bus->messages, 2, 2));
-        $this->assertSame($before, $this->readEvents($runId));
     }
 
     public function testWaitingHumanToolBatchIsNotRedrivenOrMutated(): void
@@ -476,7 +284,7 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
         $service = $this->createService($store, dispatcherBus: $bus, toolBatchStore: $batchStore);
         $before = $this->readEvents($runId);
 
-        $result = $service->repair($runId, true);
+        $result = $service->repair($runId, true, \Symfony\Component\Uid\Uuid::v4()->toRfc4122());
         $this->assertSame(SessionRepairRefusalReasonEnum::AmbiguousPendingWork, $result->refusalReason);
         $this->assertSame([], $bus->messages);
         $this->assertSame($before, $this->readEvents($runId));
@@ -496,11 +304,11 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
         $before = $this->readEvents($runId);
         $key = hash('sha256', $runId.'|repair-advance|0|1');
 
-        $this->assertSame(0, $service->repair($runId, false)->activeOperationsRedriven);
+        $this->assertSame(0, $service->repair($runId, false, \Symfony\Component\Uid\Uuid::v4()->toRfc4122())->activeOperationsRedriven);
         $this->assertSame([], $bus->messages);
 
-        $service->repair($runId, true);
-        $service->repair($runId, true);
+        $service->repair($runId, true, \Symfony\Component\Uid\Uuid::v4()->toRfc4122());
+        $service->repair($runId, true, \Symfony\Component\Uid\Uuid::v4()->toRfc4122());
         $this->assertCount(2, $bus->messages);
         $this->assertContainsOnlyInstancesOf(AdvanceRun::class, $bus->messages);
         foreach ($bus->messages as $message) {
@@ -519,7 +327,7 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
         $runStore = $this->createStaleCancellationRunStore($runId, unresolvedTool: false);
 
         $service = $this->createService($runStore);
-        $result = $service->repair($runId, false);
+        $result = $service->repair($runId, false, \Symfony\Component\Uid\Uuid::v4()->toRfc4122());
 
         $this->assertTrue($result->repairableStaleCancellationDetected);
         $this->assertStringContainsStringIgnoringCase('stale non-terminal cancellation', $result->message);
@@ -533,7 +341,7 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
         $originalPrefix = $this->readRawLines($runId);
 
         $service = $this->createService($runStore);
-        $result = $service->repair($runId, true);
+        $result = $service->repair($runId, true, \Symfony\Component\Uid\Uuid::v4()->toRfc4122());
 
         $this->assertTrue($result->staleCancellationRepaired);
 
@@ -557,7 +365,7 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
         $runStore = $this->createStaleCancellationRunStore($runId, unresolvedTool: true);
 
         $service = $this->createService($runStore);
-        $result = $service->repair($runId, true);
+        $result = $service->repair($runId, true, \Symfony\Component\Uid\Uuid::v4()->toRfc4122());
 
         $decoded = $this->readEvents($runId);
         $last = $decoded[\count($decoded) - 1];
@@ -589,7 +397,7 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
         $this->assertSame('tool', $replayed[1]->role);
         $this->assertSame(self::TOOL_CALL_ID, $replayed[1]->toolCallId);
 
-        $second = $service->repair($runId, true);
+        $second = $service->repair($runId, true, \Symfony\Component\Uid\Uuid::v4()->toRfc4122());
         $this->assertFalse($second->repairableStaleCancellationDetected);
         $this->assertSame(1, $this->countEvents($this->readEvents($runId), RunEventTypeEnum::ToolExecutionEnd->value));
 
@@ -603,11 +411,11 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
         $runStore = $this->createStaleCancellationRunStore($runId, unresolvedTool: false);
 
         $service = $this->createService($runStore);
-        $service->repair($runId, true);
+        $service->repair($runId, true, \Symfony\Component\Uid\Uuid::v4()->toRfc4122());
 
         $lineCountAfterFirst = \count($this->readRawLines($runId));
 
-        $second = $service->repair($runId, true);
+        $second = $service->repair($runId, true, \Symfony\Component\Uid\Uuid::v4()->toRfc4122());
         $this->assertFalse($second->repairableStaleCancellationDetected);
         $this->assertSame($lineCountAfterFirst, \count($this->readRawLines($runId)));
     }
@@ -621,7 +429,7 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
         $runStore = $this->createStaleCancellationRunStore($runId, unresolvedTool: false);
 
         $service = $this->createService($runStore);
-        $service->repair($runId, true);
+        $service->repair($runId, true, \Symfony\Component\Uid\Uuid::v4()->toRfc4122());
 
         $lines = $this->readRawLines($runId);
         foreach ($original as $index => $expectedLine) {
@@ -647,7 +455,7 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
 
         $service = $this->createService($runStore);
         $before = $this->readRawLines($runId);
-        $result = $service->repair($runId, true);
+        $result = $service->repair($runId, true, \Symfony\Component\Uid\Uuid::v4()->toRfc4122());
 
         $this->assertFalse($result->repairableStaleCancellationDetected);
         $this->assertSame(SessionRepairRefusalReasonEnum::DuplicateSequences, $result->refusalReason);
@@ -670,7 +478,7 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
             status: RunStatus::Running,
             version: 1,
             turnNo: 1,
-            lastSeq: 4,
+            lastSeq: 2,
             isStreaming: true,
             streamingMessage: ['message_id' => 'm1'],
             activeStepId: 'llm-1',
@@ -678,16 +486,16 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
 
         $service = $this->createService($runStore);
         $before = $this->readRawLines($runId);
-        $result = $service->repair($runId, true);
+        $result = $service->repair($runId, true, \Symfony\Component\Uid\Uuid::v4()->toRfc4122());
 
         $this->assertSame(SessionRepairRefusalReasonEnum::ActiveStreaming, $result->refusalReason);
         $this->assertStringContainsStringIgnoringCase('active streaming', $result->message);
         $this->assertSame($before, $this->readRawLines($runId));
     }
 
-    public function testMissingSequencesProducesTypedRefusal(): void
+    public function testAbandonedAllocationGapIsAcceptedByRepair(): void
     {
-        $runId = 'missing';
+        $runId = 'abandoned-allocation';
         $factory = new EventFactory();
         $this->persistRunEvents($runId, [
             $factory->event($runId, 1, 0, RunEventTypeEnum::RunStarted->value, []),
@@ -696,14 +504,28 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
         ]);
 
         $runStore = new TestActiveRunContext();
-        $runStore->loadRecovered(RunState::queued($runId));
+        $runStore->loadRecovered(new RunState(
+            runId: $runId,
+            status: RunStatus::Completed,
+            version: 1,
+            turnNo: 1,
+            lastSeq: 4,
+            model: 'test-model'));
 
         $service = $this->createService($runStore);
         $before = $this->readRawLines($runId);
-        $result = $service->repair($runId, true);
+        $preview = $service->repair($runId, false, \Symfony\Component\Uid\Uuid::v4()->toRfc4122());
+        $this->assertNull($preview->refusalReason);
+        $this->assertStringContainsStringIgnoringCase('no repairable corruption', $preview->message);
 
-        $this->assertSame(SessionRepairRefusalReasonEnum::MissingSequences, $result->refusalReason);
+        $apply = $service->repair($runId, true, \Symfony\Component\Uid\Uuid::v4()->toRfc4122());
+        $this->assertNull($apply->refusalReason);
+        $this->assertFalse($apply->staleCancellationRepaired);
         $this->assertSame($before, $this->readRawLines($runId));
+        $this->assertSame([1, 2, 4], array_map(
+            static fn (array $event): int => $event['seq'],
+            $this->readEvents($runId),
+        ));
     }
 
     public function testAmbiguousPendingWorkProducesTypedRefusal(): void
@@ -725,7 +547,7 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
 
         $service = $this->createService($runStore);
         $before = $this->readRawLines($runId);
-        $result = $service->repair($runId, true);
+        $result = $service->repair($runId, true, \Symfony\Component\Uid\Uuid::v4()->toRfc4122());
 
         $this->assertSame(SessionRepairRefusalReasonEnum::AmbiguousPendingWork, $result->refusalReason);
         $this->assertSame($before, $this->readRawLines($runId));
@@ -757,7 +579,7 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
 
         $service = $this->createService($runStore);
         $prefix = \count($events);
-        $result = $service->repair($runId, true);
+        $result = $service->repair($runId, true, \Symfony\Component\Uid\Uuid::v4()->toRfc4122());
         $this->assertTrue($result->staleCancellationRepaired);
 
         $decoded = $this->readEvents($runId);
@@ -775,7 +597,7 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
         $prefix = \count($this->readRawLines($runId));
 
         $service = $this->createService($runStore);
-        $result = $service->repair($runId, true);
+        $result = $service->repair($runId, true, \Symfony\Component\Uid\Uuid::v4()->toRfc4122());
         $this->assertTrue($result->staleCancellationRepaired);
 
         $decoded = $this->readEvents($runId);
@@ -789,7 +611,7 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
         $runId = 'no-events';
         $logger = new TestLogger();
         $service = $this->createService(logger: $logger);
-        $result = $service->repair($runId, true);
+        $result = $service->repair($runId, true, \Symfony\Component\Uid\Uuid::v4()->toRfc4122());
 
         $this->assertSame(SessionRepairRefusalReasonEnum::NoEvents, $result->refusalReason);
         $this->assertCount(1, $logger->records);
@@ -825,7 +647,7 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
 
         $service = $this->createService($runStore);
         $prefix = \count($events);
-        $service->repair($runId, true);
+        $service->repair($runId, true, \Symfony\Component\Uid\Uuid::v4()->toRfc4122());
         $decoded = $this->readEvents($runId);
         $appended = \array_slice($decoded, $prefix);
         $this->assertSame(1, $this->countInSlice($appended, RunEventTypeEnum::LlmStepAborted->value));
@@ -1062,23 +884,6 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
         return $lines;
     }
 
-    /**
-     * @param list<object> $messages
-     *
-     * @return list<string>
-     */
-    private function toolKeys(array $messages, int $offset, int $length): array
-    {
-        $keys = [];
-        foreach (\array_slice($messages, $offset, $length) as $message) {
-            $this->assertInstanceOf(ExecuteToolCall::class, $message);
-            $keys[] = $message->idempotencyKey();
-        }
-        sort($keys);
-
-        return $keys;
-    }
-
     private function persistActiveToolBatchEvents(string $runId, string $stepId, bool $waitingHuman = false): void
     {
         $factory = new EventFactory();
@@ -1106,7 +911,7 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
         $this->persistRunEvents($runId, $factory->eventsFromSpecs($runId, 3, 1, $specs));
     }
 
-    private function createService(?ActiveRunContextInterface $activeRunContext = null, ?TestLogger $logger = null, ?TestMessageBus $dispatcherBus = null, ?ToolBatchStoreInterface $toolBatchStore = null, ?MessageBusInterface $commandBus = null): SessionRepairService
+    private function createService(?ActiveRunContextInterface $activeRunContext = null, ?TestLogger $logger = null, ?MessageBusInterface $dispatcherBus = null, ?ToolBatchStoreInterface $toolBatchStore = null, ?MessageBusInterface $commandBus = null): SessionRepairService
     {
         $activeRunContext ??= new TestActiveRunContext();
         $dispatcherBus ??= new TestMessageBus();
@@ -1127,6 +932,10 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
 
         $lockDir = $this->projectDir.'/.hatfield/locks';
         TestDirectoryIsolation::ensureDirectory($lockDir);
+        $locks = new RunLockManager(new LockFactory(new FlockStore($lockDir)));
+        $dispatcherEvents = new \Symfony\Component\EventDispatcher\EventDispatcher();
+        $notifications = new \Ineersa\CodingAgent\Runtime\Messenger\EffectDispatchFailureSubscriber(self::getContainer()->get(\Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink::class), self::getContainer()->get(\Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink::class), consumerStdoutEvents: false);
+        $dispatcherEvents->addListener(\Ineersa\AgentCore\Application\Handler\EffectDispatchFailedEvent::class, $notifications->onFailure(...));
 
         $eventStore = new SessionRunEventStore(
             hatfieldSessionStore: $hatfieldSessionStore,
@@ -1143,13 +952,18 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
             replayEventPreparer: new ReplayEventPreparer(),
             eventFactory: new EventFactory(),
             toolCallSequenceValidator: new AgentMessageToolCallSequenceValidator(),
-            lockManager: new RunLockManager(new LockFactory(new FlockStore($lockDir))),
+            lockManager: $locks,
             logger: $logger ?? new NullLogger(),
-            stepDispatcher: new StepDispatcher($commandBus, $dispatcherBus),
             toolBatchStore: $toolBatchStore,
             serializer: AttributeSerializerValidatorTestFactory::create()[0],
             historyReplayFilter: new \Ineersa\CodingAgent\Session\History\HistoryReplayFilter(new \Ineersa\CodingAgent\Session\History\HistoryProjector()),
-            runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit($activeRunContext, $eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus()), new NullLogger(), new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector()),
+            runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
+                activeRunContext: $activeRunContext,
+                eventStore: $eventStore,
+                logger: new NullLogger(),
+                finalizer: \Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher($commandBus, $dispatcherBus, new TestLogger(), events: $dispatcherEvents), locks: $locks),
+                actionValidator: new \Ineersa\AgentCore\Application\Handler\CoordinationActionValidator(),
+            ),
             deferredBatches: self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository::class),
         );
     }

@@ -36,6 +36,7 @@ final readonly class OwnerRunInitializationMiddleware implements MiddlewareInter
         private RunLockManager $locks,
         private \Psr\Log\LoggerInterface $logger,
         private \Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry $artifacts,
+        private \Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery $transitionRecovery,
     ) {
     }
 
@@ -86,6 +87,7 @@ final readonly class OwnerRunInitializationMiddleware implements MiddlewareInter
     public function initializeForOwner(string $runId, object $message): void
     {
         $this->locks->synchronized($runId, function () use ($runId, $message): void {
+            $this->transitionRecovery->recover($runId);
             try {
                 $this->registry->requireLoaded($runId);
             } catch (RunContextNotLoadedException) {

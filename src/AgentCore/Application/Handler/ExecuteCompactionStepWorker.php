@@ -15,7 +15,6 @@ use Ineersa\AgentCore\Infrastructure\RunLogContext;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
-use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
@@ -33,15 +32,15 @@ use Symfony\Component\Messenger\MessageBusInterface;
 final readonly class ExecuteCompactionStepWorker
 {
     public function __construct(
-        private PlatformInterface $platform,
         private MessageBusInterface $commandBus,
+        private PlatformInterface $platform,
         private ?RunTracer $tracer = null,
         private LoggerInterface $logger = new NullLogger(),
     ) {
     }
 
     #[AsMessageHandler(bus: 'agent.execution.bus')]
-    public function __invoke(ExecuteCompactionStep $message): void
+    public function __invoke(ExecuteCompactionStep $message): CompactionStepResult
     {
         RunLogContext::enter([
             'run_id' => $message->runId(),
@@ -52,29 +51,32 @@ final readonly class ExecuteCompactionStepWorker
         ]);
 
         try {
-            $execute = function () use ($message): void {
-                $result = $this->execute($message);
-
-                try {
-                    $this->commandBus->dispatch($result);
-                } catch (ExceptionInterface $exception) {
-                    throw new \RuntimeException('Failed to dispatch compaction result to command bus.', previous: $exception);
-                }
+            $execute = function () use ($message): CompactionStepResult {
+                return $this->execute($message);
             };
 
-            if (null === $this->tracer) {
-                $execute();
-
-                return;
-            }
-
-            $this->tracer->inSpan('turn.execution.compaction_worker', [
+            $result = null === $this->tracer ? $execute() : $this->tracer->inSpan('turn.execution.compaction_worker', [
                 'run_id' => $message->runId(),
                 'turn_no' => $message->turnNo(),
                 'step_id' => $message->stepId(),
                 'worker' => 'compaction',
                 'model' => $message->model,
             ], $execute, root: true);
+            try {
+                $this->commandBus->dispatch($result);
+            } catch (\Throwable $exception) {
+                $this->logger->warning('runtime.result_send_failed', [
+                    'run_id' => $message->runId(),
+                    'session_id' => $message->runId(),
+                    'component' => 'execution_worker',
+                    'event_type' => 'runtime.result_send_failed',
+                    'exception_class' => $exception::class,
+                ]);
+
+                return $result;
+            }
+
+            return $result;
         } finally {
             RunLogContext::leave();
         }

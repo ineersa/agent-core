@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Handler;
 
+use Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 
@@ -21,6 +22,7 @@ final readonly class ToolBatchCollectOutcome
         public bool $complete,
         public array $orderedResults = [],
         public array $effectsToDispatch = [],
+        public ?FinalizeToolBatchDTO $action = null,
     ) {
     }
 

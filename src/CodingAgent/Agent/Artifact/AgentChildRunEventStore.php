@@ -42,7 +42,7 @@ use Symfony\Component\Lock\LockFactory;
  * bound-run validation, child artifact path, streaming reads, and child-specific
  * diagnostics.
  */
-final class AgentChildRunEventStore implements EventStoreInterface
+final class AgentChildRunEventStore implements \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface
 {
     private readonly JsonlRunEventLog $eventLog;
 
@@ -60,40 +60,6 @@ final class AgentChildRunEventStore implements EventStoreInterface
         $this->pathResolver->validatePathComponent($parentRunId, 'parentRunId');
         $this->pathResolver->validatePathComponent($artifactId, 'artifactId');
         $this->eventLog = new JsonlRunEventLog($eventPayloadNormalizer, $lockFactory, $sequenceAllocator, $bootstrapReader);
-    }
-
-    public function append(RunEvent $event): RunEvent
-    {
-        if ($event->runId !== $this->agentRunId) {
-            throw new \RuntimeException(\sprintf('RunEvent integrity error: embedded runId "%s" does not match bound agentRunId "%s".', $event->runId, $this->agentRunId));
-        }
-
-        return $this->eventLog->appendMany(
-            path: $this->eventsPath(),
-            events: [$event],
-            runLabel: 'child run',
-            dirMode: SessionAgentArtifactPathResolver::DIR_PERMISSIONS,
-        )[0];
-    }
-
-    public function appendMany(array $events): array
-    {
-        if ([] === $events) {
-            return [];
-        }
-
-        foreach ($events as $event) {
-            if ($event->runId !== $this->agentRunId) {
-                throw new \RuntimeException(\sprintf('RunEvent integrity error: embedded runId "%s" does not match bound agentRunId "%s".', $event->runId, $this->agentRunId));
-            }
-        }
-
-        return $this->eventLog->appendMany(
-            path: $this->eventsPath(),
-            events: $events,
-            runLabel: 'child run',
-            dirMode: SessionAgentArtifactPathResolver::DIR_PERMISSIONS,
-        );
     }
 
     /**
@@ -136,6 +102,59 @@ final class AgentChildRunEventStore implements EventStoreInterface
         } finally {
             $lock->release();
         }
+    }
+
+    public function appendTransition(array $events, array $work): array
+    {
+        if (($work['run_id'] ?? null) !== $this->agentRunId) {
+            throw new \InvalidArgumentException('Child prepared work identity mismatch.');
+        }
+        if ([] === $events) {
+            if (!\is_string($work['run_id'] ?? null)) {
+                throw new \InvalidArgumentException('Prepared decision requires run identity.');
+            }
+        }
+        foreach ($events as $event) {
+            if ($event->runId !== $events[0]->runId || $event->runId !== $this->agentRunId) {
+                throw new \InvalidArgumentException('Transition events have inconsistent run identity.');
+            }
+        }
+
+        return $this->eventLog->appendMany($this->eventsPath(), $events, runLabel: 'child run', dirMode: SessionAgentArtifactPathResolver::DIR_PERMISSIONS, work: $work);
+    }
+
+    public function verifiedPendingTransition(string $runId): ?\Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO
+    {
+        if ($runId !== $this->agentRunId) {
+            throw new \InvalidArgumentException('Child pending transition identity mismatch.');
+        }
+
+        return $this->eventLog->verifiedPendingTransition($this->eventsPath(), $runId);
+    }
+
+    public function verifiedPendingBatch(string $runId, string $identity): array
+    {
+        if ($runId !== $this->agentRunId) {
+            throw new \InvalidArgumentException('Child pending batch identity mismatch.');
+        }
+
+        return $this->eventLog->verifiedPendingBatch($this->eventsPath(), $runId, $identity);
+    }
+
+    public function finalizeVerifiedTransition(string $runId, string $identity): void
+    {
+        if ($runId !== $this->agentRunId) {
+            throw new \InvalidArgumentException('Child finalization identity mismatch.');
+        }
+        $this->eventLog->finalizeVerifiedTransition($this->eventsPath(), $runId, $identity);
+    }
+
+    public function assertTransitionReady(string $runId): void
+    {
+        if ($runId !== $this->agentRunId) {
+            throw new \InvalidArgumentException('Child transition identity mismatch.');
+        }
+        $this->eventLog->assertTransitionReady($this->eventsPath(), $runId);
     }
 
     public function latestSequenceFor(string $runId): ?int

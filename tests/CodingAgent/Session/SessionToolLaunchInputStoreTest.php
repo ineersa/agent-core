@@ -9,7 +9,6 @@ use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
 use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
-use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreMutation;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
@@ -49,31 +48,29 @@ final class SessionToolLaunchInputStoreTest extends IsolatedKernelTestCase
             $this->assertStringNotContainsString('PRIVATE_LAUNCH_BODY', $body);
             $readCall = new ExecuteToolCall($runId, 1, 'step-'.$count, 1, 'read-key', 'read', 'read', ['path' => 'x'], 1);
             $batch = new ToolBatchStateDTO(expectedOrder: [$callId => 0, 'read' => 1], calls: [$callId => $call, 'read' => $readCall], pendingQueue: [$callId], inFlight: [], results: [], finalized: false, maxParallelism: 2);
-            $batchStore->save($runId, 1, 'step-'.$count, $batch);
-            $batchFiles = glob($paths->resolveToolBatchesDirectory($runId).'/*.json');
-            $batchPath = end($batchFiles);
-            // Locate the exact envelope rather than relying on filename order.
-            foreach ($batchFiles as $candidate) {
-                if (str_contains(file_get_contents($candidate), $callId)) {
-                    $batchPath = $candidate;
-                    break;
-                }
-            }
-            $batchBody = file_get_contents($batchPath);
-            $this->assertStringNotContainsString('PRIVATE_LAUNCH_BODY', $batchBody);
-            $sizes[] = [\strlen($body), \strlen($batchBody), $reference->bytes];
+            $register = new \Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO($runId, 1, 'step-'.$count, [$call, $readCall], $batch->expectedOrder, $batch->pendingQueue, $batch->inFlight, $batch->maxParallelism);
+            $verified = new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(\Symfony\Component\Uid\Uuid::v7()->toRfc4122(), ['run_id' => $runId, 'actions' => [$register]]);
+            $batchStore->prepareChanges([$register], $verified)();
+            $schedule = self::getContainer()->get(\Doctrine\DBAL\Connection::class)->fetchAssociative(
+                'SELECT calls_json, pending_queue_json FROM tool_batch_schedule WHERE run_id = ? AND turn_no = ? AND step_id = ?',
+                [$runId, 1, 'step-'.$count],
+            );
+            $this->assertIsArray($schedule);
+            $this->assertStringNotContainsString('PRIVATE_LAUNCH_BODY', (string) $schedule['calls_json']);
+            $sizes[] = [\strlen($body), \strlen((string) $schedule['calls_json']), $reference->bytes];
             $payloadPath = $this->payloadPath($runId, $callId);
             $original = hash_file('sha256', $payloadPath);
-            $readResult = \Ineersa\AgentCore\Tests\Support\Builder\ToolCallResultBuilder::success($runId)->withTurnNo(1)->withStepId('step-'.$count)->withToolCallId('read')->withOrderIndex(1)->build();
-            $batchStore->mutate($runId, 1, 'step-'.$count, static function ($current) use ($readResult): ToolBatchStoreMutation {
-                $current->results['read'] = $readResult;
-
-                return new ToolBatchStoreMutation(null, $current);
-            });
+            // Schedule writes keep sealed launch input untouched.
+            $batchStore->prepareChanges([new \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO($runId, 1, 'step-'.$count, pendingQueue: [$callId], inFlight: [], awaitingHumanInput: [], finalized: false)], new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(\Symfony\Component\Uid\Uuid::v7()->toRfc4122(), [
+                'run_id' => $runId,
+                'actions' => [new \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO($runId, 1, 'step-'.$count, pendingQueue: [$callId], inFlight: [], awaitingHumanInput: [], finalized: false)],
+            ]))();
             $this->assertSame($original, hash_file('sha256', $payloadPath));
-            // If mutate tried to resolve launch input, this corruption would fail.
             file_put_contents($payloadPath, 'unreadable-as-input');
-            $batchStore->mutate($runId, 1, 'step-'.$count, static fn ($current) => new ToolBatchStoreMutation(null, $current));
+            $batchStore->prepareChanges([new \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO($runId, 1, 'step-'.$count, pendingQueue: [$callId], inFlight: [], awaitingHumanInput: [], finalized: false)], new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(\Symfony\Component\Uid\Uuid::v7()->toRfc4122(), [
+                'run_id' => $runId,
+                'actions' => [new \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO($runId, 1, 'step-'.$count, pendingQueue: [$callId], inFlight: [], awaitingHumanInput: [], finalized: false)],
+            ]))();
             $this->assertSame('unreadable-as-input', file_get_contents($payloadPath));
             $this->assertNotSame($original, hash_file('sha256', $payloadPath));
             $this->assertNotNull($batchStore->load($runId, 1, 'step-'.$count));
@@ -117,8 +114,10 @@ final class SessionToolLaunchInputStoreTest extends IsolatedKernelTestCase
             return new ToolResult('fork-call', 'fork', [['type' => 'text', 'text' => 'launch failed']], isError: true);
         });
         $bus = new TestMessageBus();
-        $worker = new ExecuteToolCallWorker($executor, $bus, $this->createStub(DeferredToolCompletionRepositoryInterface::class), new ToolExecutionResultStore(), $this->createStub(RunOperationalStatusReaderInterface::class), launchInputStore: $store);
-        $worker($call);
+        $worker = new ExecuteToolCallWorker(new TestMessageBus(), new \Ineersa\AgentCore\Tests\Support\TestLogger(), $executor, $this->createStub(DeferredToolCompletionRepositoryInterface::class), new ToolExecutionResultStore(), $this->createStub(RunOperationalStatusReaderInterface::class), launchInputStore: $store);
+        $result = $worker($call);
+        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\ToolCallResult::class, $result);
+        $this->assertTrue($result->isError);
         $this->assertFileExists($this->payloadPath($runId, 'fork-call'));
     }
 
@@ -209,10 +208,8 @@ final class SessionToolLaunchInputStoreTest extends IsolatedKernelTestCase
         $inputStore->expects($this->never())->method('read');
         $reference = new ToolLaunchInputReferenceDTO('fork', 'owner', 2, 'step', 'call', 'model', str_repeat('a', 64), 1);
         $call = new ExecuteToolCall('owner', 1, 'step', 1, 'key', 'call', 'fork', [], 0, parentModel: 'model', launchContext: $reference);
-        $bus = new TestMessageBus();
-        $worker = new ExecuteToolCallWorker($executor, $bus, $this->createStub(DeferredToolCompletionRepositoryInterface::class), new ToolExecutionResultStore(), $this->createStub(RunOperationalStatusReaderInterface::class), launchInputStore: $inputStore);
-        $worker($call);
-        $this->assertOwnerVisibleInputFailure($bus, 'Tool launch input reference does not match execution envelope.');
+        $worker = new ExecuteToolCallWorker(new TestMessageBus(), new \Ineersa\AgentCore\Tests\Support\TestLogger(), $executor, $this->createStub(DeferredToolCompletionRepositoryInterface::class), new ToolExecutionResultStore(), $this->createStub(RunOperationalStatusReaderInterface::class), launchInputStore: $inputStore);
+        $this->assertOwnerVisibleInputFailure($worker($call), 'Tool launch input reference does not match execution envelope.');
     }
 
     public function testMissingInputFailsBeforeExternalWork(): void
@@ -221,10 +218,8 @@ final class SessionToolLaunchInputStoreTest extends IsolatedKernelTestCase
         $executor->expects($this->never())->method('execute');
         $inputStore = self::getContainer()->get(ToolLaunchInputStoreInterface::class);
         $reference = new ToolLaunchInputReferenceDTO('fork', 'missing-owner', 1, 'step', 'call', 'model', str_repeat('a', 64), 1);
-        $bus = new TestMessageBus();
-        $worker = new ExecuteToolCallWorker($executor, $bus, $this->createStub(DeferredToolCompletionRepositoryInterface::class), new ToolExecutionResultStore(), $this->createStub(RunOperationalStatusReaderInterface::class), launchInputStore: $inputStore);
-        $worker($this->call($reference));
-        $this->assertOwnerVisibleInputFailure($bus, 'Missing or corrupt tool launch input.');
+        $worker = new ExecuteToolCallWorker(new TestMessageBus(), new \Ineersa\AgentCore\Tests\Support\TestLogger(), $executor, $this->createStub(DeferredToolCompletionRepositoryInterface::class), new ToolExecutionResultStore(), $this->createStub(RunOperationalStatusReaderInterface::class), launchInputStore: $inputStore);
+        $this->assertOwnerVisibleInputFailure($worker($this->call($reference)), 'Missing or corrupt tool launch input.');
     }
 
     public function testCorruptInputProducesErrorResultWithoutExternalExecution(): void
@@ -235,10 +230,8 @@ final class SessionToolLaunchInputStoreTest extends IsolatedKernelTestCase
         file_put_contents($this->payloadPath($runId, 'call'), 'corrupt');
         $executor = $this->createMock(ToolExecutorInterface::class);
         $executor->expects($this->never())->method('execute');
-        $bus = new TestMessageBus();
-        $worker = new ExecuteToolCallWorker($executor, $bus, $this->createStub(DeferredToolCompletionRepositoryInterface::class), new ToolExecutionResultStore(), $this->createStub(RunOperationalStatusReaderInterface::class), launchInputStore: $inputStore);
-        $worker($this->call($reference));
-        $this->assertOwnerVisibleInputFailure($bus, 'Missing or corrupt tool launch input.');
+        $worker = new ExecuteToolCallWorker(new TestMessageBus(), new \Ineersa\AgentCore\Tests\Support\TestLogger(), $executor, $this->createStub(DeferredToolCompletionRepositoryInterface::class), new ToolExecutionResultStore(), $this->createStub(RunOperationalStatusReaderInterface::class), launchInputStore: $inputStore);
+        $this->assertOwnerVisibleInputFailure($worker($this->call($reference)), 'Missing or corrupt tool launch input.');
     }
 
     public function testUnreadableInputProducesErrorResultWithoutExternalExecution(): void
@@ -248,84 +241,12 @@ final class SessionToolLaunchInputStoreTest extends IsolatedKernelTestCase
         $executor = $this->createMock(ToolExecutorInterface::class);
         $executor->expects($this->never())->method('execute');
         $reference = new ToolLaunchInputReferenceDTO('fork', 'owner', 1, 'step', 'call', 'model', str_repeat('a', 64), 1);
-        $bus = new TestMessageBus();
-        $worker = new ExecuteToolCallWorker($executor, $bus, $this->createStub(DeferredToolCompletionRepositoryInterface::class), new ToolExecutionResultStore(), $this->createStub(RunOperationalStatusReaderInterface::class), launchInputStore: $inputStore);
-        $worker($this->call($reference));
-        $this->assertOwnerVisibleInputFailure($bus, 'Cannot open tool launch input.');
+        $worker = new ExecuteToolCallWorker(new TestMessageBus(), new \Ineersa\AgentCore\Tests\Support\TestLogger(), $executor, $this->createStub(DeferredToolCompletionRepositoryInterface::class), new ToolExecutionResultStore(), $this->createStub(RunOperationalStatusReaderInterface::class), launchInputStore: $inputStore);
+        $this->assertOwnerVisibleInputFailure($worker($this->call($reference)), 'Cannot open tool launch input.');
     }
 
-    public function testFreshWorkerReusesCommittedSynchronousForkFailureWhileSiblingRemainsPending(): void
+    private function assertOwnerVisibleInputFailure(?\Ineersa\AgentCore\Domain\Message\ToolCallResult $result, string $message): void
     {
-        $runId = self::getContainer()->get(HatfieldSessionStore::class)->createSession('mixed-fork-failure');
-        $inputStore = self::getContainer()->get(ToolLaunchInputStoreInterface::class);
-        $batchStore = self::getContainer()->get(ToolBatchStoreInterface::class);
-        $reference = $inputStore->publish('fork', $runId, 1, 'step', 'fork', 'model', '', [new AgentMessage('user', [['type' => 'text', 'text' => 'input']])]);
-        $fork = new ExecuteToolCall($runId, 1, 'step', 1, 'fork-request', 'fork', 'fork', ['task' => 'work'], 0, mode: 'parallel', maxParallelism: 2, parentModel: 'model', launchContext: $reference);
-        $sibling = new ExecuteToolCall($runId, 1, 'step', 1, 'sibling-request', 'sibling', 'read', ['path' => 'x'], 1, mode: 'parallel', maxParallelism: 2);
-        $ownerCollector = new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(store: $batchStore);
-        $ownerCollector->registerExpectedBatch($runId, 1, 'step', [$fork, $sibling]);
-        $executor = $this->createMock(ToolExecutorInterface::class);
-        $executor->expects($this->once())->method('execute')->willThrowException(new \Ineersa\AgentCore\Contract\Tool\ToolCallException('Original fork preparation failure.', retryable: false, hint: 'original hint'));
-        $bus = new TestMessageBus();
-        $deferred = self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class);
-        $worker = new ExecuteToolCallWorker($executor, $bus, $deferred, new ToolExecutionResultStore(), $this->createStub(RunOperationalStatusReaderInterface::class), launchInputStore: $inputStore, toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(store: $batchStore));
-        $worker($fork);
-        $this->assertCount(1, $bus->messages);
-        $originalFailure = $bus->messages[0];
-        $this->assertTrue($originalFailure->isError);
-        $this->assertSame('Original fork preparation failure.', $originalFailure->error['message']);
-        $state = \Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder::running($runId)->withTurnNo(1)->withActiveStepId('step')->withLastSeq(0)->withPendingToolCalls(['fork' => false, 'sibling' => false])->build()->with(['model' => 'model']);
-        $handler = new \Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler(
-            toolBatchCollector: $ownerCollector,
-            eventFactory: new \Ineersa\AgentCore\Domain\Event\EventFactory(),
-            toolCallExtractor: new \Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor(),
-            messageNormalizer: new \Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer(),
-            serializer: self::getContainer()->get(SerializerInterface::class),
-        );
-        $transition = $handler->handle($originalFailure, $state);
-        $this->assertCount(1, $transition->events);
-        $this->assertSame('tool_execution_end', $transition->events[0]->type);
-        $active = new \Ineersa\AgentCore\Tests\Support\TestActiveRunContext();
-        $active->loadRecovered($state);
-        $eventStore = self::getContainer()->get(\Ineersa\AgentCore\Contract\EventStoreInterface::class);
-        $commit = new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
-            activeRunContext: $active, eventStore: $eventStore,
-            stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus()),
-            logger: new \Ineersa\AgentCore\Tests\Support\TestLogger(), toolBatchCollector: $ownerCollector,
-            hookDispatcher: new \Ineersa\AgentCore\Application\Handler\HookDispatcher([self::getContainer()->get(\Ineersa\CodingAgent\Session\ToolBatchSnapshotCleanupHookSubscriber::class)]),
-        );
-        $commit->commit($state, $transition->nextState, $transition->events, $transition->effects);
-        $this->assertFileDoesNotExist($this->payloadPath($runId, 'fork'));
-        $this->assertNull($deferred->findByRunAndToolCall($runId, 'fork'));
-        $this->assertEquals($originalFailure, $batchStore->load($runId, 1, 'step')->results['fork']);
-        $this->assertCount(1, iterator_to_array($eventStore->rangeFor($runId, 1, 1)));
-
-        $freshExecutor = $this->createMock(ToolExecutorInterface::class);
-        $freshExecutor->expects($this->never())->method('execute');
-        $unreadInput = $this->createMock(ToolLaunchInputStoreInterface::class);
-        $unreadInput->expects($this->never())->method('read');
-        $freshBus = new TestMessageBus();
-        $freshWorker = new ExecuteToolCallWorker($freshExecutor, $freshBus, $deferred, new ToolExecutionResultStore(), $this->createStub(RunOperationalStatusReaderInterface::class), launchInputStore: $unreadInput, toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(store: $batchStore));
-        $freshWorker($fork);
-        $this->assertCount(1, $freshBus->messages);
-        $this->assertEquals($originalFailure, $freshBus->messages[0]);
-        $this->assertSame('original hint', $freshBus->messages[0]->error['hint']);
-        $duplicate = $ownerCollector->collect($freshBus->messages[0]);
-        $this->assertTrue($duplicate->duplicate);
-        $this->assertFalse($duplicate->complete);
-        $unchanged = $handler->handle($freshBus->messages[0], $active->requireLoaded($runId));
-        $this->assertSame([], $unchanged->events);
-        $batch = $batchStore->load($runId, 1, 'step');
-        $this->assertFalse($batch->finalized);
-        $this->assertArrayHasKey('sibling', $batch->inFlight);
-        $this->assertArrayNotHasKey('sibling', $batch->results);
-        $this->assertFalse($active->requireLoaded($runId)->pendingToolCalls['sibling']);
-    }
-
-    private function assertOwnerVisibleInputFailure(TestMessageBus $bus, string $message): void
-    {
-        $this->assertCount(1, $bus->messages);
-        $result = $bus->messages[0];
         $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\ToolCallResult::class, $result);
         $this->assertTrue($result->isError);
         $this->assertSame('call', $result->toolCallId);

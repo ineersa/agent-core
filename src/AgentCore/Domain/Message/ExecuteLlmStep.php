@@ -8,8 +8,8 @@ namespace Ineersa\AgentCore\Domain\Message;
  * Immutable execution envelope for one LLM turn.
  *
  * The coordinator supplies the complete immutable invocation context. This
- * execution envelope is the only approved process boundary for prompt history;
- * workers must never load a RunState snapshot to rebuild it.
+ * request travels on the execution bus with its original turn and step identity.
+ * Workers must never load a RunState snapshot to rebuild it.
  */
 final readonly class ExecuteLlmStep extends AbstractAgentBusMessage
 {

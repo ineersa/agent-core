@@ -49,9 +49,10 @@ final readonly class HistorySelectionService implements HistorySelectionServiceI
      * @throws RunStateDuplicateSequenceReplayException
      * @throws \RuntimeException
      */
-    public function selectPrompt(string $runId, int $targetPromptTurnNo): array
+    public function selectPrompt(string $runId, int $targetPromptTurnNo, string $commandId): array
     {
         return $this->lockManager->synchronized($runId, function () use ($runId, $targetPromptTurnNo): array {
+            $this->runCommit->assertTransitionReady($runId);
             $events = $this->eventStore->allFor($runId);
 
             if ([] === $events) {
