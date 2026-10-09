@@ -226,6 +226,63 @@ final class SessionReplayCoordinatorTest extends IsolatedKernelTestCase
         $this->assertSame([], static::getContainer()->get('owner.replay.transcript_projector')->blocks());
     }
 
+    #[\PHPUnit\Framework\Attributes\DataProvider('questionCancellation')]
+    public function testCancelledQuestionCanBeEvictedButActiveQuestionPinsItsGroup(bool $cancel): void
+    {
+        $container = static::getContainer();
+        $this->runId = $container->get(\Ineersa\CodingAgent\Session\HatfieldSessionStore::class)->createSession('question eviction');
+        $this->path = $container->get(\Ineersa\CodingAgent\Session\SessionRunEventStore::class)->historySource($this->runId)->path;
+        (new Filesystem())->mkdir(\dirname($this->path));
+        $this->write(1, 0, 'run_started', ['payload' => ['messages' => [$this->message('root')]]]);
+        $this->write(3, 0, 'waiting_human', ['question_id' => 'historic-question', 'prompt' => 'Proceed?']);
+        // An aborted model operation alone does not abandon the human wait.
+        $this->write(4, 0, 'llm_step_aborted', ['step_id' => 'unrelated-step']);
+        if ($cancel) {
+            $this->write(5, 0, 'agent_command_applied', ['kind' => 'cancel']);
+        }
+        $codec = $container->get(\Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec::class);
+        for ($i = 0; $i < 3; ++$i) {
+            $call = 'complete-'.$i;
+            $this->write(7 + $i * 6, 0, 'tool_execution_start', ['tool_call_id' => $call, 'tool_name' => 'read', 'arguments' => ['path' => 'example.txt']]);
+            $result = new \Ineersa\AgentCore\Domain\Message\ToolCallResult(
+                runId: $this->runId, turnNo: 0, stepId: 'step', attempt: 1, idempotencyKey: $call,
+                toolCallId: $call, orderIndex: 0,
+                result: ['tool_name' => 'read', 'content' => [['type' => 'text', 'text' => str_repeat('x', 1024 * 1024)]]],
+            );
+            $this->write(9 + $i * 6, 0, 'tool_execution_end', $codec->toEventPayload($result));
+            $this->write(11 + $i * 6, 0, 'tool_batch_committed', []);
+        }
+        $stateOnly = $this->coordinator->reconstruct(RunState::queued($this->runId));
+        $this->assertNotNull($stateOnly);
+        $this->assertCount($cancel ? 0 : 1, $stateOnly->state->pendingHumanInputRequests);
+        if (!$cancel) {
+            $this->expectException(\LengthException::class);
+            $this->expectExceptionMessage('Transcript display group exceeds the bootstrap view budget');
+        }
+        $view = $this->coordinator->reconstruct(RunState::queued($this->runId), withTranscript: true);
+        $this->assertNotNull($view);
+        $this->assertLessThanOrEqual(2000, \count($view->blocks));
+        $this->assertLessThanOrEqual(4 * 1024 * 1024, \strlen(json_encode($view->blocks, \JSON_THROW_ON_ERROR)));
+        $this->assertNotContains('hitl_historic-question', array_column($view->blocks, 'id'));
+        $this->assertContains('tool_call_complete-2', array_column($view->blocks, 'id'));
+        $this->assertContains('tool_result_complete-2', array_column($view->blocks, 'id'));
+        $spools = $container->get(\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapSpoolStore::class);
+        try {
+            $descriptor = $spools->seal($this->runId, $view->state->lastSeq, $view->endOffset, $view->anchor, $view->blocks,
+                ['status' => $view->state->status->value, 'model' => $view->state->model, 'turn_no' => $view->state->turnNo] + $view->resume);
+            $this->assertTrue($spools->isActive($this->runId));
+            $this->assertGreaterThan(0, $descriptor->bytes);
+        } finally {
+            $spools->cancel($this->runId);
+        }
+    }
+
+    public static function questionCancellation(): iterable
+    {
+        yield 'accepted cancellation closes the question' => [true];
+        yield 'operation abortion leaves the question protected' => [false];
+    }
+
     public function testColdAndWarmMemoryInIndependent128MProcesses(): void
     {
         $directory = TestDirectoryIsolation::createProjectTempDir('coordinated-replay-memory');

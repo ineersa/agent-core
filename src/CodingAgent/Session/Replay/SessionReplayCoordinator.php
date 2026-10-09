@@ -216,7 +216,7 @@ final readonly class SessionReplayCoordinator
                 }
                 unset($calls[$id]);
             } elseif ($block->streaming || (\in_array($block->kind, [TranscriptBlockKindEnum::Question, TranscriptBlockKindEnum::Approval], true)
-                && !\in_array($block->meta['status'] ?? null, ['answered', 'approved', 'rejected'], true))) {
+                && !\in_array($block->meta['status'] ?? null, ['answered', 'approved', 'rejected', 'cancelled'], true))) {
                 return false;
             }
         }
