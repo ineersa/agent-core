@@ -62,6 +62,121 @@ final class RunHistoryIndexTest extends IsolatedKernelTestCase
         }
     }
 
+    public function testPromptPagesAndExactSparseSelectionMatchReferencePolicy(): void
+    {
+        $text = str_repeat("original\n", 200);
+        $fixtures = [
+            [1, 0, 'run_started', ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Initial']]]]]],
+            [3, 100, 'turn_advanced', []],
+            [5, 80, 'turn_advanced', []],
+            [7, 80, 'agent_command_queued', ['kind' => 'follow_up', 'text' => 'Queued only']],
+            [9, 80, 'agent_command_rejected', ['kind' => 'steer', 'text' => 'Rejected']],
+            [11, 80, 'agent_command_applied', ['kind' => 'append_message', 'text' => 'Generated']],
+            [13, 80, 'agent_command_applied', ['kind' => 'follow_up', 'text' => 'Replaced']],
+            [15, 80, 'agent_command_applied', ['kind' => 'steer', 'message' => ['content' => [['type' => 'text', 'text' => $text]]]]],
+            [17, 4, 'turn_advanced', []],
+            [19, 4, 'llm_step_completed', []],
+            [21, 4, 'agent_command_applied', ['kind' => 'follow_up', 'text' => 'Discarded pending']],
+            [23, 100, 'history_position_set', ['position_turn_no' => 100, 'reason' => 'history_select']],
+            [25, 100, 'history_tail_discarded', ['after_turn_no' => 100]],
+            [27, 80, 'turn_advanced', []],
+            [29, 80, 'agent_command_applied', ['kind' => 'follow_up', 'text' => $text]],
+            [31, 4, 'turn_advanced', []],
+            [33, 80, 'history_position_set', ['position_turn_no' => 80, 'reason' => 'history_select']],
+        ];
+        $events = [];
+        $promptBytes = 0;
+        foreach ($fixtures as [$seq, $turn, $type, $payload]) {
+            $bytes = $this->write($seq, $turn, $type, $payload);
+            if (29 === $seq) {
+                $promptBytes = $bytes;
+            }
+            $events[] = new RunEvent('indexed', $seq, $turn, $type, $payload);
+        }
+        $index = new RunHistoryIndex(static::getContainer()->get(LockFactory::class), $this->logger);
+        $page = $index->promptPage($this->log, $this->path, 'indexed', after: 0);
+        $reference = (new \Ineersa\CodingAgent\Tests\Support\HistoryReferenceProjector())->build($events);
+        $this->assertSame(array_keys($reference->promptsByTurnNo), array_column($page['rows'], 'turn_no'));
+        $this->assertSame([3, 31], array_column($page['rows'], 'anchor'));
+        $this->assertSame(RunHistoryIndex::PREVIEW_BYTES, \strlen($page['rows'][1]['preview']));
+        $this->assertSame(27, $page['selected']);
+        $this->logger->records = [];
+        $prompt = $index->selectPrompt($this->log, $this->path, 'indexed', 4);
+        $this->assertSame(['position' => 80, 'predecessor' => 80, 'text' => $text], $prompt);
+        $this->assertSame($promptBytes, $this->readBytes('selected_prompt'));
+        $this->assertSame(1, $this->readLines('selected_prompt'));
+        $this->assertSame(0, $this->readBytes('index_cold_rebuild'));
+        $this->assertSame(0, $this->readBytes('sequence_range'));
+        $this->logger->records = [];
+        $near = $index->promptPage($this->log, $this->path, 'indexed');
+        $this->assertSame([4], array_column($near['rows'], 'turn_no'));
+        $this->assertSame(31, $near['older']);
+        $this->assertSame(0, $this->readBytes('selected_prompt'));
+        $this->assertSame(1, $this->readLines('index_boundary_validation'));
+    }
+
+    public function testExactPromptLocationFailureRefusesAndInvalidatesDisposableEvidence(): void
+    {
+        $this->write(1, 0, 'run_started', ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Original']]]]]);
+        $this->write(3, 1, 'turn_advanced');
+        $index = new RunHistoryIndex(static::getContainer()->get(LockFactory::class), $this->logger);
+        $index->promptPage($this->log, $this->path, 'indexed');
+        $db = $this->db();
+        $db->executeStatement('UPDATE event_location SET offset = (SELECT offset FROM event_location WHERE seq = 3), length = (SELECT length FROM event_location WHERE seq = 3) WHERE seq = 1');
+        $db->close();
+        $canonical = file_get_contents($this->path);
+        try {
+            $index->selectPrompt($this->log, $this->path, 'indexed', 1);
+            $this->fail('A mismatching prompt location must not be accepted.');
+        } catch (\RuntimeException $exception) {
+            $this->assertStringContainsString('does not match', $exception->getMessage());
+        }
+        $this->assertSame($canonical, file_get_contents($this->path));
+        $this->assertFileExists(\dirname($this->path).'/history-index.sqlite.unavailable');
+        $this->assertSame('Original', $index->selectPrompt($this->log, $this->path, 'indexed', 1)['text']);
+        $this->assertFileDoesNotExist(\dirname($this->path).'/history-index.sqlite.unavailable');
+    }
+
+    public function testEveryPromptIsReachableThroughBoundedAnchorPagesAndOldSchemaRebuilds(): void
+    {
+        for ($i = 1; $i <= 80; ++$i) {
+            $this->write($i * 3, 81 - $i, 'agent_command_applied', ['kind' => 'follow_up', 'text' => str_repeat('p'.$i, 300)]);
+            $this->write($i * 3 + 1, 81 - $i, 'turn_advanced');
+        }
+        $index = new RunHistoryIndex(static::getContainer()->get(LockFactory::class), $this->logger);
+        $tail = $index->promptPage($this->log, $this->path, 'indexed');
+        $this->assertCount(32, $tail['rows']);
+        $this->assertSame(1, $tail['rows'][31]['turn_no']);
+        $outsidePage = $index->selectPrompt($this->log, $this->path, 'indexed', 80);
+        $this->assertSame(0, $outsidePage['predecessor']);
+        $this->assertSame(str_repeat('p1', 300), $outsidePage['text']);
+        $all = [];
+        $after = 0;
+        $this->logger->records = [];
+        do {
+            $page = $index->promptPage($this->log, $this->path, 'indexed', after: $after);
+            $this->assertLessThanOrEqual(32, \count($page['rows']));
+            $this->assertLessThanOrEqual(32 * 240, array_sum(array_map(static fn (array $row): int => \strlen($row['preview']), $page['rows'])));
+            array_push($all, ...array_column($page['rows'], 'turn_no'));
+            $after = $page['newer'];
+        } while (null !== $after);
+        $this->assertSame(range(80, 1), $all);
+        $this->assertSame(3, $this->readLines('index_boundary_validation'));
+        $this->assertSame(0, $this->readBytes('index_cold_rebuild'));
+        $older = $index->promptPage($this->log, $this->path, 'indexed', before: $tail['older']);
+        $this->assertSame(range(64, 33), array_column($older['rows'], 'turn_no'));
+        $db = $this->db();
+        $db->executeStatement('ALTER TABLE turn_anchor DROP COLUMN prompt_seq');
+        $db->executeStatement('ALTER TABLE turn_anchor DROP COLUMN prompt_preview');
+        $db->executeStatement('DROP TABLE pending_prompt');
+        $db->executeStatement('UPDATE index_meta SET version = 2');
+        $db->close();
+        $this->logger->records = [];
+        $rebuilt = $index->promptPage($this->log, $this->path, 'indexed');
+        $this->assertSame($tail, $rebuilt);
+        $this->assertSame(filesize($this->path), $this->readBytes('index_cold_rebuild'));
+    }
+
     public function testForwardTailUsesStableRetainedOrderAndOnlyValidatesBoundaryWhenWarm(): void
     {
         $index = new RunHistoryIndex(static::getContainer()->get(LockFactory::class), $this->logger);

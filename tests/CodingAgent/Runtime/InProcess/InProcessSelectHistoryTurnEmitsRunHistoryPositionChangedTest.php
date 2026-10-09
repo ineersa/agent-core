@@ -6,7 +6,6 @@ namespace Ineersa\CodingAgent\Tests\Runtime\InProcess;
 
 use Ineersa\AgentCore\Application\Dto\RunStateReplayResult;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
-use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\History\HistorySelectionServiceInterface;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
@@ -27,12 +26,13 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Ineersa\CodingAgent\Session\History\HistoryProjector;
 use Ineersa\CodingAgent\Session\History\HistorySelectionService;
+use Ineersa\CodingAgent\Session\RunHistoryIndex;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextDiscovery;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextRenderer;
 use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
+use Ineersa\CodingAgent\Tests\Support\HistoryEventStoreFactory;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\Attributes\Test;
@@ -54,10 +54,7 @@ final class InProcessSelectHistoryTurnEmitsRunHistoryPositionChangedTest extends
     #[Test]
     public function sendSelectHistoryTurnPersistsSelectionAndEmitsOneRuntimePositionEvent(): void
     {
-        $eventStore = new InMemoryEventStore();
-        foreach ($this->sessionEvents() as $event) {
-            $eventStore->seed($event);
-        }
+        $eventStore = HistoryEventStoreFactory::create(self::getContainer()->get(HatfieldSessionStore::class), $this->sessionEvents());
 
         $activeRunContext = new TestActiveRunContext();
         $activeRunContext->loadRecovered(new RunState(
@@ -88,8 +85,7 @@ final class InProcessSelectHistoryTurnEmitsRunHistoryPositionChangedTest extends
             activeRunContext: $activeRunContext,
             lockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
             logger: new NullLogger(),
-            historyProjector: new HistoryProjector(),
-            replayEventPreparer: new ReplayEventPreparer(),
+            historyIndex: self::getContainer()->get(RunHistoryIndex::class),
             runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
                 activeRunContext: $activeRunContext,
                 eventStore: $eventStore,
@@ -185,7 +181,7 @@ final class InProcessSelectHistoryTurnEmitsRunHistoryPositionChangedTest extends
     }
 
     private function client(
-        InMemoryEventStore $eventStore,
+        \Ineersa\AgentCore\Contract\EventStoreInterface $eventStore,
         HistorySelectionServiceInterface $historySelectionService,
         InMemoryRuntimeEventSink $sink,
         TestActiveRunContext $activeRunContext,

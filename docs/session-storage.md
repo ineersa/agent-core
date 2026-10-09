@@ -143,6 +143,18 @@ New session creation uses atomic exclusive `mkdir` of the leaf session path and 
 
 Selected history position and retained-history replay are derived from the canonical event stream; details of projection live in the TUI/runtime implementation.
 
+The picker opens near the selected position and loads at most 32 prompt previews,
+each capped at 240 UTF-8 bytes. Select `Older prompts...` or `Newer prompts...` with
+Enter to navigate pages. Internal turns are not selectable rows, but they remain
+valid predecessors. Selecting a prompt restores its complete original text to the
+editor without discarding forward history or starting a model turn.
+
+The disposable `history-index.sqlite` stores stable anchors, bounded previews and
+canonical record locations, not full prompt bodies. Missing, invalid or obsolete
+indexes rebuild from `events.jsonl`. Warm page reads validate the indexed boundary;
+exact prompt lookup reads its canonical record. The published extension history
+API still returns its complete title array and reads prompt records explicitly.
+
 ## Concurrency and locking
 
 Session access uses cooperative locking so two interactive controllers do not corrupt the same session directory. Contenders fail closed or wait according to runtime lock helpers — do not hand-edit `events.jsonl` while a session is live.

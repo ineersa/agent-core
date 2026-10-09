@@ -27,6 +27,8 @@ use PHPUnit\Framework\Attributes\DataProvider;
 #[AllowMockObjectsWithoutExpectations]
 final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
 {
+    use \Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
+
     private TestLogger $logger;
 
     public function testValidatedMountPrecedesExactAcknowledgementAndDurableSuffixReadiness(): void
@@ -206,6 +208,92 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
         $this->assertSame(0, $state->lastSeq);
         $this->assertFalse($state->bootstrapMounted);
         $this->assertStringContainsString('Previous mounted view', $harness->plainScreenText());
+    }
+
+    #[DataProvider('mountedFailures')]
+    public function testReloadAfterMountedFailureDoesNotDispatchRestoredInputAndFreshAttachRejectsOldFrames(bool $ackFails): void
+    {
+        [$state, $harness, $poller] = $this->scope();
+        [$cut, $available, $frame, $end] = $this->transfer();
+        $events = [$available, $frame, $end];
+        $client = $this->createMock(AgentSessionClient::class);
+        $client->method('events')->willReturnCallback(static function () use (&$events): array { return $events; });
+        $client->expects($this->never())->method('send');
+        $client->expects($this->never())->method('start');
+        $client->expects($this->never())->method('cancel');
+        $client->expects($this->exactly(2))->method('cancelBootstrap')->with('42');
+        $ack = $client->expects($this->once())->method('acknowledgeBootstrap')->with($cut->toArray());
+        if ($ackFails) {
+            $ack->willThrowException(new \Ineersa\CodingAgent\Runtime\Contract\RuntimeTransportException('Acknowledgement connection failed.'));
+        }
+        $mount = static function () use ($harness, $state): void {
+            $harness->screen()->setTranscriptBlocks($state->transcript);
+            $harness->screen()->syncQueuedUserMessages($state->queuedUserMessages);
+        };
+        $poller->poll($state, $client, onBootstrapMounted: $mount);
+        $this->assertSame(['17' => 'Restored pending input'], $state->queuedUserMessages);
+        $this->assertStringContainsString('Restored pending input', $harness->plainScreenText());
+        if (!$ackFails) {
+            $events = [new RuntimeEvent('protocol.error', '42', 0, ['message' => 'Suffix transfer disconnected.'])];
+            $state->lastPoll = 0;
+            $poller->poll($state, $client, onBootstrapMounted: $mount);
+        }
+        $this->assertFalse($state->sessionReady);
+        $this->assertFalse($state->bootstrapMounted);
+        $this->assertNotNull($state->bootstrapError);
+
+        $switch = new \Ineersa\Tui\Application\TuiSessionSwitchService($harness->tui(), $client, $state, $this->logger);
+        $catalog = new \Ineersa\Tui\Command\SlashCommandCatalog();
+        $questions = new \Ineersa\Tui\Question\QuestionCoordinator();
+        $catalog->register(new \Ineersa\Tui\Command\CommandMetadata('reload'), new \Ineersa\Tui\Listener\ReloadCommandHandler($switch, $state, $harness->screen(), $questions));
+        $services = $this->createSessionServices(tui: $harness->tui(), screen: $harness->screen(), state: $state, client: $client, switch: $switch, catalog: $catalog, questionCoordinator: $questions);
+        $context = $this->buildTuiContext()->withTui($harness->tui())->withScreen($harness->screen())->withState($state)->withClient($client)->withSessionServices($services)->build();
+        static::getContainer()->get(\Ineersa\Tui\Listener\SubmitListener::class)->register($context);
+        $harness->screen()->promptEditor()->replaceText('/reload');
+        $harness->tui()->setFocus($harness->screen()->editorWidget());
+        $harness->tui()->handleInput("\r");
+        $intent = $switch->consumePendingReload();
+        $this->assertNotNull($intent, 'Restored owner queue cannot strand /reload before readiness: '.$harness->plainScreenText());
+        $this->assertSame('42', $intent->sessionId);
+
+        // The outer reload loop drops the old iteration. The new iteration owns
+        // fresh pending input and protocol identity, never the old restored queue.
+        [$fresh, $freshHarness, $freshPoller] = $this->scope();
+        $this->assertSame([], $fresh->queuedUserMessages);
+        $this->assertSame([], $fresh->queuedFollowUps);
+        $freshClient = $this->createMock(AgentSessionClient::class);
+        $freshClient->expects($this->never())->method('send');
+        $freshClient->expects($this->never())->method('start');
+        $freshClient->expects($this->once())->method('attach')->with('42')->willReturn(new RunHandle('42', 'bootstrapping', 'fresh-request'));
+        $fresh->handle = $freshClient->attach($intent->sessionId);
+        [$nextCut, $nextAvailable, $nextFrame, $nextEnd] = $this->transfer('42', 'fresh-request', 1);
+        $nextCut = SessionBootstrapDescriptorDTO::fromArray(array_replace($nextCut->toArray(), ['bootstrap_id' => str_repeat('b', 32)]));
+        $nextAvailable = new RuntimeEvent($nextAvailable->type, '42', 0, array_replace($nextAvailable->payload, ['bootstrap_id' => $nextCut->bootstrapId]));
+        $nextFrame = new RuntimeEvent($nextFrame->type, '42', 0, array_replace($nextFrame->payload, ['bootstrap_id' => $nextCut->bootstrapId]));
+        $nextEnd = new RuntimeEvent($nextEnd->type, '42', 0, array_replace($nextEnd->payload, ['bootstrap_id' => $nextCut->bootstrapId]));
+        $freshEvents = [$available, $frame, $end];
+        $freshClient->method('events')->willReturnCallback(static function () use (&$freshEvents): array { return $freshEvents; });
+        $freshClient->expects($this->once())->method('acknowledgeBootstrap')->with($nextCut->toArray());
+        $freshMount = static function () use ($freshHarness, $fresh): void { $freshHarness->screen()->setTranscriptBlocks($fresh->transcript); };
+        $freshPoller->poll($fresh, $freshClient, onBootstrapMounted: $freshMount);
+        $this->assertFalse($fresh->bootstrapMounted);
+        $this->assertSame([], $fresh->queuedUserMessages);
+        $freshEvents = [$nextAvailable, $nextFrame, $nextEnd];
+        $fresh->lastPoll = 0;
+        $freshPoller->poll($fresh, $freshClient, onBootstrapMounted: $freshMount);
+        $this->assertTrue($fresh->bootstrapMounted);
+        $this->assertFalse($fresh->sessionReady);
+        $this->assertNull($fresh->bootstrapError);
+        $freshEvents = [new RuntimeEvent('session.ready', '42', 0, ['bootstrap_id' => $nextCut->bootstrapId, 'view_epoch' => 1, 'canonical_seq' => 13, 'end_offset' => 500])];
+        $fresh->lastPoll = 0;
+        $freshPoller->poll($fresh, $freshClient, onBootstrapMounted: $freshMount);
+        $this->assertTrue($fresh->sessionReady);
+    }
+
+    public static function mountedFailures(): iterable
+    {
+        yield 'ack fails after atomic mount' => [true];
+        yield 'suffix readiness fails after acknowledgement' => [false];
     }
 
     /** @return array{TuiSessionState, VirtualTuiHarness, RuntimeEventPoller} */

@@ -6,17 +6,18 @@ namespace Ineersa\CodingAgent\Tests\Session\History;
 
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
-use Ineersa\CodingAgent\Session\History\HistoryProjector;
+use Ineersa\CodingAgent\Tests\Support\HistoryReferenceProjector;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
-final class HistoryProjectorTest extends TestCase
+/** Independent legacy policy reference retained after indexed reader migration. */
+final class HistoryReferenceProjectorTest extends TestCase
 {
-    private HistoryProjector $projector;
+    private HistoryReferenceProjector $projector;
 
     protected function setUp(): void
     {
-        $this->projector = new HistoryProjector();
+        $this->projector = new HistoryReferenceProjector();
     }
 
     #[Test]

@@ -69,7 +69,7 @@ final readonly class HistoryReplayPlan
         }
         $position = $positionTurnNo ?? $history->positionTurnNo;
         $retained = [];
-        $anchors = new HistoryDTO($history->retainedTurnNos, [], $position);
+        $anchors = new HistoryDTO($history->retainedTurnNos);
         foreach ($anchors->retainedTurnNosThrough($position) as $turn) {
             $retained[$turn] = true;
         }
