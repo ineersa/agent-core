@@ -63,8 +63,9 @@ There is **no** `CollectToolBatch` message type in `src/` (stale historical name
 
 `ApplyShellCommandHandler` commits `agent_command_applied` plus canonical
 `tool_execution_start` (with flat bash `arguments.command`) under the owner lock,
-then returns the `ExecuteShellToolCall` effect. Idempotent command redelivery
-still short-circuits before those events or the effect. The shell worker has no
+then returns the `ExecuteShellToolCall` effect. Direct-shell redelivery checks
+canonical `agent_command_applied` identities even after execution ends. This is
+separate from the pending-only `ApplyCommand` mailbox. The shell worker has no
 EventStore dependency: it only executes bash and posts `ToolCallResult`.
 `tool_execution_start` is lifecycle acceptance before external work, not measured
 subprocess start; duration remains on the later result metadata.
@@ -74,7 +75,7 @@ subprocess start; duration remains on the later result metadata.
 `LlmStepResultHandler` writes child input from the owner's current messages through `ToolLaunchInputStoreInterface`, one message at a time. It attaches only `ToolLaunchInputReferenceDTO` to fork/subagent `ExecuteToolCall` effects. Ordinary tools keep `launchContext=null`.
 
 - The private immutable file lives beside tool batches in `runtime/tool-launch-inputs`, using the same parent/child path resolver. It is not an output-cap or temporary-cleanup file.
-- The reference fixes producing run/turn/step/call/model, kind, SHA-256, and byte length. Neither Messenger nor mutable batch snapshots contain the body.
+- The reference fixes producing run/turn/step/call/model, kind, SHA-256, and byte length. Neither Messenger nor SQL batch rows contain the body.
 - Fork files contain the producing messages and agents text. Subagent files contain agents text only.
 - `ExecuteToolCallWorker` checks durable deferred registration before reading input. Pending execution redelivery re-emits registration; completed execution redelivery is a no-op. Unregistered work validates and resolves input before external execution. Missing, corrupt, unreadable, or mismatched input posts an error `ToolCallResult` without archive replay.
 - Worker compaction and child reservation remain outside the owner lock.
@@ -148,7 +149,7 @@ Repair derives execution state and validates proposed messages through the retai
 
 Core actions capture prepared `AdvanceRun` or `CompactRun`, mailbox decisions, and batch registration. `AdvanceRunCoordinationFactory` fixes the step ID and idempotency key before commit. Descriptors carry messages or scalar identities, never services or `RunState`.
 
-Configured persistent stores implement `PreparedTransitionEventStoreInterface`. `RunCommit` stages exact event bytes and serialized captured work before physical append. The shared finalizer applies batch and pending-mailbox changes in one short metadata transaction, then publishes the canonical cut. Payload serialization finishes before that transaction. Normal sends run after owner-lock release through the existing buses. A failed send is logged and requires explicit `/repair`, not persistent republication.
+Configured persistent stores implement `PreparedTransitionEventStoreInterface`. `RunCommit` stages exact event bytes and serialized captured work before physical append. The shared finalizer applies batch and pending-mailbox changes in one short metadata transaction, then publishes the canonical cut. Payload serialization finishes before that transaction. Normal sends run after owner-lock release through the existing buses. `StepDispatcher` logs failed sends and emits `EffectDispatchFailedEvent` with accepted and failed counts. CodingAgent renders it through the existing transient notification flow. Repair reports requests, not queue acceptance or execution completion. A failed send requires explicit `/repair`, not persistent republication.
 
 Pending persistent transitions block owner admission and mutation until their exact staged bytes and captured coordination are reconciled. Supported local actions complete through the shared finalizer without regenerating identifiers. Unsupported actions fail closed. Unfinished canonical transitions remain eligible for startup and idle reconciliation.
 
@@ -164,7 +165,7 @@ Attach completes cancellation and context refresh before follow-up handling. Mai
 
 Repair prepares a typed decision before mutation and submits it once through `RunCommit`. Refused decisions execute no captured child actions. Source identities are not stored in the pending-only mailbox.
 
-Parent repair also captures deferred child-maintenance obligations through application-owned `RepairDeferredChildrenDTO` before root coordination. Recovery completes that captured plan without reevaluating current pending children. Original child-generation fences keep an accepted old repair from cancelling or repairing newer work; a fresh repair ID remains effective.
+Parent repair also captures deferred child-maintenance obligations through application-owned `RepairDeferredChildrenDTO` before root coordination. Recovery completes that captured plan without reevaluating current pending children. Captured child-generation fences keep recovery from changing newer work. Completed maintenance IDs are not retained; resubmission can prepare a new plan for the current generation.
 
 `EssentialAfterTurnHookInterface` prepares automatic compaction, child observation, parent cancellation, and context-budget commands before intent publication. The journal stores these descriptors separately from continuation actions. Required local coordination finishes before canonical publication. Captured transport messages send afterward, outside the owner lock. Recovery repeats the captured descriptors without reevaluating policy or generating identifiers.
 

@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Messenger;
 
-use Doctrine\DBAL\Connection;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
+use Ineersa\CodingAgent\Agent\Artifact\OwnedRunIdsProvider;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
@@ -23,7 +23,7 @@ final class PendingTransitionRecoverySubscriber
         private readonly PreparedTransitionEventStoreInterface $transitions,
         private readonly PendingTransitionRecovery $recovery,
         private readonly RunLockManager $locks,
-        private readonly Connection $connection,
+        private readonly OwnedRunIdsProvider $ownership,
         #[Autowire('%env(HATFIELD_SESSION_ID)%')]
         private readonly string $sessionId,
         private readonly LoggerInterface $logger,
@@ -74,18 +74,13 @@ final class PendingTransitionRecoverySubscriber
 
     private function nextOwnedRun(string $after): ?string
     {
-        $run = $this->connection->fetchOne(<<<'SQL'
-            WITH RECURSIVE owned_runs(run_id) AS (
-                SELECT :owner
-                UNION
-                SELECT child.child_run_id FROM deferred_subagent_child child
-                JOIN deferred_subagent_batch batch ON batch.lifecycle_id = child.batch_lifecycle_id
-                JOIN owned_runs parent ON parent.run_id = batch.parent_run_id
-            )
-            SELECT run_id FROM owned_runs WHERE run_id > :after ORDER BY run_id LIMIT 1
-            SQL, ['owner' => $this->sessionId, 'after' => $after]);
+        foreach ($this->ownership->forOwner($this->sessionId) as $run) {
+            if (strcmp($run, $after) > 0) {
+                return $run;
+            }
+        }
 
-        return false === $run ? null : (string) $run;
+        return null;
     }
 
     private function logFailure(string $runId, \Throwable $exception): void

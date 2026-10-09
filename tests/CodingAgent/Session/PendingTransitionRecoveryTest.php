@@ -133,7 +133,7 @@ final class PendingTransitionRecoveryTest extends IsolatedKernelTestCase
         return new PendingTransitionRecovery(
             $store,
             $container->get(ActiveRunContextInterface::class),
-            TestTransitionFinalizerFactory::create($store, new StepDispatcher($bus, $bus, new \Ineersa\AgentCore\Tests\Support\TestLogger()), batches: $container->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class), commands: $container->get(\Ineersa\AgentCore\Contract\CommandStoreInterface::class), locks: $locks),
+            TestTransitionFinalizerFactory::create($store, new StepDispatcher($bus, $bus, new \Ineersa\AgentCore\Tests\Support\TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher()), batches: $container->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class), commands: $container->get(\Ineersa\AgentCore\Contract\CommandStoreInterface::class), locks: $locks),
             $container->get(\Ineersa\AgentCore\Application\Handler\CoordinationActionValidator::class),
         );
     }

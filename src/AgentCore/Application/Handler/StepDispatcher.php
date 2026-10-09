@@ -12,6 +12,7 @@ use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\MessageBusInterface;
+use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 final readonly class StepDispatcher
 {
@@ -19,6 +20,7 @@ final readonly class StepDispatcher
         private MessageBusInterface $commandBus,
         private MessageBusInterface $executionBus,
         private LoggerInterface $logger,
+        private EventDispatcherInterface $events,
     ) {
     }
 
@@ -34,6 +36,10 @@ final readonly class StepDispatcher
     /** @param list<object> $effects */
     public function dispatchEffects(array $effects): void
     {
+        /** @var array<array-key, int> $accepted */
+        $accepted = [];
+        /** @var array<array-key, int> $failed */
+        $failed = [];
         foreach ($effects as $effect) {
             $message = $effect instanceof Envelope ? $effect->getMessage() : $effect;
             if (!$message instanceof AbstractAgentBusMessage) {
@@ -43,13 +49,29 @@ final readonly class StepDispatcher
                 ? $this->executionBus : $this->commandBus;
             try {
                 $bus->dispatch($effect);
+                $accepted[$message->runId()] = ($accepted[$message->runId()] ?? 0) + 1;
             } catch (\Throwable $exception) {
+                $failed[$message->runId()] = ($failed[$message->runId()] ?? 0) + 1;
                 $this->logger->warning('runtime.effect_send_failed', [
                     'run_id' => $message->runId(),
                     'session_id' => $message->runId(),
                     'component' => 'step_dispatcher',
                     'event_type' => 'runtime.effect_send_failed',
                     'message_type' => $message::class,
+                    'exception_class' => $exception::class,
+                ]);
+            }
+        }
+        foreach ($failed as $runId => $count) {
+            $runId = (string) $runId;
+            try {
+                $this->events->dispatch(new EffectDispatchFailedEvent($runId, $accepted[$runId] ?? 0, $count));
+            } catch (\Throwable $exception) {
+                $this->logger->warning('runtime.effect_send_failure_notification_failed', [
+                    'run_id' => $runId,
+                    'session_id' => $runId,
+                    'component' => 'step_dispatcher',
+                    'event_type' => 'runtime.effect_send_failure_notification_failed',
                     'exception_class' => $exception::class,
                 ]);
             }

@@ -51,7 +51,9 @@ final class PendingTransitionIdleOwnerRestartTest extends TestCase
             $this->assertSame($before['run_id'], $after['run_id']);
             $this->assertSame($before['pending_identity'], $after['pending_identity']);
             $this->assertTrue($after['ok']);
-            $this->assertSame(1, $after['delivery_count']);
+            $this->assertSame(5, $after['delivery_count']);
+            $this->assertSame([$after['run_id'], 'a-fork-'.$after['run_id'], 'b-deferred-'.$after['run_id'], 'c-nested-deferred-'.$after['run_id'], 'd-nested-fork-'.$after['run_id']], $after['owned_runs']);
+            $this->assertTrue($after['foreign_pending']);
             $this->assertTrue($after['worker_started']);
             $this->assertGreaterThanOrEqual($before['cut'], $after['cut']);
             $this->assertSame(0, $process->getExitCode());

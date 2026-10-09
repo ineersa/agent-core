@@ -31,7 +31,7 @@ final class RunCommitLoggingTest extends TestCase
             activeRunContext: $activeRunContext,
             eventStore: $eventStore,
             logger: $logger,
-            finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger())),
+            finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher())),
         );
 
         $next = new RunState(
@@ -70,7 +70,7 @@ final class RunCommitLoggingTest extends TestCase
             activeRunContext: $activeRunContext,
             eventStore: new RecordingEventStore(),
             logger: new TestLogger(),
-            finalizer: TestTransitionFinalizerFactory::create(new RecordingEventStore(), new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger())),
+            finalizer: TestTransitionFinalizerFactory::create(new RecordingEventStore(), new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher())),
         ))->commit($previous, $next, []);
 
         $this->assertSame($next, $activeRunContext->requireLoaded('run-1'));
@@ -91,7 +91,7 @@ final class RunCommitLoggingTest extends TestCase
             activeRunContext: $active,
             eventStore: $store,
             logger: new TestLogger(),
-            finalizer: TestTransitionFinalizerFactory::create($store, new StepDispatcher($bus, $bus, new TestLogger())),
+            finalizer: TestTransitionFinalizerFactory::create($store, new StepDispatcher($bus, $bus, new TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher())),
         );
 
         try {

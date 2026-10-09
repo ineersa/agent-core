@@ -50,7 +50,7 @@ final class RunCommitAfterTurnCommitPersistedSeqTest extends TestCase
             eventStore: $eventStore,
             logger: new TestLogger(),
             hookDispatcher: new HookDispatcher([$subscriber]),
-            finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger())),
+            finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher())),
         );
 
         $next = new RunState(

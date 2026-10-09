@@ -898,7 +898,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
 
         // Explicit repair authorizes these ordinary sends. Canonical start events
         // establish identity and input, not whether an external tool already acted.
-        return new SessionRepairPlan($stored, $state->with(['version' => $stored->version]), [], $leadingActions, new RepairResult(false, false, 'Active operation redriven. External effects may already have occurred.', activeOperationsRedriven: \count($effects)), $effects);
+        return new SessionRepairPlan($stored, $state->with(['version' => $stored->version]), [], $leadingActions, new RepairResult(false, false, 'Active operation redrive requested. Sends run after owner-lock release; failed sends produce a runtime error notification. External effects may already have occurred.', activeOperationsRedriven: \count($effects)), $effects);
     }
 
     private function hasOnlyDeferredChildWork(RunState $state): bool

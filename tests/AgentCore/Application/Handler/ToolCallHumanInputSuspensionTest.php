@@ -382,7 +382,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
                 activeRunContext: $activeRunContext,
                 eventStore: $eventStore,
                 logger: new \Psr\Log\NullLogger(),
-                finalizer: TestTransitionFinalizerFactory::create($eventStore, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus(), new \Ineersa\AgentCore\Tests\Support\TestLogger()), batches: $batchStore),
+                finalizer: TestTransitionFinalizerFactory::create($eventStore, new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus(), new \Ineersa\AgentCore\Tests\Support\TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher()), batches: $batchStore),
             ),
             commands: new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore(),
             handlers: [$handler],

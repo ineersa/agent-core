@@ -1704,7 +1704,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
                         DeliverDeferredSubagentBatchLifecycleMessage::class => [$bus->dispatch(...)],
                     ])),
                 ]);
-                $dispatcher = new \Ineersa\AgentCore\Application\Handler\StepDispatcher($coordinationBus, $coordinationBus, new TestLogger());
+                $dispatcher = new \Ineersa\AgentCore\Application\Handler\StepDispatcher($coordinationBus, $coordinationBus, new TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher());
                 $commit = new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
                     activeRunContext: $active,
                     eventStore: $this->store,

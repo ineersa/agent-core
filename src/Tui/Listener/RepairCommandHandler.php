@@ -92,7 +92,7 @@ final class RepairCommandHandler implements SlashCommandHandler
         }
 
         if ($result->activeOperationsRedriven > 0) {
-            return 'Session repaired: active operation redriven.';
+            return $result->message;
         }
 
         if (!$result->repairableStaleCancellationDetected) {

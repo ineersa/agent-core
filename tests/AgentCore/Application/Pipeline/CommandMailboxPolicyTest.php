@@ -430,7 +430,7 @@ final class CommandMailboxPolicyTest extends TestCase
             commandRouter: $commandRouter,
         );
         $toolBatchCollector = new ToolBatchCollector($batchStore = new TestToolBatchStore());
-        $stepDispatcher = new StepDispatcher($commandBus, $executionBus, new \Ineersa\AgentCore\Tests\Support\TestLogger());
+        $stepDispatcher = new StepDispatcher($commandBus, $executionBus, new \Ineersa\AgentCore\Tests\Support\TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher());
 
         $runCommit = new RunCommit(
             activeRunContext: $activeRunContext,

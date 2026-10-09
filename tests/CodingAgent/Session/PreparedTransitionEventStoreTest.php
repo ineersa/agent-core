@@ -255,7 +255,7 @@ final class PreparedTransitionEventStoreTest extends IsolatedKernelTestCase
             $container->get(ActiveRunContextInterface::class),
             TestTransitionFinalizerFactory::create(
                 $store,
-                new \Ineersa\AgentCore\Application\Handler\StepDispatcher($failure, $failure, new \Ineersa\AgentCore\Tests\Support\TestLogger()),
+                new \Ineersa\AgentCore\Application\Handler\StepDispatcher($failure, $failure, new \Ineersa\AgentCore\Tests\Support\TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher()),
                 batches: $container->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
                 commands: $container->get(\Ineersa\AgentCore\Contract\CommandStoreInterface::class),
             ),

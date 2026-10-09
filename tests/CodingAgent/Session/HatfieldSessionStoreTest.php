@@ -90,7 +90,13 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         $commands = self::getContainer()->get(CommandStoreInterface::class);
         $childRunId = 'delete-child-'.$sessionId;
         $grandchildRunId = 'delete-grandchild-'.$sessionId;
-        foreach ([[$sessionId, $childRunId], [$childRunId, $grandchildRunId]] as [$parentRunId, $childId]) {
+        $forkRunId = 'delete-fork-'.$sessionId;
+        $nestedForkRunId = 'delete-nested-fork-'.$sessionId;
+        $nestedDeferredRunId = 'delete-nested-deferred-'.$sessionId;
+        $artifacts = self::getContainer()->get(AgentArtifactRegistry::class);
+        $artifacts->create($sessionId, 'ordinary-fork', $forkRunId, 'fork', AgentArtifactKindEnum::Fork);
+        $artifacts->create($childRunId, 'nested-fork', $nestedForkRunId, 'fork', AgentArtifactKindEnum::Fork);
+        foreach ([[$sessionId, $childRunId], [$childRunId, $grandchildRunId], [$forkRunId, $nestedDeferredRunId]] as [$parentRunId, $childId]) {
             $batch = new DeferredSubagentBatch();
             $batch->lifecycleId = Uuid::v7()->toRfc4122();
             $batch->parentRunId = $parentRunId;
@@ -103,7 +109,7 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
             $child->launchReasoning = 'none';
             $entityManager->persist($child);
         }
-        $runs = [$sessionId, $childRunId, $grandchildRunId, 'foreign-run'];
+        $runs = [$sessionId, $childRunId, $grandchildRunId, $forkRunId, $nestedForkRunId, $nestedDeferredRunId, 'foreign-run'];
         foreach ($runs as $runId) {
             $commands->enqueue(new PendingCommand($runId, 'continue', 'pending'));
             $schedule = new ToolBatchSchedule();

@@ -91,7 +91,7 @@ final readonly class JsonlAppendJournal
         }
         $this->reconcile($path);
         // Pending intent files stay until required coordination succeeds.
-        // Operation rows and batch authority own redispatch; do not copy full work.
+        // Finalized intents are not retry obligations; lost sends require explicit repair.
     }
 
     /**

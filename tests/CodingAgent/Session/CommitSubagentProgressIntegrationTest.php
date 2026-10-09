@@ -106,7 +106,7 @@ final class CommitSubagentProgressIntegrationTest extends PerMethodIsolatedKerne
         $store->expects($this->once())->method('appendTransition')->willThrowException(new \RuntimeException('canonical append failed'));
         $bus = new \Ineersa\AgentCore\Tests\Support\TestMessageBus();
         $active = self::getContainer()->get(ActiveRunContextInterface::class);
-        $dispatcher = new \Ineersa\AgentCore\Application\Handler\StepDispatcher($bus, $bus, new \Ineersa\AgentCore\Tests\Support\TestLogger());
+        $dispatcher = new \Ineersa\AgentCore\Application\Handler\StepDispatcher($bus, $bus, new \Ineersa\AgentCore\Tests\Support\TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher());
         $commit = new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
             activeRunContext: $active,
             eventStore: $store,

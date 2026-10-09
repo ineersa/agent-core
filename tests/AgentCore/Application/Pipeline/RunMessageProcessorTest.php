@@ -49,7 +49,7 @@ final class RunMessageProcessorTest extends TestCase
         $handler = $this->createMock(RunMessageHandler::class);
         $handler->method('supports')->willReturn(true);
         $handler->expects($this->once())->method('handle')->willReturn(new HandlerResult());
-        $dispatcher = new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new \Ineersa\AgentCore\Tests\Support\TestLogger());
+        $dispatcher = new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new \Ineersa\AgentCore\Tests\Support\TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher());
         $commit = new RunCommit(
             activeRunContext: $active,
             eventStore: $store,
@@ -94,7 +94,7 @@ final class RunMessageProcessorTest extends TestCase
             return new HandlerResult();
         });
         $bus = new TestMessageBus();
-        $dispatcher = new StepDispatcher($bus, $bus, new \Ineersa\AgentCore\Tests\Support\TestLogger());
+        $dispatcher = new StepDispatcher($bus, $bus, new \Ineersa\AgentCore\Tests\Support\TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher());
         $commit = new RunCommit(
             activeRunContext: $active,
             eventStore: $store,

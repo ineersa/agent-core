@@ -51,7 +51,7 @@ final class PipelineCapturingAgentRunner implements AgentRunnerInterface
             eventStore: $eventStore,
             logger: new NullLogger(),
             hookDispatcher: null,
-            finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new \Ineersa\AgentCore\Tests\Support\TestLogger())),
+            finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new \Ineersa\AgentCore\Tests\Support\TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher())),
         );
         $processor = new RunMessageProcessor(
             activeRunContext: $activeRunContext,

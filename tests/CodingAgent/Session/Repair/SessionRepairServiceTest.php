@@ -215,6 +215,18 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
         $this->assertSame($stepId, $request->stepId());
         $this->assertSame($key, $request->idempotencyKey());
         $this->assertCount(2, $this->readEvents($runId));
+        $this->assertStringContainsString('redrive requested', $applied->message);
+
+        $rejectingBus = $this->createMock(MessageBusInterface::class);
+        $rejectingBus->expects($this->once())->method('dispatch')->willThrowException(new \RuntimeException('broker unavailable'));
+        $failedSend = $this->createService($store, dispatcherBus: $rejectingBus)->repair($runId, true, \Symfony\Component\Uid\Uuid::v4()->toRfc4122());
+        $this->assertStringContainsString('redrive requested', $failedSend->message);
+        $this->assertStringNotContainsString('operation redriven.', $failedSend->message);
+        $notifications = iterator_to_array(self::getContainer()->get(\Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink::class)->drain($runId));
+        $this->assertCount(1, $notifications);
+        $this->assertSame(['accepted_dispatches' => 0, 'failed_dispatches' => 1], $notifications[0]->payload['metadata']);
+        $this->assertSame('error', $notifications[0]->payload['severity']);
+        $this->assertCount(2, $this->readEvents($runId));
     }
 
     public function testConflictingNormalizedCompactionEnvelopeIsRefusedWithoutDispatch(): void
@@ -899,7 +911,7 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
         $this->persistRunEvents($runId, $factory->eventsFromSpecs($runId, 3, 1, $specs));
     }
 
-    private function createService(?ActiveRunContextInterface $activeRunContext = null, ?TestLogger $logger = null, ?TestMessageBus $dispatcherBus = null, ?ToolBatchStoreInterface $toolBatchStore = null, ?MessageBusInterface $commandBus = null): SessionRepairService
+    private function createService(?ActiveRunContextInterface $activeRunContext = null, ?TestLogger $logger = null, ?MessageBusInterface $dispatcherBus = null, ?ToolBatchStoreInterface $toolBatchStore = null, ?MessageBusInterface $commandBus = null): SessionRepairService
     {
         $activeRunContext ??= new TestActiveRunContext();
         $dispatcherBus ??= new TestMessageBus();
@@ -920,6 +932,10 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
 
         $lockDir = $this->projectDir.'/.hatfield/locks';
         TestDirectoryIsolation::ensureDirectory($lockDir);
+        $locks = new RunLockManager(new LockFactory(new FlockStore($lockDir)));
+        $dispatcherEvents = new \Symfony\Component\EventDispatcher\EventDispatcher();
+        $notifications = new \Ineersa\CodingAgent\Runtime\Messenger\EffectDispatchFailureSubscriber(self::getContainer()->get(\Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink::class), self::getContainer()->get(\Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink::class), consumerStdoutEvents: false);
+        $dispatcherEvents->addListener(\Ineersa\AgentCore\Application\Handler\EffectDispatchFailedEvent::class, $notifications->onFailure(...));
 
         $eventStore = new SessionRunEventStore(
             hatfieldSessionStore: $hatfieldSessionStore,
@@ -936,7 +952,7 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
             replayEventPreparer: new ReplayEventPreparer(),
             eventFactory: new EventFactory(),
             toolCallSequenceValidator: new AgentMessageToolCallSequenceValidator(),
-            lockManager: new RunLockManager(new LockFactory(new FlockStore($lockDir))),
+            lockManager: $locks,
             logger: $logger ?? new NullLogger(),
             toolBatchStore: $toolBatchStore,
             serializer: AttributeSerializerValidatorTestFactory::create()[0],
@@ -945,7 +961,7 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
                 activeRunContext: $activeRunContext,
                 eventStore: $eventStore,
                 logger: new NullLogger(),
-                finalizer: \Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher($commandBus, $dispatcherBus, new TestLogger())),
+                finalizer: \Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher($commandBus, $dispatcherBus, new TestLogger(), events: $dispatcherEvents), locks: $locks),
                 actionValidator: new \Ineersa\AgentCore\Application\Handler\CoordinationActionValidator(),
             ),
             deferredBatches: self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository::class),

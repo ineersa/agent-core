@@ -134,7 +134,7 @@ final readonly class SessionMaintenanceHandler
                 $obligations[] = new RepairDeferredChildObligationDTO(RepairDeferredChildObligationDTO::KIND_INTERRUPT, $batch->lifecycleId, $batch->parentTurnNo);
                 if ($command->apply) {
                     ++$redriven;
-                    $message = 'Deferred child interruption redriven.';
+                    $message = 'Deferred child interruption redispatch requested.';
                 }
                 continue;
             }
@@ -170,9 +170,8 @@ final readonly class SessionMaintenanceHandler
                 if (RunStatus::WaitingHuman === $state->status) {
                     continue;
                 }
-                // Parent maintenance cancels unfinished children. Do not preview
-                // unauthorized LLM redrive; missing authorization is expected for
-                // abandoned child claims and must not block cancellation.
+                // Parent maintenance cancels unfinished children rather than
+                // repeating their external operations to obtain another outcome.
                 $unfinished[] = $child->childRunId;
             }
             if ([] !== $unfinished) {
@@ -188,7 +187,7 @@ final readonly class SessionMaintenanceHandler
                 $obligations[] = new RepairDeferredChildObligationDTO(RepairDeferredChildObligationDTO::KIND_SETTLE, $batch->lifecycleId, $batch->parentTurnNo);
                 if ($allTerminal) {
                     ++$redriven;
-                    $message = 'Deferred child result delivery redriven.';
+                    $message = 'Deferred child result delivery requested.';
                 }
             }
         }
@@ -204,8 +203,8 @@ final readonly class SessionMaintenanceHandler
         if (null === $plan['message'] && 0 === $plan['activeOperationsRedriven']) {
             return $result;
         }
-        // Capture summary before acceptance; applied obligations already ran from
-        // the verified journal. Do not reevaluate current pending children here.
+        // Required local obligations ran from the verified journal. Transport
+        // sends may still await lock release; do not report queue acceptance here.
         $message = $plan['message'] ?? $result->message;
         $redriven = $result->activeOperationsRedriven + $plan['activeOperationsRedriven'];
 
