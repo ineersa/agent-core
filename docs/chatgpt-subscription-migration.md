@@ -21,7 +21,7 @@ This worktree uses the public GitHub Composer VCS repository:
 - Source: [ChatGPT platform repository](https://github.com/ineersa/symfony-ai-openai-chatgpt-platform).
 - Package review: [pull request 1](https://github.com/ineersa/symfony-ai-openai-chatgpt-platform/pull/1).
 
-The repository URL is public, but this new source commit is not published yet. Implementation validation installs it through Composer's Git driver with a command-scoped URL rewrite to the package worktree. The lock records the public Git source URL and exact commit, not an absolute path repository. A fresh installation without that mirror remains blocked until package review and publication. The package has no stable release tag yet.
+The reviewed source commit is published on the development branch. Fresh installations use the public Git repository at the locked commit; no local package mirror or absolute path repository is required. The package has no stable release tag yet.
 
 ## Manual validation
 
