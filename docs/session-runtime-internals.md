@@ -5,12 +5,26 @@ Repository-only reference for run-state projection, replay measurements, and tra
 ## Events and operational state
 
 - **`events.jsonl`**: append-only Run/TUI events used for resume and history; it is the canonical run authority.
-- Active run-control workers replay canonical events on cache miss and retain the current `RunState` only in process memory.
+- Run-control explicitly reconstructs a cold run through the indexed replay coordinator and retains one current `RunState` in its owner-local registry.
 - The payload-free `run_operational_state`, `run_operational_tool_call`, and `run_operational_human_input` database projection supports bounded operational coordination. It never stores prompt history or other full payloads and is rebuilt from canonical events when needed.
-- The single session-owned run-control consumer uses ordinary transactional upserts, not optimistic CAS. It appends canonical events before replacing the projection and memory cache; projection failure invalidates memory and replay recovers from events.
+- The single session-owned run-control consumer appends canonical events before updating operational projections and replacing its current state. Publication failure releases the owner-local state so recovery must reconstruct it.
 - The controller acquires the session-owner lock, synchronously clears that owner’s disposable parent and child projection rows, and only then launches run-control and execution consumers. Execution workers make only narrow indexed status reads for cancellation.
-- New and resumed active runs perform zero `state.json` reads or writes. Legacy event schemas removed before this cutover are unsupported; no fallback reader or event migration is retained. A current-schema synthetic benchmark matching the observed largest parent event bytes/count (43,117,264 bytes; 10,326 events) replayed in 201 ms with a 46,137,344-byte post-baseline peak delta; the child fixture (3,751,623 bytes; 927 events) replayed in 16 ms with a 2,097,152-byte delta. No PHP memory-limit change is made from this evidence.
+- New and resumed active runs perform zero `state.json` reads or writes. Older unsupported event schemas have no fallback reader or migration.
 - Sequence allocation uses `sequence.cursor` so multi-writer paths do not collide.
+
+`history-index.sqlite` is disposable scalar metadata, not a second source of truth.
+It stores actual committed record locations and immutable turn anchors. A missing
+or invalid index triggers a streaming metadata pass, followed by selected-record
+replay. Historical mappings stay on disk. Compaction locations do not replace
+the operational evidence needed to recover pending work.
+
+Parent attach produces execution state and display products in one owner-led
+replay. Committed attach-policy events extend the temporary display before its
+cut is sealed. The private `runtime/bootstrap` spool contains bounded transcript
+blocks and scalar resume metadata, never `RunState` or raw conversation events.
+The TUI validates and mounts the transfer before acknowledging its exact cut.
+Acknowledgement releases the spool; bounded canonical suffix delivery ends with
+`session.ready`. Slow screens do not hold the owner lock or accumulate event tails.
 
 Runtime projects events into the TUI transcript. Keep transient stream deltas separate from canonical replay. During active polling, observers pass their last successfully applied canonical sequence into the runtime client; in-process delivery reverse-reads only the unseen durable suffix, while transient deltas remain unfiltered and are delivered first. The observer advances its cursor only after successful forwarding/application, so a failed poll retries the same canonical suffix rather than losing it.
 

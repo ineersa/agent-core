@@ -467,6 +467,11 @@ final class JsonlRunEventLog
         return $this->historyIndex->cut($this, $path, $runId, $positionTurnNo);
     }
 
+    public function isLatestCommand(string $path, string $runId, string $key, int $sequence): bool
+    {
+        return $this->historyIndex->isLatestCommand($path, $runId, $key, $sequence);
+    }
+
     /** @return \Generator<int, RunEvent> */
     public function selectedEvents(string $path, string $runId, int $sequence, int $anchor): \Generator
     {

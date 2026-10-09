@@ -106,7 +106,7 @@ Legacy checkpoints without lifetime cache counters keep the indicator hidden, in
 
 | Flow | Behavior |
 |---|---|
-| `/resume` | Pick an existing session; rebuild transcript from events; continue with same `session_id` |
+| `/resume` | Pick an existing session; mount the owner-produced transcript; continue with the same `session_id` |
 | `/new` | Start a new session identity |
 | Lazy draft | New interactive session without an initial prompt may delay DB row creation until first message |
 | Process restart | Controller/runtime recover from session dir + DB; event projection rebuilds |
@@ -118,6 +118,12 @@ has pending human-input requests, attach cancels those waits before
 `context_refreshed`. The run becomes Cancelled rather than remaining WaitingHuman.
 History events are kept; late answers to cancelled question ids do not reopen them.
 See [human-input.md](human-input.md).
+
+The screen stays in a restoring state until it validates the bounded transcript
+transfer. It mounts the view, acknowledges the committed cursor, and catches up
+before enabling normal input. A failed transfer leaves the screen unattached,
+not usable with an empty transcript. `/reload`, `/resume`, `/new` and Escape remain
+available to reload, switch sessions or cancel restoration.
 
 ### Catalog recovery after state DB loss
 

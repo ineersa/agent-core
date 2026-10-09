@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Session\Replay;
 
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
+use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
@@ -27,6 +28,7 @@ final readonly class SessionReplayCoordinator
         private RuntimeEventMapper $mapper,
         private TranscriptProjectorInterface $projector,
         private LoggerInterface $logger,
+        private CommandStoreInterface $commands,
     ) {
     }
 
@@ -39,9 +41,10 @@ final readonly class SessionReplayCoordinator
         }
         $this->projector->reset();
         try {
+            $resume = $withTranscript ? new SessionResumeMetadataProjection() : null;
             $events = $source->log->selectedEvents($source->path, $existing->runId, $cut['sequence'], $cut['anchor']);
             if ($withTranscript) {
-                $events = $this->projectAlongside($events);
+                $events = $this->projectAlongside($events, $resume);
             }
             $state = $this->reducer->replay($existing, $events)->with(['lastSeq' => $cut['sequence']]);
             if (null !== $positionTurnNo) {
@@ -58,7 +61,7 @@ final readonly class SessionReplayCoordinator
                 ]);
             }
 
-            $result = new SessionReplayResultDTO($state, $withTranscript ? $this->projector->blocks() : [], $cut['end_offset'], $cut['anchor']);
+            $result = new SessionReplayResultDTO($state, $withTranscript ? $this->projector->blocks() : [], $cut['end_offset'], $cut['anchor'], $resume?->toArray() ?? []);
             $this->logger->debug('session_replay.reconstructed', [
                 'run_id' => $state->runId, 'session_id' => $state->runId,
                 'component' => 'session_replay', 'event_type' => 'session_replay.reconstructed',
@@ -84,11 +87,36 @@ final readonly class SessionReplayCoordinator
         }
         $this->projector->reset();
         try {
-            foreach ($this->projectAlongside($source->log->selectedEvents($source->path, $current->runId, $cut['sequence'], $cut['anchor'])) as $event) {
+            $resume = new SessionResumeMetadataProjection();
+            foreach ($this->projectAlongside($source->log->selectedEvents($source->path, $current->runId, $cut['sequence'], $cut['anchor']), $resume) as $event) {
                 unset($event);
             }
 
-            return new SessionReplayResultDTO($current, $this->projector->blocks(), $cut['end_offset'], $cut['anchor']);
+            return new SessionReplayResultDTO($current, $this->projector->blocks(), $cut['end_offset'], $cut['anchor'], $resume->toArray());
+        } finally {
+            $this->projector->reset();
+        }
+    }
+
+    /**
+     * Explicit display-only history read, with no execution-state reconstruction.
+     *
+     * @return list<TranscriptBlock>
+     */
+    public function transcriptAtPosition(string $runId, int $positionTurnNo): array
+    {
+        $source = $this->eventStore->historySource($runId);
+        $cut = $source->log->historyCut($source->path, $runId, $positionTurnNo);
+        if (null === $cut) {
+            return [];
+        }
+        $this->projector->reset();
+        try {
+            foreach ($this->projectAlongside($source->log->selectedEvents($source->path, $runId, $cut['sequence'], $cut['anchor']), null) as $event) {
+                unset($event);
+            }
+
+            return $this->projector->blocks();
         } finally {
             $this->projector->reset();
         }
@@ -96,11 +124,11 @@ final readonly class SessionReplayCoordinator
 
     /** @param list<TranscriptBlock> $blocks
      * @return list<TranscriptBlock> */
-    public function extendDisplay(array $blocks, RunEvent $committed): array
+    public function extendDisplay(array $blocks, RunEvent $committed, SessionResumeMetadataProjection $resume): array
     {
         $this->projector->replaceProjectedBlocks($blocks);
         try {
-            foreach ($this->projectAlongside([$committed]) as $event) {
+            foreach ($this->projectAlongside([$committed], $resume) as $event) {
                 unset($event);
             }
 
@@ -113,11 +141,22 @@ final readonly class SessionReplayCoordinator
     /** @param iterable<RunEvent> $events
      * @return \Generator<int, RunEvent>
      */
-    private function projectAlongside(iterable $events): \Generator
+    private function projectAlongside(iterable $events, ?SessionResumeMetadataProjection $resume): \Generator
     {
         $sizes = [];
+        $hasPending = null;
         foreach ($events as $event) {
+            $hasPending ??= null !== $resume && $this->commands->countPending($event->runId) > 0;
             $runtime = $this->mapper->toRuntimeEvent($event);
+            // Completed mailbox rows are deleted. Consult current pending evidence
+            // before retaining text, rather than accumulating historical queues.
+            $pending = $hasPending && 'user.message_queued' === $runtime?->type
+                && $this->commands->has($event->runId, (string) ($runtime->payload['idempotency_key'] ?? ''));
+            if ($pending) {
+                $source = $this->eventStore->historySource($event->runId);
+                $pending = $source->log->isLatestCommand($source->path, $event->runId, (string) $runtime->payload['idempotency_key'], $event->seq);
+            }
+            $resume?->observe($event, $runtime, $pending);
             if (null !== $runtime) {
                 $this->projector->accept($runtime);
                 $this->projector->drainChanges();

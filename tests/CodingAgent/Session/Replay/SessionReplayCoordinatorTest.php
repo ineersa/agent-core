@@ -45,6 +45,21 @@ final class SessionReplayCoordinatorTest extends IsolatedKernelTestCase
         $this->assertFileExists(\dirname($this->path).'/history-index.sqlite');
     }
 
+    public function testReusedPendingKeyNeverRetainsHistoricalTextAndStateOnlyReplayCollectsNone(): void
+    {
+        $this->write(1, 0, 'run_started', ['payload' => ['messages' => [$this->message('question')]]]);
+        $this->write(3, 1, 'turn_advanced', ['turn_no' => 1]);
+        $this->write(5, 1, 'agent_command_queued', ['kind' => 'steer', 'idempotency_key' => 'current', 'text' => str_repeat('x', 5 * 1024 * 1024)]);
+        $this->write(7, 1, 'agent_command_rejected', ['kind' => 'steer', 'idempotency_key' => 'current', 'reason' => 'settled']);
+        $this->write(9, 1, 'agent_command_queued', ['kind' => 'steer', 'idempotency_key' => 'current', 'text' => 'Still pending']);
+        static::getContainer()->get(\Ineersa\AgentCore\Contract\CommandStoreInterface::class)->enqueue(
+            new \Ineersa\AgentCore\Domain\Command\PendingCommand($this->runId, 'steer', 'current', ['text' => 'Still pending']),
+        );
+        $display = $this->coordinator->reconstruct(RunState::queued($this->runId), withTranscript: true);
+        $this->assertSame(['current' => 'Still pending'], $display?->resume['queued_messages']);
+        $this->assertSame([], $this->coordinator->reconstruct(RunState::queued($this->runId))?->resume);
+    }
+
     public function testSharedTranscriptPreservesPendingToolEvidenceAcrossCompaction(): void
     {
         $this->write(1, 0, 'run_started', ['payload' => ['messages' => [$this->message('question')]]]);

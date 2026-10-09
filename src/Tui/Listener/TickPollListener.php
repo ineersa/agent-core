@@ -42,6 +42,8 @@ final class TickPollListener implements TuiListenerRegistrar
         $state = $context->state;
         $client = $context->client;
         $screen = $context->screen;
+        $tui = $context->tui;
+        $promptHistory = $services->promptHistory;
         $questionCoordinator = $services->questionCoordinator;
         $questionController = $services->questionController;
         $subagentLiveChildPoller = $services->childPoller;
@@ -62,7 +64,7 @@ final class TickPollListener implements TuiListenerRegistrar
             ? 'next_tick_after_mount'
             : 'next_tick_after_boundary';
 
-        $context->ticks->add(static function () use ($poller, $state, $client, $screen, $questionCoordinator, $questionController, $subagentLiveChildPoller, $runtimeQuestionEventHandler, $subagentLivePickerController, $memorySnapshotLogger, &$pendingIdleMemoryCheckpoint, &$idleMemoryCheckpointEmitted, &$idleCheckpointPhase): ?bool {
+        $context->ticks->add(static function () use ($poller, $state, $client, $screen, $tui, $promptHistory, $questionCoordinator, $questionController, $subagentLiveChildPoller, $runtimeQuestionEventHandler, $subagentLivePickerController, $memorySnapshotLogger, &$pendingIdleMemoryCheckpoint, &$idleMemoryCheckpointEmitted, &$idleCheckpointPhase): ?bool {
             $activityBefore = $state->activity;
             $lastSeqBefore = $state->lastSeq;
             $onHitl = static function (RuntimeEvent $event) use ($client, $questionCoordinator, $runtimeQuestionEventHandler): void {
@@ -124,6 +126,16 @@ final class TickPollListener implements TuiListenerRegistrar
                 onHumanInputRequested: $onHitl,
                 onToolQuestionRequested: $onToolQuestion,
                 onToolTerminal: $onToolTerminal,
+                onBootstrapMounted: static function () use ($state, $screen, $tui, $promptHistory, $questionCoordinator, $questionController): void {
+                    $screen->setTranscriptBlocks($state->transcript);
+                    $screen->syncQueuedUserMessages($state->queuedUserMessages);
+                    $promptHistory->seedFrom($state->transcript);
+                    while ($questionCoordinator->actionRequired()) {
+                        $questionCoordinator->reject();
+                    }
+                    $questionController->close();
+                    $tui->requestRender();
+                },
             );
 
             if ($liveActive) {
@@ -321,7 +333,9 @@ final class TickPollListener implements TuiListenerRegistrar
             // may call setWorkingMessage directly between tick cycles, and a
             // stale static cache would skip the authoritative tick update,
             // permanently leaving a stuck working message.
-            if ($liveActive) {
+            if (!$state->sessionReady) {
+                $screen->setWorkingMessage($state->bootstrapError ?? 'Restoring session...');
+            } elseif ($liveActive) {
                 $parentMsg = match (true) {
                     RunActivityStateEnum::Cancelling === $state->activity => 'Cancelling...',
                     RunActivityStateEnum::Idle === $state->activity || $state->activity->isTerminal() => null,

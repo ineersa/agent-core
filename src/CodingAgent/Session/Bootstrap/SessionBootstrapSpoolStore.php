@@ -25,7 +25,7 @@ final readonly class SessionBootstrapSpoolStore
     }
 
     /** @param list<TranscriptBlock> $blocks
-     * @param array{status: string, model: ?string, turn_no: int} $resume */
+     * @param array<string, mixed> $resume */
     public function seal(string $runId, int $sequence, int $endOffset, int $anchor, array $blocks, array $resume): SessionBootstrapDescriptorDTO
     {
         if ($sequence < 1 || $endOffset < 1 || $anchor < 0) {

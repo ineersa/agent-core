@@ -13,6 +13,7 @@ use Ineersa\CodingAgent\Session\Contract\RunHistorySourceProviderInterface;
 use Ineersa\CodingAgent\Session\Event\RunEventPublishedEvent;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\Replay\SessionReplayCoordinator;
+use Ineersa\CodingAgent\Session\Replay\SessionResumeMetadataProjection;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 
@@ -22,6 +23,7 @@ final class SessionBootstrapProducer
     private ?string $runId = null;
     /** @var list<TranscriptBlock> */
     private array $blocks = [];
+    private ?SessionResumeMetadataProjection $resume = null;
     private ?\Throwable $projectionFailure = null;
 
     public function __construct(
@@ -60,6 +62,7 @@ final class SessionBootstrapProducer
         }
         $this->runId = $runId;
         $this->blocks = $result->blocks;
+        $this->resume = new SessionResumeMetadataProjection($result->resume);
         $this->projectionFailure = null;
 
         return $result->state;
@@ -72,7 +75,7 @@ final class SessionBootstrapProducer
             return;
         }
         try {
-            $this->blocks = $this->coordinator->extendDisplay($this->blocks, $published->event);
+            $this->blocks = $this->coordinator->extendDisplay($this->blocks, $published->event, $this->resume ?? throw new \LogicException('Missing bootstrap metadata.'));
         } catch (\Throwable $exception) {
             // A disposable display failure must not undo an accepted attach mutation.
             // Seal fails visibly after policy completes; no partial view is published.
@@ -100,7 +103,7 @@ final class SessionBootstrapProducer
             }
 
             return $this->spools->seal($runId, $cut['sequence'], $cut['end_offset'], $cut['anchor'], $this->blocks,
-                ['status' => $state->status->value, 'model' => $state->model, 'turn_no' => $state->turnNo]);
+                ['status' => $state->status->value, 'model' => $state->model, 'turn_no' => $state->turnNo] + ($this->resume?->toArray() ?? throw new \LogicException('Missing bootstrap metadata.')));
         } finally {
             $this->release();
         }
@@ -112,5 +115,6 @@ final class SessionBootstrapProducer
         $this->runId = null;
         $this->blocks = [];
         $this->projectionFailure = null;
+        $this->resume = null;
     }
 }

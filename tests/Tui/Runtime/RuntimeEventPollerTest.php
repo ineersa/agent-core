@@ -63,7 +63,7 @@ final class RuntimeEventPollerTest extends TestCase
         $this->projector->method('drainChanges')->willReturn(TranscriptChangeSet::incremental([]));
         $this->projector->method('replaceProjectedBlocks');
         $this->sessionTranscriptProvider = $this->createMock(SessionTranscriptProviderInterface::class);
-        $this->sessionTranscriptProvider->method('transcriptAtPosition')->willReturn(new SessionTranscriptSnapshotDTO([], []));
+        $this->sessionTranscriptProvider->method('transcriptAtPosition')->willReturn(new SessionTranscriptSnapshotDTO([]));
         $this->logger = $this->createMock(LoggerInterface::class);
 
         $this->poller = new RuntimeEventPoller(
@@ -899,7 +899,7 @@ final class RuntimeEventPollerTest extends TestCase
         $sessionTranscriptProvider->expects($this->once())
             ->method('transcriptAtPosition')
             ->with('test-run', 3)
-            ->willReturn(new SessionTranscriptSnapshotDTO($rebuiltBlocks, []));
+            ->willReturn(new SessionTranscriptSnapshotDTO($rebuiltBlocks));
 
         $eventApplier = new TuiRuntimeEventApplier($this->projector, SubagentProgressSerializerTestSupport::denormalizer());
         $poller = new RuntimeEventPoller(
@@ -1166,7 +1166,7 @@ final class RuntimeEventPollerTest extends TestCase
                     seq: 30,
                     text: 'Rebuilt retained history block',
                 ),
-            ], []));
+            ]));
 
         $eventApplier = new TuiRuntimeEventApplier($projector, SubagentProgressSerializerTestSupport::denormalizer());
         $poller = new RuntimeEventPoller(
@@ -1222,7 +1222,7 @@ final class RuntimeEventPollerTest extends TestCase
             new TranscriptBlock('u2', TranscriptBlockKindEnum::UserMessage, 'test-run', 3, 'conversation 2'),
         ];
         $this->sessionTranscriptProvider->method('transcriptAtPosition')
-            ->willReturn(new SessionTranscriptSnapshotDTO($snapshot, []));
+            ->willReturn(new SessionTranscriptSnapshotDTO($snapshot));
         $this->state->appendTranscriptBlock(new TranscriptBlock('old-error', TranscriptBlockKindEnum::Error, 'test-run', 99, 'stale'));
         $this->client->expects($this->exactly(2))->method('events')->willReturnOnConsecutiveCalls(
             [new RuntimeEvent('run.history_position_changed', 'test-run', 20, ['position_turn_no' => 2])],

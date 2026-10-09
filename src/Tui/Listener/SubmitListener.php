@@ -82,6 +82,12 @@ final class SubmitListener implements TuiListenerRegistrar
             if ('' === $text) {
                 return;
             }
+            if (!$state->sessionReady && 1 !== preg_match('/^\/(?:reload|new|exit|quit|resume)(?:\s|$)/', trim($text))) {
+                $screen->promptEditor()->replaceText($text);
+                $screen->setWorkingMessage($state->bootstrapError ?? 'Restoring session. Input is not ready yet.');
+
+                return;
+            }
 
             // One-shot notices clear before routing so the current command can
             // post a fresh status without racing the previous notice.

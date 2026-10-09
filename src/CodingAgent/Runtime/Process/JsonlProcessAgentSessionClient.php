@@ -323,7 +323,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         if ($this->autoResumed) {
             $this->autoResumed = false;
 
-            return new RunHandle(runId: $runId, status: 'bootstrapping');
+            return new RunHandle(runId: $runId, status: 'bootstrapping', bootstrapRequestId: $this->bootstrapCommandId);
         }
 
         $cmd = new RuntimeCommand(
@@ -337,7 +337,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         $this->bootstrapEnded = false;
         $this->writeCommandWithRetry($cmd);
 
-        return new RunHandle(runId: $runId, status: 'bootstrapping');
+        return new RunHandle(runId: $runId, status: 'bootstrapping', bootstrapRequestId: $cmd->id);
     }
 
     /** @param array<string, mixed> $cut */

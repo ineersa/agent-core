@@ -14,7 +14,7 @@ use Symfony\Component\Lock\LockFactory;
 /** Disposable scalar locations. Canonical bodies and growing history mappings never live here in PHP. */
 final readonly class RunHistoryIndex
 {
-    private const int VERSION = 1;
+    private const int VERSION = 2;
 
     public function __construct(private LockFactory $locks, private LoggerInterface $logger)
     {
@@ -62,6 +62,25 @@ final readonly class RunHistoryIndex
                 $db->close();
             }
             $lock->release();
+        }
+    }
+
+    /** Lookup within the index already validated by this owner's selected replay. */
+    public function isLatestCommand(string $path, string $runId, string $key, int $sequence): bool
+    {
+        if (is_file($this->indexPath($path).'.unavailable')) {
+            throw new \RuntimeException('Resume command evidence requires a usable history index.');
+        }
+        $db = $this->connect($path);
+        try {
+            $meta = $db->fetchAssociative('SELECT version, run_id, last_seq FROM index_meta');
+            if (false === $meta || self::VERSION !== (int) $meta['version'] || $meta['run_id'] !== $runId || (int) $meta['last_seq'] < $sequence) {
+                throw new \RuntimeException('Resume command evidence does not match its indexed cut.');
+            }
+
+            return $sequence === (int) $db->fetchOne('SELECT sequence FROM command_resolution WHERE identity_hash = ?', [hash('sha256', $key)]);
+        } finally {
+            $db->close();
         }
     }
 
@@ -173,6 +192,7 @@ final readonly class RunHistoryIndex
         $db->executeStatement('CREATE INDEX IF NOT EXISTS event_anchor ON event_location (anchor, seq)');
         $db->executeStatement('CREATE TABLE IF NOT EXISTS command_record (seq INTEGER PRIMARY KEY, type TEXT NOT NULL, source_anchor INTEGER NOT NULL, target_anchor INTEGER, suppressed INTEGER NOT NULL DEFAULT 0)');
         $db->executeStatement('CREATE INDEX IF NOT EXISTS unresolved_commands ON command_record (target_anchor, suppressed, source_anchor)');
+        $db->executeStatement('CREATE TABLE IF NOT EXISTS command_resolution (identity_hash TEXT PRIMARY KEY, sequence INTEGER NOT NULL)');
         $db->executeStatement('CREATE TABLE IF NOT EXISTS history_change (seq INTEGER PRIMARY KEY, kind TEXT NOT NULL, anchor INTEGER NOT NULL)');
         $db->executeStatement('CREATE TABLE IF NOT EXISTS context_checkpoint_location (seq INTEGER PRIMARY KEY, anchor INTEGER NOT NULL, offset INTEGER NOT NULL, length INTEGER NOT NULL)');
     }
@@ -240,7 +260,7 @@ final readonly class RunHistoryIndex
             $db->beginTransaction();
             try {
                 if (!$valid) {
-                    foreach (['index_meta', 'event_location', 'turn_anchor', 'command_record', 'history_change', 'context_checkpoint_location'] as $table) {
+                    foreach (['index_meta', 'event_location', 'turn_anchor', 'command_record', 'command_resolution', 'history_change', 'context_checkpoint_location'] as $table) {
                         $db->executeStatement('DELETE FROM '.$table);
                     }
                 }
@@ -343,6 +363,12 @@ final readonly class RunHistoryIndex
         $db->insert('event_location', ['seq' => $seq, 'offset' => $offset, 'length' => $length, 'type' => $type, 'turn_no' => $record['turn_no'], 'anchor' => $anchor]);
         if (\in_array($type, ['agent_command_queued', 'agent_command_applied'], true)) {
             $db->insert('command_record', ['seq' => $seq, 'type' => $type, 'source_anchor' => $anchor]);
+        }
+        $key = $payload['idempotency_key'] ?? null;
+        if (\is_string($key) && '' !== $key && \in_array($type, ['agent_command_queued', 'agent_command_applied', 'agent_command_rejected'], true)) {
+            // IDs may be reused after completion. Keep only their latest canonical
+            // location on disk, not old text or a new command-deduplication registry.
+            $db->executeStatement('INSERT INTO command_resolution (identity_hash, sequence) VALUES (?, ?) ON CONFLICT (identity_hash) DO UPDATE SET sequence = excluded.sequence', [hash('sha256', $key), $seq]);
         }
         if ('context_compacted' === $type) {
             $db->insert('context_checkpoint_location', ['seq' => $seq, 'anchor' => $anchor, 'offset' => $offset, 'length' => $length]);

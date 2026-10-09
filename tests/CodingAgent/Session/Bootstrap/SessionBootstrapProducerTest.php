@@ -29,7 +29,7 @@ final class SessionBootstrapProducerTest extends PerMethodIsolatedKernelTestCase
     {
         $container = static::getContainer();
         $logger = new TestLogger();
-        $coordinator = new SessionReplayCoordinator($container->get(RunHistorySourceProviderInterface::class), $container->get(RunStateReducer::class), $container->get(RuntimeEventMapper::class), $container->get('owner.replay.transcript_projector'), $logger);
+        $coordinator = new SessionReplayCoordinator($container->get(RunHistorySourceProviderInterface::class), $container->get(RunStateReducer::class), $container->get(RuntimeEventMapper::class), $container->get('owner.replay.transcript_projector'), $logger, $container->get(\Ineersa\AgentCore\Contract\CommandStoreInterface::class));
         $container->set(SessionReplayCoordinator::class, $coordinator);
         $container->set(\Ineersa\CodingAgent\Application\Pipeline\SessionMaintenanceHandler::class, new \Ineersa\CodingAgent\Application\Pipeline\SessionMaintenanceHandler(
             $container->get(\Ineersa\AgentCore\Contract\History\HistorySelectionServiceInterface::class),

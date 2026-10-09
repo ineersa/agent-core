@@ -68,7 +68,7 @@ final class RuntimeEventPoller
      *
      * @return TranscriptChangeSet|null Canonical transcript delta for ChatScreen, or null if nothing new
      */
-    public function poll(TuiSessionState $state, AgentSessionClient $client, ?callable $onHumanInputRequested = null, ?callable $onToolQuestionRequested = null, ?callable $onToolTerminal = null): ?TranscriptChangeSet
+    public function poll(TuiSessionState $state, AgentSessionClient $client, ?callable $onHumanInputRequested = null, ?callable $onToolQuestionRequested = null, ?callable $onToolTerminal = null, ?callable $onBootstrapMounted = null): ?TranscriptChangeSet
     {
         if (null === $state->handle) {
             return null;
@@ -83,6 +83,20 @@ final class RuntimeEventPoller
         $this->appliedMemoryBoundaries = new AppliedMemoryBoundaryObservation();
 
         try {
+            if (!$state->sessionReady) {
+                if (null !== $state->bootstrapError) {
+                    $this->eventApplier->releaseBootstrap();
+                    $this->pendingEvents = [];
+
+                    return null;
+                }
+                if (0.0 === $state->bootstrapStartedAt) {
+                    $state->bootstrapStartedAt = $now;
+                }
+                if ($now - $state->bootstrapStartedAt > 60) {
+                    throw new RuntimeTransportException('Session bootstrap timed out. Reload to attach again.');
+                }
+            }
             if ([] !== $this->pendingEvents && $this->pendingEvents[0]->runId !== $state->handle->runId) {
                 $this->pendingEvents = [];
             }
@@ -128,6 +142,25 @@ final class RuntimeEventPoller
 
             foreach ($events as $index => $runtimeEvent) {
                 $seq = $runtimeEvent->seq;
+                if (!$state->sessionReady && (RuntimeEventTypeEnum::ProtocolError->value === $runtimeEvent->type
+                    || (RuntimeEventTypeEnum::CommandRejected->value === $runtimeEvent->type
+                        && ($runtimeEvent->payload['command_id'] ?? null) === $state->handle->bootstrapRequestId))) {
+                    throw new RuntimeTransportException('Session attachment was refused. Reload to attach again.');
+                }
+
+                try {
+                    if ($this->eventApplier->applyBootstrap($state, $client, $runtimeEvent, $onBootstrapMounted)) {
+                        continue;
+                    }
+                } catch (\Throwable $exception) {
+                    throw new RuntimeTransportException('Session bootstrap failed validation. Reload to attach again.', 0, $exception);
+                }
+                // No optimistic streaming or canonical suffix may mutate the old
+                // view before the sealed snapshot is mounted. After mount, only
+                // durable catch-up is accepted until session.ready.
+                if (!$state->sessionReady && (!$state->bootstrapMounted || 0 === $seq)) {
+                    continue;
+                }
 
                 // Seq 0 marks transient streaming events that do not
                 // participate in persistent deduplication. Only stored
@@ -348,6 +381,22 @@ final class RuntimeEventPoller
 
             return null;
         } catch (\Throwable $e) {
+            if (!$state->sessionReady) {
+                $this->eventApplier->releaseBootstrap();
+                $state->bootstrapError = 'Not attached. Reload to restore this session.';
+                $state->bootstrapMounted = false;
+                $this->pendingEvents = [];
+                try {
+                    $client->cancelBootstrap($state->handle->runId);
+                } catch (\Throwable $cleanupFailure) {
+                    $this->logger->warning('tui.bootstrap.cancel_failed', ['run_id' => $state->handle->runId,
+                        'session_id' => $state->sessionId, 'component' => 'tui', 'event_type' => 'tui.bootstrap.cancel_failed',
+                        'exception_class' => $cleanupFailure::class]);
+                }
+                if (!$e instanceof RuntimeTransportException) {
+                    $e = new RuntimeTransportException('Session bootstrap could not complete.', 0, $e);
+                }
+            }
             ++$state->runtimePollErrorCount;
             $state->lastRuntimePollError = $e->getMessage();
 

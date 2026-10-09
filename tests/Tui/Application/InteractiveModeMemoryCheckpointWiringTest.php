@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Application;
 
 use Doctrine\ORM\EntityManagerInterface;
-use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\LoggingConfig;
@@ -25,9 +24,7 @@ use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
-use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
@@ -56,8 +53,6 @@ use Psr\Log\NullLogger;
 use Symfony\Component\DependencyInjection\ServiceLocator;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Filesystem\Filesystem;
-use Symfony\Component\Lock\LockFactory;
-use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\PropertyAccess\PropertyAccess;
 use Symfony\Component\Tui\Event\QuitEvent;
 
@@ -246,20 +241,9 @@ final class InteractiveModeMemoryCheckpointWiringTest extends TestCase
             dispatcher: new EventDispatcher(),
         );
         $historyProvider = $this->createStub(HistoryProviderInterface::class);
-        $eventStore = new SessionRunEventStore(
-            hatfieldSessionStore: $sessionStore,
-            eventPayloadNormalizer: new EventPayloadNormalizer(),
-            lockFactory: new LockFactory(new FlockStore()),
-            logger: new NullLogger(),
-            sequenceAllocator: new FileRunSequenceAllocator(),
-        );
         $sessionInit = new SessionInitializer(
             sessionStore: $sessionStore,
-            eventStore: $eventStore,
             blockFactory: new TranscriptBlockFactory(),
-            logger: new NullLogger(),
-            historyProvider: $historyProvider,
-            sessionTranscriptProvider: $this->createStub(SessionTranscriptProviderInterface::class),
         );
         $modelService = new ModelSelectionService(
             $appConfig,
