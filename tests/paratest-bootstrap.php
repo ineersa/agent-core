@@ -80,7 +80,7 @@ $homeShell = 'HOME='.escapeshellarg($qaTestHome).' HATFIELD_QA_TEST_HOME='.escap
 $phpBin = \PHP_BINARY;
 @mkdir($root.'/var/test', 0755, true);
 $cmd = sprintf(
-    '%s APP_ENV=test HATFIELD_TEST_DATABASE_PATH=%s HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH=%s HATFIELD_CACHE_DIR=%s %s %s/bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration && %s APP_ENV=test HATFIELD_TEST_DATABASE_PATH=%s HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH=%s HATFIELD_CACHE_DIR=%s %s %s/bin/console doctrine:migrations:migrate --em=messenger_transport --configuration=config/migrations/messenger_transport.yaml --no-interaction --allow-no-migration 2>&1',
+    '%s APP_ENV=test HATFIELD_TEST_DATABASE_PATH=%s HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH=%s HATFIELD_CACHE_DIR=%s %s %s/bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration && %s APP_ENV=test HATFIELD_TEST_DATABASE_PATH=%s HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH=%s HATFIELD_CACHE_DIR=%s %s %s/bin/console doctrine:migrations:migrate --em=messenger_transport --configuration=%s --no-interaction --allow-no-migration 2>&1',
     $homeShell,
     escapeshellarg($dbPath),
     escapeshellarg($transportDbPath),
@@ -92,7 +92,8 @@ $cmd = sprintf(
     escapeshellarg($transportDbPath),
     escapeshellarg($cacheDir),
     $phpBin,
-    escapeshellarg($root)
+    escapeshellarg($root),
+    escapeshellarg($root.'/config/migrations/messenger_transport.yaml')
 );
 
 $lockPath = $root.'/var/test/.bootstrap-migrate-'.hash('sha256', $dbPath).'.lock';
