@@ -40,8 +40,6 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
     private string $homeDir;
     private \Doctrine\ORM\EntityManagerInterface $entityManager;
 
-    private ?HatfieldSessionStore $lastResolverSessionStore = null;
-
     protected function setUp(): void
     {
         parent::setUp();
@@ -500,7 +498,6 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
             entityManager: $this->entityManager,
             dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
         );
-        $this->lastResolverSessionStore = $hatfieldSessionStore;
         $sessionMetaStore = $hatfieldSessionStore;
 
         $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
