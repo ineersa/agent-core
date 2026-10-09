@@ -173,6 +173,10 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         $this->primaryRunId = null;
         $this->observedChildRunIds = [];
         $this->autoResumed = false;
+        $this->bootstrapCommandId = null;
+        $this->bootstrapDescriptor = null;
+        $this->bootstrapEnded = false;
+        $this->resetSuffix();
 
         // Derive session-scoped queue names from the request runId before
         // spawning the controller process, so its env vars carry the right DSNs.
@@ -586,22 +590,38 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         }
 
         $this->stopProcess();
+        // Canonical catch-up replaces buffered data from the dead pipe. In
+        // particular, old bootstrap packets cannot precede the new identity.
+        $this->compactEventBuffer->clear();
         $this->spawnProcess();
 
         // If we had an active run before the crash, resume it transparently.
-        if ($hadRunningProcess && null !== $this->activeRunId) {
+        $resumeRunId = $this->primaryRunId ?? $this->activeRunId;
+        if ($hadRunningProcess && null !== $resumeRunId) {
+            $this->activeRunId = $resumeRunId;
+            $previousRequestId = $this->bootstrapCommandId;
+            $this->bootstrapCommandId = null;
+            $this->bootstrapDescriptor = null;
+            $this->bootstrapEnded = false;
+            $this->resetSuffix();
             $this->waitForRuntimeReady();
+            $this->compactEventBuffer->clear();
             $resume = new RuntimeCommand(
                 id: uniqid('cmd_', true),
                 type: 'resume',
                 runId: $this->activeRunId,
             );
             $this->bootstrapCommandId = $resume->id;
-            $this->bootstrapDescriptor = null;
-            $this->bootstrapEnded = false;
-            $this->resetSuffix();
             $this->writeCommand($resume);
             $this->autoResumed = true;
+            // Only this local restart decision can replace the UI's immutable
+            // handle. Publish it before any frames from the replacement pipe.
+            $this->bufferEvent(new RuntimeEvent(
+                RuntimeEventTypeEnum::SessionRestoring->value,
+                $this->activeRunId,
+                0,
+                ['previous_command_id' => $previousRequestId, 'command_id' => $resume->id],
+            ), 'controller_restart');
         }
     }
 
@@ -991,6 +1011,10 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             } catch (\JsonException|\RuntimeException) {
                 // Skip malformed stdout lines, but preserve them as diagnostics.
                 $this->stderrBuffer .= "\n[malformed stdout] ".$trimmed;
+                continue;
+            }
+            if (RuntimeEventTypeEnum::SessionRestoring->value === $event->type) {
+                // Replacement identity is trusted local lifecycle, never wire input.
                 continue;
             }
             if (RuntimeEventTypeEnum::BootstrapAvailable->value === $event->type) {

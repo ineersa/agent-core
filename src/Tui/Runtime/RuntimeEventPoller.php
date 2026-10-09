@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Runtime;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeTransportException;
 use Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface;
@@ -142,6 +143,23 @@ final class RuntimeEventPoller
 
             foreach ($events as $index => $runtimeEvent) {
                 $seq = $runtimeEvent->seq;
+                if (RuntimeEventTypeEnum::SessionRestoring->value === $runtimeEvent->type) {
+                    $requestId = $runtimeEvent->payload['command_id'] ?? null;
+                    if ($runtimeEvent->runId === $state->handle->runId
+                        && \array_key_exists('previous_command_id', $runtimeEvent->payload)
+                        && $runtimeEvent->payload['previous_command_id'] === $state->handle->bootstrapRequestId
+                        && \is_string($requestId) && '' !== $requestId
+                        && $requestId !== $state->handle->bootstrapRequestId) {
+                        $this->eventApplier->releaseBootstrap();
+                        $this->pendingEvents = [];
+                        $state->handle = new RunHandle($runtimeEvent->runId, 'bootstrapping', $requestId);
+                        $state->sessionReady = false;
+                        $state->bootstrapMounted = false;
+                        $state->bootstrapError = null;
+                        $state->bootstrapStartedAt = $now;
+                    }
+                    continue;
+                }
                 if (!$state->sessionReady && (RuntimeEventTypeEnum::ProtocolError->value === $runtimeEvent->type
                     || (RuntimeEventTypeEnum::CommandRejected->value === $runtimeEvent->type
                         && ($runtimeEvent->payload['command_id'] ?? null) === $state->handle->bootstrapRequestId))) {

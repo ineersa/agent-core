@@ -453,7 +453,7 @@ final readonly class InteractiveMode
             return;
         }
 
-        if (null !== $state->request && '' !== $state->request->prompt) {
+        if (!$state->resuming && null !== $state->request && '' !== $state->request->prompt) {
             try {
                 $state->handle = $client->start($state->request);
                 $this->sessionStore->updateMetadata($state->sessionId, [

@@ -40,6 +40,9 @@ final class TuiSessionState
     public ?RunHandle $handle = null;
     public ?StartRunRequest $request = null;
 
+    /** Accepted resume startup input, consumed once after validated session readiness. */
+    public ?string $pendingInitialPrompt = null;
+
     /**
      * Authoritative TUI activity state for the current run.
      *

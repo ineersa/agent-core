@@ -31,6 +31,134 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
 
     private TestLogger $logger;
 
+    #[DataProvider('recoveryOrigins')]
+    public function testOwnedPipeRestartRemountsThroughProductionPolling(bool $attached): void
+    {
+        [$state, $harness, $poller] = $this->scope();
+        [$client, $directory] = $this->protocolClient($state->sessionId);
+        $mounts = 0;
+        $localInput = [];
+        $mount = static function () use ($state, $harness, &$mounts, &$localInput): void {
+            ++$mounts;
+            self::assertFalse($state->sessionReady);
+            self::assertSame($localInput, $state->queuedFollowUps);
+            $harness->screen()->setTranscriptBlocks($state->transcript);
+            $harness->screen()->syncQueuedUserMessages($state->queuedUserMessages);
+        };
+        try {
+            if ($attached) {
+                $state->handle = $client->attach('42');
+                $this->pumpUntil($client, $state, $harness, $poller, $mount, static fn (): bool => $state->sessionReady);
+                $this->assertExactAck($directory);
+            } else {
+                $state->resuming = false;
+                $state->replaceTranscript([]);
+                $harness->screen()->setTranscriptBlocks([]);
+                $state->handle = $client->start(new \Ineersa\CodingAgent\Runtime\Contract\StartRunRequest('Original prompt', '42'));
+                $state->sessionReady = true;
+                $this->assertNull($state->handle->bootstrapRequestId);
+                $this->pumpUntil($client, $state, $harness, $poller, $mount,
+                    static fn (): bool => str_contains($harness->plainScreenText(), 'Original prompt'));
+            }
+            $oldRequest = $state->handle->bootstrapRequestId;
+            $oldMounts = $mounts;
+            $localInput = $state->queuedFollowUps = ['Locally queued input'];
+            $harness->screen()->promptEditor()->replaceText('Preserved editor draft');
+            $client->send('42', new \Ineersa\CodingAgent\Runtime\Contract\UserCommand('follow_up', 'exit-controller'));
+            $this->awaitPeerExit($client);
+            // No explicit attach, fake client, or recovery callback: ordinary
+            // production polling restarts the owned pipe and adopts its identity.
+            $this->pumpUntil($client, $state, $harness, $poller, $mount,
+                static fn (): bool => $state->sessionReady && $state->handle->bootstrapRequestId !== $oldRequest);
+            $this->assertSame($oldMounts + 1, $mounts);
+            $this->assertNotSame('unsolicited-request', $state->handle->bootstrapRequestId);
+            $this->assertStringContainsString('Owner-projected answer generation 2', $harness->plainScreenText());
+            $this->assertStringContainsString('Caught-up input generation 2', $harness->plainScreenText());
+            $this->assertStringContainsString('Preserved editor draft', $harness->plainScreenText());
+            $this->assertSame(['17' => 'Restored pending input'], $state->queuedUserMessages);
+            $this->assertExactAck($directory);
+            $client->send('42', new \Ineersa\CodingAgent\Runtime\Contract\UserCommand('follow_up', 'Live after recovery'));
+            $this->pumpUntil($client, $state, $harness, $poller, $mount,
+                static fn (): bool => str_contains($harness->plainScreenText(), 'Live after recovery'));
+            $this->assertNull($state->bootstrapError);
+        } finally {
+            $this->closePeer($client);
+            \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::removeDirectory($directory);
+        }
+    }
+
+    public static function recoveryOrigins(): iterable
+    {
+        yield 'initially started handle has no attach identity' => [false];
+        yield 'attached handle has the previous attach identity' => [true];
+    }
+
+    public function testResumeStartupPromptAttachesThenUsesOrdinarySubmissionOnceAfterReadiness(): void
+    {
+        $directory = \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::createProjectTempDir('resume-prompt');
+        $client = null;
+        try {
+            $store = new \Ineersa\CodingAgent\Session\HatfieldSessionStore(
+                new \Ineersa\CodingAgent\Config\AppConfig(new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'), new \Ineersa\CodingAgent\Config\LoggingConfig(), cwd: $directory),
+                static::getContainer()->get(\Doctrine\ORM\EntityManagerInterface::class), new \Symfony\Component\EventDispatcher\EventDispatcher());
+            $runId = $store->createSession('Original catalog prompt');
+            $initializer = new \Ineersa\Tui\Application\SessionInitializer($store, new \Ineersa\Tui\Transcript\TranscriptBlockFactory());
+            $state = $initializer->initialize($runId, new \Ineersa\CodingAgent\Runtime\Contract\StartRunRequest('Startup follow-up', cwd: $directory));
+            $state->replaceTranscript($initializer->buildInitialTranscript($state));
+            [, $harness, $poller] = $this->scope($runId);
+            [$client] = $this->protocolClient($runId, $directory);
+            // Exercise the production startup branch without running a real TTY.
+            (new \ReflectionMethod(\Ineersa\Tui\Application\InteractiveMode::class, 'startOrResumeRun'))->invoke(
+                static::getContainer()->get(\Ineersa\Tui\Application\InteractiveMode::class), $client, $state, $harness->screen());
+            $this->assertFalse($state->sessionReady);
+            $this->assertNotNull($state->handle->bootstrapRequestId);
+            $services = $this->createSessionServices(tui: $harness->tui(), screen: $harness->screen(), state: $state, client: $client);
+            $context = $this->buildTuiContext()->withTui($harness->tui())->withScreen($harness->screen())->withState($state)->withClient($client)->withSessionStore($store)->withSessionServices($services)->build();
+            static::getContainer()->get(\Ineersa\Tui\Listener\SubmitListener::class)->register($context);
+            $tick = static function () use ($context): void { $context->ticks->dispatch(new \Symfony\Component\Tui\Event\TickEvent()); };
+            $tick();
+            $this->assertSame('Startup follow-up', $state->pendingInitialPrompt);
+            $mount = function () use ($state, $harness, $tick, $directory): void {
+                $harness->screen()->setTranscriptBlocks($state->transcript);
+                $this->assertFalse($state->sessionReady);
+                $tick();
+                $this->assertSame([], $this->submittedTexts($directory));
+            };
+            $this->pumpUntil($client, $state, $harness, $poller, $mount, static fn (): bool => $state->sessionReady);
+            $this->assertSame('resume', $this->commands($directory)[0]['type']);
+            $this->assertSame([], $this->submittedTexts($directory));
+            $tick();
+            $tick();
+            $this->pumpUntil($client, $state, $harness, $poller, $mount,
+                static fn (): bool => str_contains($harness->plainScreenText(), 'Startup follow-up'));
+            $this->assertSame(['Startup follow-up'], $this->submittedTexts($directory));
+            $this->assertNull($state->pendingInitialPrompt);
+            $this->assertSame('Original catalog prompt', $store->findSession($runId)->prompt);
+            $oldRequest = $state->handle->bootstrapRequestId;
+            $client->send($runId, new \Ineersa\CodingAgent\Runtime\Contract\UserCommand('follow_up', 'exit-controller'));
+            $this->awaitPeerExit($client);
+            $this->pumpUntil($client, $state, $harness, $poller,
+                static function () use ($state, $harness): void { $harness->screen()->setTranscriptBlocks($state->transcript); },
+                static fn (): bool => $state->sessionReady && $state->handle->bootstrapRequestId !== $oldRequest);
+            $tick();
+            $tick();
+            $this->assertSame(1, \count(array_filter($this->submittedTexts($directory), static fn (string $text): bool => 'Startup follow-up' === $text)));
+            $harness->screen()->promptEditor()->replaceText('Ordinary user input');
+            $harness->tui()->setFocus($harness->screen()->editorWidget());
+            $harness->tui()->handleInput("\r");
+            $this->pumpUntil($client, $state, $harness, $poller,
+                static function () use ($state, $harness): void { $harness->screen()->setTranscriptBlocks($state->transcript); },
+                static fn (): bool => str_contains($harness->plainScreenText(), 'Ordinary user input'));
+            $this->assertContains('Ordinary user input', $this->submittedTexts($directory));
+            $this->assertSame('Original catalog prompt', $store->findSession($runId)->prompt);
+        } finally {
+            if (null !== $client) {
+                $this->closePeer($client);
+            }
+            \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::removeDirectory($directory);
+        }
+    }
+
     public function testValidatedMountPrecedesExactAcknowledgementAndDurableSuffixReadiness(): void
     {
         [$state, $harness, $poller] = $this->scope();
@@ -297,13 +425,13 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
     }
 
     /** @return array{TuiSessionState, VirtualTuiHarness, RuntimeEventPoller} */
-    private function scope(): array
+    private function scope(string $runId = '42'): array
     {
-        $state = new TuiSessionState('42', true);
-        $state->handle = new RunHandle('42', 'bootstrapping', 'request');
+        $state = new TuiSessionState($runId, true);
+        $state->handle = new RunHandle($runId, 'bootstrapping', 'request');
         $state->sessionReady = false;
-        $harness = new VirtualTuiHarness(sessionId: '42');
-        $state->replaceTranscript([new TranscriptBlock('previous', TranscriptBlockKindEnum::System, '42', 0, 'Previous mounted view')]);
+        $harness = new VirtualTuiHarness(sessionId: $runId);
+        $state->replaceTranscript([new TranscriptBlock('previous', TranscriptBlockKindEnum::System, $runId, 0, 'Previous mounted view')]);
         $harness->screen()->setTranscriptBlocks($state->transcript);
         /** @var TranscriptProjectorInterface $projector */
         $projector = static::getContainer()->get('tui.session.parent_transcript_projector');
@@ -315,6 +443,102 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
         return [$state, $harness, $poller];
     }
 
+    /** @return array{\Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient, string} */
+    private function protocolClient(string $runId, ?string $directory = null): array
+    {
+        $directory ??= \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::createProjectTempDir('bootstrap-recovery');
+        [$cut, , $frame] = $this->transfer($runId);
+        (new \Symfony\Component\Filesystem\Filesystem())->dumpFile($directory.'/transfer.json', json_encode(
+            ['cut' => $cut->toArray(), 'bytes' => base64_decode($frame->payload['data'], true)], \JSON_THROW_ON_ERROR));
+        $locator = new class implements \Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator {
+            public function command(): array
+            {
+                return [\PHP_BINARY, $this->path()];
+            }
+
+            public function path(): string
+            {
+                return \dirname(__DIR__).'/Support/BootstrapRecoveryProtocol.php';
+            }
+        };
+        $client = new \Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient(
+            new \Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig($locator, $directory),
+            new \Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig(),
+            new \Ineersa\CodingAgent\Tool\ToolFilterRuntimeConfig(), $this->logger);
+
+        return [$client, $directory];
+    }
+
+    private function pumpUntil(\Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient $client, TuiSessionState $state, VirtualTuiHarness $harness, RuntimeEventPoller $poller, callable $mount, callable $ready): void
+    {
+        $deadline = microtime(true) + 3;
+        do {
+            $state->lastPoll = 0;
+            $changes = $poller->poll($state, $client, onBootstrapMounted: $mount);
+            if (null !== $changes) {
+                $harness->screen()->applyTranscriptChangeSet($changes);
+            }
+            $this->assertTrue($this->peerRunning($client), 'Owned protocol peer died: '.$state->lastRuntimePollError);
+            $this->assertNull($state->bootstrapError, $state->lastRuntimePollError);
+            if ($ready()) {
+                return;
+            }
+            usleep(1_000); // Yield inside the bounded, liveness-coupled readiness predicate.
+        } while (microtime(true) < $deadline);
+        $this->fail('Bootstrap did not become usable: '.$harness->plainScreenText());
+    }
+
+    private function peerRunning(\Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient $client): bool
+    {
+        $process = (new \ReflectionProperty($client, 'process'))->getValue($client);
+
+        return \is_resource($process) && proc_get_status($process)['running'];
+    }
+
+    private function awaitPeerExit(\Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient $client): void
+    {
+        $deadline = microtime(true) + 3;
+        while ($this->peerRunning($client) && microtime(true) < $deadline) {
+            usleep(1_000);
+        }
+        $this->assertFalse($this->peerRunning($client), 'Controlled exit/EOF must stop the owned peer without a signal.');
+    }
+
+    private function closePeer(\Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient $client): void
+    {
+        $pipes = (new \ReflectionProperty($client, 'pipes'))->getValue($client);
+        if (isset($pipes[0]) && \is_resource($pipes[0])) {
+            fclose($pipes[0]);
+        }
+        $this->awaitPeerExit($client);
+        $client->shutdown(); // Already exited: no root-owned or session-tagged process is signalled.
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function commands(string $directory): array
+    {
+        if (!is_file($directory.'/commands.jsonl')) {
+            return [];
+        }
+
+        return array_map(static fn (string $line): array => json_decode($line, true, 512, \JSON_THROW_ON_ERROR), file($directory.'/commands.jsonl', \FILE_IGNORE_NEW_LINES));
+    }
+
+    /** @return list<string> */
+    private function submittedTexts(string $directory): array
+    {
+        return array_values(array_map(static fn (array $command): string => $command['payload']['text'], array_filter(
+            $this->commands($directory), static fn (array $command): bool => \in_array($command['type'], ['follow_up', 'user_message'], true))));
+    }
+
+    private function assertExactAck(string $directory): void
+    {
+        $cut = json_decode(file_get_contents($directory.'/previous.json'), true, 512, \JSON_THROW_ON_ERROR);
+        unset($cut['command_id']);
+        $acks = array_values(array_filter($this->commands($directory), static fn (array $command): bool => 'bootstrap.applied' === $command['type']));
+        $this->assertSame($cut, $acks[array_key_last($acks)]['payload']);
+    }
+
     /** @return array{SessionBootstrapDescriptorDTO, RuntimeEvent, RuntimeEvent, RuntimeEvent} */
     private function transfer(string $runId = '42', string $request = 'request', int $epoch = 3): array
     {
@@ -322,7 +546,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
         $resume['usage']['inputTokens'] = 41;
         $resume['queued_messages'] = ['17' => 'Restored pending input'];
         $resume += ['status' => 'completed', 'model' => 'provider/model', 'turn_no' => 2];
-        $block = new TranscriptBlock('answer', TranscriptBlockKindEnum::AssistantMessage, $runId, 101, 'Owner-projected answer');
+        $block = new TranscriptBlock('answer', TranscriptBlockKindEnum::AssistantMessage, $runId, 13, 'Owner-projected answer');
         $serializer = static::getContainer()->get('serializer');
         $bytes = $serializer->serialize(['kind' => 'resume', 'data' => $resume], 'json')."\n";
         $bytes .= '{"kind":"block","data":'.$serializer->serialize($block, 'json')."}\n";

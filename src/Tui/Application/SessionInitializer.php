@@ -97,6 +97,10 @@ final readonly class SessionInitializer
             $state->request = $request;
         }
 
+        if ($resuming && null !== $request && '' !== $request->prompt) {
+            $state->pendingInitialPrompt = $request->prompt;
+        }
+
         return $state;
     }
 
