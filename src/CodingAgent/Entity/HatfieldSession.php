@@ -71,8 +71,8 @@ class HatfieldSession
     #[ORM\Column(type: 'string', nullable: true)]
     public ?string $reasoning = null;
 
-    /** Historical transport metadata retained without rewriting existing session rows.
-     * HTTP requests do not read or update it.
+    /** Initial HTTP reasoning effort and durable, message-anchored configuration updates.
+     * Model changes or invalidated history roots/anchors start a new reasoning epoch.
      *
      * @var array<string, mixed>|null */
     #[ORM\Column(name: 'reasoning_baseline', type: 'json', nullable: true)]
