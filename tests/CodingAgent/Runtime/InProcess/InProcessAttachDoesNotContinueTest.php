@@ -52,7 +52,8 @@ final class InProcessAttachDoesNotContinueTest extends IsolatedKernelTestCase
         $this->assertSame($baseline, $store->findSession($runId)->reasoningBaseline, 'Producer attach must not reset owner reasoning state.');
         $this->assertSame('high', $store->findSession($runId)->reasoning);
         $this->assertSame($runId, $handle->runId);
-        $this->assertSame('attached', $handle->status);
+        $this->assertSame('bootstrapping', $handle->status);
+        $this->assertNotNull($handle->bootstrapRequestId);
         $this->assertSame([], $this->spyRunner->calls, 'attach must not call AgentRunnerInterface mutators');
     }
 }
