@@ -537,8 +537,11 @@ final class AgentChildRunEventStoreTest extends TestCase
         $this->assertTrue($byMethod['allFor']['full_scan']);
         $this->assertSame($archiveBytes, $byMethod['allFor']['archive_bytes_read']);
         $this->assertSame(3, $byMethod['allFor']['decoded_event_count']);
-        $this->assertTrue($byMethod['rangeFor']['early_exit']);
-        $this->assertLessThan($archiveBytes, $byMethod['rangeFor']['archive_bytes_read']);
+        $indexed = array_values(array_filter($logger->records, static fn (array $record): bool => 'sequence_range' === ($record['context']['read_reason'] ?? null)));
+        $this->assertCount(1, $indexed);
+        $this->assertFalse($indexed[0]['context']['full_scan']);
+        $this->assertLessThan($archiveBytes, $indexed[0]['context']['archive_bytes_read']);
+        $this->assertSame(1, $indexed[0]['context']['lines_yielded']);
         $this->assertTrue($byMethod['firstFor']['early_exit']);
         $this->assertSame(1, $byMethod['firstFor']['decoded_event_count']);
     }

@@ -59,7 +59,7 @@ final class AgentChildRunEventStore implements \Ineersa\AgentCore\Contract\Prepa
     ) {
         $this->pathResolver->validatePathComponent($parentRunId, 'parentRunId');
         $this->pathResolver->validatePathComponent($artifactId, 'artifactId');
-        $this->eventLog = new JsonlRunEventLog($eventPayloadNormalizer, $lockFactory, $sequenceAllocator, $bootstrapReader);
+        $this->eventLog = new JsonlRunEventLog($eventPayloadNormalizer, $lockFactory, $sequenceAllocator, $bootstrapReader, $logger);
     }
 
     /**
@@ -188,12 +188,9 @@ final class AgentChildRunEventStore implements \Ineersa\AgentCore\Contract\Prepa
             return;
         }
 
-        foreach ($this->streamDecodedEvents('rangeFor') as $event) {
-            if ($event->seq > $endSeq) {
-                break;
-            }
-
-            if ($event->seq >= $startSeq) {
+        foreach ($this->eventLog->indexedLines($this->eventsPath(), $runId, $startSeq, $endSeq) as $line) {
+            $event = $this->eventFromLine($line);
+            if (null !== $event) {
                 yield $event;
             }
         }
