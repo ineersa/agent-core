@@ -5,7 +5,6 @@
         "config",
         "docs",
         ".hatfield/extensions/extension-api",
-        "vendor",
         "migrations"
     ],
     "files": [
@@ -21,5 +20,17 @@
     "check-requirements": false,
     "exclude-composer-files": false,
     "exclude-dev-files": true,
-    "annotations": false
+    "annotations": false,
+    "finder": [
+        {
+            "in": "vendor",
+            "notPath": [
+                "ineersa/symfony-ai-openai-chatgpt-platform/vendor",
+                "ineersa/symfony-ai-openai-chatgpt-platform/tests",
+                "ineersa/symfony-ai-openai-chatgpt-platform/.git",
+                "ineersa/symfony-ai-openai-chatgpt-platform/var",
+                "ineersa/symfony-ai-openai-chatgpt-platform/.phpunit.cache"
+            ]
+        }
+    ]
 }

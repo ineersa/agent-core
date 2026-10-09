@@ -12,7 +12,7 @@ use Symfony\Component\Lock\LockFactory;
  * Shared RMW store for ~/.hatfield/auth.json.
  *
  * One file-scoped lock key ({@see self::LOCK_KEY}) serializes ALL callers —
- * Codex, Grok, and any future provider — so concurrent refresh cannot drop
+ * Grok and unrelated retained provider records — so concurrent refresh cannot drop
  * a sibling provider entry (last-writer-wins on the whole file).
  *
  * Mutating helpers ({@see set}, {@see remove}) do NOT acquire the lock

@@ -71,11 +71,10 @@ class HatfieldSession
     #[ORM\Column(type: 'string', nullable: true)]
     public ?string $reasoning = null;
 
-    /** Fixed provider effort for the active model epoch; null until its first request.
-     * last_emitted tracks the last effort that was already represented on the wire
-     * so unchanged selections do not emit another configuration_update.
+    /** Initial HTTP reasoning effort and durable, message-anchored configuration updates.
+     * Model changes or invalidated history roots/anchors start a new reasoning epoch.
      *
-     * @var array{model?: string, effort?: string, last_emitted?: string, transitions?: list<array{message_key: string, effort: string}>, continuation_generation?: int}|null */
+     * @var array<string, mixed>|null */
     #[ORM\Column(name: 'reasoning_baseline', type: 'json', nullable: true)]
     public ?array $reasoningBaseline = null;
 
@@ -89,7 +88,7 @@ class HatfieldSession
      *
      * Generated once at session construction and persisted for the life of the row.
      * Public session_id/run_id remain the numeric DB id; provider adapters consume
-     * this key (e.g. Codex prompt_cache_key and correlation headers).
+     * this key (e.g. ChatGPT prompt_cache_key).
      *
      * SQLite DDL keeps this column nullable; new sessions always receive a UUIDv7 in
      * __construct(). Startup migration repairs NULL or empty persisted rows.

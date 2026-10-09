@@ -10,7 +10,7 @@ namespace Ineersa\CodingAgent\Auth;
  * Mirrors pi-grok-cli src/auth/config.ts + oauth.ts:
  *   issuer https://auth.x.ai, client id for grok-cli, callback path /callback.
  *
- * Shares ~/.hatfield/auth.json with Codex (separate provider key).
+ * Uses ~/.hatfield/auth.json under its own Grok provider key; legacy records remain untouched.
  */
 final class GrokOAuthConfig
 {
@@ -31,7 +31,7 @@ final class GrokOAuthConfig
 
     /**
      * Default local TCP port for the OAuth callback server.
-     * Same port pi-grok-cli uses; distinct from Codex's 1455.
+     * Same port pi-grok-cli uses; distinct from ChatGPT's 1455.
      */
     public const int DEFAULT_PORT = 56122;
 
@@ -60,7 +60,7 @@ final class GrokOAuthConfig
     /**
      * Provider options array for the given port.
      *
-     * Reuses {@see CodexOAuthProvider}: league's GenericProvider injects
+     * Reuses {@see PublicOAuthProvider}: league's GenericProvider injects
      * approval_prompt and an empty client_secret; those Hydra-style quirks
      * also break xAI's token endpoint, so the same strip/omit fixes apply.
      *

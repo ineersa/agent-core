@@ -10,7 +10,7 @@ description: Session identity, storage layout, events, resume, locking, and hist
 ## Invariants
 
 - The TUI session and AgentCore run share one identity (DB-issued numeric string).
-- Each session row also stores immutable `provider_cache_key` (UUIDv7). Codex maps it to `prompt_cache_key`; generic providers omit Hatfield correlation fields, while Grok maps the session id to its `prompt_cache_key`.
+- Each session row also stores immutable `provider_cache_key` (UUIDv7). ChatGPT maps it to `prompt_cache_key`; generic providers omit Hatfield correlation fields, while Grok maps the session id to its `prompt_cache_key`.
 - Resume uses the session directory and application database, including active tool batches and pending commands. There is no global `.hatfield/runs/` registry.
 - Canonical conversation source is append-only `events.jsonl`. Transcript projection rebuilds from events on resume.
 - There is **no** `metadata.yaml` in the session directory.
@@ -94,7 +94,7 @@ Foreground subagent runs store parent-scoped artifacts under the parent session 
 Deferred subagent supervision (single and parallel) uses durable batch records and timeouts configured by `agents.subagent_tool_timeout_seconds` (default 24h, minimum 60s). Recovery reads child event logs backward from the durable tail until its stored event sequence cursor, then restores chronological order; it does not treat `sequence.cursor` as event-tail truth because allocation may leave valid sequence holes.
 
 Each child row in `deferred_subagent_child` stores an immutable UUIDv7 `provider_cache_key`, separate from its run ID.
-Codex uses that key across turns, worker recreation, and `agent_resume`. Resume rebinds the child to a new batch without changing the key.
+ChatGPT uses that key across turns, worker recreation, and `agent_resume`. Resume rebinds the child to a new batch without changing the key.
 The upgrade backfills provider keys without changing operational event cursors, lifecycle state, or per-resume usage counters.
 
 Fork and subagent cards show cumulative cache reuse as `↻ N%` while running and after completion. The child live-view footer shows the same percentage.

@@ -56,7 +56,7 @@ final class GrokSymfonyAiProviderBuilderTest extends TestCase
 
         $grok = new AiProviderConfig(id: 'grok-cli', type: 'grok', enabled: true, baseUrl: 'https://cli-chat-proxy.grok.com');
         $generic = new AiProviderConfig(id: 'deepseek', type: 'generic', enabled: true, baseUrl: 'https://api.deepseek.com');
-        $codex = new AiProviderConfig(id: 'openai-codex', type: 'codex', enabled: true, baseUrl: 'https://chatgpt.com/backend-api');
+        $codex = new AiProviderConfig(id: 'openai-codex', type: 'chatgpt', enabled: true, baseUrl: 'https://chatgpt.com/backend-api');
 
         $this->assertTrue($builder->supports($grok));
         $this->assertFalse($builder->supports($generic));

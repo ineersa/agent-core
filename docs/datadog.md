@@ -280,26 +280,6 @@ the response request ID when available. For non-JSON HTTP errors, it also includ
 The existing diagnostic sanitizer redacts common credential patterns before truncation.
 JSON error bodies retain structural metadata only.
 
-For a Codex cached-WebSocket `prefix_mismatch`, Hatfield logs
-`llm.provider.continuation_mismatch` from its platform error handler. The SDK
-passes the two rejected items through the exception; its transport logs remain
-content-free. The host event includes indexed `current_path` and `expected_path`,
-the cached item's `expected_source`, and `current_item` and `expected_item`
-snapshots. Each snapshot contains JSON text, its post-redaction byte count, and
-`redacted` and `truncated` flags. JSON text is capped at 16,384 UTF-8 bytes per
-item. Truncated snapshots are not complete JSON. No full request history is
-captured, and the items do not enter canonical session events or model-visible
-error results. Diagnostic serialization failure is logged as `capture_failed`
-without replacing the original continuation error or enabling fallback.
-
-**Continuation snapshots can contain conversation text and tool arguments.**
-This error-only capture is an exception to the normal content-free logging rule.
-The host redacts reasoning ciphertext and common credential fields and patterns.
-Do not forward or share these snapshots without treating them as sensitive data.
-
-Redaction is best-effort. Non-JSON error pages can echo request content that the
-sanitizer does not recognize. Treat these logs as sensitive and review excerpts
-before sharing them.
 
 ## Related
 

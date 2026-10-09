@@ -10,7 +10,7 @@ namespace Ineersa\CodingAgent\Auth;
  * Maps to the per-provider entry in auth.json:
  *   grok-cli => { type, access, refresh, expires }
  *
- * No accountId — xAI tokens are not account-scoped the way Codex is.
+ * No accountId — xAI tokens are not account-scoped the way ChatGPT is.
  */
 final readonly class GrokAuthRecord
 {

@@ -61,8 +61,7 @@ class GrokModelClient extends ModelClient
         // Our request() path must also return AsyncResponse: vendor
         // RawSseStream does (new EventSourceHttpClient())->stream($response),
         // and AsyncDecoratorTrait only accepts AsyncResponse. A bare
-        // CurlResponse/MockResponse TypeErrors. CodexSseStream is the only
-        // parser that frames a bare client response itself.
+        // CurlResponse/MockResponse produces a TypeError in that vendor path.
         parent::__construct($httpClient, $baseUrl, $apiKey, $path);
         $this->httpClient = $httpClient instanceof EventSourceHttpClient
             ? $httpClient
@@ -169,7 +168,7 @@ class GrokModelClient extends ModelClient
      */
     private function sanitizeWireBody(array $body): array
     {
-        // Match pi-grok-cli + Codex: only request encrypted reasoning when the
+        // Match pi-grok-cli + ChatGPT: only request encrypted reasoning when the
         // caller asked for reasoning, and never overwrite a caller-supplied include.
         if (isset($body['reasoning'])) {
             $body['include'] ??= ['reasoning.encrypted_content'];

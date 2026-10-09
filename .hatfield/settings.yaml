@@ -61,7 +61,14 @@ ai:
     providers:
         openai-codex:
             enabled: true
-            transport: websocket-cached
+            type: chatgpt
+            base_url: https://api.openai.com
+            completions_path: /v1/responses
+            compatibility:
+                supports_developer_role: true
+                supports_reasoning_effort: false
+                thinking_format: chatgpt
+                supports_reasoning_configuration_updates: true
         llama_cpp:
             type: generic
             enabled: true
