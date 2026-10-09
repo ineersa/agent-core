@@ -130,6 +130,8 @@ final class InProcessAttachCancelsPendingHumanTest extends IsolatedKernelTestCas
             sessionMetaStore: $container->get(HatfieldSessionStore::class),
             modelResolver: $container->get(ModelResolver::class),
             commandBus: $bus,
+            bootstrapSpools: self::getContainer()->get(\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapSpoolStore::class),
+            bootstrapTransfer: self::getContainer()->get(\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapTransfer::class),
         );
 
         $this->assertSame($runId, $client->attach($runId)->runId);
@@ -243,6 +245,8 @@ final class InProcessAttachCancelsPendingHumanTest extends IsolatedKernelTestCas
             sessionMetaStore: $container->get(HatfieldSessionStore::class),
             modelResolver: $container->get(ModelResolver::class),
             commandBus: $bus,
+            bootstrapSpools: self::getContainer()->get(\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapSpoolStore::class),
+            bootstrapTransfer: self::getContainer()->get(\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapTransfer::class),
         );
 
         $client->attach($runId);

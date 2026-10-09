@@ -391,6 +391,14 @@ final class ParentEventClient implements AgentSessionClient
         throw new \BadMethodCallException();
     }
 
+    public function acknowledgeBootstrap(array $cut): void
+    {
+    }
+
+    public function cancelBootstrap(string $runId): void
+    {
+    }
+
     public function attach(string $runId): RunHandle
     {
         return new RunHandle($runId, 'attached');

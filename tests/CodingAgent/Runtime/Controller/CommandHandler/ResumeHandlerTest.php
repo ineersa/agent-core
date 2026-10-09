@@ -13,19 +13,25 @@ use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\TestCase;
 
 /**
  * Thesis: JSONL resume command must passive-attach only (no AgentCore Continue).
  */
 #[CoversClass(ResumeHandler::class)]
-final class ResumeHandlerTest extends TestCase
+final class ResumeHandlerTest extends IsolatedKernelTestCase
 {
+    protected function tearDown(): void
+    {
+        self::getContainer()->get(\Ineersa\CodingAgent\Runtime\Controller\SessionBootstrapDelivery::class)->cancel();
+        parent::tearDown();
+    }
+
     public function testResumeJsonlCommandCallsAttachAndEmitsRunResumed(): void
     {
         $spy = new AttachSpySessionClient();
-        $handler = new ResumeHandler($spy);
+        $handler = new ResumeHandler($spy, self::getContainer()->get(\Ineersa\CodingAgent\Runtime\Controller\SessionBootstrapDelivery::class));
 
         $emitted = [];
         $emit = static function (RuntimeEvent $event) use (&$emitted): void {
@@ -50,7 +56,7 @@ final class ResumeHandlerTest extends TestCase
     public function testEmitsProtocolErrorWhenRunIdMissing(): void
     {
         $spy = new AttachSpySessionClient();
-        $handler = new ResumeHandler($spy);
+        $handler = new ResumeHandler($spy, self::getContainer()->get(\Ineersa\CodingAgent\Runtime\Controller\SessionBootstrapDelivery::class));
 
         $emitted = [];
         $emit = static function (RuntimeEvent $event) use (&$emitted): void {
@@ -79,11 +85,19 @@ final class AttachSpySessionClient implements AgentSessionClient
         throw new \RuntimeException('Unexpected start()');
     }
 
+    public function acknowledgeBootstrap(array $cut): void
+    {
+    }
+
+    public function cancelBootstrap(string $runId): void
+    {
+    }
+
     public function attach(string $runId): RunHandle
     {
         $this->attachRunIds[] = $runId;
 
-        return new RunHandle(runId: $runId, status: 'attached');
+        return new RunHandle(runId: $runId, status: 'attached', bootstrapRequestId: 'fixture-attach');
     }
 
     public function send(string $runId, UserCommand $command): void

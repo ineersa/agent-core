@@ -327,7 +327,7 @@ final class JsonlRunEventLog
     }
 
     /** @return \Generator<int, array{offset: int, length: int, line: string}> */
-    public function locatedLines(string $path, int $startOffset = 0, ?JsonlPhysicalReadObservation $observation = null): iterable
+    public function locatedLines(string $path, int $startOffset = 0, ?JsonlPhysicalReadObservation $observation = null, ?int $endOffset = null): iterable
     {
         $handle = @fopen($path, 'rb');
         if (false === $handle) {
@@ -343,6 +343,12 @@ final class JsonlRunEventLog
                 throw new \RuntimeException('Cannot inspect canonical reader cut.');
             }
             $cut = (new JsonlAppendJournal())->readableOffset($path, $stat['size']);
+            if (null !== $endOffset) {
+                if ($endOffset < $startOffset || $endOffset > $cut) {
+                    throw new \RuntimeException('Requested suffix exceeds the committed cut.');
+                }
+                $cut = $endOffset;
+            }
             if ($startOffset < 0 || $startOffset > $cut || -1 === fseek($handle, $startOffset)) {
                 throw new \RuntimeException('Cannot seek committed canonical records.');
             }

@@ -212,6 +212,8 @@ final class InProcessSelectHistoryTurnEmitsRunHistoryPositionChangedTest extends
             sessionMetaStore: $container->get(HatfieldSessionStore::class),
             modelResolver: $container->get(ModelResolver::class),
             commandBus: $bus,
+            bootstrapSpools: self::getContainer()->get(\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapSpoolStore::class),
+            bootstrapTransfer: self::getContainer()->get(\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapTransfer::class),
             transientSink: $sink,
         );
     }

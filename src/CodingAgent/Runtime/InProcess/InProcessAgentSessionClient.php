@@ -47,6 +47,13 @@ use Symfony\Component\Messenger\Stamp\HandledStamp;
  */
 final class InProcessAgentSessionClient implements AgentSessionClient
 {
+    private ?string $bootstrapRequestId = null;
+    private ?string $bootstrapRunId = null;
+    private ?\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapDescriptorDTO $bootstrapDescriptor = null;
+    /** @var \Generator<int, RuntimeEvent>|null */
+    private ?\Generator $bootstrapStream = null;
+    private bool $bootstrapEnded = false;
+
     public function __construct(
         private readonly AgentRunnerInterface $runner,
         private readonly EventStoreInterface $eventStore,
@@ -60,6 +67,8 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         private readonly HatfieldSessionStore $sessionMetaStore,
         private readonly ModelResolver $modelResolver,
         private readonly MessageBusInterface $commandBus,
+        private readonly \Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapSpoolStore $bootstrapSpools,
+        private readonly \Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapTransfer $bootstrapTransfer,
         private readonly ?RuntimeEventSinkInterface $transientSink = null,
         private readonly ?ToolQuestionStoreInterface $toolQuestionStore = null,
         private readonly ToolQuestionAnswerResolver $answerResolver = new ToolQuestionAnswerResolver(),
@@ -86,7 +95,12 @@ final class InProcessAgentSessionClient implements AgentSessionClient
             throw new \RuntimeException(\sprintf('Session "%s" not found.', $runId));
         }
 
-        $this->commandBus->dispatch(new \Ineersa\CodingAgent\Application\Message\AttachRun($runId, $this->buildContextMessages(), \Symfony\Component\Uid\Uuid::v4()->toRfc4122()));
+        $this->bootstrapRequestId = \Symfony\Component\Uid\Uuid::v4()->toRfc4122();
+        $this->bootstrapRunId = $runId;
+        $this->bootstrapDescriptor = null;
+        $this->bootstrapStream = null;
+        $this->bootstrapEnded = false;
+        $this->commandBus->dispatch(new \Ineersa\CodingAgent\Application\Message\AttachRun($runId, $this->buildContextMessages(), $this->bootstrapRequestId));
 
         // Attaching is a new parent lifetime: existing artifacts stay retrievable
         // but agent_resume must not continue children launched before /resume.
@@ -96,7 +110,32 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         // also benefit from MCP tools (Phase 3+).
         $this->mcpDispatcher?->dispatchInitialize($runId, 'attach');
 
-        return new RunHandle(runId: $runId, status: 'attached');
+        return new RunHandle(runId: $runId, status: 'bootstrapping', bootstrapRequestId: $this->bootstrapRequestId);
+    }
+
+    /** @param array<string, mixed> $cut */
+    public function acknowledgeBootstrap(array $cut): void
+    {
+        $descriptor = \Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapDescriptorDTO::fromArray($cut);
+        if (!$this->bootstrapEnded || null === $this->bootstrapDescriptor || $descriptor->toArray() !== $this->bootstrapDescriptor->toArray()) {
+            throw new \RuntimeException('Bootstrap acknowledgement is stale or incomplete.');
+        }
+        $this->bootstrapSpools->acknowledge($descriptor);
+        $this->bootstrapEnded = false;
+        $this->bootstrapStream = $this->bootstrapTransfer->catchUp($descriptor);
+    }
+
+    public function cancelBootstrap(string $runId): void
+    {
+        if ($this->bootstrapRunId !== $runId) {
+            return;
+        }
+        $this->bootstrapStream = null;
+        $this->bootstrapDescriptor = null;
+        $this->bootstrapRequestId = null;
+        $this->bootstrapRunId = null;
+        $this->bootstrapEnded = false;
+        $this->bootstrapSpools->cancel($runId);
     }
 
     public function send(string $runId, UserCommand $command): void
@@ -166,20 +205,44 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         //   - Empty thinking blocks when deltas arrive too late
         if ($this->transientSink instanceof InMemoryRuntimeEventSink) {
             foreach ($this->transientSink->drain($runId) as $event) {
+                if (null !== $this->bootstrapRequestId && $runId === $this->bootstrapRunId) {
+                    if ('bootstrap.available' === $event->type && ($event->payload['request_id'] ?? null) === $this->bootstrapRequestId) {
+                        $this->bootstrapDescriptor = \Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapDescriptorDTO::fromArray($event->payload);
+                        $this->bootstrapStream = $this->bootstrapTransfer->frames($this->bootstrapDescriptor);
+                        yield $event;
+                    }
+                    continue;
+                }
                 yield $event;
             }
         }
 
-        $unseenEvents = [];
-        foreach ($this->eventStore->reverseFor($runId) as $runEvent) {
-            if ($runEvent->seq <= $afterSeq) {
-                break;
+        if ($runId === $this->bootstrapRunId) {
+            $stream = $this->bootstrapStream;
+            if (null !== $stream) {
+                foreach ($stream as $event) {
+                    if ('bootstrap.end' === $event->type) {
+                        $this->bootstrapEnded = true;
+                    } elseif ('session.ready' === $event->type) {
+                        $this->bootstrapRequestId = null;
+                        $this->bootstrapRunId = null;
+                        $this->bootstrapDescriptor = null;
+                    }
+                    yield $event;
+                }
+                if ($this->bootstrapStream === $stream) {
+                    $this->bootstrapStream = null;
+                }
             }
 
-            $unseenEvents[] = $runEvent;
+            return;
         }
 
-        foreach (array_reverse($unseenEvents) as $runEvent) {
+        $cut = $this->eventStore->latestSequenceFor($runId);
+        if (null === $cut) {
+            return;
+        }
+        foreach ($this->eventStore->rangeFor($runId, $afterSeq + 1, $cut) as $runEvent) {
             $runtimeEvent = $this->mapper->toRuntimeEvent($runEvent);
             if (null !== $runtimeEvent) {
                 yield $runtimeEvent;
@@ -233,6 +296,9 @@ final class InProcessAgentSessionClient implements AgentSessionClient
      */
     public function shutdown(): void
     {
+        if (null !== $this->bootstrapRunId) {
+            $this->cancelBootstrap($this->bootstrapRunId);
+        }
     }
 
     /**

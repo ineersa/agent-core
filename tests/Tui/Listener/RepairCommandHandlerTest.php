@@ -141,6 +141,14 @@ final class RepairCommandSpyClient implements AgentSessionClient
         throw new \RuntimeException('Unexpected start()');
     }
 
+    public function acknowledgeBootstrap(array $cut): void
+    {
+    }
+
+    public function cancelBootstrap(string $runId): void
+    {
+    }
+
     public function attach(string $runId): RunHandle
     {
         throw new \RuntimeException('Unexpected attach()');

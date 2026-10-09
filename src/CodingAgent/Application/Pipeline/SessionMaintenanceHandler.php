@@ -63,7 +63,7 @@ final readonly class SessionMaintenanceHandler
                 $descriptor = $this->bootstrap->seal();
                 // A slow controller must never hold the owner transition lock while
                 // receiving the token. The body remains in the private bounded spool.
-                $this->locks->afterRelease($command->runId, fn () => $this->emit(new RuntimeEvent(type: RuntimeEventTypeEnum::BootstrapAvailable->value, runId: $command->runId, seq: 0, payload: $descriptor->toArray())));
+                $this->locks->afterRelease($command->runId, fn () => $this->emit(new RuntimeEvent(type: RuntimeEventTypeEnum::BootstrapAvailable->value, runId: $command->runId, seq: 0, payload: $descriptor->toArray() + ['request_id' => $command->commandId])));
             } finally {
                 $this->bootstrap->release();
             }

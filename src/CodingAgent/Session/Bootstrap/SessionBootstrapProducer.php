@@ -32,6 +32,7 @@ final class SessionBootstrapProducer
         private readonly HatfieldSessionStore $sessions,
         private readonly SessionBootstrapSpoolStore $spools,
         private readonly LoggerInterface $logger,
+        private readonly SessionBootstrapEmissionGate $emissionGate,
     ) {
     }
 
@@ -44,6 +45,7 @@ final class SessionBootstrapProducer
         if (!$this->sessions->exists($runId)) {
             throw new \RuntimeException('Bootstrap requires a registered parent session.');
         }
+        $this->emissionGate->prepare($runId);
         $this->recovery->recover($runId);
         try {
             $state = $this->registry->requireLoaded($runId);
@@ -106,6 +108,7 @@ final class SessionBootstrapProducer
 
     public function release(): void
     {
+        $this->emissionGate->release();
         $this->runId = null;
         $this->blocks = [];
         $this->projectionFailure = null;

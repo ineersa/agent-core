@@ -63,6 +63,14 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
     private string $stdoutBuffer = '';
     private string $stderrBuffer = '';
+    private ?string $bootstrapCommandId = null;
+    private ?\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapDescriptorDTO $bootstrapDescriptor = null;
+    private bool $bootstrapEnded = false;
+    private bool $bootstrapAcknowledged = false;
+    private string $suffixBuffer = '';
+    private int $suffixSequence = 0;
+    private int $suffixIndex = 0;
+    private int $suffixCursor = 0;
 
     private RuntimeEventPerRunCompactBuffer $compactEventBuffer;
 
@@ -284,6 +292,10 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
     public function attach(string $runId): RunHandle
     {
+        $this->bootstrapCommandId = null;
+        $this->bootstrapDescriptor = null;
+        $this->bootstrapEnded = false;
+        $this->resetSuffix();
         // Reset stale flags from prior sessions / crash-recovery cycles.
         // ensureProcessRunning() may have set autoResumed for a different
         // session during events()/send()/cancel(); only an auto-resume
@@ -311,7 +323,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         if ($this->autoResumed) {
             $this->autoResumed = false;
 
-            return new RunHandle(runId: $runId, status: 'running');
+            return new RunHandle(runId: $runId, status: 'bootstrapping');
         }
 
         $cmd = new RuntimeCommand(
@@ -320,9 +332,35 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             runId: $runId,
         );
 
+        $this->bootstrapCommandId = $cmd->id;
+        $this->bootstrapDescriptor = null;
+        $this->bootstrapEnded = false;
         $this->writeCommandWithRetry($cmd);
 
-        return new RunHandle(runId: $runId, status: 'attached');
+        return new RunHandle(runId: $runId, status: 'bootstrapping');
+    }
+
+    /** @param array<string, mixed> $cut */
+    public function acknowledgeBootstrap(array $cut): void
+    {
+        $descriptor = \Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapDescriptorDTO::fromArray($cut);
+        if (!$this->bootstrapEnded || null === $this->bootstrapDescriptor || $descriptor->toArray() !== $this->bootstrapDescriptor->toArray()) {
+            throw new RuntimeTransportException('Bootstrap acknowledgement is stale or incomplete.');
+        }
+        $this->writeCommand(new RuntimeCommand(uniqid('cmd_', true), 'bootstrap.applied', $descriptor->runId, $descriptor->toArray()));
+        $this->bootstrapEnded = false;
+        $this->bootstrapAcknowledged = true;
+    }
+
+    public function cancelBootstrap(string $runId): void
+    {
+        if (null !== $this->process && $this->isProcessRunning()) {
+            $this->writeCommand(new RuntimeCommand(uniqid('cmd_', true), 'bootstrap.cancel', $runId));
+        }
+        $this->bootstrapDescriptor = null;
+        $this->bootstrapCommandId = null;
+        $this->bootstrapEnded = false;
+        $this->resetSuffix();
     }
 
     public function send(string $runId, UserCommand $command): void
@@ -553,11 +591,16 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         // If we had an active run before the crash, resume it transparently.
         if ($hadRunningProcess && null !== $this->activeRunId) {
             $this->waitForRuntimeReady();
-            $this->writeCommand(new RuntimeCommand(
+            $resume = new RuntimeCommand(
                 id: uniqid('cmd_', true),
                 type: 'resume',
                 runId: $this->activeRunId,
-            ));
+            );
+            $this->bootstrapCommandId = $resume->id;
+            $this->bootstrapDescriptor = null;
+            $this->bootstrapEnded = false;
+            $this->resetSuffix();
+            $this->writeCommand($resume);
             $this->autoResumed = true;
         }
     }
@@ -923,7 +966,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             return;
         }
 
-        $chunk = stream_get_contents($this->pipes[1]);
+        $chunk = fread($this->pipes[1], 65536);
         if (false === $chunk || '' === $chunk) {
             return;
         }
@@ -944,13 +987,101 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             }
 
             try {
-                yield JsonlCodec::decodeEvent($trimmed);
+                $event = JsonlCodec::decodeEvent($trimmed);
             } catch (\JsonException|\RuntimeException) {
                 // Skip malformed stdout lines, but preserve them as diagnostics.
                 $this->stderrBuffer .= "\n[malformed stdout] ".$trimmed;
                 continue;
             }
+            if (RuntimeEventTypeEnum::BootstrapAvailable->value === $event->type) {
+                if (null === $this->bootstrapCommandId || ($event->payload['command_id'] ?? null) !== $this->bootstrapCommandId) {
+                    continue;
+                }
+                $descriptor = \Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapDescriptorDTO::fromArray($event->payload);
+                if ($descriptor->runId !== $event->runId || $descriptor->runId !== $this->activeRunId) {
+                    throw new RuntimeTransportException('Bootstrap availability does not match the attached run.');
+                }
+                if (null !== $this->bootstrapDescriptor && $descriptor->viewEpoch <= $this->bootstrapDescriptor->viewEpoch) {
+                    continue;
+                }
+                $this->bootstrapDescriptor = $descriptor;
+                $this->bootstrapEnded = false;
+                $this->resetSuffix();
+                $this->suffixCursor = $descriptor->canonicalSeq;
+            } elseif (\in_array($event->type, [RuntimeEventTypeEnum::BootstrapFrame->value, RuntimeEventTypeEnum::BootstrapEnd->value, RuntimeEventTypeEnum::SessionReady->value], true)) {
+                if (null === $this->bootstrapDescriptor || $event->runId !== $this->bootstrapDescriptor->runId
+                    || ($event->payload['bootstrap_id'] ?? null) !== $this->bootstrapDescriptor->bootstrapId
+                    || ($event->payload['view_epoch'] ?? null) !== $this->bootstrapDescriptor->viewEpoch) {
+                    continue;
+                }
+                if (RuntimeEventTypeEnum::BootstrapEnd->value === $event->type) {
+                    $end = \Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapDescriptorDTO::fromArray($event->payload);
+                    if ($end->toArray() !== $this->bootstrapDescriptor->toArray()) {
+                        throw new RuntimeTransportException('Bootstrap end does not match its sealed cut.');
+                    }
+                    $this->bootstrapEnded = true;
+                } elseif (RuntimeEventTypeEnum::SessionReady->value === $event->type) {
+                    if (!$this->bootstrapAcknowledged || 0 !== $this->suffixIndex || !\is_int($event->payload['canonical_seq'] ?? null)
+                        || $event->payload['canonical_seq'] < $this->suffixCursor || !\is_int($event->payload['end_offset'] ?? null)
+                        || $event->payload['end_offset'] < $this->bootstrapDescriptor->endOffset) {
+                        throw new RuntimeTransportException('Session readiness does not match the delivered suffix.');
+                    }
+                    $this->suffixCursor = $event->payload['canonical_seq'];
+                }
+            } elseif (RuntimeEventTypeEnum::BootstrapSuffix->value === $event->type) {
+                $event = $this->decodeSuffix($event);
+                if (null === $event) {
+                    continue;
+                }
+            }
+            yield $event;
         }
+    }
+
+    private function decodeSuffix(RuntimeEvent $frame): ?RuntimeEvent
+    {
+        $payload = $frame->payload;
+        if (null === $this->bootstrapDescriptor || $frame->runId !== $this->bootstrapDescriptor->runId
+            || ($payload['bootstrap_id'] ?? null) !== $this->bootstrapDescriptor->bootstrapId
+            || ($payload['view_epoch'] ?? null) !== $this->bootstrapDescriptor->viewEpoch) {
+            // An old transfer must neither append bytes nor reset a current record.
+            return null;
+        }
+        if (!$this->bootstrapAcknowledged) {
+            throw new RuntimeTransportException('Bootstrap suffix arrived before mount acknowledgement.');
+        }
+        $chunk = \is_string($payload['data'] ?? null) && \strlen($payload['data']) <= 43692 ? base64_decode($payload['data'], true) : false;
+        if (false === $chunk || '' === $chunk || \strlen($chunk) > 32768 || !\is_int($payload['canonical_seq'] ?? null)
+            || $payload['canonical_seq'] <= $this->suffixCursor
+            || ($payload['index'] ?? null) !== $this->suffixIndex || !\is_bool($payload['last'] ?? null)
+            || (0 !== $this->suffixIndex && $payload['canonical_seq'] !== $this->suffixSequence)) {
+            throw new RuntimeTransportException('Invalid bounded bootstrap suffix frame.');
+        }
+        $this->suffixSequence = $payload['canonical_seq'];
+        ++$this->suffixIndex;
+        $this->suffixBuffer .= $chunk;
+        if (\strlen($this->suffixBuffer) > 16 * 1024 * 1024) {
+            throw new RuntimeTransportException('Bootstrap suffix record exceeds its byte budget.');
+        }
+        if (!$payload['last']) {
+            return null;
+        }
+        $event = JsonlCodec::decodeEvent($this->suffixBuffer);
+        if ($event->seq !== $this->suffixSequence || $event->runId !== $frame->runId) {
+            throw new RuntimeTransportException('Bootstrap suffix record does not match its cursor.');
+        }
+        $this->suffixCursor = $event->seq;
+        $this->suffixBuffer = '';
+        $this->suffixSequence = $this->suffixIndex = 0;
+
+        return $event;
+    }
+
+    private function resetSuffix(): void
+    {
+        $this->bootstrapAcknowledged = false;
+        $this->suffixBuffer = '';
+        $this->suffixSequence = $this->suffixIndex = $this->suffixCursor = 0;
     }
 
     private function assertProcessStillRunning(string $context): void
@@ -1043,6 +1174,10 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
      */
     private function resetSessionBoundaryState(): void
     {
+        $this->bootstrapCommandId = null;
+        $this->bootstrapDescriptor = null;
+        $this->bootstrapEnded = false;
+        $this->resetSuffix();
         $this->compactEventBuffer->clear();
         $this->observedChildRunIds = [];
         $this->stdoutBuffer = '';

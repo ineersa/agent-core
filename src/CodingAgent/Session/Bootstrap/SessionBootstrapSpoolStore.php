@@ -162,9 +162,18 @@ final readonly class SessionBootstrapSpoolStore
         }
     }
 
+    public function isActive(string $runId): bool
+    {
+        return 1 === preg_match('/^[A-Za-z0-9_-]+$/D', $runId) && $this->sessions->exists($runId)
+            && is_file($this->directory($runId).'/active.json');
+    }
+
     /** Disconnect/cancellation cleanup. The scalar epoch remains to reject old mounts. */
     public function cancel(string $runId): void
     {
+        if (!$this->sessions->exists($runId)) {
+            return;
+        }
         $lock = $this->locks->createLock('session-bootstrap-'.$runId);
         $lock->acquire(true);
         try {

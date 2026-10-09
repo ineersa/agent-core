@@ -43,6 +43,12 @@ use PHPUnit\Framework\Attributes\Test;
 #[CoversClass(InProcessAgentSessionClient::class)]
 final class ResumeHandlerCancelsPendingHumanTest extends IsolatedKernelTestCase
 {
+    protected function tearDown(): void
+    {
+        self::getContainer()->get(\Ineersa\CodingAgent\Runtime\Controller\SessionBootstrapDelivery::class)->cancel();
+        parent::tearDown();
+    }
+
     #[Test]
     public function productionResumeHandlerCancelsOutstandingHumanViaInProcessAttach(): void
     {
@@ -147,10 +153,12 @@ final class ResumeHandlerCancelsPendingHumanTest extends IsolatedKernelTestCase
             sessionMetaStore: $container->get(HatfieldSessionStore::class),
             modelResolver: $container->get(ModelResolver::class),
             commandBus: $bus,
+            bootstrapSpools: self::getContainer()->get(\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapSpoolStore::class),
+            bootstrapTransfer: self::getContainer()->get(\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapTransfer::class),
         );
 
         $emitted = [];
-        $handler = new ResumeHandler($client);
+        $handler = new ResumeHandler($client, self::getContainer()->get(\Ineersa\CodingAgent\Runtime\Controller\SessionBootstrapDelivery::class));
         $handler(new ControllerCommandEvent(
             new RuntimeCommand(id: 'cmd_resume_process', type: 'resume', runId: $runId),
             static function (RuntimeEvent $event) use (&$emitted): void {
