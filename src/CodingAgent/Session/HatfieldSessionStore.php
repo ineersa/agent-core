@@ -148,6 +148,9 @@ final class HatfieldSessionStore
             $dirty = true;
         }
         if (\array_key_exists('model', $meta) && \is_string($meta['model'])) {
+            if ($entity->model !== $meta['model']) {
+                $entity->reasoningBaseline = null;
+            }
             $entity->model = $meta['model'];
             $dirty = true;
         }
@@ -208,6 +211,71 @@ final class HatfieldSessionStore
         }
 
         return $this->getRepository()->existsById($id);
+    }
+
+    /**
+     * Claim a chat epoch from retained history, not from a worker connection.
+     * Missing anchors mean compaction/discard rewrote the prefix; normal resume does not.
+     *
+     * @param list<string> $historyKeys
+     *
+     * @return array{baseline: string, update: ?string}|null
+     */
+    public function claimReasoningBaseline(string $sessionId, string $model, string $effort, array $historyKeys): ?array
+    {
+        $entity = $this->fetchEntityOrNull($sessionId);
+        if (null === $entity) {
+            return null;
+        }
+        $keys = array_fill_keys($historyKeys, true);
+        $root = array_key_first($keys);
+        $baseline = $entity->reasoningBaseline;
+        $valid = ($baseline['model'] ?? null) === $model && \is_string($baseline['effort'] ?? null);
+        if (isset($baseline['root']) && $baseline['root'] !== $root) {
+            $valid = false;
+        }
+        foreach ($baseline['transitions'] ?? [] as $transition) {
+            if (!isset($keys[$transition['message_key']])) {
+                $valid = false;
+            }
+        }
+        if (!$valid) {
+            $entity->reasoningBaseline = ['model' => $model, 'effort' => $effort, 'last_emitted' => $effort, 'root' => $root, 'transitions' => []];
+            $this->entityManager->flush();
+
+            return null;
+        }
+        // Existing durable epochs need no prefix rewrite merely because this process resumed.
+        if (!\array_key_exists('root', $baseline)) {
+            $baseline['root'] = $root;
+            $entity->reasoningBaseline = $baseline;
+            $this->entityManager->flush();
+        }
+
+        return ['baseline' => $baseline['effort'], 'update' => $effort === ($baseline['last_emitted'] ?? $baseline['effort']) ? null : $effort];
+    }
+
+    public function rememberReasoningTransition(string $sessionId, string $model, string $messageKey, string $effort): void
+    {
+        $entity = $this->fetchEntityOrNull($sessionId);
+        if (null === $entity || ($entity->reasoningBaseline['model'] ?? null) !== $model) {
+            throw new \LogicException('Reasoning transition has no matching chat baseline.');
+        }
+        $baseline = $entity->reasoningBaseline;
+        $transitions = array_values(array_filter($baseline['transitions'] ?? [], static fn (array $entry): bool => $entry['message_key'] !== $messageKey));
+        $transitions[] = ['message_key' => $messageKey, 'effort' => $effort];
+        $baseline['transitions'] = $transitions;
+        $baseline['last_emitted'] = $effort;
+        $entity->reasoningBaseline = $baseline;
+        $this->entityManager->flush();
+    }
+
+    /** @return list<array{message_key: string, effort: string}> */
+    public function listReasoningTransitions(string $sessionId, string $model): array
+    {
+        $entity = $this->fetchEntityOrNull($sessionId);
+
+        return ($entity?->reasoningBaseline['model'] ?? null) === $model ? ($entity->reasoningBaseline['transitions'] ?? []) : [];
     }
 
     /**

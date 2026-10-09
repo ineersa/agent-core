@@ -77,7 +77,7 @@ or provider compatibility rules. Unsupported levels are rejected or coerced per 
 
 `ai.default_reasoning` supplies the session default; TUI `/model` flows may persist sparse overrides.
 
-ChatGPT sends the selected effort directly with each stateless request. It does not freeze a reasoning baseline, emit `configuration_update`, or manage response-chain continuation.
+ChatGPT models with `supports_reasoning_configuration_updates: true` at both provider and model level retain their initial `reasoning.effort` and send ordered native `configuration_update` items before durable user/tool anchors. Normal resume retains that baseline. Rewritten history claims a new epoch; explicit summary and fork overrides use their own effort without parent controls. Other models send the selected effort directly. This is HTTP history shaping, not response-chain continuation. Live subscription-endpoint acceptance remains unverified.
 
 `gpt-6.1-sol` supports `low`, `medium`, `high`, `xhigh`, and `max` reasoning
 efforts. Selecting `off` or `minimal` sends no effort value; neither disables
