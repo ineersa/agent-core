@@ -58,7 +58,9 @@ use Symfony\Component\Lock\Store\FlockStore;
 
 final class SessionHistoryProviderTest extends PerMethodIsolatedKernelTestCase
 {
-    public function testColdCanonicalSessionReplayPreservesNativeItemsAndCacheIdentity(): void
+    /** @param list<array<string, mixed>> $expected */
+    #[\PHPUnit\Framework\Attributes\DataProvider('nativeOutputProvider')]
+    public function testColdCanonicalSessionReplayPreservesNativeItemsAndCacheIdentity(array $expected, bool $terminalMessages): void
     {
         $container = self::getContainer();
         $em = $container->get('doctrine.orm.default_entity_manager');
@@ -70,10 +72,10 @@ final class SessionHistoryProviderTest extends PerMethodIsolatedKernelTestCase
         $runId = (string) $entity->id;
         $key = $entity->providerCacheKey;
         $bodies = [];
-        $http = new MockHttpClient(static function (string $method, string $url, array $options) use (&$bodies): MockResponse {
+        $http = new MockHttpClient(static function (string $method, string $url, array $options) use (&$bodies, $expected, $terminalMessages): MockResponse {
             $bodies[] = json_decode($options['body'], true, flags: \JSON_THROW_ON_ERROR);
 
-            return ChatGPTNativeReplayFixture::response(1 === \count($bodies));
+            return ChatGPTNativeReplayFixture::response(1 === \count($bodies), $expected, $terminalMessages);
         });
         $store = $container->get(EventStoreInterface::class);
         $user = new AgentMessage('user', [['type' => 'text', 'text' => 'Read both fixtures']]);
@@ -84,10 +86,13 @@ final class SessionHistoryProviderTest extends PerMethodIsolatedKernelTestCase
         PreparedEventStoreSeeder::append($store, RunEvent::forAppend($runId, 1, 'turn_advanced', ['turn_no' => 1, 'step_id' => 'read']));
         PreparedEventStoreSeeder::append($store, RunEvent::forAppend($runId, 1, 'llm_step_completed', ['step_id' => 'read', 'model' => 'openai-codex/gpt-5.5', 'assistant_message' => (new AgentMessageNormalizer())->assistantMessagePayload($result->assistantMessage)]));
         $codec = new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer());
-        foreach (['call_one', 'call_two'] as $index => $id) {
-            PreparedEventStoreSeeder::append($store, RunEvent::forAppend($runId, 1, 'tool_execution_end', $codec->toEventPayload(new ToolCallResult(runId: $runId, turnNo: 1, stepId: 'read', attempt: 1, idempotencyKey: $id, toolCallId: $id.'|fc_'.$id, orderIndex: $index, result: ['tool_name' => 'read_file', 'content' => [['type' => 'text', 'text' => 'contents']]]))));
+        $calls = array_values(array_filter($expected, static fn (array $item): bool => 'function_call' === $item['type']));
+        foreach ($calls as $index => $call) {
+            PreparedEventStoreSeeder::append($store, RunEvent::forAppend($runId, 1, 'tool_execution_end', $codec->toEventPayload(new ToolCallResult(runId: $runId, turnNo: 1, stepId: 'read', attempt: 1, idempotencyKey: $call['call_id'], toolCallId: $call['call_id'].'|'.$call['id'], orderIndex: $index, result: ['tool_name' => 'read_file', 'content' => [['type' => 'text', 'text' => 'contents']]]))));
         }
-        PreparedEventStoreSeeder::append($store, RunEvent::forAppend($runId, 1, 'tool_batch_committed', ['count' => 2]));
+        if ([] !== $calls) {
+            PreparedEventStoreSeeder::append($store, RunEvent::forAppend($runId, 1, 'tool_batch_committed', ['count' => \count($calls)]));
+        }
         $this->assertFileExists(getcwd().'/.hatfield/sessions/'.$runId.'/events.jsonl');
         // Discard both the event-store instance and ORM identity map. Nothing from the streamed result feeds the next request.
         $em->clear();
@@ -98,13 +103,33 @@ final class SessionHistoryProviderTest extends PerMethodIsolatedKernelTestCase
         $replay = new SessionRunStateReplayService($cold, new NullLogger(), $container->get(RunStateReducer::class), new ReplayEventPreparer(), new HistoryReplayFilter(new HistoryProjector()));
         $state = $replay->rebuildIfStale(RunState::queued($runId), $runId)->rebuiltState;
         $this->assertNotNull($state);
-        $this->assertCount(4, $state->messages);
+        $this->assertCount(2 + \count($calls), $state->messages);
         $next = $this->adapter($http, $sessions)->invoke(new ModelInvocationRequest('', new ModelInvocationInput(runId: $runId, messages: $state->messages)));
         $this->assertNull($next->error);
-        $this->assertSame(ChatGPTNativeReplayFixture::items(), ChatGPTNativeReplayFixture::replayedItems($bodies[1]));
+        $this->assertSame($expected, ChatGPTNativeReplayFixture::replayedItems($bodies[1]));
         $this->assertSame($key, $bodies[0]['prompt_cache_key']);
         $this->assertSame($key, $bodies[1]['prompt_cache_key']);
-        $this->assertSame(['call_one', 'call_two'], array_column(array_values(array_filter($bodies[1]['input'], static fn (array $item): bool => 'function_call_output' === ($item['type'] ?? null))), 'call_id'));
+        $this->assertSame(array_column($calls, 'call_id'), array_column(array_values(array_filter($bodies[1]['input'], static fn (array $item): bool => 'function_call_output' === ($item['type'] ?? null))), 'call_id'));
+        $summaries = [];
+        foreach ($expected as $item) {
+            foreach ($item['summary'] ?? [] as $summary) {
+                $summaries[] = $summary['text'];
+            }
+        }
+        if ([] !== $summaries) {
+            $this->assertSame(implode('', $summaries), $state->messages[1]->details['thinking']);
+        }
+    }
+
+    public static function nativeOutputProvider(): array
+    {
+        $items = ChatGPTNativeReplayFixture::items();
+        $reasoning = $items[0];
+        $reasoning['summary'] = [['type' => 'summary_text', 'text' => 'A'], ['type' => 'summary_text', 'text' => 'B']];
+        $second = $items[2];
+        $second['summary'] = [['type' => 'summary_text', 'text' => 'C'], ['type' => 'summary_text', 'text' => 'D']];
+
+        return ['empty summaries' => [$items, false], 'R M announced' => [[$reasoning, $items[4]], false], 'R M terminal message' => [[$reasoning, $items[4]], true], 'R C R M announced' => [[$reasoning, $items[1], $second, $items[5]], false], 'R C R M terminal message' => [[$reasoning, $items[1], $second, $items[5]], true]];
     }
 
     private function adapter(MockHttpClient $http, HatfieldSessionStore $sessions): LlmPlatformAdapter

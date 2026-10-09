@@ -14,6 +14,9 @@ services:
     arguments:
       $appName: 'Hatfield'
 
+  Symfony\Component\Clock\NativeClock: ~
+  Symfony\Component\Clock\ClockInterface: '@Symfony\Component\Clock\NativeClock'
+
   Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\IdTokenVerifier: ~
   Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\OAuthService: ~
   Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\AuthCommand: ~

@@ -8,7 +8,9 @@ use Symfony\AI\Platform\Bridge\OpenAIChatGPT\MessageItem;
 use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Result\Stream\Delta\MessageComplete;
 use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Result\Stream\Delta\MessageStart;
 use Symfony\AI\Platform\Message\AssistantMessage;
+use Symfony\AI\Platform\Message\Content\ContentInterface;
 use Symfony\AI\Platform\Message\Content\Text;
+use Symfony\AI\Platform\Message\Content\Thinking;
 use Symfony\AI\Platform\Result\Stream\AssistantMessageStreamListener;
 use Symfony\AI\Platform\Result\Stream\Delta\DeltaInterface;
 use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
@@ -91,10 +93,34 @@ final readonly class AssistantStreamMessageBuilder
         }
         // Terminal-only message items can precede reasoning/tools already streamed.
         // Their native output indexes, not completion arrival time, define replay order.
+        // A reasoning item may span several summary parts. Its final signature closes
+        // one native item, so message indexes address groups, never framework offsets.
+        $groups = [];
+        $thinking = [];
+        foreach ($content as $part) {
+            if ($part instanceof Thinking) {
+                $thinking[] = $part;
+                if (null !== $part->getSignature()) {
+                    $groups[] = $thinking;
+                    $thinking = [];
+                }
+                continue;
+            }
+            if ([] !== $thinking) {
+                $groups[] = $thinking;
+                $thinking = [];
+            }
+            $groups[] = [$part];
+        }
+        if ([] !== $thinking) {
+            $groups[] = $thinking;
+        }
         ksort($indexedMessages);
         foreach ($indexedMessages as $index => $message) {
-            array_splice($content, $index, 0, [$message]);
+            array_splice($groups, $index, 0, [[$message]]);
         }
+        /** @var list<ContentInterface> $content */
+        $content = array_merge([], ...$groups);
 
         return [] === $content ? null : new AssistantMessage(...$content);
     }

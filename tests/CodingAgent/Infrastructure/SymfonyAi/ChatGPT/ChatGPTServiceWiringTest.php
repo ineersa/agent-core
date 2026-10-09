@@ -13,6 +13,39 @@ use Symfony\Component\Console\CommandLoader\CommandLoaderInterface;
 
 final class ChatGPTServiceWiringTest extends PerMethodIsolatedKernelTestCase
 {
+    public function testOAuthAndPendingIdentityVerifierUseTheSameInjectedClock(): void
+    {
+        $container = self::getContainer();
+        $clock = new \Symfony\Component\Clock\MockClock('2100-01-01T00:00:00Z');
+        $container->set(\Symfony\Component\Clock\ClockInterface::class, $clock);
+        $record = \Ineersa\CodingAgent\Tests\Support\ChatGPTAuthFixture::record();
+        $storage = $this->createStub(AuthStorageInterface::class);
+        $storage->method('update')->willReturnCallback(static function (callable $update) use (&$record) {
+            return $record = $update($record);
+        });
+        $container->set(AuthStorageInterface::class, $storage);
+        $requests = [];
+        $http = new \Symfony\Component\HttpClient\MockHttpClient(static function (string $method, string $url) use (&$requests): \Symfony\Component\HttpClient\Response\MockResponse {
+            $requests[] = [$method, $url];
+            if ('POST' === $method) {
+                return new \Symfony\Component\HttpClient\Response\MockResponse(json_encode(['access_token' => 'rotated-synthetic-access', 'refresh_token' => 'rotated-synthetic-refresh', 'token_type' => 'Bearer', 'expires_in' => 3600, 'scope' => \Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\OAuthConfig::SCOPE], \JSON_THROW_ON_ERROR));
+            }
+
+            return new \Symfony\Component\HttpClient\Response\MockResponse('{}', ['http_code' => 503]);
+        });
+        $container->set(\Symfony\Contracts\HttpClient\HttpClientInterface::class, $http);
+        $updated = $container->get(\Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\OAuthService::class)->refreshCredentials();
+        $this->assertSame($clock->now()->getTimestamp() + 3600, $updated->expires);
+        $token = rtrim(strtr(base64_encode('{"alg":"RS256","kid":"synthetic-key"}'), '+/', '-_'), '=').'.e30.invalid';
+        try {
+            $container->get(\Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\IdTokenVerifier::class)->verifyReceived($token, $record->clientId, $record->nonce, $clock->now()->getTimestamp());
+            $this->fail('An unavailable signing key must still prevent identity verification.');
+        } catch (\Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\AuthException $error) {
+            $this->assertSame('ChatGPT ID-token signature verification failed.', $error->getMessage());
+        }
+        $this->assertSame([['POST', 'https://auth.openai.com/api/accounts/oauth/token'], ['GET', 'https://auth.openai.com/.well-known/jwks.json']], $requests);
+    }
+
     public function testFreshKernelRegistersAuthCommandAndHostStorageBeforeLogin(): void
     {
         $container = self::getContainer();

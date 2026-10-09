@@ -58,7 +58,7 @@ final class ChatGPTReasoningTransitionRequestHookTest extends IsolatedKernelTest
     {
         parent::setUp();
         $this->directory = TestDirectoryIsolation::createProjectTempDir('chatgpt-effort');
-        $ai = AiConfig::optionalFromArray(['ai' => ['default_model' => 'openai-codex/gpt-6-sol', 'default_reasoning' => 'low', 'providers' => ['openai-codex' => ['type' => 'chatgpt', 'enabled' => true, 'compatibility' => ['thinking_format' => 'chatgpt', 'supports_reasoning_configuration_updates' => true], 'models' => ['gpt-6-sol' => ['reasoning' => true, 'tool_calling' => true, 'thinking_level_map' => ['low' => 'low', 'high' => 'high'], 'compatibility' => ['supports_reasoning_configuration_updates' => true]], 'ordinary' => ['reasoning' => true, 'thinking_level_map' => ['low' => 'low', 'high' => 'high']]]]]]]);
+        $ai = AiConfig::optionalFromArray(['ai' => ['default_model' => 'openai-codex/gpt-6-sol', 'default_reasoning' => 'low', 'providers' => ['openai-codex' => ['type' => 'chatgpt', 'enabled' => true, 'compatibility' => ['thinking_format' => 'chatgpt', 'supports_reasoning_configuration_updates' => true], 'models' => ['gpt-6-sol' => ['reasoning' => true, 'tool_calling' => true, 'thinking_level_map' => ['low' => 'low', 'high' => 'high', 'max' => 'max'], 'compatibility' => ['supports_reasoning_configuration_updates' => true]], 'ordinary' => ['reasoning' => true, 'thinking_level_map' => ['low' => 'low', 'high' => 'high']]]]]]]);
         $this->assertNotNull($ai);
         $this->config = new AppConfig(new TuiConfig('default'), new LoggingConfig(), ai: $ai, catalog: new HatfieldModelCatalog($ai), cwd: $this->directory);
         $em = static::getContainer()->get('doctrine.orm.default_entity_manager');
@@ -128,6 +128,52 @@ final class ChatGPTReasoningTransitionRequestHookTest extends IsolatedKernelTest
         $this->assertSame([], self::controls($this->bodies[9]));
     }
 
+    public function testMaxThenHighSurvivesColdCanonicalReplayWithDistinctAnchors(): void
+    {
+        $store = $this->startCanonicalReasoningEpoch('max');
+        \Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder::append($store, \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($this->sessionId, 3, 'turn_advanced', ['turn_no' => 3, 'step_id' => 'third']));
+        \Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder::append($store, \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($this->sessionId, 3, 'agent_command_applied', ['kind' => 'follow_up', 'idempotency_key' => 'third', 'message' => self::user('third')->toArray()]));
+        \Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder::append($store, \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($this->sessionId, 3, 'history_position_set', ['position_turn_no' => 3]));
+        $this->invoke($this->coldReplay($store)->messages, 'high');
+        $this->assertSame('low', $this->bodies[2]['reasoning']['effort']);
+        $this->assertSame(['max', 'high'], self::controls($this->bodies[2]));
+        $this->assertSame('second', $this->bodies[2]['input'][2]['content']);
+        $this->assertSame('third', $this->bodies[2]['input'][4]['content']);
+        $this->assertSame($this->bodies[0]['prompt_cache_key'], $this->bodies[2]['prompt_cache_key']);
+        $this->invoke($this->coldReplay($store)->messages, 'high');
+        $this->assertSame($this->bodies[2], $this->bodies[3]);
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('invalidControlProvider')]
+    public function testInvalidControlsNeverMutateDurableLedger(bool $historicalInvalid): void
+    {
+        $model = 'openai-codex/gpt-6-sol';
+        $this->sessions->claimReasoningBaseline($this->sessionId, $model, 'low', ['a', 'b']);
+        if ($historicalInvalid) {
+            $this->sessions->rememberReasoningTransition($this->sessionId, $model, 'a', 'unsupported');
+        }
+        $em = static::getContainer()->get('doctrine.orm.default_entity_manager');
+        $before = $em->find(HatfieldSession::class, (int) $this->sessionId)->reasoningBaseline;
+        $first = new \Symfony\AI\Platform\Message\UserMessage(new \Symfony\AI\Platform\Message\Content\Text('first'));
+        $first->getMetadata()->add(\Ineersa\CodingAgent\Agent\Execution\ChatGPTReasoningTransitionMetadata::MESSAGE_KEY, 'a');
+        $second = new \Symfony\AI\Platform\Message\UserMessage(new \Symfony\AI\Platform\Message\Content\Text('second'));
+        $second->getMetadata()->add(\Ineersa\CodingAgent\Agent\Execution\ChatGPTReasoningTransitionMetadata::MESSAGE_KEY, 'b');
+        try {
+            (new ChatGPTReasoningTransitionRequestHook($this->sessions))->beforeProviderRequest($model, ['message_bag' => new \Symfony\AI\Platform\Message\MessageBag($first, $second)], [\Ineersa\CodingAgent\Agent\Execution\ChatGPTReasoningTransitionMetadata::ENABLED => true, \Ineersa\CodingAgent\Agent\Execution\ChatGPTReasoningTransitionMetadata::UPDATE => $historicalInvalid ? 'high' : 'unsupported', 'hatfield_run_id' => $this->sessionId, 'hatfield_model_ref' => $model]);
+            $this->fail('An invalid control must be rejected before constructing or persisting the request.');
+        } catch (\Symfony\AI\Platform\Exception\InvalidArgumentException $error) {
+            $this->assertSame('ChatGPT reasoning configuration has an invalid effort.', $error->getMessage());
+        }
+        $em->clear();
+        $after = $em->find(HatfieldSession::class, (int) $this->sessionId)->reasoningBaseline;
+        $this->assertSame($before, $after);
+    }
+
+    public static function invalidControlProvider(): array
+    {
+        return ['invalid candidate' => [false], 'invalid history with valid candidate' => [true]];
+    }
+
     public function testAcceptedCompactionStartsNewEpochButFailedAndRejectedResultsKeepControls(): void
     {
         $store = $this->startCanonicalReasoningEpoch();
@@ -191,7 +237,7 @@ final class ChatGPTReasoningTransitionRequestHookTest extends IsolatedKernelTest
         $this->assertSame($this->bodies[2], $this->bodies[3]);
     }
 
-    private function startCanonicalReasoningEpoch(): \Ineersa\CodingAgent\Session\SessionRunEventStore
+    private function startCanonicalReasoningEpoch(string $effort = 'high'): \Ineersa\CodingAgent\Session\SessionRunEventStore
     {
         $store = new \Ineersa\CodingAgent\Session\SessionRunEventStore($this->sessions, new \Ineersa\AgentCore\Schema\EventPayloadNormalizer(), new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()), new NullLogger(), new \Ineersa\CodingAgent\Session\FileRunSequenceAllocator());
         $append = fn (int $turn, string $type, array $payload) => \Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder::append($store, \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($this->sessionId, $turn, $type, $payload));
@@ -202,9 +248,9 @@ final class ChatGPTReasoningTransitionRequestHookTest extends IsolatedKernelTest
         $append(2, 'turn_advanced', ['turn_no' => 2, 'step_id' => 'second']);
         $append(2, 'agent_command_applied', ['kind' => 'follow_up', 'idempotency_key' => 'follow-up', 'message' => self::user('second')->toArray()]);
         $append(2, 'history_position_set', ['position_turn_no' => 2]);
-        $this->invoke($this->coldReplay($store)->messages, 'high');
+        $this->invoke($this->coldReplay($store)->messages, $effort);
         $this->assertSame('low', $this->bodies[1]['reasoning']['effort']);
-        $this->assertSame(['high'], self::controls($this->bodies[1]));
+        $this->assertSame([$effort], self::controls($this->bodies[1]));
 
         return $store;
     }

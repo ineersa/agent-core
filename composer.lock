@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "a3a9f0ba46118eb047333158f71676ab",
+    "content-hash": "e77650e83a1bfbb97cc9b23dea69e72a",
     "packages": [
         {
             "name": "centamiv/vektor",
@@ -1755,7 +1755,7 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/ineersa/symfony-ai-openai-chatgpt-platform.git",
-                "reference": "f017c91e19a8580b586dfb37aeb053a277bcadb3"
+                "reference": "66acf01ace62bac98dd755ef7778e8c9b677e4c0"
             },
             "require": {
                 "ext-openssl": "*",
@@ -1796,7 +1796,7 @@
                 "MIT"
             ],
             "description": "Single-account Sign in with ChatGPT OAuth and HTTP Responses bridge for Symfony AI.",
-            "time": "2026-10-09T20:41:00+00:00"
+            "time": "2026-10-09T22:38:27+00:00"
         },
         {
             "name": "league/commonmark",

@@ -18,14 +18,21 @@ final class ChatGPTNativeReplayFixture
         return [$reasoning('rs_one'), $call('call_one'), $reasoning('rs_two'), $call('call_two'), $message('msg_commentary', 'commentary', 'Checking.'), $message('msg_final', 'final_answer', 'Done.')];
     }
 
-    public static function response(bool $native = true): MockResponse
+    /** @param list<array<string, mixed>>|null $output */
+    public static function response(bool $native = true, ?array $output = null, bool $terminalMessages = false): MockResponse
     {
         $body = '';
-        $items = $native ? self::items() : [];
+        $items = $native ? ($output ?? self::items()) : [];
         foreach ($items as $index => $item) {
-            foreach (['response.output_item.added', 'response.output_item.done'] as $type) {
-                $body .= 'data: '.json_encode(['type' => $type, 'output_index' => $index, 'item' => $item], \JSON_THROW_ON_ERROR)."\n\n";
+            if ($terminalMessages && 'message' === $item['type']) {
+                continue;
             }
+            $body .= 'data: '.json_encode(['type' => 'response.output_item.added', 'output_index' => $index, 'item' => $item], \JSON_THROW_ON_ERROR)."\n\n";
+            foreach ($item['summary'] ?? [] as $summaryIndex => $summary) {
+                $body .= 'data: '.json_encode(['type' => 'response.reasoning_summary_text.delta', 'item_id' => $item['id'], 'summary_index' => $summaryIndex, 'delta' => $summary['text']], \JSON_THROW_ON_ERROR)."\n\n";
+                $body .= 'data: '.json_encode(['type' => 'response.reasoning_summary_text.done', 'item_id' => $item['id'], 'summary_index' => $summaryIndex, 'text' => $summary['text']], \JSON_THROW_ON_ERROR)."\n\n";
+            }
+            $body .= 'data: '.json_encode(['type' => 'response.output_item.done', 'output_index' => $index, 'item' => $item], \JSON_THROW_ON_ERROR)."\n\n";
         }
         if (!$native) {
             $body .= "data: {\"type\":\"response.output_text.delta\",\"delta\":\"done\"}\n\n";
