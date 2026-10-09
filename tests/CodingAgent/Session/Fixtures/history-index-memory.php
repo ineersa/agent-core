@@ -20,6 +20,7 @@ $_ENV['HATFIELD_CWD'] = $directory;
 $_ENV['APP_SECRET'] = 'test-secret';
 putenv('HATFIELD_CWD='.$directory);
 putenv('APP_SECRET=test-secret');
+chdir($directory);
 $kernel = new Kernel('test', false);
 $kernel->boot();
 try {

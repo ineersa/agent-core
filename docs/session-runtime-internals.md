@@ -26,7 +26,7 @@ The TUI validates and mounts the transfer before acknowledging its exact cut.
 Acknowledgement releases the spool; bounded canonical suffix delivery ends with
 `session.ready`. Slow screens do not hold the owner lock or accumulate event tails.
 
-Runtime projects events into the TUI transcript. Keep transient stream deltas separate from canonical replay. During active polling, observers pass their last successfully applied canonical sequence into the runtime client; in-process delivery reverse-reads only the unseen durable suffix, while transient deltas remain unfiltered and are delivered first. The observer advances its cursor only after successful forwarding/application, so a failed poll retries the same canonical suffix rather than losing it.
+Runtime projects events into the TUI transcript. Keep transient stream deltas separate from canonical replay. During active polling, observers pass their last successfully applied canonical sequence into the runtime client; in-process delivery reads the unseen durable suffix through indexed forward ranges, while transient deltas remain unfiltered and are delivered first. The observer advances its cursor only after successful forwarding/application, so a failed poll retries the same canonical suffix rather than losing it.
 
 ## Transition validity
 
