@@ -120,6 +120,19 @@ final class PharSmokeTest extends TestCase
         $this->assertStringContainsString('Usage:', $output);
     }
 
+    public function testPharChatGPTAuthHelp(): void
+    {
+        [$cmd, $pharPath] = $this->resolveArtifactCommand();
+        if (!str_ends_with($pharPath, '.phar')) {
+            $this->markTestSkipped('Requires the built PHAR.');
+        }
+
+        $output = $this->shellExecIsolated('APP_ENV=prod '.$this->shellCommand($cmd, 'auth:chatgpt --help 2>&1'));
+        $this->assertNotNull($output);
+        $this->assertStringContainsString('auth:chatgpt', $output);
+        $this->assertStringContainsString('login, refresh or disconnect', $output);
+    }
+
     /**
      * Verify the PHAR boots correctly from the repo root where a source-tree
      * vendor/ directory exists alongside the PHAR's bundled vendor.

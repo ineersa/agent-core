@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "c9cd46872449fdfdee9bebb3c8209270",
+    "content-hash": "522f3ade72dd1f2370795366e92a4e5d",
     "packages": [
         {
             "name": "centamiv/vektor",
@@ -1752,10 +1752,16 @@
         {
             "name": "ineersa/symfony-ai-openai-chatgpt-platform",
             "version": "dev-task/chatgpt-subscription-http",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/ineersa/symfony-ai-openai-chatgpt-platform.git",
+                "reference": "7699eda0152f074683856838d5fda2a2724a5c9e"
+            },
             "dist": {
-                "type": "path",
-                "url": "/home/ineersa/projects/symfony-ai-openai-chatgpt-platform-worktrees/chatgpt-subscription-http",
-                "reference": "5c2a555fc4b4494b630661e8c78ffef4b991f0ee"
+                "type": "zip",
+                "url": "https://api.github.com/repos/ineersa/symfony-ai-openai-chatgpt-platform/zipball/7699eda0152f074683856838d5fda2a2724a5c9e",
+                "reference": "7699eda0152f074683856838d5fda2a2724a5c9e",
+                "shasum": ""
             },
             "require": {
                 "ext-openssl": "*",
@@ -1794,10 +1800,11 @@
                 "MIT"
             ],
             "description": "Single-account Sign in with ChatGPT OAuth and HTTP Responses bridge for Symfony AI.",
-            "transport-options": {
-                "symlink": false,
-                "relative": false
-            }
+            "support": {
+                "source": "https://github.com/ineersa/symfony-ai-openai-chatgpt-platform/tree/task/chatgpt-subscription-http",
+                "issues": "https://github.com/ineersa/symfony-ai-openai-chatgpt-platform/issues"
+            },
+            "time": "2026-10-09T19:08:32+00:00"
         },
         {
             "name": "league/commonmark",

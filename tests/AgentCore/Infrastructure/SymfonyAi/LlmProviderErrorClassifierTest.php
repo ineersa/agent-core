@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Exception\SubscriptionLimitException;
+use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Exception\SubscriptionPolicyException;
 use Symfony\AI\Platform\Exception\AuthenticationException;
 use Symfony\AI\Platform\Exception\BadRequestException;
 use Symfony\AI\Platform\Exception\RateLimitExceededException;
@@ -38,6 +39,7 @@ final class LlmProviderErrorClassifierTest extends TestCase
     {
         return [
             [SubscriptionLimitException::class, LlmProviderErrorClassifier::CATEGORY_RATE_LIMIT],
+            [SubscriptionPolicyException::class, LlmProviderErrorClassifier::CATEGORY_BAD_REQUEST],
             [\TypeError::class, LlmProviderErrorClassifier::CATEGORY_UNKNOWN],
             [\LogicException::class, LlmProviderErrorClassifier::CATEGORY_UNKNOWN],
         ];
@@ -113,6 +115,23 @@ final class LlmProviderErrorClassifierTest extends TestCase
         ]);
         $this->assertTrue($auth['retryable']);
         $this->assertSame(LlmProviderErrorClassifier::CATEGORY_AUTH, $auth['error_category']);
+    }
+
+    #[DataProvider('policyStatusProvider')]
+    public function testSubscriptionPolicyOverridesRetryableHttpStatus(int $status): void
+    {
+        $result = $this->classifier->classify([
+            'type' => SubscriptionPolicyException::class,
+            'http_status_code' => $status,
+        ]);
+
+        $this->assertFalse($result['retryable']);
+        $this->assertSame(LlmProviderErrorClassifier::CATEGORY_BAD_REQUEST, $result['error_category']);
+    }
+
+    public static function policyStatusProvider(): array
+    {
+        return [[400], [401], [403], [429], [503]];
     }
 
     public function testTimeoutAndTransportExceptionsAreRetryable(): void

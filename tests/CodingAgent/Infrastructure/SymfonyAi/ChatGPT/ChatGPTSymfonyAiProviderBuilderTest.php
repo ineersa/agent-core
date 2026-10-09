@@ -19,9 +19,12 @@ use Ineersa\CodingAgent\Config\Ai\AiModelDefinition;
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ChatGPT\ChatGPTSymfonyAiProviderBuilder;
 use Ineersa\CodingAgent\Tests\Support\ChatGPTAuthFixture;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\AuthStorageInterface;
+use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Exception\SubscriptionLimitException;
+use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Exception\SubscriptionPolicyException;
 use Symfony\AI\Platform\Platform;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
@@ -110,18 +113,38 @@ final class ChatGPTSymfonyAiProviderBuilderTest extends TestCase
         $this->assertSame([], $result->assistantMessage?->getToolCalls() ?? []);
     }
 
-    public function testSubscriptionLimitIsTerminalWithoutReplay(): void
+    #[DataProvider('subscriptionFailureProvider')]
+    public function testSubscriptionFailureIsTerminalWithoutReplay(string $code, string $exceptionClass, bool $stream): void
     {
         $calls = 0;
-        $client = new MockHttpClient(static function () use (&$calls): MockResponse {
+        $client = new MockHttpClient(static function () use (&$calls, $code, $stream): MockResponse {
             ++$calls;
 
-            return new MockResponse('{"error":{"code":"insufficient_quota","message":"sensitive-body"}}', ['http_code' => 429]);
+            $error = ['code' => $code, 'message' => 'sensitive-body'];
+
+            return $stream
+                ? self::response([['type' => 'response.failed', 'response' => ['status' => 'failed', 'error' => $error]]])
+                : new MockResponse(json_encode(['error' => $error], \JSON_THROW_ON_ERROR), ['http_code' => 403]);
         });
-        $result = $this->adapter($client)->invoke(new ModelInvocationRequest('openai-codex/gpt-6.1-sol', new ModelInvocationInput(messages: [new AgentMessage('user', [['type' => 'text', 'text' => 'hello']])])));
+        $result = $this->adapter($client, maxRetries: 2)->invoke(new ModelInvocationRequest('openai-codex/gpt-6.1-sol', new ModelInvocationInput(messages: [new AgentMessage('user', [['type' => 'text', 'text' => 'hello']])])));
         $this->assertSame(1, $calls);
+        $this->assertNotNull($result->error);
+        $this->assertSame($exceptionClass, $result->error['type']);
         $this->assertFalse($result->error['retryable']);
         $this->assertStringNotContainsString('sensitive-body', $result->error['message']);
+    }
+
+    public static function subscriptionFailureProvider(): array
+    {
+        $cases = [];
+        foreach (['insufficient_quota', 'subscription_sharing_usage_limit_exceeded', 'subscription_sharing_user_not_eligible', 'subscription_sharing_unsupported_capability', 'subscription_sharing_route_not_supported', 'chatpass_v2_scope_not_authorized', 'chatpass_v2_invalid_authorization_context', 'subscription_sharing_invalid_user'] as $code) {
+            $exceptionClass = \in_array($code, ['insufficient_quota', 'subscription_sharing_usage_limit_exceeded'], true) ? SubscriptionLimitException::class : SubscriptionPolicyException::class;
+            foreach ([false, true] as $stream) {
+                $cases[$code.($stream ? '-sse' : '-http')] = [$code, $exceptionClass, $stream];
+            }
+        }
+
+        return $cases;
     }
 
     public function testCancelBeforeFirstDeltaAbortsWithoutPersistingTools(): void
@@ -171,7 +194,7 @@ final class ChatGPTSymfonyAiProviderBuilderTest extends TestCase
         return new AiProviderConfig('openai-codex', type: 'chatgpt', models: ['gpt-6.1-sol' => new AiModelDefinition('gpt-6.1-sol', toolCalling: true, reasoning: true)]);
     }
 
-    private function adapter(MockHttpClient $client): LlmPlatformAdapter
+    private function adapter(MockHttpClient $client, int $maxRetries = 0): LlmPlatformAdapter
     {
         $record = ChatGPTAuthFixture::record();
         $storage = $this->createStub(AuthStorageInterface::class);
@@ -181,7 +204,7 @@ final class ChatGPTSymfonyAiProviderBuilderTest extends TestCase
         return new LlmPlatformAdapter(new NullRunOperationalStatusReader(), new AgentMessageConverter(), new DynamicToolDescriptionProcessor(), new Platform((new \Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderFactory(
             new \Ineersa\CodingAgent\Config\AppConfig(new \Ineersa\CodingAgent\Config\TuiConfig('default'), new \Ineersa\CodingAgent\Config\LoggingConfig(), catalog: new \Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog(new \Ineersa\CodingAgent\Config\Ai\AiConfig(providers: ['openai-codex' => $this->config()]))),
             $this->createStub(EventDispatcherInterface::class), [$builder], httpClient: $client,
-        ))->createProviders()), [], [], null, null, new NullLogger(), AttributeSerializerValidatorTestFactory::denormalizer(), requestRetryPolicy: new LlmRequestRetryPolicy(maxRetries: 0, baseDelayMs: 0));
+        ))->createProviders()), [], [], null, null, new NullLogger(), AttributeSerializerValidatorTestFactory::denormalizer(), requestRetryPolicy: new LlmRequestRetryPolicy(maxRetries: $maxRetries, baseDelayMs: 0));
     }
 
     /** @param list<array<string, mixed>> $events */

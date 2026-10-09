@@ -12,16 +12,16 @@ The package reuses Symfony AI OpenResponses 0.14 for serialization, SSE conversi
 
 There are no WebSockets, cached continuation, reasoning baselines, `configuration_update`, SSE fallback, or inline authentication replay. ChatGPT generation uses a 300-second idle limit and no total deadline. Other providers retain their HTTP defaults. Completed tool calls remain dispatchable; interrupted argument streams do not become synthetic complete tools. `/usage` shows the ChatGPT usage-management link and session accounting, not a numerical subscription quota. z.ai quota presentation is unchanged. Permanent subscription limits are not retried.
 
-## Local development dependency
+## Pinned development dependency
 
-This worktree uses an unpublished Composer path dependency:
+This worktree uses the public GitHub Composer VCS repository:
 
 - Package: `ineersa/symfony-ai-openai-chatgpt-platform`.
-- Constraint: `dev-task/chatgpt-subscription-http#5c2a555fc4b4494b630661e8c78ffef4b991f0ee`.
-- Source: `/home/ineersa/projects/symfony-ai-openai-chatgpt-platform-worktrees/chatgpt-subscription-http`.
-- Composer mirrors the package into `vendor`; after package changes, update the dependency and reinstall it.
+- Constraint: `dev-task/chatgpt-subscription-http#7699eda0152f074683856838d5fda2a2724a5c9e`.
+- Source: [ChatGPT platform repository](https://github.com/ineersa/symfony-ai-openai-chatgpt-platform).
+- Package review: [pull request 1](https://github.com/ineersa/symfony-ai-openai-chatgpt-platform/pull/1).
 
-This dependency is local, not a portable released installation. Publishing the package and replacing the absolute path repository remain separate work. Do not push or release it as part of manual validation.
+Composer installs the pinned public archive without a local package checkout. The branch is published, but the package has no stable release tag yet.
 
 ## Manual validation
 
@@ -51,6 +51,8 @@ The tracked project override selects `type: chatgpt` and the new reasoning forma
 ## Proof boundaries
 
 Automated host proof covers fresh provider construction without a grant, real host/package tool and encrypted-reasoning replay through mocked HTTP, forbidden fields, interrupted unfinished tools, permanent usage errors, durable child cache identity, HTTP cancellation, Grok credential preservation, and virtual `/usage` routing/rendering. It does not establish real account eligibility, model access, OAuth server acceptance, or a successful live model turn.
+
+HTTP and terminal SSE subscription-policy and quota errors are nonretryable even with an available retry budget. Generic authentication and bad-request retry behavior is unchanged. An invalid subscriber context does not trigger an automatic OAuth loop; terminal refresh-token failure is handled by the package under its storage lock.
 
 The task remains in progress until manual account validation, independent review, and the workflow's full Castor gate complete. No real credentials, production workers, or session archives are test fixtures.
 
