@@ -128,6 +128,100 @@ final class ChatGPTReasoningTransitionRequestHookTest extends IsolatedKernelTest
         $this->assertSame([], self::controls($this->bodies[9]));
     }
 
+    public function testAcceptedCompactionStartsNewEpochButFailedAndRejectedResultsKeepControls(): void
+    {
+        $store = $this->startCanonicalReasoningEpoch();
+        $messages = $this->coldReplay($store)->messages;
+        $baseline = static::getContainer()->get('doctrine.orm.default_entity_manager')->find(HatfieldSession::class, (int) $this->sessionId)->reasoningBaseline;
+        $state = new \Ineersa\AgentCore\Domain\Run\RunState(runId: $this->sessionId, status: \Ineersa\AgentCore\Domain\Run\RunStatus::Compacting, turnNo: 2, lastSeq: $store->latestSequenceFor($this->sessionId), messages: $messages, activeStepId: 'compact', currentOperation: new \Ineersa\AgentCore\Domain\Run\CurrentOperationDTO(2, 'compact', 1, 'compact-key'));
+        $handler = static::getContainer()->get(\Ineersa\CodingAgent\Application\Pipeline\CompactionStepResultHandler::class);
+        $resultMessage = fn (?string $summary, int $attempt = 1, string $step = 'compact'): \Ineersa\AgentCore\Domain\Message\CompactionStepResult => new \Ineersa\AgentCore\Domain\Message\CompactionStepResult(runId: $this->sessionId, turnNo: 2, stepId: $step, attempt: $attempt, idempotencyKey: $step.'-key', summaryText: $summary, error: null, retainedTailMessages: [], messagesCompacted: 2, messagesRetained: 0, firstRetainedIndex: 2, tokenEstimateBefore: 50000, trigger: 'manual');
+        $rejected = $handler->handle($resultMessage('ignored', 2), $state);
+        $this->assertSame([], $rejected->events);
+        $this->assertNull($rejected->nextState);
+        $failed = $handler->handle($resultMessage(''), $state);
+        $this->assertSame('context_compaction_failed', $failed->events[0]->type);
+        foreach ($failed->events as $event) {
+            \Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder::append($store, $event);
+        }
+        $failedState = $this->coldReplay($store);
+        $this->invoke($failedState->messages, 'high');
+        $this->assertSame('low', $this->bodies[2]['reasoning']['effort']);
+        $this->assertSame(['high'], self::controls($this->bodies[2]));
+        $this->assertSame($baseline, static::getContainer()->get('doctrine.orm.default_entity_manager')->find(HatfieldSession::class, (int) $this->sessionId)->reasoningBaseline);
+        // Start a distinct operation after the failed attempt has been committed.
+        $retry = $failedState->with(['status' => \Ineersa\AgentCore\Domain\Run\RunStatus::Compacting, 'activeStepId' => 'compact-accepted', 'currentOperation' => new \Ineersa\AgentCore\Domain\Run\CurrentOperationDTO(2, 'compact-accepted', 1, 'compact-accepted-key')]);
+        $accepted = $handler->handle($resultMessage('Summary replacing both anchors.', step: 'compact-accepted'), $retry);
+        $this->assertNotNull($accepted->nextState);
+        $this->assertSame('context_compacted', $accepted->events[0]->type);
+        foreach ($accepted->events as $event) {
+            \Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder::append($store, $event);
+        }
+        $compacted = $this->coldReplay($store);
+        $this->assertCount(1, $compacted->messages);
+        $this->invoke($compacted->messages, 'high');
+        $this->assertSame('high', $this->bodies[3]['reasoning']['effort']);
+        $this->assertSame([], self::controls($this->bodies[3]));
+        $this->assertSame($this->bodies[0]['prompt_cache_key'], $this->bodies[3]['prompt_cache_key']);
+    }
+
+    public function testCommittedHistoryTailDiscardRemovesSwitchAnchorWithoutChangingCacheIdentity(): void
+    {
+        $store = $this->startCanonicalReasoningEpoch();
+        $service = new \Ineersa\CodingAgent\Session\History\HistoryTailDiscardService($store, new \Ineersa\CodingAgent\Session\History\HistoryProjector(), new NullLogger());
+        $tip = $this->coldReplay($store);
+        $this->assertNull($service->prepareForwardTailDiscard($this->sessionId, $tip));
+        \Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder::append($store, \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($this->sessionId, 1, 'history_position_set', ['position_turn_no' => 1, 'reason' => 'history_select']));
+        $selected = $this->coldReplay($store, 1);
+        $discard = $service->prepareForwardTailDiscard($this->sessionId, $selected);
+        $this->assertNotNull($discard);
+        $this->assertSame('history_tail_discarded', $discard->type);
+        $this->assertSame(1, $discard->payload['after_turn_no']);
+        \Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder::append($store, $discard);
+        $service->afterDiscardCommitted($this->sessionId);
+        $retained = $this->coldReplay($store);
+        $this->assertCount(1, $retained->messages);
+        $this->assertSame('first', $retained->messages[0]->content[0]['text']);
+        $this->invoke($retained->messages, 'high');
+        $this->assertSame('high', $this->bodies[2]['reasoning']['effort']);
+        $this->assertSame([], self::controls($this->bodies[2]));
+        $this->assertSame($this->bodies[0]['prompt_cache_key'], $this->bodies[2]['prompt_cache_key']);
+        // A normal resume after the accepted mutation retains the new epoch.
+        $this->invoke($this->coldReplay($store)->messages, 'high');
+        $this->assertSame($this->bodies[2], $this->bodies[3]);
+    }
+
+    private function startCanonicalReasoningEpoch(): \Ineersa\CodingAgent\Session\SessionRunEventStore
+    {
+        $store = new \Ineersa\CodingAgent\Session\SessionRunEventStore($this->sessions, new \Ineersa\AgentCore\Schema\EventPayloadNormalizer(), new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()), new NullLogger(), new \Ineersa\CodingAgent\Session\FileRunSequenceAllocator());
+        $append = fn (int $turn, string $type, array $payload) => \Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder::append($store, \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($this->sessionId, $turn, $type, $payload));
+        $append(0, 'run_started', ['payload' => ['messages' => [self::user('first')->toArray()]]]);
+        $append(1, 'turn_advanced', ['turn_no' => 1, 'step_id' => 'first']);
+        $append(1, 'history_position_set', ['position_turn_no' => 1]);
+        $this->invoke($this->coldReplay($store)->messages, 'low');
+        $append(2, 'turn_advanced', ['turn_no' => 2, 'step_id' => 'second']);
+        $append(2, 'agent_command_applied', ['kind' => 'follow_up', 'idempotency_key' => 'follow-up', 'message' => self::user('second')->toArray()]);
+        $append(2, 'history_position_set', ['position_turn_no' => 2]);
+        $this->invoke($this->coldReplay($store)->messages, 'high');
+        $this->assertSame('low', $this->bodies[1]['reasoning']['effort']);
+        $this->assertSame(['high'], self::controls($this->bodies[1]));
+
+        return $store;
+    }
+
+    private function coldReplay(\Ineersa\AgentCore\Contract\EventStoreInterface $store, ?int $position = null): \Ineersa\AgentCore\Domain\Run\RunState
+    {
+        $em = static::getContainer()->get('doctrine.orm.default_entity_manager');
+        $em->clear();
+        $this->sessions = new HatfieldSessionStore($this->config, $em, new EventDispatcher());
+        $replay = new \Ineersa\CodingAgent\Session\Replay\SessionRunStateReplayService($store, new NullLogger(), static::getContainer()->get(\Ineersa\AgentCore\Application\Replay\RunStateReducer::class), new \Ineersa\AgentCore\Application\Replay\ReplayEventPreparer(), new \Ineersa\CodingAgent\Session\History\HistoryReplayFilter(new \Ineersa\CodingAgent\Session\History\HistoryProjector()));
+        $state = \Ineersa\AgentCore\Domain\Run\RunState::queued($this->sessionId);
+        $rebuilt = null === $position ? $replay->rebuildIfStale($state, $this->sessionId) : $replay->rebuildAtPosition($state, $this->sessionId, $position);
+        $this->assertNotNull($rebuilt->rebuiltState);
+
+        return $rebuilt->rebuiltState;
+    }
+
     /** @param list<AgentMessage> $messages */
     private function invoke(array $messages, string $effort, bool $explicit = false, ?string $runId = null): void
     {
