@@ -135,6 +135,7 @@ final readonly class TranscriptBlockRenderer
         return match ($status) {
             'answered' => \sprintf('%s Human input answered', TranscriptGlyphs::GLYPH_QUESTION),
             'rejected' => \sprintf('%s Human input rejected', TranscriptGlyphs::GLYPH_QUESTION),
+            'cancelled' => \sprintf('%s Human input cancelled', TranscriptGlyphs::GLYPH_QUESTION),
             default => \sprintf('%s Human input required', TranscriptGlyphs::GLYPH_QUESTION),
         };
     }
