@@ -332,6 +332,8 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         // skip the explicit resume write to avoid sending a duplicate command.
         if ($this->autoResumed) {
             $this->autoResumed = false;
+            // Returning the handle delivers this identity directly to the caller.
+            $this->pendingSessionRestoring = null;
 
             return new RunHandle(runId: $runId, status: 'bootstrapping', bootstrapRequestId: $this->bootstrapCommandId);
         }
@@ -346,6 +348,9 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         $this->bootstrapDescriptor = null;
         $this->bootstrapEnded = false;
         $this->writeCommandWithRetry($cmd);
+
+        // A recovered attach also delivers its surviving identity in the handle.
+        $this->pendingSessionRestoring = null;
 
         return new RunHandle(runId: $runId, status: 'bootstrapping', bootstrapRequestId: $this->bootstrapCommandId);
     }

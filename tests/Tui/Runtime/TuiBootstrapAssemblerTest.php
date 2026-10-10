@@ -505,7 +505,8 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
         $this->assertInstanceOf(\Ineersa\Tui\Command\NoOp::class, $reload->handle($command));
     }
 
-    public function testAttachWriteFailureAfterReadinessKeepsOneSurvivingResume(): void
+    #[DataProvider('restartAfterAttachReturn')]
+    public function testAttachWriteFailureAfterReadinessKeepsOneSurvivingResume(bool $restartBeforePolling): void
     {
         [$state, $harness, $poller] = $this->scope();
         $client = null;
@@ -532,22 +533,62 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
             $state->handle = $client->attach('42');
             $returnedRequestId = $state->handle->bootstrapRequestId;
             $this->assertSame($returnedRequestId, (new \ReflectionProperty($client, 'bootstrapCommandId'))->getValue($client));
+            if ($restartBeforePolling) {
+                $this->restartReturnedAttachBeforePolling($client, $state);
+            }
             $this->pumpUntil($client, $state, $harness, $poller, static function () use ($state, $harness): void {
                 self::assertFalse($state->sessionReady);
                 $harness->screen()->setTranscriptBlocks($state->transcript);
             }, static fn (): bool => $state->sessionReady);
             $resumes = array_values(array_filter($this->commands($directory), static fn (array $command): bool => 'resume' === $command['type']));
-            $this->assertCount(1, $resumes);
-            $this->assertSame($returnedRequestId, $state->handle->bootstrapRequestId);
-            $this->assertSame($resumes[0]['id'], $state->handle->bootstrapRequestId);
-            $this->assertSame($resumes[0]['id'], (new \ReflectionProperty($client, 'bootstrapCommandId'))->getValue($client));
-            $this->assertStringContainsString('Owner-projected answer generation 2', $harness->plainScreenText());
-            $this->assertStringContainsString('Caught-up input generation 2', $harness->plainScreenText());
+            $this->assertCount($restartBeforePolling ? 2 : 1, $resumes);
+            $this->assertSame($returnedRequestId, $resumes[0]['id']);
+            $survivingId = $resumes[array_key_last($resumes)]['id'];
+            $this->assertSame($survivingId, $state->handle->bootstrapRequestId);
+            $this->assertSame($survivingId, (new \ReflectionProperty($client, 'bootstrapCommandId'))->getValue($client));
+            $generation = $restartBeforePolling ? 3 : 2;
+            $this->assertStringContainsString('Owner-projected answer generation '.$generation, $harness->plainScreenText());
+            $this->assertStringContainsString('Caught-up input generation '.$generation, $harness->plainScreenText());
             $this->assertExactAck($directory);
         } finally {
             if (\is_resource($originalStdin)) {
                 fclose($originalStdin);
             }
+            $this->closePeer($client);
+            \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::removeDirectory($directory);
+        }
+    }
+
+    public static function restartAfterAttachReturn(): iterable
+    {
+        yield 'original recovered attach' => [false];
+        yield 'restart before the returned handle is polled' => [true];
+    }
+
+    public function testAutoResumedAttachReturnAcknowledgesIdentityBeforeAnotherRestart(): void
+    {
+        [$state, $harness, $poller] = $this->scope();
+        [$client, $directory] = $this->protocolClient('42');
+        try {
+            $client->start(new \Ineersa\CodingAgent\Runtime\Contract\StartRunRequest('Original prompt', '42'));
+            $client->send('42', new \Ineersa\CodingAgent\Runtime\Contract\UserCommand('follow_up', 'exit-controller'));
+            $this->awaitPeerExit($client);
+            $state->handle = $client->attach('42');
+            $returnedRequestId = $state->handle->bootstrapRequestId;
+            $this->assertNotNull($returnedRequestId);
+            $this->restartReturnedAttachBeforePolling($client, $state);
+            $this->pumpUntil($client, $state, $harness, $poller, static function () use ($state, $harness): void {
+                self::assertFalse($state->sessionReady);
+                $harness->screen()->setTranscriptBlocks($state->transcript);
+            }, static fn (): bool => $state->sessionReady);
+            $resumes = array_values(array_filter($this->commands($directory), static fn (array $command): bool => 'resume' === $command['type']));
+            $this->assertCount(2, $resumes);
+            $this->assertSame($returnedRequestId, $resumes[0]['id']);
+            $this->assertSame($resumes[1]['id'], $state->handle->bootstrapRequestId);
+            $this->assertStringContainsString('Owner-projected answer generation 3', $harness->plainScreenText());
+            $this->assertStringContainsString('Caught-up input generation 3', $harness->plainScreenText());
+            $this->assertExactAck($directory);
+        } finally {
             $this->closePeer($client);
             \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::removeDirectory($directory);
         }
@@ -960,6 +1001,18 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
     {
         yield 'ack fails after atomic mount' => [true];
         yield 'suffix readiness fails after acknowledgement' => [false];
+    }
+
+    private function restartReturnedAttachBeforePolling(\Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient $client, TuiSessionState $state): void
+    {
+        $returnedId = $state->handle->bootstrapRequestId;
+        $client->send('42', new \Ineersa\CodingAgent\Runtime\Contract\UserCommand('follow_up', 'exit-controller'));
+        $this->awaitPeerExit($client);
+        $client->send('42', new \Ineersa\CodingAgent\Runtime\Contract\UserCommand('follow_up', 'Live after returned attach'));
+        $this->assertSame($returnedId, $state->handle->bootstrapRequestId);
+        $restoring = (new \ReflectionProperty($client, 'pendingSessionRestoring'))->getValue($client);
+        $this->assertSame($returnedId, $restoring->payload['previous_command_id']);
+        $this->assertNotSame($returnedId, $restoring->payload['command_id']);
     }
 
     private function tickContext(TuiSessionState $state, VirtualTuiHarness $harness, RuntimeEventPoller $poller, AgentSessionClient $client, ?TranscriptProjectorInterface $childProjector = null): \Ineersa\Tui\Runtime\TuiRuntimeContext
