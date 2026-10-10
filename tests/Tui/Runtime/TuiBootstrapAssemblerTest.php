@@ -254,6 +254,257 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
         yield 'attached handle has the previous attach identity' => [true];
     }
 
+    public function testRecoveryReturnsActiveChildToParentThroughRealTickAndSubmit(): void
+    {
+        [$state, $harness, $poller] = $this->scope();
+        [$client, $directory] = $this->protocolClient('42');
+        $childProjector = static::getContainer()->get('tui.session.child_transcript_projector');
+        $context = $this->tickContext($state, $harness, $poller, $client, $childProjector);
+        $tick = static function () use ($state, $context): void {
+            $state->lastPoll = 0;
+            $state->subagentLiveView->childLastPoll = 0;
+            $context->ticks->dispatch(new \Symfony\Component\Tui\Event\TickEvent());
+        };
+        $wait = function (callable $ready) use ($tick, $client, $state, $harness): void {
+            $deadline = microtime(true) + 3;
+            do {
+                $tick();
+                $this->assertTrue($this->peerRunning($client));
+                $this->assertNull($state->bootstrapError, $state->lastRuntimePollError);
+                if ($ready()) {
+                    return;
+                }
+                usleep(1_000); // Yield while the owned pipe's readiness predicate is pending.
+            } while (microtime(true) < $deadline);
+            $this->fail($harness->plainScreenText());
+        };
+        try {
+            $state->handle = $client->attach('42');
+            $wait(static fn (): bool => $state->sessionReady);
+            $oldRequest = $state->handle->bootstrapRequestId;
+            $child = new \Ineersa\Tui\Runtime\SubagentLiveChildDTO('child-42', 'artifact', 'Child',
+                \Ineersa\Tui\Runtime\SubagentLiveStatusEnum::Running, 'Child work', 1, 'provider/model', 'low');
+            $state->subagentLiveView->enter($child);
+            $childBlock = new TranscriptBlock('child-block', TranscriptBlockKindEnum::AssistantMessage, 'child-42', 1, 'Visible child answer');
+            $state->subagentLiveView->childTranscript = [$childBlock];
+            $childProjector->replaceProjectedBlocks([$childBlock]);
+            $harness->screen()->setTranscriptBlocks([$childBlock]);
+            $client->beginObservingChildRun('child-42');
+            $context->sessionServices->questionCoordinator->enqueue(new \Ineersa\Tui\Question\QuestionRequest(
+                'child-question', \Ineersa\Tui\Question\QuestionSource::AgentCore, \Ineersa\Tui\Question\QuestionKind::Confirm,
+                'Child question', runId: 'child-42'));
+            $harness->screen()->promptEditor()->replaceText('Preserved draft');
+            $state->queuedFollowUps = ['Local parent input'];
+            (new \Symfony\Component\Filesystem\Filesystem())->dumpFile($directory.'/child-run', 'child-42');
+            (new \Symfony\Component\Filesystem\Filesystem())->dumpFile($directory.'/suffix-type', RuntimeEventTypeEnum::RunCancelled->value);
+            $client->send('42', new \Ineersa\CodingAgent\Runtime\Contract\UserCommand('follow_up', 'exit-controller'));
+            $this->awaitPeerExit($client);
+            $wait(static fn (): bool => $state->sessionReady && $state->handle->bootstrapRequestId !== $oldRequest
+                && str_contains($harness->plainScreenText(), 'Local parent input'));
+            $this->assertFalse($state->subagentLiveView->active);
+            $this->assertNull($state->subagentLiveView->selected);
+            $this->assertSame([], $state->subagentLiveView->childTranscript);
+            $this->assertSame([], $childProjector->blocks());
+            $this->assertFalse($context->sessionServices->questionCoordinator->actionRequired());
+            $this->assertSame([], (new \ReflectionProperty($client, 'observedChildRunIds'))->getValue($client));
+            $this->assertStringContainsString('Owner-projected answer generation 2', $harness->plainScreenText());
+            $this->assertStringNotContainsString('Visible child answer', $harness->plainScreenText());
+            $this->assertSame('Preserved draft', $harness->screen()->editorText());
+            $this->assertSame([], $state->queuedFollowUps);
+            $this->assertExactAck($directory);
+            static::getContainer()->get(\Ineersa\Tui\Listener\SubmitListener::class)->register($context);
+            $harness->screen()->promptEditor()->replaceText('Ordinary parent submission');
+            $harness->tui()->setFocus($harness->screen()->editorWidget());
+            $harness->tui()->handleInput("\r");
+            $wait(static fn (): bool => str_contains($harness->plainScreenText(), 'Ordinary parent submission'));
+            $commands = array_values(array_filter($this->commands($directory), static fn (array $command): bool => \in_array($command['payload']['text'] ?? null, ['Local parent input', 'Ordinary parent submission'], true)));
+            $this->assertCount(2, $commands);
+            $this->assertSame(['42', '42'], array_column($commands, 'runId'));
+        } finally {
+            $this->closePeer($client);
+            \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::removeDirectory($directory);
+        }
+    }
+
+    #[DataProvider('recoveredDeferredOutcomes')]
+    public function testRecoveredDeferredInputSettlesOnlyAfterReadiness(string $status, ?string $suffix, bool $restore, bool $wait, bool $retry = false): void
+    {
+        [$state, $harness, $poller] = $this->scope();
+        [$cut, $available, $frame, $end] = $this->transfer(status: $status);
+        $state->queuedFollowUps = ['Deferred first', 'Deferred second'];
+        $harness->screen()->promptEditor()->replaceText('Fresh draft');
+        $events = [$available, $frame, $end];
+        $client = $this->createMock(AgentSessionClient::class);
+        $client->method('events')->willReturnCallback(static function () use (&$events): array {
+            $result = $events;
+            $events = [];
+
+            return $result;
+        });
+        $client->expects($this->once())->method('acknowledgeBootstrap')->with($cut->toArray())->willReturnCallback(static function () use ($state, $harness): void {
+            self::assertTrue($state->bootstrapMounted);
+            self::assertFalse($state->sessionReady);
+            self::assertStringContainsString('Owner-projected answer', $harness->plainScreenText());
+        });
+        $sent = [];
+        $attempts = 0;
+        $client->method('send')->willReturnCallback(static function (string $run, \Ineersa\CodingAgent\Runtime\Contract\UserCommand $command) use ($state, &$sent, &$attempts, $retry): void {
+            self::assertTrue($state->sessionReady);
+            self::assertSame('42', $run);
+            if (2 === ++$attempts && $retry) {
+                throw new \RuntimeException('Owned send failure');
+            }
+            $sent[] = $command->text;
+        });
+        $context = $this->tickContext($state, $harness, $poller, $client);
+        $tick = static function () use ($state, $context): void {
+            $state->lastPoll = 0;
+            $context->ticks->dispatch(new \Symfony\Component\Tui\Event\TickEvent());
+        };
+        $tick();
+        $this->assertFalse($state->sessionReady);
+        $this->assertSame([], $sent);
+        $seq = 13;
+        if (null !== $suffix) {
+            $events = [new RuntimeEvent($suffix, '42', ++$seq, ['commandType' => 'compact'])];
+            $tick();
+            $this->assertSame([], $sent, 'Canonical settlement before readiness cannot dispatch input.');
+        }
+        if ($retry) {
+            $events = [new RuntimeEvent('user.message_submitted', '42', ++$seq,
+                ['text' => 'Canonical catch-up before deferred send', 'idempotency_key' => 'catch-up']),
+                new RuntimeEvent('run.cancelled', '42', ++$seq)];
+            $this->assertSame([], $sent);
+        }
+        $events = array_merge($retry ? $events : [], [new RuntimeEvent('session.ready', '42', 0, ['bootstrap_id' => $cut->bootstrapId,
+            'view_epoch' => $cut->viewEpoch, 'canonical_seq' => $seq, 'end_offset' => 501])]);
+        $tick();
+        $this->assertTrue($state->sessionReady);
+        if ($retry) {
+            $this->assertSame(['Deferred first'], $sent);
+            $this->assertSame(['Deferred second'], $state->queuedFollowUps);
+            $this->assertNull($state->bootstrapError, 'A send failure after readiness is not a failed bootstrap.');
+        }
+        if ($wait) {
+            $this->assertSame([], $sent);
+            $this->assertSame(['Deferred first', 'Deferred second'], $state->queuedFollowUps);
+            $events = [new RuntimeEvent('run.cancelled', '42', ++$seq)];
+            $tick();
+        }
+        $tick();
+        if ($restore) {
+            $this->assertSame([], $sent);
+            $this->assertSame("Deferred first\n\nDeferred second\n\nFresh draft", $harness->screen()->editorText());
+            $this->assertNull($state->pendingEditorRestoreText);
+        } else {
+            $this->assertSame(['Deferred first', 'Deferred second'], $sent);
+            $this->assertSame('Fresh draft', $harness->screen()->editorText());
+            if ($retry) {
+                $this->assertStringContainsString('Canonical catch-up before deferred send', $harness->plainScreenText());
+            }
+        }
+        $this->assertSame([], $state->queuedFollowUps);
+    }
+
+    public static function recoveredDeferredOutcomes(): iterable
+    {
+        yield 'cancellation before snapshot cut' => ['cancelled', null, false, false];
+        yield 'compaction settled before cut' => ['completed', null, false, false];
+        yield 'failed before cut' => ['failed', null, true, false];
+        yield 'compaction completion suffix' => ['compacting', 'compaction.completed', false, false];
+        yield 'compaction failure suffix' => ['compacting', 'compaction.failed', false, false];
+        yield 'compact request rejected' => ['completed', 'command.rejected', false, false];
+        yield 'failure suffix supersedes cancelled snapshot' => ['cancelled', 'run.failed', true, false];
+        yield 'turn failure suffix restores input' => ['running', 'turn.failed', true, false];
+        yield 'cancel suffix supersedes running snapshot' => ['running', 'run.cancelled', false, false];
+        yield 'turn cancellation suffix settles input' => ['running', 'turn.cancelled', false, false];
+        yield 'ongoing cancellation' => ['cancelling', null, false, true];
+        yield 'queued execution is not a settled snapshot' => ['queued', null, false, true];
+        yield 'compaction failure does not bypass ongoing cancellation' => ['cancelling', 'compaction.failed', false, true];
+        yield 'ongoing compaction' => ['compacting', null, false, true];
+        yield 'compaction suffix supersedes settled snapshot' => ['completed', 'compaction.started', false, true];
+        yield 'failed send retries only the unsent tail after readiness' => ['cancelled', null, false, false, true];
+    }
+
+    public function testFreshInputOnOldFailedSnapshotSurvivesRejectedCompactAndSendFailure(): void
+    {
+        [$state, $harness, $poller] = $this->scope();
+        [$cut, $available, $frame, $end] = $this->transfer(status: 'failed');
+        $events = [$available, $frame, $end, new RuntimeEvent('session.ready', '42', 0,
+            ['bootstrap_id' => $cut->bootstrapId, 'view_epoch' => $cut->viewEpoch, 'canonical_seq' => 13, 'end_offset' => 500])];
+        $client = $this->createMock(AgentSessionClient::class);
+        $client->method('events')->willReturnCallback(static function () use (&$events): array {
+            $result = $events;
+            $events = [];
+
+            return $result;
+        });
+        $client->expects($this->once())->method('acknowledgeBootstrap')->with($cut->toArray());
+        $sent = [];
+        $attempts = 0;
+        $client->method('send')->willReturnCallback(static function (string $run, \Ineersa\CodingAgent\Runtime\Contract\UserCommand $command) use (&$sent, &$attempts): void {
+            if (1 === ++$attempts) {
+                throw new \RuntimeException('Owned send failure');
+            }
+            $sent[] = $command->text;
+        });
+        $context = $this->tickContext($state, $harness, $poller, $client);
+        $tick = static function () use ($state, $context): void {
+            $state->lastPoll = 0;
+            $context->ticks->dispatch(new \Symfony\Component\Tui\Event\TickEvent());
+        };
+        $tick();
+        $this->assertSame(RunActivityStateEnum::Failed, $state->activity);
+        $state->queuedFollowUps = ['Fresh later input'];
+        $state->isCompacting = true;
+        $events = [new RuntimeEvent('command.rejected', '42', 14, ['commandType' => 'compact'])];
+        $tick();
+        $this->assertSame(['Fresh later input'], $state->queuedFollowUps);
+        $this->assertNull($state->pendingEditorRestoreText);
+        $tick();
+        $tick();
+        $this->assertSame(['Fresh later input'], $sent);
+        $this->assertSame([], $state->queuedFollowUps);
+        $this->assertSame('', $harness->screen()->editorText());
+    }
+
+    public function testExhaustedSendRetriesRestoreIntentToEditorAndDoNotStrandReload(): void
+    {
+        [$state, $harness, $poller] = $this->scope();
+        [$cut, $available, $frame, $end] = $this->transfer(status: 'cancelled', queuedMessages: []);
+        $state->queuedFollowUps = ['Unsent intent'];
+        $events = [$available, $frame, $end, new RuntimeEvent('session.ready', '42', 0,
+            ['bootstrap_id' => $cut->bootstrapId, 'view_epoch' => $cut->viewEpoch, 'canonical_seq' => 13, 'end_offset' => 500])];
+        $client = $this->createMock(AgentSessionClient::class);
+        $client->method('events')->willReturnCallback(static function () use (&$events): array {
+            $result = $events;
+            $events = [];
+
+            return $result;
+        });
+        $client->expects($this->once())->method('acknowledgeBootstrap')->with($cut->toArray());
+        $client->expects($this->exactly(3))->method('send')->willThrowException(new \RuntimeException('Owned send failure'));
+        $context = $this->tickContext($state, $harness, $poller, $client);
+        for ($i = 0; $i < 3; ++$i) {
+            if ($i > 0) {
+                $events = [$end]; // Fresh ignored frames cannot reset the unsent-intent error episode.
+            }
+            $state->lastPoll = 0;
+            $context->ticks->dispatch(new \Symfony\Component\Tui\Event\TickEvent());
+        }
+        $this->assertTrue($state->sessionReady);
+        $this->assertSame([], $state->queuedFollowUps);
+        $this->assertNull($state->pendingEditorRestoreText);
+        $this->assertSame('Unsent intent', $harness->screen()->editorText());
+        $switch = $this->createMock(\Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface::class);
+        $switch->expects($this->once())->method('requestReload')->with('42');
+        $reload = new \Ineersa\Tui\Listener\ReloadCommandHandler($switch, $state, $harness->screen(), $context->sessionServices->questionCoordinator);
+        $command = new \Ineersa\Tui\Command\SlashCommand('reload', '', '/reload');
+        $this->assertInstanceOf(\Ineersa\Tui\Command\TranscriptMessage::class, $reload->handle($command));
+        $harness->screen()->promptEditor()->replaceText('');
+        $this->assertInstanceOf(\Ineersa\Tui\Command\NoOp::class, $reload->handle($command));
+    }
+
     public function testAttachWriteFailureAfterReadinessKeepsOneSurvivingResume(): void
     {
         [$state, $harness, $poller] = $this->scope();
@@ -711,6 +962,17 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
         yield 'suffix readiness fails after acknowledgement' => [false];
     }
 
+    private function tickContext(TuiSessionState $state, VirtualTuiHarness $harness, RuntimeEventPoller $poller, AgentSessionClient $client, ?TranscriptProjectorInterface $childProjector = null): \Ineersa\Tui\Runtime\TuiRuntimeContext
+    {
+        $services = $this->createSessionServices(tui: $harness->tui(), screen: $harness->screen(), state: $state,
+            client: $client, parentPoller: $poller, childProjector: $childProjector ?? static::getContainer()->get('tui.session.child_transcript_projector'));
+        $context = $this->buildTuiContext()->withTui($harness->tui())->withScreen($harness->screen())
+            ->withState($state)->withClient($client)->withSessionServices($services)->build();
+        static::getContainer()->get(\Ineersa\Tui\Listener\TickPollListener::class)->register($context);
+
+        return $context;
+    }
+
     /** @return array{TuiSessionState, VirtualTuiHarness, RuntimeEventPoller} */
     private function scope(string $runId = '42'): array
     {
@@ -827,12 +1089,12 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
     }
 
     /** @return array{SessionBootstrapDescriptorDTO, RuntimeEvent, RuntimeEvent, RuntimeEvent} */
-    private function transfer(string $runId = '42', string $request = 'request', int $epoch = 3): array
+    private function transfer(string $runId = '42', string $request = 'request', int $epoch = 3, string $status = 'completed', array $queuedMessages = ['17' => 'Restored pending input']): array
     {
         $resume = (new SessionResumeMetadataProjection())->toArray();
         $resume['usage']['inputTokens'] = 41;
-        $resume['queued_messages'] = ['17' => 'Restored pending input'];
-        $resume += ['status' => 'completed', 'model' => 'provider/model', 'turn_no' => 2];
+        $resume['queued_messages'] = $queuedMessages;
+        $resume += ['status' => $status, 'model' => 'provider/model', 'turn_no' => 2];
         $block = new TranscriptBlock('answer', TranscriptBlockKindEnum::AssistantMessage, $runId, 13, 'Owner-projected answer');
         $serializer = static::getContainer()->get('serializer');
         $bytes = $serializer->serialize(['kind' => 'resume', 'data' => $resume], 'json')."\n";

@@ -39,6 +39,9 @@ final class RuntimeEventPoller
      */
     private array $pendingEvents = [];
 
+    /** A settled deferred submission remains retryable even after its event is consumed. */
+    private bool $deferredInputReady = false;
+
     /**
      * Scalar boundaries from events that finished apply in the latest poll.
      * Cleared at the start of each poll and by {@see consumeAppliedMemoryBoundaryObservation()}.
@@ -69,7 +72,7 @@ final class RuntimeEventPoller
      *
      * @return TranscriptChangeSet|null Canonical transcript delta for ChatScreen, or null if nothing new
      */
-    public function poll(TuiSessionState $state, AgentSessionClient $client, ?callable $onHumanInputRequested = null, ?callable $onToolQuestionRequested = null, ?callable $onToolTerminal = null, ?callable $onBootstrapMounted = null): ?TranscriptChangeSet
+    public function poll(TuiSessionState $state, AgentSessionClient $client, ?callable $onHumanInputRequested = null, ?callable $onToolQuestionRequested = null, ?callable $onToolTerminal = null, ?callable $onBootstrapMounted = null, ?callable $onSessionRestoring = null): ?TranscriptChangeSet
     {
         if (null === $state->handle) {
             return null;
@@ -107,16 +110,21 @@ final class RuntimeEventPoller
                 ? $this->pendingEvents
                 : RuntimeEventCallbacks::eventList($client, $state->handle->runId, $state->lastSeq);
             if ([] === $events) {
+                $retryingDeferredInput = $this->deferredInputReady;
+                $this->dispatchDeferredInput($state, $client);
                 $state->runtimePollErrorCount = 0;
                 $state->lastRuntimePollError = '';
 
-                return null;
+                // A send can fail after readiness consumed the suffix. Finish
+                // its projection on retry even when no new pipe event arrives.
+                return $retryingDeferredInput ? $this->applyProjectedChanges($state) : null;
             }
 
             // A fresh pipe read clears an old error episode. Retained suffixes
             // deliberately do not: a deterministic apply failure must reach the
-            // existing three-strike escape rather than retry forever.
-            if (!$retryingPendingEvents) {
+            // existing three-strike escape rather than retry forever. An unsent
+            // settled intent must reach that same boundary despite fresh frames.
+            if (!$retryingPendingEvents && !$this->deferredInputReady) {
                 $state->runtimePollErrorCount = 0;
                 $state->lastRuntimePollError = '';
             }
@@ -157,6 +165,10 @@ final class RuntimeEventPoller
                         $state->bootstrapMounted = false;
                         $state->bootstrapError = null;
                         $state->bootstrapStartedAt = $now;
+                        $this->deferredInputReady = false;
+                        if (null !== $onSessionRestoring) {
+                            $onSessionRestoring();
+                        }
                     }
                     continue;
                 }
@@ -167,7 +179,19 @@ final class RuntimeEventPoller
                 }
 
                 try {
+                    $wasReady = $state->sessionReady;
                     if ($this->eventApplier->applyBootstrap($state, $client, $runtimeEvent, $onBootstrapMounted)) {
+                        if (!$wasReady && $state->sessionReady) {
+                            // The suffix may supersede the snapshot outcome. Reconcile
+                            // only after mount, exact ACK and complete catch-up.
+                            if (RunActivityStateEnum::Failed === $state->activity) {
+                                $this->eventApplier->restoreDeferredInput($state);
+                                $this->deferredInputReady = false;
+                            } else {
+                                $this->deferredInputReady = $this->deferredInputReady
+                                    || \in_array($state->activity, [RunActivityStateEnum::Idle, RunActivityStateEnum::Completed, RunActivityStateEnum::Cancelled], true);
+                            }
+                        }
                         continue;
                     }
                 } catch (\Throwable $exception) {
@@ -303,19 +327,12 @@ final class RuntimeEventPoller
                         || RuntimeEventTypeEnum::CompactionFailed->value === $runtimeEvent->type
                         || (RuntimeEventTypeEnum::CommandRejected->value === $runtimeEvent->type
                             && 'compact' === ($runtimeEvent->payload['commandType'] ?? null)))
-                        && [] !== $state->queuedFollowUps
-                        && null !== $state->handle
                         && !$state->isCompacting
                         && !\in_array($state->activity, [RunActivityStateEnum::Cancelling, RunActivityStateEnum::Compacting], true)) {
-                        while ([] !== $state->queuedFollowUps) {
-                            $client->send(
-                                $state->handle->runId,
-                                new \Ineersa\CodingAgent\Runtime\Contract\UserCommand(type: 'follow_up', text: $state->queuedFollowUps[0]),
-                            );
-                            array_shift($state->queuedFollowUps);
-                            $state->activity = RunActivityStateEnum::Starting;
-                        }
+                        $this->deferredInputReady = true;
                     }
+
+                    $this->dispatchDeferredInput($state, $client);
 
                     // Notify handlers for specific event types (isolated: one bad overlay callback
                     // must not drop later events in the same batch, e.g. run.cancelled).
@@ -362,6 +379,8 @@ final class RuntimeEventPoller
             );
             $this->pendingEvents = [];
 
+            $this->dispatchDeferredInput($state, $client);
+
             if ($hasRunHistoryPositionChanged) {
                 // Wholesale position replace already applied; drain projector dirty set for any
                 // post-position events in the same batch, then return an explicit full snapshot.
@@ -377,17 +396,8 @@ final class RuntimeEventPoller
                 return null;
             }
 
-            $changes = $this->eventApplier->drainProjectedChanges();
-            if (!$changes->isEmpty()) {
-                $state->applyTranscriptChangeSet($changes);
-
-                // Retention-floor advances can drop session-local UI blocks that
-                // never entered the projector. Return an authoritative snapshot so
-                // the mounted transcript matches session state.
-                if (null !== $changes->retentionFloorBlockId) {
-                    return TranscriptChangeSet::full($state->transcript);
-                }
-
+            $changes = $this->applyProjectedChanges($state);
+            if (null !== $changes) {
                 return $changes;
             }
 
@@ -452,6 +462,9 @@ final class RuntimeEventPoller
 
             // Capture mode: show the error and transition to Failed.
             $state->activity = RunActivityStateEnum::Failed;
+            $this->eventApplier->restoreDeferredInput($state);
+            $this->deferredInputReady = false;
+            $projectedChanges = $this->applyProjectedChanges($state);
 
             $block = new TranscriptBlock(
                 id: \sprintf('runtime_poll_error_%s_%d', $state->handle->runId, $state->runtimePollErrorCount),
@@ -464,7 +477,7 @@ final class RuntimeEventPoller
 
             $state->appendTranscriptBlock($block);
 
-            return TranscriptChangeSet::incremental([$block]);
+            return null === $projectedChanges ? TranscriptChangeSet::incremental([$block]) : TranscriptChangeSet::full($state->transcript);
         }
     }
 
@@ -477,6 +490,35 @@ final class RuntimeEventPoller
         $this->appliedMemoryBoundaries = new AppliedMemoryBoundaryObservation();
 
         return $observation;
+    }
+
+    private function applyProjectedChanges(TuiSessionState $state): ?TranscriptChangeSet
+    {
+        $changes = $this->eventApplier->drainProjectedChanges();
+        if ($changes->isEmpty()) {
+            return null;
+        }
+        $state->applyTranscriptChangeSet($changes);
+
+        // Retention-floor advances can drop session-local UI blocks that
+        // never entered the projector. Return an authoritative snapshot so
+        // the mounted transcript matches session state.
+        return null !== $changes->retentionFloorBlockId ? TranscriptChangeSet::full($state->transcript) : $changes;
+    }
+
+    private function dispatchDeferredInput(TuiSessionState $state, AgentSessionClient $client): void
+    {
+        if (!$this->deferredInputReady || !$state->sessionReady || null === $state->handle
+            || $state->isCompacting || \in_array($state->activity, [RunActivityStateEnum::Cancelling, RunActivityStateEnum::Compacting], true)) {
+            return;
+        }
+        while ([] !== $state->queuedFollowUps) {
+            $client->send($state->handle->runId,
+                new \Ineersa\CodingAgent\Runtime\Contract\UserCommand(type: 'follow_up', text: $state->queuedFollowUps[0]));
+            array_shift($state->queuedFollowUps);
+            $state->activity = RunActivityStateEnum::Starting;
+        }
+        $this->deferredInputReady = false;
     }
 
     private function rememberAppliedMemoryBoundaries(

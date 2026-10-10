@@ -57,7 +57,8 @@ while (false !== ($line = fgets(\STDIN))) {
         if ($command->payload !== $cut) {
             exit(3);
         }
-        $suffix = new RuntimeEvent(RuntimeEventTypeEnum::UserMessageSubmitted->value, $command->runId, ++$sequence,
+        $suffixType = is_file($directory.'/suffix-type') ? file_get_contents($directory.'/suffix-type') : RuntimeEventTypeEnum::UserMessageSubmitted->value;
+        $suffix = new RuntimeEvent($suffixType, $command->runId, ++$sequence,
             ['text' => 'Caught-up input generation '.$generation, 'idempotency_key' => 'suffix-'.$generation]);
         $emit(RuntimeEventTypeEnum::BootstrapSuffix->value, $command->runId, 0,
             ['bootstrap_id' => $cut['bootstrap_id'], 'view_epoch' => $cut['view_epoch'], 'canonical_seq' => $sequence,

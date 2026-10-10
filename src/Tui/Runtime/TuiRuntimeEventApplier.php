@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Runtime;
 
+use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeTransportException;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotInterface;
@@ -50,7 +51,8 @@ final readonly class TuiRuntimeEventApplier
         }
         $data = $mounted['resume'];
         $status = $data['status'] ?? null;
-        if (!\is_string($status) || null === \Ineersa\AgentCore\Domain\Run\RunStatus::tryFrom($status)
+        $runStatus = \is_string($status) ? RunStatus::tryFrom($status) : null;
+        if (null === $runStatus
             || !\is_bool($data['is_shell_run'] ?? null) || !\is_int($data['turn_no'] ?? null)
             || $data['turn_no'] < 0 || !\is_array($data['usage'] ?? null) || !\is_array($data['queued_messages'] ?? null)) {
             throw new RuntimeTransportException('Invalid bootstrap resume metadata.');
@@ -91,13 +93,17 @@ final readonly class TuiRuntimeEventApplier
         $state->subagentLiveCatalog = $catalog;
         $state->queuedUserMessages = $data['queued_messages'];
         $state->isShellRun = $data['is_shell_run'];
-        $state->activity = match ($status) {
-            'completed' => RunActivityStateEnum::Completed,
-            'cancelled' => RunActivityStateEnum::Cancelled,
-            'failed' => RunActivityStateEnum::Failed,
-            default => RunActivityStateEnum::Idle,
+        $state->activity = match ($runStatus) {
+            RunStatus::Queued => RunActivityStateEnum::Starting,
+            RunStatus::Completed => RunActivityStateEnum::Completed,
+            RunStatus::Cancelled => RunActivityStateEnum::Cancelled,
+            RunStatus::Failed => RunActivityStateEnum::Failed,
+            RunStatus::Running => RunActivityStateEnum::Running,
+            RunStatus::WaitingHuman => RunActivityStateEnum::WaitingHuman,
+            RunStatus::Cancelling => RunActivityStateEnum::Cancelling,
+            RunStatus::Compacting => RunActivityStateEnum::Compacting,
         };
-        $state->isCompacting = false;
+        $state->isCompacting = RunStatus::Compacting === $runStatus;
         $state->lastSeq = $mounted['cut']->canonicalSeq;
         $state->bootstrapMounted = true;
         $onMounted();
@@ -195,8 +201,7 @@ final readonly class TuiRuntimeEventApplier
             && [] !== $state->queuedFollowUps) {
             // Failure must not start another turn or leave hidden input that a
             // later compaction could dispatch. Return it to the user's editor.
-            $state->pendingEditorRestoreText = implode("\n\n", $state->queuedFollowUps);
-            $state->queuedFollowUps = [];
+            $this->restoreDeferredInput($state);
         }
 
         // After terminal activity, ignore stale seq=0 assistant/tool stream
@@ -215,6 +220,18 @@ final readonly class TuiRuntimeEventApplier
         $state->applyQueuedUserMessageEvent($event);
         $this->ingestSubagentProgress($state, $event);
         $this->projector->accept($event);
+    }
+
+    public function restoreDeferredInput(TuiSessionState $state): void
+    {
+        if ([] === $state->queuedFollowUps) {
+            return;
+        }
+        $text = implode("\n\n", $state->queuedFollowUps);
+        $state->pendingEditorRestoreText = null === $state->pendingEditorRestoreText
+            ? $text
+            : $state->pendingEditorRestoreText."\n\n".$text;
+        $state->queuedFollowUps = [];
     }
 
     /**

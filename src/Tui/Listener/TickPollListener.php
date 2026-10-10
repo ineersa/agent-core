@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Logging\ProcessMemorySnapshotLogger;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\SubagentLiveAttention;
+use Ineersa\Tui\Runtime\SubagentLiveMainReturn;
 use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionState;
@@ -120,13 +121,27 @@ final class TickPollListener implements TuiListenerRegistrar
                 }
             }
 
+            $returnToParent = static function () use ($state, $screen, $client, $questionCoordinator, $questionController, $subagentLiveChildPoller): void {
+                if (!$state->subagentLiveView->active) {
+                    return;
+                }
+                $selected = $state->subagentLiveView->selected;
+                if (null !== $selected) {
+                    $questionCoordinator->removeForRun($selected->agentRunId);
+                    $questionController->close();
+                }
+                SubagentLiveMainReturn::returnToMain($state, $screen, $client);
+                $subagentLiveChildPoller->resetProjection();
+            };
+
             $transcriptChanges = $poller->poll(
                 $state,
                 $client,
                 onHumanInputRequested: $onHitl,
                 onToolQuestionRequested: $onToolQuestion,
                 onToolTerminal: $onToolTerminal,
-                onBootstrapMounted: static function () use ($state, $screen, $tui, $promptHistory, $questionCoordinator, $questionController): void {
+                onBootstrapMounted: static function () use ($state, $screen, $tui, $promptHistory, $questionCoordinator, $questionController, $returnToParent): void {
+                    $returnToParent();
                     $screen->setTranscriptBlocks($state->transcript);
                     $screen->syncQueuedUserMessages($state->queuedUserMessages);
                     $promptHistory->seedFrom($state->transcript);
@@ -136,8 +151,12 @@ final class TickPollListener implements TuiListenerRegistrar
                     $questionController->close();
                     $tui->requestRender();
                 },
+                onSessionRestoring: $returnToParent,
             );
 
+            // Recovery may have exited the child during the parent poll. All
+            // remaining work must follow the view that is actually displayed.
+            $liveActive = $state->subagentLiveView->active;
             if ($liveActive) {
                 $selected = $state->subagentLiveView->selected;
                 if (null !== $selected) {
