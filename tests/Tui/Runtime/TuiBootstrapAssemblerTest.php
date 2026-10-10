@@ -327,7 +327,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
     }
 
     #[DataProvider('recoveredDeferredOutcomes')]
-    public function testRecoveredDeferredInputSettlesOnlyAfterReadiness(string $status, ?string $suffix, bool $restore, bool $wait, bool $retry = false): void
+    public function testRecoveredDeferredInputSettlesOnlyAfterReadiness(string $status, ?string $suffix, bool $restore, bool $wait, bool $retry = false, string $settlement = 'run.cancelled'): void
     {
         [$state, $harness, $poller] = $this->scope();
         [$cut, $available, $frame, $end] = $this->transfer(status: $status);
@@ -388,7 +388,10 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
         if ($wait) {
             $this->assertSame([], $sent);
             $this->assertSame(['Deferred first', 'Deferred second'], $state->queuedFollowUps);
-            $events = [new RuntimeEvent('run.cancelled', '42', ++$seq)];
+            if ('run.completed' === $settlement) {
+                $this->assertSame(RunActivityStateEnum::Running, $state->activity);
+            }
+            $events = [new RuntimeEvent($settlement, '42', ++$seq)];
             $tick();
         }
         $tick();
@@ -419,6 +422,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
         yield 'cancel suffix supersedes running snapshot' => ['running', 'run.cancelled', false, false];
         yield 'turn cancellation suffix settles input' => ['running', 'turn.cancelled', false, false];
         yield 'ongoing cancellation' => ['cancelling', null, false, true];
+        yield 'restored running execution completes after readiness' => ['running', null, false, true, false, 'run.completed'];
         yield 'queued execution is not a settled snapshot' => ['queued', null, false, true];
         yield 'compaction failure does not bypass ongoing cancellation' => ['cancelling', 'compaction.failed', false, true];
         yield 'ongoing compaction' => ['compacting', null, false, true];

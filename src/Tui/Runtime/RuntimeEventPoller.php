@@ -306,8 +306,8 @@ final class RuntimeEventPoller
                         continue;
                     }
 
-                    // Release deferred input after cancellation, compaction
-                    // settlement, or rejection of the pending compact request.
+                    // Release deferred input after completion, cancellation,
+                    // compaction settlement, or rejection of the pending compact request.
                     //
                     // GUARD: if activity is Cancelling, the user also pressed
                     // Escape during compaction.  Do NOT dispatch the queued
@@ -323,6 +323,7 @@ final class RuntimeEventPoller
                     // historical Failed activity must not block fresh input
                     // from a later request, including rejection before start.
                     if ((RuntimeEventTypeEnum::RunCancelled->value === $runtimeEvent->type
+                        || RuntimeEventTypeEnum::RunCompleted->value === $runtimeEvent->type
                         || RuntimeEventTypeEnum::CompactionCompleted->value === $runtimeEvent->type
                         || RuntimeEventTypeEnum::CompactionFailed->value === $runtimeEvent->type
                         || (RuntimeEventTypeEnum::CommandRejected->value === $runtimeEvent->type
