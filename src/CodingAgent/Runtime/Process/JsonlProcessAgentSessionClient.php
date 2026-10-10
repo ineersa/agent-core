@@ -601,7 +601,9 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             return;
         }
 
-        $hadRunningProcess = null !== $this->process;
+        // A failed spawn can leave no process while its prior attach is still
+        // owned by the caller. Preserve that recovery obligation as well.
+        $hadRunningProcess = null !== $this->process || null !== $this->bootstrapCommandId || null !== $this->pendingSessionRestoring;
 
         if ($hadRunningProcess && !$sessionChanged) {
             $this->enforceRestartRateLimit();
@@ -620,7 +622,8 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             $previousRequestId = null !== $this->pendingSessionRestoring
                 ? $this->pendingSessionRestoring->payload['previous_command_id']
                 : $this->bootstrapCommandId;
-            $this->bootstrapCommandId = null;
+            // Keep the last delivered identity until readiness and the resume
+            // write succeed. A captured failure must not erase its predecessor.
             $this->bootstrapDescriptor = null;
             $this->bootstrapEnded = false;
             $this->resetSuffix();
@@ -631,8 +634,8 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
                 type: 'resume',
                 runId: $this->activeRunId,
             );
-            $this->bootstrapCommandId = $resume->id;
             $this->writeCommand($resume);
+            $this->bootstrapCommandId = $resume->id;
             $this->autoResumed = true;
             // Only this local restart decision can replace the UI's immutable
             // handle. Publish it before any frames from the replacement pipe.
@@ -1046,7 +1049,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
                 continue;
             }
             if (RuntimeEventTypeEnum::BootstrapAvailable->value === $event->type) {
-                if (null === $this->bootstrapCommandId || ($event->payload['command_id'] ?? null) !== $this->bootstrapCommandId) {
+                if (!$this->runtimeReadyReceived || null === $this->bootstrapCommandId || ($event->payload['command_id'] ?? null) !== $this->bootstrapCommandId) {
                     continue;
                 }
                 $descriptor = \Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapDescriptorDTO::fromArray($event->payload);

@@ -13,6 +13,9 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 $directory = getcwd();
 $generation = is_file($directory.'/generation') ? (int) file_get_contents($directory.'/generation') + 1 : 1;
 file_put_contents($directory.'/generation', (string) $generation);
+if (is_file($directory.'/exit-before-ready') && $generation === (int) file_get_contents($directory.'/exit-before-ready')) {
+    exit(0);
+}
 $template = json_decode(file_get_contents($directory.'/transfer.json'), true, 512, \JSON_THROW_ON_ERROR);
 $cut = null;
 $sequence = 0;

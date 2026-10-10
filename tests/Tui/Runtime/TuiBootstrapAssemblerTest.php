@@ -594,6 +594,63 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
         }
     }
 
+    #[DataProvider('failedReplacementStarts')]
+    public function testCapturedReplacementStartupFailurePreservesMountedIdentity(bool $beforeReady): void
+    {
+        [$state, $harness, $poller] = $this->scope();
+        [$client, $directory] = $this->protocolClient('42');
+        $mounts = 0;
+        $mount = static function () use ($state, $harness, &$mounts): void {
+            ++$mounts;
+            self::assertFalse($state->sessionReady);
+            $harness->screen()->setTranscriptBlocks($state->transcript);
+        };
+        try {
+            $state->handle = $client->attach('42');
+            $this->pumpUntil($client, $state, $harness, $poller, $mount, static fn (): bool => $state->sessionReady);
+            $original = $state->handle->bootstrapRequestId;
+            (new \Symfony\Component\Filesystem\Filesystem())->dumpFile(
+                $directory.($beforeReady ? '/exit-before-ready' : '/fail-next-spawn'), '2');
+            $client->send('42', new \Ineersa\CodingAgent\Runtime\Contract\UserCommand('follow_up', 'exit-controller'));
+            $this->awaitPeerExit($client);
+            $state->lastPoll = 0;
+            // Default capture policy handles the real transport failure. No
+            // replacement identity or partial mount may reach the UI yet.
+            $poller->poll($state, $client, onBootstrapMounted: $mount);
+            $this->assertSame(1, $state->runtimePollErrorCount);
+            $this->assertNotSame('', $state->lastRuntimePollError);
+            $this->assertSame($original, $state->handle->bootstrapRequestId);
+            $this->assertSame($original, (new \ReflectionProperty($client, 'bootstrapCommandId'))->getValue($client));
+            $this->assertNull((new \ReflectionProperty($client, 'pendingSessionRestoring'))->getValue($client));
+            $this->assertSame(1, $mounts);
+            $this->assertFalse($this->peerRunning($client));
+            if ($beforeReady) {
+                $this->assertSame('2', file_get_contents($directory.'/generation'));
+                $this->assertFalse((new \ReflectionProperty($client, 'runtimeReadyReceived'))->getValue($client));
+            }
+            $this->pumpUntil($client, $state, $harness, $poller, $mount,
+                static fn (): bool => $state->sessionReady && $state->handle->bootstrapRequestId !== $original);
+            $generation = $beforeReady ? 3 : 2;
+            $this->assertSame(2, $mounts);
+            $this->assertStringContainsString('Owner-projected answer generation '.$generation, $harness->plainScreenText());
+            $this->assertStringContainsString('Caught-up input generation '.$generation, $harness->plainScreenText());
+            $resumes = array_values(array_filter($this->commands($directory), static fn (array $command): bool => 'resume' === $command['type']));
+            $this->assertCount(2, $resumes);
+            $this->assertSame($resumes[1]['id'], $state->handle->bootstrapRequestId);
+            $this->assertNotSame('unsolicited-request', $state->handle->bootstrapRequestId);
+            $this->assertExactAck($directory);
+        } finally {
+            $this->closePeer($client);
+            \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::removeDirectory($directory);
+        }
+    }
+
+    public static function failedReplacementStarts(): iterable
+    {
+        yield 'owned second peer exits before runtime.ready' => [true];
+        yield 'spawn fails after dead-pipe cleanup' => [false];
+    }
+
     public function testTwoRestartsWithoutUiPollingCoalesceOriginalPredecessor(): void
     {
         [$state, $harness, $poller] = $this->scope();
@@ -1052,9 +1109,18 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
         [$cut, , $frame] = $this->transfer($runId);
         (new \Symfony\Component\Filesystem\Filesystem())->dumpFile($directory.'/transfer.json', json_encode(
             ['cut' => $cut->toArray(), 'bytes' => base64_decode($frame->payload['data'], true)], \JSON_THROW_ON_ERROR));
-        $locator = new class implements \Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator {
+        $locator = new class($directory) implements \Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator {
+            public function __construct(private readonly string $directory)
+            {
+            }
+
             public function command(): array
             {
+                if (is_file($this->directory.'/fail-next-spawn')) {
+                    (new \Symfony\Component\Filesystem\Filesystem())->remove($this->directory.'/fail-next-spawn');
+                    throw new \Ineersa\CodingAgent\Runtime\Contract\RuntimeTransportException('Injected executable resolution failure.');
+                }
+
                 return [\PHP_BINARY, $this->path()];
             }
 
