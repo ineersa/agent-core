@@ -13,6 +13,7 @@ use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapDescriptorDTO;
 use Ineersa\CodingAgent\Session\Replay\SessionResumeMetadataProjection;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
@@ -251,6 +252,132 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
     {
         yield 'initially started handle has no attach identity' => [false];
         yield 'attached handle has the previous attach identity' => [true];
+    }
+
+    public function testAttachWriteFailureAfterReadinessKeepsOneSurvivingResume(): void
+    {
+        [$state, $harness, $poller] = $this->scope();
+        $client = null;
+        $originalStdin = null;
+        $logger = $this->createMock(\Psr\Log\LoggerInterface::class);
+        $logger->expects($this->once())->method('warning')->willReturnCallback(function (string $message, array $context) use (&$client, &$originalStdin): void {
+            self::assertSame('resume', $context['command_type']);
+            self::assertSame('Controller pipe broken, restarting and retrying', $message);
+            fclose($originalStdin);
+            $this->awaitPeerExit($client);
+        });
+        [$client, $directory] = $this->protocolClient('42', logger: $logger);
+        try {
+            $client->start(new \Ineersa\CodingAgent\Runtime\Contract\StartRunRequest('Original prompt', '42'));
+            $this->assertTrue((new \ReflectionProperty($client, 'runtimeReadyReceived'))->getValue($client));
+            $this->assertTrue($this->peerRunning($client));
+            // Fail the resume write after readiness while the original peer is
+            // still alive. The logged failure releases its actual stdin/EOF.
+            $property = new \ReflectionProperty($client, 'pipes');
+            $pipes = $property->getValue($client);
+            $originalStdin = $pipes[0];
+            $pipes[0] = fopen($directory.'/transfer.json', 'rb');
+            $property->setValue($client, $pipes);
+            $state->handle = $client->attach('42');
+            $returnedRequestId = $state->handle->bootstrapRequestId;
+            $this->assertSame($returnedRequestId, (new \ReflectionProperty($client, 'bootstrapCommandId'))->getValue($client));
+            $this->pumpUntil($client, $state, $harness, $poller, static function () use ($state, $harness): void {
+                self::assertFalse($state->sessionReady);
+                $harness->screen()->setTranscriptBlocks($state->transcript);
+            }, static fn (): bool => $state->sessionReady);
+            $resumes = array_values(array_filter($this->commands($directory), static fn (array $command): bool => 'resume' === $command['type']));
+            $this->assertCount(1, $resumes);
+            $this->assertSame($returnedRequestId, $state->handle->bootstrapRequestId);
+            $this->assertSame($resumes[0]['id'], $state->handle->bootstrapRequestId);
+            $this->assertSame($resumes[0]['id'], (new \ReflectionProperty($client, 'bootstrapCommandId'))->getValue($client));
+            $this->assertStringContainsString('Owner-projected answer generation 2', $harness->plainScreenText());
+            $this->assertStringContainsString('Caught-up input generation 2', $harness->plainScreenText());
+            $this->assertExactAck($directory);
+        } finally {
+            if (\is_resource($originalStdin)) {
+                fclose($originalStdin);
+            }
+            $this->closePeer($client);
+            \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::removeDirectory($directory);
+        }
+    }
+
+    public function testTwoRestartsWithoutUiPollingCoalesceOriginalPredecessor(): void
+    {
+        [$state, $harness, $poller] = $this->scope();
+        [$client, $directory] = $this->protocolClient('42');
+        $mounts = 0;
+        $mount = static function () use ($state, $harness, &$mounts): void {
+            ++$mounts;
+            self::assertFalse($state->sessionReady);
+            $harness->screen()->setTranscriptBlocks($state->transcript);
+        };
+        try {
+            $state->handle = $client->attach('42');
+            $this->pumpUntil($client, $state, $harness, $poller, $mount, static fn (): bool => $state->sessionReady);
+            $original = $state->handle->bootstrapRequestId;
+            $client->send('42', new \Ineersa\CodingAgent\Runtime\Contract\UserCommand('follow_up', 'exit-controller'));
+            $this->awaitPeerExit($client);
+            $client->send('42', new \Ineersa\CodingAgent\Runtime\Contract\UserCommand('follow_up', 'exit-controller'));
+            $this->awaitPeerExit($client);
+            $client->send('42', new \Ineersa\CodingAgent\Runtime\Contract\UserCommand('follow_up', 'Live after chained recovery'));
+            $this->assertSame($original, $state->handle->bootstrapRequestId);
+            $restoring = (new \ReflectionProperty($client, 'pendingSessionRestoring'))->getValue($client);
+            $this->assertSame($original, $restoring->payload['previous_command_id']);
+            $this->assertSame((new \ReflectionProperty($client, 'bootstrapCommandId'))->getValue($client), $restoring->payload['command_id']);
+            $this->pumpUntil($client, $state, $harness, $poller, $mount,
+                static fn (): bool => $state->sessionReady && $state->handle->bootstrapRequestId !== $original);
+            $this->assertSame(2, $mounts);
+            $this->assertStringContainsString('Owner-projected answer generation 3', $harness->plainScreenText());
+            $this->assertStringContainsString('Caught-up input generation 3', $harness->plainScreenText());
+            $this->assertStringNotContainsString('Owner-projected answer generation 2', $harness->plainScreenText());
+            $this->assertNotSame('unsolicited-request', $state->handle->bootstrapRequestId);
+            $resumes = array_values(array_filter($this->commands($directory), static fn (array $command): bool => 'resume' === $command['type']));
+            $this->assertCount(3, $resumes);
+            $this->assertSame($resumes[2]['id'], $state->handle->bootstrapRequestId);
+            $this->assertExactAck($directory);
+        } finally {
+            $this->closePeer($client);
+            \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::removeDirectory($directory);
+        }
+    }
+
+    public function testParentBootstrapIsBufferedWhileChildIsPolledFirst(): void
+    {
+        [$state, $harness, $poller] = $this->scope();
+        [$client, $directory] = $this->protocolClient('42');
+        try {
+            (new \Symfony\Component\Filesystem\Filesystem())->dumpFile($directory.'/child-run', 'child-42');
+            $state->handle = $client->attach('42');
+            $client->beginObservingChildRun('child-42');
+            $deadline = microtime(true) + 3;
+            $childEvents = [];
+            do {
+                foreach ($client->events('child-42') as $event) {
+                    $this->assertSame('child-42', $event->runId);
+                    $childEvents[] = $event;
+                }
+                $this->assertTrue($this->peerRunning($client));
+                if ([] !== $childEvents) {
+                    break;
+                }
+                usleep(1_000); // Yield while waiting for the owned peer's child event.
+            } while (microtime(true) < $deadline);
+            $this->assertCount(1, $childEvents);
+            $this->assertSame(RuntimeEventTypeEnum::RunStarted->value, $childEvents[0]->type);
+            $this->assertSame('42', (new \ReflectionProperty($client, 'bootstrapDescriptor'))->getValue($client)->runId);
+            $this->assertFalse($state->sessionReady);
+            $this->pumpUntil($client, $state, $harness, $poller, static function () use ($state, $harness): void {
+                self::assertFalse($state->sessionReady);
+                $harness->screen()->setTranscriptBlocks($state->transcript);
+            }, static fn (): bool => $state->sessionReady);
+            $this->assertStringContainsString('Owner-projected answer generation 1', $harness->plainScreenText());
+            $this->assertStringContainsString('Caught-up input generation 1', $harness->plainScreenText());
+            $this->assertExactAck($directory);
+        } finally {
+            $this->closePeer($client);
+            \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::removeDirectory($directory);
+        }
     }
 
     public function testResumeStartupPromptAttachesThenUsesOrdinarySubmissionOnceAfterReadiness(): void
@@ -604,7 +731,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
     }
 
     /** @return array{\Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient, string} */
-    private function protocolClient(string $runId, ?string $directory = null): array
+    private function protocolClient(string $runId, ?string $directory = null, ?\Psr\Log\LoggerInterface $logger = null): array
     {
         $directory ??= \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::createProjectTempDir('bootstrap-recovery');
         [$cut, , $frame] = $this->transfer($runId);
@@ -624,7 +751,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
         $client = new \Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient(
             new \Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig($locator, $directory),
             new \Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig(),
-            new \Ineersa\CodingAgent\Tool\ToolFilterRuntimeConfig(), $this->logger);
+            new \Ineersa\CodingAgent\Tool\ToolFilterRuntimeConfig(), $logger ?? $this->logger);
 
         return [$client, $directory];
     }

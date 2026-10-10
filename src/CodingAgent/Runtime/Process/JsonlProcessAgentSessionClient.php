@@ -105,6 +105,10 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
      */
     private ?string $primaryRunId = null;
 
+    // Local identity changes survive discarded dead-pipe packets. Keep only
+    // the first unconsumed predecessor and the latest replacement identity.
+    private ?RuntimeEvent $pendingSessionRestoring = null;
+
     /**
      * Whether ensureProcessRunning() auto-resumed the active run during
      * this restart cycle. Used to prevent duplicate resume commands when
@@ -169,6 +173,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
     public function start(StartRunRequest $request): RunHandle
     {
         // New run — clear stale state from any previous run or crash.
+        $this->pendingSessionRestoring = null;
         $this->activeRunId = null;
         $this->primaryRunId = null;
         $this->observedChildRunIds = [];
@@ -296,6 +301,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
     public function attach(string $runId): RunHandle
     {
+        $this->pendingSessionRestoring = null;
         $this->bootstrapCommandId = null;
         $this->bootstrapDescriptor = null;
         $this->bootstrapEnded = false;
@@ -341,7 +347,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         $this->bootstrapEnded = false;
         $this->writeCommandWithRetry($cmd);
 
-        return new RunHandle(runId: $runId, status: 'bootstrapping', bootstrapRequestId: $cmd->id);
+        return new RunHandle(runId: $runId, status: 'bootstrapping', bootstrapRequestId: $this->bootstrapCommandId);
     }
 
     /** @param array<string, mixed> $cut */
@@ -361,6 +367,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         if (null !== $this->process && $this->isProcessRunning()) {
             $this->writeCommand(new RuntimeCommand(uniqid('cmd_', true), 'bootstrap.cancel', $runId));
         }
+        $this->pendingSessionRestoring = null;
         $this->bootstrapDescriptor = null;
         $this->bootstrapCommandId = null;
         $this->bootstrapEnded = false;
@@ -418,6 +425,12 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
         // Transparently restart the controller process if it died.
         $this->ensureProcessRunning();
+
+        if (null !== $this->pendingSessionRestoring && $this->pendingSessionRestoring->runId === $runId) {
+            $restoring = $this->pendingSessionRestoring;
+            $this->pendingSessionRestoring = null;
+            yield $restoring;
+        }
 
         // Drain buffered events for this run only; other run IDs stay partitioned.
         foreach ($this->drainBufferedEventsForRun($runId) as $event) {
@@ -599,7 +612,9 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         $resumeRunId = $this->primaryRunId ?? $this->activeRunId;
         if ($hadRunningProcess && null !== $resumeRunId) {
             $this->activeRunId = $resumeRunId;
-            $previousRequestId = $this->bootstrapCommandId;
+            $previousRequestId = null !== $this->pendingSessionRestoring
+                ? $this->pendingSessionRestoring->payload['previous_command_id']
+                : $this->bootstrapCommandId;
             $this->bootstrapCommandId = null;
             $this->bootstrapDescriptor = null;
             $this->bootstrapEnded = false;
@@ -616,12 +631,12 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             $this->autoResumed = true;
             // Only this local restart decision can replace the UI's immutable
             // handle. Publish it before any frames from the replacement pipe.
-            $this->bufferEvent(new RuntimeEvent(
+            $this->pendingSessionRestoring = new RuntimeEvent(
                 RuntimeEventTypeEnum::SessionRestoring->value,
                 $this->activeRunId,
                 0,
                 ['previous_command_id' => $previousRequestId, 'command_id' => $resume->id],
-            ), 'controller_restart');
+            );
         }
     }
 
@@ -946,6 +961,14 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
                 'exception' => $e,
             ]);
             $this->ensureProcessRunning();
+            // Recovery already sent the surviving parent resume. Retrying the
+            // failed attach would supersede it with an identity the client lost.
+            if ('resume' === $command->type && $command->runId === $this->primaryRunId
+                && $this->autoResumed && $this->bootstrapCommandId !== $command->id) {
+                $this->autoResumed = false;
+
+                return;
+            }
             $this->writeCommand($command);
         }
     }
@@ -1022,7 +1045,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
                     continue;
                 }
                 $descriptor = \Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapDescriptorDTO::fromArray($event->payload);
-                if ($descriptor->runId !== $event->runId || $descriptor->runId !== $this->activeRunId) {
+                if ($descriptor->runId !== $event->runId || $descriptor->runId !== $this->primaryRunId) {
                     throw new RuntimeTransportException('Bootstrap availability does not match the attached run.');
                 }
                 if (null !== $this->bootstrapDescriptor && $descriptor->viewEpoch <= $this->bootstrapDescriptor->viewEpoch) {
@@ -1198,6 +1221,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
      */
     private function resetSessionBoundaryState(): void
     {
+        $this->pendingSessionRestoring = null;
         $this->bootstrapCommandId = null;
         $this->bootstrapDescriptor = null;
         $this->bootstrapEnded = false;

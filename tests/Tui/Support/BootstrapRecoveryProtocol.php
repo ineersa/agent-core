@@ -50,6 +50,9 @@ while (false !== ($line = fgets(\STDIN))) {
         $emit(RuntimeEventTypeEnum::BootstrapFrame->value, $command->runId, 0,
             ['bootstrap_id' => $cut['bootstrap_id'], 'view_epoch' => $cut['view_epoch'], 'index' => 0, 'data' => base64_encode($bytes)]);
         $emit(RuntimeEventTypeEnum::BootstrapEnd->value, $command->runId, 0, $cut + ['frames' => 1]);
+        if (is_file($directory.'/child-run')) {
+            $emit(RuntimeEventTypeEnum::RunStarted->value, file_get_contents($directory.'/child-run'), 1);
+        }
     } elseif ('bootstrap.applied' === $command->type) {
         if ($command->payload !== $cut) {
             exit(3);
