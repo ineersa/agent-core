@@ -109,6 +109,10 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
     // the first unconsumed predecessor and the latest replacement identity.
     private ?RuntimeEvent $pendingSessionRestoring = null;
 
+    // Started sessions have no bootstrap ID; failed replacement startup must
+    // retain their resume obligation independently of identity publication.
+    private bool $recoveryPending = false;
+
     /**
      * Whether ensureProcessRunning() auto-resumed the active run during
      * this restart cycle. Used to prevent duplicate resume commands when
@@ -173,6 +177,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
     public function start(StartRunRequest $request): RunHandle
     {
         // New run — clear stale state from any previous run or crash.
+        $this->recoveryPending = false;
         $this->pendingSessionRestoring = null;
         $this->activeRunId = null;
         $this->primaryRunId = null;
@@ -301,6 +306,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
     public function attach(string $runId): RunHandle
     {
+        $this->recoveryPending = false;
         $this->pendingSessionRestoring = null;
         $this->bootstrapCommandId = null;
         $this->bootstrapDescriptor = null;
@@ -597,13 +603,13 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             $this->stopProcess();
         }
 
-        if (null !== $this->process && $this->isProcessRunning()) {
+        if (null !== $this->process && $this->isProcessRunning() && !$this->recoveryPending) {
             return;
         }
 
-        // A failed spawn can leave no process while its prior attach is still
-        // owned by the caller. Preserve that recovery obligation as well.
-        $hadRunningProcess = null !== $this->process || null !== $this->bootstrapCommandId || null !== $this->pendingSessionRestoring;
+        $hadRunningProcess = null !== $this->process || $this->recoveryPending;
+        $resumeRunId = $this->primaryRunId ?? $this->activeRunId;
+        $this->recoveryPending = $hadRunningProcess && null !== $resumeRunId;
 
         if ($hadRunningProcess && !$sessionChanged) {
             $this->enforceRestartRateLimit();
@@ -616,7 +622,6 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         $this->spawnProcess();
 
         // If we had an active run before the crash, resume it transparently.
-        $resumeRunId = $this->primaryRunId ?? $this->activeRunId;
         if ($hadRunningProcess && null !== $resumeRunId) {
             $this->activeRunId = $resumeRunId;
             $previousRequestId = null !== $this->pendingSessionRestoring
@@ -645,6 +650,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
                 0,
                 ['previous_command_id' => $previousRequestId, 'command_id' => $resume->id],
             );
+            $this->recoveryPending = false;
         }
     }
 
@@ -1229,6 +1235,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
      */
     private function resetSessionBoundaryState(): void
     {
+        $this->recoveryPending = false;
         $this->pendingSessionRestoring = null;
         $this->bootstrapCommandId = null;
         $this->bootstrapDescriptor = null;

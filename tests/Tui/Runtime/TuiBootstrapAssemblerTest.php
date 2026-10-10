@@ -599,7 +599,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
     }
 
     #[DataProvider('failedReplacementStarts')]
-    public function testCapturedReplacementStartupFailurePreservesMountedIdentity(bool $beforeReady): void
+    public function testCapturedReplacementStartupFailurePreservesMountedIdentity(bool $beforeReady, bool $attached): void
     {
         [$state, $harness, $poller] = $this->scope();
         [$client, $directory] = $this->protocolClient('42');
@@ -610,8 +610,20 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
             $harness->screen()->setTranscriptBlocks($state->transcript);
         };
         try {
-            $state->handle = $client->attach('42');
-            $this->pumpUntil($client, $state, $harness, $poller, $mount, static fn (): bool => $state->sessionReady);
+            if ($attached) {
+                $state->handle = $client->attach('42');
+                $this->pumpUntil($client, $state, $harness, $poller, $mount, static fn (): bool => $state->sessionReady);
+            } else {
+                $state->resuming = false;
+                $state->replaceTranscript([]);
+                $harness->screen()->setTranscriptBlocks([]);
+                $state->handle = $client->start(new \Ineersa\CodingAgent\Runtime\Contract\StartRunRequest('Original prompt', '42'));
+                $state->sessionReady = true;
+                $this->assertNull($state->handle->bootstrapRequestId);
+                $this->pumpUntil($client, $state, $harness, $poller, $mount,
+                    static fn (): bool => str_contains($harness->plainScreenText(), 'Original prompt'));
+            }
+            $oldMounts = $mounts;
             $original = $state->handle->bootstrapRequestId;
             (new \Symfony\Component\Filesystem\Filesystem())->dumpFile(
                 $directory.($beforeReady ? '/exit-before-ready' : '/fail-next-spawn'), '2');
@@ -626,7 +638,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
             $this->assertSame($original, $state->handle->bootstrapRequestId);
             $this->assertSame($original, (new \ReflectionProperty($client, 'bootstrapCommandId'))->getValue($client));
             $this->assertNull((new \ReflectionProperty($client, 'pendingSessionRestoring'))->getValue($client));
-            $this->assertSame(1, $mounts);
+            $this->assertSame($oldMounts, $mounts);
             $this->assertFalse($this->peerRunning($client));
             if ($beforeReady) {
                 $this->assertSame('2', file_get_contents($directory.'/generation'));
@@ -635,12 +647,12 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
             $this->pumpUntil($client, $state, $harness, $poller, $mount,
                 static fn (): bool => $state->sessionReady && $state->handle->bootstrapRequestId !== $original);
             $generation = $beforeReady ? 3 : 2;
-            $this->assertSame(2, $mounts);
+            $this->assertSame($oldMounts + 1, $mounts);
             $this->assertStringContainsString('Owner-projected answer generation '.$generation, $harness->plainScreenText());
             $this->assertStringContainsString('Caught-up input generation '.$generation, $harness->plainScreenText());
             $resumes = array_values(array_filter($this->commands($directory), static fn (array $command): bool => 'resume' === $command['type']));
-            $this->assertCount(2, $resumes);
-            $this->assertSame($resumes[1]['id'], $state->handle->bootstrapRequestId);
+            $this->assertCount($attached ? 2 : 1, $resumes);
+            $this->assertSame($resumes[array_key_last($resumes)]['id'], $state->handle->bootstrapRequestId);
             $this->assertNotSame('unsolicited-request', $state->handle->bootstrapRequestId);
             $this->assertExactAck($directory);
         } finally {
@@ -651,8 +663,10 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
 
     public static function failedReplacementStarts(): iterable
     {
-        yield 'owned second peer exits before runtime.ready' => [true];
-        yield 'spawn fails after dead-pipe cleanup' => [false];
+        yield 'attached second peer exits before runtime.ready' => [true, true];
+        yield 'attached spawn fails after dead-pipe cleanup' => [false, true];
+        yield 'started second peer exits before runtime.ready' => [true, false];
+        yield 'started spawn fails after dead-pipe cleanup' => [false, false];
     }
 
     public function testTwoRestartsWithoutUiPollingCoalesceOriginalPredecessor(): void
