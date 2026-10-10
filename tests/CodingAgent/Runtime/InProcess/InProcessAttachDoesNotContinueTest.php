@@ -45,7 +45,6 @@ final class InProcessAttachDoesNotContinueTest extends IsolatedKernelTestCase
         $store = self::getContainer()->get(HatfieldSessionStore::class);
         $runId = $store->createSession();
         $store->updateMetadata($runId, ['reasoning' => 'high']);
-        $store->claimReasoningBaseline($runId, 'openai-codex/gpt-6-astra', 'medium');
         $baseline = $store->findSession($runId)->reasoningBaseline;
         $handle = $client->attach($runId);
 

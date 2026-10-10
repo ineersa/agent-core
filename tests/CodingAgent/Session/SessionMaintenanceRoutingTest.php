@@ -393,11 +393,10 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         $this->assertSame([], $toolTransport->getSent());
     }
 
-    public function testAttachResetsReasoningOnlyAtOwnerConsumptionWithoutStartingModelTurn(): void
+    public function testAttachDoesNotStartModelTurnOrCreateTransportMetadata(): void
     {
         $run = $this->seed();
         $sessions = self::getContainer()->get(HatfieldSessionStore::class);
-        $sessions->claimReasoningBaseline($run, 'test-model', 'medium');
         $baseline = $sessions->findSession($run)->reasoningBaseline;
         $active = self::getContainer()->get(ActiveRunContextInterface::class);
         $state = $active->requireLoaded($run);
@@ -405,7 +404,7 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         $queued = $bus->dispatch(new AttachRun($run, [], 'attach-id'));
         $this->assertSame($baseline, $sessions->findSession($run)->reasoningBaseline);
         $bus->dispatch($queued->with(new ReceivedStamp('run_control')));
-        $this->assertSame(['continuation_generation' => $sessions->continuationGeneration($run)], $sessions->findSession($run)->reasoningBaseline);
+        $this->assertNull($sessions->findSession($run)->reasoningBaseline);
         $this->assertSame($state->turnNo, $active->requireLoaded($run)->turnNo);
         $this->assertGreaterThan($state->lastSeq, $active->requireLoaded($run)->lastSeq);
         $this->assertSame([], self::getContainer()->get('messenger.transport.llm')->getSent());
@@ -675,7 +674,6 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         $active = self::getContainer()->get(ActiveRunContextInterface::class);
         $active->replaceCurrent($active->requireLoaded($run)->with(['turnNo' => 0]));
         $sessions = self::getContainer()->get(HatfieldSessionStore::class);
-        $sessions->claimReasoningBaseline($run, 'test-model', 'medium');
         $handler = $this->createMock(\Ineersa\AgentCore\Application\Pipeline\RunMessageHandler::class);
         $handler->method('supports')->willReturn(true);
         $handler->expects($this->once())->method('handle')->willReturn(new \Ineersa\AgentCore\Application\Pipeline\HandlerResult(postCommitActions: [new \Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO(new AdvanceRun($run, 0, 'user-advance', 1, 'user-advance'))]));
@@ -692,7 +690,7 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         $this->assertCount(1, $sent);
         $this->assertInstanceOf(AdvanceRun::class, $sent[0]->getMessage());
         $this->assertSame(0, $this->afterTurnCount);
-        $this->assertSame(['continuation_generation' => $sessions->continuationGeneration($run)], $sessions->findSession($run)->reasoningBaseline);
+        $this->assertNull($sessions->findSession($run)->reasoningBaseline);
         $this->assertMaintenanceDidNotScheduleCompaction($run);
     }
 
@@ -706,7 +704,6 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
             RunEvent::forAppend($run, 0, 'run_started', ['payload' => ['metadata' => ['model' => 'test-model'], 'messages' => []]]),
             RunEvent::forAppend($run, 0, 'waiting_human', ['question_id' => 'old-question', 'prompt' => 'Continue?']),
         ]);
-        $sessions->claimReasoningBaseline($run, 'test-model', 'medium');
         $bus = $container->get('agent.command.bus');
         $bus->dispatch(new AttachRun($run, [], 'attach-id'));
         $bus->dispatch(new ApplyCommand($run, 0, 'follow-now', 1, 'follow-now', 'follow_up', ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Continue now']]]]));
@@ -722,7 +719,7 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         $this->assertSame(0, $state->turnNo);
         $this->assertCount(2, $transport->getSent(), 'Attach must not enqueue its cleanup behind the follow-up.');
         $this->assertSame([], $container->get('messenger.transport.llm')->getSent());
-        $this->assertSame(['continuation_generation' => $sessions->continuationGeneration($run)], $sessions->findSession($run)->reasoningBaseline);
+        $this->assertNull($sessions->findSession($run)->reasoningBaseline);
         $cleanup = $events->allFor($run);
         $this->assertSame(['run_started', 'waiting_human', 'agent_command_applied', 'agent_end', 'context_refreshed'], array_column($cleanup, 'type'));
         $bus->dispatch($queued[1]->with(new ReceivedStamp('run_control')));
@@ -879,7 +876,6 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
             new \Psr\Log\NullLogger(),
             $container->get(ActiveRunContextInterface::class),
             $container->get(\Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor::class),
-            $container->get(HatfieldSessionStore::class),
             $container->get(\Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware::class),
             $container->get(\Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery::class),
             $container->get(DeferredSubagentBatchRepository::class),

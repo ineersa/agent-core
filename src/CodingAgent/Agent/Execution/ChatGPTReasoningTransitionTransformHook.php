@@ -13,20 +13,19 @@ use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Symfony\AI\Platform\Bridge\OpenAICodex\CodexReasoningTransitionMetadata;
 
 /**
- * Re-applies durable Astra reasoning-transition markers onto surviving history.
+ * Re-applies durable ChatGPT reasoning-transition markers onto surviving history.
  *
- * New transitions are recorded by {@see AstraReasoningTransitionRequestHook}
- * after SessionAwareModelResolver decides an update is required. Compaction and
- * resume clear the session baseline so discarded switches are not kept.
+ * New transitions are recorded by {@see ChatGPTReasoningTransitionRequestHook}
+ * after SessionAwareModelResolver decides an update is required. Rewritten history
+ * invalidates the ledger at model resolution; ordinary resume retains it.
  *
  * Runs before {@see \Ineersa\CodingAgent\Tool\OutputCapLlmTransformHook} so
  * durable MESSAGE_KEY values are derived from original history text and survive
  * later LLM-facing rewrites (including OutputCap saved-path filenames).
  */
-final readonly class AstraReasoningTransitionTransformHook implements TransformContextHookInterface
+final readonly class ChatGPTReasoningTransitionTransformHook implements TransformContextHookInterface
 {
     public function __construct(
         private ModelSelectionService $selectionService,
@@ -65,14 +64,14 @@ final readonly class AstraReasoningTransitionTransformHook implements TransformC
             $key = self::messageKeyInHistory($messages, $index);
             $effort = null !== $key ? ($byKey[$key] ?? null) : null;
             $metadata = $message->metadata;
-            unset($metadata[CodexReasoningTransitionMetadata::KEY], $metadata[CodexReasoningTransitionMetadata::MESSAGE_KEY]);
+            unset($metadata[ChatGPTReasoningTransitionMetadata::KEY], $metadata[ChatGPTReasoningTransitionMetadata::MESSAGE_KEY]);
 
             if (null !== $key) {
-                $metadata[CodexReasoningTransitionMetadata::MESSAGE_KEY] = $key;
+                $metadata[ChatGPTReasoningTransitionMetadata::MESSAGE_KEY] = $key;
             }
 
             if (\is_string($effort) && '' !== $effort) {
-                $metadata[CodexReasoningTransitionMetadata::KEY] = $effort;
+                $metadata[ChatGPTReasoningTransitionMetadata::KEY] = $effort;
             }
 
             if ($metadata === $message->metadata) {
@@ -128,7 +127,7 @@ final readonly class AstraReasoningTransitionTransformHook implements TransformC
         }
 
         $message = $messages[$index];
-        $existing = $message->metadata[CodexReasoningTransitionMetadata::MESSAGE_KEY] ?? null;
+        $existing = $message->metadata[ChatGPTReasoningTransitionMetadata::MESSAGE_KEY] ?? null;
         if (\is_string($existing) && '' !== $existing) {
             return $existing;
         }
@@ -203,15 +202,15 @@ final readonly class AstraReasoningTransitionTransformHook implements TransformC
     {
         $out = [];
         foreach ($messages as $message) {
-            if (!\array_key_exists(CodexReasoningTransitionMetadata::KEY, $message->metadata)
-                && !\array_key_exists(CodexReasoningTransitionMetadata::MESSAGE_KEY, $message->metadata)) {
+            if (!\array_key_exists(ChatGPTReasoningTransitionMetadata::KEY, $message->metadata)
+                && !\array_key_exists(ChatGPTReasoningTransitionMetadata::MESSAGE_KEY, $message->metadata)) {
                 $out[] = $message;
 
                 continue;
             }
 
             $metadata = $message->metadata;
-            unset($metadata[CodexReasoningTransitionMetadata::KEY], $metadata[CodexReasoningTransitionMetadata::MESSAGE_KEY]);
+            unset($metadata[ChatGPTReasoningTransitionMetadata::KEY], $metadata[ChatGPTReasoningTransitionMetadata::MESSAGE_KEY]);
             $out[] = new AgentMessage(
                 role: $message->role,
                 content: $message->content,
@@ -247,7 +246,7 @@ final readonly class AstraReasoningTransitionTransformHook implements TransformC
             return null;
         }
 
-        if ('codex' !== $this->catalog->getProvider($modelRef->providerId)?->type
+        if ('chatgpt' !== $this->catalog->getProvider($modelRef->providerId)?->type
             || true !== $this->catalog->getModel($modelRef)?->compatibility?->supportsReasoningConfigurationUpdates) {
             return null;
         }

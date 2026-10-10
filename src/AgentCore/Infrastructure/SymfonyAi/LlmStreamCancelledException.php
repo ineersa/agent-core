@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Infrastructure\SymfonyAi;
 
 /**
- * Marks run cancellation from HTTP progress callbacks or Codex WebSocket
+ * Marks run cancellation from HTTP progress callbacks and transport
  * cancellation subscriptions during a silent or in-flight stream wait.
  *
  * HTTP or Amp transport layers may wrap this exception;

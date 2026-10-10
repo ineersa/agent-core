@@ -30,7 +30,7 @@ final class UsageCommandRegistrar implements TuiListenerRegistrar, SlashCommandC
     {
         $catalog->registerMetadata(new CommandMetadata(
             name: 'usage',
-            description: 'Show OpenAI Codex and z.ai quota status plus session usage',
+            description: 'Show ChatGPT and z.ai quota status plus session usage',
             usage: '/usage',
             acceptsArguments: false,
         ));

@@ -61,7 +61,6 @@ final class HistoryTailDiscardServiceTest extends TestCase
 
         $service = new HistoryTailDiscardService(
             HistoryEventStoreFactory::create($sessionStore, $events),
-            $sessionStore,
             new NullLogger(),
         );
         $state = new RunState(
@@ -94,7 +93,6 @@ final class HistoryTailDiscardServiceTest extends TestCase
 
         $service = new HistoryTailDiscardService(
             HistoryEventStoreFactory::create($sessionStore, $events),
-            $sessionStore,
             new NullLogger(),
         );
         $state = new RunState(
@@ -118,7 +116,7 @@ final class HistoryTailDiscardServiceTest extends TestCase
             $this->event($runId, 2, 4, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 4]),
             $this->event($runId, 3, 100, RunEventTypeEnum::HistoryPositionSet->value, ['position_turn_no' => 100]),
         ]);
-        $service = new HistoryTailDiscardService($store, $sessionStore, new NullLogger());
+        $service = new HistoryTailDiscardService($store, new NullLogger());
         $state = new RunState(runId: $runId, status: RunStatus::Completed, version: 1, turnNo: 100, lastSeq: 3);
         $this->assertSame(100, $service->prepareForwardTailDiscard($runId, $state)?->payload['after_turn_no']);
         $this->assertNull($service->prepareForwardTailDiscard($runId, $state->with(['turnNo' => 99])));
@@ -131,7 +129,6 @@ final class HistoryTailDiscardServiceTest extends TestCase
         $sessionStore = $this->sessionStore();
         $service = new HistoryTailDiscardService(
             HistoryEventStoreFactory::create($sessionStore),
-            $sessionStore,
             new NullLogger(),
         );
 
@@ -163,8 +160,7 @@ final class HistoryTailDiscardServiceTest extends TestCase
     }
 
     /**
-     * Structural tests use non-numeric run ids, so
-     * {@see HatfieldSessionStore::resetReasoningBaseline()} is a no-op.
+     * Build isolated session storage for the indexed history fixture.
      */
     private function sessionStore(): HatfieldSessionStore
     {

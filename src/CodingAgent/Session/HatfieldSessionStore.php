@@ -149,9 +149,7 @@ final class HatfieldSessionStore
         }
         if (\array_key_exists('model', $meta) && \is_string($meta['model'])) {
             if ($entity->model !== $meta['model']) {
-                $entity->reasoningBaseline = [
-                    'continuation_generation' => ($entity->reasoningBaseline['continuation_generation'] ?? 0) + 1,
-                ];
+                $entity->reasoningBaseline = null;
             }
             $entity->model = $meta['model'];
             $dirty = true;
@@ -216,163 +214,68 @@ final class HatfieldSessionStore
     }
 
     /**
-     * Claim the first request's effort. Return null for that first request,
-     * or the decision for subsequent requests in the same model epoch.
+     * Claim a chat epoch from retained history, not from a worker connection.
+     * Missing anchors mean compaction/discard rewrote the prefix; normal resume does not.
      *
-     * @return array{baseline: string, update: ?string, last_emitted: string}|null
+     * @param list<string> $historyKeys
+     *
+     * @return array{baseline: string, update: ?string}|null
      */
-    public function claimReasoningBaseline(string $sessionId, string $model, string $effort): ?array
+    public function claimReasoningBaseline(string $sessionId, string $model, string $effort, array $historyKeys): ?array
     {
         $entity = $this->fetchEntityOrNull($sessionId);
         if (null === $entity) {
             return null;
         }
-
-        // Rewritten history clears the reasoning baseline but retains the
-        // continuation generation for every LLM worker to observe.
-        if (isset($entity->reasoningBaseline['continuation_generation'])
-            && !\is_string($entity->reasoningBaseline['model'] ?? null)) {
-            $entity->reasoningBaseline = [
-                'model' => $model,
-                'effort' => $effort,
-                'last_emitted' => $effort,
-                'transitions' => [],
-                'continuation_generation' => $entity->reasoningBaseline['continuation_generation'],
-            ];
+        $keys = array_fill_keys($historyKeys, true);
+        $root = array_key_first($keys);
+        $baseline = $entity->reasoningBaseline;
+        $valid = ($baseline['model'] ?? null) === $model && \is_string($baseline['effort'] ?? null);
+        if (isset($baseline['root']) && $baseline['root'] !== $root) {
+            $valid = false;
+        }
+        foreach ($baseline['transitions'] ?? [] as $transition) {
+            if (!isset($keys[$transition['message_key']])) {
+                $valid = false;
+            }
+        }
+        if (!$valid) {
+            $entity->reasoningBaseline = ['model' => $model, 'effort' => $effort, 'last_emitted' => $effort, 'root' => $root, 'transitions' => []];
             $this->entityManager->flush();
 
             return null;
         }
-
-        if ($model === ($entity->reasoningBaseline['model'] ?? null)) {
-            $baseline = $entity->reasoningBaseline['effort'] ?? null;
-            if (!\is_string($baseline) || '' === $baseline) {
-                return null;
-            }
-
-            $lastEmitted = $entity->reasoningBaseline['last_emitted'] ?? $baseline;
-            if (!\is_string($lastEmitted) || '' === $lastEmitted) {
-                $lastEmitted = $baseline;
-            }
-
-            return [
-                'baseline' => $baseline,
-                'update' => $effort === $lastEmitted ? null : $effort,
-                'last_emitted' => $lastEmitted,
-            ];
+        // Existing durable epochs need no prefix rewrite merely because this process resumed.
+        if (!\array_key_exists('root', $baseline)) {
+            $baseline['root'] = $root;
+            $entity->reasoningBaseline = $baseline;
+            $this->entityManager->flush();
         }
 
-        $entity->reasoningBaseline = [
-            'model' => $model,
-            'effort' => $effort,
-            'last_emitted' => $effort,
-            'transitions' => [],
-            'continuation_generation' => $entity->reasoningBaseline['continuation_generation'] ?? 0,
-        ];
-        $this->entityManager->flush();
-
-        return null;
+        return ['baseline' => $baseline['effort'], 'update' => $effort === ($baseline['last_emitted'] ?? $baseline['effort']) ? null : $effort];
     }
 
-    /**
-     * Remember a history-bound reasoning transition for later request rebuild.
-     *
-     * @param non-empty-string $messageKey
-     * @param non-empty-string $effort
-     */
     public function rememberReasoningTransition(string $sessionId, string $model, string $messageKey, string $effort): void
     {
         $entity = $this->fetchEntityOrNull($sessionId);
-        if (null === $entity) {
-            return;
+        if (null === $entity || ($entity->reasoningBaseline['model'] ?? null) !== $model) {
+            throw new \LogicException('Reasoning transition has no matching chat baseline.');
         }
-
         $baseline = $entity->reasoningBaseline;
-        if (!\is_array($baseline)
-            || ($baseline['model'] ?? null) !== $model
-            || !\is_string($baseline['effort'] ?? null)
-            || '' === $baseline['effort']) {
-            return;
-        }
-
-        $transitions = \is_array($baseline['transitions'] ?? null) ? $baseline['transitions'] : [];
-        $next = [];
-        foreach ($transitions as $transition) {
-            if (!\is_array($transition)) {
-                continue;
-            }
-            $existingKey = $transition['message_key'] ?? null;
-            if (!\is_string($existingKey) || '' === $existingKey || $existingKey === $messageKey) {
-                continue;
-            }
-            $existingEffort = $transition['effort'] ?? null;
-            if (!\is_string($existingEffort) || '' === $existingEffort) {
-                continue;
-            }
-            $next[] = ['message_key' => $existingKey, 'effort' => $existingEffort];
-        }
-        $next[] = ['message_key' => $messageKey, 'effort' => $effort];
-
-        $baseline['transitions'] = $next;
+        $transitions = array_values(array_filter($baseline['transitions'] ?? [], static fn (array $entry): bool => $entry['message_key'] !== $messageKey));
+        $transitions[] = ['message_key' => $messageKey, 'effort' => $effort];
+        $baseline['transitions'] = $transitions;
         $baseline['last_emitted'] = $effort;
         $entity->reasoningBaseline = $baseline;
         $this->entityManager->flush();
     }
 
-    /**
-     * @return list<array{message_key: string, effort: string}>
-     */
+    /** @return list<array{message_key: string, effort: string}> */
     public function listReasoningTransitions(string $sessionId, string $model): array
     {
         $entity = $this->fetchEntityOrNull($sessionId);
-        if (null === $entity) {
-            return [];
-        }
 
-        $baseline = $entity->reasoningBaseline;
-        if (!\is_array($baseline) || ($baseline['model'] ?? null) !== $model) {
-            return [];
-        }
-
-        $transitions = \is_array($baseline['transitions'] ?? null) ? $baseline['transitions'] : [];
-        $out = [];
-        foreach ($transitions as $transition) {
-            if (!\is_array($transition)) {
-                continue;
-            }
-            $messageKey = $transition['message_key'] ?? null;
-            $effort = $transition['effort'] ?? null;
-            if (!\is_string($messageKey) || '' === $messageKey || !\is_string($effort) || '' === $effort) {
-                continue;
-            }
-            $out[] = ['message_key' => $messageKey, 'effort' => $effort];
-        }
-
-        return $out;
-    }
-
-    public function resetReasoningBaseline(string $sessionId): void
-    {
-        $entity = $this->fetchEntityOrNull($sessionId);
-        if (null === $entity) {
-            return;
-        }
-
-        // Each process-local cache observes the new generation independently.
-        // A consumed boolean would reset only the first LLM worker.
-        $generation = $entity->reasoningBaseline['continuation_generation'] ?? 0;
-        $entity->reasoningBaseline = ['continuation_generation' => $generation + 1];
-        $this->entityManager->flush();
-    }
-
-    public function continuationGeneration(string $sessionId): ?int
-    {
-        $entity = $this->fetchEntityOrNull($sessionId);
-        if (null === $entity) {
-            return null;
-        }
-
-        return $entity->reasoningBaseline['continuation_generation'] ?? 0;
+        return ($entity?->reasoningBaseline['model'] ?? null) === $model ? ($entity->reasoningBaseline['transitions'] ?? []) : [];
     }
 
     /**
@@ -609,7 +512,7 @@ final class HatfieldSessionStore
             return null;
         }
 
-        // Mutable session metadata (model/reasoning/name/baseline) can change
+        // Mutable session metadata (model/reasoning/name) can change
         // in another process while this EM still holds the identity-map copy.
         // Refresh before returning or mutating so Doctrine dirty-checks against
         // the committed row. Existence/delete use COUNT instead of this helper.

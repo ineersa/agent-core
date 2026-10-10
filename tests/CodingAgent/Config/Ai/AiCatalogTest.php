@@ -114,7 +114,6 @@ YAML);
             ['minimal' => null, 'low' => 'low', 'medium' => 'medium', 'high' => 'high', 'xhigh' => 'xhigh', 'max' => 'max'],
             $astra->thinkingLevelMap,
         );
-        $this->assertTrue($astra->compatibility?->supportsReasoningConfigurationUpdates);
         $this->assertTrue($astra->compatibility?->pinContextWindow);
 
         $sol61 = $ai->providers['openai-codex']->models['gpt-6.1-sol'];
@@ -125,7 +124,6 @@ YAML);
             ['minimal' => null, 'low' => 'low', 'medium' => 'medium', 'high' => 'high', 'xhigh' => 'xhigh', 'max' => 'max'],
             $sol61->thinkingLevelMap,
         );
-        $this->assertTrue($sol61->compatibility?->supportsReasoningConfigurationUpdates);
         $this->assertTrue($sol61->compatibility?->pinContextWindow);
         $this->assertTrue($sol61->toolCalling);
         $this->assertTrue($sol61->reasoning);
@@ -142,7 +140,6 @@ YAML);
             ['off' => 'none', 'minimal' => 'low', 'low' => 'low', 'medium' => 'medium', 'high' => 'high', 'xhigh' => 'xhigh', 'max' => 'max'],
             $sol->thinkingLevelMap,
         );
-        $this->assertTrue($sol->compatibility?->supportsReasoningConfigurationUpdates);
         $this->assertTrue($sol->compatibility?->pinContextWindow);
         $this->assertTrue($sol->toolCalling);
         $this->assertTrue($sol->reasoning);
@@ -156,7 +153,6 @@ YAML);
         $this->assertSame(128000, $luna->maxTokens);
         $this->assertSame(['text', 'image'], $luna->input);
         $this->assertSame($sol->thinkingLevelMap, $luna->thinkingLevelMap);
-        $this->assertTrue($luna->compatibility?->supportsReasoningConfigurationUpdates);
         $this->assertTrue($luna->compatibility?->pinContextWindow);
         $this->assertTrue($luna->toolCalling);
         $this->assertTrue($luna->reasoning);
@@ -192,7 +188,7 @@ YAML);
         $this->assertSame(['low' => 'low', 'high' => 'high', 'max' => 'max'], $go->models['deepseek-v4.1-flash']->thinkingLevelMap);
         $this->assertSame('deepseek', $go->models['deepseek-v4.1-flash']->compatibility?->thinkingFormat);
         $this->assertTrue($go->models['deepseek-v4.1-flash']->compatibility?->requiresReasoningContentOnAssistantMessages);
-        $this->assertSame('codex', $go->models['muse-spark-1.3-contributor']->compatibility?->thinkingFormat);
+        $this->assertSame('chatgpt', $go->models['muse-spark-1.3-contributor']->compatibility?->thinkingFormat);
         $this->assertSame([], $go->models['longcat-2.5-preview-free']->thinkingLevelMap);
     }
 

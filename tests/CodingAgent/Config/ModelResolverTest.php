@@ -510,7 +510,7 @@ class ModelResolverTest extends TestCase
             'default_model' => 'openai-codex/gpt-5.6-luna',
             'providers' => [
                 'openai-codex' => [
-                    'type' => 'codex',
+                    'type' => 'chatgpt',
                     'enabled' => true,
                     'base_url' => 'https://chatgpt.com/backend-api',
                     'models' => [
@@ -547,7 +547,7 @@ class ModelResolverTest extends TestCase
         $aiData = [
             'providers' => [
                 'openai-codex' => [
-                    'type' => 'codex',
+                    'type' => 'chatgpt',
                     'enabled' => true,
                     'base_url' => 'https://chatgpt.com/backend-api',
                     'models' => [

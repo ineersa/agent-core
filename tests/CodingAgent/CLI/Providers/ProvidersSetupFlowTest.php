@@ -87,12 +87,12 @@ providers:
     openai-codex:
         label: 'OpenAI Codex'
         kind: oauth
-        type: codex
+        type: chatgpt
         enabled: false
         base_url: https://chatgpt.com/backend-api
         api: openai-responses
         completions_path: /codex/responses
-        auth_command: 'auth:codex'
+        auth_command: 'auth:chatgpt'
         models:
             gpt-5.6-luna:
                 name: GPT-5.6 Luna
@@ -241,7 +241,7 @@ YAML);
         $settings = Yaml::parseFile($projectFile);
         $this->assertIsArray($settings);
         $this->assertSame(['enabled' => true], $settings['ai']['providers']['openai-codex'] ?? null);
-        $this->assertSame(['auth:codex'], $flow->pendingAuthCommands());
+        $this->assertSame(['auth:chatgpt'], $flow->pendingAuthCommands());
         $this->assertStringContainsString($this->projectDir, $flow->settingsPath());
     }
 

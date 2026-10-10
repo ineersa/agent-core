@@ -49,6 +49,8 @@ Related focused references:
 |---|---|
 | `~/.hatfield/ai-catalog.yaml` | User AI catalog (see [ai-catalog.md](ai-catalog.md)) |
 | `~/.hatfield/settings.yaml` | User overrides |
+| `~/.hatfield/chatgpt-auth.json` | Single-account verified ChatGPT grant; use `auth:chatgpt login` |
+| `~/.hatfield/auth.json` | Grok credentials and retained legacy records; not used for ChatGPT |
 | `<cwd>/.hatfield/settings.yaml` | Project overrides |
 | `<cwd>/.hatfield/sessions/` | Session storage (ignored by git) |
 | `<cwd>/.hatfield/tmp/` | Tool/output-cap/bg temp data |
@@ -85,6 +87,10 @@ Relative paths in settings resolve against the **active project CWD** (not the i
 | `logging.path` | Log directory |
 | `logging.level` | Monolog level |
 | `logging.max_files` | Rotated file retention |
+
+### Cache-preserving reasoning updates
+
+`ai.providers.<id>.compatibility.supports_reasoning_configuration_updates` enables native HTTP reasoning controls for ChatGPT. The selected model must also carry the same compatibility flag; bundled GPT-6 models do. Other models send the selected effort normally. Enabled chat sessions retain their initial top-level effort and persist ordered switches before durable user/tool anchors. Resume retains the baseline; rewritten history claims a new epoch. Explicit summary and fork overrides do not mutate the parent baseline. Live subscription-endpoint acceptance remains unverified.
 
 ### Compaction (summary)
 

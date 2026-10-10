@@ -811,7 +811,7 @@ final class FakeProvidersSetupFlow implements ProvidersSetupFlowInterface
             ['id' => 'zai', 'label' => 'Z.ai (GLM)', 'need' => 'needs an API key', 'kind' => 'apikey', 'authCommand' => null, 'models' => ['glm-5.3']],
             ['id' => 'deepseek', 'label' => 'DeepSeek', 'need' => 'needs an API key', 'kind' => 'apikey', 'authCommand' => null, 'models' => ['deepseek-v4-pro']],
             ['id' => 'opencode-go', 'label' => 'OpenCode Go', 'need' => 'needs an API key', 'kind' => 'apikey', 'authCommand' => null, 'models' => ['deepseek-v4.1-flash']],
-            ['id' => 'openai-codex', 'label' => 'OpenAI Codex', 'need' => 'log in with your ChatGPT account', 'kind' => 'oauth', 'authCommand' => 'auth:codex', 'models' => ['gpt-5.6-luna']],
+            ['id' => 'openai-codex', 'label' => 'OpenAI Codex', 'need' => 'log in with your ChatGPT account', 'kind' => 'oauth', 'authCommand' => 'auth:chatgpt', 'models' => ['gpt-5.6-luna']],
             ['id' => 'grok-cli', 'label' => 'Grok / xAI', 'need' => 'log in with your xAI account', 'kind' => 'oauth', 'authCommand' => 'auth:grok', 'models' => ['grok-composer-2.5-fast']],
         ];
         $rows = [];
@@ -855,7 +855,7 @@ final class FakeProvidersSetupFlow implements ProvidersSetupFlowInterface
         $this->wrote = true;
         $auth = match ($id) {
             'grok-cli' => 'auth:grok',
-            'openai-codex' => 'auth:codex',
+            'openai-codex' => 'auth:chatgpt',
             default => null,
         };
         $models = match ($id) {

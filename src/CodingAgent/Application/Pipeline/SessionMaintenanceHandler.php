@@ -37,7 +37,6 @@ final readonly class SessionMaintenanceHandler
         private \Psr\Log\LoggerInterface $logger,
         private \Ineersa\AgentCore\Contract\ActiveRunContextInterface $registry,
         private \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor $processor,
-        private \Ineersa\CodingAgent\Session\HatfieldSessionStore $sessions,
         private \Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware $initialization,
         private \Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery $recovery,
         private DeferredSubagentBatchRepository $deferredBatches,
@@ -58,7 +57,6 @@ final readonly class SessionMaintenanceHandler
                 }
                 // Do not retain the old context beside the refreshed owner state.
                 unset($state);
-                $this->sessions->resetReasoningBaseline($command->runId);
                 $this->processor->process('attach', new \Ineersa\AgentCore\Domain\Message\RefreshRunContext($command->runId, $command->messages));
                 $descriptor = $this->bootstrap->seal();
                 // A slow controller must never hold the owner transition lock while
