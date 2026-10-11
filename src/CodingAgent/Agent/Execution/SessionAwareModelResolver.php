@@ -111,10 +111,15 @@ final class SessionAwareModelResolver implements ModelResolverInterface
                 foreach ($input->messages as $index => $message) {
                     // Use canonical invocation history, before OutputCap or other request
                     // transforms. Anchor identity alone cannot detect a rewritten prefix.
-                    $context = hash('sha256', $context.json_encode([
+                    // Match TransformHook::stringify() tolerance: a pathological message
+                    // must degrade the fingerprint, never fail model resolution. Key order
+                    // is part of the fingerprint, so content producers must build parts
+                    // with a consistent key order.
+                    $encoded = json_encode([
                         $message->role, $message->content, $message->name,
                         $message->toolCallId, $message->toolName, $message->details, $message->isError,
-                    ], \JSON_THROW_ON_ERROR));
+                    ], \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
+                    $context = hash('sha256', $context.(false === $encoded ? '{}' : $encoded));
                     $key = ChatGPTReasoningTransitionTransformHook::messageKeyInHistory($input->messages, $index);
                     if (null !== $key) {
                         $historyKeys[$key] = $context;
