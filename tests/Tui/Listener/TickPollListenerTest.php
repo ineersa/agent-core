@@ -53,6 +53,57 @@ final class TickPollListenerTest extends TestCase
 
     private ?TuiTickDispatcher $contextTicks = null;
 
+    public function testTrustedParentRecoveryExitsChildAndRefreshesTickOwnership(): void
+    {
+        $state = new TuiSessionState('parent');
+        $state->handle = new RunHandle('parent', 'attached', 'old-request');
+        $state->subagentLiveView->enter(new \Ineersa\Tui\Runtime\SubagentLiveChildDTO('child', 'artifact', 'Child',
+            \Ineersa\Tui\Runtime\SubagentLiveStatusEnum::Running, 'Child work', 1, 'provider/model', 'low'));
+        $state->queuedFollowUps = ['Deferred parent input'];
+        $state->pendingEditorRestoreText = 'Pending parent restoration';
+        $harness = new VirtualTuiHarness(sessionId: 'parent');
+        $harness->screen()->promptEditor()->replaceText('Fresh draft');
+        $order = [];
+        $client = $this->createMock(AgentSessionClient::class);
+        $client->method('events')->willReturnCallback(static function (string $run) use (&$order): array {
+            $order[] = $run;
+
+            return 'parent' === $run ? [new RuntimeEvent('session.restoring', 'parent', 0,
+                ['previous_command_id' => 'old-request', 'command_id' => 'new-request'])] : [];
+        });
+        $client->expects($this->once())->method('endObservingChildRun')->with('child');
+        $client->expects($this->never())->method('send');
+        $childProjector = new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState());
+        $childProjector->accept(new RuntimeEvent('user.message_submitted', 'child', 1, ['text' => 'Child-only projection']));
+        $childPoller = new SubagentLiveChildViewPoller($childProjector, new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer());
+        $coordinator = new QuestionCoordinator();
+        $question = new QuestionRequest('child-question', QuestionSource::AgentCore, QuestionKind::Confirm, 'Child question', runId: 'child');
+        $coordinator->enqueue($question);
+        $controller = new QuestionController($coordinator, $harness->screen());
+        $controller->open($question);
+        $poller = new RuntimeEventPoller(new TuiRuntimeEventApplier(
+            new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), SubagentProgressSerializerTestSupport::denormalizer()),
+            new NullLogger(), new RuntimeExceptionBoundary(new EventDispatcher()), $this->createStub(SessionTranscriptProviderInterface::class));
+        $services = $this->createSessionServices(tui: $harness->tui(), screen: $harness->screen(), state: $state,
+            client: $client, parentPoller: $poller, childPoller: $childPoller,
+            questionCoordinator: $coordinator, questionController: $controller, subagentLivePicker: $this->closedSubagentLivePicker());
+        $context = $this->buildTuiContext()->withTui($harness->tui())->withScreen($harness->screen())->withState($state)
+            ->withClient($client)->withSessionServices($services)->build();
+        $this->createTickPollListener()->register($context);
+        $context->ticks->dispatch(new \Symfony\Component\Tui\Event\TickEvent());
+        $this->assertSame(['child', 'parent'], $order);
+        $this->assertFalse($state->subagentLiveView->active);
+        $this->assertSame('parent', $state->visibleQuestionOwnerRunId());
+        $this->assertSame([], $childProjector->blocks());
+        $this->assertFalse($coordinator->actionRequired());
+        $this->assertFalse($controller->isOpen());
+        $this->assertSame(['Deferred parent input'], $state->queuedFollowUps);
+        $this->assertSame("Pending parent restoration\n\nFresh draft", $harness->screen()->editorText());
+        $this->assertNull($state->pendingEditorRestoreText);
+        $this->assertFalse($state->sessionReady);
+        $this->assertSame('new-request', $state->handle->bootstrapRequestId);
+    }
+
     /**
      * Confirm cancel must send a boolean false answer so the bash background
      * poller receives a resolved decision instead of hanging on null.

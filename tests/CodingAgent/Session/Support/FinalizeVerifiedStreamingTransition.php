@@ -27,6 +27,7 @@ try {
         $container->get(Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper::class),
         $sink,
         true,
+        $container->get('event_dispatcher'),
     );
     $stream->finalizeVerifiedTransition($argv[2], $argv[3]);
     $emitted = iterator_to_array($sink->drain($argv[2]));

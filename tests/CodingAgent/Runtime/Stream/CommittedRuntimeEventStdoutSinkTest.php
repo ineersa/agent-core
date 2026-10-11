@@ -10,18 +10,18 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Runtime\Stream\CommittedRuntimeEventStdoutSink;
 use Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink;
-use PHPUnit\Framework\TestCase;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Symfony\Component\Process\Process;
 
 /**
  * @covers \Ineersa\CodingAgent\Runtime\Stream\CommittedRuntimeEventStdoutSink
  */
-final class CommittedRuntimeEventStdoutSinkTest extends TestCase
+final class CommittedRuntimeEventStdoutSinkTest extends IsolatedKernelTestCase
 {
     public function testEmitNoopsWhenStdoutIsNotPipe(): void
     {
         $logger = new TestLogger();
-        $sink = new CommittedRuntimeEventStdoutSink($logger, new StdoutRuntimeEventSink());
+        $sink = new CommittedRuntimeEventStdoutSink($logger, new StdoutRuntimeEventSink(), self::getContainer()->get(\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapEmissionGate::class));
 
         $sink->emit(new RuntimeEvent(RuntimeEventTypeEnum::TurnStarted->value, 'run-a', 3, []));
 
@@ -42,17 +42,18 @@ final class CommittedRuntimeEventStdoutSinkTest extends TestCase
         );
 
         $process = new Process([\PHP_BINARY, '-r', <<<'PHP'
-            require getcwd().'/vendor/autoload.php';
+            require $argv[1].'/vendor/autoload.php';
+            $kernel = new \Ineersa\CodingAgent\Kernel('test', false);
+            $kernel->boot();
 
-            $sink = new \Ineersa\CodingAgent\Runtime\Stream\CommittedRuntimeEventStdoutSink(new \Psr\Log\NullLogger(), new \Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink());
+            $sink = new \Ineersa\CodingAgent\Runtime\Stream\CommittedRuntimeEventStdoutSink(new \Psr\Log\NullLogger(), new \Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink(), $kernel->getContainer()->get('test.service_container')->get(\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapEmissionGate::class));
             $sink->emit(new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent(
                 type: \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum::TurnStarted->value,
                 runId: 'run-a',
                 seq: 3,
                 payload: ['url' => 'https://example.com/path/to', 'text' => 'héllo'],
             ));
-            PHP]);
-        $process->setWorkingDirectory(\dirname(__DIR__, 4));
+            PHP, \dirname(__DIR__, 4)], getcwd(), ['HATFIELD_SESSION_ID' => false]);
         $process->mustRun();
 
         $output = $process->getOutput();

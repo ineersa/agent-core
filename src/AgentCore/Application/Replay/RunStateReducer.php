@@ -33,9 +33,9 @@ final readonly class RunStateReducer
     }
 
     /**
-     * @param list<RunEvent> $events
+     * @param iterable<RunEvent> $events chronological canonical events; callers own history selection
      */
-    public function replay(RunState $existingState, array $events): RunState
+    public function replay(RunState $existingState, iterable $events): RunState
     {
         $state = new RunState(
             runId: $existingState->runId,
@@ -61,6 +61,8 @@ final readonly class RunStateReducer
 
             // Advance lastSeq to the current event's sequence number.
             $state = $state->with(['lastSeq' => $event->seq]);
+            // Drop the processed record before the source decodes its successor.
+            unset($event);
         }
 
         // Copy mutable collections back into a new RunState with final values.
@@ -106,7 +108,7 @@ final readonly class RunStateReducer
             RunEventTypeEnum::ContextCompacted->value => $this->applyContextCompacted($payload, $state, $messages),
             RunEventTypeEnum::ContextRefreshed->value => $this->applyContextRefreshed($payload, $state, $messages),
             RunEventTypeEnum::ContextCompactionFailed->value => $this->applyContextCompactionFailed($payload, $state),
-            RunEventTypeEnum::HistoryPositionSet->value,
+            RunEventTypeEnum::HistoryPositionSet->value => $this->applyHistoryPositionSet($payload, $state, $pendingToolCalls, $completedToolResultsByCallId),
             RunEventTypeEnum::HistoryTailDiscarded->value => $this->applyNoMutation($event, $state),
             default => $this->applyNoMutation($event, $state),
         };
@@ -119,6 +121,31 @@ final readonly class RunStateReducer
     }
 
     // ── Event reducers ──────────────────────────────────────────────────────
+
+    /**
+     * Selection changes conversation position, never authorization to run old work.
+     * Continuation position markers retain their ordinary no-mutation behavior.
+     *
+     * @param array<string, mixed>          $payload
+     * @param array<string, bool>           $pendingToolCalls
+     * @param array<string, ToolCallResult> $completedToolResultsByCallId
+     */
+    private function applyHistoryPositionSet(array $payload, RunState $state, array &$pendingToolCalls, array &$completedToolResultsByCallId): RunState
+    {
+        if ('history_select' !== ($payload['reason'] ?? null)) {
+            return $state;
+        }
+        $pendingToolCalls = [];
+        $completedToolResultsByCallId = [];
+
+        return $state->with([
+            'status' => RunStatus::Completed,
+            'currentOperation' => null,
+            'currentToolCalls' => [],
+            'pendingShellToolCalls' => [],
+            'pendingHumanInputRequests' => [],
+        ]);
+    }
 
     /**
      * @param list<AgentMessage> $messages

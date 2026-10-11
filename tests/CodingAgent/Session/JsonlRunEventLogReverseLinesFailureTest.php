@@ -187,6 +187,7 @@ final class JsonlRunEventLogReverseLinesFailureTest extends TestCase
             new LockFactory(new InMemoryStore()),
             $this->createStub(RunSequenceAllocatorInterface::class),
             new EventLogMaxSeqBootstrapReader(),
+            new \Psr\Log\NullLogger(),
         );
     }
 

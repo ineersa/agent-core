@@ -74,12 +74,33 @@ final class SubmitListener implements TuiListenerRegistrar
         $history = $services->promptHistory;
         $pastedImageSubmissionService = $this->pastedImageSubmissionService;
 
+        $initialSessionId = $state->sessionId;
+        $context->ticks->add(static function () use ($state, $initialSessionId, $screen, $sessionStore, $blockFactory, $client, $logger, $tui, $lifecycle, $pastedImageSubmissionService, $history): ?bool {
+            if ($state->sessionReady && null !== $state->handle && $state->sessionId === $initialSessionId
+                && null !== $state->pendingInitialPrompt) {
+                $text = $state->pendingInitialPrompt;
+                // Consume before the ordinary submission path: subsequent ticks
+                // and controller recovery cannot replay this startup intent.
+                $state->pendingInitialPrompt = null;
+                $history->append($text);
+                self::dispatchToRuntime($text, $state, $screen, $sessionStore, $blockFactory, $client, $logger, $tui, $lifecycle, $pastedImageSubmissionService);
+            }
+
+            return null;
+        });
+
         $context->tui->addListener(static function (SubmitEvent $event) use (
             $client, $sessionStore, $state, $screen, $tui, $router, $blockFactory,
             $questionCoordinator, $questionController, $subagentLiveInputPolicy, $logger, $lifecycle, $history, $pastedImageSubmissionService,
         ) {
             $text = $screen->extract();
             if ('' === $text) {
+                return;
+            }
+            if (!$state->sessionReady && 1 !== preg_match('/^\/(?:reload|new|exit|quit|resume)(?:\s|$)/', trim($text))) {
+                $screen->promptEditor()->replaceText($text);
+                $screen->setWorkingMessage($state->bootstrapError ?? 'Restoring session. Input is not ready yet.');
+
                 return;
             }
 

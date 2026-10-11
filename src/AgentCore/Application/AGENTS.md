@@ -110,8 +110,12 @@ Success and error results run the shared validated processor path once, before p
 
 Ordered retained-history projection lives in **CodingAgent** (`CodingAgent\Session\History`). AgentCore emits canonical history events (`turn_advanced`, `history_position_set`, `history_tail_discarded`) and depends on:
 
-- `RunStateRebuilderInterface` → App `SessionRunStateReplayService` (filter retained history before reducing `RunState`)
+- `RunStateRebuilderInterface` → App `SessionRunStateReplayService` → `SessionReplayCoordinator` (stream indexed retained records through the iterable `RunStateReducer`)
 - `HistorySelectionServiceInterface` / `HistoryTailDiscardInterface` → App history services; `HistoryTailDiscardInterface` is the mutate-behind-tip choke point used by `RunMessageProcessor`
+
+Owner reconstruction uses the disposable scalar index to resolve the committed cut and selected anchor. A missing index requires a metadata pass before the body pass. Optional transcript projection shares that body traversal, caps the view at 4 MiB and 2,000 blocks, and releases its private projector on success or failure. Compaction replaces prompt messages, not older operational evidence. Returned state retains the full canonical sequence even when the selected records end earlier. Bootstrap transport and historical UI providers remain separate callers to migrate.
+
+Explicit historical reconstruction clears operation, tool, shell, and human-input authorization. Committed `history_position_set` events with reason `history_select` preserve that fence during cold recovery and release staged results from superseded batches. Continuation position markers remain no-ops. View eviction removes closed user or tool/question exchanges without severing active calls or unanswered questions.
 
 `HistoryTailDiscardService` prepares an unsequenced discard event. `RunMessageProcessor` commits it separately before the normal handler, including no-op handlers, then clears the reasoning baseline after publication. Preparation cannot append or change metadata.
 

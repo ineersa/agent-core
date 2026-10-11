@@ -307,6 +307,7 @@ final class SessionRunEventStoreTest extends TestCase
         $this->assertCount(1, $events);
         $this->assertSame(1, $events[0]->seq);
         $this->assertSame('run_started', $events[0]->type);
+        $this->assertSame([1], array_map(static fn (RunEvent $event): int => $event->seq, iterator_to_array($this->store->rangeFor($runId, 1, 2))));
     }
 
     public function testAllForSkipsIncompatibleSchemaOnEachRead(): void
@@ -435,11 +436,11 @@ final class SessionRunEventStoreTest extends TestCase
         $this->assertSame($archiveBytes, $byMethod['allFor']['archive_bytes_read']);
         $this->assertSame(3, $byMethod['allFor']['decoded_event_count']);
 
-        $this->assertArrayHasKey('rangeFor', $byMethod);
-        $this->assertTrue($byMethod['rangeFor']['early_exit']);
-        $this->assertFalse($byMethod['rangeFor']['full_scan']);
-        $this->assertLessThan($archiveBytes, $byMethod['rangeFor']['archive_bytes_read']);
-        $this->assertSame(2, $byMethod['rangeFor']['decoded_event_count']);
+        $indexed = array_values(array_filter($logger->records, static fn (array $record): bool => 'sequence_range' === ($record['context']['read_reason'] ?? null)));
+        $this->assertCount(1, $indexed);
+        $this->assertFalse($indexed[0]['context']['full_scan']);
+        $this->assertLessThan($archiveBytes, $indexed[0]['context']['archive_bytes_read']);
+        $this->assertSame(1, $indexed[0]['context']['lines_yielded']);
 
         $this->assertArrayHasKey('firstFor', $byMethod);
         $this->assertTrue($byMethod['firstFor']['early_exit']);
@@ -473,7 +474,7 @@ final class SessionRunEventStoreTest extends TestCase
             foreach ([$production, $wholeFile, $stream] as $payload) {
                 $this->assertSame(1800, $payload['decoded_count']);
                 $this->assertSame($prepare['archive_bytes'], $payload['archive_bytes']);
-                $this->assertSame($prepare['archive_bytes'], $payload['archive_bytes_read']);
+                $this->assertSame($prepare['archive_bytes'] * ('range-stream' === $payload['mode'] ? 2 : 1), $payload['archive_bytes_read']);
                 $this->assertTrue($payload['full_scan']);
                 $this->assertFalse($payload['early_exit']);
                 $this->assertLessThan(134217728, $payload['peak_after_bytes']);

@@ -58,6 +58,11 @@ declare(strict_types=1);
  */
 
 \$sourceConsole = {$consoleExport};
+// Keep replay-owned PIDs untagged in their initial process environment. The
+// application still receives the same session identity through Symfony's env reader.
+if (false !== (\$replaySession = getenv('HATFIELD_REPLAY_SESSION_ID'))) {
+    \$_SERVER['HATFIELD_SESSION_ID'] = \$replaySession;
+}
 \$argv = \$_SERVER['argv'] ?? [];
 if ([] === \$argv) {
     fwrite(STDERR, "controller-replay messenger console wrapper: empty argv\\n");

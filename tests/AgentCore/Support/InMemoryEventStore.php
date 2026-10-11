@@ -14,8 +14,6 @@ final class InMemoryEventStore implements PreparedTransitionEventStoreInterface
 
     public int $firstForCalls = 0;
 
-    public int $latestSequenceForCalls = 0;
-
     public int $rangeForCalls = 0;
 
     /** @var array<string, list<RunEvent>> */
@@ -91,8 +89,6 @@ final class InMemoryEventStore implements PreparedTransitionEventStoreInterface
 
     public function latestSequenceFor(string $runId): ?int
     {
-        ++$this->latestSequenceForCalls;
-
         return $this->highWaterByRun[$runId] ?? null;
     }
 

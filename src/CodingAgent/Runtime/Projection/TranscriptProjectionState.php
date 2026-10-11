@@ -385,6 +385,20 @@ final class TranscriptProjectionState
         }
     }
 
+    /** Run cancellation or termination abandons unanswered waits, not their history. */
+    public function cancelPendingQuestions(string $runId): void
+    {
+        foreach ($this->blocks as $id => $block) {
+            if ($block->runId === $runId
+                && \in_array($block->kind, [TranscriptBlockKindEnum::Question, TranscriptBlockKindEnum::Approval], true)
+                && 'pending' === ($block->meta['status'] ?? null)) {
+                $meta = $block->meta;
+                $meta['status'] = 'cancelled';
+                $this->updateBlock($id, $block->with(text: $block->text.' (cancelled)', meta: $meta));
+            }
+        }
+    }
+
     /**
      * Add a cancellation block for turn/run cancelled events.
      */

@@ -68,7 +68,7 @@ final class SubmitListenerReasoningNoticeClearTest extends TestCase
     {
         $state = new TuiSessionState('transient-repost-session');
         $provider = $this->createStub(HistoryProviderInterface::class);
-        $provider->method('forSession')->willReturn(new HistoryView(prompts: [], positionTurnNo: 0));
+        $provider->method('forSession')->willReturn(new HistoryView(prompts: [], selectedAnchor: 0));
         $harness = new VirtualTuiHarness(sessionId: $state->sessionId);
         $screen = $harness->screen();
         $tui = $harness->tui();

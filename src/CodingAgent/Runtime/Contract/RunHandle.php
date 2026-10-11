@@ -12,6 +12,7 @@ final readonly class RunHandle
     public function __construct(
         public string $runId,
         public string $status = 'starting',
+        public ?string $bootstrapRequestId = null,
     ) {
     }
 }

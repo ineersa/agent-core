@@ -29,12 +29,16 @@ use Symfony\Component\Lock\LockFactory;
  */
 final class JsonlRunEventLog
 {
+    private readonly RunHistoryIndex $historyIndex;
+
     public function __construct(
         private readonly EventPayloadNormalizer $eventPayloadNormalizer,
         private readonly LockFactory $lockFactory,
         private readonly RunSequenceAllocatorInterface $sequenceAllocator,
         private readonly EventLogMaxSeqBootstrapReader $bootstrapReader,
+        private readonly \Psr\Log\LoggerInterface $logger,
     ) {
+        $this->historyIndex = new RunHistoryIndex($lockFactory, $logger);
     }
 
     /**
@@ -180,6 +184,7 @@ final class JsonlRunEventLog
         $lock->acquire(true);
         try {
             (new JsonlAppendJournal())->finalizeVerified($path, $identity);
+            $this->historyIndex->updateAfterCommit($this, $path, $runId);
         } finally {
             $lock->release();
         }
@@ -309,12 +314,20 @@ final class JsonlRunEventLog
      *
      * Empty lines are yielded unchanged so callers keep their existing blank-line policy.
      * A partial final line is also yielded unchanged. When observation is provided,
-     * records bytes returned by fgets. EOF is confirmed with feof(); a false fgets
-     * caused by a read error is not labelled as a full scan.
+     * records bytes returned by fgets. Completion requires reaching the validated
+     * committed byte cut; a false fgets caused by a read error is not a full scan.
      *
      * @return \Generator<int, string>
      */
     public function forwardLines(string $path, ?JsonlPhysicalReadObservation $observation = null): iterable
+    {
+        foreach ($this->locatedLines($path, 0, $observation) as $record) {
+            yield $record['line'];
+        }
+    }
+
+    /** @return \Generator<int, array{offset: int, length: int, line: string}> */
+    public function locatedLines(string $path, int $startOffset = 0, ?JsonlPhysicalReadObservation $observation = null, ?int $endOffset = null): iterable
     {
         $handle = @fopen($path, 'rb');
         if (false === $handle) {
@@ -330,12 +343,34 @@ final class JsonlRunEventLog
                 throw new \RuntimeException('Cannot inspect canonical reader cut.');
             }
             $cut = (new JsonlAppendJournal())->readableOffset($path, $stat['size']);
-            $position = 0;
-            while ($position < $cut && false !== ($line = fgets($handle, $cut - $position + 1))) {
-                $position += \strlen($line);
-                $observation?->addBytes(\strlen($line));
+            if (null !== $endOffset) {
+                if ($endOffset < $startOffset || $endOffset > $cut) {
+                    throw new \RuntimeException('Requested suffix exceeds the committed cut.');
+                }
+                $cut = $endOffset;
+            }
+            if ($startOffset < 0 || $startOffset > $cut || -1 === fseek($handle, $startOffset)) {
+                throw new \RuntimeException('Cannot seek committed canonical records.');
+            }
+            $position = $startOffset;
+            $offset = $position;
+            $line = '';
+            // PHP allocates fgets(length)'s requested buffer, even for short lines.
+            // Passing the whole remaining archive defeats streaming memory bounds.
+            while ($position < $cut && false !== ($chunk = fgets($handle, min(8193, $cut - $position + 1)))) {
+                $position += \strlen($chunk);
+                $observation?->addBytes(\strlen($chunk));
+                $line .= $chunk;
+                if (str_ends_with($chunk, "\n")) {
+                    $observation?->addLineYielded();
+                    yield ['offset' => $offset, 'length' => \strlen($line), 'line' => $line];
+                    $line = '';
+                    $offset = $position;
+                }
+            }
+            if ('' !== $line) {
                 $observation?->addLineYielded();
-                yield $line;
+                yield ['offset' => $offset, 'length' => \strlen($line), 'line' => $line];
             }
 
             $earlyExit = false;
@@ -345,6 +380,127 @@ final class JsonlRunEventLog
             if ($earlyExit) {
                 $observation?->finish(reachedEof: false, earlyExit: true);
             }
+        }
+    }
+
+    /** @return array{device: int, inode: int, end_offset: int} */
+    public function committedIdentity(string $path): array
+    {
+        $handle = @fopen($path, 'rb');
+        if (false === $handle) {
+            throw new \RuntimeException('Cannot open canonical archive.');
+        }
+        try {
+            $stat = fstat($handle);
+            if (false === $stat) {
+                throw new \RuntimeException('Cannot inspect canonical archive identity.');
+            }
+
+            return ['device' => $stat['dev'], 'inode' => $stat['ino'], 'end_offset' => (new JsonlAppendJournal())->readableOffset($path, $stat['size'])];
+        } finally {
+            fclose($handle);
+        }
+    }
+
+    /** @param iterable<array{offset: int, length: int}> $locations
+     * @return \Generator<int, string> */
+    public function linesAt(string $path, iterable $locations, JsonlPhysicalReadObservation $observation): iterable
+    {
+        $handle = @fopen($path, 'rb');
+        if (false === $handle) {
+            throw new \RuntimeException('Cannot open indexed canonical records.');
+        }
+        $completed = false;
+        try {
+            $stat = fstat($handle);
+            if (false === $stat) {
+                throw new \RuntimeException('Cannot inspect indexed canonical records.');
+            }
+            $cut = (new JsonlAppendJournal())->readableOffset($path, $stat['size']);
+            $end = 0;
+            $contiguous = true;
+            foreach ($locations as $location) {
+                if ($location['offset'] < 0 || $location['length'] < 1 || $location['offset'] + $location['length'] > $cut
+                    || -1 === fseek($handle, $location['offset'])) {
+                    throw new \RuntimeException('Indexed record lies outside the committed archive.');
+                }
+                $line = '';
+                while (\strlen($line) < $location['length']) {
+                    $chunk = fgets($handle, min(8193, $location['length'] - \strlen($line) + 1));
+                    if (false === $chunk) {
+                        throw new \RuntimeException('Cannot read indexed canonical record.');
+                    }
+                    $observation->addBytes(\strlen($chunk));
+                    $line .= $chunk;
+                    // A corrupt length must not allocate/read the entire archive.
+                    if (str_ends_with($chunk, "\n")) {
+                        break;
+                    }
+                }
+                if (\strlen($line) !== $location['length'] || !str_ends_with($line, "\n")) {
+                    throw new \RuntimeException('Indexed canonical record is incomplete.');
+                }
+                $contiguous = $contiguous && $location['offset'] === $end;
+                $end = $location['offset'] + $location['length'];
+                $observation->addLineYielded();
+                yield $line;
+            }
+            $completed = true;
+            $observation->finish(reachedEof: $contiguous && $end === $cut, earlyExit: false);
+        } finally {
+            fclose($handle);
+            if (!$completed) {
+                $observation->finish(reachedEof: false, earlyExit: true);
+            }
+        }
+    }
+
+    /** @return iterable<string> */
+    public function indexedLines(string $path, string $runId, int $startSeq, int $endSeq): iterable
+    {
+        return $this->historyIndex->records($this, $path, $runId, $startSeq, $endSeq);
+    }
+
+    /** @return array{sequence: int, end_offset: int, anchor: int}|null */
+    public function historyCut(string $path, string $runId, ?int $positionTurnNo = null): ?array
+    {
+        return $this->historyIndex->cut($this, $path, $runId, $positionTurnNo);
+    }
+
+    public function hasForwardTail(string $path, string $runId, int $positionTurnNo): bool
+    {
+        return $this->historyIndex->hasForwardTail($this, $path, $runId, $positionTurnNo);
+    }
+
+    public function isLatestCommand(string $path, string $runId, string $key, int $sequence): bool
+    {
+        return $this->historyIndex->isLatestCommand($path, $runId, $key, $sequence);
+    }
+
+    /** @return \Generator<int, RunEvent> */
+    public function selectedEvents(string $path, string $runId, int $sequence, int $anchor): \Generator
+    {
+        $decoded = false;
+        foreach ($this->historyIndex->locatedRecords($this, $path, $runId, 1, $sequence, $anchor, true) as [, $record]) {
+            if ($this->isIncompatibleSchemaVersion($record)) {
+                $this->logger->warning('session_replay.incompatible_schema_record', [
+                    'run_id' => $runId, 'session_id' => $runId, 'component' => 'session_replay',
+                    'event_type' => 'session_replay.incompatible_schema_record', 'sequence' => $record['seq'],
+                ]);
+                unset($record);
+                continue;
+            }
+            $event = $this->denormalizeRunEvent($record);
+            if (null === $event) {
+                throw new \RuntimeException('Canonical replay record cannot be decoded.');
+            }
+            $decoded = true;
+            unset($record);
+            yield $event;
+            unset($event);
+        }
+        if (!$decoded) {
+            throw new \RuntimeException('Known canonical history has no compatible replay records.');
         }
     }
 

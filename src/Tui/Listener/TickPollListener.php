@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Logging\ProcessMemorySnapshotLogger;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\SubagentLiveAttention;
+use Ineersa\Tui\Runtime\SubagentLiveMainReturn;
 use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionState;
@@ -42,6 +43,8 @@ final class TickPollListener implements TuiListenerRegistrar
         $state = $context->state;
         $client = $context->client;
         $screen = $context->screen;
+        $tui = $context->tui;
+        $promptHistory = $services->promptHistory;
         $questionCoordinator = $services->questionCoordinator;
         $questionController = $services->questionController;
         $subagentLiveChildPoller = $services->childPoller;
@@ -62,7 +65,7 @@ final class TickPollListener implements TuiListenerRegistrar
             ? 'next_tick_after_mount'
             : 'next_tick_after_boundary';
 
-        $context->ticks->add(static function () use ($poller, $state, $client, $screen, $questionCoordinator, $questionController, $subagentLiveChildPoller, $runtimeQuestionEventHandler, $subagentLivePickerController, $memorySnapshotLogger, &$pendingIdleMemoryCheckpoint, &$idleMemoryCheckpointEmitted, &$idleCheckpointPhase): ?bool {
+        $context->ticks->add(static function () use ($poller, $state, $client, $screen, $tui, $promptHistory, $questionCoordinator, $questionController, $subagentLiveChildPoller, $runtimeQuestionEventHandler, $subagentLivePickerController, $memorySnapshotLogger, &$pendingIdleMemoryCheckpoint, &$idleMemoryCheckpointEmitted, &$idleCheckpointPhase): ?bool {
             $activityBefore = $state->activity;
             $lastSeqBefore = $state->lastSeq;
             $onHitl = static function (RuntimeEvent $event) use ($client, $questionCoordinator, $runtimeQuestionEventHandler): void {
@@ -118,14 +121,42 @@ final class TickPollListener implements TuiListenerRegistrar
                 }
             }
 
+            $returnToParent = static function () use ($state, $screen, $client, $questionCoordinator, $questionController, $subagentLiveChildPoller): void {
+                if (!$state->subagentLiveView->active) {
+                    return;
+                }
+                $selected = $state->subagentLiveView->selected;
+                if (null !== $selected) {
+                    $questionCoordinator->removeForRun($selected->agentRunId);
+                    $questionController->close();
+                }
+                SubagentLiveMainReturn::returnToMain($state, $screen, $client);
+                $subagentLiveChildPoller->resetProjection();
+            };
+
             $transcriptChanges = $poller->poll(
                 $state,
                 $client,
                 onHumanInputRequested: $onHitl,
                 onToolQuestionRequested: $onToolQuestion,
                 onToolTerminal: $onToolTerminal,
+                onBootstrapMounted: static function () use ($state, $screen, $tui, $promptHistory, $questionCoordinator, $questionController, $returnToParent): void {
+                    $returnToParent();
+                    $screen->setTranscriptBlocks($state->transcript);
+                    $screen->syncQueuedUserMessages($state->queuedUserMessages);
+                    $promptHistory->seedFrom($state->transcript);
+                    while ($questionCoordinator->actionRequired()) {
+                        $questionCoordinator->reject();
+                    }
+                    $questionController->close();
+                    $tui->requestRender();
+                },
+                onSessionRestoring: $returnToParent,
             );
 
+            // Recovery may have exited the child during the parent poll. All
+            // remaining work must follow the view that is actually displayed.
+            $liveActive = $state->subagentLiveView->active;
             if ($liveActive) {
                 $selected = $state->subagentLiveView->selected;
                 if (null !== $selected) {
@@ -321,7 +352,9 @@ final class TickPollListener implements TuiListenerRegistrar
             // may call setWorkingMessage directly between tick cycles, and a
             // stale static cache would skip the authoritative tick update,
             // permanently leaving a stuck working message.
-            if ($liveActive) {
+            if (!$state->sessionReady) {
+                $screen->setWorkingMessage($state->bootstrapError ?? 'Restoring session...');
+            } elseif ($liveActive) {
                 $parentMsg = match (true) {
                     RunActivityStateEnum::Cancelling === $state->activity => 'Cancelling...',
                     RunActivityStateEnum::Idle === $state->activity || $state->activity->isTerminal() => null,

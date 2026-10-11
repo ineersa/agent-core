@@ -45,7 +45,7 @@ final class SessionRunEventStore implements \Ineersa\AgentCore\Contract\Prepared
         EventLogMaxSeqBootstrapReader $bootstrapReader = new EventLogMaxSeqBootstrapReader(),
     ) {
         $this->sessionsBasePath = $hatfieldSessionStore->resolveSessionsBasePath();
-        $this->eventLog = new JsonlRunEventLog($eventPayloadNormalizer, $lockFactory, $sequenceAllocator, $bootstrapReader);
+        $this->eventLog = new JsonlRunEventLog($eventPayloadNormalizer, $lockFactory, $sequenceAllocator, $bootstrapReader, $logger);
     }
 
     public function appendTransition(array $events, array $work): array
@@ -93,6 +93,16 @@ final class SessionRunEventStore implements \Ineersa\AgentCore\Contract\Prepared
         return null;
     }
 
+    public function historySource(string $runId): RunHistorySourceDTO
+    {
+        return new RunHistorySourceDTO($this->eventLog, $this->eventsPath($runId));
+    }
+
+    public function hasForwardTail(string $runId, int $positionTurnNo): bool
+    {
+        return $this->eventLog->hasForwardTail($this->eventsPath($runId), $runId, $positionTurnNo);
+    }
+
     public function firstFor(string $runId): ?RunEvent
     {
         foreach ($this->streamDecodedEvents($runId, 'firstFor') as $event) {
@@ -105,9 +115,8 @@ final class SessionRunEventStore implements \Ineersa\AgentCore\Contract\Prepared
     /**
      * Streams events one JSONL line at a time without materializing the full allFor list.
      *
-     * Events are physically appended under the per-run sequence lock, so durable file order
-     * is canonical sequence order (with possible sequence holes). The scan stops at the first
-     * sequence above endSeq; allFor() remains responsible for full-log validation.
+     * Reads indexed physical locations within the committed cut. Missing or invalid
+     * disposable indexes first rebuild scalar metadata in one streaming pass.
      *
      * @return \Generator<int, RunEvent>
      */
@@ -117,12 +126,9 @@ final class SessionRunEventStore implements \Ineersa\AgentCore\Contract\Prepared
             return;
         }
 
-        foreach ($this->streamDecodedEvents($runId, 'rangeFor') as $event) {
-            if ($event->seq > $endSeq) {
-                break;
-            }
-
-            if ($event->seq >= $startSeq) {
+        foreach ($this->eventLog->indexedLines($this->eventsPath($runId), $runId, $startSeq, $endSeq) as $line) {
+            $event = $this->eventFromLine($runId, $line);
+            if (null !== $event) {
                 yield $event;
             }
         }

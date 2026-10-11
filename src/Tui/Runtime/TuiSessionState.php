@@ -31,9 +31,17 @@ final class TuiSessionState
 {
     public string $sessionId;
     public bool $resuming;
+    /** Controller transport readiness is not permission to submit session input. */
+    public bool $sessionReady = true;
+    public bool $bootstrapMounted = false;
+    public float $bootstrapStartedAt = 0.0;
+    public ?string $bootstrapError = null;
 
     public ?RunHandle $handle = null;
     public ?StartRunRequest $request = null;
+
+    /** Accepted resume startup input, consumed once after validated session readiness. */
+    public ?string $pendingInitialPrompt = null;
 
     /**
      * Authoritative TUI activity state for the current run.
@@ -70,7 +78,7 @@ final class TuiSessionState
      * Keyed by idempotency_key; value is the message text.
      *
      * Driven by applyQueuedUserMessageEvent(), called from both
-     * RuntimeEventPoller and SessionInitializer::replayFromEvents. Rendered by
+     * RuntimeEventPoller and the owner bootstrap metadata. Rendered by
      * the PendingMessagesWidget above the editor until the canonical user
      * message is applied to the run, at which point the entry pops and the
      * finalized ❯ user message is appended to the transcript.
@@ -217,10 +225,8 @@ final class TuiSessionState
      * The PendingMessagesWidget above the editor renders the pushed entries as
      * "⏳ <text>" until the canonical ❯ user message is applied to the run.
      *
-     * Called from BOTH the live RuntimeEventPoller and
-     * SessionInitializer::replayFromEvents so the pending-queue widget is
-     * rebuilt correctly after resume (e.g. a steer queued while the run is
-     * active must still show ⏳ after the TUI is closed and reopened).
+     * Bootstrap restores the owner's bounded pending map; live polling applies
+     * later changes without reconstructing historical events here.
      */
     public function applyQueuedUserMessageEvent(RuntimeEvent $event): void
     {

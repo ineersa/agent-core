@@ -21,6 +21,7 @@ final readonly class ResumeHandler
 {
     public function __construct(
         private readonly AgentSessionClient $client,
+        private readonly \Ineersa\CodingAgent\Runtime\Controller\SessionBootstrapDelivery $bootstrap,
     ) {
     }
 
@@ -43,12 +44,23 @@ final readonly class ResumeHandler
             return;
         }
 
-        $handle = $this->client->attach($runId);
+        // Gate before owner attach can publish cancellation/context events.
+        $this->bootstrap->begin($runId, $command->id);
+        try {
+            $handle = $this->client->attach($runId);
+            if (null === $handle->bootstrapRequestId) {
+                throw new \LogicException('Controller attach requires a correlated bootstrap request.');
+            }
+            $this->bootstrap->expect($handle->bootstrapRequestId);
+        } catch (\Throwable $exception) {
+            $this->bootstrap->cancel();
+            throw $exception;
+        }
 
         $event->emit(new RuntimeEvent(
             type: RuntimeEventTypeEnum::RunResumed->value,
             runId: $handle->runId,
-            seq: 1,
+            seq: 0,
             payload: ['status' => $handle->status],
         ));
 

@@ -7,14 +7,14 @@ namespace Ineersa\CodingAgent\Session\History;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\RunStateDuplicateSequenceReplayException;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
-use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
-use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\History\HistorySelectionServiceInterface;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\CodingAgent\Session\RunHistoryIndex;
+use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -32,13 +32,12 @@ use Psr\Log\LoggerInterface;
 final readonly class HistorySelectionService implements HistorySelectionServiceInterface
 {
     public function __construct(
-        private EventStoreInterface $eventStore,
+        private SessionRunEventStore $eventStore,
         private RunStateRebuilderInterface $runStateRebuilder,
         private ActiveRunContextInterface $activeRunContext,
         private RunLockManager $lockManager,
         private LoggerInterface $logger,
-        private HistoryProjector $historyProjector,
-        private ReplayEventPreparer $replayEventPreparer,
+        private RunHistoryIndex $historyIndex,
         private RunCommit $runCommit,
     ) {
     }
@@ -53,27 +52,12 @@ final readonly class HistorySelectionService implements HistorySelectionServiceI
     {
         return $this->lockManager->synchronized($runId, function () use ($runId, $targetPromptTurnNo): array {
             $this->runCommit->assertTransitionReady($runId);
-            $events = $this->eventStore->allFor($runId);
-
-            if ([] === $events) {
-                throw new \RuntimeException(\sprintf('Cannot select history for run %s: no events found.', $runId));
-            }
-
-            $history = $this->historyProjector->build($events);
-            if (!\array_key_exists($targetPromptTurnNo, $history->promptsByTurnNo)) {
-                throw new \RuntimeException(\sprintf('Cannot select history for run %s: target turn %d is not a selectable human prompt.', $runId, $targetPromptTurnNo));
-            }
-
+            $source = $this->eventStore->historySource($runId);
+            $prompt = $this->historyIndex->selectPrompt($source->log, $source->path, $runId, $targetPromptTurnNo);
             $state = $this->activeRunContext->requireLoaded($runId);
-
-            $duplicateSeqs = $this->replayEventPreparer->duplicateSequences($events);
-            if ([] !== $duplicateSeqs) {
-                throw new RunStateDuplicateSequenceReplayException(\sprintf('Cannot select history for run %s: event history contains %d duplicate sequence number(s): %s.', $runId, \count($duplicateSeqs), implode(', ', array_map('strval', \array_slice($duplicateSeqs, 0, 10)))));
-            }
-
-            $previousPosition = $history->positionTurnNo;
-            $positionTurnNo = $history->predecessorTurnNo($targetPromptTurnNo);
-            $editorPromptText = $history->promptsByTurnNo[$targetPromptTurnNo];
+            $previousPosition = $prompt['position'];
+            $positionTurnNo = $prompt['predecessor'];
+            $editorPromptText = $prompt['text'];
 
             $positionEvent = new RunEvent(
                 runId: $runId,

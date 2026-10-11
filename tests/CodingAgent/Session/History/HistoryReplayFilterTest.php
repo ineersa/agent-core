@@ -55,7 +55,7 @@ final class HistoryReplayFilterTest extends TestCase
     }
 
     #[Test]
-    public function testFilterAtPositionKeepsPrefixOnlyIncludingInternalAnchors(): void
+    public function testFilterKeepsSelectedPrefixIncludingInternalAnchors(): void
     {
         $events = [
             $this->event(1, 0, RunEventTypeEnum::RunStarted->value),
@@ -67,9 +67,10 @@ final class HistoryReplayFilterTest extends TestCase
             $this->event(6, 2, RunEventTypeEnum::LlmStepCompleted->value),
             $this->event(7, 3, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 3]),
             $this->event(8, 3, RunEventTypeEnum::LlmStepCompleted->value),
+            $this->event(9, 2, RunEventTypeEnum::HistoryPositionSet->value, ['position_turn_no' => 2, 'reason' => 'history_select']),
         ];
 
-        $filtered = $this->filter->filterAtPosition($events, 2);
+        $filtered = $this->filter->filter($events);
         $this->assertSame([1, 2], array_values(array_map(
             static fn (RunEvent $event): int => $event->turnNo,
             array_filter(
@@ -98,7 +99,7 @@ final class HistoryReplayFilterTest extends TestCase
             ]),
         ];
 
-        $filtered = $this->filter->filterAtPosition($events, 1);
+        $filtered = $this->filter->filter($events);
         foreach ($filtered as $event) {
             if (RunEventTypeEnum::AgentCommandApplied->value === $event->type) {
                 $this->fail('Seeding command for discarded turn 2 must be excluded from position 1 prefix');
@@ -138,7 +139,7 @@ final class HistoryReplayFilterTest extends TestCase
             ]),
         ];
 
-        $filtered = $this->filter->filterAtPosition($events, 1);
+        $filtered = $this->filter->filter($events);
 
         $commandTypes = [];
         foreach ($filtered as $event) {

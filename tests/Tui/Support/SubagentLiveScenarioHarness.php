@@ -360,9 +360,14 @@ final class SubagentLiveScenarioHarness
     private static function emptyHistoryProvider(): HistoryProviderInterface
     {
         return new class implements HistoryProviderInterface {
-            public function forSession(string $runId): HistoryView
+            public function forSession(string $runId, ?int $before = null, ?int $after = null): HistoryView
             {
-                return new HistoryView(prompts: [], positionTurnNo: 0);
+                return new HistoryView(prompts: [], selectedAnchor: 0);
+            }
+
+            public function promptText(string $runId, int $turnNo): string
+            {
+                throw new \RuntimeException('This scenario has no selectable prompts.');
             }
         };
     }

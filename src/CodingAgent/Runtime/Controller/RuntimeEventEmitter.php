@@ -24,6 +24,14 @@ final class RuntimeEventEmitter
 
     private bool $shuttingDown = false;
 
+    private bool $bootstrapOutput = false;
+    private ?string $writeWatcher = null;
+    /** @var list<array{line: string, after: ?\Closure, started: bool, run_id: string}> */
+    private array $pending = [];
+    private int $pendingBytes = 0;
+    private ?\Closure $bootstrapFilter = null;
+    private ?\Closure $onDrained = null;
+
     /** @var (\Closure(): void)|null Callback invoked on fatal stdout write failure before event loop stop. */
     private ?\Closure $onFatalShutdown = null;
 
@@ -60,7 +68,99 @@ final class RuntimeEventEmitter
      */
     public function emit(RuntimeEvent $event): void
     {
-        $this->emitInternal($event);
+        $this->tryEmit($event);
+    }
+
+    /**
+     * Returns true only for a completed live write. Filtered, queued, or
+     * unavailable output must not acknowledge separately persisted questions.
+     */
+    public function tryEmit(RuntimeEvent $event): bool
+    {
+        if (null !== $this->bootstrapFilter && ($this->bootstrapFilter)($event)) {
+            return false;
+        }
+        if ($this->bootstrapOutput) {
+            $this->emitTransfer($event);
+
+            return false;
+        }
+
+        return $this->emitInternal($event);
+    }
+
+    /** @param (\Closure(RuntimeEvent): bool)|null $filter */
+    public function setBootstrapFilter(?\Closure $filter): void
+    {
+        $this->bootstrapFilter = $filter;
+    }
+
+    public function beginBootstrapOutput(): void
+    {
+        $this->bootstrapOutput = true;
+        $this->onDrained = null;
+        if (null !== $this->stdout) {
+            stream_set_blocking($this->stdout, false);
+        }
+    }
+
+    /** At most 64 KiB of encoded startup output is retained, including control replies. */
+    public function emitTransfer(RuntimeEvent $event, ?\Closure $after = null): void
+    {
+        if (null === $this->stdout || $this->shuttingDown) {
+            return;
+        }
+        $line = JsonlCodec::encodeEvent($event);
+        if ($this->pendingBytes + \strlen($line) > 65536) {
+            throw new RuntimeTransportException('Bootstrap stdout exceeds its bounded pending budget.');
+        }
+        $this->pending[] = ['line' => $line, 'after' => $after, 'started' => false, 'run_id' => $event->runId];
+        $this->pendingBytes += \strlen($line);
+        if (null === $this->writeWatcher) {
+            $this->writeWatcher = EventLoop::onWritable($this->stdout, $this->flushBootstrap(...));
+        }
+    }
+
+    public function whenDrained(\Closure $after): void
+    {
+        if ([] === $this->pending) {
+            $after();
+        } else {
+            $this->onDrained = $after;
+        }
+    }
+
+    /** Finish a partial JSONL line, but release cancelled frames and callbacks.
+     * Stay nonblocking and detached until a replacement bootstrap completes. */
+    public function cancelBootstrapOutput(): void
+    {
+        $partial = ($this->pending[0]['started'] ?? false) ? $this->pending[0] : null;
+        if (null !== $partial) {
+            $partial['after'] = null;
+        }
+        $this->pending = null === $partial ? [] : [$partial];
+        $this->pendingBytes = null === $partial ? 0 : \strlen($partial['line']);
+        $this->onDrained = null;
+        $this->bootstrapFilter = static fn (RuntimeEvent $event): bool => !\in_array($event->type, [
+            \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum::CommandAck->value,
+            \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum::CommandRejected->value,
+            \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum::ProtocolError->value,
+        ], true);
+        if ([] === $this->pending && null !== $this->writeWatcher) {
+            EventLoop::cancel($this->writeWatcher);
+            $this->writeWatcher = null;
+        }
+    }
+
+    public function finishBootstrapOutput(): void
+    {
+        if ([] !== $this->pending) {
+            throw new \LogicException('Bootstrap output is still pending.');
+        }
+        $this->bootstrapOutput = false;
+        if (null !== $this->stdout) {
+            stream_set_blocking($this->stdout, true);
+        }
     }
 
     /**
@@ -77,11 +177,57 @@ final class RuntimeEventEmitter
     public function shutdown(): void
     {
         $this->shuttingDown = true;
+        if (null !== $this->writeWatcher) {
+            EventLoop::cancel($this->writeWatcher);
+            $this->writeWatcher = null;
+        }
+        $this->pending = [];
+        $this->pendingBytes = 0;
+        $this->onDrained = null;
+        $this->bootstrapFilter = null;
+    }
+
+    private function flushBootstrap(): void
+    {
+        if ([] === $this->pending || null === $this->stdout) {
+            return;
+        }
+        $written = @fwrite($this->stdout, $this->pending[0]['line']);
+        if (false === $written) {
+            $runId = $this->pending[0]['run_id'];
+            $this->logger->error('session.bootstrap.stdout_failed', ['run_id' => $runId, 'session_id' => $runId,
+                'component' => 'RuntimeEventEmitter', 'event_type' => 'session.bootstrap.stdout_failed']);
+            $this->shutdown();
+            if (null !== $this->onFatalShutdown) {
+                ($this->onFatalShutdown)();
+            }
+            EventLoop::getDriver()->stop();
+
+            return;
+        }
+        $this->pendingBytes -= $written;
+        $this->pending[0]['started'] = $this->pending[0]['started'] || $written > 0;
+        $this->pending[0]['line'] = substr($this->pending[0]['line'], $written);
+        if ('' === $this->pending[0]['line']) {
+            $finished = array_shift($this->pending);
+            if (null !== $finished['after']) {
+                EventLoop::queue($finished['after']);
+            }
+        }
+        if ([] === $this->pending) {
+            EventLoop::cancel($this->writeWatcher);
+            $this->writeWatcher = null;
+            $after = $this->onDrained;
+            $this->onDrained = null;
+            if (null !== $after) {
+                $after();
+            }
+        }
     }
 
     private function emitInternal(RuntimeEvent $event): bool
     {
-        if (null === $this->stdout) {
+        if (null === $this->stdout || $this->shuttingDown) {
             return false;
         }
 

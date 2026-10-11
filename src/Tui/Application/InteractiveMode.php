@@ -206,11 +206,10 @@ final readonly class InteractiveMode
             // is reused from the previous iteration.
             $services = $this->compositionFactory->create($tui, $screen, $state, $client);
 
-            // ── Build initial transcript with the scope's parent applier ──
-            // Resume replay and subsequent parent polling share the same
-            // session-owned projector/projection state.
+            // Resume mounts only a restoring notice. The owner's sealed transfer
+            // replaces it atomically through the tick poller after validation.
             $state->replaceTranscript(
-                $this->sessionInit->buildInitialTranscript($state, $services->parentEventApplier),
+                $this->sessionInit->buildInitialTranscript($state),
             );
 
             // Seed session-scoped prompt history from the rebuilt transcript
@@ -252,8 +251,8 @@ final readonly class InteractiveMode
             // Passive resume does not poll runtime events immediately; clear any
             // optimistic Working... left from a prior in-session submit so terminal
             // cancelled/completed/failed sessions do not show ◐ Working... until tick.
-            if ($state->resuming && !$state->activity->isActive()) {
-                $screen->setWorkingMessage('');
+            if ($state->resuming) {
+                $screen->setWorkingMessage($state->bootstrapError ?? 'Restoring session...');
             }
 
             // ── Register listeners (DI-driven, stateless registrars) ──
@@ -287,6 +286,7 @@ final readonly class InteractiveMode
 
             $tui->setFocus($screen->editorWidget());
             $tui->run();
+            $services->parentEventApplier->releaseBootstrap();
 
             // ── Consume exit intent and dispatch session ended ──
             $reloadIntent = $services->switch->consumePendingReload();
@@ -453,7 +453,7 @@ final readonly class InteractiveMode
             return;
         }
 
-        if (null !== $state->request && '' !== $state->request->prompt) {
+        if (!$state->resuming && null !== $state->request && '' !== $state->request->prompt) {
             try {
                 $state->handle = $client->start($state->request);
                 $this->sessionStore->updateMetadata($state->sessionId, [
@@ -478,21 +478,18 @@ final readonly class InteractiveMode
                 $existingRunId = (string) $session->id;
                 try {
                     $state->handle = $client->attach($existingRunId);
-                    $state->appendTranscriptBlock($this->blockFactory->system(
-                        runId: $state->sessionId,
-                        text: \sprintf('Resumed run %s', $existingRunId),
-                        seq: \count($state->transcript) + 1,
-                        style: 'muted',
-                        category: 'lifecycle',
-                    ));
+                    $state->sessionReady = false;
+                    $state->bootstrapStartedAt = microtime(true);
                 } catch (\Throwable $e) {
                     $this->logger->warning('Failed to resume run', [
                         'exception' => $e,
                         'run_id' => $existingRunId,
                     ]);
+                    $state->bootstrapError = 'Not attached. Reload to restore this session.';
+                    $state->sessionReady = false;
                     $state->appendTranscriptBlock($this->blockFactory->system(
                         runId: $state->sessionId,
-                        text: 'Could not resume run — starting fresh.',
+                        text: $state->bootstrapError,
                         seq: \count($state->transcript) + 1,
                         style: 'warning',
                     ));

@@ -26,6 +26,7 @@ final class ResumeCanonicalEventsFixture
                 'payload' => [
                     'system_prompt' => '',
                     'messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Tell me about testing.']]]],
+                    'metadata' => ['model' => 'llama_cpp_test/test', 'session' => []],
                 ],
             ],
             'ts' => $now,

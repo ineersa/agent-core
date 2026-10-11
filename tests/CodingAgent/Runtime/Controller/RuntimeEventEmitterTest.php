@@ -34,12 +34,12 @@ final class RuntimeEventEmitterTest extends TestCase
     {
         $emitter = $this->createEmitter();
 
-        $emitter->emit(new RuntimeEvent(
+        $this->assertFalse($emitter->tryEmit(new RuntimeEvent(
             type: RuntimeEventTypeEnum::RuntimeReady->value,
             runId: '',
             seq: 0,
             payload: [],
-        ));
+        )));
 
         $this->assertFalse($emitter->isShuttingDown());
     }
@@ -51,6 +51,7 @@ final class RuntimeEventEmitterTest extends TestCase
 
         $emitter->shutdown();
         $this->assertTrue($emitter->isShuttingDown());
+        $this->assertFalse($emitter->tryEmit(new RuntimeEvent(RuntimeEventTypeEnum::ToolQuestionRequested->value, 'run', 0, [])));
     }
 
     public function testEmitWritesJsonlToStdout(): void
@@ -59,12 +60,12 @@ final class RuntimeEventEmitterTest extends TestCase
         $emitter->openStdout();
         $this->replaceStdoutWithMemory($emitter);
 
-        $emitter->emit(new RuntimeEvent(
+        $this->assertTrue($emitter->tryEmit(new RuntimeEvent(
             type: RuntimeEventTypeEnum::RunStarted->value,
             runId: 'stdout-run-1',
             seq: 1,
             payload: [],
-        ));
+        )));
 
         $stdout = $this->stdoutHandle($emitter);
         rewind($stdout);
@@ -72,6 +73,64 @@ final class RuntimeEventEmitterTest extends TestCase
 
         $this->assertStringContainsString('run.started', $raw);
         $this->assertStringContainsString('stdout-run-1', $raw);
+    }
+
+    public function testBootstrapOutputIsBoundedAndCancellationReleasesPendingCallbacks(): void
+    {
+        [$writer, $reader] = stream_socket_pair(\STREAM_PF_UNIX, \STREAM_SOCK_STREAM, \STREAM_IPPROTO_IP);
+        $emitter = $this->createEmitter();
+        $reflection = new \ReflectionClass($emitter);
+        $reflection->getProperty('stdout')->setValue($emitter, $writer);
+        $emitter->beginBootstrapOutput();
+        $token = new \stdClass();
+        $weak = \WeakReference::create($token);
+        $frame = new RuntimeEvent(RuntimeEventTypeEnum::BootstrapFrame->value, 'run', 0, ['data' => base64_encode(str_repeat('x', 32768))]);
+        try {
+            $emitter->emitTransfer($frame, static fn () => $token);
+            unset($token);
+            $this->assertNotNull($weak->get());
+            try {
+                $emitter->emitTransfer($frame);
+                $this->fail('A second frame cannot exceed the 64 KiB pending budget.');
+            } catch (\Ineersa\CodingAgent\Runtime\Contract\RuntimeTransportException $exception) {
+                $this->assertStringContainsString('bounded pending budget', $exception->getMessage());
+            }
+            $this->assertLessThanOrEqual(65536, $reflection->getProperty('pendingBytes')->getValue($emitter));
+            $emitter->cancelBootstrapOutput();
+            $this->assertSame([], $reflection->getProperty('pending')->getValue($emitter));
+            $this->assertSame(0, $reflection->getProperty('pendingBytes')->getValue($emitter));
+            $this->assertNull($reflection->getProperty('writeWatcher')->getValue($emitter));
+            $this->assertNull($weak->get());
+            $this->assertFalse($emitter->tryEmit(new RuntimeEvent(RuntimeEventTypeEnum::RunStarted->value, 'run', 99, [])));
+            $this->assertSame(0, $reflection->getProperty('pendingBytes')->getValue($emitter), 'A cancelled view remains detached.');
+        } finally {
+            $emitter->shutdown();
+            fclose($writer);
+            fclose($reader);
+        }
+    }
+
+    public function testDisconnectReleasesPendingOutputAndInvokesOwnedShutdown(): void
+    {
+        [$writer, $reader] = stream_socket_pair(\STREAM_PF_UNIX, \STREAM_SOCK_STREAM, \STREAM_IPPROTO_IP);
+        $emitter = $this->createEmitter();
+        $reflection = new \ReflectionClass($emitter);
+        $reflection->getProperty('stdout')->setValue($emitter, $writer);
+        $emitter->beginBootstrapOutput();
+        $stopped = false;
+        $emitter->setFatalShutdownHandler(static function () use (&$stopped): void { $stopped = true; });
+        try {
+            $emitter->emitTransfer(new RuntimeEvent(RuntimeEventTypeEnum::BootstrapEnd->value, 'run', 0, []));
+            fclose($reader);
+            $reflection->getMethod('flushBootstrap')->invoke($emitter);
+            $this->assertTrue($stopped);
+            $this->assertTrue($emitter->isShuttingDown());
+            $this->assertSame(0, $reflection->getProperty('pendingBytes')->getValue($emitter));
+            $this->assertNull($reflection->getProperty('writeWatcher')->getValue($emitter));
+        } finally {
+            $emitter->shutdown();
+            fclose($writer);
+        }
     }
 
     private function createEmitter(): RuntimeEventEmitter

@@ -63,6 +63,14 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
     private string $stdoutBuffer = '';
     private string $stderrBuffer = '';
+    private ?string $bootstrapCommandId = null;
+    private ?\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapDescriptorDTO $bootstrapDescriptor = null;
+    private bool $bootstrapEnded = false;
+    private bool $bootstrapAcknowledged = false;
+    private string $suffixBuffer = '';
+    private int $suffixSequence = 0;
+    private int $suffixIndex = 0;
+    private int $suffixCursor = 0;
 
     private RuntimeEventPerRunCompactBuffer $compactEventBuffer;
 
@@ -96,6 +104,14 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
      * parent durable events stay buffered while activeRunId targets a selected child.
      */
     private ?string $primaryRunId = null;
+
+    // Local identity changes survive discarded dead-pipe packets. Keep only
+    // the first unconsumed predecessor and the latest replacement identity.
+    private ?RuntimeEvent $pendingSessionRestoring = null;
+
+    // Started sessions have no bootstrap ID; failed replacement startup must
+    // retain their resume obligation independently of identity publication.
+    private bool $recoveryPending = false;
 
     /**
      * Whether ensureProcessRunning() auto-resumed the active run during
@@ -161,10 +177,16 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
     public function start(StartRunRequest $request): RunHandle
     {
         // New run — clear stale state from any previous run or crash.
+        $this->recoveryPending = false;
+        $this->pendingSessionRestoring = null;
         $this->activeRunId = null;
         $this->primaryRunId = null;
         $this->observedChildRunIds = [];
         $this->autoResumed = false;
+        $this->bootstrapCommandId = null;
+        $this->bootstrapDescriptor = null;
+        $this->bootstrapEnded = false;
+        $this->resetSuffix();
 
         // Derive session-scoped queue names from the request runId before
         // spawning the controller process, so its env vars carry the right DSNs.
@@ -284,6 +306,12 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
     public function attach(string $runId): RunHandle
     {
+        $this->recoveryPending = false;
+        $this->pendingSessionRestoring = null;
+        $this->bootstrapCommandId = null;
+        $this->bootstrapDescriptor = null;
+        $this->bootstrapEnded = false;
+        $this->resetSuffix();
         // Reset stale flags from prior sessions / crash-recovery cycles.
         // ensureProcessRunning() may have set autoResumed for a different
         // session during events()/send()/cancel(); only an auto-resume
@@ -310,8 +338,10 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         // skip the explicit resume write to avoid sending a duplicate command.
         if ($this->autoResumed) {
             $this->autoResumed = false;
+            // Returning the handle delivers this identity directly to the caller.
+            $this->pendingSessionRestoring = null;
 
-            return new RunHandle(runId: $runId, status: 'running');
+            return new RunHandle(runId: $runId, status: 'bootstrapping', bootstrapRequestId: $this->bootstrapCommandId);
         }
 
         $cmd = new RuntimeCommand(
@@ -320,9 +350,39 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             runId: $runId,
         );
 
+        $this->bootstrapCommandId = $cmd->id;
+        $this->bootstrapDescriptor = null;
+        $this->bootstrapEnded = false;
         $this->writeCommandWithRetry($cmd);
 
-        return new RunHandle(runId: $runId, status: 'attached');
+        // A recovered attach also delivers its surviving identity in the handle.
+        $this->pendingSessionRestoring = null;
+
+        return new RunHandle(runId: $runId, status: 'bootstrapping', bootstrapRequestId: $this->bootstrapCommandId);
+    }
+
+    /** @param array<string, mixed> $cut */
+    public function acknowledgeBootstrap(array $cut): void
+    {
+        $descriptor = \Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapDescriptorDTO::fromArray($cut);
+        if (!$this->bootstrapEnded || null === $this->bootstrapDescriptor || $descriptor->toArray() !== $this->bootstrapDescriptor->toArray()) {
+            throw new RuntimeTransportException('Bootstrap acknowledgement is stale or incomplete.');
+        }
+        $this->writeCommand(new RuntimeCommand(uniqid('cmd_', true), 'bootstrap.applied', $descriptor->runId, $descriptor->toArray()));
+        $this->bootstrapEnded = false;
+        $this->bootstrapAcknowledged = true;
+    }
+
+    public function cancelBootstrap(string $runId): void
+    {
+        if (null !== $this->process && $this->isProcessRunning()) {
+            $this->writeCommand(new RuntimeCommand(uniqid('cmd_', true), 'bootstrap.cancel', $runId));
+        }
+        $this->pendingSessionRestoring = null;
+        $this->bootstrapDescriptor = null;
+        $this->bootstrapCommandId = null;
+        $this->bootstrapEnded = false;
+        $this->resetSuffix();
     }
 
     public function send(string $runId, UserCommand $command): void
@@ -376,6 +436,12 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
         // Transparently restart the controller process if it died.
         $this->ensureProcessRunning();
+
+        if (null !== $this->pendingSessionRestoring && $this->pendingSessionRestoring->runId === $runId) {
+            $restoring = $this->pendingSessionRestoring;
+            $this->pendingSessionRestoring = null;
+            yield $restoring;
+        }
 
         // Drain buffered events for this run only; other run IDs stay partitioned.
         foreach ($this->drainBufferedEventsForRun($runId) as $event) {
@@ -537,28 +603,54 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             $this->stopProcess();
         }
 
-        if (null !== $this->process && $this->isProcessRunning()) {
+        if (null !== $this->process && $this->isProcessRunning() && !$this->recoveryPending) {
             return;
         }
 
-        $hadRunningProcess = null !== $this->process;
+        $hadRunningProcess = null !== $this->process || $this->recoveryPending;
+        $resumeRunId = $this->primaryRunId ?? $this->activeRunId;
+        $this->recoveryPending = $hadRunningProcess && null !== $resumeRunId;
 
         if ($hadRunningProcess && !$sessionChanged) {
             $this->enforceRestartRateLimit();
         }
 
         $this->stopProcess();
+        // Canonical catch-up replaces buffered data from the dead pipe. In
+        // particular, old bootstrap packets cannot precede the new identity.
+        $this->compactEventBuffer->clear();
         $this->spawnProcess();
 
         // If we had an active run before the crash, resume it transparently.
-        if ($hadRunningProcess && null !== $this->activeRunId) {
+        if ($hadRunningProcess && null !== $resumeRunId) {
+            $this->activeRunId = $resumeRunId;
+            $previousRequestId = null !== $this->pendingSessionRestoring
+                ? $this->pendingSessionRestoring->payload['previous_command_id']
+                : $this->bootstrapCommandId;
+            // Keep the last delivered identity until readiness and the resume
+            // write succeed. A captured failure must not erase its predecessor.
+            $this->bootstrapDescriptor = null;
+            $this->bootstrapEnded = false;
+            $this->resetSuffix();
             $this->waitForRuntimeReady();
-            $this->writeCommand(new RuntimeCommand(
+            $this->compactEventBuffer->clear();
+            $resume = new RuntimeCommand(
                 id: uniqid('cmd_', true),
                 type: 'resume',
                 runId: $this->activeRunId,
-            ));
+            );
+            $this->writeCommand($resume);
+            $this->bootstrapCommandId = $resume->id;
             $this->autoResumed = true;
+            // Only this local restart decision can replace the UI's immutable
+            // handle. Publish it before any frames from the replacement pipe.
+            $this->pendingSessionRestoring = new RuntimeEvent(
+                RuntimeEventTypeEnum::SessionRestoring->value,
+                $this->activeRunId,
+                0,
+                ['previous_command_id' => $previousRequestId, 'command_id' => $resume->id],
+            );
+            $this->recoveryPending = false;
         }
     }
 
@@ -883,6 +975,14 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
                 'exception' => $e,
             ]);
             $this->ensureProcessRunning();
+            // Recovery already sent the surviving parent resume. Retrying the
+            // failed attach would supersede it with an identity the client lost.
+            if ('resume' === $command->type && $command->runId === $this->primaryRunId
+                && $this->autoResumed && $this->bootstrapCommandId !== $command->id) {
+                $this->autoResumed = false;
+
+                return;
+            }
             $this->writeCommand($command);
         }
     }
@@ -923,7 +1023,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             return;
         }
 
-        $chunk = stream_get_contents($this->pipes[1]);
+        $chunk = fread($this->pipes[1], 65536);
         if (false === $chunk || '' === $chunk) {
             return;
         }
@@ -944,13 +1044,105 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             }
 
             try {
-                yield JsonlCodec::decodeEvent($trimmed);
+                $event = JsonlCodec::decodeEvent($trimmed);
             } catch (\JsonException|\RuntimeException) {
                 // Skip malformed stdout lines, but preserve them as diagnostics.
                 $this->stderrBuffer .= "\n[malformed stdout] ".$trimmed;
                 continue;
             }
+            if (RuntimeEventTypeEnum::SessionRestoring->value === $event->type) {
+                // Replacement identity is trusted local lifecycle, never wire input.
+                continue;
+            }
+            if (RuntimeEventTypeEnum::BootstrapAvailable->value === $event->type) {
+                if (!$this->runtimeReadyReceived || null === $this->bootstrapCommandId || ($event->payload['command_id'] ?? null) !== $this->bootstrapCommandId) {
+                    continue;
+                }
+                $descriptor = \Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapDescriptorDTO::fromArray($event->payload);
+                if ($descriptor->runId !== $event->runId || $descriptor->runId !== $this->primaryRunId) {
+                    throw new RuntimeTransportException('Bootstrap availability does not match the attached run.');
+                }
+                if (null !== $this->bootstrapDescriptor && $descriptor->viewEpoch <= $this->bootstrapDescriptor->viewEpoch) {
+                    continue;
+                }
+                $this->bootstrapDescriptor = $descriptor;
+                $this->bootstrapEnded = false;
+                $this->resetSuffix();
+                $this->suffixCursor = $descriptor->canonicalSeq;
+            } elseif (\in_array($event->type, [RuntimeEventTypeEnum::BootstrapFrame->value, RuntimeEventTypeEnum::BootstrapEnd->value, RuntimeEventTypeEnum::SessionReady->value], true)) {
+                if (null === $this->bootstrapDescriptor || $event->runId !== $this->bootstrapDescriptor->runId
+                    || ($event->payload['bootstrap_id'] ?? null) !== $this->bootstrapDescriptor->bootstrapId
+                    || ($event->payload['view_epoch'] ?? null) !== $this->bootstrapDescriptor->viewEpoch) {
+                    continue;
+                }
+                if (RuntimeEventTypeEnum::BootstrapEnd->value === $event->type) {
+                    $end = \Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapDescriptorDTO::fromArray($event->payload);
+                    if ($end->toArray() !== $this->bootstrapDescriptor->toArray()) {
+                        throw new RuntimeTransportException('Bootstrap end does not match its sealed cut.');
+                    }
+                    $this->bootstrapEnded = true;
+                } elseif (RuntimeEventTypeEnum::SessionReady->value === $event->type) {
+                    if (!$this->bootstrapAcknowledged || 0 !== $this->suffixIndex || !\is_int($event->payload['canonical_seq'] ?? null)
+                        || $event->payload['canonical_seq'] < $this->suffixCursor || !\is_int($event->payload['end_offset'] ?? null)
+                        || $event->payload['end_offset'] < $this->bootstrapDescriptor->endOffset) {
+                        throw new RuntimeTransportException('Session readiness does not match the delivered suffix.');
+                    }
+                    $this->suffixCursor = $event->payload['canonical_seq'];
+                }
+            } elseif (RuntimeEventTypeEnum::BootstrapSuffix->value === $event->type) {
+                $event = $this->decodeSuffix($event);
+                if (null === $event) {
+                    continue;
+                }
+            }
+            yield $event;
         }
+    }
+
+    private function decodeSuffix(RuntimeEvent $frame): ?RuntimeEvent
+    {
+        $payload = $frame->payload;
+        if (null === $this->bootstrapDescriptor || $frame->runId !== $this->bootstrapDescriptor->runId
+            || ($payload['bootstrap_id'] ?? null) !== $this->bootstrapDescriptor->bootstrapId
+            || ($payload['view_epoch'] ?? null) !== $this->bootstrapDescriptor->viewEpoch) {
+            // An old transfer must neither append bytes nor reset a current record.
+            return null;
+        }
+        if (!$this->bootstrapAcknowledged) {
+            throw new RuntimeTransportException('Bootstrap suffix arrived before mount acknowledgement.');
+        }
+        $chunk = \is_string($payload['data'] ?? null) && \strlen($payload['data']) <= 43692 ? base64_decode($payload['data'], true) : false;
+        if (false === $chunk || '' === $chunk || \strlen($chunk) > 32768 || !\is_int($payload['canonical_seq'] ?? null)
+            || $payload['canonical_seq'] <= $this->suffixCursor
+            || ($payload['index'] ?? null) !== $this->suffixIndex || !\is_bool($payload['last'] ?? null)
+            || (0 !== $this->suffixIndex && $payload['canonical_seq'] !== $this->suffixSequence)) {
+            throw new RuntimeTransportException('Invalid bounded bootstrap suffix frame.');
+        }
+        $this->suffixSequence = $payload['canonical_seq'];
+        ++$this->suffixIndex;
+        $this->suffixBuffer .= $chunk;
+        if (\strlen($this->suffixBuffer) > 16 * 1024 * 1024) {
+            throw new RuntimeTransportException('Bootstrap suffix record exceeds its byte budget.');
+        }
+        if (!$payload['last']) {
+            return null;
+        }
+        $event = JsonlCodec::decodeEvent($this->suffixBuffer);
+        if ($event->seq !== $this->suffixSequence || $event->runId !== $frame->runId) {
+            throw new RuntimeTransportException('Bootstrap suffix record does not match its cursor.');
+        }
+        $this->suffixCursor = $event->seq;
+        $this->suffixBuffer = '';
+        $this->suffixSequence = $this->suffixIndex = 0;
+
+        return $event;
+    }
+
+    private function resetSuffix(): void
+    {
+        $this->bootstrapAcknowledged = false;
+        $this->suffixBuffer = '';
+        $this->suffixSequence = $this->suffixIndex = $this->suffixCursor = 0;
     }
 
     private function assertProcessStillRunning(string $context): void
@@ -1043,6 +1235,12 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
      */
     private function resetSessionBoundaryState(): void
     {
+        $this->recoveryPending = false;
+        $this->pendingSessionRestoring = null;
+        $this->bootstrapCommandId = null;
+        $this->bootstrapDescriptor = null;
+        $this->bootstrapEnded = false;
+        $this->resetSuffix();
         $this->compactEventBuffer->clear();
         $this->observedChildRunIds = [];
         $this->stdoutBuffer = '';

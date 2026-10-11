@@ -106,7 +106,7 @@ final class InProcessAgentSessionClientEventsTest extends IsolatedKernelTestCase
         $unseen = iterator_to_array($this->client()->events(self::RUN_ID, 1997));
 
         $this->assertSame([1998, 1999, 2000], array_map(static fn (RuntimeEvent $event): int => $event->seq, $unseen));
-        $this->assertSame(4, self::$eventStore->reverseForYieldedEvents);
+        $this->assertSame(1, self::$eventStore->reverseForYieldedEvents);
         $this->assertSame(0, self::$eventStore->allForCalls);
     }
 
@@ -174,6 +174,8 @@ final class InProcessAgentSessionClientEventsTest extends IsolatedKernelTestCase
             sessionMetaStore: $container->get(HatfieldSessionStore::class),
             modelResolver: $container->get(ModelResolver::class),
             commandBus: $commandBus ?? new TestMessageBus(),
+            bootstrapSpools: self::getContainer()->get(\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapSpoolStore::class),
+            bootstrapTransfer: self::getContainer()->get(\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapTransfer::class),
             transientSink: $transientSink,
         );
     }
@@ -246,6 +248,6 @@ final class ReverseOnlyEventStore implements EventStoreInterface
     {
         ++$this->allForCalls;
 
-        throw new \LogicException('InProcessAgentSessionClient must use reverseFor().');
+        throw new \LogicException('InProcessAgentSessionClient must use bounded canonical ranges.');
     }
 }

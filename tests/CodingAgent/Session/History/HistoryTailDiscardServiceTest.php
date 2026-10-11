@@ -4,23 +4,41 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Session\History;
 
-use Ineersa\AgentCore\Contract\EventStoreInterface;
-use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\CodingAgent\Session\History\HistoryProjector;
+use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\LoggingConfig;
+use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\History\HistoryTailDiscardService;
+use Ineersa\CodingAgent\Tests\Support\HistoryEventStoreFactory;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 
 #[CoversClass(HistoryTailDiscardService::class)]
 final class HistoryTailDiscardServiceTest extends TestCase
 {
+    private string $tempDir;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->tempDir = TestDirectoryIsolation::createProjectTempDir('history-tail-discard');
+    }
+
+    protected function tearDown(): void
+    {
+        TestDirectoryIsolation::removeDirectory($this->tempDir);
+        parent::tearDown();
+    }
+
     /**
      * Thesis: mutate-behind-tip must append history_tail_discarded so forward turns
      * leave active history; without it, abandoned future stays selectable/replayable.
@@ -39,13 +57,10 @@ final class HistoryTailDiscardServiceTest extends TestCase
             ]),
         ];
 
-        $store = $this->createMock(PreparedTransitionEventStoreInterface::class);
-        $store->method('allFor')->willReturn($events);
-        $store->expects($this->never())->method('appendTransition');
+        $sessionStore = $this->sessionStore();
 
         $service = new HistoryTailDiscardService(
-            $store,
-            new HistoryProjector(),
+            HistoryEventStoreFactory::create($sessionStore, $events),
             new NullLogger(),
         );
         $state = new RunState(
@@ -74,13 +89,10 @@ final class HistoryTailDiscardServiceTest extends TestCase
             $this->event($runId, 2, 1, RunEventTypeEnum::HistoryPositionSet->value, ['position_turn_no' => 1]),
         ];
 
-        $store = $this->createMock(PreparedTransitionEventStoreInterface::class);
-        $store->method('allFor')->willReturn($events);
-        $store->expects($this->never())->method('appendTransition');
+        $sessionStore = $this->sessionStore();
 
         $service = new HistoryTailDiscardService(
-            $store,
-            new HistoryProjector(),
+            HistoryEventStoreFactory::create($sessionStore, $events),
             new NullLogger(),
         );
         $state = new RunState(
@@ -95,11 +107,28 @@ final class HistoryTailDiscardServiceTest extends TestCase
         $this->assertNull($result);
     }
 
+    public function testSparseDescendingNumbersDiscardByAnchorOrderWithoutPublishing(): void
+    {
+        $runId = 'sparse-discard';
+        $sessionStore = $this->sessionStore();
+        $store = HistoryEventStoreFactory::create($sessionStore, [
+            $this->event($runId, 1, 100, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 100]),
+            $this->event($runId, 2, 4, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 4]),
+            $this->event($runId, 3, 100, RunEventTypeEnum::HistoryPositionSet->value, ['position_turn_no' => 100]),
+        ]);
+        $service = new HistoryTailDiscardService($store, new NullLogger());
+        $state = new RunState(runId: $runId, status: RunStatus::Completed, version: 1, turnNo: 100, lastSeq: 3);
+        $this->assertSame(100, $service->prepareForwardTailDiscard($runId, $state)?->payload['after_turn_no']);
+        $this->assertNull($service->prepareForwardTailDiscard($runId, $state->with(['turnNo' => 99])));
+        $this->assertNull($service->prepareForwardTailDiscard($runId, $state->with(['turnNo' => 4])));
+        $this->assertSame(3, $store->latestSequenceFor($runId));
+    }
+
     public function testDetectsMutatingMessages(): void
     {
+        $sessionStore = $this->sessionStore();
         $service = new HistoryTailDiscardService(
-            $this->createStub(EventStoreInterface::class),
-            new HistoryProjector(),
+            HistoryEventStoreFactory::create($sessionStore),
             new NullLogger(),
         );
 
@@ -128,6 +157,22 @@ final class HistoryTailDiscardServiceTest extends TestCase
             kind: 'select_history_turn',
             payload: [],
         )));
+    }
+
+    /**
+     * Build isolated session storage for the indexed history fixture.
+     */
+    private function sessionStore(): HatfieldSessionStore
+    {
+        return new HatfieldSessionStore(
+            appConfig: new AppConfig(
+                tui: new TuiConfig(theme: 'default'),
+                logging: new LoggingConfig(),
+                cwd: $this->tempDir,
+            ),
+            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+            dispatcher: new EventDispatcher(),
+        );
     }
 
     /**

@@ -94,7 +94,7 @@ final class ToolQuestionPoller
             $this->logger->warning('tool_question.poller_startup_cleanup_failed', [
                 'component' => 'tool_question.poller',
                 'event_type' => 'tool_question.poller_startup_cleanup_failed',
-                'exception' => $e->getMessage(),
+                'exception_class' => $e::class,
             ]);
             // Fail closed: do not block controller startup for cleanup.
         }
@@ -109,7 +109,7 @@ final class ToolQuestionPoller
             $this->logger->warning('tool_question.poller_query_failed', [
                 'component' => 'tool_question.poller',
                 'event_type' => 'tool_question.poller_query_failed',
-                'exception' => $e->getMessage(),
+                'exception_class' => $e::class,
             ]);
 
             return;
@@ -140,9 +140,14 @@ final class ToolQuestionPoller
             );
 
             try {
-                $this->emitter->emit($event);
+                if (!$this->emitter->tryEmit($event)) {
+                    // Bootstrap filtering also drops seq-zero questions. They
+                    // are not in JSONL: leave them in the store for the next
+                    // poll after readiness, rather than retaining a PHP backlog.
+                    continue;
+                }
 
-                // Only mark emitted after successful emit. If markEmitted
+                // Only mark emitted after a completed live write. If markEmitted
                 // throws, the question stays un-emitted and will be
                 // re-emitted on the next poll. The TUI also deduplicates
                 // via handleToolQuestionRequested's hasRequest($requestId)
@@ -154,7 +159,8 @@ final class ToolQuestionPoller
                     'event_type' => 'tool_question.poller_emit_failed',
                     'request_id' => $question->requestId,
                     'run_id' => $question->runId,
-                    'exception' => $e->getMessage(),
+                    'session_id' => $question->runId,
+                    'exception_class' => $e::class,
                 ]);
 
                 // Continue to subsequent questions — a single failure must

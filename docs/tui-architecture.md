@@ -69,6 +69,19 @@ TUI sends commands and consumes events through `AgentSessionClient` + runtime pr
 - Transient stream deltas use sequence `0` and are not durable replay.
 - `RuntimeEventTranslator` maps AgentCore `RunEvent` values to protocol DTOs. It does not consume `RunState`.
 
+On resume, the screen shows a restoring notice and blocks execution input.
+The run-control owner rebuilds its current state and bounded transcript together.
+The TUI does not read the archive or build a second execution state.
+
+The controller sends the sealed transcript as bounded `bootstrap.frame` records.
+The TUI checks frame order, transfer identity, epoch, actual bytes, record count
+and checksum before replacing the mounted transcript and hydrating its projector.
+Only then does it acknowledge the exact committed cut. The controller deletes
+the private spool and sends the canonical suffix from that cut. `session.ready`
+enables execution input after catch-up; `runtime.ready` only means the controller
+transport is usable. Cancelled, corrupt, timed-out or disconnected transfers
+leave the screen visibly unattached. Reload and session navigation remain available.
+
 Do not reach into AgentCore stores from widgets.
 
 Dependency direction follows `depfile.yaml`. TUI may depend on CodingAgent services and models when semantics match. CodingAgent generally must not depend on TUI, with specific approved CLI bridge edges. Direct TUI → AgentCore edges are allowed only where Deptrac lists them; prefer the owning CodingAgent service. `Runtime/Contract` and `Runtime/Protocol` remain for session/runtime protocol contracts, not as a workaround boundary for ordinary CodingAgent ownership.

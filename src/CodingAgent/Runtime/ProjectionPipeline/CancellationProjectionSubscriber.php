@@ -26,12 +26,12 @@ final readonly class CancellationProjectionSubscriber implements EventSubscriber
     }
 
     /**
-     * Marker event — no block created. Follow-up operation/turn/run
-     * cancellation events create the actual blocks.
+     * Accepted run cancellation drops the execution human-input queue.
+     * No cancellation block until the operation/turn/run settles.
      */
     public function onCancellationRequested(TranscriptProjectionEvent $event): void
     {
-        // Intentionally blank: marker event only
+        $event->state->cancelPendingQuestions($event->runId());
     }
 
     public function onOperationCancelled(TranscriptProjectionEvent $event): void
@@ -68,6 +68,8 @@ final readonly class CancellationProjectionSubscriber implements EventSubscriber
         $state = $event->state;
         $reason = (string) ($p['reason'] ?? 'user_cancelled');
 
+        // Canonical step abortion clears the operation, not the human-input
+        // queue. Only accepted run cancellation or termination closes questions.
         $state->removeActiveStreamingBlocks($event->runId());
         $state->addCancelledBlock($event->runId(), $reason, 'turn');
     }
@@ -79,6 +81,7 @@ final readonly class CancellationProjectionSubscriber implements EventSubscriber
         $reason = (string) ($p['reason'] ?? 'user_cancelled');
 
         $state->removeActiveStreamingBlocks($event->runId());
+        $state->cancelPendingQuestions($event->runId());
         $state->addCancelledBlock($event->runId(), $reason, 'run');
     }
 }

@@ -106,7 +106,7 @@ Legacy checkpoints without lifetime cache counters keep the indicator hidden, in
 
 | Flow | Behavior |
 |---|---|
-| `/resume` | Pick an existing session; rebuild transcript from events; continue with same `session_id` |
+| `/resume` | Pick an existing session; mount the owner-produced transcript; continue with the same `session_id` |
 | `/new` | Start a new session identity |
 | Lazy draft | New interactive session without an initial prompt may delay DB row creation until first message |
 | Process restart | Controller/runtime recover from session dir + DB; event projection rebuilds |
@@ -118,6 +118,12 @@ has pending human-input requests, attach cancels those waits before
 `context_refreshed`. The run becomes Cancelled rather than remaining WaitingHuman.
 History events are kept; late answers to cancelled question ids do not reopen them.
 See [human-input.md](human-input.md).
+
+The screen stays in a restoring state until it validates the bounded transcript
+transfer. It mounts the view, acknowledges the committed cursor, and catches up
+before enabling normal input. A failed transfer leaves the screen unattached,
+not usable with an empty transcript. `/reload`, `/resume`, `/new` and Escape remain
+available to reload, switch sessions or cancel restoration.
 
 ### Catalog recovery after state DB loss
 
@@ -136,6 +142,18 @@ New session creation uses atomic exclusive `mkdir` of the leaf session path and 
 `/history` is **conversation-only** (user-prompt rows). It supports navigating retained history / undo-redo semantics for the active session’s linear history model. File restore is **not** mixed into `/history` (extension-owned `/rewind` is separate and package-local).
 
 Selected history position and retained-history replay are derived from the canonical event stream; details of projection live in the TUI/runtime implementation.
+
+The picker opens near the selected position and loads at most 32 prompt previews,
+each capped at 240 UTF-8 bytes. Select `Older prompts...` or `Newer prompts...` with
+Enter to navigate pages. Internal turns are not selectable rows, but they remain
+valid predecessors. Selecting a prompt restores its complete original text to the
+editor without discarding forward history or starting a model turn.
+
+The disposable `history-index.sqlite` stores stable anchors, bounded previews and
+canonical record locations, not full prompt bodies. Missing, invalid or obsolete
+indexes rebuild from `events.jsonl`. Warm page reads validate the indexed boundary;
+exact prompt lookup reads its canonical record. The published extension history
+API still returns its complete title array and reads prompt records explicitly.
 
 ## Concurrency and locking
 

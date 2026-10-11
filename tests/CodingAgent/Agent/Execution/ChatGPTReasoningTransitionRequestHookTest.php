@@ -214,7 +214,7 @@ final class ChatGPTReasoningTransitionRequestHookTest extends IsolatedKernelTest
     public function testCommittedHistoryTailDiscardRemovesSwitchAnchorWithoutChangingCacheIdentity(): void
     {
         $store = $this->startCanonicalReasoningEpoch();
-        $service = new \Ineersa\CodingAgent\Session\History\HistoryTailDiscardService($store, new \Ineersa\CodingAgent\Session\History\HistoryProjector(), new NullLogger());
+        $service = new \Ineersa\CodingAgent\Session\History\HistoryTailDiscardService($store, new NullLogger());
         $tip = $this->coldReplay($store);
         $this->assertNull($service->prepareForwardTailDiscard($this->sessionId, $tip));
         \Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder::append($store, \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($this->sessionId, 1, 'history_position_set', ['position_turn_no' => 1, 'reason' => 'history_select']));
@@ -255,12 +255,16 @@ final class ChatGPTReasoningTransitionRequestHookTest extends IsolatedKernelTest
         return $store;
     }
 
-    private function coldReplay(\Ineersa\AgentCore\Contract\EventStoreInterface $store, ?int $position = null): \Ineersa\AgentCore\Domain\Run\RunState
+    private function coldReplay(\Ineersa\CodingAgent\Session\SessionRunEventStore $store, ?int $position = null): \Ineersa\AgentCore\Domain\Run\RunState
     {
         $em = static::getContainer()->get('doctrine.orm.default_entity_manager');
         $em->clear();
         $this->sessions = new HatfieldSessionStore($this->config, $em, new EventDispatcher());
-        $replay = new \Ineersa\CodingAgent\Session\Replay\SessionRunStateReplayService($store, new NullLogger(), static::getContainer()->get(\Ineersa\AgentCore\Application\Replay\RunStateReducer::class), new \Ineersa\AgentCore\Application\Replay\ReplayEventPreparer(), new \Ineersa\CodingAgent\Session\History\HistoryReplayFilter(new \Ineersa\CodingAgent\Session\History\HistoryProjector()));
+        $container = static::getContainer();
+        $source = new \Ineersa\CodingAgent\Agent\Artifact\ChildAwareEventStore($store, $container->get(\Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory::class), $container->get(\Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory::class));
+        $projector = new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector($container->get('event_dispatcher'), new \Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState());
+        $coordinator = new \Ineersa\CodingAgent\Session\Replay\SessionReplayCoordinator($source, $container->get(\Ineersa\AgentCore\Application\Replay\RunStateReducer::class), $container->get(\Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper::class), $projector, new NullLogger(), $container->get(\Ineersa\AgentCore\Contract\CommandStoreInterface::class));
+        $replay = new \Ineersa\CodingAgent\Session\Replay\SessionRunStateReplayService($store, $coordinator);
         $state = \Ineersa\AgentCore\Domain\Run\RunState::queued($this->sessionId);
         $rebuilt = null === $position ? $replay->rebuildIfStale($state, $this->sessionId) : $replay->rebuildAtPosition($state, $this->sessionId, $position);
         $this->assertNotNull($rebuilt->rebuiltState);

@@ -57,8 +57,9 @@ final readonly class OwnerRunInitializationMiddleware implements MiddlewareInter
         }
 
         return $this->locks->synchronized($runId, function () use ($runId, $message, $envelope, $stack): Envelope {
-            // Maintenance performs recovery inside its correlated response boundary.
-            if (!$message instanceof RepairSession && !$message instanceof SelectHistoryPrompt) {
+            // Attach prepares state and display together before applying its policy.
+            // Other maintenance performs recovery inside its response boundary.
+            if (!$message instanceof RepairSession && !$message instanceof SelectHistoryPrompt && !$message instanceof AttachRun) {
                 $this->initializeForOwner($runId, $message);
             }
 

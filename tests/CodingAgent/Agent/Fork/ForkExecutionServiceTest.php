@@ -121,7 +121,8 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
         PreparedEventStoreSeeder::append($store, RunEvent::forAppend($childId, 0, 'run_started', ['payload' => ['metadata' => $metadata, 'messages' => array_map(static fn (AgentMessage $message): array => $message->toArray(), $started->messages)]]));
         $em->clear();
         $cold = $container->get(AgentChildRunEventStoreFactory::class)->create($parent, $childId, $child->artifactId);
-        $replay = new \Ineersa\CodingAgent\Session\Replay\SessionRunStateReplayService($cold, new NullLogger(), $container->get(\Ineersa\AgentCore\Application\Replay\RunStateReducer::class), new \Ineersa\AgentCore\Application\Replay\ReplayEventPreparer(), new \Ineersa\CodingAgent\Session\History\HistoryReplayFilter(new \Ineersa\CodingAgent\Session\History\HistoryProjector()));
+        $coordinator = $container->get(\Ineersa\CodingAgent\Session\Replay\SessionReplayCoordinator::class);
+        $replay = new \Ineersa\CodingAgent\Session\Replay\SessionRunStateReplayService($cold, $coordinator);
         $state = $replay->rebuildIfStale(RunState::queued($childId), $childId)->rebuiltState;
         $this->assertNotNull($state);
         foreach ([0, 1] as $restart) {

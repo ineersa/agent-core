@@ -64,6 +64,18 @@ class CancelListenerTest extends TestCase
 
     // ── Active run cancellation ──────────────────────────────────
 
+    public function testEscapeCancelsOnlyTheBootstrapAndKeepsTheScreenUnattached(): void
+    {
+        $this->state->handle = new RunHandle('run-123', 'bootstrapping', 'request');
+        $this->state->sessionReady = false;
+        $this->client->expects($this->once())->method('cancelBootstrap')->with('run-123');
+        $this->client->expects($this->never())->method('cancel');
+        $harness = new \Ineersa\Tui\Tests\Support\VirtualTuiHarness(sessionId: 'test-session');
+        $this->dispatchCancelEvent(screen: $harness->screen());
+        $this->assertFalse($this->state->sessionReady);
+        $this->assertStringContainsString('Not attached', $harness->plainScreenText());
+    }
+
     #[Test]
     public function cancelActiveRunSendsCancelToClient(): void
     {

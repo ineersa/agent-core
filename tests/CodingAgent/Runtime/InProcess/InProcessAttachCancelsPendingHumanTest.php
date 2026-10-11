@@ -111,7 +111,12 @@ final class InProcessAttachCancelsPendingHumanTest extends IsolatedKernelTestCas
         $container = self::getContainer();
         $fixtureState = $active->requireLoaded($runId);
         $active = $container->get(ActiveRunContextInterface::class);
-        $active->loadRecovered($fixtureState);
+        $canonical = [\Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($runId, 0, 'run_started', ['payload' => ['messages' => []]])];
+        foreach ($fixtureState->pendingHumanInputRequests as $question) {
+            $canonical[] = \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($runId, 0, 'waiting_human', $question->waitingHumanEventPayload());
+        }
+        $persisted = \Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder::appendMany($container->get(\Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface::class), $canonical);
+        $active->loadRecovered($fixtureState->with(['lastSeq' => $persisted[\count($persisted) - 1]->seq]));
         $client = new InProcessAgentSessionClient(
             runner: $runner,
             eventStore: $this->createStub(EventStoreInterface::class),
@@ -125,6 +130,8 @@ final class InProcessAttachCancelsPendingHumanTest extends IsolatedKernelTestCas
             sessionMetaStore: $container->get(HatfieldSessionStore::class),
             modelResolver: $container->get(ModelResolver::class),
             commandBus: $bus,
+            bootstrapSpools: self::getContainer()->get(\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapSpoolStore::class),
+            bootstrapTransfer: self::getContainer()->get(\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapTransfer::class),
         );
 
         $this->assertSame($runId, $client->attach($runId)->runId);
@@ -137,6 +144,8 @@ final class InProcessAttachCancelsPendingHumanTest extends IsolatedKernelTestCas
             $container->get(\Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware::class),
             $container->get(\Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery::class),
             $container->get(\Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository::class),
+            $container->get(\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapProducer::class),
+            $container->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class),
         );
         $ownerAttach->attach($bus->messages[0]);
 
@@ -217,7 +226,12 @@ final class InProcessAttachCancelsPendingHumanTest extends IsolatedKernelTestCas
         $container = self::getContainer();
         $fixtureState = $active->requireLoaded($runId);
         $active = $container->get(ActiveRunContextInterface::class);
-        $active->loadRecovered($fixtureState);
+        $canonical = [\Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($runId, 0, 'run_started', ['payload' => ['messages' => []]])];
+        foreach ($fixtureState->pendingHumanInputRequests as $question) {
+            $canonical[] = \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($runId, 0, 'waiting_human', $question->waitingHumanEventPayload());
+        }
+        $persisted = \Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder::appendMany($container->get(\Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface::class), $canonical);
+        $active->loadRecovered($fixtureState->with(['lastSeq' => $persisted[\count($persisted) - 1]->seq]));
         $client = new InProcessAgentSessionClient(
             runner: $runner,
             eventStore: $this->createStub(EventStoreInterface::class),
@@ -231,6 +245,8 @@ final class InProcessAttachCancelsPendingHumanTest extends IsolatedKernelTestCas
             sessionMetaStore: $container->get(HatfieldSessionStore::class),
             modelResolver: $container->get(ModelResolver::class),
             commandBus: $bus,
+            bootstrapSpools: self::getContainer()->get(\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapSpoolStore::class),
+            bootstrapTransfer: self::getContainer()->get(\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapTransfer::class),
         );
 
         $client->attach($runId);
@@ -243,6 +259,8 @@ final class InProcessAttachCancelsPendingHumanTest extends IsolatedKernelTestCas
             $container->get(\Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware::class),
             $container->get(\Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery::class),
             $container->get(\Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository::class),
+            $container->get(\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapProducer::class),
+            $container->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class),
         );
         $ownerAttach->attach($bus->messages[0]);
         $this->assertSame(0, $runner->cancelCount);

@@ -30,7 +30,7 @@ final readonly class RunLifecycleProjectionSubscriber implements EventSubscriber
      */
     public function onRunCompleted(TranscriptProjectionEvent $event): void
     {
-        // Intentionally blank: run completed needs no block.
+        $event->state->cancelPendingQuestions($event->runId());
     }
 
     public function onRunFailed(TranscriptProjectionEvent $event): void
@@ -57,6 +57,7 @@ final readonly class RunLifecycleProjectionSubscriber implements EventSubscriber
         $text = implode(': ', $parts);
 
         $state->removeActiveStreamingBlocks($runId);
+        $state->cancelPendingQuestions($runId);
 
         $state->addBlock(new TranscriptBlock(
             id: 'run_failed_'.$state->nextSeq(),
