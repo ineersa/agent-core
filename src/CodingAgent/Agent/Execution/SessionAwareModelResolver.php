@@ -107,10 +107,17 @@ final class SessionAwareModelResolver implements ModelResolverInterface
             ) {
                 $effort = $reasoningOptions['reasoning']['effort'];
                 $historyKeys = [];
+                $context = '';
                 foreach ($input->messages as $index => $message) {
+                    // Use canonical invocation history, before OutputCap or other request
+                    // transforms. Anchor identity alone cannot detect a rewritten prefix.
+                    $context = hash('sha256', $context.json_encode([
+                        $message->role, $message->content, $message->name,
+                        $message->toolCallId, $message->toolName, $message->details, $message->isError,
+                    ], \JSON_THROW_ON_ERROR));
                     $key = ChatGPTReasoningTransitionTransformHook::messageKeyInHistory($input->messages, $index);
                     if (null !== $key) {
-                        $historyKeys[] = $key;
+                        $historyKeys[$key] = $context;
                     }
                 }
                 $baseline = $this->sessionMetadataStore->claimReasoningBaseline($sessionId, $modelRef->toString(), $effort, $historyKeys);

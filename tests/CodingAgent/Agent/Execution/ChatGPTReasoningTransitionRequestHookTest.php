@@ -144,11 +144,51 @@ final class ChatGPTReasoningTransitionRequestHookTest extends IsolatedKernelTest
         $this->assertSame($this->bodies[2], $this->bodies[3]);
     }
 
+    public function testContextRefreshResetsControlsWhenEveryAnchorSurvives(): void
+    {
+        $store = $this->startCanonicalReasoningEpoch();
+        $before = $this->coldReplay($store)->messages;
+        $keys = array_map(static fn (int $index): ?string => ChatGPTReasoningTransitionTransformHook::messageKeyInHistory($before, $index), array_keys($before));
+        $this->assertCount(1, $this->sessions->listReasoningTransitions($this->sessionId, 'openai-codex/gpt-6-sol'));
+        // Refresh replaces generated context, not the conversational user/tool anchors.
+        \Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder::append($store, \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($this->sessionId, 2, 'context_refreshed', ['messages' => [(new AgentMessage('system', [['type' => 'text', 'text' => 'Refreshed instructions.']]))->toArray()]]));
+        $after = $this->coldReplay($store)->messages;
+        $afterKeys = [];
+        foreach ($after as $index => $message) {
+            $key = ChatGPTReasoningTransitionTransformHook::messageKeyInHistory($after, $index);
+            if (null !== $key) {
+                $afterKeys[] = $key;
+            }
+        }
+        // The old root and membership checks would accept this history.
+        $this->assertSame($keys, $afterKeys);
+        $this->invoke($after, 'high');
+        $this->assertSame('high', $this->bodies[2]['reasoning']['effort']);
+        $this->assertSame([], self::controls($this->bodies[2]));
+        $this->assertSame([], $this->sessions->listReasoningTransitions($this->sessionId, 'openai-codex/gpt-6-sol'));
+        $this->invoke($after, 'high', explicit: true);
+        $this->assertSame($this->bodies[3], $this->bodies[2]);
+        $this->invoke([...$after, self::user('third')], 'low');
+        $this->assertSame('high', $this->bodies[4]['reasoning']['effort']);
+        $this->assertSame(['low'], self::controls($this->bodies[4]));
+    }
+
+    public function testReorderingSurvivingAnchorsResetsControls(): void
+    {
+        $messages = [self::user('first'), self::user('second'), self::user('third')];
+        $this->invoke([$messages[0]], 'low');
+        $this->invoke($messages, 'high');
+        $this->assertSame(['high'], self::controls($this->bodies[1]));
+        $this->invoke([$messages[0], $messages[2], $messages[1]], 'high');
+        $this->assertSame('high', $this->bodies[2]['reasoning']['effort']);
+        $this->assertSame([], self::controls($this->bodies[2]));
+    }
+
     #[\PHPUnit\Framework\Attributes\DataProvider('invalidControlProvider')]
     public function testInvalidControlsNeverMutateDurableLedger(bool $historicalInvalid): void
     {
         $model = 'openai-codex/gpt-6-sol';
-        $this->sessions->claimReasoningBaseline($this->sessionId, $model, 'low', ['a', 'b']);
+        $this->sessions->claimReasoningBaseline($this->sessionId, $model, 'low', ['a' => 'first-prefix', 'b' => 'second-prefix']);
         if ($historicalInvalid) {
             $this->sessions->rememberReasoningTransition($this->sessionId, $model, 'a', 'unsupported');
         }
