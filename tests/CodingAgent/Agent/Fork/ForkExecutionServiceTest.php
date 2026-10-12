@@ -74,7 +74,7 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
         $container->get(RunOperationalProjectionRepository::class)->replace(new RunState($parent, RunStatus::Running));
         $frames = [];
         $http = new \Symfony\Component\HttpClient\MockHttpClient(static function (string $method, string $url, array $options) use (&$frames): \Symfony\Component\HttpClient\Response\MockResponse {
-            $frames[] = json_decode($options['body'], true, flags: \JSON_THROW_ON_ERROR);
+            $frames[] = \Ineersa\CodingAgent\Tests\Support\HttpRequestBodyDecoder::decode($options);
 
             return \Ineersa\CodingAgent\Tests\Support\ChatGPTNativeReplayFixture::response(1 === \count($frames));
         });
@@ -181,7 +181,7 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
         $httpClient = new \Symfony\Component\HttpClient\MockHttpClient(static function (string $method, string $url, array $options) use (&$frames): \Symfony\Component\HttpClient\Response\MockResponse {
             self::assertSame('POST', $method);
             self::assertSame('https://api.openai.com/v1/responses', $url);
-            $frames[] = json_decode($options['body'], true, flags: \JSON_THROW_ON_ERROR);
+            $frames[] = \Ineersa\CodingAgent\Tests\Support\HttpRequestBodyDecoder::decode($options);
 
             return new \Symfony\Component\HttpClient\Response\MockResponse('data: {"type":"response.output_text.delta","delta":"ok"}'."\n\n".'data: {"type":"response.completed","response":{"id":"resp_test","status":"completed","output":[]}}'."\n\n", ['response_headers' => ['content-type: text/event-stream']]);
         });
