@@ -94,7 +94,6 @@
             "Ineersa\\HatfieldExt\\TaskWorkflow\\": ".hatfield/extensions/task-workflow/src/",
             "Ineersa\\HatfieldExt\\FileRewind\\": ".hatfield/extensions/file-rewind/src/",
             "Ineersa\\HatfieldExt\\ObservationalMemory\\": ".hatfield/extensions/observational-memory/src/",
-            "Ineersa\\HatfieldExt\\Jbcontext\\": ".hatfield/extensions/jbcontext/src/",
             "DoctrineMigrations\\MessengerTransport\\": "migrations/messenger_transport/"
         }
     },
@@ -107,7 +106,6 @@
             "Ineersa\\HatfieldExt\\TaskWorkflow\\Tests\\": ".hatfield/extensions/task-workflow/tests/",
             "Ineersa\\HatfieldExt\\FileRewind\\Tests\\": ".hatfield/extensions/file-rewind/tests/",
             "Ineersa\\HatfieldExt\\ObservationalMemory\\Tests\\": ".hatfield/extensions/observational-memory/tests/",
-            "Ineersa\\HatfieldExt\\Jbcontext\\Tests\\": ".hatfield/extensions/jbcontext/tests/",
             "Ineersa\\Tools\\PHPStan\\": "tools/phpstan/"
         }
     },

@@ -272,8 +272,6 @@ jobs:
             repository: hatfield-ext-file-rewind
           - directory: .hatfield/extensions/observational-memory
             repository: hatfield-ext-observational-memory
-          - directory: .hatfield/extensions/jbcontext
-            repository: hatfield-ext-jbcontext
     steps:
       - name: Require MONOREPO_SPLIT_TOKEN
         env:

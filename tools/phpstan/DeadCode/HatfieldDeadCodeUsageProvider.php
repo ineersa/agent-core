@@ -16,6 +16,7 @@ use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressChildR
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressParallelSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingleSnapshotDTO;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
+use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionContextInterface;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use ShipMonk\PHPStan\DeadCode\Provider\ReflectionBasedMemberUsageProvider;
 use ShipMonk\PHPStan\DeadCode\Provider\VirtualUsageData;
@@ -76,6 +77,13 @@ final class HatfieldDeadCodeUsageProvider extends ReflectionBasedMemberUsageProv
         if (\in_array($method->getName(), ['registerToolResultHook', 'registerToolCallRewriteHook', 'registerSkill'], true)
             && $method->getDeclaringClass()->implementsInterface(ExtensionApiInterface::class)) {
             return VirtualUsageData::withNote('Published ExtensionApiInterface method with no current extension callers');
+        }
+
+        // Third-party extensions can still publish startup warnings through the
+        // public TUI contract even without a bundled extension using this method.
+        if ('setExtensionWarning' === $method->getName()
+            && $method->getDeclaringClass()->implementsInterface(TuiExtensionContextInterface::class)) {
+            return VirtualUsageData::withNote('Published TuiExtensionContextInterface method with no current extension callers');
         }
 
         // Measured with this rule removed: ShipMonk reports both required
