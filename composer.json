@@ -72,7 +72,7 @@
         "symfony/ai-sqlite-store": "^0.14",
         "symfony/ai-vektor-store": "^0.14",
         "centamiv/vektor": "^2.0",
-        "ineersa/symfony-ai-openai-chatgpt-platform": "dev-task/zstd-originator#1b53cecedc732412de7873ef23ba251a1b90652c"
+        "ineersa/symfony-ai-openai-chatgpt-platform": "dev-task/zstd-originator#cfb64a2a9859e9f4e930ccc91c0880d94e71a60f"
     },
     "require-dev": {
         "friendsofphp/php-cs-fixer": "^3.94",
