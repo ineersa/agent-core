@@ -108,7 +108,7 @@ final class ChatGPTSymfonyAiProviderBuilderTest extends TestCase
             ['type' => 'response.output_item.added', 'output_index' => 0, 'item' => ['type' => 'function_call', 'id' => 'fc_partial', 'call_id' => 'call_partial', 'name' => 'read_file', 'arguments' => '']],
             ['type' => 'response.function_call_arguments.delta', 'item_id' => 'fc_partial', 'output_index' => 0, 'delta' => '{"path":'],
         ]));
-        $result = $this->adapter($client)->invoke(new ModelInvocationRequest('openai-codex/gpt-6.1-sol', new ModelInvocationInput(messages: [new AgentMessage('user', [['type' => 'text', 'text' => 'read']])])));
+        $result = $this->adapter($client)->invoke(new ModelInvocationRequest('openai-codex/gpt-6.1-sol', new ModelInvocationInput(messages: [new AgentMessage('user', [['type' => 'text', 'text' => 'read']])]), new ModelInvocationOptions(extraOptions: ['prompt_cache_key' => 'stable-cache-key'])));
         $this->assertNotNull($result->error);
         $this->assertSame([], $result->assistantMessage?->getToolCalls() ?? []);
     }
@@ -126,7 +126,7 @@ final class ChatGPTSymfonyAiProviderBuilderTest extends TestCase
                 ? self::response([['type' => 'response.failed', 'response' => ['status' => 'failed', 'error' => $error]]])
                 : new MockResponse(json_encode(['error' => $error], \JSON_THROW_ON_ERROR), ['http_code' => 403]);
         });
-        $result = $this->adapter($client, maxRetries: 2)->invoke(new ModelInvocationRequest('openai-codex/gpt-6.1-sol', new ModelInvocationInput(messages: [new AgentMessage('user', [['type' => 'text', 'text' => 'hello']])])));
+        $result = $this->adapter($client, maxRetries: 2)->invoke(new ModelInvocationRequest('openai-codex/gpt-6.1-sol', new ModelInvocationInput(messages: [new AgentMessage('user', [['type' => 'text', 'text' => 'hello']])]), new ModelInvocationOptions(extraOptions: ['prompt_cache_key' => 'stable-cache-key'])));
         $this->assertSame(1, $calls);
         $this->assertNotNull($result->error);
         $this->assertSame($exceptionClass, $result->error['type']);
@@ -156,7 +156,7 @@ final class ChatGPTSymfonyAiProviderBuilderTest extends TestCase
             }
         };
         $client = new MockHttpClient(static function (): never { self::fail('A pre-cancelled stream must not open HTTP.'); });
-        $result = $this->adapter($client)->invoke(new ModelInvocationRequest('openai-codex/gpt-6.1-sol', new ModelInvocationInput(messages: [new AgentMessage('user', [['type' => 'text', 'text' => 'hello']])]), new ModelInvocationOptions(cancelToken: $token)));
+        $result = $this->adapter($client)->invoke(new ModelInvocationRequest('openai-codex/gpt-6.1-sol', new ModelInvocationInput(messages: [new AgentMessage('user', [['type' => 'text', 'text' => 'hello']])]), new ModelInvocationOptions(cancelToken: $token, extraOptions: ['prompt_cache_key' => 'stable-cache-key'])));
         $this->assertSame('aborted', $result->stopReason);
         $this->assertNull($result->error);
         $this->assertNull($result->assistantMessage);
@@ -181,7 +181,7 @@ final class ChatGPTSymfonyAiProviderBuilderTest extends TestCase
             self::fail('No body may be consumed after cancellation.');
         })();
         $response = new MockResponse($body, ['response_headers' => ['content-type: text/event-stream']]);
-        $result = $this->adapter(new MockHttpClient($response))->invoke(new ModelInvocationRequest('openai-codex/gpt-6.1-sol', new ModelInvocationInput(messages: [new AgentMessage('user', [['type' => 'text', 'text' => 'hello']])]), new ModelInvocationOptions(cancelToken: $token)));
+        $result = $this->adapter(new MockHttpClient($response))->invoke(new ModelInvocationRequest('openai-codex/gpt-6.1-sol', new ModelInvocationInput(messages: [new AgentMessage('user', [['type' => 'text', 'text' => 'hello']])]), new ModelInvocationOptions(cancelToken: $token, extraOptions: ['prompt_cache_key' => 'stable-cache-key'])));
         $this->assertSame('aborted', $result->stopReason);
         $this->assertNull($result->error);
         $this->assertNull($result->assistantMessage, 'Unconsumed buffered text must not become a canonical response.');
@@ -215,7 +215,7 @@ final class ChatGPTSymfonyAiProviderBuilderTest extends TestCase
             return self::response(1 === \count($bodies) ? $events : [['type' => 'response.output_text.delta', 'delta' => 'done'], ['type' => 'response.completed', 'response' => ['status' => 'completed', 'output' => []]]]);
         });
         $user = new AgentMessage('user', [['type' => 'text', 'text' => 'Read local fixtures']]);
-        $result = $this->adapter($client)->invoke(new ModelInvocationRequest('openai-codex/gpt-6.1-sol', new ModelInvocationInput(messages: [$user])));
+        $result = $this->adapter($client)->invoke(new ModelInvocationRequest('openai-codex/gpt-6.1-sol', new ModelInvocationInput(messages: [$user]), new ModelInvocationOptions(extraOptions: ['prompt_cache_key' => 'stable-cache-key'])));
         $this->assertNull($result->error);
         $this->assertNotNull($result->assistantMessage);
         $directory = \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::createProjectTempDir('chatgpt-cold-replay');
@@ -239,7 +239,7 @@ final class ChatGPTSymfonyAiProviderBuilderTest extends TestCase
             foreach (['call_one', 'call_two'] as $id) {
                 $tools[] = new AgentMessage('tool', [['type' => 'text', 'text' => 'contents']], toolCallId: $id.'|fc_'.$id, toolName: 'read_file');
             }
-            $next = $this->adapter($client)->invoke(new ModelInvocationRequest('openai-codex/gpt-6.1-sol', new ModelInvocationInput(messages: [$user, $assistant, ...$tools])));
+            $next = $this->adapter($client)->invoke(new ModelInvocationRequest('openai-codex/gpt-6.1-sol', new ModelInvocationInput(messages: [$user, $assistant, ...$tools]), new ModelInvocationOptions(extraOptions: ['prompt_cache_key' => 'stable-cache-key'])));
             $this->assertNull($next->error);
             $native = array_values(array_filter($bodies[1]['input'], static fn (array $item): bool => \in_array($item['type'] ?? null, ['reasoning', 'function_call', 'message'], true) && 'user' !== ($item['role'] ?? null)));
             $this->assertSame($expected, $native);

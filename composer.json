@@ -71,7 +71,7 @@
         "symfony/ai-sqlite-store": "^0.14",
         "symfony/ai-vektor-store": "^0.14",
         "centamiv/vektor": "^2.0",
-        "ineersa/symfony-ai-openai-chatgpt-platform": "dev-task/chatgpt-subscription-http#66acf01ace62bac98dd755ef7778e8c9b677e4c0"
+        "ineersa/symfony-ai-openai-chatgpt-platform": "dev-task/session-id-cache-affinity#979f745bd75697af1e65802981691d3db154b7e4"
     },
     "require-dev": {
         "friendsofphp/php-cs-fixer": "^3.94",
