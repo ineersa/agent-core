@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "2cecb5c6b25d11545b2838a1c5cbf787",
+    "content-hash": "9645fa269f8b57a99275865bded7c511",
     "packages": [
         {
             "name": "centamiv/vektor",
@@ -1751,11 +1751,11 @@
         },
         {
             "name": "ineersa/symfony-ai-openai-chatgpt-platform",
-            "version": "dev-task/session-id-cache-affinity",
+            "version": "dev-task/zstd-originator",
             "source": {
                 "type": "git",
                 "url": "https://github.com/ineersa/symfony-ai-openai-chatgpt-platform.git",
-                "reference": "979f745bd75697af1e65802981691d3db154b7e4"
+                "reference": "1b53cecedc732412de7873ef23ba251a1b90652c"
             },
             "require": {
                 "ext-openssl": "*",
@@ -1780,6 +1780,9 @@
                 "phpstan/phpstan-phpunit": "^2.0",
                 "phpunit/phpunit": "^13.2"
             },
+            "suggest": {
+                "ext-zstd": "Lossless level-3 compression of Responses request bodies to mitigate gateway upload-size failures."
+            },
             "type": "library",
             "autoload": {
                 "psr-4": {
@@ -1795,7 +1798,7 @@
                 "MIT"
             ],
             "description": "Single-account Sign in with ChatGPT OAuth and HTTP Responses bridge for Symfony AI.",
-            "time": "2026-10-12T17:53:59+00:00"
+            "time": "2026-10-12T20:35:47+00:00"
         },
         {
             "name": "league/commonmark",
@@ -12773,7 +12776,8 @@
         "ext-phar": "*",
         "ext-posix": "*",
         "ext-tokenizer": "*",
-        "ext-xml": "*"
+        "ext-xml": "*",
+        "ext-zstd": "*"
     },
     "platform-dev": {},
     "plugin-api-version": "2.6.0"

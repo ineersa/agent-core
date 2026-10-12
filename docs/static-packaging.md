@@ -24,6 +24,12 @@ Local builds support the **host** target only. The four-target matrix runs on ta
 Native builds include `fileinfo` for MIME detection, `gd` for image resizing, and
 `exif` for JPEG orientation. GD and EXIF remain optional for system-PHP installs.
 
+Native builds also include `zstd` for lossless ChatGPT request compression.
+The pinned SPC revision provides `config/pkg/ext/ext-zstd.yml`, which depends on
+the `zstd` library recipe. Use `zstd` in the pin's extension list, without `ext-`.
+System-PHP and PHAR installations require `ext-zstd` too; Composer checks it
+when installing dependencies for the PHAR build.
+
 ## Build flow
 
 ```bash

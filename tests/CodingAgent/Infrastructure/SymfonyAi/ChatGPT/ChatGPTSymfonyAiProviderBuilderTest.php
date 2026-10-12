@@ -60,7 +60,7 @@ final class ChatGPTSymfonyAiProviderBuilderTest extends TestCase
             self::assertSame('https://api.openai.com/v1/responses', $url);
             self::assertSame(0.0, $options['max_duration']);
             self::assertSame(300.0, $options['timeout']);
-            $bodies[] = json_decode($options['body'], true, flags: \JSON_THROW_ON_ERROR);
+            $bodies[] = json_decode(isset($options['normalized_headers']['content-encoding']) ? zstd_uncompress($options['body']) : $options['body'], true, flags: \JSON_THROW_ON_ERROR);
             $events = 1 === \count($bodies) ? $first : [['type' => 'response.output_text.delta', 'delta' => 'done'], ['type' => 'response.completed', 'response' => ['status' => 'completed', 'output' => []]]];
 
             return self::response($events);
@@ -210,7 +210,7 @@ final class ChatGPTSymfonyAiProviderBuilderTest extends TestCase
         $events[] = ['type' => 'response.completed', 'response' => ['status' => 'completed', 'output' => $terminalMessages ? $expected : []]];
         $bodies = [];
         $client = new MockHttpClient(static function (string $method, string $url, array $options) use (&$bodies, $events): MockResponse {
-            $bodies[] = json_decode($options['body'], true, flags: \JSON_THROW_ON_ERROR);
+            $bodies[] = json_decode(isset($options['normalized_headers']['content-encoding']) ? zstd_uncompress($options['body']) : $options['body'], true, flags: \JSON_THROW_ON_ERROR);
 
             return self::response(1 === \count($bodies) ? $events : [['type' => 'response.output_text.delta', 'delta' => 'done'], ['type' => 'response.completed', 'response' => ['status' => 'completed', 'output' => []]]]);
         });
