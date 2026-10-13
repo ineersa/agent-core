@@ -18,6 +18,7 @@ use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 
@@ -107,6 +108,62 @@ final class BackgroundProcessControllerSessionLifecycleListenerTest extends Isol
         $this->assertFileDoesNotExist($accepted['pid_file']);
         // OS liveness after stop is covered by ProcessLifecycleTest and
         // BackgroundProcessManagerTest; this case owns session-scoped row/sidecar cleanup.
+    }
+
+    /** @return iterable<string, array{string, bool}> */
+    public static function unprovenAcceptedRows(): iterable
+    {
+        foreach (['legacy', 'foreign', 'wrong-session', 'invalid-marker', 'wrong-status'] as $case) {
+            yield $case.' starting' => [$case, true];
+            yield $case.' shutdown' => [$case, false];
+        }
+    }
+
+    #[Test]
+    #[DataProvider('unprovenAcceptedRows')]
+    public function automaticCleanupDoesNotStopUnfinishedUnprovenRows(string $case, bool $starting): void
+    {
+        $session = 'protected-run';
+        if ('legacy' === $case) {
+            $log = $this->tmpDir.'/legacy.log';
+            $status = $this->tmpDir.'/legacy.status';
+        } else {
+            $lifecycle = 'foreign' === $case
+                ? new ProcessLifecycle(new BackgroundProcessConfig(storageDir: $this->tmpDir.'/foreign'), new TestLogger())
+                : $this->lifecycle;
+            $launch = $lifecycle->allocateManagedLaunch('wrong-session' === $case ? 'other-run' : $session);
+            $log = $launch->logPath;
+            $status = $launch->statusPath;
+            if ('invalid-marker' === $case) {
+                file_put_contents(\dirname($log).'/owner.json', '{}');
+            } elseif ('wrong-status' === $case) {
+                $status = \dirname($log).'/wrong.status';
+            }
+            $launch = null;
+        }
+        file_put_contents($log, 'retained');
+        $id = $this->store->insertRecord([
+            'pid' => \PHP_INT_MAX,
+            'pgid' => null,
+            'session_id' => $session,
+            'command' => 'fixture',
+            'log_path' => $log,
+            'status_path' => $status,
+            'started_at' => new \DateTimeImmutable(),
+        ]);
+        $this->manager->markBackgroundedForRecord($id, $session);
+        $event = $starting ? new ControllerSessionStartingEvent($session) : new ControllerSessionShutdownEvent($session);
+        $this->dispatcher->dispatch($event);
+        $this->dispatcher->dispatch($event);
+
+        $entity = $this->store->fetchByRecordId($id);
+        $this->assertNotNull($entity);
+        // stopByRecordId() would refresh this absent PID into a finished row,
+        // even without sending a signal. Remaining unfinished proves it was
+        // never called; no real or protected process is used as a sentinel.
+        $this->assertNull($entity->finishedAt);
+        $this->assertFileExists($log);
+        $this->assertFileDoesNotExist($status);
     }
 
     /**

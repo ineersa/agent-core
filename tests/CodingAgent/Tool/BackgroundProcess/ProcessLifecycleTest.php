@@ -52,6 +52,66 @@ final class ProcessLifecycleTest extends TestCase
         $this->assertFalse($this->lifecycle->isAlive(-1));
     }
 
+    /** @return iterable<string, array{string}> */
+    public static function unprovenAutomaticScopes(): iterable
+    {
+        foreach (['legacy', 'foreign', 'wrong-session', 'invalid-marker', 'wrong-status'] as $case) {
+            yield $case => [$case];
+        }
+    }
+
+    #[Test]
+    #[DataProvider('unprovenAutomaticScopes')]
+    public function automaticCleanupNeverCallsStopForUnprovenScope(string $case): void
+    {
+        if ('legacy' === $case) {
+            $log = $this->tmpDir.'/legacy.log';
+            $status = $this->tmpDir.'/legacy.status';
+        } else {
+            $lifecycle = 'foreign' === $case
+                ? new ProcessLifecycle(new BackgroundProcessConfig(storageDir: $this->tmpDir.'/foreign'), new TestLogger())
+                : $this->lifecycle;
+            $launch = $lifecycle->allocateManagedLaunch('wrong-session' === $case ? 'other-session' : 'session');
+            $log = $launch->logPath;
+            $status = $launch->statusPath;
+            if ('invalid-marker' === $case) {
+                file_put_contents(\dirname($log).'/owner.json', '{}');
+            } elseif ('wrong-status' === $case) {
+                $status = \dirname($log).'/wrong.status';
+            }
+        }
+        file_put_contents($log, 'retained');
+        $called = false;
+        $this->assertFalse($this->lifecycle->cleanupManagedRecordSidecars($log, $status, 'session', static function () use (&$called): void {
+            $called = true;
+        }));
+        $this->assertFalse($called, 'Ownership must be established before the automatic stop callback.');
+        $this->assertFileExists($log);
+    }
+
+    #[Test]
+    public function automaticStopHoldsCoordinatorAndRetainsLastWriter(): void
+    {
+        $launch = $this->lifecycle->allocateManagedLaunch('session');
+        $log = $launch->logPath;
+        $status = $launch->statusPath;
+        $coordinator = (new LockFactory(new FlockStore($this->tmpDir)))->createLock('background-artifact-lifecycle', ttl: null);
+        $calls = 0;
+        $stop = function () use ($coordinator, &$calls): void {
+            ++$calls;
+            $this->assertFalse($coordinator->acquire(false), 'The validated scope must remain coordinated through stop.');
+        };
+        $this->assertFalse($this->lifecycle->cleanupManagedRecordSidecars($log, $status, 'session', $stop));
+        $this->assertSame(1, $calls, 'A managed live writer permits stop, but not premature removal.');
+        $this->assertDirectoryExists(\dirname($log));
+        $launch = null;
+        $this->assertTrue($this->lifecycle->cleanupManagedRecordSidecars($log, $status, 'session', $stop));
+        $this->assertSame(2, $calls);
+        $this->assertDirectoryDoesNotExist(\dirname($log));
+        $this->assertFalse($this->lifecycle->cleanupManagedRecordSidecars($log, $status, 'session', $stop));
+        $this->assertSame(2, $calls, 'An already removed scope cannot authorize another stop.');
+    }
+
     #[Test]
     public function launchProcessTracksWrapperPidNotTransientLauncher(): void
     {

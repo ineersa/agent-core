@@ -452,6 +452,38 @@ final class ProcessLifecycle
     // ─── Cleanup ─────────────────────────────────────────────────────
 
     /**
+     * Validate automatic session cleanup before it can stop a process. Keep
+     * the coordinator through stop and removal so recovery cannot replace the
+     * validated scope. A live last writer still prevents sidecar removal.
+     *
+     * @param \Closure(): void $stop
+     */
+    public function cleanupManagedRecordSidecars(string $logPath, string $statusPath, string $sessionId, \Closure $stop): bool
+    {
+        return $this->withManagedStorage(function (string $root) use ($logPath, $statusPath, $sessionId, $stop): bool {
+            $directory = \dirname($logPath);
+            $owner = $this->managedOwner($root, $directory);
+            if (null === $owner || $owner['session_id'] !== $sessionId
+                || $logPath !== $directory.'/'.$owner['nonce'].'.log'
+                || $statusPath !== $directory.'/'.$owner['nonce'].'.status') {
+                return false;
+            }
+            $stop();
+            $lease = (new LockFactory(new FlockStore($directory)))->createLock('background-writer', ttl: null);
+            if (!$lease->acquire(false)) {
+                return false;
+            }
+            try {
+                (new Filesystem())->remove($directory);
+            } finally {
+                $lease->release();
+            }
+
+            return true;
+        });
+    }
+
+    /**
      * Delete only the exact managed directory belonging to one record, after
      * acquiring its last-writer lease. Flat legacy sidecars have no such proof
      * and remain protected even when a durable row references them.
