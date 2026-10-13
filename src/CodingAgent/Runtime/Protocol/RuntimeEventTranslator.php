@@ -199,10 +199,10 @@ final class RuntimeEventTranslator
                 $payload['details'] = ['thinking' => $thinking];
             }
 
-            // Include canonical tool-call data for reconstruction of
-            // non-streaming ToolCall blocks on resume.
+            // Keep canonical tool-call data for replay annotations even when ordered
+            // native content owns block reconstruction (for example, skill reads).
             $toolCalls = $assistantMessage['tool_calls'] ?? null;
-            if (null === $content && \is_array($toolCalls) && [] !== $toolCalls) {
+            if (\is_array($toolCalls) && [] !== $toolCalls) {
                 $payload['tool_calls'] = $toolCalls;
             }
         }

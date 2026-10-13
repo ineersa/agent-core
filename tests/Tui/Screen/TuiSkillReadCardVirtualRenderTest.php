@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Screen;
 
+use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
+use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\LoggingConfig;
@@ -17,6 +20,7 @@ use Ineersa\CodingAgent\Runtime\ProjectionPipeline\SkillReadProjectionSubscriber
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
 use Ineersa\CodingAgent\Skills\SkillsConfig;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
@@ -29,6 +33,7 @@ use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use Ineersa\Tui\Transcript\TranscriptGlyphs;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\AI\Platform\Bridge\OpenAIChatGPT\MessageItem;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Filesystem\Filesystem;
 
@@ -170,6 +175,57 @@ final class TuiSkillReadCardVirtualRenderTest extends TestCase
             $expandedAnsi,
             'Expanded skill header must keep Skill palette role',
         );
+    }
+
+    #[Test]
+    public function testNativeCanonicalTranslationReplaysOrderedCommentaryAndAnnotatedSkillCard(): void
+    {
+        $skillDir = $this->tmpDir.'/.agents/skills/testing';
+        mkdir($skillDir, 0777, true);
+        $skillFile = $skillDir.'/SKILL.md';
+        file_put_contents($skillFile, "---\nname: testing\ndescription: Testing skill\n---\n\nSkill body\n");
+        $discovery = $this->createDiscovery($this->tmpDir);
+        $this->assertNotNull($discovery->findBySkillFilePath($skillFile));
+        $projector = $this->createProjector($discovery);
+        $signedParts = [];
+        foreach ([['commentary', 'Loading the testing skill.'], ['final_answer', 'Skill loaded.']] as $index => [$phase, $text]) {
+            $signed = MessageItem::toText(['type' => 'message', 'id' => 'msg_'.$index, 'role' => 'assistant', 'phase' => $phase, 'content' => [['type' => 'output_text', 'text' => $text]]]);
+            $signedParts[] = ['type' => 'text', 'text' => $text, 'text_signature' => $signed->getSignature()];
+        }
+        $toolCalls = [['id' => 'call-native-skill', 'name' => 'read', 'arguments' => ['path' => $skillFile, 'offset' => 1, 'limit' => 400]]];
+        $canonical = new RunEvent('native-skill-run', 5, 1, 'llm_step_completed', [
+            'step_id' => 'native-step',
+            'assistant_message' => [
+                'content' => [$signedParts[0], ['type' => 'tool_call', 'tool_call_index' => 0], $signedParts[1]],
+                'tool_calls' => $toolCalls,
+            ],
+        ]);
+        $translator = new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()));
+        $completion = $translator->translate($canonical);
+        $this->assertNotNull($completion);
+        $projector->accept($completion);
+
+        $blocks = $projector->blocks();
+        $this->assertCount(3, $blocks, 'Ordered native content and top-level tools must not duplicate the read.');
+        $this->assertSame('commentary', $blocks[0]->meta['phase'] ?? null);
+        $this->assertSame('call-native-skill', $blocks[1]->meta['tool_call_id'] ?? null);
+        $this->assertSame('testing', $blocks[1]->meta['skill_name'] ?? null);
+        $this->assertSame('final_answer', $blocks[2]->meta['phase'] ?? null);
+        $this->assertSame($toolCalls, $completion->payload['tool_calls'] ?? null);
+        $this->assertSame($signedParts[0], $canonical->payload['assistant_message']['content'][0], 'Presentation translation cannot modify native replay signatures.');
+
+        $harness = new VirtualTuiHarness();
+        $harness->screen()->setWorkingVisible(false);
+        $harness->screen()->setTranscriptBlocks($blocks);
+        $screen = $harness->plainScreenText();
+        $this->assertStringContainsString('[skill] testing:1-400', $screen);
+        $this->assertStringNotContainsString('[commentary]', $screen);
+        $this->assertSame(1, substr_count($screen, '[skill]'));
+        $this->assertLessThan(strpos($screen, '[skill]'), strpos($screen, 'Loading the testing skill.'));
+        $this->assertLessThan(strpos($screen, 'Skill loaded.'), strpos($screen, '[skill]'));
+        $projector->accept($completion);
+        $harness->screen()->applyTranscriptChangeSet($projector->drainChanges());
+        $this->assertSame($screen, $harness->plainScreenText(), 'Canonical redelivery keeps one annotated skill card in native order.');
     }
 
     private function skillHeaderPlainLine(string $plainScreenText): string
