@@ -13,6 +13,53 @@ use Symfony\Component\Console\CommandLoader\CommandLoaderInterface;
 
 final class ChatGPTServiceWiringTest extends PerMethodIsolatedKernelTestCase
 {
+    public function testHostProviderCompressesWithoutChangingHistoryOrRoutingHeaders(): void
+    {
+        $container = self::getContainer();
+        $record = \Ineersa\CodingAgent\Tests\Support\ChatGPTAuthFixture::record();
+        $storage = $this->createStub(AuthStorageInterface::class);
+        $storage->method('update')->willReturnCallback(static fn (callable $update) => $update($record));
+        $container->set(AuthStorageInterface::class, $storage);
+        $text = implode('', array_map(static fn (int $index): string => hash('sha256', (string) $index), range(1, 256)));
+        $text .= $text;
+        $requests = 0;
+        $http = new \Symfony\Component\HttpClient\MockHttpClient(static function (string $method, string $url, array $options) use ($text, &$requests): \Symfony\Component\HttpClient\Response\MockResponse {
+            ++$requests;
+            self::assertSame('POST', $method);
+            self::assertSame('https://api.openai.com/v1/responses', $url);
+            $headers = $options['normalized_headers'];
+            self::assertSame(['Originator: Hatfield'], $headers['originator']);
+            self::assertSame(['session-id: synthetic-cache-key'], $headers['session-id']);
+            self::assertSame(['x-client-request-id: synthetic-cache-key'], $headers['x-client-request-id']);
+            self::assertSame(['Content-Encoding: zstd'], $headers['content-encoding']);
+            self::assertSame(['Content-Type: application/json'], $headers['content-type']);
+            self::assertSame(['Accept: text/event-stream'], $headers['accept']);
+            self::assertSame(['Authorization: Bearer synthetic-access'], $headers['authorization']);
+            self::assertSame(['X-Host-Proof: unchanged'], $headers['x-host-proof']);
+            $json = zstd_uncompress($options['body']);
+            self::assertIsString($json);
+            self::assertSame(zstd_compress($json, 3), $options['body']);
+            self::assertLessThan(\strlen($json), \strlen($options['body']));
+            self::assertLessThanOrEqual(100 * \strlen($options['body']), \strlen($json));
+            $body = json_decode($json, true, flags: \JSON_THROW_ON_ERROR);
+            self::assertSame('synthetic-cache-key', $body['prompt_cache_key']);
+            self::assertSame($text, $body['input'][0]['content']);
+            self::assertFalse($body['store']);
+            self::assertTrue($body['stream']);
+
+            return new \Symfony\Component\HttpClient\Response\MockResponse("data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"output\":[]}}\n\n", ['response_headers' => ['content-type: text/event-stream']]);
+        });
+        $provider = $container->get(ChatGPTSymfonyAiProviderBuilder::class)->build(
+            new \Ineersa\CodingAgent\Config\Ai\AiProviderConfig('openai-codex', type: 'chatgpt', models: ['gpt-6.1-sol' => new \Ineersa\CodingAgent\Config\Ai\AiModelDefinition('gpt-6.1-sol', toolCalling: true, reasoning: true)]),
+            $http->withOptions(['headers' => ['X-Host-Proof' => 'unchanged']]),
+        );
+        $result = $provider->invoke('openai-codex/gpt-6.1-sol', new \Symfony\AI\Platform\Message\MessageBag(\Symfony\AI\Platform\Message\Message::ofUser($text)), ['prompt_cache_key' => 'synthetic-cache-key']);
+        foreach ($result->getResult()->getContent() as $chunk) {
+            // Consume the real package stream so the HTTP boundary assertions execute.
+        }
+        $this->assertSame(1, $requests);
+    }
+
     public function testOAuthAndPendingIdentityVerifierUseTheSameInjectedClock(): void
     {
         $container = self::getContainer();

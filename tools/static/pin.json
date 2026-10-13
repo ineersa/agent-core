@@ -33,7 +33,8 @@
         "xmlreader",
         "xmlwriter",
         "intl",
-        "zlib"
+        "zlib",
+        "zstd"
     ],
     "notes": "SPC --for-extensions names (without ext- prefix). Extension list is a deliberate SFX superset (transitive micro/build needs: sodium/dom/simplexml/xmlreader/xmlwriter/zlib/pdo/sqlite3) — not identical to system-PHAR Composer/bin/console/installer guards (see docs/phar-packaging.md). Core pins: exact PHP patch + official source SHA-256 + immutable phpmicro commit via --custom-local=php-micro + tracked Linux self-path patch (phpmicro_patch / phpmicro_patch_sha256) so micro_get_filename uses /proc/self/exe instead of realpath(AT_EXECFN). Remove that patch once upstream no longer realpaths AT_EXECFN on Linux. Libraries beyond PHP/phpmicro are not fully locked. Host static builds need re2c/flex/gperf. User guide: docs/static-packaging.md."
 }

@@ -17,6 +17,28 @@ use Symfony\Component\Process\Process;
  */
 final class BuildDistributionScriptTest extends TestCase
 {
+    public function testZstdIsRequiredAcrossDistributionEntrypoints(): void
+    {
+        $root = ProjectDir::get();
+        $composer = json_decode((string) file_get_contents($root.'/composer.json'), true, flags: \JSON_THROW_ON_ERROR);
+        $pin = json_decode((string) file_get_contents($root.'/tools/static/pin.json'), true, flags: \JSON_THROW_ON_ERROR);
+        $this->assertArrayHasKey('ext-zstd', $composer['require']);
+        $this->assertContains('zstd', $pin['extensions']);
+        $this->assertStringContainsString("'phar', 'zstd'", (string) file_get_contents($root.'/bin/console'));
+        $this->assertStringContainsString('phar zstd)', (string) file_get_contents($root.'/installer/bash-installer'));
+        $workflow = \Symfony\Component\Yaml\Yaml::parseFile($root.'/.github/workflows/release.yml');
+        $phpSetups = 0;
+        foreach ($workflow['jobs'] as $job) {
+            foreach ($job['steps'] as $step) {
+                if (str_starts_with($step['uses'] ?? '', 'shivammathur/setup-php@')) {
+                    ++$phpSetups;
+                    $this->assertContains('zstd', array_map('trim', explode(',', $step['with']['extensions'])));
+                }
+            }
+        }
+        $this->assertSame(3, $phpSetups);
+    }
+
     public function testPharOnlyInvokesCastorWithAllowMissingNativeAndSpaceReleaseVersion(): void
     {
         $root = ProjectDir::get();

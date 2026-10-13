@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 /**
- * Static analysis, code-style, and security-audit tasks.
+ * Dependency management, static analysis, code-style, and security-audit tasks.
  *
  * These are independent tooling tasks — no live LLM dependency,
  * no PHAR dependency, no process-tree management.
@@ -12,6 +12,8 @@ declare(strict_types=1);
 use Castor\Attribute\AsTask;
 use Symfony\Component\Filesystem\Path;
 
+use function Castor\context;
+use function Castor\run;
 use function CastorTasks\ensure_dead_code_symfony_container_xml;
 use function CastorTasks\project_root_dir;
 use function CastorTasks\regenerate_dead_code_baseline;
@@ -24,6 +26,14 @@ require_once __DIR__.'/../vendor/autoload.php';
 require_once __DIR__.'/helpers.php';
 require_once __DIR__.'/shared.php';
 require_once __DIR__.'/env.php';
+
+#[AsTask(name: 'update-package', description: 'Update a Composer package and validate the lock file')]
+function update_package(string $package): void
+{
+    $context = context()->withWorkingDirectory(project_root_dir());
+    run(['composer', 'update', '--no-interaction', '--no-progress', '--', $package], context: $context);
+    run(['composer', 'validate', '--check-lock'], context: $context);
+}
 
 // ─── Static analysis ──────────────────────────────────────────────
 
