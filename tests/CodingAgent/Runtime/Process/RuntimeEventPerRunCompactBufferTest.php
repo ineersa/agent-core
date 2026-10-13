@@ -41,6 +41,56 @@ final class RuntimeEventPerRunCompactBufferTest extends TestCase
         $this->assertSame([], iterator_to_array($buffer->drain('child')));
     }
 
+    public function testUnobservedNativeTextCheckpointsReplaceDuplicateSnapshotsWithoutDurableBacklog(): void
+    {
+        $buffer = new RuntimeEventPerRunCompactBuffer();
+        foreach (['first', 'second'] as $index => $itemId) {
+            $payload = ['block_id' => 'child_step_'.$itemId, 'step_id' => 'step', 'item_id' => $itemId, 'output_index' => $index, 'phase' => 'commentary'];
+            $buffer->ingest(new RuntimeEvent(RuntimeEventTypeEnum::AssistantTextStarted->value, 'child', 0, $payload + ['text' => 'prefix']));
+            $buffer->ingest(new RuntimeEvent(RuntimeEventTypeEnum::AssistantTextDelta->value, 'child', 0, $payload + ['text' => 'suffix']));
+            for ($revision = 0; $revision < 100; ++$revision) {
+                $buffer->ingest(new RuntimeEvent(RuntimeEventTypeEnum::AssistantTextCompleted->value, 'child', 0, $payload + ['text' => 'snapshot '.$revision]));
+            }
+        }
+        $buffer->ingest(new RuntimeEvent(RuntimeEventTypeEnum::TurnStarted->value, 'child', 4, []));
+        $buffer->releaseObservationRetention('child');
+
+        $this->assertSame(2, $buffer->totalTailCount());
+        $tail = iterator_to_array($buffer->drain('child'));
+        $this->assertSame(['first', 'second'], array_column(array_column($tail, 'payload'), 'item_id'));
+        foreach ($tail as $event) {
+            $this->assertSame(RuntimeEventTypeEnum::AssistantTextCompleted->value, $event->type);
+            $this->assertSame(0, $event->seq);
+            $this->assertSame('snapshot 99', $event->payload['text']);
+        }
+        $this->assertSame(0, $buffer->totalTailCount());
+    }
+
+    public function testNativeSnapshotsArePrunedOnlyByMatchingDurableMessageOrRunTermination(): void
+    {
+        foreach ([RuntimeEventTypeEnum::AssistantMessageCompleted, RuntimeEventTypeEnum::RunCompleted, RuntimeEventTypeEnum::RunFailed, RuntimeEventTypeEnum::RunCancelled] as $boundary) {
+            $buffer = new RuntimeEventPerRunCompactBuffer();
+            foreach (['first', 'second'] as $index => $itemId) {
+                $buffer->ingest(new RuntimeEvent(RuntimeEventTypeEnum::AssistantTextCompleted->value, 'child', 0, [
+                    'block_id' => 'child_step_'.$itemId, 'step_id' => 'step', 'output_index' => $index, 'text' => $itemId,
+                ]));
+            }
+            $buffer->ingest(new RuntimeEvent(RuntimeEventTypeEnum::AssistantMessageCompleted->value, 'child', 4, ['message_id' => 'other-step']));
+            $this->assertSame(2, $buffer->totalTailCount(), 'Another step cannot supersede the unfinished native message.');
+            $buffer->ingest(new RuntimeEvent($boundary->value, 'child', 5, ['message_id' => 'step']));
+            $this->assertSame([], iterator_to_array($buffer->drain('child')), $boundary->value);
+        }
+    }
+
+    public function testUnobservedUnphasedTextCompletionStillOnlyPrunes(): void
+    {
+        $buffer = new RuntimeEventPerRunCompactBuffer();
+        $buffer->ingest(new RuntimeEvent(RuntimeEventTypeEnum::AssistantTextStarted->value, 'child', 0, ['block_id' => 'child_step_text', 'text' => 'generic']));
+        $buffer->ingest(new RuntimeEvent(RuntimeEventTypeEnum::AssistantTextCompleted->value, 'child', 0, ['block_id' => 'child_step_text', 'text' => 'generic']));
+
+        $this->assertSame([], iterator_to_array($buffer->drain('child')));
+    }
+
     public function testTextDeltasCoalesceToConcatenatedProductionTextKey(): void
     {
         $buffer = new RuntimeEventPerRunCompactBuffer();

@@ -368,6 +368,8 @@ final readonly class TranscriptBlockRenderer
 
         if ($this->isThinkingBlock($block)) {
             $style = $this->applyThinkingStyle($style);
+        } elseif (TranscriptBlockKindEnum::AssistantMessage === $block->kind && 'commentary' === ($block->meta['phase'] ?? null)) {
+            $style = $style->withItalic(true);
         }
 
         $mdWidget->setStyle($style);

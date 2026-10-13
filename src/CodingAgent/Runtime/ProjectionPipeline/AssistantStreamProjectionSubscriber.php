@@ -31,11 +31,11 @@ final readonly class AssistantStreamProjectionSubscriber implements EventSubscri
     }
 
     /**
-     * Marker event — no block created.
+     * Retry starts discard native text from the previous attempt, not thinking.
      */
     public function onMessageStarted(TranscriptProjectionEvent $event): void
     {
-        // Intentionally blank: marker event only
+        $event->state->removeNativeTextBlocksExcept($event->runId(), (string) ($event->payload()['step_id'] ?? ''), []);
     }
 
     // ── Text block ───────────────────────────────────────────────────────────
@@ -87,12 +87,28 @@ final readonly class AssistantStreamProjectionSubscriber implements EventSubscri
         $blockId = (string) ($p['block_id'] ?? '');
 
         $block = $state->getBlock($blockId);
+        if (null === $block && \array_key_exists('output_index', $p) && '' !== ($p['text'] ?? '')) {
+            // Process buffering may retain only the complete native checkpoint.
+            $this->onTextStarted($event);
+            $block = $state->getBlock($blockId);
+        }
         if (null === $block) {
             return;
         }
 
+        if (\array_key_exists('output_index', $p) && '' === ($p['text'] ?? '')) {
+            $state->removeBlock($blockId);
+
+            return;
+        }
+        $meta = $block->meta;
+        foreach (['phase', 'item_id', 'output_index'] as $key) {
+            if (\array_key_exists($key, $p)) {
+                $meta[$key] = $p[$key];
+            }
+        }
         $state->updateBlock($blockId, $block
-            ->with(text: isset($p['text']) ? (string) $p['text'] : $block->text)
+            ->with(text: isset($p['text']) ? (string) $p['text'] : $block->text, meta: $meta)
             ->finalize(),
         );
     }
@@ -206,6 +222,38 @@ final readonly class AssistantStreamProjectionSubscriber implements EventSubscri
             ));
         }
 
+        if (isset($p['content'])) {
+            $ids = [];
+            $textIds = [];
+            foreach ($p['content'] as $part) {
+                if ('tool_call' === $part['type']) {
+                    $id = $this->projectToolCall($event, $part, $messageId);
+                    if (null !== $id) {
+                        $ids[] = $id;
+                    }
+                    continue;
+                }
+                $id = (string) $part['block_id'];
+                $textIds[] = $id;
+                $text = (string) $part['text'];
+                if ('' === $text) {
+                    $event->state->removeBlock($id);
+                    continue;
+                }
+                $block = $event->state->getBlock($id);
+                $meta = $event->state->buildAssistantMeta(array_replace($p, $part));
+                $event->state->addBlock(null !== $block
+                    ? $block->with(text: $text, meta: $meta)->finalize()
+                    : new TranscriptBlock($id, TranscriptBlockKindEnum::AssistantMessage, $event->runId(), $event->state->nextSeq(), $text, $meta),
+                );
+                $ids[] = $id;
+            }
+            $event->state->removeNativeTextBlocksExcept($event->runId(), $messageId, $textIds);
+            $event->state->orderMessageContent($ids);
+
+            return;
+        }
+
         // ── Reconstruct canonical (non-streaming) text block ──
         //
         // When the live streaming path already produced a text block,
@@ -247,35 +295,7 @@ final readonly class AssistantStreamProjectionSubscriber implements EventSubscri
                 if (!\is_array($tc)) {
                     continue;
                 }
-                $callId = (string) ($tc['id'] ?? '');
-                if ('' === $callId) {
-                    continue;
-                }
-                $toolCallBlockId = 'tool_call_'.$callId;
-                if (null !== $event->state->getBlock($toolCallBlockId)) {
-                    continue; // already exists from streaming path
-                }
-                $toolName = (string) ($tc['name'] ?? '');
-                $arguments = $tc['arguments'] ?? [];
-                $argsText = \is_array($arguments) && [] !== $arguments
-                    ? $event->state->argumentsToText($arguments)
-                    : '()';
-                $text = '' !== $toolName ? $toolName.$argsText : $argsText;
-
-                $event->state->addBlock(new TranscriptBlock(
-                    id: $toolCallBlockId,
-                    kind: TranscriptBlockKindEnum::ToolCall,
-                    runId: $event->runId(),
-                    seq: $event->state->nextSeq(),
-                    text: $text,
-                    meta: [
-                        'tool_call_id' => $callId,
-                        'tool_name' => $toolName,
-                        'arguments' => $arguments,
-                        'message_id' => $messageId,
-                    ],
-                    streaming: false,
-                ));
+                $this->projectToolCall($event, $tc, $messageId);
             }
         }
     }
@@ -299,5 +319,30 @@ final readonly class AssistantStreamProjectionSubscriber implements EventSubscri
                 'stop_reason' => (string) ($p['stop_reason'] ?? 'error'),
             ],
         ));
+    }
+
+    /** @param array<string, mixed> $call */
+    private function projectToolCall(TranscriptProjectionEvent $event, array $call, string $messageId): ?string
+    {
+        $callId = (string) ($call['id'] ?? '');
+        if ('' === $callId) {
+            return null;
+        }
+        $id = 'tool_call_'.$callId;
+        if (null === $event->state->getBlock($id)) {
+            $name = (string) ($call['name'] ?? '');
+            $arguments = $call['arguments'] ?? [];
+            $argsText = \is_array($arguments) && [] !== $arguments ? $event->state->argumentsToText($arguments) : '()';
+            $event->state->addBlock(new TranscriptBlock(
+                id: $id,
+                kind: TranscriptBlockKindEnum::ToolCall,
+                runId: $event->runId(),
+                seq: $event->state->nextSeq(),
+                text: $name.$argsText,
+                meta: ['tool_call_id' => $callId, 'tool_name' => $name, 'arguments' => $arguments, 'message_id' => $messageId],
+            ));
+        }
+
+        return $id;
     }
 }
