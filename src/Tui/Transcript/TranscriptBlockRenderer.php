@@ -259,6 +259,10 @@ final readonly class TranscriptBlockRenderer
     // Glyph prefixes — TranscriptGlyphs constants are the public glyph contract for tests/assertions.
     private function prefixFor(TranscriptBlock $block): string
     {
+        if (TranscriptBlockKindEnum::AssistantMessage === $block->kind && 'commentary' === ($block->meta['phase'] ?? null)) {
+            return TranscriptGlyphs::GLYPH_ASSISTANT_COMMENTARY;
+        }
+
         return match ($block->kind) {
             TranscriptBlockKindEnum::UserMessage => TranscriptGlyphs::GLYPH_USER_MESSAGE,
             TranscriptBlockKindEnum::AssistantMessage => TranscriptGlyphs::GLYPH_ASSISTANT_MESSAGE,
@@ -277,6 +281,10 @@ final readonly class TranscriptBlockRenderer
     // Theme colors per block kind (flat TextWidget path and markdown base color).
     private function colorFor(TranscriptBlock $block): ThemeColorEnum
     {
+        if (TranscriptBlockKindEnum::AssistantMessage === $block->kind && 'commentary' === ($block->meta['phase'] ?? null)) {
+            return ThemeColorEnum::Muted;
+        }
+
         return match ($block->kind) {
             TranscriptBlockKindEnum::UserMessage => ThemeColorEnum::UserMessage,
             TranscriptBlockKindEnum::AssistantMessage => ThemeColorEnum::AssistantMessage,

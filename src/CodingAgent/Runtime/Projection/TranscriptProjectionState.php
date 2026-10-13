@@ -314,6 +314,11 @@ final class TranscriptProjectionState
         if (isset($p['stop_reason'])) {
             $meta['stop_reason'] = (string) $p['stop_reason'];
         }
+        foreach (['phase', 'item_id', 'output_index'] as $key) {
+            if (\array_key_exists($key, $p)) {
+                $meta[$key] = $p[$key];
+            }
+        }
 
         return $meta;
     }
@@ -523,6 +528,46 @@ final class TranscriptProjectionState
             if (($block->meta['message_id'] ?? '') === $messageId && $block->streaming) {
                 $this->updateBlock($id, $block->finalize());
             }
+        }
+    }
+
+    /** @param list<string> $keepIds */
+    public function removeNativeTextBlocksExcept(string $runId, string $messageId, array $keepIds): void
+    {
+        foreach ($this->blocks as $id => $block) {
+            if (TranscriptBlockKindEnum::AssistantMessage === $block->kind
+                && $block->runId === $runId
+                && ($block->meta['message_id'] ?? '') === $messageId
+                && \array_key_exists('output_index', $block->meta)
+                && !\in_array($id, $keepIds, true)
+            ) {
+                $this->removeBlock($id);
+            }
+        }
+    }
+
+    /**
+     * Terminal-only messages can arrive after their tools. Reinsert the completed
+     * step's text/tool blocks in native order through ordinary removals/upserts,
+     * leaving thinking and session-local UI blocks intact.
+     *
+     * @param list<string> $ids
+     */
+    public function orderMessageContent(array $ids): void
+    {
+        $current = array_values(array_filter($this->order, static fn (string $id): bool => \in_array($id, $ids, true)));
+        if ($current === $ids) {
+            return;
+        }
+        $blocks = [];
+        foreach ($ids as $id) {
+            $blocks[] = $this->blocks[$id];
+            $this->removeBlock($id);
+        }
+        foreach ($blocks as $block) {
+            $this->addBlock($block);
+            // Consumers must remove before upserting to observe the changed order.
+            $this->removedIds[$block->id] = true;
         }
     }
 

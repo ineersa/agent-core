@@ -173,13 +173,19 @@ final class RuntimeEventTranslator
     {
         $p = $runEvent->payload;
 
-        $text = $this->extractAssistantText($p['assistant_message'] ?? null);
+        $assistantMessage = $p['assistant_message'] ?? null;
+        $content = \is_array($assistantMessage)
+            ? AssistantMessageContentMapper::map($assistantMessage, $runEvent->runId, (string) ($p['step_id'] ?? ''))
+            : null;
 
         $payload = [
             'message_id' => (string) ($p['step_id'] ?? ''),
-            'text' => $text,
+            'text' => null === $content ? $this->extractAssistantText($assistantMessage) : '',
             'stop_reason' => (string) ($p['stop_reason'] ?? ''),
         ];
+        if (null !== $content) {
+            $payload['content'] = $content;
+        }
 
         if (isset($p['usage'])) {
             $payload['usage'] = $p['usage'];
@@ -187,7 +193,6 @@ final class RuntimeEventTranslator
 
         // Include canonical thinking details for replay/reconstruction of
         // non-streaming AssistantThinking blocks on resume.
-        $assistantMessage = $p['assistant_message'] ?? null;
         if (\is_array($assistantMessage)) {
             $thinking = (string) ($assistantMessage['details']['thinking'] ?? '');
             if ('' !== $thinking) {
@@ -197,7 +202,7 @@ final class RuntimeEventTranslator
             // Include canonical tool-call data for reconstruction of
             // non-streaming ToolCall blocks on resume.
             $toolCalls = $assistantMessage['tool_calls'] ?? null;
-            if (\is_array($toolCalls) && [] !== $toolCalls) {
+            if (null === $content && \is_array($toolCalls) && [] !== $toolCalls) {
                 $payload['tool_calls'] = $toolCalls;
             }
         }
