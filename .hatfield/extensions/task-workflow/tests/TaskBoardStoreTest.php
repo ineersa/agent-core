@@ -35,9 +35,7 @@ final class TaskBoardStoreTest extends TestCase
     {
         putenv('HATFIELD_TASK_WORKFLOW_ROOT');
         TestDirectoryIsolation::removeDirectory($this->boardRoot);
-        if (isset($this->codeRoot)) {
-            TestDirectoryIsolation::removeDirectory($this->codeRoot);
-        }
+        TestDirectoryIsolation::removeDirectory($this->codeRoot ?? '');
     }
 
     #[Test]

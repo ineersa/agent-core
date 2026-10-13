@@ -292,15 +292,14 @@ function prune_completed_qa_reports(string $root): void
     $lock->acquire(blocking: true);
     try {
         $completed = [];
-        $markers = glob($reports.'/qa-*/.completed');
-        foreach (false === $markers ? [] : $markers as $marker) {
-            $directory = \dirname($marker);
+        foreach ((new Finder())->files()->in($reports)->depth(1)->ignoreDotFiles(false)->name('.completed') as $marker) {
+            $directory = $marker->getPath();
             $id = basename($directory);
-            if (realpath($directory) !== $directory || is_link($marker)
+            if (realpath($directory) !== $directory || $marker->isLink()
                 || 1 !== preg_match('/^qa-\d{8}-\d{6}-\d+-[a-f0-9]{8}$/D', $id)) {
                 continue;
             }
-            $data = json_decode((string) file_get_contents($marker), true);
+            $data = json_decode((string) file_get_contents($marker->getPathname()), true);
             if (!\is_array($data) || !array_is_list($data) || 2 !== \count($data) || $data[0] !== $id
                 || (!\is_int($data[1]) && !\is_float($data[1])) || !is_finite((float) $data[1])) {
                 continue;
