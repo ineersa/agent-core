@@ -25,18 +25,6 @@ final class ReplayEventPreparerTest extends TestCase
         $this->assertSame([2], $preparer->duplicateSequences($events));
     }
 
-    public function testMissingSequencesDetectsGaps(): void
-    {
-        $preparer = new ReplayEventPreparer();
-        $events = [
-            $this->event(1),
-            $this->event(3),
-            $this->event(5),
-        ];
-
-        $this->assertSame([2, 4], $preparer->missingSequences($events));
-    }
-
     private function event(int $seq): RunEvent
     {
         return new RunEvent(

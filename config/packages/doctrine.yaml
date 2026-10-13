@@ -14,7 +14,7 @@
 #
 # ORM entities on the default connection:
 #   - background_process  — BackgroundProcessManager durable tracking
-#   - (tool_batch_state removed — session filesystem snapshots via SessionToolBatchStore)
+#   - tool_batch_schedule — DoctrineToolBatchStore scheduling metadata
 #   - tool_question       — ToolQuestionStore cross-process tool-local questions
 #
 doctrine:
@@ -51,6 +51,10 @@ doctrine:
             default:
                 connection: default
                 mappings:
+                    AgentCore\Infrastructure\Doctrine:
+                        dir: '%kernel.project_dir%/src/AgentCore/Infrastructure/Doctrine'
+                        prefix: 'Ineersa\AgentCore\Infrastructure\Doctrine'
+                        type: attribute
                     CodingAgent\Entity:
                         dir: '%kernel.project_dir%/src/CodingAgent/Entity'
                         prefix: 'Ineersa\CodingAgent\Entity'

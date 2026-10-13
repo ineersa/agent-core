@@ -21,6 +21,30 @@ use Symfony\Component\Tui\Tui;
 #[CoversClass(TuiSessionSwitchService::class)]
 final class SessionSwitchServiceTest extends TestCase
 {
+    #[DataProvider('bootstrapNavigation')]
+    public function testNavigationAbandonsTheTransferWithoutCancellingExecution(string $action): void
+    {
+        $client = $this->createMock(AgentSessionClient::class);
+        $client->expects($this->once())->method('cancelBootstrap')->with('restoring');
+        $client->expects($this->never())->method('cancel');
+        $state = new TuiSessionState('restoring', true);
+        $state->handle = new RunHandle('restoring', 'bootstrapping', 'request');
+        $state->sessionReady = false;
+        $service = $this->createService($state, $client);
+        match ($action) {
+            'resume' => $service->requestResume('next'),
+            'new' => $service->requestNewDraft(),
+            'reload' => $service->requestReload('restoring'),
+        };
+    }
+
+    public static function bootstrapNavigation(): iterable
+    {
+        yield 'resume' => ['resume'];
+        yield 'new draft' => ['new'];
+        yield 'reload' => ['reload'];
+    }
+
     public function testConsumePendingSwitchReturnsNullWhenNothingPending(): void
     {
         $service = $this->createService();

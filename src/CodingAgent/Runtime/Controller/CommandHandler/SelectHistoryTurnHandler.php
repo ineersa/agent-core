@@ -58,7 +58,7 @@ final readonly class SelectHistoryTurnHandler
         }
 
         try {
-            $this->commandBus->dispatch(new SelectHistoryPrompt($runId, $targetTurnNo));
+            $this->commandBus->dispatch(new SelectHistoryPrompt($runId, $targetTurnNo, $command->id));
         } catch (\Throwable $e) {
             $this->logger->error('select_history_turn_handler.failed', [
                 'run_id' => $runId,

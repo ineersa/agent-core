@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Pipeline;
 
-use Ineersa\AgentCore\Application\Handler\AdvanceRunCallbackFactory;
+use Ineersa\AgentCore\Application\Handler\AdvanceRunCoordinationFactory;
 use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Contract\Compaction\PreLlmCompactionGuardInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
@@ -15,7 +15,6 @@ use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Symfony\Component\Messenger\MessageBusInterface;
 
 final readonly class AdvanceRunHandler implements RunMessageHandler
 {
@@ -24,7 +23,6 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
         private EventFactory $eventFactory,
         private ?RunTracer $tracer = null,
         private ?PreLlmCompactionGuardInterface $preLlmCompactionGuard = null,
-        private ?MessageBusInterface $commandBus = null,
     ) {
     }
 
@@ -34,6 +32,11 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
     }
 
     public function handle(object $message, RunState $state): HandlerResult
+    {
+        return \Ineersa\AgentCore\Application\Handler\CommandMailboxCoordinationFactory::finalize($this->prepare($message, $state));
+    }
+
+    private function prepare(object $message, RunState $state): HandlerResult
     {
         if (!$message instanceof AdvanceRun) {
             throw new \InvalidArgumentException('AdvanceRunHandler can only handle AdvanceRun messages.');
@@ -105,15 +108,13 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                 'lastAppliedAdvanceKey' => $message->idempotencyKey(),
             ]);
 
-            $postCommit = [];
-            if (null !== $this->commandBus) {
-                $postCommit[] = AdvanceRunCallbackFactory::create($this->commandBus, $runId, $state->turnNo, 'post-cancel-advance', 'Failed to dispatch AdvanceRun after cancellation terminalized.');
-            }
+            $postCommitActions = [];
+            $postCommitActions[] = AdvanceRunCoordinationFactory::create($runId, $state->turnNo, 'post-cancel-advance');
 
             return new HandlerResult(
                 nextState: $nextState,
                 events: $events,
-                postCommit: $postCommit,
+                postCommitActions: $postCommitActions,
             );
         }
 
@@ -182,7 +183,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
         // Compaction replaces RunState.messages and the CompactRunHandler
         // will emit its own events.  We still commit the AgentCommandApplied
         // events from the mailbox drain, and pass the CompactRun effect
-        // through for postCommit dispatch.
+        // through for post-commit coordination dispatch.
         if ([] !== $mailboxEffects) {
             $events = $this->eventFactory->eventsFromSpecs($runId, $preparedState->turnNo, $state->lastSeq + 1, $boundaryEventSpecs);
             $nextState = $preparedState->with([

@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
+use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\CodingAgent\Agent\Execution\RunStartedMetadataReader;
 use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedMetadataDTO;
 use PHPUnit\Framework\TestCase;
@@ -212,7 +213,7 @@ final class RunStartedMetadataSerializerTest extends TestCase
     {
         $runId = 'child-run';
         $store = new InMemoryEventStore();
-        $store->append(new RunEvent(
+        PreparedEventStoreSeeder::append($store, new RunEvent(
             runId: $runId,
             seq: 1,
             turnNo: 0,

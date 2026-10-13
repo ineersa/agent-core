@@ -29,11 +29,11 @@ jobs:
           test "${TAG_SHA}" = "${GITHUB_SHA}"
 
       - name: Setup PHP
-        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
         with:
           # Exact patch from tools/static/pin.json (setup-php accepts patch values).
           php-version: "8.5.8"
-          extensions: mbstring, xml, intl, curl, openssl, pcntl, posix, tokenizer, ctype, fileinfo, filter, iconv, phar, pdo_sqlite, sqlite3, zip
+          extensions: mbstring, xml, intl, curl, openssl, pcntl, posix, tokenizer, ctype, fileinfo, filter, iconv, phar, pdo_sqlite, sqlite3, zip, zstd
           coverage: none
           tools: composer:v2
 
@@ -80,10 +80,10 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup PHP
-        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
         with:
           php-version: "8.5.8"
-          extensions: mbstring, xml, intl, curl, openssl, pcntl, posix, tokenizer, ctype, fileinfo, filter, iconv, phar, pdo_sqlite, sqlite3, zip
+          extensions: mbstring, xml, intl, curl, openssl, pcntl, posix, tokenizer, ctype, fileinfo, filter, iconv, phar, pdo_sqlite, sqlite3, zip, zstd
           coverage: none
           tools: composer:v2
 
@@ -165,10 +165,10 @@ jobs:
           test "${TAG_SHA}" = "${GITHUB_SHA}"
 
       - name: Setup PHP
-        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
         with:
           php-version: "8.5.8"
-          extensions: mbstring, xml, intl, curl, openssl, pcntl, posix, tokenizer, ctype, fileinfo, filter, iconv, phar, pdo_sqlite, sqlite3, zip
+          extensions: mbstring, xml, intl, curl, openssl, pcntl, posix, tokenizer, ctype, fileinfo, filter, iconv, phar, pdo_sqlite, sqlite3, zip, zstd
           coverage: none
           tools: composer:v2
 
@@ -253,7 +253,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # One-way monorepo split mirrors for Extension API + five project extensions.
+  # One-way monorepo split mirrors for Extension API and project extensions.
   # Destination repositories are pre-provisioned outside this workflow; missing
   # MONOREPO_SPLIT_TOKEN or a missing destination repo must fail the matrix cell.
   package-split:
@@ -272,8 +272,6 @@ jobs:
             repository: hatfield-ext-file-rewind
           - directory: .hatfield/extensions/observational-memory
             repository: hatfield-ext-observational-memory
-          - directory: .hatfield/extensions/jbcontext
-            repository: hatfield-ext-jbcontext
     steps:
       - name: Require MONOREPO_SPLIT_TOKEN
         env:
@@ -282,7 +280,7 @@ jobs:
           set -euo pipefail
           if [[ -z "${MONOREPO_SPLIT_TOKEN}" ]]; then
             echo "ERROR: secret MONOREPO_SPLIT_TOKEN is missing or empty."
-            echo "Provision a least-privilege token with contents:write on the six split repositories"
+            echo "Provision a least-privilege token with contents:write on the split repositories"
             echo "and add it as repository secret MONOREPO_SPLIT_TOKEN."
             exit 1
           fi

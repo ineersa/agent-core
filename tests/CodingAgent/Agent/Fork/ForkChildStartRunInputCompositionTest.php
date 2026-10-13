@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Agent\Fork;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Fork\ForkChildLaunchInputBuilder;
@@ -225,7 +226,7 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
 
         $toolSetResolver = self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface::class);
         $eventStore = self::getContainer()->get(\Ineersa\AgentCore\Contract\EventStoreInterface::class);
-        $eventStore->append(new \Ineersa\AgentCore\Domain\Event\RunEvent(
+        PreparedEventStoreSeeder::append($eventStore, new \Ineersa\AgentCore\Domain\Event\RunEvent(
             runId: $identity->childRunId,
             seq: 1,
             turnNo: 0,

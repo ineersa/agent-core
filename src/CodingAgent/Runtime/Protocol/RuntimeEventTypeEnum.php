@@ -26,6 +26,9 @@ enum RuntimeEventTypeEnum: string
     case RunFailed = 'run.failed';
     case RunCancelled = 'run.cancelled';
 
+    /** Process-client-only notification; controller stdout cannot authorize a replacement attach. */
+    case SessionRestoring = 'session.restoring';
+
     // ── User input ──────────────────────────────────────────────────────
 
     case UserMessageSubmitted = 'user.message_submitted';
@@ -114,6 +117,12 @@ enum RuntimeEventTypeEnum: string
     // ── Runtime lifecycle (controller process) ─────────────────────────────
 
     case RuntimeReady = 'runtime.ready';
+    case BootstrapAvailable = 'bootstrap.available';
+    case BootstrapFrame = 'bootstrap.frame';
+    case BootstrapEnd = 'bootstrap.end';
+    case BootstrapSuffix = 'bootstrap.suffix';
+    case SessionReady = 'session.ready';
+    case CanonicalHighWater = 'canonical.high_water';
     case ProtocolError = 'protocol.error';
     case RunResumed = 'run.resumed';
     case RunHistoryPositionChanged = 'run.history_position_changed';

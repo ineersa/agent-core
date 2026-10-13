@@ -117,30 +117,6 @@ final class HatfieldSessionStoreCrossProcessFreshnessTest extends IsolatedKernel
     }
 
     #[Test]
-    public function claimReasoningBaselineSeesExternallyChangedBaseline(): void
-    {
-        $sessionId = $this->store->createSession('/task-start example');
-        $this->assertNull($this->store->claimReasoningBaseline($sessionId, 'provider/model-a', 'high'));
-
-        $this->connection->executeStatement(
-            'UPDATE hatfield_session SET reasoning_baseline = :baseline WHERE id = :id',
-            [
-                'baseline' => json_encode(['model' => 'provider/model-a', 'effort' => 'low'], \JSON_THROW_ON_ERROR),
-                'id' => (int) $sessionId,
-            ],
-        );
-
-        $this->assertSame(
-            [
-                'baseline' => 'low',
-                'update' => 'high',
-                'last_emitted' => 'low',
-            ],
-            $this->store->claimReasoningBaseline($sessionId, 'provider/model-a', 'high'),
-        );
-    }
-
-    #[Test]
     public function existsReportsDeletionVisibleOnlyInDatabase(): void
     {
         $sessionId = $this->store->createSession('/task-start example');

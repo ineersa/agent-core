@@ -18,7 +18,7 @@ use Symfony\Component\Lock\LockFactory;
  * .hatfield/sessions/<runId>/events.jsonl.
  *
  * Sequence allocation uses a per-run {@see FileRunSequenceAllocator::COUNTER_BASENAME} file.
- * events.jsonl is never scanned during normal append (only bootstrap when cursor is missing).
+ * events.jsonl is never scanned during normal prepared transition append (only bootstrap when cursor is missing).
  *
  * Append/sequence/bootstrap mechanics and the decode/denormalize/schema/sort
  * primitives are delegated to {@see JsonlRunEventLog}; this class owns the
@@ -31,7 +31,7 @@ use Symfony\Component\Lock\LockFactory;
  * this process, and retaining every decoded body after resume kept obsolete
  * pre-compaction payloads hot for the TUI lifetime.
  */
-final class SessionRunEventStore implements EventStoreInterface
+final class SessionRunEventStore implements \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface
 {
     private readonly string $sessionsBasePath;
     private readonly JsonlRunEventLog $eventLog;
@@ -45,32 +45,43 @@ final class SessionRunEventStore implements EventStoreInterface
         EventLogMaxSeqBootstrapReader $bootstrapReader = new EventLogMaxSeqBootstrapReader(),
     ) {
         $this->sessionsBasePath = $hatfieldSessionStore->resolveSessionsBasePath();
-        $this->eventLog = new JsonlRunEventLog($eventPayloadNormalizer, $lockFactory, $sequenceAllocator, $bootstrapReader);
+        $this->eventLog = new JsonlRunEventLog($eventPayloadNormalizer, $lockFactory, $sequenceAllocator, $bootstrapReader, $logger);
     }
 
-    public function append(RunEvent $event): RunEvent
-    {
-        $path = $this->eventsPath($event->runId);
-
-        return $this->eventLog->appendMany($path, events: [$event])[0];
-    }
-
-    public function appendMany(array $events): array
+    public function appendTransition(array $events, array $work): array
     {
         if ([] === $events) {
-            return [];
+            if (!\is_string($work['run_id'] ?? null)) {
+                throw new \InvalidArgumentException('Prepared decision requires run identity.');
+            }
         }
-
-        $runId = $events[0]->runId;
         foreach ($events as $event) {
-            if ($event->runId !== $runId) {
-                throw new \InvalidArgumentException('appendMany requires all events to share the same runId.');
+            if ($event->runId !== $events[0]->runId) {
+                throw new \InvalidArgumentException('Transition events have inconsistent run identity.');
             }
         }
 
-        $path = $this->eventsPath($runId);
+        return $this->eventLog->appendMany($this->eventsPath($events[0]->runId ?? $work['run_id']), $events, work: $work);
+    }
 
-        return $this->eventLog->appendMany($path, $events);
+    public function verifiedPendingTransition(string $runId): ?\Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO
+    {
+        return $this->eventLog->verifiedPendingTransition($this->eventsPath($runId), $runId);
+    }
+
+    public function verifiedPendingBatch(string $runId, string $identity): array
+    {
+        return $this->eventLog->verifiedPendingBatch($this->eventsPath($runId), $runId, $identity);
+    }
+
+    public function finalizeVerifiedTransition(string $runId, string $identity): void
+    {
+        $this->eventLog->finalizeVerifiedTransition($this->eventsPath($runId), $runId, $identity);
+    }
+
+    public function assertTransitionReady(string $runId): void
+    {
+        $this->eventLog->assertTransitionReady($this->eventsPath($runId), $runId);
     }
 
     public function latestSequenceFor(string $runId): ?int
@@ -80,6 +91,16 @@ final class SessionRunEventStore implements EventStoreInterface
         }
 
         return null;
+    }
+
+    public function historySource(string $runId): RunHistorySourceDTO
+    {
+        return new RunHistorySourceDTO($this->eventLog, $this->eventsPath($runId));
+    }
+
+    public function hasForwardTail(string $runId, int $positionTurnNo): bool
+    {
+        return $this->eventLog->hasForwardTail($this->eventsPath($runId), $runId, $positionTurnNo);
     }
 
     public function firstFor(string $runId): ?RunEvent
@@ -94,9 +115,8 @@ final class SessionRunEventStore implements EventStoreInterface
     /**
      * Streams events one JSONL line at a time without materializing the full allFor list.
      *
-     * Events are physically appended under the per-run sequence lock, so durable file order
-     * is canonical sequence order (with possible sequence holes). The scan stops at the first
-     * sequence above endSeq; allFor() remains responsible for full-log validation.
+     * Reads indexed physical locations within the committed cut. Missing or invalid
+     * disposable indexes first rebuild scalar metadata in one streaming pass.
      *
      * @return \Generator<int, RunEvent>
      */
@@ -106,12 +126,9 @@ final class SessionRunEventStore implements EventStoreInterface
             return;
         }
 
-        foreach ($this->streamDecodedEvents($runId, 'rangeFor') as $event) {
-            if ($event->seq > $endSeq) {
-                break;
-            }
-
-            if ($event->seq >= $startSeq) {
+        foreach ($this->eventLog->indexedLines($this->eventsPath($runId), $runId, $startSeq, $endSeq) as $line) {
+            $event = $this->eventFromLine($runId, $line);
+            if (null !== $event) {
                 yield $event;
             }
         }

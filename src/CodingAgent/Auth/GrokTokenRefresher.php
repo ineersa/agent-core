@@ -5,16 +5,16 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Auth;
 
 use League\OAuth2\Client\Provider\Exception\IdentityProviderException;
-use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexOAuthProvider;
+use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\PublicOAuthProvider;
 
 /**
  * Exchanges a refresh token for fresh Grok CLI OAuth credentials.
  *
- * Uses {@see CodexOAuthProvider} (league GenericProvider with approval_prompt
+ * Uses {@see PublicOAuthProvider} (league GenericProvider with approval_prompt
  * strip + empty client_secret omit) against auth.x.ai — those two fixes are
  * provider-agnostic and required for xAI as well.
  *
- * Unlike Codex: if the token response omits refresh_token, keep the old one
+ * If the token response omits refresh_token, keep the old one
  * (xAI may rotate or omit depending on client registration).
  */
 class GrokTokenRefresher
@@ -44,7 +44,7 @@ class GrokTokenRefresher
             $collaborators['httpClient'] = $this->httpClient;
         }
 
-        $provider = new CodexOAuthProvider(GrokOAuthConfig::providerOptions($this->port), $collaborators);
+        $provider = new PublicOAuthProvider(GrokOAuthConfig::providerOptions($this->port), $collaborators);
 
         try {
             $token = $provider->getAccessToken('refresh_token', [

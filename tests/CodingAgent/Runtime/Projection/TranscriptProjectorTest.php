@@ -1511,6 +1511,39 @@ final class TranscriptProjectorTest extends TestCase
         $this->assertCount(2, $blocks);
         $this->assertSame(TranscriptBlockKindEnum::Question, $blocks[0]->kind);
         $this->assertFalse($blocks[0]->streaming);
+        $this->assertSame('pending', $blocks[0]->meta['status']);
+    }
+
+    public function testRunClosureCancelsOnlyItsPendingQuestionsAndPreservesResolvedStatuses(): void
+    {
+        foreach (['cancellation.requested', 'run.cancelled', 'run.completed', 'run.failed'] as $terminal) {
+            $this->projector->reset();
+            $this->accept('human_input.requested', ['question_id' => 'pending', 'prompt' => 'Wait?']);
+            $this->accept('human_input.requested', ['question_id' => 'other'], 'other-run');
+            $this->accept('human_input.requested', ['question_id' => 'answered']);
+            $this->accept('human_input.answered', ['question_id' => 'answered', 'answer' => 'yes']);
+            $this->accept('approval.requested', ['request_id' => 'approved']);
+            $this->accept('approval.approved', ['request_id' => 'approved']);
+            $this->accept('approval.requested', ['request_id' => 'rejected']);
+            $this->accept('approval.rejected', ['request_id' => 'rejected']);
+            $this->accept('approval.requested', ['request_id' => 'pending-approval']);
+            $this->accept('operation.cancelled', ['operation_id' => 'unrelated']);
+            $this->accept('turn.cancelled');
+            $blocks = array_column($this->projector->blocks(), null, 'id');
+            $this->assertSame('pending', $blocks['hitl_pending']->meta['status']);
+            $this->accept($terminal);
+            $blocks = array_column($this->projector->blocks(), null, 'id');
+            $this->assertSame('cancelled', $blocks['hitl_pending']->meta['status']);
+            $this->assertSame('cancelled', $blocks['approval_pending-approval']->meta['status']);
+            $this->assertSame('Wait? (cancelled)', $blocks['hitl_pending']->text);
+            $this->assertSame('pending', $blocks['hitl_other']->meta['status']);
+            foreach (['hitl_answered' => 'answered', 'approval_approved' => 'approved', 'approval_rejected' => 'rejected'] as $id => $status) {
+                $this->assertSame($status, $blocks[$id]->meta['status']);
+            }
+            $this->accept($terminal);
+            $blocks = array_column($this->projector->blocks(), null, 'id');
+            $this->assertSame('Wait? (cancelled)', $blocks['hitl_pending']->text, 'Repeated closure does not rewrite history again.');
+        }
     }
 
     // ── Cancellation run-scoping ─────────────────────────────────────────────

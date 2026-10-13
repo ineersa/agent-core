@@ -45,32 +45,6 @@ final class ReplayEventPreparer
     }
 
     /**
-     * @param list<RunEvent> $events sorted ascending by seq
-     *
-     * @return list<int>
-     */
-    public function missingSequences(array $events): array
-    {
-        $missing = [];
-        $expected = 1;
-
-        foreach ($events as $event) {
-            if ($event->seq < $expected) {
-                continue;
-            }
-
-            while ($expected < $event->seq) {
-                $missing[] = $expected;
-                ++$expected;
-            }
-
-            ++$expected;
-        }
-
-        return $missing;
-    }
-
-    /**
      * @param list<RunEvent> $events
      */
     public function maxSequence(array $events): int

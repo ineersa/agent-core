@@ -108,10 +108,10 @@ follow their extension's installation and update rules instead.
 Setup is manual, not an automatic first-run wizard. For custom or local providers,
 see [model settings](docs/settings-models.md). For catalog updates and sparse
 credential overrides, see the [provider catalog](docs/ai-catalog.md).
-OAuth login helpers are available for OpenAI Codex and Grok CLI:
+OAuth login helpers are available for ChatGPT and Grok CLI:
 
 ```bash
-hatfield auth:codex
+hatfield auth:chatgpt login
 hatfield auth:grok
 ```
 

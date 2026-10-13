@@ -381,6 +381,13 @@ final class AgentMessageConverter
     {
         $textContent = $this->contentToText($message->content);
         $imageRefParts = $this->extractImageRefParts($message->content);
+        $hasSignedText = false;
+        foreach ($message->content as $part) {
+            if ('text' === ($part['type'] ?? null) && \is_string($part['text_signature'] ?? null)) {
+                $hasSignedText = true;
+                break;
+            }
+        }
 
         // Skip thinking-only assistant messages (no text, no tool calls)
         // that were erroneously persisted from provider reasoning-only
@@ -393,6 +400,7 @@ final class AgentMessageConverter
         // thinking-only responses to errors.
         if ('assistant' === $message->role
             && '' === $textContent
+            && !$hasSignedText
             && [] === ($message->metadata['tool_calls'] ?? [])
             && null !== $message->details
             && \is_string($message->details['thinking'] ?? null)
@@ -535,27 +543,39 @@ final class AgentMessageConverter
             ? $message->details['thinking_signatures']
             : [];
         $hasOrderedThinkingParts = false;
+        $hasOrderedToolParts = false;
+        $toolCalls = $this->assistantToolCalls($message);
         foreach ($message->content as $part) {
             if (!\is_array($part)) {
                 continue;
             }
-            if ('thinking' === ($part['type'] ?? null)) {
+            if ('tool_call' === ($part['type'] ?? null)) {
+                $hasOrderedToolParts = true;
+            }
+            if ('thinking' === ($part['type'] ?? null) || isset($part['text_signature'])) {
                 $hasOrderedThinkingParts = true;
-                break;
             }
         }
 
-        if ($hasOrderedThinkingParts) {
+        if ($hasOrderedThinkingParts || $hasOrderedToolParts) {
             foreach ($message->content as $part) {
                 if (!\is_array($part)) {
                     continue;
                 }
 
                 $type = $part['type'] ?? null;
+                if ('tool_call' === $type) {
+                    $index = $part['tool_call_index'] ?? null;
+                    if (\is_int($index) && isset($toolCalls[$index])) {
+                        $contentParts[] = $toolCalls[$index];
+                    }
+                    continue;
+                }
                 if ('text' === $type) {
                     $text = $part['text'] ?? null;
-                    if (\is_string($text) && '' !== $text) {
-                        $contentParts[] = new Text($text);
+                    $signature = \is_string($part['text_signature'] ?? null) ? $part['text_signature'] : null;
+                    if (\is_string($text) && ('' !== $text || null !== $signature)) {
+                        $contentParts[] = new Text($text, $signature);
                     }
                     continue;
                 }
@@ -604,8 +624,7 @@ final class AgentMessageConverter
             }
         }
 
-        $toolCalls = $this->assistantToolCalls($message);
-        if (null !== $toolCalls) {
+        if (!$hasOrderedToolParts && null !== $toolCalls) {
             foreach ($toolCalls as $toolCall) {
                 $contentParts[] = $toolCall;
             }

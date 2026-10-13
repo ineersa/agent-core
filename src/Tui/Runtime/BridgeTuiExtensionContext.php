@@ -87,17 +87,21 @@ final readonly class BridgeTuiExtensionContext implements TuiExtensionContextInt
 
     public function turnRowsInDisplayOrder(string $sessionId): array
     {
-        $history = $this->runtime->historyProvider->forSession($sessionId);
         $rows = [];
-        // Public ExtensionApi contract: sparse human prompts only.
-        // Derive presentation fields here; internal HistoryView is turnNo+promptText.
-        foreach ($history->prompts as $prompt) {
-            $title = PickerListLabelFormatter::sanitizeTitle($prompt->promptText);
-            if ('' === $title) {
-                $title = 'Turn '.$prompt->turnNo;
+        // The published ExtensionApi returns a complete array. Keep that explicit
+        // request separate from the native /history picker's bounded page lifetime.
+        $after = 0;
+        do {
+            $history = $this->runtime->historyProvider->forSession($sessionId, after: $after);
+            foreach ($history->prompts as $prompt) {
+                $title = PickerListLabelFormatter::sanitizeTitle($this->runtime->historyProvider->promptText($sessionId, $prompt->turnNo));
+                if ('' === $title) {
+                    $title = 'Turn '.$prompt->turnNo;
+                }
+                $rows[] = ['turnNo' => $prompt->turnNo, 'title' => $title, 'displayRole' => 'user'];
             }
-            $rows[] = ['turnNo' => $prompt->turnNo, 'title' => $title, 'displayRole' => 'user'];
-        }
+            $after = $history->newerAfter;
+        } while (null !== $after);
 
         return $rows;
     }

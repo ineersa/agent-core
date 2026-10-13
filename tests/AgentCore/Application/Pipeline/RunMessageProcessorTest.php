@@ -6,18 +6,18 @@ namespace Ineersa\AgentCore\Tests\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
-use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Pipeline\HandlerResult;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Application\Pipeline\RunMessageHandler;
 use Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor;
-use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\History\HistoryTailDiscardInterface;
+use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
@@ -35,17 +35,49 @@ final class RunMessageProcessorTest extends TestCase
         $this->exerciseDiscard(true);
     }
 
+    public function testPendingDuplicateStopsBeforeHistoryMutationButCompletedIdentityCanRunAgain(): void
+    {
+        $active = new TestActiveRunContext();
+        $active->loadRecovered(RunState::queued('run'));
+        $store = $this->createMock(PreparedTransitionEventStoreInterface::class);
+        $store->expects($this->never())->method('appendTransition');
+        $commands = new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore();
+        $commands->enqueue(new \Ineersa\AgentCore\Domain\Command\PendingCommand('run', 'follow_up', 'same'));
+        $discard = $this->createMock(HistoryTailDiscardInterface::class);
+        $discard->expects($this->once())->method('isContextMutatingMessage')->willReturn(false);
+        $discard->expects($this->never())->method('prepareForwardTailDiscard');
+        $handler = $this->createMock(RunMessageHandler::class);
+        $handler->method('supports')->willReturn(true);
+        $handler->expects($this->once())->method('handle')->willReturn(new HandlerResult());
+        $dispatcher = new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new \Ineersa\AgentCore\Tests\Support\TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher());
+        $commit = new RunCommit(
+            activeRunContext: $active,
+            eventStore: $store,
+            logger: new NullLogger(),
+            finalizer: TestTransitionFinalizerFactory::create($store, $dispatcher, commands: $commands),
+        );
+        $processor = new RunMessageProcessor($active, new RunLockManager(new LockFactory(new InMemoryStore())), $commit, [$handler], $commands, $discard);
+        $message = new \Ineersa\AgentCore\Domain\Message\ApplyCommand('run', 0, 'step', 1, 'same', 'follow_up', []);
+        $processor->process('test', $message);
+        $commands->markApplied('run', 'same');
+        $processor->process('test', $message);
+    }
+
     private function exerciseDiscard(bool $failAppend): void
     {
         $active = new TestActiveRunContext();
         $active->loadRecovered(RunState::queued('run'));
-        $store = $this->createMock(EventStoreInterface::class);
-        $store->expects($this->once())->method('append')->willReturnCallback(static function (RunEvent $event) use ($failAppend): RunEvent {
+        $store = $this->createMock(PreparedTransitionEventStoreInterface::class);
+        $store->expects($this->once())->method('appendTransition')->willReturnCallback(static function (array $events) use ($failAppend): array {
+            if ([] === $events) {
+                return [];
+            }
+            $event = $events[0];
             if ($failAppend) {
                 throw new \RuntimeException('append failed');
             }
 
-            return new RunEvent($event->runId, 7, $event->turnNo, $event->type, $event->payload);
+            return [new RunEvent($event->runId, 7, $event->turnNo, $event->type, $event->payload)];
         });
         $discard = $this->createMock(HistoryTailDiscardInterface::class);
         $discard->method('isContextMutatingMessage')->willReturn(true);
@@ -62,9 +94,14 @@ final class RunMessageProcessorTest extends TestCase
             return new HandlerResult();
         });
         $bus = new TestMessageBus();
-        $dispatcher = new StepDispatcher($bus, $bus);
-        $commit = new RunCommit($active, $store, $dispatcher, new NullLogger(), new ToolBatchCollector());
-        $processor = new RunMessageProcessor($active, new RunLockManager(new LockFactory(new InMemoryStore())), $commit, $dispatcher, [$handler], $discard);
+        $dispatcher = new StepDispatcher($bus, $bus, new \Ineersa\AgentCore\Tests\Support\TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher());
+        $commit = new RunCommit(
+            activeRunContext: $active,
+            eventStore: $store,
+            logger: new NullLogger(),
+            finalizer: TestTransitionFinalizerFactory::create($store, $dispatcher),
+        );
+        $processor = new RunMessageProcessor($active, new RunLockManager(new LockFactory(new InMemoryStore())), $commit, [$handler], new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore(), $discard);
         if ($failAppend) {
             $this->expectException(\RuntimeException::class);
             $this->expectExceptionMessage('append failed');

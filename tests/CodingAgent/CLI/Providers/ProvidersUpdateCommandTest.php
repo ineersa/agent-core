@@ -174,7 +174,7 @@ providers:
     openai-codex:
         label: 'OpenAI Codex'
         kind: oauth
-        type: codex
+        type: chatgpt
         enabled: false
         base_url: https://chatgpt.com/backend-api
         api: openai-responses
@@ -208,7 +208,7 @@ providers:
     openai-codex:
         label: 'Old OpenAI Codex'
         kind: oauth
-        type: codex
+        type: chatgpt
         enabled: true
         base_url: https://stale.example
         api: openai-responses

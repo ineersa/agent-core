@@ -17,6 +17,7 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO;
+use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchService;
 use Ineersa\CodingAgent\Agent\Fork\ForkExecutionService;
 use Ineersa\CodingAgent\Agent\Fork\ForkSnapshotSanitizer;
@@ -268,7 +269,7 @@ final class ForkSnapshotCompactionBeforeLaunchTest extends PerMethodIsolatedKern
     private function appendCanonicalParentRun(string $runId, string $model, array $messages): void
     {
         $eventStore = self::getContainer()->get(\Ineersa\AgentCore\Contract\EventStoreInterface::class);
-        $eventStore->append(new \Ineersa\AgentCore\Domain\Event\RunEvent(
+        PreparedEventStoreSeeder::append($eventStore, new \Ineersa\AgentCore\Domain\Event\RunEvent(
             runId: $runId,
             seq: 1,
             turnNo: 0,

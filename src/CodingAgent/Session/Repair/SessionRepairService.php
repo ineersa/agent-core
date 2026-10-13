@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Session\Repair;
 
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
-use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
@@ -51,7 +50,6 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         private AgentMessageToolCallSequenceValidator $toolCallSequenceValidator,
         private RunLockManager $lockManager,
         private LoggerInterface $logger,
-        private StepDispatcher $stepDispatcher,
         private ToolBatchStoreInterface $toolBatchStore,
         private NormalizerInterface&DenormalizerInterface $serializer,
         private RunCommit $runCommit,
@@ -61,10 +59,43 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         $this->toolExecutionEndPayloadCodec = new ToolExecutionEndPayloadCodec($this->serializer);
     }
 
-    public function repair(string $runId, bool $apply): RepairResult
+    /** @param list<object> $postCommitActions */
+    public function repair(string $runId, bool $apply, string $commandId, array $postCommitActions = []): RepairResult
     {
-        return $this->lockManager->synchronized($runId, function () use ($runId, $apply): RepairResult {
-            return $this->doRepair($runId, $apply);
+        return $this->lockManager->synchronized($runId, function () use ($runId, $apply, $commandId, $postCommitActions): RepairResult {
+            $this->runCommit->assertTransitionReady($runId);
+            $decision = $this->doRepair($runId, $apply, $commandId, leadingActions: $postCommitActions);
+            if ($decision instanceof SessionRepairPlan) {
+                if ($apply) {
+                    $this->runCommit->commit(
+                        $decision->previousState,
+                        $decision->nextState,
+                        $decision->events,
+                        dispatchAfterTurnHooks: false,
+                        postCommitEffects: $decision->effects,
+                        postCommitActions: $decision->actions,
+                    );
+                    if ([] !== $decision->events) {
+                        $this->logger->info('session_repair.completed', [
+                            'run_id' => $runId,
+                            'component' => 'session.repair',
+                            'event_type' => 'session.repair.completed',
+                            'terminal_events_appended' => \count($decision->events),
+                        ]);
+                    }
+                }
+
+                return $decision->result;
+            }
+            // Refused repairs must not execute captured mutation actions such as
+            // deferred-child cancellation. Coordination-only commits require an
+            // admitted decision and captured actions; no source marker is stored.
+            if ($apply && null === $decision->refusalReason && [] !== $postCommitActions) {
+                $state = $this->activeRunContext->requireLoaded($runId);
+                $this->runCommit->commit($state, $state, [], dispatchAfterTurnHooks: false, postCommitActions: $postCommitActions);
+            }
+
+            return $decision;
         });
     }
 
@@ -102,18 +133,6 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             );
         }
 
-        $missingSeqs = $this->replayEventPreparer->missingSequences($sorted);
-        if ([] !== $missingSeqs) {
-            $this->logRefusal($runId, SessionRepairRefusalReasonEnum::MissingSequences, ['missing_count' => \count($missingSeqs)]);
-
-            return new RepairResult(
-                repairableStaleCancellationDetected: false,
-                staleCancellationRepaired: false,
-                message: 'Session repair refused: missing event sequences detected.',
-                refusalReason: SessionRepairRefusalReasonEnum::MissingSequences,
-            );
-        }
-
         return $sorted;
     }
 
@@ -125,7 +144,10 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         ]);
     }
 
-    private function doRepair(string $runId, bool $apply): RepairResult
+    /**
+     * @param list<object> $leadingActions
+     */
+    private function doRepair(string $runId, bool $apply, string $commandId, array $leadingActions = []): RepairResult|SessionRepairPlan
     {
         $sorted = $this->canonicalHistory($runId);
         if ($sorted instanceof RepairResult) {
@@ -155,6 +177,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
                     sorted: $sorted,
                     replayed: $replayed,
                     storedState: $storedState,
+                    leadingActions: $leadingActions,
                 );
             }
 
@@ -164,11 +187,12 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
                 sorted: $sorted,
                 replayed: $replayed,
                 storedState: $storedState,
+                leadingActions: $leadingActions,
             );
         }
 
         if (RunStatus::Cancelling !== $replayed->status) {
-            $redrive = $this->currentOperationRedrive($runId, $apply, $sorted, $replayed);
+            $redrive = $this->currentOperationRedrive($runId, $apply, $sorted, $replayed, $leadingActions);
             if (null !== $redrive) {
                 return $redrive;
             }
@@ -260,6 +284,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             storedState: $storedState,
             successMessage: 'Stale non-terminal cancellation repaired.',
             requiredStatus: RunStatus::Cancelled,
+            leadingActions: $leadingActions,
         );
     }
 
@@ -271,6 +296,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
      * messages only — never a second agent_end or tool_batch_committed.
      *
      * @param list<RunEvent> $sorted
+     * @param list<object>   $leadingActions
      */
     private function repairTerminalCancelledMalformedBatch(
         string $runId,
@@ -278,7 +304,8 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         array $sorted,
         RunState $replayed,
         RunState $storedState,
-    ): RepairResult {
+        array $leadingActions,
+    ): RepairResult|SessionRepairPlan {
         if (!$this->hasCancellationContext($sorted)) {
             return $this->noRepairResult('No repairable corruption detected.');
         }
@@ -297,6 +324,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             successMessage: 'Terminal cancelled session repaired: missing tool messages appended.',
             requiredStatus: RunStatus::Cancelled,
             stepIdPrefix: 'repair-cancel',
+            leadingActions: $leadingActions,
         );
     }
 
@@ -306,6 +334,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
      * unavailable result so a resumed session has a valid assistant/tool pair.
      *
      * @param list<RunEvent> $sorted
+     * @param list<object>   $leadingActions
      */
     private function repairTerminalFailedMalformedBatch(
         string $runId,
@@ -313,7 +342,8 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         array $sorted,
         RunState $replayed,
         RunState $storedState,
-    ): RepairResult {
+        array $leadingActions,
+    ): RepairResult|SessionRepairPlan {
         return $this->repairTerminalMalformedBatch(
             runId: $runId,
             apply: $apply,
@@ -324,11 +354,13 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             successMessage: 'Failed session repaired: missing tool messages appended.',
             requiredStatus: RunStatus::Failed,
             stepIdPrefix: 'repair-failed',
+            leadingActions: $leadingActions,
         );
     }
 
     /**
      * @param list<RunEvent> $sorted
+     * @param list<object>   $leadingActions
      */
     private function repairTerminalMalformedBatch(
         string $runId,
@@ -340,7 +372,8 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         string $successMessage,
         RunStatus $requiredStatus,
         string $stepIdPrefix,
-    ): RepairResult {
+        array $leadingActions,
+    ): RepairResult|SessionRepairPlan {
         $missingIds = $this->missingToolResultIds($replayed->messages);
         if (null === $missingIds) {
             return $this->noRepairResult('No repairable corruption detected: append-only repair cannot reorder events for unclosed tool-call batches.');
@@ -421,6 +454,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             storedState: $storedState,
             successMessage: $successMessage,
             requiredStatus: $requiredStatus,
+            leadingActions: $leadingActions,
             requireValidToolCallSequence: true,
         );
     }
@@ -428,6 +462,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
     /**
      * @param list<array{type: string, payload: array<string, mixed>}> $eventSpecs
      * @param list<RunEvent>                                           $sorted
+     * @param list<object>                                             $leadingActions
      */
     private function appendProposedRepairEvents(
         string $runId,
@@ -439,7 +474,8 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         string $successMessage,
         RunStatus $requiredStatus,
         bool $requireValidToolCallSequence = false,
-    ): RepairResult {
+        array $leadingActions = [],
+    ): RepairResult|SessionRepairPlan {
         $proposedEvents = $this->eventFactory->eventsFromSpecs($runId, $turnNo, $maxSeq + 1, $eventSpecs);
         $hypothetical = array_merge($sorted, $proposedEvents);
         $hypotheticalReplay = $this->retainedReplay($runId, $hypothetical);
@@ -488,19 +524,17 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             'isStreaming' => false,
             'streamingMessage' => null,
         ]);
-        $this->runCommit->commit($storedState, $persisted, $proposedEvents, dispatchAfterTurnHooks: false);
 
-        $this->logger->info('session_repair.completed', [
-            'run_id' => $runId,
-            'component' => 'session.repair',
-            'event_type' => 'session.repair.completed',
-            'terminal_events_appended' => \count($proposedEvents),
-        ]);
-
-        return new RepairResult(
-            repairableStaleCancellationDetected: true,
-            staleCancellationRepaired: true,
-            message: $successMessage,
+        return new SessionRepairPlan(
+            $storedState,
+            $persisted,
+            $proposedEvents,
+            $leadingActions,
+            new RepairResult(
+                repairableStaleCancellationDetected: true,
+                staleCancellationRepaired: true,
+                message: $successMessage,
+            ),
         );
     }
 
@@ -799,92 +833,72 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
     }
 
     /**
-     * A manual /repair is explicit authorization to resend a bounded current
-     * operation. It never appends a synthetic completion event: workers and
+     * A manual /repair explicitly requests the current operation again. It never appends a synthetic completion event: workers and
      * result handlers remain the authoritative completion path.
      *
      * @param list<RunEvent> $events
+     * @param list<object>   $leadingActions
      */
-    private function currentOperationRedrive(string $runId, bool $apply, array $events, RunState $state): ?RepairResult
+    private function currentOperationRedrive(string $runId, bool $apply, array $events, RunState $state, array $leadingActions): RepairResult|SessionRepairPlan|null
     {
         $events = $this->historyReplayFilter->filter($events);
         $effects = [];
         $operation = $state->currentOperation;
-
-        // Validate shell reconstruction before collecting any LLM effect. A
-        // historical shell event without standalone evidence is ambiguous; in
-        // particular, it must not cause a legacy shell-seeded turn to be
-        // redriven as a fabricated LLM operation.
-        $shellEffects = [];
         $standaloneShellOperation = false;
         foreach ($state->pendingShellToolCalls as $toolCallId => $_) {
             $shell = $this->shellEffectFromEvents($runId, $toolCallId, $events);
             if (null === $shell) {
-                return $this->refusalResult($runId, 'Session repair refused: current shell command cannot be reconstructed safely.', SessionRepairRefusalReasonEnum::AmbiguousPendingWork);
+                return $this->refusalResult($runId, 'Session repair refused: current shell command cannot be reconstructed.', SessionRepairRefusalReasonEnum::AmbiguousPendingWork);
             }
-            $shellEffects[] = $shell;
-            $standaloneShellOperation = $standaloneShellOperation
-                || (null !== $operation && $this->isStandaloneShellOperation($operation, $toolCallId, $events));
+            $effects[] = $shell;
+            $standaloneShellOperation = $standaloneShellOperation || (null !== $operation && $this->isStandaloneShellOperation($operation, $toolCallId, $events));
         }
-
         if (RunStatus::Compacting === $state->status) {
-            if (null === $operation) {
-                return $this->refusalResult($runId, 'Session repair refused: current compaction identity cannot be reconstructed safely.', SessionRepairRefusalReasonEnum::AmbiguousPendingWork);
+            $request = null;
+            foreach (array_reverse($events) as $event) {
+                if (RunEventTypeEnum::ContextCompactionStarted->value !== $event->type || !\is_array($event->payload['worker_request'] ?? null)) {
+                    continue;
+                }
+                $candidate = $this->serializer->denormalize($event->payload['worker_request'], ExecuteCompactionStep::class);
+                if ($candidate instanceof ExecuteCompactionStep && $candidate->runId() === $runId && $operation?->matchesMessage($candidate)) {
+                    $request = $candidate;
+                    break;
+                }
             }
-
-            $compaction = $this->compactionRequestFromStartedEvents($runId, $operation, $events);
-            if (null === $compaction) {
-                return $this->refusalResult($runId, 'Session repair refused: historical current compaction input cannot be reconstructed safely.', SessionRepairRefusalReasonEnum::AmbiguousPendingWork);
+            if (null === $request) {
+                return $this->refusalResult($runId, 'Session repair refused: current compaction input cannot be reconstructed.', SessionRepairRefusalReasonEnum::AmbiguousPendingWork);
             }
-            $effects[] = $compaction;
+            $effects[] = $request;
         } elseif (null !== $operation && !$standaloneShellOperation) {
-            $effects[] = new ExecuteLlmStep(
-                runId: $runId,
-                turnNo: $operation->turnNo,
-                stepId: $operation->stepId,
-                attempt: $operation->attempt,
-                idempotencyKey: $operation->idempotencyKey,
-                toolsRef: \sprintf('toolset:run:%s:turn:%d', $runId, $operation->turnNo),
-                messages: $state->messages,
-            );
+            $effects[] = new ExecuteLlmStep($runId, $operation->turnNo, $operation->stepId, $operation->attempt, $operation->idempotencyKey, \sprintf('toolset:run:%s:turn:%d', $runId, $operation->turnNo), $state->messages);
         }
-        $effects = [...$effects, ...$shellEffects];
-
         if (null !== $state->activeStepId && [] !== $state->pendingToolCalls) {
             $batch = $this->toolBatchStore->load($runId, $state->turnNo, $state->activeStepId);
             if (null !== $batch && !$batch->finalized && [] === $batch->awaitingHumanInput) {
-                foreach ([...$batch->pendingQueue, ...array_keys($batch->inFlight)] as $toolCallId) {
-                    // A launched fork/subagent is already durable. Replaying its
-                    // launch only returns the pending handle; maintenance must
-                    // repair the existing child's operation instead.
-                    if (isset($batch->calls[$toolCallId]) && !$this->isDeferredChildCall($state, $toolCallId)) {
-                        $effects[] = $batch->calls[$toolCallId];
+                foreach ($batch->inFlight as $id => $_) {
+                    if (($state->pendingToolCalls[$id] ?? true) || $this->isDeferredChildCall($state, $id)) {
+                        continue;
                     }
+                    // Collected siblings are reused, not re-executed. Queued calls
+                    // remain behind the collector's capacity and sequential barriers.
+                    $effects[] = $batch->results[$id] ?? $batch->calls[$id] ?? throw new \RuntimeException('Stored tool batch call is missing.');
                 }
             }
         }
-
         if ([] === $effects && null === $operation && RunStatus::Running === $state->status && [] === $state->pendingToolCalls && [] === $state->pendingShellToolCalls) {
-            $effects[] = new AdvanceRun(
-                runId: $runId,
-                turnNo: $state->turnNo,
-                stepId: \sprintf('repair-advance-%d', $state->turnNo),
-                attempt: 1,
-                idempotencyKey: hash('sha256', \sprintf('%s|repair-advance|%d|%d', $runId, $state->turnNo, $state->lastSeq)),
-            );
+            $effects[] = new AdvanceRun($runId, $state->turnNo, \sprintf('repair-advance-%d', $state->turnNo), 1, hash('sha256', \sprintf('%s|repair-advance|%d|%d', $runId, $state->turnNo, $state->lastSeq)));
         }
-
         if ([] === $effects) {
             return null;
         }
-
         if (!$apply) {
-            return new RepairResult(false, false, 'Active operation repair available.');
+            return new RepairResult(false, false, 'Active operation repair available. External effects may already have occurred.');
         }
+        $stored = $this->activeRunContext->requireLoaded($runId);
 
-        $this->stepDispatcher->dispatchEffects($effects);
-
-        return new RepairResult(false, false, 'Active operation redriven.', activeOperationsRedriven: \count($effects));
+        // Explicit repair authorizes these ordinary sends. Canonical start events
+        // establish identity and input, not whether an external tool already acted.
+        return new SessionRepairPlan($stored, $state->with(['version' => $stored->version]), [], $leadingActions, new RepairResult(false, false, 'Active operation redrive requested. Sends run after owner-lock release; failed sends produce a runtime error notification. External effects may already have occurred.', activeOperationsRedriven: \count($effects)), $effects);
     }
 
     private function hasOnlyDeferredChildWork(RunState $state): bool
@@ -909,54 +923,6 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
     private function isDeferredChildCall(RunState $state, string $toolCallId): bool
     {
         return $this->deferredBatches->hasLaunchedPendingParentToolCall($state->runId, $state->turnNo, $toolCallId);
-    }
-
-    /**
-     * @param list<RunEvent> $events
-     */
-    private function compactionRequestFromStartedEvents(string $runId, CurrentOperationDTO $operation, array $events): ?ExecuteCompactionStep
-    {
-        foreach (array_reverse($events) as $event) {
-            if (RunEventTypeEnum::ContextCompactionStarted->value !== $event->type
-                || !$this->operationMatchesEvent($operation, $event)) {
-                continue;
-            }
-
-            $workerRequest = $event->payload['worker_request'] ?? null;
-            if (!\is_array($workerRequest)) {
-                return null;
-            }
-
-            try {
-                $request = $this->serializer->denormalize($workerRequest, ExecuteCompactionStep::class);
-            } catch (\Throwable $exception) {
-                $this->logger->warning('Session repair could not denormalize compaction worker request.', [
-                    'event_type' => 'session.repair.compaction_denormalization_failed',
-                    'run_id' => $runId,
-                    'exception' => $exception::class,
-                ]);
-
-                return null;
-            }
-
-            if (!$request instanceof ExecuteCompactionStep
-                || $request->runId() !== $runId
-                || !$operation->matches($request->turnNo(), $request->stepId(), $request->attempt(), $request->idempotencyKey())) {
-                return null;
-            }
-
-            return $request;
-        }
-
-        return null;
-    }
-
-    private function operationMatchesEvent(CurrentOperationDTO $operation, RunEvent $event): bool
-    {
-        return $operation->turnNo === ($event->payload['turn_no'] ?? null)
-            && $operation->stepId === ($event->payload['step_id'] ?? null)
-            && $operation->attempt === ($event->payload['operation_attempt'] ?? null)
-            && $operation->idempotencyKey === ($event->payload['operation_idempotency_key'] ?? null);
     }
 
     /**

@@ -11,7 +11,7 @@ final readonly class RepairResult
         public bool $staleCancellationRepaired,
         public string $message,
         public ?SessionRepairRefusalReasonEnum $refusalReason = null,
-        /** Number of current operation messages dispatched by an applied manual repair. */
+        /** Number of redispatch requests made by repair, not broker acceptances or completed executions. */
         public int $activeOperationsRedriven = 0,
     ) {
     }

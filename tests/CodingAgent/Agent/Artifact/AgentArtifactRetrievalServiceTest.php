@@ -13,6 +13,7 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRetrievalService;
@@ -228,13 +229,13 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $childRun = 'child-events';
         $entry = $this->registry->create($parent, $artifactId, $childRun, 'scout', AgentArtifactKindEnum::Subagent);
         self::getContainer()->get(AgentChildRunDirectory::class)->register($entry);
-        $eventStore = self::getContainer()->get(EventStoreInterface::class);
+        $eventStore = self::getContainer()->get(\Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface::class);
 
         $secret = 'RAW_TOOL_OUTPUT_SECRET_12345';
         /** @var ToolExecutionEndPayloadCodec $toolExecutionEndPayloadCodec */
         $toolExecutionEndPayloadCodec = self::getContainer()->get(ToolExecutionEndPayloadCodec::class);
         for ($i = 1; $i <= 25; ++$i) {
-            $eventStore->append(RunEvent::forAppend(
+            PreparedEventStoreSeeder::append($eventStore, RunEvent::forAppend(
                 runId: $childRun,
                 turnNo: 0,
                 type: RunEventTypeEnum::ToolExecutionEnd->value,
@@ -299,7 +300,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $entry = $this->registry->get($parent, $artifactId);
         $this->directory->register($entry);
         $eventStore = self::getContainer()->get(EventStoreInterface::class);
-        $eventStore->append(RunEvent::forAppend($childRun, 0, RunEventTypeEnum::RunStarted->value, ['payload' => ['messages' => array_map(static fn (AgentMessage $m): array => $m->toArray(), $messages)]]));
+        PreparedEventStoreSeeder::append($eventStore, RunEvent::forAppend($childRun, 0, RunEventTypeEnum::RunStarted->value, ['payload' => ['messages' => array_map(static fn (AgentMessage $m): array => $m->toArray(), $messages)]]));
         $service = $this->makeService(eventStore: $eventStore);
         $out = $service->retrieve($parent, $this->args(['artifact_id' => $artifactId, 'mode' => 'history', 'limit' => 3]));
 
@@ -361,8 +362,8 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
 
         $this->directory->register($this->registry->get($parent, $artifactId));
         $events = self::getContainer()->get(EventStoreInterface::class);
-        $events->append(RunEvent::forAppend($childRun, 4, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 4]));
-        $events->append(RunEvent::forAppend($childRun, 4, RunEventTypeEnum::AgentEnd->value, ['reason' => 'cancelled']));
+        PreparedEventStoreSeeder::append($events, RunEvent::forAppend($childRun, 4, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 4]));
+        PreparedEventStoreSeeder::append($events, RunEvent::forAppend($childRun, 4, RunEventTypeEnum::AgentEnd->value, ['reason' => 'cancelled']));
         $service = $this->makeService(eventStore: $events);
         $out = $service->retrieve($parent, $this->args(['artifact_id' => $artifactId, 'mode' => 'metadata']));
 

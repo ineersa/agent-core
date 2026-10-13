@@ -4,13 +4,21 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Session;
 
+use Doctrine\ORM\EntityManagerInterface;
+use Ineersa\AgentCore\Contract\CommandStoreInterface;
+use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
+use Ineersa\CodingAgent\Entity\DeferredSubagentBatch;
+use Ineersa\CodingAgent\Entity\DeferredSubagentChild;
+use Ineersa\CodingAgent\Entity\ToolBatchSchedule;
+use Ineersa\CodingAgent\Session\Event\ControllerSessionShutdownEvent;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\OutputCap;
 use Symfony\Component\Clock\Clock;
 use Symfony\Component\Clock\MockClock;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\Uid\Uuid;
 use Symfony\Component\Uid\UuidV7;
 
@@ -78,11 +86,56 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         $this->assertTrue($this->store->exists($sessionId));
         $this->assertDirectoryExists($sessionPath);
 
-        $this->store->deleteSession($sessionId);
+        $entityManager = self::getContainer()->get(EntityManagerInterface::class);
+        $commands = self::getContainer()->get(CommandStoreInterface::class);
+        $childRunId = 'delete-child-'.$sessionId;
+        $grandchildRunId = 'delete-grandchild-'.$sessionId;
+        $forkRunId = 'delete-fork-'.$sessionId;
+        $nestedForkRunId = 'delete-nested-fork-'.$sessionId;
+        $nestedDeferredRunId = 'delete-nested-deferred-'.$sessionId;
+        $artifacts = self::getContainer()->get(AgentArtifactRegistry::class);
+        $artifacts->create($sessionId, 'ordinary-fork', $forkRunId, 'fork', AgentArtifactKindEnum::Fork);
+        $artifacts->create($childRunId, 'nested-fork', $nestedForkRunId, 'fork', AgentArtifactKindEnum::Fork);
+        foreach ([[$sessionId, $childRunId], [$childRunId, $grandchildRunId], [$forkRunId, $nestedDeferredRunId]] as [$parentRunId, $childId]) {
+            $batch = new DeferredSubagentBatch();
+            $batch->lifecycleId = Uuid::v7()->toRfc4122();
+            $batch->parentRunId = $parentRunId;
+            $batch->parentToolCallId = 'delete-tool';
+            $entityManager->persist($batch);
+            $child = new DeferredSubagentChild();
+            $child->batchLifecycleId = $batch->lifecycleId;
+            $child->childRunId = $childId;
+            $child->launchModel = 'test/model';
+            $child->launchReasoning = 'none';
+            $entityManager->persist($child);
+        }
+        $runs = [$sessionId, $childRunId, $grandchildRunId, $forkRunId, $nestedForkRunId, $nestedDeferredRunId, 'foreign-run'];
+        foreach ($runs as $runId) {
+            $commands->enqueue(new PendingCommand($runId, 'continue', 'pending'));
+            $schedule = new ToolBatchSchedule();
+            $schedule->runId = $runId;
+            $schedule->stepId = 'pending-step';
+            $entityManager->persist($schedule);
+        }
+        $entityManager->flush();
+
+        // Ordinary shutdown retains pending work, including nested child runs.
+        self::getContainer()->get(EventDispatcherInterface::class)->dispatch(new ControllerSessionShutdownEvent($sessionId));
+        foreach ($runs as $runId) {
+            $this->assertSame(1, $commands->countPending($runId));
+            $this->assertSame(1, $entityManager->getRepository(ToolBatchSchedule::class)->count(['runId' => $runId]));
+        }
+
+        $this->store->deleteSession('00'.$sessionId);
 
         $this->assertFalse($this->store->exists($sessionId));
         $this->assertNull($this->store->findSession($sessionId));
         $this->assertDirectoryDoesNotExist($sessionPath);
+        foreach ($runs as $runId) {
+            $expected = 'foreign-run' === $runId ? 1 : 0;
+            $this->assertSame($expected, $commands->countPending($runId));
+            $this->assertSame($expected, $entityManager->getRepository(ToolBatchSchedule::class)->count(['runId' => $runId]));
+        }
     }
 
     public function testDeleteSessionCleansParentAndChildOutputCapScopesThroughTheContainerLifecycleListener(): void

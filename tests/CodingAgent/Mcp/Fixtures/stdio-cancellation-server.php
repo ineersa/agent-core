@@ -37,6 +37,15 @@ while (false !== ($line = fgets(\STDIN))) {
     } elseif ('tools/call' === $method && 'fast' === $request['params']['name']) {
         $result = ['content' => [['type' => 'text', 'text' => 'quick']]];
     } else {
+        if (array_key_exists('id', $request)) {
+            // Reject modern discovery promptly so the client can negotiate
+            // this legacy fixture's initialize handshake without a timeout.
+            echo json_encode([
+                'jsonrpc' => '2.0',
+                'id' => $id,
+                'error' => ['code' => -32601, 'message' => 'Method not found: '.$method],
+            ], \JSON_THROW_ON_ERROR)."\n";
+        }
         continue;
     }
 

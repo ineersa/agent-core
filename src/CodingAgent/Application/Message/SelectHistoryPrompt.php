@@ -6,7 +6,7 @@ namespace Ineersa\CodingAgent\Application\Message;
 
 final readonly class SelectHistoryPrompt
 {
-    public function __construct(public string $runId, public int $turnNo)
+    public function __construct(public string $runId, public int $turnNo, public string $commandId)
     {
     }
 }

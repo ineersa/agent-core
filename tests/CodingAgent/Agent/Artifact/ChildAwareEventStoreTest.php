@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Agent\Artifact;
 
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\CodingAgent\Agent\Artifact\ChildAwareEventStore;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 
@@ -24,7 +25,7 @@ final class ChildAwareEventStoreTest extends IsolatedKernelTestCase
         );
 
         // Should not throw.
-        $store->append($event);
+        PreparedEventStoreSeeder::append($store, $event);
 
         $events = $store->allFor('parent-ev-router');
         $this->assertNotEmpty($events);
@@ -42,14 +43,14 @@ final class ChildAwareEventStoreTest extends IsolatedKernelTestCase
     public function testRangeForDelegatesParentEvents(): void
     {
         $store = self::getContainer()->get(ChildAwareEventStore::class);
-        $store->append(new RunEvent(
+        PreparedEventStoreSeeder::append($store, new RunEvent(
             runId: 'parent-range-router',
             seq: 1,
             turnNo: 0,
             type: RunEventTypeEnum::RunStarted->value,
             payload: [],
         ));
-        $store->append(new RunEvent(
+        PreparedEventStoreSeeder::append($store, new RunEvent(
             runId: 'parent-range-router',
             seq: 2,
             turnNo: 1,
@@ -83,7 +84,7 @@ final class ChildAwareEventStoreTest extends IsolatedKernelTestCase
             ),
         ];
 
-        $store->appendMany($events);
+        PreparedEventStoreSeeder::appendMany($store, $events);
 
         $results = $store->allFor('parent-ev-many');
         $this->assertCount(2, $results);

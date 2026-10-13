@@ -96,7 +96,7 @@ final class SymfonyAiProviderFactoryTest extends TestCase
     {
         $providerConfig = new AiProviderConfig(
             id: 'openai-codex',
-            type: 'codex',
+            type: 'chatgpt',
             enabled: false,
             baseUrl: 'https://chatgpt.com/backend-api',
         );

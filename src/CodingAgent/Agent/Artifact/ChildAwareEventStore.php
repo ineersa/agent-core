@@ -17,7 +17,7 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
  *
  * Child run location uses AgentChildRunDirectory.
  */
-final class ChildAwareEventStore implements EventStoreInterface
+final class ChildAwareEventStore implements \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface, \Ineersa\CodingAgent\Session\Contract\RunHistorySourceProviderInterface
 {
     /** @var array<string, AgentChildRunEventStore> agentRunId → store */
     private array $childStores = [];
@@ -29,35 +29,65 @@ final class ChildAwareEventStore implements EventStoreInterface
     ) {
     }
 
-    public function append(RunEvent $event): RunEvent
+    public function appendTransition(array $events, array $work): array
     {
-        $childStore = $this->resolveChildStore($event->runId);
-        if (null !== $childStore) {
-            return $childStore->append($event);
+        $store = $this->resolveChildStore($events[0]->runId ?? $work['run_id']) ?? $this->parentStore;
+        if (!$store instanceof \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface) {
+            throw new \LogicException('Configured canonical store lacks transition preparation.');
         }
 
-        return $this->parentStore->append($event);
+        return $store->appendTransition($events, $work);
     }
 
-    public function appendMany(array $events): array
+    public function verifiedPendingTransition(string $runId): ?\Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO
     {
-        if ([] === $events) {
-            return [];
+        $store = $this->resolveChildStore($runId) ?? $this->parentStore;
+        if (!$store instanceof \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface) {
+            throw new \LogicException('Configured canonical store lacks transition preparation.');
         }
 
-        $runId = $events[0]->runId;
-        foreach ($events as $event) {
-            if ($event->runId !== $runId) {
-                throw new \InvalidArgumentException('appendMany requires all events to share the same runId.');
-            }
+        return $store->verifiedPendingTransition($runId);
+    }
+
+    public function verifiedPendingBatch(string $runId, string $identity): array
+    {
+        $store = $this->resolveChildStore($runId) ?? $this->parentStore;
+        if (!$store instanceof \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface) {
+            throw new \LogicException('Configured canonical store lacks transition preparation.');
         }
 
-        $childStore = $this->resolveChildStore($runId);
-        if (null !== $childStore) {
-            return $childStore->appendMany($events);
+        return $store->verifiedPendingBatch($runId, $identity);
+    }
+
+    public function finalizeVerifiedTransition(string $runId, string $identity): void
+    {
+        $store = $this->resolveChildStore($runId) ?? $this->parentStore;
+        if (!$store instanceof \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface) {
+            throw new \LogicException('Configured canonical store lacks transition preparation.');
+        }
+        $store->finalizeVerifiedTransition($runId, $identity);
+    }
+
+    public function assertTransitionReady(string $runId): void
+    {
+        $store = $this->resolveChildStore($runId) ?? $this->parentStore;
+        if (!$store instanceof \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface) {
+            throw new \LogicException('Configured canonical store lacks transition preparation.');
+        }
+        $store->assertTransitionReady($runId);
+    }
+
+    public function historySource(string $runId): \Ineersa\CodingAgent\Session\RunHistorySourceDTO
+    {
+        $child = $this->resolveChildStore($runId);
+        if (null !== $child) {
+            return $child->historySource();
+        }
+        if (!$this->parentStore instanceof \Ineersa\CodingAgent\Session\SessionRunEventStore) {
+            throw new \LogicException('Indexed replay requires the configured canonical session store.');
         }
 
-        return $this->parentStore->appendMany($events);
+        return $this->parentStore->historySource($runId);
     }
 
     public function latestSequenceFor(string $runId): ?int

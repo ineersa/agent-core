@@ -605,6 +605,52 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends TestCase
         $this->assertCount(1, $capacityWarnings);
     }
 
+    public function testSuffixAssemblyRejectsStaleTransferFramesAndResetsAtSessionBoundaries(): void
+    {
+        // No child process is needed to prove the decoder's identity boundary.
+        $client = $this->createClientWithFakeScript(__FILE__);
+        $reflection = new \ReflectionClass($client);
+        $descriptor = new \Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapDescriptorDTO('parent-run', str_repeat('a', 32), 2, 50, 100, 1, 1, 1, str_repeat('0', 64));
+        $reflection->getProperty('bootstrapDescriptor')->setValue($client, $descriptor);
+        $reflection->getProperty('suffixCursor')->setValue($client, 50);
+        $reflection->getProperty('bootstrapAcknowledged')->setValue($client, true);
+        $decode = $reflection->getMethod('decodeSuffix');
+        $event = new RuntimeEvent(RuntimeEventTypeEnum::TurnStarted->value, 'parent-run', 53, ['turn_no' => 3]);
+        $encoded = \Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec::encodeEvent($event);
+        $payload = ['bootstrap_id' => $descriptor->bootstrapId, 'view_epoch' => 2, 'canonical_seq' => 53,
+            'index' => 0, 'data' => base64_encode(substr($encoded, 0, 40)), 'last' => false];
+        $this->assertNull($decode->invoke($client, new RuntimeEvent('bootstrap.suffix', 'parent-run', 0, $payload)));
+        foreach (['bootstrap_id' => str_repeat('b', 32), 'view_epoch' => 1] as $key => $stale) {
+            $wrong = $payload;
+            $wrong[$key] = $stale;
+            $this->assertNull($decode->invoke($client, new RuntimeEvent('bootstrap.suffix', 'parent-run', 0, $wrong)));
+        }
+        $this->assertNull($decode->invoke($client, new RuntimeEvent('bootstrap.suffix', 'other-run', 0, $payload)));
+        $payload['index'] = 1;
+        $payload['data'] = base64_encode(substr($encoded, 40));
+        $payload['last'] = true;
+        $decoded = $decode->invoke($client, new RuntimeEvent('bootstrap.suffix', 'parent-run', 0, $payload));
+        $this->assertEquals($event, $decoded);
+        $this->assertSame(53, $reflection->getProperty('suffixCursor')->getValue($client));
+
+        $payload['index'] = 0;
+        $payload['canonical_seq'] = 54;
+        $payload['last'] = false;
+        $payload['data'] = base64_encode(substr($encoded, 0, 40));
+        $this->assertNull($decode->invoke($client, new RuntimeEvent('bootstrap.suffix', 'parent-run', 0, $payload)));
+        $reflection->getMethod('resetSessionBoundaryState')->invoke($client);
+        $this->assertSame('', $reflection->getProperty('suffixBuffer')->getValue($client));
+        $this->assertSame(0, $reflection->getProperty('suffixIndex')->getValue($client));
+        $this->assertNull($decode->invoke($client, new RuntimeEvent('bootstrap.suffix', 'parent-run', 0, $payload)));
+
+        $reflection->getProperty('bootstrapDescriptor')->setValue($client, $descriptor);
+        $reflection->getProperty('suffixCursor')->setValue($client, 50);
+        $reflection->getProperty('bootstrapAcknowledged')->setValue($client, true);
+        $payload['index'] = 2;
+        $this->expectException(\Ineersa\CodingAgent\Runtime\Contract\RuntimeTransportException::class);
+        $decode->invoke($client, new RuntimeEvent('bootstrap.suffix', 'parent-run', 0, $payload));
+    }
+
     private function createStartBatchFakeControllerClient(?string $generatedRunId = null): JsonlProcessAgentSessionClient
     {
         $fakeScript = $this->tmpDir.'/start-batch-controller.php';

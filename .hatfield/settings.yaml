@@ -13,7 +13,6 @@ extensions:
         - Ineersa\HatfieldExt\TaskWorkflow\TaskWorkflowExtension
         - Ineersa\HatfieldExt\FileRewind\FileRewindExtension
         - Ineersa\HatfieldExt\ObservationalMemory\ObservationalMemoryExtension
-        - Ineersa\HatfieldExt\Jbcontext\JbcontextExtension
     settings:
         file_rewind:
             enabled: false
@@ -43,7 +42,7 @@ extensions:
         safe_guard:
             allow_write_outside_cwd: [/home/ineersa/projects/agent-core-worktrees, /tmp, /home/ineersa/projects/symfony, /home/ineersa/projects/ai]
 forks:
-    model: grok-cli/grok-composer-2.5-fast
+    model: openai-codex/gpt-6.1-sol
     thinking_level: low
     extensions:
         enabled: {}
@@ -61,7 +60,14 @@ ai:
     providers:
         openai-codex:
             enabled: true
-            transport: websocket-cached
+            type: chatgpt
+            base_url: https://api.openai.com
+            completions_path: /v1/responses
+            compatibility:
+                supports_developer_role: true
+                supports_reasoning_effort: false
+                thinking_format: chatgpt
+                supports_reasoning_configuration_updates: true
         llama_cpp:
             type: generic
             enabled: true

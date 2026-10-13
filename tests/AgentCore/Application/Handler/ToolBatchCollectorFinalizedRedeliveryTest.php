@@ -4,58 +4,34 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Application\Handler;
 
-use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
+use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
-use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
-use Ineersa\CodingAgent\Config\AppConfig;
-use Ineersa\CodingAgent\Config\LoggingConfig;
-use Ineersa\CodingAgent\Config\TuiConfig;
-use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Ineersa\CodingAgent\Session\SessionToolBatchStore;
-use Ineersa\CodingAgent\Tests\Session\Support\ParentSessionToolBatchRunStoragePaths;
-use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
+use Ineersa\AgentCore\Tests\Support\TestToolBatchStore;
 use PHPUnit\Framework\TestCase;
-use Psr\Log\NullLogger;
-use Symfony\Component\Lock\LockFactory;
-use Symfony\Component\Lock\Store\FlockStore;
 
 /**
- * Regression: finalized durable snapshot must replay acceptedComplete on redelivery
+ * Regression: finalized durable schedule must replay acceptedComplete on redelivery
  * when canonical commit never happened (old behavior returned duplicate and stalled).
  */
 final class ToolBatchCollectorFinalizedRedeliveryTest extends TestCase
 {
-    private string $projectDir = '';
-
-    protected function setUp(): void
-    {
-        parent::setUp();
-        $this->projectDir = TestDirectoryIsolation::createOsTempDir('tool-batch-finalized-redelivery');
-        TestDirectoryIsolation::createHatfieldTree($this->projectDir, withSessions: true);
-    }
-
-    protected function tearDown(): void
-    {
-        TestDirectoryIsolation::removeDirectory($this->projectDir);
-        parent::tearDown();
-    }
-
     public function testFinalizedSnapshotRedeliveryReplaysAcceptedComplete(): void
     {
         $store = $this->createStore();
-        $collector = new ToolBatchCollector(defaultMaxParallelism: 4, store: $store);
+        $collector = new ToolBatchCollector($store, 4);
 
-        $collector->registerExpectedBatch('run-1', 1, 'step-1', [
+        TestToolBatchRegistration::register($collector, $store, 'run-1', 1, 'step-1', [
             $this->executeToolCall('call-1', 0),
         ]);
 
         $result = $this->toolResult('call-1', 0);
-        $first = $collector->collect($result);
+        $first = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($collector, $store, $result);
         $this->assertTrue($first->complete);
 
-        $redelivery = $collector->collect($result);
+        $redelivery = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($collector, $store, $result);
         $this->assertTrue($redelivery->accepted);
         $this->assertFalse($redelivery->duplicate);
         $this->assertTrue($redelivery->complete);
@@ -78,25 +54,9 @@ final class ToolBatchCollectorFinalizedRedeliveryTest extends TestCase
         );
     }
 
-    private function createStore(): SessionToolBatchStore
+    private function createStore(): ToolBatchStoreInterface
     {
-        $entityManager = $this->createStub(EntityManagerInterface::class);
-        $appConfig = new AppConfig(
-            tui: new TuiConfig(theme: 'default'),
-            logging: new LoggingConfig(),
-            cwd: $this->projectDir,
-        );
-        $hatfield = new HatfieldSessionStore($appConfig, $entityManager, new \Symfony\Component\EventDispatcher\EventDispatcher());
-
-        [$serializer, $validator] = AttributeSerializerValidatorTestFactory::create();
-
-        return new SessionToolBatchStore(
-            new ParentSessionToolBatchRunStoragePaths($hatfield),
-            new LockFactory(new FlockStore()),
-            new NullLogger(),
-            $serializer,
-            $validator,
-        );
+        return new TestToolBatchStore();
     }
 
     private function toolResult(string $toolCallId, int $orderIndex): ToolCallResult

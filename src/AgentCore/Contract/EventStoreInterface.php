@@ -8,15 +8,6 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 
 interface EventStoreInterface
 {
-    public function append(RunEvent $event): RunEvent;
-
-    /**
-     * @param list<RunEvent> $events
-     *
-     * @return list<RunEvent>
-     */
-    public function appendMany(array $events): array;
-
     /**
      * Latest durably appended canonical sequence, or null when the run has no events.
      */

@@ -97,6 +97,29 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
     // ── DispatchRuntime starts new run ─────────────────────────────
 
     #[Test]
+    public function bootstrapBlocksTypedExecutionUntilSessionReadyWithoutLosingTheDraft(): void
+    {
+        $this->state->handle = new RunHandle('run-1', 'bootstrapping', 'request');
+        $this->state->sessionReady = false;
+        $this->state->activity = RunActivityStateEnum::Completed;
+        $this->client->expects($this->never())->method('start');
+        $this->client->expects($this->never())->method('shellExecute');
+        $commands = [];
+        $this->client->expects($this->once())->method('send')->willReturnCallback(static function (string $runId, UserCommand $command) use (&$commands): void {
+            $commands[] = $command;
+        });
+        $harness = new VirtualTuiHarness(sessionId: 'test-session');
+        foreach (['A typed prompt', '/review pending', '!pwd'] as $text) {
+            $this->dispatchSubmit($text, screen: $harness->screen());
+            $this->assertSame($text, $harness->screen()->promptEditor()->getText());
+            $this->assertSame([], $commands);
+        }
+        $this->state->sessionReady = true;
+        $this->dispatchSubmit('Ready now', screen: $harness->screen());
+        $this->assertCount(1, $commands);
+    }
+
+    #[Test]
     public function dispatchRuntimeStartsNewRunWhenNoHandle(): void
     {
         $this->state->handle = null;

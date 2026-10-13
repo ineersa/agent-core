@@ -22,6 +22,7 @@ final readonly class ObserveDeferredSubagentBatchChildTurnMessage
         public RunStatus $committedStatus,
         public int $turnNo,
         public array $committedEvents,
+        public ?int $predecessorSequence = null,
     ) {
     }
 }

@@ -5,10 +5,11 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
-use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
+use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Contract\History\HistoryTailDiscardInterface;
 use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
+use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
 
 /**
@@ -26,8 +27,8 @@ final readonly class RunMessageProcessor
         private ActiveRunContextInterface $activeRunContext,
         private RunLockManager $runLockManager,
         private RunCommit $runCommit,
-        private StepDispatcher $stepDispatcher,
         iterable $handlers,
+        private CommandStoreInterface $commands,
         private ?HistoryTailDiscardInterface $historyTailDiscard = null,
     ) {
         $this->handlers = [...$handlers];
@@ -53,8 +54,13 @@ final readonly class RunMessageProcessor
                         : 'runtime',
                 ]);
                 try {
+                    $this->runCommit->assertTransitionReady($runId);
+                    // A duplicate pending command cannot discard selected history.
+                    // Completed IDs are absent and may be submitted again.
+                    if ($message instanceof ApplyCommand && $this->commands->has($runId, $message->idempotencyKey())) {
+                        return;
+                    }
                     $state = $this->activeRunContext->requireLoaded($runId);
-
                     // A context-mutating action may append history_tail_discarded
                     // before its normal handler transition. Persist this separate
                     // canonical mutation immediately, including no-op handlers.
@@ -69,29 +75,20 @@ final readonly class RunMessageProcessor
 
                     $result = $handler->handle($message, $state);
                     if (null === $result->nextState) {
-                        $this->dispatchPostCommit($result);
+                        if ([] !== $result->postCommitEffects || [] !== $result->postCommitActions) {
+                            $this->runCommit->commit($state, $state, [], dispatchAfterTurnHooks: false, postCommitEffects: $result->postCommitEffects, postCommitActions: $result->postCommitActions);
+                        }
 
                         return;
                     }
 
-                    $this->runCommit->commit($state, $result->nextState, $result->events, $result->effects);
-                    $this->dispatchPostCommit($result);
+                    $this->runCommit->commit($state, $result->nextState, $result->events, $result->effects, postCommitEffects: $result->postCommitEffects, postCommitActions: $result->postCommitActions);
                 } finally {
                     RunLogContext::leave();
                 }
             });
         } finally {
             RunLogContext::leave();
-        }
-    }
-
-    private function dispatchPostCommit(HandlerResult $result): void
-    {
-        if ([] !== $result->postCommitEffects) {
-            $this->stepDispatcher->dispatchEffects($result->postCommitEffects);
-        }
-        foreach ($result->postCommit as $callback) {
-            $callback();
         }
     }
 

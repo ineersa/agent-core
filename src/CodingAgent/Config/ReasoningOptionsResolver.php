@@ -88,8 +88,8 @@ final readonly class ReasoningOptionsResolver
             return $result;
         }
 
-        // Codex Responses API: reasoning.effort format
-        if ('codex' === $thinkingFormat) {
+        // ChatGPT Responses API: reasoning.effort format
+        if ('chatgpt' === $thinkingFormat) {
             return ['reasoning' => ['effort' => $mappedValue, 'summary' => 'auto']];
         }
 

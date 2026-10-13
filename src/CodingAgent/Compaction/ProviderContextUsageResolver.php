@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Compaction;
 
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
 
 /**
  * Resolves the latest provider-reported context token usage from
@@ -60,14 +61,23 @@ final class ProviderContextUsageResolver
      *
      * Manual /compact attempts do NOT count — only auto markers.
      *
+     * @param list<AfterTurnCommitEventSummary> $ownerBatch
+     *
      * @return int|null eligible tokens, or null when no eligible
      *                  measurement exists
      */
-    public function getLatestEligibleInputTokens(string $runId): ?int
+    public function getLatestEligibleInputTokens(string $runId, array $ownerBatch = []): ?int
     {
         $hasNewerAutoAttempt = false;
 
-        foreach ($this->eventStore->reverseFor($runId) as $event) {
+        // The owner supplies its ordered transition batch, while observers
+        // still see the predecessor cut until coordination is finalized.
+        // Consult this batch first without exposing its physical suffix.
+        $events = function () use ($runId, $ownerBatch): \Generator {
+            yield from array_reverse($ownerBatch);
+            yield from $this->eventStore->reverseFor($runId);
+        };
+        foreach ($events() as $event) {
             if (
                 (RunEventTypeEnum::ContextCompactionStarted->value === $event->type
                     || RunEventTypeEnum::ContextCompactionFailed->value === $event->type)

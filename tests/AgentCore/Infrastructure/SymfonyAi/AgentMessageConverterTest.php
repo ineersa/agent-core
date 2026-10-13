@@ -11,8 +11,8 @@ use Ineersa\AgentCore\Infrastructure\SymfonyAi\ConversationHistoryConversion;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\Group;
-use Symfony\AI\Platform\Bridge\OpenAICodex\CodexModel;
-use Symfony\AI\Platform\Bridge\OpenAICodex\Contract\CodexContract;
+use Symfony\AI\Platform\Bridge\OpenResponses\Contract\OpenResponsesContract;
+use Symfony\AI\Platform\Bridge\OpenResponses\ResponsesModel;
 use Symfony\AI\Platform\Message\AssistantMessage;
 use Symfony\AI\Platform\Message\Content\Image;
 use Symfony\AI\Platform\Message\Content\Text;
@@ -250,14 +250,14 @@ final class AgentMessageConverterTest extends IsolatedKernelTestCase
             ],
         );
 
-        $payload = CodexContract::create()->createRequestPayload(
-            new CodexModel('openai-codex/gpt-6-astra'),
+        $payload = OpenResponsesContract::create()->createRequestPayload(
+            new ResponsesModel('openai-codex/gpt-6-astra'),
             $this->converter->toMessageBagForTarget([$original], 'openai-codex/gpt-6-astra'),
             [],
         );
 
         $this->assertSame('message', $payload['input'][0]['type']);
-        $this->assertSame("Done\nsecret plan", $payload['input'][0]['content'][0]['text']);
+        $this->assertSame("Done\nsecret plan", $payload['input'][0]['content']);
         $this->assertSame('function_call', $payload['input'][1]['type']);
         $this->assertSame('call_845adac454c64712b769d15b', $payload['input'][1]['call_id']);
         $this->assertArrayNotHasKey('id', $payload['input'][1]);
@@ -349,23 +349,23 @@ final class AgentMessageConverterTest extends IsolatedKernelTestCase
             new AgentMessage(role: 'tool', content: [['type' => 'text', 'text' => 'ok']], toolCallId: 'call_native|fc_native', toolName: 'bash'),
         ];
 
-        $same = CodexContract::create()->createRequestPayload(
-            new CodexModel('model-a'),
+        $same = OpenResponsesContract::create()->createRequestPayload(
+            new ResponsesModel('model-a'),
             $this->converter->toMessageBagForTarget($messages, 'custom-codex/model-a'),
             [],
         );
         $this->assertSame('reasoning', $same['input'][0]['type']);
-        $this->assertSame('fc_native', $same['input'][2]['id']);
+        $this->assertSame('call_native|fc_native', $same['input'][2]['call_id']);
         $this->assertSame($same['input'][2]['call_id'], $same['input'][3]['call_id']);
 
         foreach (['custom-codex/model-b', 'other-codex/model-a'] as $target) {
-            $changed = CodexContract::create()->createRequestPayload(
-                new CodexModel('model-a'),
+            $changed = OpenResponsesContract::create()->createRequestPayload(
+                new ResponsesModel('model-a'),
                 $this->converter->toMessageBagForTarget($messages, $target),
                 [],
             );
             $this->assertSame('message', $changed['input'][0]['type']);
-            $this->assertStringContainsString('plan', $changed['input'][0]['content'][0]['text']);
+            $this->assertStringContainsString('plan', $changed['input'][0]['content']);
             $this->assertArrayNotHasKey('id', $changed['input'][1]);
             $this->assertSame($changed['input'][1]['call_id'], $changed['input'][2]['call_id']);
         }
@@ -471,8 +471,8 @@ final class AgentMessageConverterTest extends IsolatedKernelTestCase
 
         $this->assertSame($first, $second);
         $this->assertSame(
-            CodexContract::create()->createRequestPayload(new CodexModel('gpt-6-astra'), $first, []),
-            CodexContract::create()->createRequestPayload(new CodexModel('gpt-6-astra'), $second, []),
+            OpenResponsesContract::create()->createRequestPayload(new ResponsesModel('gpt-6-astra'), $first, []),
+            OpenResponsesContract::create()->createRequestPayload(new ResponsesModel('gpt-6-astra'), $second, []),
         );
     }
 

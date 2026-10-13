@@ -39,7 +39,9 @@ final class ReloadCommandHandler implements SlashCommandHandler
 
     public function handle(SlashCommand $command): CommandResult
     {
-        if ($this->state->activity->isActive()) {
+        // Unattached runtime metadata cannot strand the screen in restoration.
+        // Local drafts and paste/question input below still receive protection.
+        if ($this->state->sessionReady && $this->state->activity->isActive()) {
             return new TranscriptMessage(
                 'Cannot reload while a run is active — wait for it to finish or cancel it first.',
                 'system',
@@ -47,7 +49,7 @@ final class ReloadCommandHandler implements SlashCommandHandler
             );
         }
 
-        if ($this->state->isCompacting) {
+        if ($this->state->sessionReady && $this->state->isCompacting) {
             return new TranscriptMessage(
                 'Cannot reload during compaction — wait for it to finish.',
                 'system',
@@ -63,7 +65,7 @@ final class ReloadCommandHandler implements SlashCommandHandler
             );
         }
 
-        if ([] !== $this->state->queuedUserMessages) {
+        if ($this->state->sessionReady && [] !== $this->state->queuedUserMessages) {
             return new TranscriptMessage(
                 'Cannot reload while messages are queued for submission.',
                 'system',

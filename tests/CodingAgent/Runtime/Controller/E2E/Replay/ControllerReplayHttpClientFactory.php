@@ -166,7 +166,7 @@ final class ControllerReplayHttpClientFactory
             $payload = $options['json'];
         } elseif (isset($options['body']) && \is_string($options['body']) && '' !== $options['body']) {
             try {
-                $decoded = json_decode($options['body'], true, 512, \JSON_THROW_ON_ERROR);
+                $decoded = \Ineersa\CodingAgent\Tests\Support\HttpRequestBodyDecoder::decode($options);
                 if (\is_array($decoded)) {
                     $payload = $decoded;
                 }

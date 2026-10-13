@@ -180,12 +180,6 @@ final class PromptCacheDiagnosticsInvocationSubscriber implements EventSubscribe
             return 'unknown';
         }
 
-        if ('codex' === $provider->type) {
-            $transport = $provider->transport;
-
-            return null !== $transport && '' !== $transport ? $transport : 'websocket';
-        }
-
         return 'http';
     }
 

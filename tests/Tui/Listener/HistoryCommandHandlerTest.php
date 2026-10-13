@@ -53,12 +53,9 @@ final class HistoryCommandHandlerTest extends TestCase
     {
         $history = new HistoryView(
             prompts: [
-                new HistoryPromptView(
-                    turnNo: 1,
-                    promptText: 'Root turn',
-                ),
+                new HistoryPromptView(turnNo: 1, promptText: 'Root turn', anchor: 1),
             ],
-            positionTurnNo: 1,
+            selectedAnchor: 1,
         );
 
         $provider = $this->createStub(HistoryProviderInterface::class);

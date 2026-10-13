@@ -37,7 +37,7 @@ final class HistoryPickerController
     ) {
     }
 
-    public function open(): void
+    public function open(?int $before = null, ?int $after = null): void
     {
         if ($this->overlay?->isOpen() ?? false) {
             return;
@@ -47,7 +47,7 @@ final class HistoryPickerController
         $screen = $this->screen;
         $state = $this->state;
 
-        $history = $this->historyProvider->forSession($state->sessionId);
+        $history = $this->historyProvider->forSession($state->sessionId, $before, $after);
         if ([] === $history->prompts) {
             $screen->setTransientStatus('history', 'Session has no user prompts yet');
             $screen->refresh();
@@ -78,10 +78,16 @@ final class HistoryPickerController
         $picker = $this;
         $switcher = $this->switcher;
 
-        $listWidget->onSelect(static function (SelectEvent $event) use ($picker, $switcher): void {
-            $turnNo = (int) $event->getItem()['value'];
+        $listWidget->onSelect(static function (SelectEvent $event) use ($picker, $switcher, $history): void {
+            $value = $event->getItem()['value'];
             $picker->closePicker();
-            $switcher->selectHistoryTurn($turnNo);
+            if ('older' === $value) {
+                $picker->open(before: $history->olderBefore);
+            } elseif ('newer' === $value) {
+                $picker->open(after: $history->newerAfter);
+            } else {
+                $switcher->selectHistoryTurn((int) $value);
+            }
         });
 
         $listWidget->onCancel(static function (CancelEvent $event) use ($picker): void {
@@ -103,18 +109,23 @@ final class HistoryPickerController
     public static function buildItems(HistoryView $history, TuiTheme $theme): array
     {
         $items = [];
-        $tip = $history->positionTurnNo;
+        if (null !== $history->olderBefore) {
+            $items[] = ['value' => 'older', 'label' => $theme->muted('Older prompts...')];
+        }
         foreach ($history->prompts as $prompt) {
             $body = PickerListLabelFormatter::sanitizeTitle($prompt->promptText);
             if ('' === $body) {
                 $body = 'User message (turn '.$prompt->turnNo.')';
             }
-            $marker = $prompt->turnNo === $tip ? '◉ ' : '○ ';
+            $marker = $prompt->anchor === $history->selectedAnchor ? '◉ ' : '○ ';
             $prefix = PickerListLabelFormatter::formatRolePrefix($theme, 'user');
             $items[] = [
                 'value' => (string) $prompt->turnNo,
                 'label' => $marker.$prefix.' '.$body,
             ];
+        }
+        if (null !== $history->newerAfter) {
+            $items[] = ['value' => 'newer', 'label' => $theme->muted('Newer prompts...')];
         }
 
         return $items;
@@ -132,13 +143,13 @@ final class HistoryPickerController
 
         // Prefer the first human prompt after the selected tip (tip may equal a prompt
         // turn when sitting at its completion, or an internal predecessor).
-        $tip = $history->positionTurnNo;
+        $offset = null !== $history->olderBefore ? 1 : 0;
         foreach ($prompts as $idx => $prompt) {
-            if ($prompt->turnNo > $tip) {
-                return $idx;
+            if ($prompt->anchor > $history->selectedAnchor) {
+                return $idx + $offset;
             }
         }
 
-        return max(0, \count($prompts) - 1);
+        return max(0, \count($prompts) - 1 + $offset);
     }
 }

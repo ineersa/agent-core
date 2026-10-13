@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ResolvedModel;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderRequestPreparedEvent;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
+use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
@@ -112,8 +113,7 @@ final class SessionCacheInspectCommandTest extends IsolatedKernelTestCase
             providers: [
                 'openai-codex' => new AiProviderConfig(
                     id: 'openai-codex',
-                    type: 'codex',
-                    transport: 'websocket',
+                    type: 'chatgpt',
                     models: ['gpt-5.6' => new AiModelDefinition(id: 'gpt-5.6', name: 'gpt-5.6')],
                 ),
                 'deepseek' => new AiProviderConfig(
@@ -145,8 +145,8 @@ final class SessionCacheInspectCommandTest extends IsolatedKernelTestCase
         $this->assertStringNotContainsString('Authorization', $serialized);
 
         $eventStore = $this->eventStore($hatfieldSessionStore);
-        $eventStore->append(RunEvent::forAppend($sessionId, 0, 'run_started', ['metadata' => ['model' => 'openai-codex/gpt-5.6']]));
-        $eventStore->append(RunEvent::forAppend($sessionId, 1, 'llm_step_completed', [
+        PreparedEventStoreSeeder::append($eventStore, RunEvent::forAppend($sessionId, 0, 'run_started', ['metadata' => ['model' => 'openai-codex/gpt-5.6']]));
+        PreparedEventStoreSeeder::append($eventStore, RunEvent::forAppend($sessionId, 1, 'llm_step_completed', [
             'step_id' => 'parent-step-1',
             'usage' => [
                 'input_tokens' => 100,
@@ -157,7 +157,7 @@ final class SessionCacheInspectCommandTest extends IsolatedKernelTestCase
                 'cost' => 0.12,
             ],
         ]));
-        $eventStore->append(RunEvent::forAppend($sessionId, 2, 'llm_step_completed', [
+        PreparedEventStoreSeeder::append($eventStore, RunEvent::forAppend($sessionId, 2, 'llm_step_completed', [
             'step_id' => 'parent-step-2',
             'usage' => [
                 'input_tokens' => 200,
@@ -168,7 +168,7 @@ final class SessionCacheInspectCommandTest extends IsolatedKernelTestCase
             ],
         ]));
         // Historical usage-only event (no sidecar diagnostics).
-        $eventStore->append(RunEvent::forAppend($sessionId, 3, 'llm_step_completed', [
+        PreparedEventStoreSeeder::append($eventStore, RunEvent::forAppend($sessionId, 3, 'llm_step_completed', [
             'step_id' => 'parent-step-hist',
             'usage' => ['input_tokens' => 50, 'output_tokens' => 5, 'cost' => 0.01],
         ]));
@@ -183,8 +183,8 @@ final class SessionCacheInspectCommandTest extends IsolatedKernelTestCase
         $this->assertStringNotContainsString('child-secret-SHOULD-NOT-PRINT', json_encode($childRecords, \JSON_THROW_ON_ERROR));
 
         $childStore = $this->childEventStoreFactory($hatfieldSessionStore)->create($sessionId, $childRunId, $artifactId);
-        $childStore->append(RunEvent::forAppend($childRunId, 0, 'run_started', ['metadata' => ['model' => 'deepseek/deepseek-v4-flash']]));
-        $childStore->append(RunEvent::forAppend($childRunId, 1, 'llm_step_completed', [
+        PreparedEventStoreSeeder::append($childStore, RunEvent::forAppend($childRunId, 0, 'run_started', ['metadata' => ['model' => 'deepseek/deepseek-v4-flash']]));
+        PreparedEventStoreSeeder::append($childStore, RunEvent::forAppend($childRunId, 1, 'llm_step_completed', [
             'step_id' => 'child-step-1',
             'usage' => ['input_tokens' => 80, 'output_tokens' => 8, 'cache_read_tokens' => 60, 'cost' => 0.02],
         ]));
@@ -204,7 +204,7 @@ final class SessionCacheInspectCommandTest extends IsolatedKernelTestCase
         $this->assertSame(Command::SUCCESS, $exit);
         $this->assertStringContainsString('Per-family summary (not combined)', $display);
         $this->assertStringContainsString('openai-codex', $display);
-        $this->assertStringContainsString('websocket', $display);
+        $this->assertStringContainsString('http', $display);
         $this->assertStringContainsString('deepseek', $display);
         $this->assertStringContainsString('subagent', $display);
         $this->assertStringContainsString('Prefix attribution unavailable', $display);
@@ -229,7 +229,7 @@ final class SessionCacheInspectCommandTest extends IsolatedKernelTestCase
         $hatfieldSessionStore = $this->sessionStoreForCwd($projectDir);
         $eventStore = $this->eventStore($hatfieldSessionStore);
         $registry = $this->artifactRegistry($hatfieldSessionStore);
-        $eventStore->append(RunEvent::forAppend($sessionId, 1, 'llm_step_completed', [
+        PreparedEventStoreSeeder::append($eventStore, RunEvent::forAppend($sessionId, 1, 'llm_step_completed', [
             'step_id' => 'usage-only-step',
             'usage' => ['input_tokens' => 10, 'output_tokens' => 1, 'cost' => 0.01],
         ]));
@@ -292,7 +292,7 @@ final class SessionCacheInspectCommandTest extends IsolatedKernelTestCase
         $pathResolver = new SessionAgentArtifactPathResolver($hatfieldSessionStore);
         $diagStore = $this->diagStore($hatfieldSessionStore, $registry);
 
-        $eventStore->append(RunEvent::forAppend($sessionId, 1, 'llm_step_completed', [
+        PreparedEventStoreSeeder::append($eventStore, RunEvent::forAppend($sessionId, 1, 'llm_step_completed', [
             'step_id' => 'parent-step',
             'usage' => ['input_tokens' => 10, 'output_tokens' => 1, 'cost' => 0.01],
         ]));

@@ -248,7 +248,7 @@ final class ApplyShellCommandHandlerTest extends TestCase
             ->withTurnNo($start->nextState->turnNo)->withStepId('shell-step')->withToolCallId($shellId)
             ->withResult(['tool_name' => 'bash', 'content' => [['type' => 'text', 'text' => 'shell']]])->build();
         $resultHandler = new \Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler(
-            toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(),
+            toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\TestToolBatchStore()),
             eventFactory: new EventFactory(), toolCallExtractor: new \Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor(),
             messageNormalizer: new \Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer(),
             serializer: AttributeSerializerValidatorTestFactory::denormalizer(),

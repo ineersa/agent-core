@@ -466,7 +466,7 @@ class ReasoningOptionsResolverTest extends TestCase
             new AiCompatibility(
                 supportsDeveloperRole: false,
                 supportsReasoningEffort: false,
-                thinkingFormat: 'codex',
+                thinkingFormat: 'chatgpt',
             ),
         );
 
@@ -492,7 +492,7 @@ class ReasoningOptionsResolverTest extends TestCase
                 'reasoning' => true,
                 'thinkingLevelMap' => ['medium' => 'medium'],
             ]),
-            new AiCompatibility(supportsReasoningEffort: false, thinkingFormat: 'codex'),
+            new AiCompatibility(supportsReasoningEffort: false, thinkingFormat: 'chatgpt'),
         );
 
         $resolver = $this->resolverForProviders(['openai-codex' => $provider]);
@@ -656,7 +656,7 @@ class ReasoningOptionsResolverTest extends TestCase
             new AiCompatibility(
                 supportsDeveloperRole: false,
                 supportsReasoningEffort: false,
-                thinkingFormat: 'codex',
+                thinkingFormat: 'chatgpt',
             ),
         );
 

@@ -9,13 +9,16 @@ use PHPUnit\Framework\TestCase;
 
 final class AiProviderConfigTest extends TestCase
 {
-    public function testTransportFromArray(): void
+    public function testChatGPTTypePreservesOpaqueProviderIdWithoutTransportSettings(): void
     {
         $config = AiProviderConfig::fromArray([
-            'type' => 'codex',
+            'type' => 'chatgpt',
             'transport' => 'sse',
         ], 'openai-codex');
 
-        $this->assertSame('sse', $config->transport);
+        $this->assertSame('chatgpt', $config->type);
+        $this->assertSame('openai-codex', $config->id);
+        $this->assertFalse(property_exists($config, 'transport'));
+        $this->assertFalse(property_exists($config, 'websocketCacheIdleTtlSeconds'));
     }
 }

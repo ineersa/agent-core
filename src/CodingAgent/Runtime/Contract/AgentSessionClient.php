@@ -28,6 +28,12 @@ interface AgentSessionClient
      */
     public function attach(string $runId): RunHandle;
 
+    /** Confirm that the bounded view was mounted at this exact sealed protocol cut.
+     * @param array<string, mixed> $cut */
+    public function acknowledgeBootstrap(array $cut): void;
+
+    public function cancelBootstrap(string $runId): void;
+
     public function send(string $runId, UserCommand $command): void;
 
     /**

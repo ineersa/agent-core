@@ -201,16 +201,16 @@ switch ($mode) {
         }
         $records = array_values(array_filter(
             $logger->records,
-            static fn (array $record): bool => 'session.event_store.physical_read' === ($record['context']['event_type'] ?? null)
-                && 'rangeFor' === ($record['context']['method'] ?? null),
+            static fn (array $record): bool => 'history_index.physical_read' === $record['message'],
         ));
-        if (1 !== count($records)) {
-            fwrite(\STDERR, 'expected one rangeFor physical-read record, got '.count($records)."\n");
+        if (3 !== count($records)) {
+            fwrite(\STDERR, 'expected boundary validation, cold index rebuild and indexed range records, got '.count($records)."\n");
             exit(3);
         }
-        $archiveBytesRead = $records[0]['context']['archive_bytes_read'];
-        $fullScan = $records[0]['context']['full_scan'];
-        $earlyExit = $records[0]['context']['early_exit'];
+        // Cold range reading does one metadata pass and one body pass. Count both.
+        $archiveBytesRead = array_sum(array_column(array_column($records, 'context'), 'archive_bytes_read'));
+        $fullScan = $records[1]['context']['full_scan'] && $records[2]['context']['full_scan'];
+        $earlyExit = false;
         break;
 
     default:

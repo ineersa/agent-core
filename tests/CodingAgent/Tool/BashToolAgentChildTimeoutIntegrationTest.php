@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\CodingAgent\Entity\ToolQuestion;
 use Ineersa\CodingAgent\Entity\ToolQuestionStatusEnum;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
@@ -33,7 +34,7 @@ final class BashToolAgentChildTimeoutIntegrationTest extends IsolatedKernelTestC
 
         /** @var EventStoreInterface $eventStore */
         $eventStore = self::getContainer()->get(EventStoreInterface::class);
-        $eventStore->append(new RunEvent(
+        PreparedEventStoreSeeder::append($eventStore, new RunEvent(
             runId: $childRunId,
             seq: 0,
             turnNo: 0,

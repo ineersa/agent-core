@@ -29,7 +29,7 @@ use Symfony\AI\Platform\PlatformInterface;
  *
  * Reuses the configured Symfony AI Platform, Agent-owned toolbox loop, and
  * Hatfield routing metadata. Publicly blocking; streams
- * internally so Codex WebSocket and HTTP streaming providers complete.
+ * internally so HTTP streaming providers complete.
  *
  * When {@see AgentCallRequestDTO::$maxDurationSeconds} is set, this runner
  * builds a selected-provider Platform once for the call (including tool-loop

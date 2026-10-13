@@ -45,14 +45,14 @@ final class InProcessAttachDoesNotContinueTest extends IsolatedKernelTestCase
         $store = self::getContainer()->get(HatfieldSessionStore::class);
         $runId = $store->createSession();
         $store->updateMetadata($runId, ['reasoning' => 'high']);
-        $store->claimReasoningBaseline($runId, 'openai-codex/gpt-6-astra', 'medium');
         $baseline = $store->findSession($runId)->reasoningBaseline;
         $handle = $client->attach($runId);
 
         $this->assertSame($baseline, $store->findSession($runId)->reasoningBaseline, 'Producer attach must not reset owner reasoning state.');
         $this->assertSame('high', $store->findSession($runId)->reasoning);
         $this->assertSame($runId, $handle->runId);
-        $this->assertSame('attached', $handle->status);
+        $this->assertSame('bootstrapping', $handle->status);
+        $this->assertNotNull($handle->bootstrapRequestId);
         $this->assertSame([], $this->spyRunner->calls, 'attach must not call AgentRunnerInterface mutators');
     }
 }

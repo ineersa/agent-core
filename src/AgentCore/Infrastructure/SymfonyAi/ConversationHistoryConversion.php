@@ -132,6 +132,14 @@ final class ConversationHistoryConversion
         $details = \is_array($message->details) ? $message->details : null;
         $content = $message->content;
 
+        // Native message identity and content signatures belong only to the source model.
+        foreach ($content as &$part) {
+            if (\is_array($part)) {
+                unset($part['text_signature']);
+            }
+        }
+        unset($part);
+
         $hasOrderedThinkingParts = false;
         foreach ($content as $part) {
             if (\is_array($part) && 'thinking' === ($part['type'] ?? null)) {

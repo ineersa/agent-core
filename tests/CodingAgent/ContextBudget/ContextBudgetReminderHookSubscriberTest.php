@@ -50,7 +50,6 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
 
         $this->subscriber = new ContextBudgetReminderHookSubscriber(
             $this->eventStore,
-            $this->agentRunner,
             new ContextBudgetReminderConfig(
                 earlyInputTokens: 200000,
                 urgentRemainingTokens: 25000,
@@ -65,13 +64,12 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
     {
         $subscriber = new ContextBudgetReminderHookSubscriber(
             $this->eventStore,
-            $this->agentRunner,
             new ContextBudgetReminderConfig(),
             $this->appConfigWithCatalogWindow(272000),
         );
         $this->mockEvents([$this->runStarted(1, 272000)]);
         $this->agentRunner->expects($this->never())->method('appendMessage');
-        $subscriber->handleAfterTurnCommit($this->hookContext([
+        $this->dispatchPrepared($subscriber, $this->hookContext([
             $this->summary(2, RunEventTypeEnum::LlmStepCompleted->value, ['usage' => ['input_tokens' => $inputTokens]]),
         ]));
     }
@@ -102,7 +100,7 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
                 }),
             );
 
-        $this->subscriber->handleAfterTurnCommit($this->hookContext([
+        $this->dispatchPrepared($this->subscriber, $this->hookContext([
             $this->summary(2, RunEventTypeEnum::LlmStepCompleted->value, [
                 'usage' => ['input_tokens' => 200000],
             ]),
@@ -128,7 +126,7 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
             );
 
         // remaining = 272000 - 250000 = 22000 < 25000 and input >= 200000
-        $this->subscriber->handleAfterTurnCommit($this->hookContext([
+        $this->dispatchPrepared($this->subscriber, $this->hookContext([
             $this->summary(2, RunEventTypeEnum::LlmStepCompleted->value, [
                 'usage' => ['prompt_tokens' => 250000],
             ]),
@@ -159,7 +157,7 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
             );
 
         // Early already queued; remaining now urgent.
-        $this->subscriber->handleAfterTurnCommit($this->hookContext([
+        $this->dispatchPrepared($this->subscriber, $this->hookContext([
             $this->summary(4, RunEventTypeEnum::LlmStepCompleted->value, [
                 'usage' => ['input_tokens' => 250000],
             ]),
@@ -193,7 +191,7 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
                 }),
             );
 
-        $this->subscriber->handleAfterTurnCommit($this->hookContext([
+        $this->dispatchPrepared($this->subscriber, $this->hookContext([
             $this->summary(4, RunEventTypeEnum::LlmStepCompleted->value, [
                 'usage' => ['input_tokens' => 210000],
             ]),
@@ -206,7 +204,7 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
         $this->eventStore->expects($this->never())->method('reverseFor');
         $this->agentRunner->expects($this->never())->method('appendMessage');
 
-        $this->subscriber->handleAfterTurnCommit($this->hookContext([
+        $this->dispatchPrepared($this->subscriber, $this->hookContext([
             $this->summary(2, RunEventTypeEnum::LlmStepCompleted->value, [
                 'usage' => ['input_tokens' => 100000],
             ]),
@@ -224,14 +222,14 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
         // No positive usage
         $committedState = $this->runState(model: null);
 
-        $this->subscriber->handleAfterTurnCommit($this->hookContext([
+        $this->dispatchPrepared($this->subscriber, $this->hookContext([
             $this->summary(2, RunEventTypeEnum::LlmStepCompleted->value, [
                 'usage' => ['input_tokens' => 0],
             ]),
         ], $committedState));
 
         // Missing window (run_started has none, catalog empty for null model)
-        $this->subscriber->handleAfterTurnCommit($this->hookContext([
+        $this->dispatchPrepared($this->subscriber, $this->hookContext([
             $this->summary(3, RunEventTypeEnum::LlmStepCompleted->value, [
                 'usage' => ['input_tokens' => 210000],
             ]),
@@ -245,13 +243,13 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
         ]);
         $this->agentRunner->expects($this->never())->method('appendMessage');
 
-        $this->subscriber->handleAfterTurnCommit($this->hookContext([
+        $this->dispatchPrepared($this->subscriber, $this->hookContext([
             $this->summary(2, RunEventTypeEnum::LlmStepAborted->value, [
                 'usage' => ['input_tokens' => 250000],
             ]),
         ]));
 
-        $this->subscriber->handleAfterTurnCommit($this->hookContext([
+        $this->dispatchPrepared($this->subscriber, $this->hookContext([
             $this->summary(3, RunEventTypeEnum::ToolBatchCommitted->value, []),
         ]));
     }
@@ -263,7 +261,7 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
         ]);
         $this->agentRunner->expects($this->once())->method('appendMessage');
 
-        $this->subscriber->handleAfterTurnCommit($this->hookContext(
+        $this->dispatchPrepared($this->subscriber, $this->hookContext(
             [
                 $this->summary(2, RunEventTypeEnum::LlmStepCompleted->value, [
                     'usage' => ['input_tokens' => 200000],
@@ -285,7 +283,7 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
         ]);
         $this->agentRunner->expects($this->never())->method('appendMessage');
 
-        $this->subscriber->handleAfterTurnCommit($this->hookContext([
+        $this->dispatchPrepared($this->subscriber, $this->hookContext([
             $this->summary(3, RunEventTypeEnum::LlmStepCompleted->value, [
                 'usage' => ['input_tokens' => 260000],
             ]),
@@ -298,7 +296,6 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
     {
         $subscriber = new ContextBudgetReminderHookSubscriber(
             $this->eventStore,
-            $this->agentRunner,
             new ContextBudgetReminderConfig(disableForMain: $disableMain, disableForForks: $disableForks, disableForSubagents: $disableSubagents),
             $this->appConfigWithCatalogWindow(272000),
         );
@@ -312,7 +309,7 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
             $expectation->with('run-1', new Callback(static fn (AgentMessage $message): bool => ContextBudgetReminderHookSubscriber::wrapSystemReminder($text) === ($message->content[0]['text'] ?? null)));
         }
 
-        $subscriber->handleAfterTurnCommit($this->hookContext([
+        $this->dispatchPrepared($subscriber, $this->hookContext([
             $this->summary(2, RunEventTypeEnum::LlmStepCompleted->value, [
                 'usage' => ['input_tokens' => $inputTokens],
             ]),
@@ -332,6 +329,15 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
             yield 'fork ignores subagent flag '.$level => [$fork, false, true, $tokens, false, true];
             yield 'subagent ignores fork flag '.$level => [$subagent, true, false, $tokens, false, true];
             yield 'parent ignores both flags '.$level => [[], true, true, $tokens, false, false];
+        }
+    }
+
+    private function dispatchPrepared(ContextBudgetReminderHookSubscriber $subscriber, AfterTurnCommitHookContext $context): void
+    {
+        foreach ($subscriber->prepareAfterTurnCommit($context, $context->runState->lastSeq) as $action) {
+            $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO::class, $action);
+            $data = $action->message->payload['message'];
+            $this->agentRunner->appendMessage($context->runId, new AgentMessage(role: $data['role'], content: $data['content'], metadata: $data['metadata']));
         }
     }
 

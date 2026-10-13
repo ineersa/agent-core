@@ -10,8 +10,8 @@ description: Session identity, storage layout, events, resume, locking, and hist
 ## Invariants
 
 - The TUI session and AgentCore run share one identity (DB-issued numeric string).
-- Each session row also stores immutable `provider_cache_key` (UUIDv7). Codex maps it to `prompt_cache_key`; generic providers omit Hatfield correlation fields, while Grok maps the session id to its `prompt_cache_key`.
-- Everything needed to resume lives under the session directory plus the `hatfield_session` DB row — there is no global `.hatfield/runs/` registry.
+- Each session row also stores immutable `provider_cache_key` (UUIDv7). ChatGPT maps it to `prompt_cache_key`; generic providers omit Hatfield correlation fields, while Grok maps the session id to its `prompt_cache_key`.
+- Resume uses the session directory and application database, including active tool batches and pending commands. There is no global `.hatfield/runs/` registry.
 - Canonical conversation source is append-only `events.jsonl`. Transcript projection rebuilds from events on resume.
 - There is **no** `metadata.yaml` in the session directory.
 
@@ -71,6 +71,19 @@ Sessions may be renamed via `/rename`. Display names are metadata only — they 
 - Transient streamed text is separate from durable events. Resume rebuilds from
   committed history, not from an unfinished stream.
 
+Active `tool_batch_schedule` rows retain calls, collected results, scheduling order,
+and human-input waits. `run_command` retains pending command bodies only. Applying
+or rejecting a command deletes its whole row, so a completed command ID can be
+submitted again. Redelivery after completion can repeat user input.
+
+There is no import of legacy batch files or cached commands. Rebuilding the runtime
+database does not recover their pending payloads from conversation events.
+Permanent session deletion removes pending command and batch rows for the owner
+and all descendants found through artifact registries and deferred reservations.
+Ordinary shutdown retains those rows. Startup and idle recovery use the same
+ownership traversal to finish interrupted canonical transitions, not to resend
+completed transitions.
+
 Provider or model switches convert that canonical history at request time. See
 [history-conversion.md](history-conversion.md).
 
@@ -81,7 +94,7 @@ Foreground subagent runs store parent-scoped artifacts under the parent session 
 Deferred subagent supervision (single and parallel) uses durable batch records and timeouts configured by `agents.subagent_tool_timeout_seconds` (default 24h, minimum 60s). Recovery reads child event logs backward from the durable tail until its stored event sequence cursor, then restores chronological order; it does not treat `sequence.cursor` as event-tail truth because allocation may leave valid sequence holes.
 
 Each child row in `deferred_subagent_child` stores an immutable UUIDv7 `provider_cache_key`, separate from its run ID.
-Codex uses that key across turns, worker recreation, and `agent_resume`. Resume rebinds the child to a new batch without changing the key.
+ChatGPT uses that key across turns, worker recreation, and `agent_resume`. Resume rebinds the child to a new batch without changing the key.
 The upgrade backfills provider keys without changing operational event cursors, lifecycle state, or per-resume usage counters.
 
 Fork and subagent cards show cumulative cache reuse as `↻ N%` while running and after completion. The child live-view footer shows the same percentage.
@@ -93,7 +106,7 @@ Legacy checkpoints without lifetime cache counters keep the indicator hidden, in
 
 | Flow | Behavior |
 |---|---|
-| `/resume` | Pick an existing session; rebuild transcript from events; continue with same `session_id` |
+| `/resume` | Pick an existing session; mount the owner-produced transcript; continue with the same `session_id` |
 | `/new` | Start a new session identity |
 | Lazy draft | New interactive session without an initial prompt may delay DB row creation until first message |
 | Process restart | Controller/runtime recover from session dir + DB; event projection rebuilds |
@@ -105,6 +118,12 @@ has pending human-input requests, attach cancels those waits before
 `context_refreshed`. The run becomes Cancelled rather than remaining WaitingHuman.
 History events are kept; late answers to cancelled question ids do not reopen them.
 See [human-input.md](human-input.md).
+
+The screen stays in a restoring state until it validates the bounded transcript
+transfer. It mounts the view, acknowledges the committed cursor, and catches up
+before enabling normal input. A failed transfer leaves the screen unattached,
+not usable with an empty transcript. `/reload`, `/resume`, `/new` and Escape remain
+available to reload, switch sessions or cancel restoration.
 
 ### Catalog recovery after state DB loss
 
@@ -124,6 +143,18 @@ New session creation uses atomic exclusive `mkdir` of the leaf session path and 
 
 Selected history position and retained-history replay are derived from the canonical event stream; details of projection live in the TUI/runtime implementation.
 
+The picker opens near the selected position and loads at most 32 prompt previews,
+each capped at 240 UTF-8 bytes. Select `Older prompts...` or `Newer prompts...` with
+Enter to navigate pages. Internal turns are not selectable rows, but they remain
+valid predecessors. Selecting a prompt restores its complete original text to the
+editor without discarding forward history or starting a model turn.
+
+The disposable `history-index.sqlite` stores stable anchors, bounded previews and
+canonical record locations, not full prompt bodies. Missing, invalid or obsolete
+indexes rebuild from `events.jsonl`. Warm page reads validate the indexed boundary;
+exact prompt lookup reads its canonical record. The published extension history
+API still returns its complete title array and reads prompt records explicitly.
+
 ## Concurrency and locking
 
 Session access uses cooperative locking so two interactive controllers do not corrupt the same session directory. Contenders fail closed or wait according to runtime lock helpers — do not hand-edit `events.jsonl` while a session is live.
@@ -136,8 +167,10 @@ Session access uses cooperative locking so two interactive controllers do not co
 
 ## Transition validity
 
-The runtime ignores completed or stale control messages, but tool execution is not
-an exactly-once guarantee. A retried operation can repeat external effects.
+Execution handlers reject completed or stale results where their lifecycle supports
+that check. The pending-only `ApplyCommand` mailbox does not retain completed IDs
+for deduplication. Direct-shell commands separately check canonical applied identities.
+Tool execution is not an exactly-once guarantee: a retried operation can repeat external effects.
 
 ### Repair safety
 
@@ -149,7 +182,26 @@ Repair reuses the current operation identity. It does not mark unfinished work a
 completed, roll back side effects, or clear abandoned claimed messages. Check whether
 the original command or external tool already performed its action before redispatching.
 
-For a pending fork or subagent call, repair cancels unfinished children instead of
+Repair reconstructs model and shell requests from canonical state and evidence.
+Ordinary tools reuse their current calls from the active SQL batch. Collected sibling
+results can be delivered to the owner without executing those siblings again.
+Queued calls stay behind the collector's capacity and sequential barriers. A batch
+awaiting human input is not redriven, including independent in-flight siblings.
+
+Repair preserves invocation identities where available, but canonical events do not
+prove whether an external action already happened. There is no generic execution
+claim, saved worker-result protocol, or receipt retirement. Explicit repair can
+repeat external execution. Tools with critical side effects must provide their own
+idempotency contract.
+
+Repair responses report redispatch requests, not completed execution or queue
+acceptance. Sends run after the owner lock releases. If a send fails, a transient
+error notification reports accepted and failed sends; some work may still run.
+There is no persistent sending buffer or automatic resend. Retry explicitly with
+`/repair` after checking for prior external effects. The transition journal recovers
+unfinished canonical appends and local coordination, not lost sends after finalization.
+
+For a pending deferred child call, repair cancels unfinished children instead of
 retrying their operations or launching replacements. It durably aborts abandoned
 requests and settles the existing parent tool call, so queued parent input can continue.
 Child run IDs, artifacts, worktrees, and provider cache keys remain intact. Completed
@@ -157,12 +209,18 @@ children keep their results. Late child responses cannot revive cancelled execut
 Active streaming and human-input waits retain their safety checks; existing batch
 interruptions and deadlines retain their lifecycle owner. A preview does not cancel work.
 
+Parent repair captures child-maintenance obligations before committing its decision.
+Recovery finishes the captured plan without reevaluating newer children. Its captured
+generation checks prevent that plan from changing newer work. A completed repair
+command ID is not retained; resubmission can prepare a new plan for the current generation.
+
 If a cancelled or failed terminal history has unmatched assistant tool calls, repair
 appends synthetic error tool results and a batch commit. This restores valid model
 history without repeating tool execution or appending another terminal event.
 
 Calls waiting for human input are not redispatched. Compaction repair requires a
-saved prepared request and refuses safely when that request is unavailable.
+request from the canonical compaction-start event matching the current operation,
+and refuses when that input cannot be reconstructed.
 Do not edit queue rows or event logs to force recovery while a controller is live.
 
 Existing `idempotency.jsonl` files are inert legacy data. Current runs do not create

@@ -23,23 +23,29 @@ use Symfony\Component\Lock\LockFactory;
  * vs streaming reads, optional physical-read observations, per-store exception/log messages).
  * The only policy hook is the optional successful-write callback used by
  * SessionRunEventStore for cache invalidation.
+ * Canonical publication finalizes only through verified transition identity.
  *
  * @internal
  */
 final class JsonlRunEventLog
 {
+    private readonly RunHistoryIndex $historyIndex;
+
     public function __construct(
         private readonly EventPayloadNormalizer $eventPayloadNormalizer,
         private readonly LockFactory $lockFactory,
         private readonly RunSequenceAllocatorInterface $sequenceAllocator,
         private readonly EventLogMaxSeqBootstrapReader $bootstrapReader,
+        private readonly \Psr\Log\LoggerInterface $logger,
     ) {
+        $this->historyIndex = new RunHistoryIndex($lockFactory, $logger);
     }
 
     /**
      * Allocates a contiguous seq block and appends already-validated events under the run lock.
      *
-     * @param list<RunEvent> $events
+     * @param list<RunEvent>       $events
+     * @param array<string, mixed> $work
      *
      * @return list<RunEvent>
      */
@@ -48,12 +54,33 @@ final class JsonlRunEventLog
         array $events,
         string $runLabel = 'run',
         ?int $dirMode = null,
+        array $work = [],
     ): array {
-        $lock = $this->lockFactory->createLock('hatfield-run-'.$events[0]->runId);
+        $runId = $events[0]->runId ?? $work['run_id'] ?? null;
+        if (!\is_string($runId) || '' === $runId) {
+            throw new \InvalidArgumentException('Prepared transition requires run identity.');
+        }
+        $lock = $this->lockFactory->createLock('hatfield-run-'.$runId);
         $lock->acquire(true);
 
         try {
-            $seqBlock = $this->sequenceAllocator->allocateBlock(
+            (new JsonlAppendJournal())->assertReady($path);
+            if ([] === $work) {
+                throw new \InvalidArgumentException('Canonical append requires captured owner coordination work.');
+            }
+            $predecessorSeq = 0;
+            foreach ($this->reverseLines($path) as $line) {
+                $predecessor = $this->decodeLine($line);
+                if (!\is_array($predecessor) || ($predecessor['run_id'] ?? null) !== $runId || !\is_int($predecessor['seq'] ?? null)) {
+                    throw new \RuntimeException('Invalid canonical transition predecessor identity.');
+                }
+                $predecessorSeq = $predecessor['seq'];
+                break;
+            }
+            if (($work['predecessor_seq'] ?? null) !== $predecessorSeq) {
+                throw new \RuntimeException('Canonical transition predecessor sequence changed.');
+            }
+            $seqBlock = [] === $events ? [] : $this->sequenceAllocator->allocateBlock(
                 FileRunSequenceAllocator::counterPathForEventsLog($path),
                 \count($events),
                 fn (): int => $this->bootstrapReader->readMaxSeq($path),
@@ -62,11 +89,113 @@ final class JsonlRunEventLog
 
             foreach ($events as $index => $event) {
                 $persistedEvent = $this->withSeq($event, $seqBlock[$index]);
-                $this->writeEventLocked($path, $persistedEvent, $runLabel, $dirMode);
                 $persisted[] = $persistedEvent;
             }
 
+            if (null !== $dirMode) {
+                (new \Symfony\Component\Filesystem\Filesystem())->mkdir(\dirname($path), $dirMode);
+            }
+            $records = (function () use ($persisted): iterable {
+                foreach ($persisted as $event) {
+                    yield json_encode($this->eventPayloadNormalizer->normalizeRunEvent($event), \JSON_THROW_ON_ERROR)."\n";
+                }
+            })();
+            (new JsonlAppendJournal())->append($path, $records, $work);
+
             return $persisted;
+        } finally {
+            $lock->release();
+        }
+    }
+
+    public function verifiedPendingTransition(string $path, string $runId): ?\Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO
+    {
+        $lock = $this->lockFactory->createLock('hatfield-run-'.$runId);
+        $lock->acquire(true);
+        try {
+            $pending = (new JsonlAppendJournal())->verifiedPending($path);
+            if (null !== $pending && ($pending->work['run_id'] ?? null) !== $runId) {
+                throw new \RuntimeException('Prepared work run identity mismatch.');
+            }
+
+            return $pending;
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /**
+     * @return list<RunEvent>
+     */
+    public function verifiedPendingBatch(string $path, string $runId, string $identity): array
+    {
+        $lock = $this->lockFactory->createLock('hatfield-run-'.$runId);
+        $lock->acquire(true);
+        try {
+            $pending = (new JsonlAppendJournal())->verifiedPending($path);
+            if (null === $pending) {
+                throw new \RuntimeException('Verified transition missing before batch read.');
+            }
+            if (($pending->work['run_id'] ?? null) !== $runId) {
+                throw new \RuntimeException('Prepared work run identity mismatch.');
+            }
+            if ($pending->identity !== $identity) {
+                throw new \RuntimeException('Prepared transition identity changed before batch read.');
+            }
+
+            $records = (new JsonlAppendJournal())->verifiedStagedRecords($path, $identity);
+            $events = [];
+            foreach ($records as $record) {
+                $line = rtrim($record, "\r\n");
+                if ('' === $line) {
+                    throw new \RuntimeException('Verified staged batch contains a blank record.');
+                }
+                $payload = $this->decodeLine($line);
+                if (!\is_array($payload)) {
+                    throw new \RuntimeException('Verified staged batch contains a non-object record.');
+                }
+                if (($payload['run_id'] ?? null) !== $runId) {
+                    throw new \RuntimeException('Verified staged batch run identity mismatch.');
+                }
+                if ($this->isIncompatibleSchemaVersion($payload)) {
+                    throw new \RuntimeException('Verified staged batch schema is incompatible.');
+                }
+                $event = $this->denormalizeRunEvent($payload);
+                if (null === $event) {
+                    throw new \RuntimeException('Verified staged batch could not be decoded.');
+                }
+                $events[] = $event;
+            }
+
+            $sequences = $pending->eventSequences;
+            if (array_map(static fn (RunEvent $event): int => $event->seq, $events) !== $sequences) {
+                throw new \RuntimeException('Verified staged batch sequences do not match captured identities.');
+            }
+
+            return $events;
+        } finally {
+            $lock->release();
+        }
+    }
+
+    public function finalizeVerifiedTransition(string $path, string $runId, string $identity): void
+    {
+        $lock = $this->lockFactory->createLock('hatfield-run-'.$runId);
+        $lock->acquire(true);
+        try {
+            (new JsonlAppendJournal())->finalizeVerified($path, $identity);
+            $this->historyIndex->updateAfterCommit($this, $path, $runId);
+        } finally {
+            $lock->release();
+        }
+    }
+
+    public function assertTransitionReady(string $path, string $runId): void
+    {
+        $lock = $this->lockFactory->createLock('hatfield-run-'.$runId);
+        $lock->acquire(true);
+        try {
+            (new JsonlAppendJournal())->assertReady($path);
         } finally {
             $lock->release();
         }
@@ -107,6 +236,9 @@ final class JsonlRunEventLog
             }
 
             $size = $stat['size'];
+            if (\is_int($size) && is_file($path.'.append.pending.json')) {
+                $size = (new JsonlAppendJournal())->readableOffset($path, $size);
+            }
             if (!\is_int($size) || $size < 0) {
                 $earlyExit = false;
                 $observation?->finish(reachedEof: false, earlyExit: false);
@@ -182,12 +314,20 @@ final class JsonlRunEventLog
      *
      * Empty lines are yielded unchanged so callers keep their existing blank-line policy.
      * A partial final line is also yielded unchanged. When observation is provided,
-     * records bytes returned by fgets. EOF is confirmed with feof(); a false fgets
-     * caused by a read error is not labelled as a full scan.
+     * records bytes returned by fgets. Completion requires reaching the validated
+     * committed byte cut; a false fgets caused by a read error is not a full scan.
      *
      * @return \Generator<int, string>
      */
     public function forwardLines(string $path, ?JsonlPhysicalReadObservation $observation = null): iterable
+    {
+        foreach ($this->locatedLines($path, 0, $observation) as $record) {
+            yield $record['line'];
+        }
+    }
+
+    /** @return \Generator<int, array{offset: int, length: int, line: string}> */
+    public function locatedLines(string $path, int $startOffset = 0, ?JsonlPhysicalReadObservation $observation = null, ?int $endOffset = null): iterable
     {
         $handle = @fopen($path, 'rb');
         if (false === $handle) {
@@ -198,19 +338,169 @@ final class JsonlRunEventLog
 
         $earlyExit = true;
         try {
-            while (false !== ($line = fgets($handle))) {
-                $observation?->addBytes(\strlen($line));
+            $stat = fstat($handle);
+            if (false === $stat) {
+                throw new \RuntimeException('Cannot inspect canonical reader cut.');
+            }
+            $cut = (new JsonlAppendJournal())->readableOffset($path, $stat['size']);
+            if (null !== $endOffset) {
+                if ($endOffset < $startOffset || $endOffset > $cut) {
+                    throw new \RuntimeException('Requested suffix exceeds the committed cut.');
+                }
+                $cut = $endOffset;
+            }
+            if ($startOffset < 0 || $startOffset > $cut || -1 === fseek($handle, $startOffset)) {
+                throw new \RuntimeException('Cannot seek committed canonical records.');
+            }
+            $position = $startOffset;
+            $offset = $position;
+            $line = '';
+            // PHP allocates fgets(length)'s requested buffer, even for short lines.
+            // Passing the whole remaining archive defeats streaming memory bounds.
+            while ($position < $cut && false !== ($chunk = fgets($handle, min(8193, $cut - $position + 1)))) {
+                $position += \strlen($chunk);
+                $observation?->addBytes(\strlen($chunk));
+                $line .= $chunk;
+                if (str_ends_with($chunk, "\n")) {
+                    $observation?->addLineYielded();
+                    yield ['offset' => $offset, 'length' => \strlen($line), 'line' => $line];
+                    $line = '';
+                    $offset = $position;
+                }
+            }
+            if ('' !== $line) {
                 $observation?->addLineYielded();
-                yield $line;
+                yield ['offset' => $offset, 'length' => \strlen($line), 'line' => $line];
             }
 
             $earlyExit = false;
-            $observation?->finish(reachedEof: feof($handle), earlyExit: false);
+            $observation?->finish(reachedEof: $position === $cut, earlyExit: false);
         } finally {
             fclose($handle);
             if ($earlyExit) {
                 $observation?->finish(reachedEof: false, earlyExit: true);
             }
+        }
+    }
+
+    /** @return array{device: int, inode: int, end_offset: int} */
+    public function committedIdentity(string $path): array
+    {
+        $handle = @fopen($path, 'rb');
+        if (false === $handle) {
+            throw new \RuntimeException('Cannot open canonical archive.');
+        }
+        try {
+            $stat = fstat($handle);
+            if (false === $stat) {
+                throw new \RuntimeException('Cannot inspect canonical archive identity.');
+            }
+
+            return ['device' => $stat['dev'], 'inode' => $stat['ino'], 'end_offset' => (new JsonlAppendJournal())->readableOffset($path, $stat['size'])];
+        } finally {
+            fclose($handle);
+        }
+    }
+
+    /** @param iterable<array{offset: int, length: int}> $locations
+     * @return \Generator<int, string> */
+    public function linesAt(string $path, iterable $locations, JsonlPhysicalReadObservation $observation): iterable
+    {
+        $handle = @fopen($path, 'rb');
+        if (false === $handle) {
+            throw new \RuntimeException('Cannot open indexed canonical records.');
+        }
+        $completed = false;
+        try {
+            $stat = fstat($handle);
+            if (false === $stat) {
+                throw new \RuntimeException('Cannot inspect indexed canonical records.');
+            }
+            $cut = (new JsonlAppendJournal())->readableOffset($path, $stat['size']);
+            $end = 0;
+            $contiguous = true;
+            foreach ($locations as $location) {
+                if ($location['offset'] < 0 || $location['length'] < 1 || $location['offset'] + $location['length'] > $cut
+                    || -1 === fseek($handle, $location['offset'])) {
+                    throw new \RuntimeException('Indexed record lies outside the committed archive.');
+                }
+                $line = '';
+                while (\strlen($line) < $location['length']) {
+                    $chunk = fgets($handle, min(8193, $location['length'] - \strlen($line) + 1));
+                    if (false === $chunk) {
+                        throw new \RuntimeException('Cannot read indexed canonical record.');
+                    }
+                    $observation->addBytes(\strlen($chunk));
+                    $line .= $chunk;
+                    // A corrupt length must not allocate/read the entire archive.
+                    if (str_ends_with($chunk, "\n")) {
+                        break;
+                    }
+                }
+                if (\strlen($line) !== $location['length'] || !str_ends_with($line, "\n")) {
+                    throw new \RuntimeException('Indexed canonical record is incomplete.');
+                }
+                $contiguous = $contiguous && $location['offset'] === $end;
+                $end = $location['offset'] + $location['length'];
+                $observation->addLineYielded();
+                yield $line;
+            }
+            $completed = true;
+            $observation->finish(reachedEof: $contiguous && $end === $cut, earlyExit: false);
+        } finally {
+            fclose($handle);
+            if (!$completed) {
+                $observation->finish(reachedEof: false, earlyExit: true);
+            }
+        }
+    }
+
+    /** @return iterable<string> */
+    public function indexedLines(string $path, string $runId, int $startSeq, int $endSeq): iterable
+    {
+        return $this->historyIndex->records($this, $path, $runId, $startSeq, $endSeq);
+    }
+
+    /** @return array{sequence: int, end_offset: int, anchor: int}|null */
+    public function historyCut(string $path, string $runId, ?int $positionTurnNo = null): ?array
+    {
+        return $this->historyIndex->cut($this, $path, $runId, $positionTurnNo);
+    }
+
+    public function hasForwardTail(string $path, string $runId, int $positionTurnNo): bool
+    {
+        return $this->historyIndex->hasForwardTail($this, $path, $runId, $positionTurnNo);
+    }
+
+    public function isLatestCommand(string $path, string $runId, string $key, int $sequence): bool
+    {
+        return $this->historyIndex->isLatestCommand($path, $runId, $key, $sequence);
+    }
+
+    /** @return \Generator<int, RunEvent> */
+    public function selectedEvents(string $path, string $runId, int $sequence, int $anchor): \Generator
+    {
+        $decoded = false;
+        foreach ($this->historyIndex->locatedRecords($this, $path, $runId, 1, $sequence, $anchor, true) as [, $record]) {
+            if ($this->isIncompatibleSchemaVersion($record)) {
+                $this->logger->warning('session_replay.incompatible_schema_record', [
+                    'run_id' => $runId, 'session_id' => $runId, 'component' => 'session_replay',
+                    'event_type' => 'session_replay.incompatible_schema_record', 'sequence' => $record['seq'],
+                ]);
+                unset($record);
+                continue;
+            }
+            $event = $this->denormalizeRunEvent($record);
+            if (null === $event) {
+                throw new \RuntimeException('Canonical replay record cannot be decoded.');
+            }
+            $decoded = true;
+            unset($record);
+            yield $event;
+            unset($event);
+        }
+        if (!$decoded) {
+            throw new \RuntimeException('Known canonical history has no compatible replay records.');
         }
     }
 
@@ -272,25 +562,5 @@ final class JsonlRunEventLog
             payload: $event->payload,
             createdAt: $event->createdAt,
         );
-    }
-
-    private function writeEventLocked(string $path, RunEvent $event, string $runLabel, ?int $dirMode): void
-    {
-        $dir = \dirname($path);
-        if (!is_dir($dir)) {
-            if (null === $dirMode) {
-                mkdir(directory: $dir, recursive: true);
-            } else {
-                mkdir($dir, $dirMode, true);
-            }
-        }
-
-        $entry = $this->eventPayloadNormalizer->normalizeRunEvent($event);
-        $json = json_encode($entry, \JSON_THROW_ON_ERROR);
-
-        $written = file_put_contents($path, $json."\n", \FILE_APPEND | \LOCK_EX);
-        if (false === $written) {
-            throw new \RuntimeException(\sprintf('Failed to append to events.jsonl for %s "%s" at seq %d.', $runLabel, $event->runId, $event->seq));
-        }
     }
 }

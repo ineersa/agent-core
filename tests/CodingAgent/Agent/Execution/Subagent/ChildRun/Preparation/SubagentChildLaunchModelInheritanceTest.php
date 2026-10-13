@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO;
+use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
@@ -161,7 +162,7 @@ final class SubagentChildLaunchModelInheritanceTest extends IsolatedKernelTestCa
         if (null !== $reasoning) {
             $metadata['reasoning'] = $reasoning;
         }
-        $eventStore->append(new RunEvent(
+        PreparedEventStoreSeeder::append($eventStore, new RunEvent(
             runId: $parentRunId,
             seq: 1,
             turnNo: 0,

@@ -43,6 +43,8 @@ final readonly class AiCompatibility
      *                                                                 from models.dev (e.g. GPT-6 models are
      *                                                                 pinned to the 272k cheap pricing tier
      *                                                                 while models.dev reports the raw window)
+     * @param bool        $supportsReasoningConfigurationUpdates       accepts native HTTP reasoning controls
+     *                                                                 while retaining the initial effort prefix
      */
     public function __construct(
         public bool $supportsDeveloperRole = false,
@@ -51,8 +53,8 @@ final readonly class AiCompatibility
         public ?string $thinkingFormat = null,
         public bool $zaiToolStream = false,
         public bool $requiresReasoningContentOnAssistantMessages = false,
-        public bool $supportsReasoningConfigurationUpdates = false,
         public bool $pinContextWindow = false,
+        public bool $supportsReasoningConfigurationUpdates = false,
     ) {
     }
 
@@ -73,8 +75,8 @@ final readonly class AiCompatibility
             thinkingFormat: isset($data['thinking_format']) && \is_string($data['thinking_format']) ? $data['thinking_format'] : null,
             zaiToolStream: self::boolOrDefault($data['zai_tool_stream'] ?? null, false),
             requiresReasoningContentOnAssistantMessages: self::boolOrDefault($data['requires_reasoning_content_on_assistant_messages'] ?? null, false),
-            supportsReasoningConfigurationUpdates: self::boolOrDefault($data['supports_reasoning_configuration_updates'] ?? null, false),
             pinContextWindow: self::boolOrDefault($data['pin_context_window'] ?? null, false),
+            supportsReasoningConfigurationUpdates: self::boolOrDefault($data['supports_reasoning_configuration_updates'] ?? null, false),
         );
     }
 

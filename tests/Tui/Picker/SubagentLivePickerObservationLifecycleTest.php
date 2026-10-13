@@ -223,6 +223,14 @@ final class ObservingSpyClient implements AgentSessionClient
         throw new \RuntimeException('not used');
     }
 
+    public function acknowledgeBootstrap(array $cut): void
+    {
+    }
+
+    public function cancelBootstrap(string $runId): void
+    {
+    }
+
     public function attach(string $runId): RunHandle
     {
         throw new \RuntimeException('not used');

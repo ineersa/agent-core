@@ -14,14 +14,22 @@ use Psr\Log\LoggerInterface;
 /**
  * @covers \Ineersa\CodingAgent\Runtime\Controller\ToolQuestionPoller
  *
- * RuntimeEventEmitter is final and cannot be mocked, so we use a real
- * emitter with null eventClient. Its emit() call
- * is a no-op when stdout is null (openStdout not called)
- * — no side effects, no throws. We verify behaviour through
- * store mocks (findUnemittedPendingQuestions → markEmitted chain).
+ * A real emitter writes to an owned memory stream. Store doubles prove the
+ * acknowledgement boundary; the bootstrap lifecycle test uses the Doctrine store.
  */
 final class ToolQuestionPollerTest extends TestCase
 {
+    /** @var list<resource> */
+    private array $outputs = [];
+
+    protected function tearDown(): void
+    {
+        foreach ($this->outputs as $output) {
+            fclose($output);
+        }
+        parent::tearDown();
+    }
+
     // ── poll() behaviour ───────────────────────────────────────────────
 
     public function testPollEmitsEventAndMarksEmitted(): void
@@ -114,7 +122,8 @@ final class ToolQuestionPollerTest extends TestCase
         $logger->expects($this->once())
             ->method('warning')
             ->with('tool_question.poller_emit_failed', $this->callback(static fn (array $c): bool => ($c['request_id'] ?? '') === 'rq-1'
-                && str_contains($c['exception'] ?? '', 'DB write failure')
+                && ($c['exception_class'] ?? '') === \RuntimeException::class
+                && !isset($c['exception'])
             ));
 
         $poller = new ToolQuestionPoller(
@@ -165,7 +174,7 @@ final class ToolQuestionPollerTest extends TestCase
         $logger = $this->createMock(LoggerInterface::class);
         $logger->expects($this->once())
             ->method('warning')
-            ->with('tool_question.poller_startup_cleanup_failed', $this->callback(static fn (array $c): bool => str_contains($c['exception'] ?? '', 'DB unavailable')));
+            ->with('tool_question.poller_startup_cleanup_failed', $this->callback(static fn (array $c): bool => ($c['exception_class'] ?? '') === \RuntimeException::class && !isset($c['exception'])));
 
         $poller = new ToolQuestionPoller(
             store: $store,
@@ -182,9 +191,15 @@ final class ToolQuestionPollerTest extends TestCase
 
     private function createEmitter(): RuntimeEventEmitter
     {
-        return new RuntimeEventEmitter(
+        $emitter = new RuntimeEventEmitter(
             logger: $this->createStub(LoggerInterface::class),
         );
+        $output = fopen('php://memory', 'w+b');
+        $this->assertIsResource($output);
+        $this->outputs[] = $output;
+        (new \ReflectionProperty($emitter, 'stdout'))->setValue($emitter, $output);
+
+        return $emitter;
     }
 
     /**

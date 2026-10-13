@@ -14,7 +14,6 @@ use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobRequestDTO;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterSessionStartHookContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterSessionStartHookInterface;
-use Ineersa\HatfieldExt\Jbcontext\Job\JbcontextEligibilityJobHandler;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Messenger\MessageBusInterface;
@@ -73,12 +72,12 @@ final class ExtensionSessionStartHookSubscriberTest extends IsolatedKernelTestCa
             public function onAfterSessionStart(AfterSessionStartHookContextDTO $context): void
             {
                 $this->dispatcher->dispatch(new ExtensionAgentJobRequestDTO(
-                    handlerId: JbcontextEligibilityJobHandler::HANDLER_ID,
+                    handlerId: 'test.session-start',
                     payload: [
                         'session_id' => $context->runId,
                         'attempt' => 1,
                     ],
-                    jobId: 'jbcontext.eligibility.'.$context->runId.'.attempt.1',
+                    jobId: 'test.session-start.'.$context->runId.'.attempt.1',
                     correlationId: $context->runId,
                 ));
             }
@@ -88,11 +87,11 @@ final class ExtensionSessionStartHookSubscriberTest extends IsolatedKernelTestCa
         $subscriber->onSessionStarting(new ControllerSessionStartingEvent('session-live-1'));
 
         $sent = $transport->getSent();
-        $this->assertCount(1, $sent, 'Expected eligibility job on extension_agent before any turn.');
+        $this->assertCount(1, $sent, 'Expected session-start job on extension_agent before any turn.');
         $message = $sent[0]->getMessage();
         $this->assertInstanceOf(ExtensionAgentJobMessage::class, $message);
-        $this->assertSame(JbcontextEligibilityJobHandler::HANDLER_ID, $message->handlerId);
+        $this->assertSame('test.session-start', $message->handlerId);
         $this->assertSame('session-live-1', $message->payload['session_id'] ?? null);
-        $this->assertSame('jbcontext.eligibility.session-live-1.attempt.1', $message->jobId);
+        $this->assertSame('test.session-start.session-live-1.attempt.1', $message->jobId);
     }
 }

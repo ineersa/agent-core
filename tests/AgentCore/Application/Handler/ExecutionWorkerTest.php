@@ -13,7 +13,6 @@ use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
-use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
@@ -23,7 +22,6 @@ use Ineersa\AgentCore\Infrastructure\SymfonyAi\MalformedToolCallSequenceExceptio
 use Ineersa\AgentCore\Tests\Support\Fake\FakeToolExecutor;
 use Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
-use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use PHPUnit\Framework\TestCase;
 
 final class ExecutionWorkerTest extends TestCase
@@ -39,10 +37,9 @@ final class ExecutionWorkerTest extends TestCase
             }
         };
 
-        $commandBus = new TestMessageBus();
-        $worker = new ExecuteLlmStepWorker($platform, $commandBus);
+        $worker = new ExecuteLlmStepWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), $platform);
 
-        $worker(new ExecuteLlmStep(
+        $result = $worker(new ExecuteLlmStep(
             runId: 'run-worker-1',
             turnNo: 4,
             stepId: 'turn-4-llm-1',
@@ -50,12 +47,6 @@ final class ExecutionWorkerTest extends TestCase
             idempotencyKey: 'llm-idemp-1',
             toolsRef: 'toolset:run:run-worker-1:turn:4',
         ));
-
-        $this->assertCount(1, $commandBus->messages);
-        $this->assertInstanceOf(LlmStepResult::class, $commandBus->messages[0]);
-
-        /** @var LlmStepResult $result */
-        $result = $commandBus->messages[0];
 
         $this->assertSame('run-worker-1', $result->runId());
         $this->assertSame('turn-4-llm-1', $result->stepId());
@@ -74,10 +65,9 @@ final class ExecutionWorkerTest extends TestCase
             }
         };
 
-        $commandBus = new TestMessageBus();
-        $worker = new ExecuteLlmStepWorker($platform, $commandBus);
+        $worker = new ExecuteLlmStepWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), $platform);
 
-        $worker(new ExecuteLlmStep(
+        $result = $worker(new ExecuteLlmStep(
             runId: 'run-malformed-1',
             turnNo: 3,
             stepId: 'turn-3-llm-1',
@@ -85,12 +75,6 @@ final class ExecutionWorkerTest extends TestCase
             idempotencyKey: 'llm-malformed-1',
             toolsRef: 'toolset:run:run-malformed-1:turn:3',
         ));
-
-        $this->assertCount(1, $commandBus->messages);
-        $this->assertInstanceOf(LlmStepResult::class, $commandBus->messages[0]);
-
-        /** @var LlmStepResult $result */
-        $result = $commandBus->messages[0];
 
         $this->assertSame('run-malformed-1', $result->runId());
         $this->assertSame('turn-3-llm-1', $result->stepId());
@@ -112,13 +96,12 @@ final class ExecutionWorkerTest extends TestCase
             }
         };
 
-        $commandBus = new TestMessageBus();
         $traceLogger = new TestLogger();
         $tracer = new RunTracer($traceLogger);
 
-        $worker = new ExecuteLlmStepWorker($platform, $commandBus, tracer: $tracer);
+        $worker = new ExecuteLlmStepWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), $platform, tracer: $tracer);
 
-        $worker(new ExecuteLlmStep(
+        $result = $worker(new ExecuteLlmStep(
             runId: 'run-worker-obs-1',
             turnNo: 2,
             stepId: 'turn-2-llm-1',
@@ -155,10 +138,9 @@ final class ExecutionWorkerTest extends TestCase
             }
         };
 
-        $commandBus = new TestMessageBus();
-        $worker = new ExecuteToolCallWorker($toolExecutor, $commandBus, new InMemoryDeferredToolCompletionRepository(), new ToolExecutionResultStore(), new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader());
+        $worker = new ExecuteToolCallWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), new TestLogger(), $toolExecutor, new InMemoryDeferredToolCompletionRepository(), new ToolExecutionResultStore(), new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader());
 
-        $worker(new ExecuteToolCall(
+        $result = $worker(new ExecuteToolCall(
             runId: 'run-worker-2',
             turnNo: 2,
             stepId: 'turn-2-tools-1',
@@ -171,18 +153,12 @@ final class ExecutionWorkerTest extends TestCase
             toolIdempotencyKey: 'tool-invocation-1',
         ));
 
-        $this->assertCount(1, $commandBus->messages);
-        $this->assertInstanceOf(ToolCallResult::class, $commandBus->messages[0]);
-
-        /** @var ToolCallResult $result */
-        $result = $commandBus->messages[0];
-
         $this->assertSame('call-1', $result->toolCallId);
         $this->assertFalse($result->isError);
         $this->assertSame('web_search', $result->result['tool_name']);
     }
 
-    public function testToolWorkerReleasesCompletedResultAfterSuccessfulDispatch(): void
+    public function testToolWorkerReleasesCompletedResultAfterSuccessfulReturn(): void
     {
         $store = new ToolExecutionResultStore();
         $stored = new ToolResult(
@@ -194,15 +170,14 @@ final class ExecutionWorkerTest extends TestCase
         );
         $store->remember('run-release-1', 'call-release-1', 'web_search', 'tool-release-1', $stored);
 
-        $worker = new ExecuteToolCallWorker(
+        $worker = new ExecuteToolCallWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), new TestLogger(),
             new FakeToolExecutor(),
-            new TestMessageBus(),
             new InMemoryDeferredToolCompletionRepository(),
             $store,
             new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
         );
 
-        $worker(new ExecuteToolCall(
+        $result = $worker(new ExecuteToolCall(
             runId: 'run-release-1',
             turnNo: 1,
             stepId: 'turn-1-tools-1',
@@ -217,53 +192,6 @@ final class ExecutionWorkerTest extends TestCase
 
         $this->assertNull($store->findByRunToolCall('run-release-1', 'call-release-1'));
         $this->assertNull($store->findByToolAndIdempotencyKey('web_search', 'tool-release-1'));
-    }
-
-    public function testToolWorkerRetainsCompletedResultWhenDispatchFails(): void
-    {
-        $store = new ToolExecutionResultStore();
-        $stored = new ToolResult(
-            toolCallId: 'call-retain-1',
-            toolName: 'web_search',
-            content: [['type' => 'text', 'text' => 'stored']],
-            details: [],
-            isError: false,
-        );
-        $store->remember('run-retain-1', 'call-retain-1', 'web_search', 'tool-retain-1', $stored);
-
-        $worker = new ExecuteToolCallWorker(
-            new FakeToolExecutor(),
-            new class implements \Symfony\Component\Messenger\MessageBusInterface {
-                public function dispatch(object $message, array $stamps = []): \Symfony\Component\Messenger\Envelope
-                {
-                    throw new \Symfony\Component\Messenger\Exception\TransportException('dispatch failed');
-                }
-            },
-            new InMemoryDeferredToolCompletionRepository(),
-            $store,
-            new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
-        );
-
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('Failed to dispatch tool result to command bus.');
-
-        try {
-            $worker(new ExecuteToolCall(
-                runId: 'run-retain-1',
-                turnNo: 1,
-                stepId: 'turn-1-tools-1',
-                attempt: 1,
-                idempotencyKey: 'tool-retain-1',
-                toolCallId: 'call-retain-1',
-                toolName: 'web_search',
-                args: [],
-                orderIndex: 0,
-                toolIdempotencyKey: 'tool-retain-1',
-            ));
-        } finally {
-            $this->assertSame($stored, $store->findByRunToolCall('run-retain-1', 'call-retain-1'));
-            $this->assertSame($stored, $store->findByToolAndIdempotencyKey('web_search', 'tool-retain-1'));
-        }
     }
 
     public function testToolWorkerReleasesDeferredMarkerAfterDurableRegistration(): void
@@ -288,9 +216,8 @@ final class ExecutionWorkerTest extends TestCase
             }
         };
 
-        $worker = new ExecuteToolCallWorker(
+        $worker = new ExecuteToolCallWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), new TestLogger(),
             $executor,
-            new TestMessageBus(),
             new InMemoryDeferredToolCompletionRepository(),
             $store,
             new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
@@ -331,11 +258,10 @@ final class ExecutionWorkerTest extends TestCase
             }
         };
 
-        $commandBus = new TestMessageBus();
         $testLogger = new TestLogger();
 
         // Non-null logger passed so the worker logs (bypasses NullLogger default).
-        $worker = new ExecuteLlmStepWorker($platform, $commandBus, logger: $testLogger);
+        $worker = new ExecuteLlmStepWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), $platform, logger: $testLogger);
 
         $worker(new ExecuteLlmStep(
             runId: 'run-empty-metrics-1',
@@ -389,10 +315,9 @@ final class ExecutionWorkerTest extends TestCase
             }
         };
 
-        $commandBus = new TestMessageBus();
-        $worker = new ExecuteLlmStepWorker($platform, $commandBus);
+        $worker = new ExecuteLlmStepWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), $platform);
 
-        $worker(new ExecuteLlmStep(
+        $result = $worker(new ExecuteLlmStep(
             runId: 'run-empty-1',
             turnNo: 3,
             stepId: 'turn-3-llm-1',
@@ -400,12 +325,6 @@ final class ExecutionWorkerTest extends TestCase
             idempotencyKey: 'llm-empty-1',
             toolsRef: 'toolset:run:run-empty-1:turn:3',
         ));
-
-        $this->assertCount(1, $commandBus->messages);
-        $this->assertInstanceOf(LlmStepResult::class, $commandBus->messages[0]);
-
-        /** @var LlmStepResult $result */
-        $result = $commandBus->messages[0];
 
         $this->assertSame('run-empty-1', $result->runId());
         $this->assertNull($result->assistantMessage, 'Empty platform response must not produce a fake assistant message');
@@ -436,10 +355,9 @@ final class ExecutionWorkerTest extends TestCase
             }
         };
 
-        $commandBus = new TestMessageBus();
-        $worker = new ExecuteLlmStepWorker($platform, $commandBus);
+        $worker = new ExecuteLlmStepWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), $platform);
 
-        $worker(new ExecuteLlmStep(
+        $result = $worker(new ExecuteLlmStep(
             runId: 'run-finish-only-1',
             turnNo: 1,
             stepId: 'turn-1-llm-1',
@@ -447,9 +365,6 @@ final class ExecutionWorkerTest extends TestCase
             idempotencyKey: 'llm-finish-only-1',
             toolsRef: 'toolset:run:run-finish-only-1:turn:1',
         ));
-
-        $this->assertCount(1, $commandBus->messages);
-        $result = $commandBus->messages[0];
         $this->assertInstanceOf(LlmStepResult::class, $result);
         $this->assertNull($result->assistantMessage);
         $this->assertNotNull($result->error);

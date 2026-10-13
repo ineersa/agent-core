@@ -9,7 +9,6 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\Picker\PickerOverlay;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Tests\Support\ResumeCanonicalEventsFixture;
-use Ineersa\Tui\Tests\Support\ResumeSessionInitializerTestFactory;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -34,26 +33,17 @@ final class TuiResumeSessionVirtualTest extends TestCase
     }
 
     #[Test]
-    public function testSessionInitializerReconstructsCanonicalBlocksOnVirtualScreen(): void
+    public function testResumeShowsRestoringNoticeInsteadOfReconstructingTheArchive(): void
     {
-        [$initializer, $eventApplier] = ResumeSessionInitializerTestFactory::createWithApplier($this->createStub(EntityManagerInterface::class), $this->projectDir);
+        $store = new \Ineersa\CodingAgent\Session\HatfieldSessionStore(new \Ineersa\CodingAgent\Config\AppConfig(new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'), new \Ineersa\CodingAgent\Config\LoggingConfig(), cwd: $this->projectDir),
+            $this->createStub(EntityManagerInterface::class), new \Symfony\Component\EventDispatcher\EventDispatcher());
+        $initializer = new \Ineersa\Tui\Application\SessionInitializer($store, new \Ineersa\Tui\Transcript\TranscriptBlockFactory());
         $state = new TuiSessionState(self::SESSION_ID, true);
-        $blocks = $initializer->buildInitialTranscript($state, $eventApplier);
-
         $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
-        $harness->screen()->setTranscriptBlocks($blocks);
-
-        $screen = $harness->plainScreenText();
-
-        $this->assertStringContainsString('Let me think about this request carefully.', $screen);
-        $this->assertStringContainsString('Here is the answer you requested.', $screen);
-        $this->assertStringContainsString('read', $screen);
-        $this->assertStringContainsString('/tmp/example.txt', $screen);
-        $this->assertStringNotContainsString('FILE CONTENTS HERE', $screen);
-        $this->assertStringContainsString('turn cancelled', $screen);
-        $this->assertStringNotContainsString('● Running…', $screen);
-        $this->assertStringNotContainsString('[2J', $screen);
-        $this->assertStringNotContainsString('[3J', $screen);
+        $harness->screen()->setTranscriptBlocks($initializer->buildInitialTranscript($state));
+        $this->assertStringContainsString('Restoring session...', $harness->plainScreenText());
+        $this->assertFalse($state->sessionReady);
+        $this->assertSame(0, $state->lastSeq);
     }
 
     #[Test]

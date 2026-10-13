@@ -49,8 +49,22 @@ final class CancelListener implements TuiListenerRegistrar
         $boundary = $this->boundary;
         $questionController = $services->questionController;
         $questionCoordinator = $services->questionCoordinator;
+        $parentEventApplier = $services->parentEventApplier;
 
-        $context->tui->addListener(static function (CancelEvent $event) use ($client, $state, $screen, $logger, $boundary, $questionController, $questionCoordinator): void {
+        $context->tui->addListener(static function (CancelEvent $event) use ($client, $state, $screen, $logger, $boundary, $questionController, $questionCoordinator, $parentEventApplier): void {
+            if (!$state->sessionReady && null !== $state->handle) {
+                $parentEventApplier->releaseBootstrap();
+                try {
+                    $client->cancelBootstrap($state->handle->runId);
+                } catch (\Throwable $exception) {
+                    $logger->warning('tui.bootstrap.cancel_failed', ['run_id' => $state->handle->runId, 'session_id' => $state->sessionId,
+                        'component' => 'tui', 'event_type' => 'tui.bootstrap.cancel_failed', 'exception_class' => $exception::class]);
+                }
+                $state->bootstrapError = 'Not attached. Reload to restore this session.';
+                $screen->setWorkingMessage($state->bootstrapError);
+
+                return;
+            }
             // Free-form typing (__other__ escape hatch): ESC returns to the
             // select list instead of cancelling the run. The user can then ESC
             // again from the list to cancel the question (→ 'Cancelled by user').

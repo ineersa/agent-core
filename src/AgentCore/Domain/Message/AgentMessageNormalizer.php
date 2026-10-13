@@ -265,22 +265,32 @@ final readonly class AgentMessageNormalizer
     }
 
     /**
-     * @return list<array{type: 'text', text: string}|array{type: 'thinking', text: string, thinking_signature?: string|null}>
+     * @return list<array<string, mixed>>
      */
     private function orderedAssistantContent(AssistantMessage $assistantMessage): array
     {
         $content = [];
+        $toolIndex = 0;
 
         foreach ($assistantMessage->getContent() as $part) {
+            if ($part instanceof ToolCall) {
+                // IDs and executable arguments remain in tool_calls; this slot records order.
+                $content[] = ['type' => 'tool_call', 'tool_call_index' => $toolIndex++];
+                continue;
+            }
             if ($part instanceof Text) {
                 $text = $part->getText();
-                if ('' === $text) {
+                if ('' === $text && null === $part->getSignature()) {
                     continue;
                 }
-                $content[] = [
+                $entry = [
                     'type' => 'text',
                     'text' => $text,
                 ];
+                if (null !== $part->getSignature()) {
+                    $entry['text_signature'] = $part->getSignature();
+                }
+                $content[] = $entry;
                 continue;
             }
 

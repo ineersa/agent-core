@@ -61,6 +61,14 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
                 throw new \RuntimeException('Not expected in test');
             }
 
+            public function acknowledgeBootstrap(array $cut): void
+            {
+            }
+
+            public function cancelBootstrap(string $runId): void
+            {
+            }
+
             public function attach(string $runId): \Ineersa\CodingAgent\Runtime\Contract\RunHandle
             {
                 throw new \RuntimeException('Not expected in test');

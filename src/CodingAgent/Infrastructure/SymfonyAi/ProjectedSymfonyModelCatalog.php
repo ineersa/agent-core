@@ -17,7 +17,7 @@ use Symfony\AI\Platform\ModelCatalog\AbstractModelCatalog;
  * (default: {@see CompletionsModel}) with capabilities derived from
  * Hatfield's rich model definitions.  The model class can be
  * overridden via the constructor for provider-specific bridges
- * (e.g. {@see CodexModel} for the OpenAI Codex bridge).
+ * (e.g. {@see ResponsesModel} for the ChatGPT bridge).
  *
  * Unknown models are not supported — only explicitly listed models
  * are registered.

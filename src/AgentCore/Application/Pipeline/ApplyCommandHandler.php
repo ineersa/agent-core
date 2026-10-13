@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Pipeline;
 
-use Ineersa\AgentCore\Application\Handler\AdvanceRunCallbackFactory;
+use Ineersa\AgentCore\Application\Handler\AdvanceRunCoordinationFactory;
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
+use Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO;
+use Ineersa\AgentCore\Domain\Coordination\MarkCommandAppliedDTO;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\CommandCancellationOptions;
@@ -27,8 +29,6 @@ use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
 use Psr\Log\LoggerInterface;
-use Symfony\Component\Messenger\Exception\ExceptionInterface;
-use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
@@ -49,7 +49,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         private EventFactory $eventFactory,
         private AgentMessageNormalizer $messageNormalizer,
         private int $maxPendingCommands = 100,
-        private ?MessageBusInterface $commandBus = null,
         private ?ToolBatchCollector $toolBatchCollector = null,
         private ?LoggerInterface $logger = null,
         private (NormalizerInterface&DenormalizerInterface)|null $serializer = null,
@@ -62,6 +61,11 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
     }
 
     public function handle(object $message, RunState $state): HandlerResult
+    {
+        return \Ineersa\AgentCore\Application\Handler\CommandMailboxCoordinationFactory::finalize($this->prepare($message, $state));
+    }
+
+    private function prepare(object $message, RunState $state): HandlerResult
     {
         if (!$message instanceof ApplyCommand) {
             throw new \InvalidArgumentException('ApplyCommandHandler can only handle ApplyCommand messages.');
@@ -144,10 +148,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             ),
         );
 
-        if (!$this->commandStore->enqueue($pendingCommand)) {
-            return new HandlerResult();
-        }
-
         $nextState = $state->with([
             'version' => $state->version + 1,
             'lastSeq' => $state->lastSeq + 1,
@@ -179,28 +179,25 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         // dispatch AdvanceRun while the prompt tail contains unresolved
         // assistant tool_calls, causing the provider to reject the run
         // with "insufficient tool messages following tool_calls message".
-        $postCommit = [];
+        $postCommitActions = [new \Ineersa\AgentCore\Domain\Coordination\EnqueueCommandDTO($pendingCommand)];
         // Active runs (Running, Cancelling, or Compacting) queue the command
         // for the next safe boundary.  Non-active runs apply immediately.
         $isActive = \in_array($state->status, [RunStatus::Running, RunStatus::Cancelling, RunStatus::Compacting], true);
         if (!$isActive && \in_array($message->kind, [CoreCommandKind::Steer, CoreCommandKind::FollowUp, CoreCommandKind::AppendMessage], true)) {
-            $followUpAdvance = $this->followUpAdvanceCallback($runId, $state->turnNo, $message->kind);
-            if (null !== $followUpAdvance) {
-                $postCommit[] = $followUpAdvance;
-            }
+            $followUpAdvance = $this->followUpAdvanceAction($runId, $state->turnNo, $message->kind);
+            $postCommitActions[] = $followUpAdvance;
         }
 
         return new HandlerResult(
             nextState: $nextState,
             events: [$queuedEvent],
-            postCommit: $postCommit,
+            postCommitActions: $postCommitActions,
         );
     }
 
     private function rejectCommand(RunState $state, ApplyCommand $message, string $reason): HandlerResult
     {
         $runId = $message->runId();
-        $this->commandStore->markRejected($runId, $message->idempotencyKey(), $reason);
 
         $nextState = $state->with([
             'version' => $state->version + 1,
@@ -233,8 +230,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             ? $message->payload['reason']
             : 'Run cancelled by command.';
 
-        $this->commandStore->markApplied($runId, $message->idempotencyKey());
-
         // Reject stale queued user-input commands after cancel (#152).
         // AppendMessage stays pending in the mailbox for post-cancel AdvanceRun drain.
         $rejectedCommands = [];
@@ -252,7 +247,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 continue;
             }
 
-            $this->commandStore->markRejected($runId, $pendingCommand->idempotencyKey, $cancelRejectReason);
             $rejectedCommands[] = $pendingCommand;
         }
 
@@ -281,14 +275,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         // Repeated cancel during Cancelling should not be rejected.
         if (RunStatus::Cancelling === $state->status) {
             if (!self::hasActiveCancellationWork($state)) {
-                $terminalSpecs = [[
-                    'type' => RunEventTypeEnum::AgentCommandApplied->value,
-                    'payload' => [
-                        'kind' => $message->kind,
-                        'idempotency_key' => $message->idempotencyKey(),
-                        'options' => [],
-                    ],
-                ], [
+                $terminalSpecs = [...$eventSpecs, [
                     'type' => RunEventTypeEnum::AgentEnd->value,
                     'payload' => [
                         'reason' => 'cancelled',
@@ -296,12 +283,10 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 ]];
                 $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $terminalSpecs);
 
-                $postCommit = [];
+                $postCommitActions = [];
                 if ($hasPendingAppendMessage) {
-                    $followUpAdvance = $this->followUpAdvanceCallback($runId, $state->turnNo, 'post-cancel-advance');
-                    if (null !== $followUpAdvance) {
-                        $postCommit[] = $followUpAdvance;
-                    }
+                    $followUpAdvance = $this->followUpAdvanceAction($runId, $state->turnNo, 'post-cancel-advance');
+                    $postCommitActions[] = $followUpAdvance;
                 }
 
                 return new HandlerResult(
@@ -319,18 +304,11 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                         'currentOperation' => null,
                     ]),
                     events: $events,
-                    postCommit: $postCommit,
+                    postCommitActions: $postCommitActions,
                 );
             }
 
-            $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, [[
-                'type' => RunEventTypeEnum::AgentCommandApplied->value,
-                'payload' => [
-                    'kind' => $message->kind,
-                    'idempotency_key' => $message->idempotencyKey(),
-                    'options' => [],
-                ],
-            ]]);
+            $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
 
             $noopState = $state->with([
                 'version' => $state->version + 1,
@@ -373,18 +351,16 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 'currentOperation' => null,
             ]);
 
-            $postCommit = [];
+            $postCommitActions = [];
             if ($hasPendingAppendMessage) {
-                $followUpAdvance = $this->followUpAdvanceCallback($runId, $state->turnNo, 'post-cancel-advance');
-                if (null !== $followUpAdvance) {
-                    $postCommit[] = $followUpAdvance;
-                }
+                $followUpAdvance = $this->followUpAdvanceAction($runId, $state->turnNo, 'post-cancel-advance');
+                $postCommitActions[] = $followUpAdvance;
             }
 
             return new HandlerResult(
                 nextState: $nextState,
                 events: $events,
-                postCommit: $postCommit,
+                postCommitActions: $postCommitActions,
             );
         }
 
@@ -467,10 +443,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             ),
         );
 
-        if (!$this->commandStore->enqueue($pendingCommand)) {
-            return new HandlerResult();
-        }
-
         $nextState = $state->with([
             'version' => $state->version + 1,
             'lastSeq' => $state->lastSeq + 1,
@@ -492,6 +464,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         return new HandlerResult(
             nextState: $nextState,
             events: [$queuedEvent],
+            postCommitActions: [new \Ineersa\AgentCore\Domain\Coordination\EnqueueCommandDTO($pendingCommand)],
         );
     }
 
@@ -590,7 +563,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         }
 
         $runId = $message->runId();
-        $this->commandStore->markApplied($runId, $message->idempotencyKey());
 
         $messages = $state->messages;
         $messages[] = $humanResponseMessage;
@@ -623,19 +595,17 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             ],
         );
 
-        $postCommit = [];
+        $postCommitActions = [];
         // Model-turn answers schedule AdvanceRun only when no further human requests remain.
         if ([] === $remainingRequests) {
-            $followUpAdvance = $this->followUpAdvanceCallback($runId, $state->turnNo, 'human-response');
-            if (null !== $followUpAdvance) {
-                $postCommit[] = $followUpAdvance;
-            }
+            $followUpAdvance = $this->followUpAdvanceAction($runId, $state->turnNo, 'human-response');
+            $postCommitActions[] = $followUpAdvance;
         }
 
         return new HandlerResult(
             nextState: $nextState,
             events: [$event],
-            postCommit: $postCommit,
+            postCommitActions: $postCommitActions,
         );
     }
 
@@ -686,7 +656,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         );
 
         try {
-            $effects = $this->toolBatchCollector->resumeHumanInputAnswer(
+            $prepared = $this->toolBatchCollector->prepareHumanInputAnswer(
                 $message->runId(),
                 $turnNo,
                 $stepId,
@@ -736,16 +706,14 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             ],
         );
 
-        // markApplied only after postCommitEffects succeed so Messenger redelivery can
-        // redrive the exact ExecuteToolCall from durable batch answer metadata.
+        // Mailbox acceptance and the exact resumed effect share the pending plan.
+        // A dispatch failure recovers that plan, not another command preparation.
         return new HandlerResult(
             nextState: $nextState,
             events: [$event],
-            postCommitEffects: $effects,
-            postCommit: [
-                function () use ($runId, $message): void {
-                    $this->commandStore->markApplied($runId, $message->idempotencyKey());
-                },
+            postCommitEffects: $prepared->effects,
+            postCommitActions: [...(null !== $prepared->action ? [$prepared->action] : []),
+                new MarkCommandAppliedDTO($runId, $message->idempotencyKey()),
             ],
         );
     }
@@ -770,7 +738,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         }
 
         try {
-            $effects = $this->toolBatchCollector->redriveHumanInputAnswer(
+            $prepared = $this->toolBatchCollector->prepareHumanInputRedrive(
                 $message->runId(),
                 $turnNo,
                 $stepId,
@@ -786,11 +754,9 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         return new HandlerResult(
             nextState: null,
             events: [],
-            postCommitEffects: $effects,
-            postCommit: [
-                function () use ($runId, $message): void {
-                    $this->commandStore->markApplied($runId, $message->idempotencyKey());
-                },
+            postCommitEffects: $prepared->effects,
+            postCommitActions: [...(null !== $prepared->action ? [$prepared->action] : []),
+                new MarkCommandAppliedDTO($runId, $message->idempotencyKey()),
             ],
         );
     }
@@ -859,7 +825,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
      *
      * Non-active state (Completed / Failed / Cancelled / WaitingHuman /
      * Queued): mark applied immediately and dispatch CompactRun via
-     * post-commit callback.  No enqueue so the command cannot be
+     * post-commit coordination action.  No enqueue so the command cannot be
      * drained again on a future mailbox cycle — mirroring
      * applyHumanResponseCommand.
      */
@@ -870,7 +836,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
 
         if (!$isActive) {
             // Terminal/safe boundary: apply immediately.
-            $this->commandStore->markApplied($runId, $message->idempotencyKey());
 
             $nextState = $state->with([
                 'version' => $state->version + 1,
@@ -889,16 +854,14 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 ],
             );
 
-            $postCommit = [];
-            $compactCallback = $this->compactCallback($runId, $state->turnNo, $message->payload['custom_instructions'] ?? null);
-            if (null !== $compactCallback) {
-                $postCommit[] = $compactCallback;
-            }
+            $postCommitActions = [];
+            $compactAction = $this->compactAction($runId, $state->turnNo, $message->payload['custom_instructions'] ?? null);
+            $postCommitActions[] = $compactAction;
 
             return new HandlerResult(
                 nextState: $nextState,
                 events: [$appliedEvent],
-                postCommit: $postCommit,
+                postCommitActions: $postCommitActions,
             );
         }
 
@@ -909,10 +872,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             idempotencyKey: $message->idempotencyKey(),
             payload: $message->payload,
         );
-
-        if (!$this->commandStore->enqueue($pendingCommand)) {
-            return new HandlerResult();
-        }
 
         $nextState = $state->with([
             'version' => $state->version + 1,
@@ -934,6 +893,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         return new HandlerResult(
             nextState: $nextState,
             events: [$queuedEvent],
+            postCommitActions: [new \Ineersa\AgentCore\Domain\Coordination\EnqueueCommandDTO($pendingCommand)],
         );
     }
 
@@ -1078,18 +1038,23 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             'currentOperation' => null,
         ]);
 
-        $postCommit = [];
+        if (null === $this->toolBatchCollector) {
+            throw new \LogicException('Cancel of deferred tool-call human waits requires ToolBatchCollector to finalize scheduling.');
+        }
+        $postCommitActions = [];
+        $cancelFinalization = $this->toolBatchCollector->prepareCancelFinalization($runId, $state->turnNo, $state->activeStepId ?? $syntheticStepId);
+        if (null !== $cancelFinalization) {
+            $postCommitActions[] = $cancelFinalization;
+        }
         if ($hasPendingAppendMessage) {
-            $followUpAdvance = $this->followUpAdvanceCallback($runId, $state->turnNo, 'post-cancel-advance');
-            if (null !== $followUpAdvance) {
-                $postCommit[] = $followUpAdvance;
-            }
+            $followUpAdvance = $this->followUpAdvanceAction($runId, $state->turnNo, 'post-cancel-advance');
+            $postCommitActions[] = $followUpAdvance;
         }
 
         return new HandlerResult(
             nextState: $nextState,
             events: $events,
-            postCommit: $postCommit,
+            postCommitActions: $postCommitActions,
         );
     }
 
@@ -1179,37 +1144,23 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         ]);
     }
 
-    private function followUpAdvanceCallback(string $runId, int $turnNo, string $prefix): ?callable
+    private function followUpAdvanceAction(string $runId, int $turnNo, string $prefix): DispatchCoordinationMessageDTO
     {
-        if (null === $this->commandBus) {
-            return null;
-        }
-
-        return AdvanceRunCallbackFactory::create($this->commandBus, $runId, $turnNo, $prefix, 'Failed to dispatch follow-up AdvanceRun command.');
+        return AdvanceRunCoordinationFactory::create($runId, $turnNo, $prefix);
     }
 
-    private function compactCallback(string $runId, int $turnNo, ?string $customInstructions = null): ?callable
+    private function compactAction(string $runId, int $turnNo, ?string $customInstructions = null): DispatchCoordinationMessageDTO
     {
-        if (null === $this->commandBus) {
-            return null;
-        }
+        $stepId = \sprintf('compact-%d', hrtime(true));
 
-        return function () use ($runId, $turnNo, $customInstructions): void {
-            $stepId = \sprintf('compact-%d', hrtime(true));
-
-            try {
-                $this->commandBus->dispatch(new CompactRun(
-                    runId: $runId,
-                    turnNo: $turnNo,
-                    stepId: $stepId,
-                    attempt: 1,
-                    idempotencyKey: hash('sha256', \sprintf('%s|%s', $runId, $stepId)),
-                    trigger: 'manual',
-                    customInstructions: $customInstructions,
-                ));
-            } catch (ExceptionInterface $exception) {
-                throw new \RuntimeException('Failed to dispatch CompactRun command.', previous: $exception);
-            }
-        };
+        return new DispatchCoordinationMessageDTO(new CompactRun(
+            runId: $runId,
+            turnNo: $turnNo,
+            stepId: $stepId,
+            attempt: 1,
+            idempotencyKey: hash('sha256', \sprintf('%s|%s', $runId, $stepId)),
+            trigger: 'manual',
+            customInstructions: $customInstructions,
+        ));
     }
 }

@@ -11,9 +11,11 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionCatalogRecoveryService;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\Tui\Application\SessionInitializer;
 use Ineersa\Tui\Tests\Support\ResumeCanonicalEventsFixture;
+use Symfony\Component\Process\Process;
 use Symfony\Component\Uid\Uuid;
 use Symfony\Component\Uid\UuidV7;
 
@@ -109,25 +111,16 @@ final class SessionCatalogRecoveryServiceTest extends IsolatedKernelTestCase
 
         $this->assertSame($originalBytes, file_get_contents($eventsPath), 'recovery must not rewrite events.jsonl');
 
-        // Existing SessionInitializer replay remains usable after catalog recovery.
-        // The session-scoped parent applier is composed per session; the test
-        // builds one over a stub projector (blocks come from the provider).
+        // Catalog recovery admits resume, not a second synchronous archive replay.
         /** @var SessionInitializer $initializer */
         $initializer = self::getContainer()->get(SessionInitializer::class);
-        $eventApplier = new \Ineersa\Tui\Runtime\TuiRuntimeEventApplier(
-            $this->createStub(\Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface::class),
-            $this->createStub(\Symfony\Component\Serializer\Normalizer\DenormalizerInterface::class),
-        );
         $state = $initializer->initialize($sessionId);
         $this->assertTrue($state->resuming);
         $this->assertSame($sessionId, $state->sessionId);
-        $blocks = $initializer->buildInitialTranscript($state, $eventApplier);
-        $this->assertNotEmpty($blocks);
-        $joined = '';
-        foreach ($blocks as $block) {
-            $joined .= ($block->text ?? '').' ';
-        }
-        $this->assertStringContainsString('Here is the answer you requested.', $joined);
+        $blocks = $initializer->buildInitialTranscript($state);
+        $this->assertFalse($state->sessionReady);
+        $this->assertCount(1, $blocks);
+        $this->assertSame('Restoring session...', $blocks[0]->text);
 
         // Subsequent create allocates a different id and leaves recovered bytes alone.
         $newId = $this->sessionStore->createSession('fresh after recovery');
@@ -148,7 +141,9 @@ final class SessionCatalogRecoveryServiceTest extends IsolatedKernelTestCase
         // Non-canonical / malformed neighbors must not block recovery or steal IDs.
         $malformedDir = $projectDir.'/.hatfield/sessions/88';
         mkdir($malformedDir, 0777, true);
-        file_put_contents($malformedDir.'/events.jsonl', "{not-json\n");
+        file_put_contents($malformedDir.'/events.jsonl',
+            $this->minimalRunStartedJsonl('88', 'private orphan prompt')."{not-json\n",
+        );
 
         $nonNumeric = $projectDir.'/.hatfield/sessions/not-a-number';
         mkdir($nonNumeric, 0777, true);
@@ -210,6 +205,32 @@ final class SessionCatalogRecoveryServiceTest extends IsolatedKernelTestCase
         $this->assertFileExists($leadingZeroDir.'/events.jsonl');
         $this->assertFileExists($overflowDir.'/events.jsonl');
 
+        $this->assertLogsArePrivacySafe();
+    }
+
+    public function testIncompatibleSchemaCannotSupplyCatalogMetadata(): void
+    {
+        $directory = $this->isolatedCwd().'/.hatfield/sessions/56';
+        mkdir($directory, 0777, true);
+        $start = json_decode($this->minimalRunStartedJsonl('56', 'current prompt'), true, 512, \JSON_THROW_ON_ERROR);
+        $start['ts'] = '2026-01-02T00:00:00+00:00';
+        $incompatible = $start;
+        $incompatible['schema_version'] = '999.0';
+        $incompatible['seq'] = 9;
+        $incompatible['ts'] = '2030-01-01T00:00:00+00:00';
+        $incompatible['payload']['payload']['messages'][0]['content'][0]['text'] = 'incompatible private prompt';
+        $path = $directory.'/events.jsonl';
+        $bytes = json_encode($start, \JSON_THROW_ON_ERROR)."\n".json_encode($incompatible, \JSON_THROW_ON_ERROR)."\n";
+        file_put_contents($path, $bytes);
+
+        ($this->recovery)();
+        $this->em->clear();
+        $session = $this->sessionStore->findSession('56');
+        $this->assertNotNull($session);
+        $this->assertSame('current prompt', $session->prompt);
+        $this->assertSame('2026-01-02 00:00:00', $session->createdAt->format('Y-m-d H:i:s'));
+        $this->assertSame('2026-01-02 00:00:00', $session->updatedAt->format('Y-m-d H:i:s'));
+        $this->assertSame($bytes, file_get_contents($path));
         $this->assertLogsArePrivacySafe();
     }
 
@@ -307,6 +328,40 @@ final class SessionCatalogRecoveryServiceTest extends IsolatedKernelTestCase
         $this->assertSame('low', $session->reasoning);
     }
 
+    public function testColdCatalogMemoryPlateausInIndependent128MProcesses(): void
+    {
+        $directory = TestDirectoryIsolation::createProjectTempDir('catalog-recovery-memory');
+        try {
+            $measurements = [];
+            foreach ([1000, 16000] as $count) {
+                $process = new Process([\PHP_BINARY, '-d', 'memory_limit=128M', __DIR__.'/Fixtures/catalog-recovery-memory.php', $directory, (string) $count], \dirname(__DIR__, 3), ['HATFIELD_SESSION_ID' => false], timeout: 8);
+                $process->mustRun();
+                $measurements[] = json_decode($process->getOutput(), true, 512, \JSON_THROW_ON_ERROR);
+            }
+            [$small, $large] = $measurements;
+            $this->assertGreaterThan($small['archive_bytes'] * 15, $large['archive_bytes']);
+            $this->assertLessThan(128 * 1024 * 1024, $large['peak_bytes']);
+            $this->assertLessThanOrEqual($small['peak_bytes'] + 4 * 1024 * 1024, $large['peak_bytes']);
+            foreach ($measurements as $measurement) {
+                $this->assertSame($measurement['source_hash'], $measurement['recovered_hash']);
+                $this->assertSame($measurement['archive_bytes'], $measurement['recovered_bytes']);
+                $this->assertSame('Fixed catalog prompt', $measurement['prompt']);
+                $this->assertSame('Fixed catalog prompt', $measurement['name']);
+                $this->assertSame('openai/gpt-test', $measurement['model']);
+                $this->assertSame('medium', $measurement['reasoning']);
+                $this->assertSame('12', $measurement['parent_id']);
+                $this->assertSame('2026-01-01 00:00:00', $measurement['created_at']);
+                $this->assertSame('2026-01-03 00:00:00', $measurement['updated_at']);
+                $this->assertTrue($measurement['fresh_orphan']);
+                $this->assertTrue($measurement['provider_uuid_v7']);
+                $this->assertSame($measurement['provider_cache_key'], $measurement['repeated_provider_cache_key']);
+            }
+            fwrite(\STDERR, 'catalog-recovery memory: '.json_encode($measurements, \JSON_THROW_ON_ERROR)."\n");
+        } finally {
+            TestDirectoryIsolation::removeDirectory($directory);
+        }
+    }
+
     private function minimalRunStartedJsonl(string $runId, string $prompt): string
     {
         $now = (new \DateTimeImmutable())->format(\DATE_ATOM);
@@ -372,6 +427,8 @@ final class SessionCatalogRecoveryServiceTest extends IsolatedKernelTestCase
             $this->assertStringNotContainsString('FILE CONTENTS HERE', $encoded);
             $this->assertStringNotContainsString('{not-json', $encoded);
             $this->assertStringNotContainsString('child task', $encoded);
+            $this->assertStringNotContainsString('private orphan prompt', $encoded);
+            $this->assertStringNotContainsString('incompatible private prompt', $encoded);
         }
     }
 }

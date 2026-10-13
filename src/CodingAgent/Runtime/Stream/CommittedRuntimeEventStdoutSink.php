@@ -21,12 +21,19 @@ final class CommittedRuntimeEventStdoutSink implements RuntimeEventSinkInterface
     public function __construct(
         private readonly LoggerInterface $logger,
         private readonly StdoutRuntimeEventSink $stdoutSink,
+        private readonly \Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapEmissionGate $bootstrapGate,
     ) {
     }
 
     public function emit(RuntimeEvent $event): void
     {
         try {
+            // The owner still publishes the full event locally to its temporary
+            // projector. A stalled screen receives only a durable marker here.
+            if ($event->seq > 0 && $this->bootstrapGate->holds($event->runId)) {
+                $event = new RuntimeEvent(\Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum::CanonicalHighWater->value,
+                    $event->runId, 0, ['canonical_seq' => $event->seq]);
+            }
             $result = $this->stdoutSink->write($event);
         } catch (\Throwable $e) {
             $this->logWriteFailure($event, $e->getMessage(), $e::class);

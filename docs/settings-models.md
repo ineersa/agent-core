@@ -29,7 +29,7 @@ Every selectable model must be listed under its provider. Unknown model names ar
 
 ## Provider entries (`ai.providers`)
 
-Each provider key names a configured provider, such as `deepseek`, `openai-codex`, or `llama-local`. Codex and Grok always load their respective default OAuth entry. Provider IDs do not select accounts.
+Each provider key names a configured provider, such as `deepseek`, `openai-codex`, or `llama-local`. ChatGPT and Grok each use one saved OAuth account. Provider IDs do not select accounts.
 
 For catalog providers, settings may stay sparse — scalars such as `enabled` / `api_key` /
 `base_url` override the catalog; an explicit `models:` map replaces the catalog models
@@ -49,7 +49,7 @@ Common fields:
 
 | Field | Meaning |
 |---|---|
-| `type` | Provider bridge type (for example `generic`, `codex`, `grok`) |
+| `type` | Provider bridge type (for example `generic`, `chatgpt`, `grok`) |
 | `enabled` | Whether the provider is active |
 | `base_url` | API base URL |
 | `api` | Wire API family (for example `openai-completions`) |
@@ -61,13 +61,10 @@ Common fields:
 
 OAuth providers:
 
-- `type: codex` stores tokens under `~/.hatfield/auth.json` key `openai-codex` via `bin/console auth:codex`.
+- `type: chatgpt` uses verified direct-token OAuth in `~/.hatfield/chatgpt-auth.json` via `bin/console auth:chatgpt login`. The bundled identifier remains `openai-codex` to preserve existing model references. Old Codex grants are not reused.
 - `type: grok` (Grok CLI / cli-chat-proxy) stores tokens under key `grok-cli` via `bin/console auth:grok`. Do not set `api_key`.
 
-For Codex, `ai.providers.openai-codex.transport` accepts `websocket` (built-in
-default), `websocket-cached`, or `sse`. This repository's `.hatfield/settings.yaml`
-opts in to `websocket-cached`; other projects keep the built-in default unless
-they override it.
+ChatGPT uses HTTP/SSE only at `https://api.openai.com/v1/responses` and sends full history on every request. There are no `transport` or WebSocket-cache settings. Remove old `type: codex` overrides; they are unsupported. The configured YAML model list is not proof of account entitlement. `/usage` shows the plan-management URL, not a numeric ChatGPT quota.
 
 Model metadata typically includes display `name`, `context_window`, `max_tokens`,
 `input` modalities, `tool_calling`, `reasoning`, optional `thinking_level_map`, and `cost`.
@@ -80,18 +77,7 @@ or provider compatibility rules. Unsupported levels are rejected or coerced per 
 
 `ai.default_reasoning` supplies the session default; TUI `/model` flows may persist sparse overrides.
 
-The model compatibility flag `supports_reasoning_configuration_updates`
-keeps the first request's reasoning effort fixed for the active session. Later
-requests insert the selected effort as a `configuration_update` before new input.
-This applies to plain WebSocket, cached WebSocket, and SSE. Resume or a model
-change starts a new baseline from the current selection. Explicit compaction
-overrides remain separate. The flag defaults to false and is enabled for the
-GPT-6 and GPT-6.1 Codex models (`gpt-6.1-sol`, `gpt-6-astra`, `gpt-6-sol`,
-and `gpt-6-luna`) in the bundled catalog. A settings-level `models` map replaces
-the catalog models, so definitions for these models must include the flag to
-enable it. For Codex models without the flag, a mid-session effort change
-starts a fresh cached WebSocket continuation instead of reusing the prior
-response.
+ChatGPT models with `supports_reasoning_configuration_updates: true` at both provider and model level retain their initial `reasoning.effort` and send ordered native `configuration_update` items before durable user/tool anchors. Normal resume retains that baseline. Rewritten history claims a new epoch; explicit summary and fork overrides use their own effort without parent controls. Other models send the selected effort directly. This is HTTP history shaping, not response-chain continuation. Live subscription-endpoint acceptance remains unverified.
 
 `gpt-6.1-sol` supports `low`, `medium`, `high`, `xhigh`, and `max` reasoning
 efforts. Selecting `off` or `minimal` sends no effort value; neither disables
@@ -99,7 +85,7 @@ reasoning.
 
 ## HTTP client (`ai.http`)
 
-Controls outbound LLM HTTP timeouts and the **application** retry budget for one platform invocation.
+Controls outbound LLM HTTP timeouts and the **application** retry budget for one platform invocation. ChatGPT generation overrides the shared defaults with 300 seconds idle and `max_duration: 0`; there is no hard total generation deadline. OAuth operations have separate bounded budgets. Known permanent ChatGPT subscription-limit errors are terminal and are not retried.
 
 | Key | Default | Meaning |
 |---|---|---|

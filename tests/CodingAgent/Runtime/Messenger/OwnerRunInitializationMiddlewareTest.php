@@ -14,6 +14,7 @@ use Ineersa\AgentCore\Domain\Message\StartRunPayload;
 use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
@@ -119,7 +120,7 @@ final class OwnerRunInitializationMiddlewareTest extends PerMethodIsolatedKernel
     public function testRecoveryOccursOnceUntilExplicitRelease(): void
     {
         $run = $this->reserve();
-        self::getContainer()->get(EventStoreInterface::class)->append(RunEvent::forAppend($run, 0, 'run_started', ['payload' => ['metadata' => ['model' => 'test-model']]]));
+        PreparedEventStoreSeeder::append(self::getContainer()->get(EventStoreInterface::class), RunEvent::forAppend($run, 0, 'run_started', ['payload' => ['metadata' => ['model' => 'test-model']]]));
         $this->consume($this->start($run));
         $first = $this->registry()->requireLoaded($run);
         $this->assertSame(1, $first->lastSeq);
@@ -136,7 +137,7 @@ final class OwnerRunInitializationMiddlewareTest extends PerMethodIsolatedKernel
         $run = $this->reserve();
         $this->registry()->createNew($run);
         $events = self::getContainer()->get(EventStoreInterface::class);
-        $events->append(RunEvent::forAppend($run, 0, 'run_started', ['payload' => ['metadata' => ['model' => 'test-model']], 'step_id' => 'start']));
+        PreparedEventStoreSeeder::append($events, RunEvent::forAppend($run, 0, 'run_started', ['payload' => ['metadata' => ['model' => 'test-model']], 'step_id' => 'start']));
         try {
             $this->registry()->replaceCurrent(new RunState($run, RunStatus::Running, lastSeq: 1, activeStepId: str_repeat('x', 256)));
             $this->fail('Projection validation must fail after the canonical append.');
@@ -159,14 +160,14 @@ final class OwnerRunInitializationMiddlewareTest extends PerMethodIsolatedKernel
     {
         $run = $this->reserve();
         $events = self::getContainer()->get(EventStoreInterface::class);
-        $events->append(RunEvent::forAppend($run, 0, 'run_started', ['payload' => ['metadata' => ['model' => 'test-model']]]));
+        PreparedEventStoreSeeder::append($events, RunEvent::forAppend($run, 0, 'run_started', ['payload' => ['metadata' => ['model' => 'test-model']]]));
         $replay = $this->createMock(\Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface::class);
         $replay->expects($this->once())->method('rebuildIfStale')->willReturn(\Ineersa\AgentCore\Application\Dto\RunStateReplayResult::noEvents());
         $middleware = new OwnerRunInitializationMiddleware($this->registry(), $events, $replay,
             self::getContainer()->get(HatfieldSessionStore::class),
             self::getContainer()->get(\Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory::class),
             self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class),
-            new \Psr\Log\NullLogger(), self::getContainer()->get(AgentArtifactRegistry::class));
+            new \Psr\Log\NullLogger(), self::getContainer()->get(AgentArtifactRegistry::class), self::getContainer()->get(\Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery::class));
         try {
             $middleware->handle(new Envelope($this->start($run), [new ReceivedStamp('run_control')]), new StackMiddleware());
             $this->fail('Empty recovery must not admit queued state.');

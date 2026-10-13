@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Runtime;
 
+use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\RuntimeTransportException;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotInterface;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
@@ -15,9 +18,8 @@ use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 /**
  * Reduces non-transcript TUI session state from runtime events.
  *
- * Live RuntimeEventPoller and SessionInitializer retained-history resume call this
- * for each retained-prefix replay event so usage, activity, queued messages, and
- * subagent catalog match live processing. History-position transcript blocks are
+ * Live RuntimeEventPoller applies events after the owner-produced bootstrap.
+ * History-position transcript blocks are
  * assigned wholesale from SessionTranscriptProviderInterface, not from this projector.
  *
  * Wire array {@code subagent_progress} is denormalized once here before the typed
@@ -25,10 +27,94 @@ use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
  */
 final readonly class TuiRuntimeEventApplier
 {
+    private TuiBootstrapAssembler $bootstrap;
+
     public function __construct(
         private TranscriptProjectorInterface $projector,
         private DenormalizerInterface $denormalizer,
     ) {
+        $this->bootstrap = new TuiBootstrapAssembler($denormalizer);
+    }
+
+    /** Protocol events never enter the ordinary transcript reducer. */
+    public function applyBootstrap(TuiSessionState $state, AgentSessionClient $client, RuntimeEvent $event, ?callable $onMounted): bool
+    {
+        if (!\in_array($event->type, ['bootstrap.available', 'bootstrap.frame', 'bootstrap.end', 'session.ready'], true)) {
+            return false;
+        }
+        $mounted = $this->bootstrap->accept($state, $event);
+        if (null === $mounted) {
+            return true;
+        }
+        if (null === $onMounted) {
+            throw new RuntimeTransportException('Bootstrap requires a mounted transcript consumer.');
+        }
+        $data = $mounted['resume'];
+        $status = $data['status'] ?? null;
+        $runStatus = \is_string($status) ? RunStatus::tryFrom($status) : null;
+        if (null === $runStatus
+            || !\is_bool($data['is_shell_run'] ?? null) || !\is_int($data['turn_no'] ?? null)
+            || $data['turn_no'] < 0 || !\is_array($data['usage'] ?? null) || !\is_array($data['queued_messages'] ?? null)) {
+            throw new RuntimeTransportException('Invalid bootstrap resume metadata.');
+        }
+        $usage = new UsageProjection();
+        foreach (['inputTokens', 'outputTokens', 'turnOutputTokens', 'latestInputTokens', 'cacheReadTokens', 'cacheCreationTokens'] as $key) {
+            if (!\is_int($data['usage'][$key] ?? null) || $data['usage'][$key] < 0) {
+                throw new RuntimeTransportException('Invalid bootstrap usage metadata.');
+            }
+            $usage->$key = $data['usage'][$key];
+        }
+        if (!\is_bool($data['usage']['hasCacheTelemetry'] ?? null) || !is_numeric($data['usage']['totalCost'] ?? null)) {
+            throw new RuntimeTransportException('Invalid bootstrap cost metadata.');
+        }
+        $usage->hasCacheTelemetry = $data['usage']['hasCacheTelemetry'];
+        $usage->totalCost = (float) $data['usage']['totalCost'];
+        // Digit-only identities become integer PHP array keys after JSON decoding.
+        foreach ($data['queued_messages'] as $text) {
+            if (!\is_string($text)) {
+                throw new RuntimeTransportException('Invalid bootstrap pending message.');
+            }
+        }
+        $catalog = new SubagentLiveCatalog();
+        foreach ($mounted['blocks'] as $block) {
+            $progress = $block->meta['subagent_progress'] ?? null;
+            if (\is_array($progress)) {
+                $progress = $this->denormalizer->denormalize($progress, SubagentProgressSnapshotInterface::class);
+            }
+            if ($progress instanceof SubagentProgressSnapshotInterface) {
+                $catalog->ingestSnapshot($progress);
+            }
+        }
+        // No partial blocks, usage, catalog or durable cursor become visible before
+        // checksum validation and metadata decoding have both succeeded.
+        $this->hydrateProjectedTranscript($mounted['blocks']);
+        $state->replaceTranscript($mounted['blocks']);
+        $state->usage = $usage;
+        $state->subagentLiveCatalog = $catalog;
+        $state->queuedUserMessages = $data['queued_messages'];
+        $state->isShellRun = $data['is_shell_run'];
+        $state->activity = match ($runStatus) {
+            RunStatus::Queued => RunActivityStateEnum::Starting,
+            RunStatus::Completed => RunActivityStateEnum::Completed,
+            RunStatus::Cancelled => RunActivityStateEnum::Cancelled,
+            RunStatus::Failed => RunActivityStateEnum::Failed,
+            RunStatus::Running => RunActivityStateEnum::Running,
+            RunStatus::WaitingHuman => RunActivityStateEnum::WaitingHuman,
+            RunStatus::Cancelling => RunActivityStateEnum::Cancelling,
+            RunStatus::Compacting => RunActivityStateEnum::Compacting,
+        };
+        $state->isCompacting = RunStatus::Compacting === $runStatus;
+        $state->lastSeq = $mounted['cut']->canonicalSeq;
+        $state->bootstrapMounted = true;
+        $onMounted();
+        $client->acknowledgeBootstrap($mounted['cut']->toArray());
+
+        return true;
+    }
+
+    public function releaseBootstrap(): void
+    {
+        $this->bootstrap->release();
     }
 
     /**
@@ -115,8 +201,7 @@ final readonly class TuiRuntimeEventApplier
             && [] !== $state->queuedFollowUps) {
             // Failure must not start another turn or leave hidden input that a
             // later compaction could dispatch. Return it to the user's editor.
-            $state->pendingEditorRestoreText = implode("\n\n", $state->queuedFollowUps);
-            $state->queuedFollowUps = [];
+            $this->restoreDeferredInput($state);
         }
 
         // After terminal activity, ignore stale seq=0 assistant/tool stream
@@ -135,6 +220,18 @@ final readonly class TuiRuntimeEventApplier
         $state->applyQueuedUserMessageEvent($event);
         $this->ingestSubagentProgress($state, $event);
         $this->projector->accept($event);
+    }
+
+    public function restoreDeferredInput(TuiSessionState $state): void
+    {
+        if ([] === $state->queuedFollowUps) {
+            return;
+        }
+        $text = implode("\n\n", $state->queuedFollowUps);
+        $state->pendingEditorRestoreText = null === $state->pendingEditorRestoreText
+            ? $text
+            : $state->pendingEditorRestoreText."\n\n".$text;
+        $state->queuedFollowUps = [];
     }
 
     /**

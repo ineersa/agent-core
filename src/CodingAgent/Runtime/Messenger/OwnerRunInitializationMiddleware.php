@@ -36,6 +36,7 @@ final readonly class OwnerRunInitializationMiddleware implements MiddlewareInter
         private RunLockManager $locks,
         private \Psr\Log\LoggerInterface $logger,
         private \Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry $artifacts,
+        private \Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery $transitionRecovery,
     ) {
     }
 
@@ -56,8 +57,9 @@ final readonly class OwnerRunInitializationMiddleware implements MiddlewareInter
         }
 
         return $this->locks->synchronized($runId, function () use ($runId, $message, $envelope, $stack): Envelope {
-            // Maintenance performs recovery inside its correlated response boundary.
-            if (!$message instanceof RepairSession && !$message instanceof SelectHistoryPrompt) {
+            // Attach prepares state and display together before applying its policy.
+            // Other maintenance performs recovery inside its response boundary.
+            if (!$message instanceof RepairSession && !$message instanceof SelectHistoryPrompt && !$message instanceof AttachRun) {
                 $this->initializeForOwner($runId, $message);
             }
 
@@ -86,6 +88,7 @@ final readonly class OwnerRunInitializationMiddleware implements MiddlewareInter
     public function initializeForOwner(string $runId, object $message): void
     {
         $this->locks->synchronized($runId, function () use ($runId, $message): void {
+            $this->transitionRecovery->recover($runId);
             try {
                 $this->registry->requireLoaded($runId);
             } catch (RunContextNotLoadedException) {

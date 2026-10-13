@@ -4,28 +4,18 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Session;
 
-use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
-use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
-use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
+use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
-use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
-use Ineersa\CodingAgent\Runtime\ProjectionPipeline\AssistantStreamProjectionSubscriber;
-use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
-use Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
-use Ineersa\CodingAgent\Session\History\HistoryProjector;
-use Ineersa\CodingAgent\Session\History\HistoryReplayFilter;
+use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\CodingAgent\Session\SessionTranscriptProvider;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\TestCase;
-use Symfony\Component\EventDispatcher\EventDispatcher;
-use Symfony\Component\EventDispatcher\EventDispatcherInterface;
+use Symfony\Component\Filesystem\Filesystem;
 
 #[CoversClass(SessionTranscriptProvider::class)]
-final class SessionTranscriptProviderTest extends TestCase
+final class SessionTranscriptProviderTest extends IsolatedKernelTestCase
 {
     private string $runId = 'transcript-provider-run';
 
@@ -61,6 +51,17 @@ final class SessionTranscriptProviderTest extends TestCase
         $this->assertStringNotContainsString('Answer B discarded', $joined);
     }
 
+    public function testDisplayDoesNotReplayExecutionOnlyHumanResponseValidation(): void
+    {
+        $provider = $this->createProvider([
+            $this->runEvent('run_started', 1, 0, ['payload' => ['messages' => []]]),
+            $this->turnAdvanced(2, 1),
+            $this->runEvent('llm_step_completed', 3, 1, $this->assistantPayload('Historical display')),
+            $this->runEvent('agent_command_applied', 4, 1, ['kind' => 'human_response', 'question_id' => '', 'answer' => 'old']),
+        ]);
+        $this->assertStringContainsString('Historical display', json_encode($provider->transcriptAtPosition($this->runId, 1)->transcriptBlocks, \JSON_THROW_ON_ERROR));
+    }
+
     /** @return array<string, mixed> */
     private function assistantPayload(string $text): array
     {
@@ -75,22 +76,16 @@ final class SessionTranscriptProviderTest extends TestCase
     /** @param list<RunEvent> $events */
     private function createProvider(array $events): SessionTranscriptProvider
     {
-        $store = $this->createStub(EventStoreInterface::class);
-        $store->method('allFor')->willReturn($events);
+        $container = static::getContainer();
+        $path = $container->get(SessionRunEventStore::class)->historySource($this->runId)->path;
+        $normalizer = $container->get(EventPayloadNormalizer::class);
+        $bytes = '';
+        foreach ($events as $event) {
+            $bytes .= json_encode($normalizer->normalizeRunEvent($event), \JSON_THROW_ON_ERROR)."\n";
+        }
+        (new Filesystem())->dumpFile($path, $bytes);
 
-        $projector = new HistoryProjector();
-        $replayFilter = new HistoryReplayFilter($projector);
-        $eventDispatcher = $this->createStub(EventDispatcherInterface::class);
-        $translator = new RuntimeEventTranslator($eventDispatcher, new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()));
-        $eventMapper = new RuntimeEventMapper($translator);
-
-        $dispatcher = new EventDispatcher();
-        $projectionState = new TranscriptProjectionState();
-        $dispatcher->addSubscriber(new UserMessageProjectionSubscriber());
-        $dispatcher->addSubscriber(new AssistantStreamProjectionSubscriber());
-        $transcriptProjector = new TranscriptProjector($dispatcher, $projectionState);
-
-        return new SessionTranscriptProvider($store, $replayFilter, $eventMapper, $transcriptProjector);
+        return $container->get(SessionTranscriptProvider::class);
     }
 
     /** @param array<string, mixed> $payload */

@@ -85,7 +85,7 @@ final class HistoryPickerControllerTest extends TestCase
     #[Test]
     public function testBuildItemsEmptyHistory(): void
     {
-        $history = new HistoryView(prompts: [], positionTurnNo: 0);
+        $history = new HistoryView(prompts: [], selectedAnchor: 0);
         $theme = new DefaultTheme(new ThemePalette('test'));
         $this->assertSame([], HistoryPickerController::buildItems($history, $theme));
     }
@@ -109,7 +109,7 @@ final class HistoryPickerControllerTest extends TestCase
     #[Test]
     public function testOpenShowsStatusWhenEmpty(): void
     {
-        $history = new HistoryView(prompts: [], positionTurnNo: 0);
+        $history = new HistoryView(prompts: [], selectedAnchor: 0);
         $provider = $this->createStub(HistoryProviderInterface::class);
         $provider->method('forSession')->willReturn($history);
         $switcher = $this->createStub(TuiSessionSwitchServiceInterface::class);
@@ -148,16 +148,10 @@ final class HistoryPickerControllerTest extends TestCase
     {
         return new HistoryView(
             prompts: [
-                new HistoryPromptView(
-                    turnNo: 1,
-                    promptText: 'Hello',
-                ),
-                new HistoryPromptView(
-                    turnNo: 3,
-                    promptText: 'Follow-up',
-                ),
+                new HistoryPromptView(turnNo: 1, promptText: 'Hello', anchor: 1),
+                new HistoryPromptView(turnNo: 3, promptText: 'Follow-up', anchor: 3),
             ],
-            positionTurnNo: $positionTurnNo,
+            selectedAnchor: $positionTurnNo,
         );
     }
 

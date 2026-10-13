@@ -14,6 +14,7 @@ final class ControllerSessionShutdownEvent extends Event
 {
     public function __construct(
         public readonly string $sessionId,
+        public readonly bool $permanentDeletion = false,
     ) {
         if ('' === $sessionId) {
             throw new \InvalidArgumentException('Controller session ID must not be empty.');

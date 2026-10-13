@@ -9,6 +9,8 @@
  * with the configured body shape. MCP_FIXTURE_HEADER_LOG records method,
  * inbound session header, and status. MCP_FIXTURE_RECEIVED marks when a slow
  * tools/call has been accepted.
+ * A .pending sidecar stores the session/request cursor prefix. Empty SSE
+ * priming events allow GET resumption without completing the pending call.
  *
  * Post-initialize calls require a non-empty matching Mcp-Session-Id. A missing
  * session header returns HTTP 400 so a sessionless retry cannot false-pass.
@@ -46,19 +48,25 @@ if ('/' !== $path && '/mcp' !== $path) {
     exit(1);
 }
 
-$body = file_get_contents('php://input');
-if (false === $body || '' === $body) {
-    respond(400, 'application/json', json_encode(['jsonrpc' => '2.0', 'error' => ['code' => -32700, 'message' => 'Empty body'], 'id' => null], \JSON_THROW_ON_ERROR), $headerLog, 'empty', $sessionHeader);
+// GET resumes an SSE response using Last-Event-ID, not a JSON-RPC body.
+$isResume = 'GET' === ($_SERVER['REQUEST_METHOD'] ?? '');
+if ($isResume) {
+    $request = ['method' => 'sse/resume'];
+} else {
+    $body = file_get_contents('php://input');
+    if (false === $body || '' === $body) {
+        respond(400, 'application/json', json_encode(['jsonrpc' => '2.0', 'error' => ['code' => -32700, 'message' => 'Empty body'], 'id' => null], \JSON_THROW_ON_ERROR), $headerLog, 'empty', $sessionHeader);
 
-    exit(1);
-}
+        exit(1);
+    }
 
-try {
-    $request = json_decode($body, true, 512, \JSON_THROW_ON_ERROR);
-} catch (JsonException) {
-    respond(400, 'application/json', json_encode(['jsonrpc' => '2.0', 'error' => ['code' => -32700, 'message' => 'Parse error'], 'id' => null], \JSON_THROW_ON_ERROR), $headerLog, 'parse-error', $sessionHeader);
+    try {
+        $request = json_decode($body, true, 512, \JSON_THROW_ON_ERROR);
+    } catch (JsonException) {
+        respond(400, 'application/json', json_encode(['jsonrpc' => '2.0', 'error' => ['code' => -32700, 'message' => 'Parse error'], 'id' => null], \JSON_THROW_ON_ERROR), $headerLog, 'parse-error', $sessionHeader);
 
-    exit(1);
+        exit(1);
+    }
 }
 
 if (!is_array($request)) {
@@ -85,6 +93,19 @@ if ('' !== $sessionHeader
     exit(0);
 }
 
+// A legacy server must reject the pre-handshake modern discovery probe before
+// enforcing session headers on requests belonging to an initialized session.
+if ('server/discover' === $method) {
+    $payload = json_encode([
+        'jsonrpc' => '2.0',
+        'id' => $rawId,
+        'error' => ['code' => -32601, 'message' => 'Method not found: '.$method],
+    ], \JSON_THROW_ON_ERROR);
+    respond(200, 'application/json', $payload, $headerLog, $method, $sessionHeader);
+
+    exit(0);
+}
+
 if ('initialize' !== $method && '' === $sessionHeader) {
     respond(400, 'text/plain', 'Missing Mcp-Session-Id', $headerLog, $method, $sessionHeader);
 
@@ -98,9 +119,29 @@ if ('' !== $sessionHeader && ('' === $currentSession || $sessionHeader !== $curr
 }
 
 try {
+    if ($isResume) {
+        $streamId = is_file($stateFile.'.pending') ? trim((string) file_get_contents($stateFile.'.pending')) : '';
+        $lastEventId = $_SERVER['HTTP_LAST_EVENT_ID'] ?? '';
+        $prefix = $streamId.':';
+        $sequence = substr($lastEventId, strlen($prefix));
+        if ('' === $streamId || !str_starts_with($lastEventId, $prefix) || !ctype_digit($sequence)) {
+            respond(400, 'text/plain', 'Unknown SSE event ID', $headerLog, $method, $sessionHeader);
+
+            exit(0);
+        }
+
+        // Advance the cursor with another empty priming event, without a
+        // terminal result. The original tool request remains pending.
+        $eventId = $prefix.((int) $sequence + 1);
+        respond(200, 'text/event-stream', 'id: '.$eventId."\ndata:\n\n", $headerLog, $method, $sessionHeader);
+
+        exit(0);
+    }
+
     if ('initialize' === $method) {
         $sessionId = 'session-'.bin2hex(random_bytes(8));
         file_put_contents($stateFile, $sessionId);
+        @unlink($stateFile.'.pending');
         $payload = json_encode([
             'jsonrpc' => '2.0',
             'id' => $rawId,
@@ -197,9 +238,11 @@ try {
             file_put_contents($receivedFile, 'received');
         }
 
-        // An SSE comment is not a result. Leave the SDK request pending without
-        // blocking body reads or delaying the fixture to force interruption.
-        respond(200, 'text/event-stream', ": pending\n\n", $headerLog, $method, $sessionHeader);
+        // A session/request-scoped cursor lets the SDK resume this response
+        // after EOF. Empty priming events do not complete the tool request.
+        $streamId = $sessionHeader.':'.$rawId;
+        file_put_contents($stateFile.'.pending', $streamId);
+        respond(200, 'text/event-stream', 'id: '.$streamId.":0\ndata:\n\n", $headerLog, $method, $sessionHeader);
 
         exit(0);
     }

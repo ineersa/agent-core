@@ -11,8 +11,9 @@ namespace Ineersa\CodingAgent\Session;
  * consumer stopped before the logical end of the scan. This is not device I/O
  * throughput and does not re-encode events to estimate size.
  *
- * Forward scans: {@see fullScan()} requires feof() after the read loop, not merely
- * fgets() returning false (read errors must not be labelled as EOF).
+ * Forward scans: {@see fullScan()} requires reaching the validated committed byte
+ * cut, not merely fgets() returning false. Indexed seeks count as a full scan only
+ * when their locations cover the entire committed archive without gaps.
  *
  * Reverse scans: {@see fullScan()} means the consumer did not stop early and the
  * scanner reached the start of the file. {@see archiveBytesRead()} may still equal

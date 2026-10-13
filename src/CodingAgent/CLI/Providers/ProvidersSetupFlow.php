@@ -527,7 +527,7 @@ final class ProvidersSetupFlow implements ProvidersSetupFlowInterface
 
         return match ($kind) {
             'oauth' => match ($provider['auth_command'] ?? null) {
-                'auth:codex' => 'log in with your ChatGPT account',
+                'auth:chatgpt' => 'log in with your ChatGPT account',
                 'auth:grok' => 'log in with your xAI account',
                 default => 'log in with your account',
             },

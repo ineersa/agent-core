@@ -33,13 +33,13 @@ provider prefixes are not stripped.
 
 | Source history | Target transport | Tool-call IDs | Thinking / signatures | Notes |
 |---|---|---|---|---|
-| Generic chat completions (for example `zai/...`) | OpenAI Codex Responses | Normalize incompatible call IDs and matching result IDs; omit Responses item `id` | Visible thinking becomes assistant text; opaque signatures are dropped | Fixes the reported `call_...` item-id rejection |
-| OpenAI Codex Responses | Generic chat completions | Composite `call_id\|fc_*` ids are remapped to bounded unique Completions ids; tool results follow the same map | Visible thinking becomes ordinary assistant text / `reasoning_content`; Codex encrypted signatures are not reusable | Reverse of the reported switch |
-| Same provider/API, different model | Same transport | Associations preserved; Codex omits native item ids so discarded reasoning pairs are not required | Visible thinking becomes ordinary text; signatures are not reused | Same-provider model switch |
-| Exact same qualified model | Same transport | Associations preserved; native Codex `fc_*` item ids may be replayed with matching `function_call_output.call_id` | Thinking signatures stay structured | Ordinary continuation / resume |
+| Generic chat completions (for example `zai/...`) | ChatGPT Responses | Normalize incompatible call IDs and matching result IDs; omit Responses item `id` | Visible thinking becomes assistant text; opaque signatures are dropped | Fixes the reported `call_...` item-id rejection |
+| ChatGPT Responses | Generic chat completions | Composite `call_id\|fc_*` ids are remapped to bounded unique Completions ids; tool results follow the same map | Visible thinking becomes ordinary assistant text / `reasoning_content`; ChatGPT encrypted signatures are not reusable | Reverse of the reported switch |
+| Same provider/API, different model | Same transport | Associations preserved; ChatGPT omits native item ids so discarded reasoning pairs are not required | Visible thinking becomes ordinary text; signatures are not reused | Same-provider model switch |
+| Exact same qualified model | Same transport | Associations preserved; native ChatGPT `fc_*` item ids may be replayed with matching `function_call_output.call_id` | Thinking signatures stay structured | Ordinary continuation / resume |
 | Any source | Text-only target | Unchanged | Unchanged by this conversion | Unsupported images already become placeholders through `ImageGatingConvertHook` |
 
-Grok uses the same generic chat-completions history shape as other non-Codex
+Grok uses the same generic chat-completions history shape as other non-Responses
 providers for this matrix.
 
 Cross-model IDs use alphanumeric characters, underscores, and hyphens, with a
@@ -55,7 +55,7 @@ nonportable. Existing completed-step events carry the model needed for replay.
 These stay in stored history but cannot round-trip as native target metadata:
 
 - Encrypted or opaque reasoning / thinking signatures across models or providers
-- Codex Responses item ids that are not `fc_*`
+- ChatGPT Responses item ids that are not `fc_*`
 - Redacted or empty opaque reasoning with no visible text
 - Incomplete tool-call batches; `AgentMessageToolCallSequenceValidator` still rejects them before the provider call
 

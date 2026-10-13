@@ -12,13 +12,10 @@ use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
-use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Message\AssistantMessage;
 use Symfony\AI\Platform\Message\Content\Text;
 use Symfony\AI\Platform\Message\Content\Thinking;
-use Symfony\Component\Messenger\Exception\TransportException;
-use Symfony\Component\Messenger\Exception\UnrecoverableMessageHandlingException;
 
 /**
  * Contract tests for {@see ExecuteLlmStepWorker}.
@@ -40,11 +37,10 @@ final class ExecuteLlmStepWorkerTest extends TestCase
         // Worker stubs receive already-final platform results and must not re-invoke.
         $thinkingOnly = new AssistantMessage(new Thinking('reasoning...'));
         $platform = $this->createAlternatingPlatform([$thinkingOnly, new AssistantMessage(new Text('should-not-run'))]);
-        $testBus = new TestMessageBus();
         $testLogger = new TestLogger();
-        $worker = new ExecuteLlmStepWorker($platform, $testBus, logger: $testLogger);
+        $worker = new ExecuteLlmStepWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), $platform, logger: $testLogger);
 
-        $worker(new ExecuteLlmStep(
+        $result = $worker(new ExecuteLlmStep(
             runId: 'run-1',
             turnNo: 1,
             stepId: 'step-1',
@@ -52,10 +48,6 @@ final class ExecuteLlmStepWorkerTest extends TestCase
             idempotencyKey: 'key-1',
             toolsRef: 'tools-1',
         ));
-
-        $this->assertCount(1, $testBus->messages);
-        /** @var LlmStepResult $result */
-        $result = $testBus->messages[0];
         $this->assertNull($result->assistantMessage);
         $this->assertSame('empty_assistant_content', $result->error['type'] ?? null);
         $this->assertFalse($result->error['retryable'] ?? true);
@@ -68,12 +60,11 @@ final class ExecuteLlmStepWorkerTest extends TestCase
         $validResponse = new AssistantMessage(new Text('Direct response'));
 
         $platform = $this->createAlternatingPlatform([$validResponse]);
-        $testBus = new TestMessageBus();
         $testLogger = new TestLogger();
 
-        $worker = new ExecuteLlmStepWorker($platform, $testBus, logger: $testLogger);
+        $worker = new ExecuteLlmStepWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), $platform, logger: $testLogger);
 
-        $worker(new ExecuteLlmStep(
+        $result = $worker(new ExecuteLlmStep(
             runId: 'run-3',
             turnNo: 1,
             stepId: 'step-3',
@@ -81,11 +72,6 @@ final class ExecuteLlmStepWorkerTest extends TestCase
             idempotencyKey: 'key-3',
             toolsRef: 'tools-3',
         ));
-
-        $this->assertCount(1, $testBus->messages);
-
-        /** @var LlmStepResult $result */
-        $result = $testBus->messages[0];
         $this->assertNotNull($result->assistantMessage);
         $this->assertSame('Direct response', $result->assistantMessage->asText());
         $this->assertNull($result->error);
@@ -108,12 +94,11 @@ final class ExecuteLlmStepWorkerTest extends TestCase
         );
 
         $platform = $this->createAlternatingPlatform([$errorResult]);
-        $testBus = new TestMessageBus();
         $testLogger = new TestLogger();
 
-        $worker = new ExecuteLlmStepWorker($platform, $testBus, logger: $testLogger);
+        $worker = new ExecuteLlmStepWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), $platform, logger: $testLogger);
 
-        $worker(new ExecuteLlmStep(
+        $result = $worker(new ExecuteLlmStep(
             runId: 'run-4',
             turnNo: 1,
             stepId: 'step-4',
@@ -121,11 +106,6 @@ final class ExecuteLlmStepWorkerTest extends TestCase
             idempotencyKey: 'key-4',
             toolsRef: 'tools-4',
         ));
-
-        $this->assertCount(1, $testBus->messages);
-
-        /** @var LlmStepResult $result */
-        $result = $testBus->messages[0];
         $this->assertNotNull($result->error, 'Provider error must be propagated.');
         $this->assertSame('provider_error', $result->error['type'] ?? null);
         $this->assertFalse($result->error['retryable'] ?? true);
@@ -148,11 +128,10 @@ final class ExecuteLlmStepWorkerTest extends TestCase
         );
 
         $platform = $this->createAlternatingPlatform([$aborted]);
-        $testBus = new TestMessageBus();
         $testLogger = new TestLogger();
-        $worker = new ExecuteLlmStepWorker($platform, $testBus, logger: $testLogger);
+        $worker = new ExecuteLlmStepWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), $platform, logger: $testLogger);
 
-        $worker(new ExecuteLlmStep(
+        $result = $worker(new ExecuteLlmStep(
             runId: 'run-aborted-silence',
             turnNo: 1,
             stepId: 'step-aborted-silence',
@@ -160,10 +139,6 @@ final class ExecuteLlmStepWorkerTest extends TestCase
             idempotencyKey: 'key-aborted-silence',
             toolsRef: 'tools-aborted-silence',
         ));
-
-        $this->assertCount(1, $testBus->messages);
-        /** @var LlmStepResult $result */
-        $result = $testBus->messages[0];
         $this->assertSame('aborted', $result->stopReason);
         $this->assertNull($result->error);
         $this->assertNull($result->assistantMessage);
@@ -194,11 +169,10 @@ final class ExecuteLlmStepWorkerTest extends TestCase
         );
 
         $platform = $this->createAlternatingPlatform([$aborted]);
-        $testBus = new TestMessageBus();
         $testLogger = new TestLogger();
-        $worker = new ExecuteLlmStepWorker($platform, $testBus, logger: $testLogger);
+        $worker = new ExecuteLlmStepWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), $platform, logger: $testLogger);
 
-        $worker(new ExecuteLlmStep(
+        $result = $worker(new ExecuteLlmStep(
             runId: 'run-aborted-thinking',
             turnNo: 1,
             stepId: 'step-aborted-thinking',
@@ -206,10 +180,6 @@ final class ExecuteLlmStepWorkerTest extends TestCase
             idempotencyKey: 'key-aborted-thinking',
             toolsRef: 'tools-aborted-thinking',
         ));
-
-        $this->assertCount(1, $testBus->messages);
-        /** @var LlmStepResult $result */
-        $result = $testBus->messages[0];
         $this->assertSame('aborted', $result->stopReason);
         $this->assertNull($result->error);
         $this->assertSame($thinkingOnly, $result->assistantMessage);
@@ -226,7 +196,7 @@ final class ExecuteLlmStepWorkerTest extends TestCase
         $this->assertCount(0, $completedLogs, 'Aborted thinking-only must not be logged as completion.');
     }
 
-    public function testCommandBusDispatchFailureIsUnrecoverable(): void
+    public function testWorkerReturnsTerminalLlmStepResultWithoutDispatching(): void
     {
         $ok = new PlatformInvocationResult(
             assistantMessage: new AssistantMessage(new Text('ok')),
@@ -234,29 +204,19 @@ final class ExecuteLlmStepWorkerTest extends TestCase
             stopReason: 'stop',
         );
         $platform = $this->createAlternatingPlatform([$ok]);
-        $commandBus = new class implements \Symfony\Component\Messenger\MessageBusInterface {
-            public function dispatch(object $message, array $stamps = []): \Symfony\Component\Messenger\Envelope
-            {
-                throw new TransportException('command bus unavailable');
-            }
-        };
-        $worker = new ExecuteLlmStepWorker($platform, $commandBus, logger: new TestLogger());
+        $worker = new ExecuteLlmStepWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), $platform, logger: new TestLogger());
 
-        try {
-            $worker(new ExecuteLlmStep(
-                runId: 'run-dispatch-fail',
-                turnNo: 1,
-                stepId: 'step-dispatch-fail',
-                attempt: 1,
-                idempotencyKey: 'key-dispatch-fail',
-                toolsRef: 'tools-dispatch-fail',
-            ));
-            $this->fail('Command-bus dispatch failure must throw UnrecoverableMessageHandlingException.');
-        } catch (UnrecoverableMessageHandlingException $exception) {
-            $this->assertStringContainsString('Failed to dispatch LLM result to command bus.', $exception->getMessage());
-            $this->assertInstanceOf(TransportException::class, $exception->getPrevious());
-        }
+        $result = $worker(new ExecuteLlmStep(
+            runId: 'run-dispatch-fail',
+            turnNo: 1,
+            stepId: 'step-dispatch-fail',
+            attempt: 1,
+            idempotencyKey: 'key-dispatch-fail',
+            toolsRef: 'tools-dispatch-fail',
+        ));
 
+        $this->assertInstanceOf(LlmStepResult::class, $result);
+        $this->assertSame('ok', $result->assistantMessage?->asText());
         $this->assertSame(1, $platform->invocationCount);
     }
 
@@ -283,10 +243,9 @@ final class ExecuteLlmStepWorkerTest extends TestCase
         );
 
         $platform = $this->createAlternatingPlatform([$errorResult]);
-        $testBus = new TestMessageBus();
-        $worker = new ExecuteLlmStepWorker($platform, $testBus, logger: new TestLogger());
+        $worker = new ExecuteLlmStepWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), $platform, logger: new TestLogger());
 
-        $worker(new ExecuteLlmStep(
+        $result = $worker(new ExecuteLlmStep(
             runId: 'run-retryable',
             turnNo: 2,
             stepId: 'step-retryable',
@@ -294,9 +253,6 @@ final class ExecuteLlmStepWorkerTest extends TestCase
             idempotencyKey: 'key-retryable',
             toolsRef: 'tools-ref',
         ));
-
-        $this->assertCount(1, $testBus->messages);
-        $result = $testBus->messages[0];
         $this->assertInstanceOf(LlmStepResult::class, $result);
         $this->assertTrue($result->error['retry_exhausted'] ?? false);
         $this->assertFalse($result->error['retryable'] ?? true);
@@ -307,7 +263,7 @@ final class ExecuteLlmStepWorkerTest extends TestCase
     public function testForwardsCoordinatorPreparedMessagesToPlatform(): void
     {
         $platform = $this->createAlternatingPlatform([new AssistantMessage(new Text('done'))]);
-        $worker = new ExecuteLlmStepWorker($platform, new TestMessageBus(), logger: new TestLogger());
+        $worker = new ExecuteLlmStepWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), $platform, logger: new TestLogger());
         $messages = [new AgentMessage('user', [['type' => 'text', 'text' => 'private coordinator context']])];
 
         $worker(new ExecuteLlmStep(

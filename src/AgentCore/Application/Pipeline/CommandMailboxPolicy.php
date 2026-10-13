@@ -88,7 +88,6 @@ final readonly class CommandMailboxPolicy
                 }
 
                 $messages[] = $hydratedMessage;
-                $this->commandStore->markApplied($state->runId, $pendingCommand->idempotencyKey);
 
                 // Include serialized message payload so events.jsonl replay
                 // can reconstruct user message transcript blocks.
@@ -121,8 +120,6 @@ final readonly class CommandMailboxPolicy
             // shouldContinue because compaction is terminal — it does not
             // advance the turn.
             if (CoreCommandKind::Compact === $pendingCommand->kind) {
-                $this->commandStore->markApplied($state->runId, $pendingCommand->idempotencyKey);
-
                 $eventSpecs[] = [
                     'type' => RunEventTypeEnum::AgentCommandApplied->value,
                     'payload' => [
@@ -167,17 +164,13 @@ final readonly class CommandMailboxPolicy
     }
 
     /**
-     * Reject a pending command in the store and produce its rejection event spec.
-     *
-     * markRejected runs before the event is built so a failed store write
-     * aborts before any rejection event is emitted.
+     * Prepare a rejection event without changing the captured mailbox cutoff.
+     * The owner journals its corresponding status decision before finalization.
      *
      * @return array{type: string, payload: array<string, mixed>}
      */
     private function rejectCommand(RunState $state, PendingCommand $command, string $reason): array
     {
-        $this->commandStore->markRejected($state->runId, $command->idempotencyKey, $reason);
-
         return [
             'type' => RunEventTypeEnum::AgentCommandRejected->value,
             'payload' => [
@@ -210,8 +203,6 @@ final readonly class CommandMailboxPolicy
         } catch (\Throwable $throwable) {
             return [$this->rejectCommand($state, $command, $throwable->getMessage())];
         }
-
-        $this->commandStore->markApplied($state->runId, $command->idempotencyKey);
 
         $eventSpecs = [[
             'type' => RunEventTypeEnum::AgentCommandApplied->value,

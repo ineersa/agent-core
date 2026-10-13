@@ -187,6 +187,7 @@ final class JsonlRunEventLogReverseLinesFailureTest extends TestCase
             new LockFactory(new InMemoryStore()),
             $this->createStub(RunSequenceAllocatorInterface::class),
             new EventLogMaxSeqBootstrapReader(),
+            new \Psr\Log\NullLogger(),
         );
     }
 
@@ -237,8 +238,11 @@ final class JsonlReverseLinesFailureStreamWrapper
     /**
      * @return array<string, int>|false
      */
-    public function url_stat(string $path, int $flags): array
+    public function url_stat(string $path, int $flags): array|false
     {
+        if (str_contains($path, '.append.')) {
+            return false;
+        }
         $host = parse_url($path, \PHP_URL_HOST);
         $mode = \is_string($host) && '' !== $host ? $host : 'empty';
 

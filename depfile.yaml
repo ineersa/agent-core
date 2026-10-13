@@ -14,7 +14,6 @@ parameters:
     - .hatfield/extensions/task-workflow/src
     - .hatfield/extensions/file-rewind/src
     - .hatfield/extensions/observational-memory/src
-    - .hatfield/extensions/jbcontext/src
   exclude_files:
     - .*\.test\.php$
     - .*Test\.php$
@@ -170,11 +169,6 @@ parameters:
       collectors:
         - type: classNameRegex
           value: '#^Ineersa\\HatfieldExt\\ObservationalMemory\\#'
-
-    - name: HatfieldExtJbcontext
-      collectors:
-        - type: classNameRegex
-          value: '#^Ineersa\\HatfieldExt\\Jbcontext\\#'
 
     - name: AppExtensionBuiltin
       collectors:
@@ -859,10 +853,6 @@ parameters:
       - SymfonyAiPlatform
       - SymfonyHttpClient
       - SymfonyLock
-    HatfieldExtJbcontext:
-      - AppExtensionApi
-      - HatfieldExtJbcontext
-      - SymfonyYaml
     AppExtensionBuiltin:
       - AppExtensionApi
       - AppRuntimeContract

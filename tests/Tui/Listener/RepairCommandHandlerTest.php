@@ -72,7 +72,7 @@ final class RepairCommandHandlerTest extends TestCase
     public function reportsActiveOperationRedrive(): void
     {
         $client = new RepairCommandSpyClient();
-        $client->result = new RepairResult(false, false, 'internal', activeOperationsRedriven: 1);
+        $client->result = new RepairResult(false, false, 'Active operation redrive requested.', activeOperationsRedriven: 1);
         $state = new TuiSessionState('repair');
         $state->handle = new RunHandle('run-redrive');
         $handler = new RepairCommandHandler($client, $state, new NullLogger());
@@ -80,7 +80,7 @@ final class RepairCommandHandlerTest extends TestCase
         $result = $handler->handle(new SlashCommand('repair', '', '/repair'));
 
         $this->assertInstanceOf(TranscriptMessage::class, $result);
-        $this->assertSame('Session repaired: active operation redriven.', $result->text);
+        $this->assertSame('Active operation redrive requested.', $result->text);
         $this->assertSame('system', $result->style);
     }
 
@@ -139,6 +139,14 @@ final class RepairCommandSpyClient implements AgentSessionClient
     public function start(StartRunRequest $request): RunHandle
     {
         throw new \RuntimeException('Unexpected start()');
+    }
+
+    public function acknowledgeBootstrap(array $cut): void
+    {
+    }
+
+    public function cancelBootstrap(string $runId): void
+    {
     }
 
     public function attach(string $runId): RunHandle

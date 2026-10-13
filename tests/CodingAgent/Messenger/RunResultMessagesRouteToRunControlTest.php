@@ -58,7 +58,7 @@ final class RunResultMessagesRouteToRunControlTest extends IsolatedKernelTestCas
         $this->assertSame($message, $sent[0]->getMessage());
     }
 
-    public function testExecutionEffectUsesExecutionBusAndLlmTransport(): void
+    public function testOrdinaryRequestUsesExecutionBusAndLlmTransport(): void
     {
         /** @var InMemoryTransport $transport */
         $transport = self::getContainer()->get('messenger.transport.llm');

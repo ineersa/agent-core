@@ -54,6 +54,7 @@ final class TuiFileRewindPickerExtensionVirtualTest extends TestCase
             $harness = new VirtualTuiHarness(sessionId: $sessionId);
             $provider = $this->createStub(HistoryProviderInterface::class);
             $provider->method('forSession')->willReturn($this->sampleUserPromptHistory($sessionId));
+            $provider->method('promptText')->willReturnCallback(static fn (string $runId, int $turnNo): string => 1 === $turnNo ? 'Create file' : 'Append line');
 
             $runtime = $this->buildTuiContext()
                 ->withTui($harness->tui())
@@ -121,6 +122,7 @@ final class TuiFileRewindPickerExtensionVirtualTest extends TestCase
         $harness = new VirtualTuiHarness(sessionId: $sessionId);
         $provider = $this->createStub(HistoryProviderInterface::class);
         $provider->method('forSession')->willReturn($history);
+        $provider->method('promptText')->willReturnCallback(static fn (string $runId, int $turnNo): string => 1 === $turnNo ? 'Create file' : 'Append line');
 
         $runtime = $this->buildTuiContext()
             ->withTui($harness->tui())
@@ -205,10 +207,10 @@ final class TuiFileRewindPickerExtensionVirtualTest extends TestCase
     {
         return new HistoryView(
             prompts: [
-                new HistoryPromptView(1, 'Create file'),
-                new HistoryPromptView(3, 'Append line'),
+                new HistoryPromptView(1, 'Create file', 1),
+                new HistoryPromptView(3, 'Append line', 3),
             ],
-            positionTurnNo: 3,
+            selectedAnchor: 3,
         );
     }
 }

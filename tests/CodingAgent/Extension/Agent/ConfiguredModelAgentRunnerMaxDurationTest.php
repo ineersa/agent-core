@@ -226,7 +226,7 @@ final class ConfiguredModelAgentRunnerMaxDurationTest extends TestCase
         $providers = [
             'mock' => new AiProviderConfig(
                 id: 'mock',
-                type: 'openai',
+                type: 'generic',
                 enabled: true,
                 baseUrl: 'https://mock.example.test',
                 apiKey: 'test-key',
@@ -244,7 +244,7 @@ final class ConfiguredModelAgentRunnerMaxDurationTest extends TestCase
         if ($includeExtraProvider) {
             $providers['other'] = new AiProviderConfig(
                 id: 'other',
-                type: 'openai',
+                type: 'generic',
                 enabled: true,
                 baseUrl: 'https://other.example.test',
                 apiKey: 'other-key',

@@ -190,7 +190,8 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
             'HATFIELD_AGENT_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=agent_{$this->sessionId}&redeliver_timeout=315360000",
             'HATFIELD_MCP_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=mcp_{$this->sessionId}&redeliver_timeout=315360000",
             'HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=extension_agent_{$this->sessionId}&redeliver_timeout=315360000",
-            'HATFIELD_SESSION_ID' => $this->sessionId,
+            // The test wrapper sets $_SERVER identity without tagging signal-owned PIDs.
+            'HATFIELD_REPLAY_SESSION_ID' => $this->sessionId,
             // Replay activation — consumed by ControllerReplayHttpClientFactory
             'HATFIELD_LLM_REPLAY_FIXTURE_PATH' => implode(';', $fixturePaths),
             // Inherited by ConsumerSupervisor children; ConfigExecutableLocator wins.
@@ -210,7 +211,7 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
         $process = @proc_open(
             array_merge(
                 // setsid -w: proc_open child becomes session/PGID leader.
-                ['setsid', '-w', $php, $script, 'agent', '--controller', '--cwd='.$this->tempDir],
+                ['setsid', '-w', $php, $messengerConsole, 'agent', '--controller', '--cwd='.$this->tempDir],
                 $this->controllerExtraArgs(),
             ),
             $descriptors,

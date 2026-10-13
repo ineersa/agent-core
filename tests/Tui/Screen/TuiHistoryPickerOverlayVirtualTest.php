@@ -57,14 +57,59 @@ final class TuiHistoryPickerOverlayVirtualTest extends TestCase
         $this->assertSame(1, substr_count($screen, 'hello'));
     }
 
+    #[Test]
+    public function testIndexedPagesNavigateBothDirectionsAndSelectSparsePromptsThroughNativeInput(): void
+    {
+        $directory = \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::createProjectTempDir('history-picker-pages');
+        try {
+            $sessionId = 'paged-history';
+            $sessionStore = new \Ineersa\CodingAgent\Session\HatfieldSessionStore(
+                new \Ineersa\CodingAgent\Config\AppConfig(tui: new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'), logging: new \Ineersa\CodingAgent\Config\LoggingConfig(), cwd: $directory),
+                $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+                new \Symfony\Component\EventDispatcher\EventDispatcher(),
+            );
+            $events = [];
+            for ($i = 70; $i >= 1; --$i) {
+                $events[] = \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($sessionId, $i, 'agent_command_applied', ['kind' => 'follow_up', 'text' => 'Prompt number '.$i]);
+                $events[] = \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($sessionId, $i, 'turn_advanced', ['turn_no' => $i]);
+            }
+            $store = \Ineersa\CodingAgent\Tests\Support\HistoryEventStoreFactory::create($sessionStore, $events);
+            $provider = new \Ineersa\CodingAgent\Session\SessionHistoryProvider($store, new \Ineersa\CodingAgent\Session\RunHistoryIndex(new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()), new \Psr\Log\NullLogger()));
+            $harness = new VirtualTuiHarness(sessionId: $sessionId);
+            $switcher = $this->createMock(TuiSessionSwitchServiceInterface::class);
+            $switcher->expects($this->once())->method('selectHistoryTurn')->with(33);
+            $picker = new HistoryPickerController($harness->tui(), $harness->screen(), new TuiSessionState($sessionId), $provider, $switcher);
+            (new HistoryCommandHandler($picker))->handle(new SlashCommand('history', '', '/history'));
+            $this->assertStringContainsString('Prompt number 1', $harness->plainScreenText());
+            for ($i = 0; $i < 32; ++$i) {
+                $harness->tui()->handleInput("\x1b[A");
+            }
+            $this->assertStringContainsString('Older prompts...', $harness->plainScreenText());
+            $harness->tui()->handleInput("\n");
+            $this->assertStringContainsString('Prompt number 33', $harness->plainScreenText());
+            $this->assertStringContainsString('Newer prompts...', $harness->plainScreenText());
+            $harness->tui()->handleInput("\x1b[B");
+            $harness->tui()->handleInput("\n");
+            $this->assertStringContainsString('Prompt number 1', $harness->plainScreenText());
+            for ($i = 0; $i < 32; ++$i) {
+                $harness->tui()->handleInput("\x1b[A");
+            }
+            $harness->tui()->handleInput("\n");
+            $harness->tui()->handleInput("\n");
+            $this->assertStringNotContainsString('Session history', $harness->plainScreenText());
+        } finally {
+            \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::removeDirectory($directory);
+        }
+    }
+
     private function sampleHistory(): HistoryView
     {
         return new HistoryView(
             prompts: [
-                new HistoryPromptView(1, 'hello'),
-                new HistoryPromptView(2, 'Can you create file'),
+                new HistoryPromptView(1, 'hello', 1),
+                new HistoryPromptView(2, 'Can you create file', 2),
             ],
-            positionTurnNo: 2,
+            selectedAnchor: 2,
         );
     }
 }

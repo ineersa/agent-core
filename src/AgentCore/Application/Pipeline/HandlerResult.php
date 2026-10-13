@@ -10,17 +10,17 @@ use Ineersa\AgentCore\Domain\Run\RunState;
 final readonly class HandlerResult
 {
     /**
-     * @param list<RunEvent>         $events
-     * @param list<object>           $effects
-     * @param list<object>           $postCommitEffects
-     * @param list<callable(): void> $postCommit
+     * @param list<RunEvent> $events
+     * @param list<object>   $effects
+     * @param list<object>   $postCommitEffects
+     * @param list<object>   $postCommitActions
      */
     public function __construct(
         public ?RunState $nextState = null,
         public array $events = [],
         public array $effects = [],
         public array $postCommitEffects = [],
-        public array $postCommit = [],
+        public array $postCommitActions = [],
     ) {
     }
 }

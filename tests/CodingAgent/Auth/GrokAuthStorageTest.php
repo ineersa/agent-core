@@ -10,8 +10,6 @@ use Ineersa\CodingAgent\Auth\GrokOAuthConfig;
 use Ineersa\CodingAgent\Auth\GrokTokenRefresher;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
-use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexAuthFileStore;
-use Symfony\AI\Platform\Bridge\OpenAICodex\Auth\CodexAuthRecord;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 
@@ -63,15 +61,13 @@ final class GrokAuthStorageTest extends TestCase
         $this->assertNull($this->storage->loadCredentials());
     }
 
-    public function testCodexAndGrokWritesPreserveEachOther(): void
+    public function testGrokWritesPreserveUnrelatedLegacyGrants(): void
     {
-        $lockFactory = new LockFactory(new FlockStore($this->tmpDir));
-        $codex = new CodexAuthFileStore($this->tmpDir.'/'.GrokOAuthConfig::AUTH_FILE, $lockFactory);
-        $codex->saveCredentials(new CodexAuthRecord('codex-one', 'codex-refresh', time() + 3600, 'account'));
+        $path = $this->tmpDir.'/'.GrokOAuthConfig::AUTH_FILE;
+        $legacy = ['openai-codex' => ['access' => 'legacy-sentinel']];
+        (new \Symfony\Component\Filesystem\Filesystem())->dumpFile($path, json_encode($legacy, \JSON_THROW_ON_ERROR));
         $this->storage->saveCredentials(new GrokAuthRecord('grok-one', 'grok-refresh', time() + 3600));
-        $codex->saveCredentials(new CodexAuthRecord('codex-two', 'codex-refresh', time() + 3600, 'account'));
-
-        $this->assertSame('codex-two', $codex->loadCredentialsRaw()?->access);
+        $this->assertSame($legacy['openai-codex'], json_decode(file_get_contents($path), true, flags: \JSON_THROW_ON_ERROR)['openai-codex']);
         $this->assertSame('grok-one', $this->storage->loadCredentialsRaw()?->access);
     }
 

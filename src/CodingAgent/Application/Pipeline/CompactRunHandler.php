@@ -25,7 +25,6 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\CompactionRuntimeSettingsDTO;
 use Ineersa\CodingAgent\Extension\ExtensionCompactionHookDispatcher;
 use Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface;
-use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
@@ -51,7 +50,6 @@ final readonly class CompactRunHandler implements RunMessageHandler, RunMessageH
         private ExtensionCompactionHookDispatcher $extensionHookDispatcher,
         private RunRelationshipReaderInterface $relationshipReader,
         private NormalizerInterface $normalizer,
-        private HatfieldSessionStore $sessionMetadataStore,
         private LoggerInterface $logger = new NullLogger(),
     ) {
     }
@@ -480,11 +478,6 @@ final readonly class CompactRunHandler implements RunMessageHandler, RunMessageH
             'currentOperation' => null,
             'lastAppliedCompactionKey' => $message->idempotencyKey(),
         ]);
-
-        // Same baseline reset as CompactionStepResultHandler: replacement summaries
-        // rewrite history without the async worker, so discarded transition anchors
-        // must not survive into the next Astra request.
-        $this->sessionMetadataStore->resetReasoningBaseline($runId);
 
         // Pre-LLM guard replacement must continue the LLM turn.
         $effects = [];

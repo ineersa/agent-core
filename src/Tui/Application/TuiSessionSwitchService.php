@@ -90,6 +90,9 @@ class TuiSessionSwitchService implements TuiSessionSwitchServiceInterface
      */
     public function requestReload(string $sessionId): void
     {
+        if (!$this->state->sessionReady) {
+            $this->cancelCurrentRun();
+        }
         $this->pendingReload = new ProcessReloadIntentDTO($sessionId);
         $this->tui->stop();
     }
@@ -180,6 +183,17 @@ class TuiSessionSwitchService implements TuiSessionSwitchServiceInterface
     private function cancelCurrentRun(): void
     {
         if (null === $this->state->handle) {
+            return;
+        }
+        if (!$this->state->sessionReady) {
+            try {
+                $this->client->cancelBootstrap($this->state->handle->runId);
+            } catch (\Throwable $exception) {
+                $this->logger->warning('tui.bootstrap.switch_cancel_failed', ['run_id' => $this->state->handle->runId,
+                    'session_id' => $this->state->sessionId, 'component' => 'tui', 'event_type' => 'tui.bootstrap.switch_cancel_failed',
+                    'exception_class' => $exception::class]);
+            }
+
             return;
         }
 

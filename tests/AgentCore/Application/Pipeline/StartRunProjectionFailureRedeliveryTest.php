@@ -18,6 +18,7 @@ use Ineersa\AgentCore\Tests\Support\Builder\StartRunMessageBuilder;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
+use Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
@@ -38,23 +39,22 @@ final class StartRunProjectionFailureRedeliveryTest extends TestCase
         $executionBus = new TestMessageBus();
         $activeRunContext = new FailOnceProjectionActiveRunContext();
         $activeRunContext->createNew('run-start-projection-fail');
+        $locks = new RunLockManager(new LockFactory(new InMemoryStore()));
 
         $processor = new RunMessageProcessor(
             activeRunContext: $activeRunContext,
-            runLockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
+            runLockManager: $locks,
+            commands: new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore(),
             runCommit: new RunCommit(
                 activeRunContext: $activeRunContext,
                 eventStore: $eventStore,
-                stepDispatcher: new StepDispatcher(new TestMessageBus(), $executionBus),
                 logger: new NullLogger(),
-                toolBatchCollector: new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(),
+                finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher($commandBus, $executionBus, new \Ineersa\AgentCore\Tests\Support\TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher()), locks: $locks),
             ),
-            stepDispatcher: new StepDispatcher(new TestMessageBus(), $executionBus),
             handlers: [
                 new StartRunHandler(
                     eventFactory: new EventFactory(),
                     normalizer: TestSerializerFactory::normalizer(),
-                    commandBus: $commandBus,
                 ),
             ],
         );
@@ -89,9 +89,12 @@ final class StartRunProjectionFailureRedeliveryTest extends TestCase
 
         $this->assertCount(1, $eventStore->allFor('run-start-projection-fail'), 'Redelivery must not append a second run_started.');
         $this->assertCount(1, $commandBus->messages);
-        $this->assertInstanceOf(AdvanceRun::class, $commandBus->messages[0]);
-        $this->assertSame('run-start-projection-fail', $commandBus->messages[0]->runId());
-        $this->assertStringStartsWith('start-follow-up-', $commandBus->messages[0]->stepId());
+        $advance = $commandBus->messages[0] instanceof \Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO
+            ? $commandBus->messages[0]->message
+            : $commandBus->messages[0];
+        $this->assertInstanceOf(AdvanceRun::class, $advance);
+        $this->assertSame('run-start-projection-fail', $advance->runId());
+        $this->assertStringStartsWith('start-follow-up-', $advance->stepId());
     }
 }
 
