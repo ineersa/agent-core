@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Mcp\Client;
 
+use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
+
 /**
  * Hatfield-owned contract for the broker-owned MCP connection manager.
  *
@@ -64,5 +66,5 @@ interface McpConnectionManagerInterface
      * @throws McpClientInvocationException on missing client after reconnect
      * @throws McpClientInvocationException on SDK call failures
      */
-    public function callTool(string $runId, string $serverName, string $toolName, array $arguments = []): array;
+    public function callTool(string $runId, string $serverName, string $toolName, array $arguments = [], ?CancellationTokenInterface $cancellationToken = null, ?int $timeoutSeconds = null): array;
 }

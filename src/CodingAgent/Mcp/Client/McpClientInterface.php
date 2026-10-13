@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Mcp\Client;
 
+use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
+
 /**
  * Hatfield-owned MCP client boundary interface.
  *
@@ -33,6 +35,11 @@ interface McpClientInterface
     public function disconnect(): void;
 
     /**
+     * Whether the client still has a usable initialized connection.
+     */
+    public function isConnected(): bool;
+
+    /**
      * List available tools from the connected MCP server.
      *
      * Returns an array of tool definitions as associative arrays,
@@ -50,5 +57,5 @@ interface McpClientInterface
      *
      * @return array{content: list<array<string, mixed>>, isError: bool}
      */
-    public function callTool(string $name, array $arguments = []): array;
+    public function callTool(string $name, array $arguments = [], ?CancellationTokenInterface $cancellationToken = null, ?int $timeoutSeconds = null): array;
 }

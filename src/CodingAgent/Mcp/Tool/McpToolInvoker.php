@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Mcp\Tool;
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\CodingAgent\Mcp\Client\McpClientInterruptedException;
 use Ineersa\CodingAgent\Mcp\Client\McpClientInvocationException;
 use Ineersa\CodingAgent\Mcp\Client\McpConnectionManagerInterface;
 use Psr\Log\LoggerInterface;
@@ -21,16 +22,8 @@ use Psr\Log\LoggerInterface;
  * are tiny callables that carry only static MCP identity and delegate
  * to this invoker at call time.
  *
- * TODO: Per-call timeout is not enforced because the MCP SDK
- * ({@see McpSdkClientAdapter}) has no per-call timeout or cancellation
- * hook.  Request timeout is fixed at client construction time
- * ({@see McpSdkClientFactory::createSdkClient()}) via the server's
- * configured `timeoutMs`.  {@see ToolContext::timeoutSeconds()} cannot
- * currently cap an in-flight SDK call.  Similarly,
- * {@see ToolContext::cancellationToken()} is not propagated to SDK
- * calls.  When the SDK adds call-level timeout/cancellation support,
- * wire it through {@see McpClientInterface::callTool()} and enforce
- * min(mcpConfigTimeout, toolContextTimeout) here.
+ * Propagates the ambient cancellation token and deadline to the MCP client.
+ * The adapter caps the deadline by the server's configured timeout.
  */
 final readonly class McpToolInvoker
 {
@@ -64,7 +57,11 @@ final readonly class McpToolInvoker
                 serverName: $serverName,
                 toolName: $mcpName,
                 arguments: $arguments,
+                cancellationToken: $context->cancellationToken(),
+                timeoutSeconds: $context->timeoutSeconds(),
             );
+        } catch (McpClientInterruptedException $e) {
+            throw new ToolCallException(error: $e->getMessage(), retryable: false, hint: 'The MCP tool call was cancelled or timed out.', previous: $e);
         } catch (McpClientInvocationException $e) {
             // Client-layer failure (missing client after reconnect,
             // SDK error, connection drop).  Translate to ToolCallException
