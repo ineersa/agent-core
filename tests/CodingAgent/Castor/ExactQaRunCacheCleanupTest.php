@@ -117,4 +117,49 @@ final class ExactQaRunCacheCleanupTest extends TestCase
             TestDirectoryIsolation::removeDirectory($work);
         }
     }
+
+    public function testOutsideTemporaryScopeRequiresOwnershipAndConsumerCompletion(): void
+    {
+        require_once ProjectDir::get().'/.castor/helpers.php';
+        require_once ProjectDir::get().'/.castor/qa_tmux.php';
+        $work = TestDirectoryIsolation::createProjectTempDir('qa-os-retention');
+        $id = 'qa-20260101-000000-77-deadbeef';
+        $base = TestDirectoryIsolation::createOsTempDir('qa-os-base');
+        $filesystem = new \Symfony\Component\Filesystem\Filesystem();
+        $anchor = (string) realpath($filesystem->tempnam($base, $id.'-'));
+        $os = $anchor.'.d';
+        $filesystem->mkdir($os);
+        $marker = $work.'/var/reports/'.$id.'/.os-temp';
+        $keep = getenv('HATFIELD_KEEP_TMP');
+        try {
+            $filesystem->dumpFile($marker, json_encode([$work, $anchor], \JSON_THROW_ON_ERROR));
+            $filesystem->dumpFile($os.'/proof.txt', 'OS diagnostic');
+            \CastorTasks\prune_completed_qa_reports($work);
+            $this->assertDirectoryExists($os, 'An allocation record without consumer completion is not deletion authority.');
+            $filesystem->remove($marker);
+            $filesystem->symlink($os.'/proof.txt', $marker);
+            $this->assertNull(\CastorTasks\qa_os_temporary_directory($id, $work));
+            $filesystem->remove($marker);
+            $filesystem->dumpFile($marker, json_encode([$work, \dirname($os)], \JSON_THROW_ON_ERROR));
+            $this->assertNull(\CastorTasks\qa_os_temporary_directory($id, $work), 'The external base is not the allocated child scope.');
+            $filesystem->dumpFile($marker, json_encode([$work, $anchor], \JSON_THROW_ON_ERROR));
+            $filesystem->rename($os, $os.'.saved');
+            $filesystem->symlink($os.'.saved', $os);
+            $this->assertNull(\CastorTasks\qa_os_temporary_directory($id, $work), 'Symlinked scope directories are not deletion authority.');
+            $filesystem->remove($os);
+            $filesystem->rename($os.'.saved', $os);
+            putenv('HATFIELD_KEEP_TMP=1');
+            \CastorTasks\complete_qa_run($id, $work);
+            $this->assertFileExists($work.'/var/reports/'.$id.'/diagnostics/'.basename($os).'/proof.txt');
+            $this->assertDirectoryDoesNotExist($os);
+            $this->assertFileDoesNotExist($anchor);
+            $this->assertDirectoryExists($base, 'Only the allocated child scope is owned, not its external base.');
+            \CastorTasks\prune_completed_qa_reports($work);
+            $this->assertFileExists($work.'/var/reports/'.$id.'/.completed');
+        } finally {
+            false === $keep ? putenv('HATFIELD_KEEP_TMP') : putenv('HATFIELD_KEEP_TMP='.$keep);
+            TestDirectoryIsolation::removeDirectory($base);
+            TestDirectoryIsolation::removeDirectory($work);
+        }
+    }
 }

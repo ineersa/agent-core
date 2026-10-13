@@ -264,18 +264,50 @@ function initialize_qa_check_run(bool $keepOverrides = false): string
         }
     }
 
+    if (Path::isBasePath($projectRoot, (string) realpath(sys_get_temp_dir()))) {
+        throw new \RuntimeException('QA system temporary directories must be outside the checkout.');
+    }
+    $anchor = (string) realpath((new Filesystem())->tempnam(sys_get_temp_dir(), $id.'-'));
+    if (file_exists($anchor.'.d') || is_link($anchor.'.d')) {
+        (new Filesystem())->remove($anchor);
+        throw new \RuntimeException('QA system temporary scope already exists.');
+    }
+    (new Filesystem())->mkdir($anchor.'.d');
+    (new Filesystem())->dumpFile($projectRoot.'/'.$reportsRel.'/.os-temp', json_encode([$projectRoot, $anchor], \JSON_THROW_ON_ERROR));
+
     return $id;
+}
+
+/** Only allocation records from this worktree authorize an outside temporary scope. */
+function qa_os_temporary_directory(string $id, string $root): ?string
+{
+    $marker = $root.'/var/reports/'.$id.'/.os-temp';
+    $data = is_file($marker) && !is_link($marker) ? json_decode((string) file_get_contents($marker), true) : null;
+    if (!\is_array($data) || 2 !== \count($data) || ($data[0] ?? null) !== $root || !\is_string($data[1] ?? null)
+        || str_contains($data[1], "\0") || Path::canonicalize($data[1]) !== $data[1] || !Path::isAbsolute($data[1]) || Path::isBasePath($root, $data[1])
+        || !str_starts_with(basename($data[1]), $id.'-') || (file_exists($data[1]) && (!is_file($data[1]) || realpath($data[1]) !== $data[1])) || is_link($data[1])) {
+        return null;
+    }
+    $os = $data[1].'.d';
+    if ((file_exists($os) && (!is_file($data[1]) || !is_dir($os) || realpath($os) !== $os)) || is_link($os)) {
+        return null;
+    }
+
+    return $os;
 }
 
 /** Publish completion only after exact-run process/tmux shutdown is proved. */
 function complete_qa_run(string $id, string $root): void
 {
-    $temporary = $root.'/var/tmp/'.$id;
-    if (getenv('HATFIELD_KEEP_TMP') && is_dir($temporary)) {
+    assert_castor_check_run_no_process_leaks($id);
+    foreach ([$root.'/var/tmp/'.$id, qa_os_temporary_directory($id, $root)] as $temporary) {
+        if (!getenv('HATFIELD_KEEP_TMP') || null === $temporary || !is_dir($temporary)) {
+            continue;
+        }
         // FIFOs and sockets are coordination resources, not persisted diagnostics.
         $entries = (new Finder())->in($temporary)->ignoreDotFiles(false)->ignoreVCS(false)
             ->filter(static fn (\SplFileInfo $entry): bool => $entry->isFile() || $entry->isDir() || $entry->isLink());
-        (new Filesystem())->mirror($temporary, $root.'/var/reports/'.$id.'/diagnostics', iterator: $entries);
+        (new Filesystem())->mirror($temporary, $root.'/var/reports/'.$id.'/diagnostics/'.basename($temporary), iterator: $entries);
     }
     (new Filesystem())->dumpFile($root.'/var/reports/'.$id.'/.completed', json_encode([$id, microtime(true)], \JSON_THROW_ON_ERROR));
     prune_completed_qa_reports($root);
@@ -304,10 +336,15 @@ function prune_completed_qa_reports(string $root): void
                 || (!\is_int($data[1]) && !\is_float($data[1])) || !is_finite((float) $data[1])) {
                 continue;
             }
+            $os = qa_os_temporary_directory($id, $root);
+            if ((file_exists($directory.'/.os-temp') || is_link($directory.'/.os-temp')) && null === $os) {
+                continue;
+            }
             cleanup_exact_qa_run_cache_roots($id, $root);
-            $temporary = $root.'/var/tmp/'.$id;
-            if (realpath($temporary) === $temporary) {
-                (new Filesystem())->remove($temporary);
+            foreach ([$root.'/var/tmp/'.$id, $os, null === $os ? null : substr($os, 0, -2)] as $temporary) {
+                if (null !== $temporary && realpath($temporary) === $temporary) {
+                    (new Filesystem())->remove($temporary);
+                }
             }
             $completed[$directory] = $data[1];
         }
@@ -325,10 +362,7 @@ function initialize_standalone_qa_run(): void
         return;
     }
     $id = initialize_qa_check_run(keepOverrides: true);
-    register_shutdown_function(static function () use ($id): void {
-        assert_castor_check_run_no_process_leaks($id);
-        complete_qa_run($id, project_root_dir());
-    });
+    register_shutdown_function(__NAMESPACE__.'\complete_qa_run', $id, project_root_dir());
 }
 
 /**
@@ -424,12 +458,16 @@ function qa_test_home_shell_prefix(): string
 {
     $home = qa_test_home_dir();
     $cache = qa_standalone_test_cache_dir();
-    $temporary = getenv('HATFIELD_QA_TMP_DIR');
+    $temporary = qa_os_temporary_directory((string) getenv('HATFIELD_QA_RUN_ID'), project_root_dir());
+    $allocation = project_root_dir().'/var/reports/'.getenv('HATFIELD_QA_RUN_ID').'/.os-temp';
+    if (null === $temporary && (file_exists($allocation) || is_link($allocation))) {
+        throw new \RuntimeException('QA system temporary allocation has uncertain ownership.');
+    }
 
     return 'HOME='.escapeshellarg($home)
         .' HATFIELD_QA_TEST_HOME='.escapeshellarg($home)
         .' HATFIELD_CACHE_DIR='.escapeshellarg($cache)
-        .' TMPDIR='.escapeshellarg(Path::makeAbsolute(false !== $temporary && '' !== $temporary ? $temporary : 'var/tmp', project_root_dir()))
+        .(null === $temporary ? '' : ' TMPDIR='.escapeshellarg($temporary))
         // Disable Xdebug features in QA children unless debugging or coverage was requested.
         .' XDEBUG_MODE='.escapeshellarg(false === getenv('XDEBUG_MODE') ? 'off' : getenv('XDEBUG_MODE'));
 }
