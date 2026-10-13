@@ -38,6 +38,20 @@ Removal uses Symfony Filesystem. It normalizes directory permissions before desc
 
 Build outputs and caches under `var/tmp/phar`, `phar-build`, `dist`, `static-build` and `static-php-cli` have different owners. PHAR session copies can serve active sessions. `clean:cleanup` no longer recursively removes these unmarked resources or unlinks build locks. Ad-hoc investigation directories, raw LLM captures and unrelated user files also remain untouched. Runtime background artifacts, controller locks, batch snapshots and launch-input recovery have separate lifecycles.
 
+## Controller lock migration
+
+**Stop every old source and PHAR controller before deploying the managed-directory build.** Old binaries use a different lock namespace and cannot exclude a controller using the new store. This migration does not authorize signaling protected processes or deleting their locks.
+
+1. Close old controllers through their normal session shutdown path. Confirm that all old controller binaries have stopped, including controllers launched from other installations or worktrees for the same project.
+2. Deploy the updated source and PHAR builds together. Do not launch old controller builds afterward.
+3. Restart sessions using the updated builds.
+
+`ControllerSessionOwnerLockStore` uses `.hatfield/tmp/controller-locks/managed-<hash>/` for each canonical project-CWD and session resource. Its `owner` file records the exact resource before Symfony FlockStore opens the session inode. Source, worktree and PHAR controllers converge on the same project-scoped directory. Independent sessions retain independent, non-expiring locks.
+
+One permanent Symfony flock coordinator serializes every managed session open and directory reclamation. Do not unlink its inode. Normal release removes the exact owned session directory. The next controller acquisition also recovers other recorded directories whose leases are free. Inherited consumers holding a crashed controller's descriptor prevent reclamation until they exit. Pending contenders wait for the coordinator before opening a session inode, so removal cannot split exclusion across old and new inodes.
+
+Legacy flat `sf.*.lock` files remain untouched. Unmarked directories, invalid ownership records and symlinked scopes are not adopted. A crash before the ownership marker is published can leave an unmarked empty directory; retain it until its lifecycle is independently established. Neither filename nor age establishes quiescence. `castor clean:cleanup` does not remove these runtime resources.
+
 ## Report retention
 
 Keep the latest **10 completed QA runs**, regardless of result. There are no success/failure tiers or additional retention settings. Report ownership is recorded in `.artifact-owner.json` inside each generated report directory.

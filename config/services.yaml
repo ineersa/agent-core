@@ -586,12 +586,14 @@ services:
       $stdoutSink: '@Ineersa\CodingAgent\Runtime\Stream\CommittedRuntimeEventStdoutSink'
       $streamCommittedEventsToStdout: '%env(bool:HATFIELD_CONSUMER_STDOUT_EVENTS)%'
 
-  # Dedicated FlockStore for controller single-owner locks. Default FrameworkBundle
+  # Managed FlockStore directories for controller single-owner locks. Default FrameworkBundle
   # flock is partitioned by kernel.project_dir and would diverge across installs.
   hatfield.controller.session_owner.lock_store:
-    class: Symfony\Component\Lock\Store\FlockStore
+    class: Ineersa\CodingAgent\Runtime\Controller\ControllerSessionOwnerLockStore
     arguments:
       - '%hatfield.controller.session_owner_lock_dir%'
+
+  Ineersa\CodingAgent\Runtime\Controller\ControllerSessionOwnerLockStore: '@hatfield.controller.session_owner.lock_store'
 
   hatfield.controller.session_owner.lock_factory:
     class: Symfony\Component\Lock\LockFactory
