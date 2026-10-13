@@ -44,12 +44,14 @@ final class RuntimeEventPerRunCompactBuffer
         // Stream checkpoints (durable seq > 0 or transient seq = 0) prune superseded deltas.
         // Observed runs must retain the checkpoint itself: parent-first JSONL demux would
         // otherwise leave child live projection with tool results and no ToolCall arguments
-        // (fork/subagent bash cards). Unobserved runs keep pruning-only — memory compact,
-        // no durable backlog.
+        // (fork/subagent bash cards). Native text messages complete before their durable
+        // LLM step: retain one transient snapshot per block even for unobserved children,
+        // so live-view entry can render them until the durable message supersedes them.
+        // Other unobserved checkpoints remain pruning-only, with no durable backlog.
         if ($this->isStreamCheckpoint($event)) {
             $this->pruneTransientTailForCheckpoint($runId, $event);
-            if ($observedRun) {
-                $this->appendTail($runId, $event);
+            if ($observedRun || $this->isNativeTextCheckpoint($event)) {
+                $this->compactAppendTransient($runId, $event);
             }
 
             return;
@@ -186,6 +188,13 @@ final class RuntimeEventPerRunCompactBuffer
             RuntimeEventTypeEnum::ToolExecutionCancelled->value,
             RuntimeEventTypeEnum::TurnCompleted->value,
         ], true);
+    }
+
+    private function isNativeTextCheckpoint(RuntimeEvent $event): bool
+    {
+        return 0 === $event->seq
+            && RuntimeEventTypeEnum::AssistantTextCompleted->value === $event->type
+            && \array_key_exists('output_index', $event->payload);
     }
 
     private function isRunTerminal(RuntimeEvent $event): bool
@@ -344,7 +353,7 @@ final class RuntimeEventPerRunCompactBuffer
             $this->tailByRunId[$runId] = [];
         }
 
-        if (self::isCoalescableStreamEvent($event)) {
+        if (self::isCoalescableStreamEvent($event) || $this->isNativeTextCheckpoint($event)) {
             $key = self::streamCoalesceKey($event);
             foreach ($this->tailByRunId[$runId] as $index => $existing) {
                 if (0 !== $existing->seq

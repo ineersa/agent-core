@@ -6,7 +6,9 @@ namespace Ineersa\Tui\Tests\Runtime;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotDTO;
+use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
+use Ineersa\CodingAgent\Runtime\Process\RuntimeEventPerRunCompactBuffer;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
@@ -16,22 +18,85 @@ use Ineersa\CodingAgent\Runtime\ProjectionPipeline\HitlProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\CodingAgent\Runtime\Stream\AssistantTextStreamSubscriber;
+use Ineersa\CodingAgent\Runtime\Stream\LlmStreamDispatchObserver;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
 use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
 use Ineersa\Tui\Runtime\SubagentLiveViewState;
+use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\AI\Platform\Bridge\OpenAIChatGPT\MessageItem;
+use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Result\Stream\Delta\MessageComplete;
+use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Result\Stream\Delta\MessageStart;
+use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 
 #[CoversClass(SubagentLiveChildViewPoller::class)]
 final class SubagentLiveChildViewPollerReplayTest extends TestCase
 {
     private const string CHILD_RUN_ID = 'child_run_replay';
+
+    #[Test]
+    public function enteringUnobservedChildShowsCompletedNativeCommentaryBeforeDurableStepCompletion(): void
+    {
+        $buffer = new RuntimeEventPerRunCompactBuffer();
+        $sink = new class($buffer) implements RuntimeEventSinkInterface {
+            public function __construct(private readonly RuntimeEventPerRunCompactBuffer $buffer)
+            {
+            }
+
+            public function emit(RuntimeEvent $event): void
+            {
+                $this->buffer->ingest($event, observedRun: false);
+            }
+        };
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addSubscriber(new AssistantTextStreamSubscriber($sink));
+        $observer = new LlmStreamDispatchObserver($dispatcher);
+        $observer->onStreamStart(self::CHILD_RUN_ID, 'unfinished-step');
+        foreach (['Inspecting files.', 'Running checks.'] as $index => $text) {
+            $item = ['type' => 'message', 'id' => 'msg_'.$index, 'role' => 'assistant', 'phase' => 'commentary', 'content' => [['type' => 'output_text', 'text' => $text]]];
+            $observer->onDelta(self::CHILD_RUN_ID, 'unfinished-step', new MessageStart($item, $index));
+            $observer->onDelta(self::CHILD_RUN_ID, 'unfinished-step', new TextDelta($text));
+            $completion = new MessageComplete(MessageItem::toText($item), $index);
+            $observer->onDelta(self::CHILD_RUN_ID, 'unfinished-step', $completion);
+            $observer->onDelta(self::CHILD_RUN_ID, 'unfinished-step', $completion);
+        }
+
+        $poller = new SubagentLiveChildViewPoller($this->childLiveProjector(), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer());
+        $live = $this->liveState();
+        $snapshot = new ChildRunTranscriptSnapshotDTO([], [new RuntimeEvent(
+            RuntimeEventTypeEnum::AssistantMessageCompleted->value, self::CHILD_RUN_ID, 5,
+            ['message_id' => 'previous-step', 'text' => 'Previous durable answer.'],
+        )], 5);
+        $harness = new VirtualTuiHarness();
+        $harness->screen()->setWorkingVisible(false);
+        $harness->screen()->setTranscriptBlocks($poller->replaySnapshot($live, $snapshot));
+        $this->assertStringContainsString('Previous durable answer.', $harness->plainScreenText());
+
+        $client = $this->createMock(AgentSessionClient::class);
+        $client->expects($this->once())->method('events')->with(self::CHILD_RUN_ID, 5)
+            ->willReturnCallback(static fn (): iterable => $buffer->drain(self::CHILD_RUN_ID));
+        $changes = $poller->poll($live, $client);
+        $this->assertNotNull($changes);
+        $harness->screen()->applyTranscriptChangeSet($changes);
+
+        $screen = $harness->plainScreenText();
+        foreach (['Previous durable answer.', 'Inspecting files.', 'Running checks.'] as $text) {
+            $this->assertSame(1, substr_count($screen, $text), 'Snapshot and native tail must appear once before llm_step_completed.');
+        }
+        $this->assertLessThan(strpos($screen, 'Running checks.'), strpos($screen, 'Inspecting files.'));
+        $this->assertStringNotContainsString('[commentary]', $screen);
+        $this->assertSame(['commentary', 'commentary'], array_column(array_column(\array_slice($live->childTranscript, 1), 'meta'), 'phase'));
+        $this->assertSame(5, $live->childLastSeq, 'The native checkpoint remains transient, not durable history.');
+        $this->assertSame(0, $buffer->totalTailCount());
+    }
 
     #[Test]
     public function replaySnapshotSetsChildLastSeqAndFiresUnresolvedHitlOnly(): void
