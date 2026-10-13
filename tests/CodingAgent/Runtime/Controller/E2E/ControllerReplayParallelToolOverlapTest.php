@@ -292,15 +292,15 @@ YAML;
     private function countLiveOwnedBarrierBashProcesses(): int
     {
         // BackgroundProcessManager launches via setsid, so barrier bash children
-        // are not under the controller process tree. Use owned .hatfield/tmp/bg
-        // PID files plus /proc cmdline matching for positive liveness.
+        // are not under the controller process tree. Use owned managed scopes
+        // under .hatfield/tmp/bg plus /proc cmdline matching for positive liveness.
         $bgDir = $this->tempDir.'/.hatfield/tmp/bg';
         if (!is_dir($bgDir)) {
             return 0;
         }
 
         $live = 0;
-        foreach (glob($bgDir.'/*.pid') ?: [] as $pidFile) {
+        foreach (glob($bgDir.'/managed-*/*.pid') ?: [] as $pidFile) {
             $pid = (int) trim((string) @file_get_contents($pidFile));
             if ($pid <= 0 || !is_dir('/proc/'.$pid)) {
                 continue;
