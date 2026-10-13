@@ -18,7 +18,7 @@ Thoroughness (infer from task, default medium):
 - Thorough: Trace all dependencies, check tests/types
 
 Strategy:
-1. Use `code_search` for conceptual discovery when available. Use `rg`/`find` for literal text and file searches in the exact checkout.
+1. Use `rg`/`find` for literal text and file searches in the exact checkout.
 2. Read targeted sections after searches identify the relevant files.
 3. Trace definitions, callers, imports, and implementations to identify dependencies between files.
 
