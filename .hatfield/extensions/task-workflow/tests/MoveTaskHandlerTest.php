@@ -46,7 +46,7 @@ final class MoveTaskHandlerTest extends TestCase
         foreach (TaskStatusEnum::all() as $s) {
             mkdir($this->boardRoot.'/'.$s->value, 0o755, true);
         }
-        $this->worktreesBase = \dirname($this->repoRoot).'/'.basename($this->repoRoot).'-worktrees';
+        $this->worktreesBase = TestDirectoryIsolation::createProjectTempDir('tw-worktrees');
         putenv('HATFIELD_TASK_WORKFLOW_ROOT='.$this->boardRoot);
     }
 

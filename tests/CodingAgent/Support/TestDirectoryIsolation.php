@@ -4,6 +4,12 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Support;
 
+use CastorTasks\TestArtifactLifecycle;
+use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Finder\Finder;
+
+require_once \dirname(__DIR__, 3).'/.castor/TestArtifactLifecycle.php';
+
 /**
  * Shared temporary-directory creation and cleanup for tests.
  *
@@ -16,6 +22,54 @@ namespace Ineersa\CodingAgent\Tests\Support;
  */
 final class TestDirectoryIsolation
 {
+    /** @var array<string, string> */
+    private static array $diagnosticReports = [];
+
+    /** Archive explicitly requested test proof without keeping the working tree. */
+    public static function preserveDirectory(string $source, ?string $projectRoot = null, ?TestArtifactLifecycle $lifecycle = null): string
+    {
+        $root = $projectRoot ?? ProjectDir::get();
+        if (!str_starts_with($source, $root.'/var/tmp/') || realpath($source) !== $source || !is_dir($source)) {
+            throw new \InvalidArgumentException('Invalid isolated test diagnostic source.');
+        }
+        $configured = getenv('HATFIELD_QA_REPORTS_DIR');
+        $report = false === $configured ? '' : $configured;
+        if ('' !== $report && !str_starts_with($report, '/')) {
+            $report = $root.'/'.$report;
+        }
+        $marker = $report.'/.artifact-owner.json';
+        $owner = is_file($marker) && !is_link($marker) ? json_decode((string) file_get_contents($marker), true) : null;
+        $active = false;
+        if (\is_array($owner) && ($owner['root'] ?? null) === $root && \is_int($owner['pid'] ?? null)
+            && \is_string($owner['id'] ?? null) && 1 === preg_match('/^[a-f0-9]{32}$/D', $owner['id'])
+            && \is_array($owner['paths'] ?? null) && array_is_list($owner['paths'])
+            && \is_string($owner['start'] ?? null) && null === ($owner['completed'] ?? null)
+            && 1 === preg_match('~^'.preg_quote($root, '~').'/var/reports/qa-[A-Za-z0-9._-]+$~D', $report)
+            && realpath($report) === $report) {
+            $stat = @file_get_contents('/proc/'.$owner['pid'].'/stat');
+            if (false !== $stat && false !== ($end = strrpos($stat, ')'))) {
+                $fields = explode(' ', substr($stat, $end + 2));
+                $active = ($fields[19] ?? null) === $owner['start'] && !\in_array($fields[0], ['Z', 'X'], true);
+            }
+        }
+        if (!$active) {
+            if (!isset(self::$diagnosticReports[$root])) {
+                $report = $root.'/var/reports/qa-test-'.date('Ymd-His').'-'.getmypid().'-'.bin2hex(random_bytes(8));
+                ($lifecycle ?? TestArtifactLifecycle::current($root))->report($report);
+                self::$diagnosticReports[$root] = $report;
+            }
+            $report = self::$diagnosticReports[$root];
+        }
+        $destination = $report.'/diagnostics/'.basename($source).'-'.substr(hash('sha256', $source), 0, 12);
+        // FIFOs and sockets are live coordination resources, not persisted proof.
+        // Mirroring them is unsupported and reading a FIFO can block forever.
+        $entries = (new Finder())->in($source)->ignoreDotFiles(false)->ignoreVCS(false)
+            ->filter(static fn (\SplFileInfo $entry): bool => $entry->isFile() || $entry->isDir() || $entry->isLink());
+        (new Filesystem())->mirror($source, $destination, iterator: $entries, options: ['override' => true]);
+
+        return $destination;
+    }
+
     /**
      * Create a temporary directory under the project's var/tmp/.
      *
@@ -28,6 +82,7 @@ final class TestDirectoryIsolation
     {
         $projectDir = ProjectDir::get();
         $dir = $projectDir.'/var/tmp/'.$prefix.'-'.bin2hex(random_bytes(8));
+        TestArtifactLifecycle::current($projectDir)->own($dir);
         mkdir($dir, $permissions, true);
 
         return $dir;
@@ -43,7 +98,14 @@ final class TestDirectoryIsolation
      */
     public static function createOsTempDir(string $prefix = 'test', int $permissions = 0o750): string
     {
-        $dir = sys_get_temp_dir().'/'.$prefix.'-'.bin2hex(random_bytes(8));
+        // macOS system temp paths commonly traverse /var -> /private/var.
+        // Register the canonical allocation rather than a symlink escape.
+        $tempRoot = realpath(sys_get_temp_dir());
+        if (false === $tempRoot) {
+            throw new \RuntimeException('System temporary directory does not exist.');
+        }
+        $dir = $tempRoot.'/'.$prefix.'-'.bin2hex(random_bytes(8));
+        TestArtifactLifecycle::current(ProjectDir::get())->own($dir);
         mkdir($dir, $permissions, true);
 
         return $dir;
@@ -129,14 +191,15 @@ YAML
     /**
      * Recursively remove a directory tree.
      *
-     * Normalizes file permissions to ensure writability before unlinking,
-     * matching the robustness pattern used in E2E test cleanup.
+     * Normalizes directory permissions before removal without following symlinks.
      *
      * @param string $dir path to the directory to remove
      */
     public static function removeDirectory(string $dir): void
     {
-        if (!is_dir($dir)) {
+        if (!is_dir($dir) && !is_link($dir)) {
+            TestArtifactLifecycle::current(ProjectDir::get())->forgetRemovedPath($dir);
+
             return;
         }
 
@@ -144,40 +207,9 @@ YAML
         // flushing ~/.hatfield/ai-catalog.yaml during tearDown) can recreate entries between
         // the child walk and the final rmdir. Ownership teardown must stop writers first;
         // a second immediate pass only absorbs the unlink/rmdir TOCTOU window and must not
-        // replace process ownership. removeDirectoryOnce is a no-op when already gone.
-        self::removeDirectoryOnce($dir);
-        self::removeDirectoryOnce($dir);
-    }
-
-    private static function removeDirectoryOnce(string $dir): void
-    {
-        if (!is_dir($dir)) {
-            return;
-        }
-
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
-        );
-
-        foreach ($iterator as $file) {
-            $path = $file->getPathname();
-            if ($file->isDir()) {
-                @chmod($path, 0755);
-                if (!@rmdir($path) && is_dir($path)) {
-                    throw new \RuntimeException(\sprintf('Failed to remove directory "%s".', $path));
-                }
-            } else {
-                @chmod($path, 0644);
-                if (!@unlink($path) && is_file($path)) {
-                    throw new \RuntimeException(\sprintf('Failed to unlink "%s".', $path));
-                }
-            }
-        }
-
-        @chmod($dir, 0755);
-        if (!@rmdir($dir) && is_dir($dir)) {
-            throw new \RuntimeException(\sprintf('Failed to remove directory "%s".', $dir));
-        }
+        // replace process ownership. Framework removal is a no-op when already gone.
+        TestArtifactLifecycle::removePath($dir);
+        TestArtifactLifecycle::removePath($dir);
+        TestArtifactLifecycle::current(ProjectDir::get())->forgetRemovedPath($dir);
     }
 }

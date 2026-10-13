@@ -32,7 +32,7 @@ final class WorktreeManagerCopyTest extends TestCase
         file_put_contents($extDir.'/composer.json', '{"name": "test/extensions"}');
         $this->runGit($this->repoRoot, ['add', '.hatfield/']);
         $this->runGit($this->repoRoot, ['commit', '-m', 'add extensions']);
-        $this->worktreesBase = \dirname($this->repoRoot).'/'.basename($this->repoRoot).'-worktrees';
+        $this->worktreesBase = TestDirectoryIsolation::createProjectTempDir('tw-worktrees');
     }
 
     protected function tearDown(): void

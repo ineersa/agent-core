@@ -36,11 +36,14 @@ use Ineersa\CodingAgent\Tests\Support\ParaTestWorkerIsolation;
 
 // PHPUnit subprocesses inherit TEST_TOKEN, but cannot share the parent's
 // active DAMA transaction. Namespace the paired DBs and cache by process too.
-$token = (getenv('TEST_TOKEN') ?: '0').'-P'.getmypid();
+$token = (getenv('TEST_TOKEN') ?: '0').'-P'.getmypid().'-'.bin2hex(random_bytes(8));
 $qaRunId = getenv('HATFIELD_QA_RUN_ID') ?: '';
 $lane = getenv('HATFIELD_QA_LANE') ?: '';
 
 $root = dirname(__DIR__);
+require_once $root.'/vendor/autoload.php';
+require_once $root.'/.castor/TestArtifactLifecycle.php';
+$artifacts = CastorTasks\TestArtifactLifecycle::current($root);
 
 // ── Per-worker (+ per-lane) DB / cache paths ──
 $dbPath = ParaTestWorkerIsolation::appDatabaseFilename($qaRunId, $lane, $token);
@@ -52,6 +55,7 @@ putenv("HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH={$transportDbPath}");
 $_ENV['HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH'] = $transportDbPath;
 
 $cacheDir = ParaTestWorkerIsolation::cacheDirectory($qaRunId, $lane, $token);
+$artifacts->own($root.'/'.$cacheDir);
 putenv("HATFIELD_CACHE_DIR={$cacheDir}");
 $_ENV['HATFIELD_CACHE_DIR'] = $cacheDir;
 
@@ -59,6 +63,7 @@ $_ENV['HATFIELD_CACHE_DIR'] = $cacheDir;
 $qaTestHome = getenv('HATFIELD_QA_TEST_HOME') ?: '';
 if ('' === $qaTestHome) {
     $qaTestHome = $root.'/var/tmp/qa-home/paratest-T'.$token;
+    $artifacts->own($qaTestHome);
     $hatfieldDir = $qaTestHome.'/.hatfield';
     if (!is_dir($hatfieldDir) && !mkdir($hatfieldDir, 0777, true) && !is_dir($hatfieldDir)) {
         fwrite(\STDERR, "ParaTest bootstrap (token={$token}): unable to create QA test HOME\n");

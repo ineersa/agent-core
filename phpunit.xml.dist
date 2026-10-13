@@ -26,6 +26,7 @@
     </testsuites>
     <extensions>
         <bootstrap class="DAMA\DoctrineTestBundle\PHPUnit\PHPUnitExtension"/>
+        <bootstrap class="Ineersa\CodingAgent\Tests\Support\TestArtifactCleanupExtension"/>
     </extensions>
     <source>
         <include>

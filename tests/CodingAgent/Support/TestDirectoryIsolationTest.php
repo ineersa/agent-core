@@ -28,4 +28,36 @@ final class TestDirectoryIsolationTest extends TestCase
 
         $this->assertDirectoryDoesNotExist($root);
     }
+
+    #[Test]
+    public function removalDoesNotFollowOrChmodSymlinkTargets(): void
+    {
+        $root = TestDirectoryIsolation::createOsTempDir('test-directory-links');
+        $outside = TestDirectoryIsolation::createOsTempDir('test-directory-outside');
+        file_put_contents($outside.'/keep', 'unrelated');
+        chmod($outside, 0700);
+        symlink($outside, $root.'/external');
+        symlink($outside, $root.'/alias');
+        try {
+            TestDirectoryIsolation::removeDirectory($root.'/alias');
+            $this->assertFileExists($outside.'/keep');
+            TestDirectoryIsolation::removeDirectory($root);
+            $this->assertFileExists($outside.'/keep');
+            $this->assertSame(0700, fileperms($outside) & 0777);
+        } finally {
+            TestDirectoryIsolation::removeDirectory($root);
+            TestDirectoryIsolation::removeDirectory($outside);
+        }
+    }
+
+    #[Test]
+    public function removalNormalizesDirectoriesBeforeDescending(): void
+    {
+        $root = TestDirectoryIsolation::createOsTempDir('test-directory-restricted');
+        mkdir($root.'/nested/hidden', 0700, true);
+        file_put_contents($root.'/nested/hidden/proof', 'fixture');
+        chmod($root.'/nested', 0000);
+        TestDirectoryIsolation::removeDirectory($root);
+        $this->assertDirectoryDoesNotExist($root);
+    }
 }

@@ -12,6 +12,8 @@ use Symfony\Component\Process\Process;
 
 use function Castor\run;
 
+require_once __DIR__.'/TestArtifactLifecycle.php';
+
 const REPORTS_DIR = __DIR__.'/../var/reports';
 
 /**
@@ -246,6 +248,11 @@ function initialize_qa_check_run(): string
     }
 
     $projectRoot = project_root_dir();
+    $artifacts = TestArtifactLifecycle::current($projectRoot);
+    $artifacts->recover();
+    $artifacts->own($projectRoot.'/'.$tmpRel);
+    $artifacts->own($projectRoot.'/'.$cacheRel);
+    $artifacts->report($projectRoot.'/'.$reportsRel);
     foreach ([$reportsRel, $tmpRel, $cacheRel, 'var/test'] as $relative) {
         $path = $projectRoot.'/'.$relative;
         if (!is_dir($path) && !mkdir($path, 0777, true) && !is_dir($path)) {
@@ -284,7 +291,8 @@ function qa_test_home_dir(): string
         $segment = sanitize_qa_run_id_segment((string) $runId);
         $resolved = $projectRoot.'/var/tmp/'.$segment.'/qa-home';
     } else {
-        $resolved = $projectRoot.'/var/tmp/qa-home/pid-'.getmypid();
+        $resolved = $projectRoot.'/var/tmp/qa-home/pid-'.getmypid().'-'.bin2hex(random_bytes(8));
+        TestArtifactLifecycle::current($projectRoot)->own($resolved);
     }
 
     $hatfieldDir = $resolved.'/.hatfield';
@@ -327,10 +335,11 @@ function qa_standalone_test_cache_dir(): string
         $segment = sanitize_qa_run_id_segment((string) $runId);
         $resolved = '.hatfield/cache-'.$segment;
     } else {
-        $resolved = '.hatfield/cache-test-pid-'.getmypid();
+        $resolved = '.hatfield/cache-test-pid-'.getmypid().'-'.bin2hex(random_bytes(8));
     }
 
     $path = $projectRoot.'/'.$resolved;
+    TestArtifactLifecycle::current($projectRoot)->own($path);
     if (!is_dir($path) && !mkdir($path, 0777, true) && !is_dir($path)) {
         throw new \RuntimeException(\sprintf('Unable to create standalone test cache directory "%s".', $path));
     }
@@ -1199,8 +1208,8 @@ function hatfield_phar_session_copies_dir(): string
  * another launch after a rebuild cannot replace a live session's artifact.
  *
  * Same build reuses the immutable copy. A corrupt existing copy fails closed
- * rather than replacing bytes under a live process. Swept by
- * `castor clean:cleanup` (removes the whole var/tmp/phar tree).
+ * rather than replacing bytes under a live process. Test-artifact recovery
+ * retains these unmarked runtime copies; it never removes a live session's PHAR.
  *
  * @param string      $pharPath    canonical artifact to copy from
  * @param string|null $sessionsDir override root for session copies (tests)
@@ -2219,6 +2228,10 @@ function cleanup_exact_qa_run_cache_roots(string $qaRunId, ?string $projectRoot 
     }
 
     if ([] !== $removed) {
+        $artifacts = TestArtifactLifecycle::current(project_root_dir());
+        foreach ($removed as $path) {
+            $artifacts->forgetRemovedPath($path);
+        }
         echo 'QA run cache cleanup: removed '.\count($removed)." exact-run cache root(s) for HATFIELD_QA_RUN_ID={$segment}\n";
     }
 

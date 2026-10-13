@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\E2E;
 
+use CastorTasks\TestArtifactLifecycle;
+use Ineersa\CodingAgent\Tests\Support\ProjectDir;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+
 /**
  * PHPUnit-compatible tmux test harness for TUI e2e/snapshot tests.
  *
@@ -58,7 +62,7 @@ final class TmuxHarness
 
     public function __construct()
     {
-        $this->root = \Ineersa\CodingAgent\Tests\Support\ProjectDir::get();
+        $this->root = ProjectDir::get();
         $this->pid = getmypid();
     }
 
@@ -127,6 +131,12 @@ final class TmuxHarness
         if ('' !== $qaRunId) {
             $paneEnvPrefix = 'export HATFIELD_QA_RUN_ID='.escapeshellarg($qaRunId).'; ';
         }
+        // Detached panes are forked by the existing tmux server, not this
+        // producer. They cannot inherit its lease, so export its current token.
+        $artifactOwner = TestArtifactLifecycle::registerCurrentTmuxOwner() ?? '';
+        if ('' !== $artifactOwner) {
+            $paneEnvPrefix .= 'export HATFIELD_TEST_ARTIFACT_OWNER='.escapeshellarg($artifactOwner).'; ';
+        }
 
         $innerCmd = \sprintf(
             '%scd %s && %s',
@@ -135,11 +145,16 @@ final class TmuxHarness
             $command,
         );
 
+        $sessionEnv = '' !== $artifactOwner ? '-e '.escapeshellarg('HATFIELD_TEST_ARTIFACT_OWNER='.$artifactOwner) : '';
+        if ('' !== $qaRunId) {
+            $sessionEnv .= ' -e '.escapeshellarg('HATFIELD_QA_RUN_ID='.$qaRunId);
+        }
         $cmd = \sprintf(
-            'tmux new-session -d -P -F "#{pane_id}" -x %d -y %d -s %s -- bash -c %s 2>&1',
+            'tmux new-session -d -P -F "#{pane_id}" -x %d -y %d -s %s %s -- bash -c %s 2>&1',
             $width,
             $height,
             escapeshellarg($session),
+            $sessionEnv,
             escapeshellarg($innerCmd),
         );
 
@@ -151,6 +166,13 @@ final class TmuxHarness
         $paneId = $output;
         if (!str_starts_with($paneId, '%')) {
             throw new \RuntimeException(\sprintf('Failed to create tmux session "%s". Output: %s', $session, $output));
+        }
+
+        if ('' !== $artifactOwner) {
+            $this->runTmux(
+                \sprintf('tmux set-option -t %s %s %s', escapeshellarg($session), escapeshellarg(\CastorTasks\artifact_tmux_session_ownership_option()), escapeshellarg($artifactOwner)),
+                self::TMUX_CMD_TIMEOUT,
+            );
         }
 
         if ('' !== $qaRunId) {
@@ -250,6 +272,7 @@ final class TmuxHarness
         $ansi = $this->captureAnsi($pane);
         $path = \sprintf('%s/%s-%s.ansi', $this->snapshotDir, $tag, date('Ymd-His'));
         file_put_contents($path, $ansi);
+        TestDirectoryIsolation::preserveDirectory($this->snapshotDir);
     }
 
     // ── send keys ──────────────────────────────────────────
