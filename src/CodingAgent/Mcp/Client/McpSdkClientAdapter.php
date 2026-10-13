@@ -4,9 +4,13 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Mcp\Client;
 
+use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Mcp\Client as SdkClient;
+use Mcp\Client\CancellationTokenInterface as SdkCancellationTokenInterface;
 use Mcp\Client\Transport\TransportInterface;
 use Mcp\Exception\ConnectionException as SdkConnectionException;
+use Mcp\Exception\RequestCancelledException as SdkRequestCancelledException;
+use Mcp\Exception\TimeoutException as SdkTimeoutException;
 use Mcp\Schema\Content\AudioContent;
 use Mcp\Schema\Content\BlobResourceContents;
 use Mcp\Schema\Content\Content;
@@ -34,6 +38,7 @@ final class McpSdkClientAdapter implements McpClientInterface
     public function __construct(
         private readonly SdkClient $client,
         private readonly TransportInterface $transport,
+        private readonly ?float $serverTimeoutSeconds = null,
     ) {
     }
 
@@ -49,6 +54,11 @@ final class McpSdkClientAdapter implements McpClientInterface
     public function disconnect(): void
     {
         $this->client->disconnect();
+    }
+
+    public function isConnected(): bool
+    {
+        return $this->client->isConnected();
     }
 
     /**
@@ -90,9 +100,30 @@ final class McpSdkClientAdapter implements McpClientInterface
     /**
      * @return array{content: list<array<string, mixed>>, isError: bool}
      */
-    public function callTool(string $name, array $arguments = []): array
+    public function callTool(string $name, array $arguments = [], ?CancellationTokenInterface $cancellationToken = null, ?int $timeoutSeconds = null): array
     {
-        $result = $this->client->callTool($name, $arguments);
+        $sdkToken = null === $cancellationToken ? null : new class($cancellationToken) implements SdkCancellationTokenInterface {
+            public function __construct(private readonly CancellationTokenInterface $token)
+            {
+            }
+
+            public function isCancellationRequested(): bool
+            {
+                return $this->token->isCancellationRequested();
+            }
+        };
+
+        $effectiveTimeout = match (true) {
+            null === $timeoutSeconds => $this->serverTimeoutSeconds,
+            null === $this->serverTimeoutSeconds => (float) $timeoutSeconds,
+            default => min($this->serverTimeoutSeconds, (float) $timeoutSeconds),
+        };
+
+        try {
+            $result = $this->client->callTool($name, $arguments, cancellation: $sdkToken, timeoutSeconds: $effectiveTimeout);
+        } catch (SdkRequestCancelledException|SdkTimeoutException $e) {
+            throw new McpClientInterruptedException($e->getMessage(), (int) $e->getCode(), $e);
+        }
 
         $content = [];
         foreach ($result->content as $item) {

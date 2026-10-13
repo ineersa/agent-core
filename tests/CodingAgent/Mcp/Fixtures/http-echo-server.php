@@ -6,9 +6,7 @@
  * A minimal stateless JSON-RPC handler that runs behind PHP's built-in
  * web server.  Each request is handled independently — the PHP built-in
  * server spawns a new process per request, so session state is not
- * preserved.  This is acceptable for discovery tests (initialize +
- * tools/list) because the SDK HttpTransport sends both requests in
- * the same POST body (JSON-RPC batch/bidi) or sequentially.
+ * preserved. Discovery and simple tool calls do not need shared state.
  *
  * Usage:
  *   php -S 127.0.0.1:<port> tests/CodingAgent/Mcp/Fixtures/http-echo-server.php
@@ -75,6 +73,12 @@ try {
         $response = handleInitialize($rawId);
     } elseif ('tools/list' === $method) {
         $response = handleListTools($rawId);
+    } elseif ('tools/call' === $method && 'hello' === ($request['params']['name'] ?? null)) {
+        $response = [
+            'jsonrpc' => '2.0',
+            'id' => $rawId,
+            'result' => ['content' => [['type' => 'text', 'text' => 'Hello, '.($request['params']['arguments']['name'] ?? '')]]],
+        ];
     } elseif ('notifications/initialized' === $method) {
         // Acknowledge without response
         http_response_code(202);
