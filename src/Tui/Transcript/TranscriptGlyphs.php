@@ -21,8 +21,6 @@ final class TranscriptGlyphs
     public const string GLYPH_USER_MESSAGE = '  ❯';
     /** Assistant message prefix glyph */
     public const string GLYPH_ASSISTANT_MESSAGE = '  ◇';
-    /** User-facing assistant narration, distinct from reasoning and the answer. */
-    public const string GLYPH_ASSISTANT_COMMENTARY = '  ◇ [commentary]';
     /** Assistant thinking prefix glyph */
     public const string GLYPH_ASSISTANT_THINKING = '  ⋯';
     /** Tool call/result prefix glyph */

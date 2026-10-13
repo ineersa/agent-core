@@ -20,6 +20,8 @@ use Ineersa\CodingAgent\Runtime\Stream\AssistantTextStreamSubscriber;
 use Ineersa\CodingAgent\Runtime\Stream\AssistantThinkingStreamSubscriber;
 use Ineersa\CodingAgent\Runtime\Stream\LlmStreamDispatchObserver;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
+use Ineersa\Tui\Theme\ThemeColorEnum;
+use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
 use Ineersa\Tui\Transcript\TranscriptGlyphs;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -32,13 +34,17 @@ use Symfony\AI\Platform\Result\Stream\Delta\ThinkingComplete;
 use Symfony\AI\Platform\Result\Stream\Delta\ThinkingDelta;
 use Symfony\AI\Platform\Result\Stream\Delta\ThinkingStart;
 use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Tui\Terminal\ScreenBuffer;
 
 final class TranscriptBlockRendererTest extends TestCase
 {
     #[DataProvider('messageDeliveryModes')]
     public function testCommentaryAndAnswerRenderSeparatelyLiveAndAfterReplayWithThinkingHidden(bool $terminalOnly, bool $phaseOnComplete): void
     {
-        $harness = new VirtualTuiHarness(displayConfig: new TranscriptDisplayConfig(thinkingVisible: false));
+        $harness = new VirtualTuiHarness(
+            palette: new ThemePalette('commentary-test', [ThemeColorEnum::AssistantMessage->value => 'green', ThemeColorEnum::Muted->value => 'red']),
+            displayConfig: new TranscriptDisplayConfig(thinkingVisible: false),
+        );
         $harness->screen()->setWorkingVisible(false);
         $dispatcher = new EventDispatcher();
         $dispatcher->addSubscriber(new AssistantStreamProjectionSubscriber());
@@ -63,7 +69,7 @@ final class TranscriptBlockRendererTest extends TestCase
         $observer->onDelta('run', 'step', new ThinkingComplete('Hidden reasoning'));
         $harness->screen()->applyTranscriptChangeSet($projector->drainChanges());
         $content = [];
-        foreach ([['commentary', '**Checking files**'], ['final_answer', 'The answer is **42**.']] as $index => [$phase, $text]) {
+        foreach ([['commentary', "**Checking files** and *planning* the next step.\n\nNarration continues."], ['final_answer', 'The answer is **42**.']] as $index => [$phase, $text]) {
             $item = ['type' => 'message', 'id' => 'msg_'.$index, 'role' => 'assistant', 'phase' => $phase, 'content' => [['type' => 'output_text', 'text' => $text]]];
             if (!$terminalOnly) {
                 $header = $item;
@@ -75,11 +81,7 @@ final class TranscriptBlockRendererTest extends TestCase
                 $harness->screen()->applyTranscriptChangeSet($projector->drainChanges());
                 if (0 === $index) {
                     $this->assertStringContainsString('Checking files', $harness->plainScreenText());
-                    if ($phaseOnComplete) {
-                        $this->assertStringNotContainsString('[commentary]', $harness->plainScreenText());
-                    } else {
-                        $this->assertStringContainsString('[commentary] Checking files', $harness->plainScreenText());
-                    }
+                    $this->assertRenderedTextStyle($harness, 'Checking files', !$phaseOnComplete);
                     $this->assertStringNotContainsString('The answer is', $harness->plainScreenText());
                 }
             }
@@ -89,7 +91,12 @@ final class TranscriptBlockRendererTest extends TestCase
             $content[] = ['type' => 'text', 'text' => $text, 'text_signature' => $signed->getSignature()];
         }
         $live = $harness->plainScreenText();
-        $this->assertStringContainsString(trim(TranscriptGlyphs::GLYPH_ASSISTANT_COMMENTARY).' Checking files', $live);
+        $this->assertStringContainsString(trim(TranscriptGlyphs::GLYPH_ASSISTANT_MESSAGE).' Checking files', $live);
+        $this->assertStringNotContainsString('[commentary]', $live);
+        $this->assertRenderedTextStyle($harness, 'Checking files', true);
+        $this->assertRenderedTextStyle($harness, 'planning the next step.', true);
+        $this->assertRenderedTextStyle($harness, 'Narration continues.', true);
+        $this->assertRenderedTextStyle($harness, 'The answer is 42.', false);
         $this->assertStringContainsString(trim(TranscriptGlyphs::GLYPH_ASSISTANT_MESSAGE).' The answer is 42.', $live);
         $this->assertSame(1, substr_count($live, 'Checking files'));
         $this->assertSame(1, substr_count($live, 'The answer is 42.'));
@@ -101,10 +108,16 @@ final class TranscriptBlockRendererTest extends TestCase
         $projector->accept($completion);
         $harness->screen()->applyTranscriptChangeSet($projector->drainChanges());
         $this->assertSame($live, $harness->plainScreenText(), 'Canonical completion must not duplicate streamed messages.');
+        $this->assertRenderedTextStyle($harness, 'Checking files', true);
+        $this->assertRenderedTextStyle($harness, 'The answer is 42.', false);
         $projector->reset();
         $projector->accept($completion);
         $harness->screen()->setTranscriptBlocks($projector->blocks());
         $this->assertSame($live, $harness->plainScreenText(), 'Cold canonical replay renders the same phase-separated text.');
+        $this->assertRenderedTextStyle($harness, 'Checking files', true);
+        $this->assertRenderedTextStyle($harness, 'planning the next step.', true);
+        $this->assertRenderedTextStyle($harness, 'Narration continues.', true);
+        $this->assertRenderedTextStyle($harness, 'The answer is 42.', false);
         $this->assertStringNotContainsString('Hidden reasoning', $harness->plainScreenText());
     }
 
@@ -136,7 +149,8 @@ final class TranscriptBlockRendererTest extends TestCase
         $harness->screen()->applyTranscriptChangeSet($projector->drainChanges());
         $text = $harness->plainScreenText();
         $this->assertStringContainsString('Local notification', $text);
-        $this->assertStringContainsString('[commentary] Narration', $text);
+        $this->assertStringContainsString('Narration', $text);
+        $this->assertStringNotContainsString('[commentary]', $text);
         $this->assertSame(1, substr_count($text, 'Narration'));
         $this->assertSame(1, substr_count($text, 'Answer'));
         $this->assertLessThan(strpos($text, 'read'), strpos($text, 'Narration'));
@@ -176,5 +190,29 @@ final class TranscriptBlockRendererTest extends TestCase
         yield 'pending' => ['pending', 'Human input required'];
         yield 'answered' => ['answered', 'Human input answered'];
         yield 'rejected' => ['rejected', 'Human input rejected'];
+    }
+
+    private function assertRenderedTextStyle(VirtualTuiHarness $harness, string $text, bool $italic): void
+    {
+        $buffer = new ScreenBuffer($harness->terminal()->getColumns(), $harness->terminal()->getRows());
+        $buffer->write($harness->ansiOutput());
+        foreach ($buffer->getCells() as $cells) {
+            $line = implode('', array_column($cells, 'char'));
+            $start = strpos($line, $text);
+            if (false === $start) {
+                continue;
+            }
+            $offset = 0;
+            foreach ($cells as $cell) {
+                if ($offset >= $start && $offset < $start + \strlen($text) && '' !== $cell['char']) {
+                    $this->assertMatchesRegularExpression('/(?:\x1b\[|;)32(?:;|m)/', $cell['style'], 'Rendered text retains the normal assistant palette color.');
+                    $this->assertSame($italic, 1 === preg_match('/(?:\x1b\[|;)3(?:;|m)/', $cell['style']), 'Italic must reach every rendered text cell, including Markdown spans.');
+                }
+                $offset += \strlen($cell['char']);
+            }
+
+            return;
+        }
+        $this->fail('Rendered text was not found: '.$text);
     }
 }
