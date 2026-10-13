@@ -285,7 +285,7 @@ final class ChatGPTReasoningTransitionRequestHookTest extends IsolatedKernelTest
         $this->assertNotNull($catalog);
         $resolver = new SessionAwareModelResolver($selection, $catalog, $this->sessions, static::getContainer()->get(DeferredSubagentChildRepository::class));
         $http = new MockHttpClient(function (string $method, string $url, array $options): MockResponse {
-            $this->bodies[] = json_decode($options['body'], true, flags: \JSON_THROW_ON_ERROR);
+            $this->bodies[] = \Ineersa\CodingAgent\Tests\Support\HttpRequestBodyDecoder::decode($options);
 
             return new MockResponse("data: {\"type\":\"response.output_text.delta\",\"delta\":\"done\"}\n\ndata: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"output\":[]}}\n\n", ['response_headers' => ['content-type: text/event-stream']]);
         });

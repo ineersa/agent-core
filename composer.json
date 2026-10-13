@@ -32,6 +32,7 @@
         "ext-posix": "*",
         "ext-tokenizer": "*",
         "ext-xml": "*",
+        "ext-zstd": "*",
         "ineersa/hatfield-extension-api": "@dev",
         "symfony/console": "^8.1",
         "symfony/dependency-injection": "^8.1",
@@ -71,7 +72,7 @@
         "symfony/ai-sqlite-store": "^0.14",
         "symfony/ai-vektor-store": "^0.14",
         "centamiv/vektor": "^2.0",
-        "ineersa/symfony-ai-openai-chatgpt-platform": "dev-task/session-id-cache-affinity#979f745bd75697af1e65802981691d3db154b7e4"
+        "ineersa/symfony-ai-openai-chatgpt-platform": "dev-task/zstd-originator#cfb64a2a9859e9f4e930ccc91c0880d94e71a60f"
     },
     "require-dev": {
         "friendsofphp/php-cs-fixer": "^3.94",

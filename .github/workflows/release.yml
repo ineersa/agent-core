@@ -33,7 +33,7 @@ jobs:
         with:
           # Exact patch from tools/static/pin.json (setup-php accepts patch values).
           php-version: "8.5.8"
-          extensions: mbstring, xml, intl, curl, openssl, pcntl, posix, tokenizer, ctype, fileinfo, filter, iconv, phar, pdo_sqlite, sqlite3, zip
+          extensions: mbstring, xml, intl, curl, openssl, pcntl, posix, tokenizer, ctype, fileinfo, filter, iconv, phar, pdo_sqlite, sqlite3, zip, zstd
           coverage: none
           tools: composer:v2
 
@@ -83,7 +83,7 @@ jobs:
         uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
         with:
           php-version: "8.5.8"
-          extensions: mbstring, xml, intl, curl, openssl, pcntl, posix, tokenizer, ctype, fileinfo, filter, iconv, phar, pdo_sqlite, sqlite3, zip
+          extensions: mbstring, xml, intl, curl, openssl, pcntl, posix, tokenizer, ctype, fileinfo, filter, iconv, phar, pdo_sqlite, sqlite3, zip, zstd
           coverage: none
           tools: composer:v2
 
@@ -168,7 +168,7 @@ jobs:
         uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
         with:
           php-version: "8.5.8"
-          extensions: mbstring, xml, intl, curl, openssl, pcntl, posix, tokenizer, ctype, fileinfo, filter, iconv, phar, pdo_sqlite, sqlite3, zip
+          extensions: mbstring, xml, intl, curl, openssl, pcntl, posix, tokenizer, ctype, fileinfo, filter, iconv, phar, pdo_sqlite, sqlite3, zip, zstd
           coverage: none
           tools: composer:v2
 

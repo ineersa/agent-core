@@ -71,7 +71,7 @@ final class SessionHistoryProviderTest extends PerMethodIsolatedKernelTestCase
         $key = $entity->providerCacheKey;
         $bodies = [];
         $http = new MockHttpClient(static function (string $method, string $url, array $options) use (&$bodies, $expected, $terminalMessages): MockResponse {
-            $bodies[] = json_decode($options['body'], true, flags: \JSON_THROW_ON_ERROR);
+            $bodies[] = \Ineersa\CodingAgent\Tests\Support\HttpRequestBodyDecoder::decode($options);
 
             return ChatGPTNativeReplayFixture::response(1 === \count($bodies), $expected, $terminalMessages);
         });
