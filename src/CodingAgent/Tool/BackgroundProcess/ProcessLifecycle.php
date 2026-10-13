@@ -7,9 +7,6 @@ namespace Ineersa\CodingAgent\Tool\BackgroundProcess;
 use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Psr\Log\LoggerInterface;
-use Symfony\Component\Filesystem\Filesystem;
-use Symfony\Component\Lock\LockFactory;
-use Symfony\Component\Lock\Store\FlockStore;
 
 /**
  * OS and filesystem operations for background process lifecycle.
@@ -30,55 +27,6 @@ final class ProcessLifecycle
 
     // ─── Process launch ──────────────────────────────────────────────
 
-    /** Publish durable ownership before any shell or sidecar can exist. */
-    public function allocateManagedLaunch(string $sessionId): ManagedBackgroundProcessLaunchDTO
-    {
-        return $this->withManagedStorage(static function (string $root) use ($sessionId): ManagedBackgroundProcessLaunchDTO {
-            $nonce = bin2hex(random_bytes(8));
-            $directory = $root.'/managed-'.$nonce;
-            $filesystem = new Filesystem();
-            if (file_exists($directory) || is_link($directory)) {
-                throw new \RuntimeException('Background launch ownership collision.');
-            }
-            $filesystem->mkdir($directory);
-            $filesystem->dumpFile($directory.'/owner.json', json_encode(['nonce' => $nonce, 'session_id' => $sessionId], \JSON_THROW_ON_ERROR));
-            // exec/setsid/bash and the workload inherit this open-file description.
-            // Explicit release() would unlock surviving writers after producer death.
-            $lease = (new LockFactory(new FlockStore($directory)))->createLock('background-writer', ttl: null, autoRelease: false);
-            if (!$lease->acquire(false)) {
-                throw new \RuntimeException('New background writer lease was unexpectedly held.');
-            }
-
-            return new ManagedBackgroundProcessLaunchDTO($directory.'/'.$nonce.'.pid', $directory.'/'.$nonce.'.log', $directory.'/'.$nonce.'.status', $lease);
-        });
-    }
-
-    /** @param \Closure(string, string, string): bool $remove true permits exact managed scope removal */
-    public function visitStoppedManagedArtifacts(\Closure $remove): void
-    {
-        $this->withManagedStorage(function (string $root) use ($remove): void {
-            foreach (new \DirectoryIterator($root) as $entry) {
-                $directory = $entry->getPathname();
-                $owner = $this->managedOwner($root, $directory);
-                if (null === $owner) {
-                    continue;
-                }
-                $lease = (new LockFactory(new FlockStore($directory)))->createLock('background-writer', ttl: null);
-                if (!$lease->acquire(false)) {
-                    continue;
-                }
-                try {
-                    $prefix = $directory.'/'.$owner['nonce'];
-                    if ($remove($prefix.'.log', $prefix.'.status', $owner['session_id'])) {
-                        (new Filesystem())->remove($directory);
-                    }
-                } finally {
-                    $lease->release();
-                }
-            }
-        });
-    }
-
     /**
      * Launch a command in a new session/process group via setsid.
      *
@@ -92,7 +40,7 @@ final class ProcessLifecycle
      * @param string $logFile    Path to the .log file for stdout/stderr
      * @param string $statusFile Path to the .status file for exit code
      *
-     * @return array{pid: int, pgid: int|null, start_identity: string|null}
+     * @return array{pid: int, pgid: int|null}
      *
      * @throws \RuntimeException on launch failure
      */
@@ -113,12 +61,8 @@ final class ProcessLifecycle
         //     to the child, waits for it, writes the status, and exits
         //  5. Waits for the child on the normal path, stores child RC
         //     in a variable before echo so exit reflects child outcome
-        // Stamp the wrapper's own Linux start identity before publishing readiness.
-        // Strip the parenthesized comm field before selecting stat field 22;
-        // process names may contain spaces or parentheses. Missing /proc leaves
-        // the identity unknown, not permission to signal a failed launch later.
         $shellCode = \sprintf(
-            'echo $$ > %s || exit 1; PROC_STAT=; { read -r PROC_STAT < /proc/$$/stat; } 2>/dev/null; PROC_STAT=${PROC_STAT##*) }; set -- $PROC_STAT; echo "$$ ${20}"; exec >> %s 2>&1; bash -c %s & CHILD_PID=$!; STATUS_FILE=%s; trap \'kill -TERM $CHILD_PID 2>/dev/null; wait $CHILD_PID 2>/dev/null; echo $? > $STATUS_FILE; exit\' TERM; wait $CHILD_PID 2>/dev/null; RC=$?; echo $RC > $STATUS_FILE; exit $RC',
+            'echo $$ > %s || exit 1; echo $$; exec >> %s 2>&1; bash -c %s & CHILD_PID=$!; STATUS_FILE=%s; trap \'kill -TERM $CHILD_PID 2>/dev/null; wait $CHILD_PID 2>/dev/null; echo $? > $STATUS_FILE; exit\' TERM; wait $CHILD_PID 2>/dev/null; RC=$?; echo $RC > $STATUS_FILE; exit $RC',
             escapeshellarg($pidFile),
             escapeshellarg($logFile),
             escapeshellarg($command),
@@ -150,9 +94,7 @@ final class ProcessLifecycle
 
         $pgid = $this->resolvePgid($pid);
 
-        $identity = explode(' ', trim($output[0]), 2)[1] ?? null;
-
-        return ['pid' => $pid, 'pgid' => $pgid, 'start_identity' => null !== $identity && ctype_digit($identity) ? $identity : null];
+        return ['pid' => $pid, 'pgid' => $pgid];
     }
 
     // ─── Signal delivery ─────────────────────────────────────────────
@@ -182,47 +124,6 @@ final class ProcessLifecycle
     }
 
     // ─── Liveness / status ───────────────────────────────────────────
-
-    /** Stop a positively owned launch, including one whose database insertion failed. */
-    public function stopOwnedProcess(int $pid, ?int $pgid, string $statusPath, int $graceSeconds, ?string $startIdentity = null): string
-    {
-        if (null !== $this->readStatusFile($statusPath) || !$this->isAlive($pid)) {
-            return 'none';
-        }
-        if (null !== $startIdentity) {
-            $stat = @file_get_contents('/proc/'.$pid.'/stat');
-            $end = false !== $stat ? strrpos($stat, ')') : false;
-            $fields = false !== $stat && false !== $end ? explode(' ', substr($stat, $end + 2)) : [];
-            if (($fields[19] ?? null) !== $startIdentity) {
-                throw new \RuntimeException('Failed launch process identity is no longer verifiable.');
-            }
-        }
-        $signalSent = 'term';
-        $this->sendTerm($pid, $pgid);
-        // Wrapper TERM handling records status before /proc fully disappears.
-        // The bounded 50ms poll is shared with ordinary bg_status termination.
-        // Its cadence matches resolvePgid; use waitpid/eventfd if stop latency
-        // becomes a hot path.
-        if ($graceSeconds > 0) {
-            $deadlineNs = hrtime(true) + ($graceSeconds * 1_000_000_000);
-            while (hrtime(true) < $deadlineNs) {
-                if (null !== $this->readStatusFile($statusPath) || !$this->isAlive($pid)) {
-                    break;
-                }
-                usleep(50_000);
-            }
-        }
-        if (null === $this->readStatusFile($statusPath) && $this->isAlive($pid)) {
-            $signalSent = 'term+kill';
-            $this->sendKill($pid, $pgid);
-        }
-        // Preserve a real wrapper exit code; -1 marks only missing KILL status.
-        if ('' !== $statusPath) {
-            $this->writeStopMarker($statusPath);
-        }
-
-        return $signalSent;
-    }
 
     /**
      * Check if a process is alive by examining /proc/<pid>.
@@ -452,111 +353,54 @@ final class ProcessLifecycle
     // ─── Cleanup ─────────────────────────────────────────────────────
 
     /**
-     * Validate automatic session cleanup before it can stop a process. Keep
-     * the coordinator through stop and removal so recovery cannot replace the
-     * validated scope. A live last writer still prevents sidecar removal.
-     *
-     * @param \Closure(): void $stop
-     */
-    public function cleanupManagedRecordSidecars(string $logPath, string $statusPath, string $sessionId, \Closure $stop): bool
-    {
-        return $this->withManagedStorage(function (string $root) use ($logPath, $statusPath, $sessionId, $stop): bool {
-            $directory = \dirname($logPath);
-            $owner = $this->managedOwner($root, $directory);
-            if (null === $owner || $owner['session_id'] !== $sessionId
-                || $logPath !== $directory.'/'.$owner['nonce'].'.log'
-                || $statusPath !== $directory.'/'.$owner['nonce'].'.status') {
-                return false;
-            }
-            $stop();
-            $lease = (new LockFactory(new FlockStore($directory)))->createLock('background-writer', ttl: null);
-            if (!$lease->acquire(false)) {
-                return false;
-            }
-            try {
-                (new Filesystem())->remove($directory);
-            } finally {
-                $lease->release();
-            }
-
-            return true;
-        });
-    }
-
-    /**
-     * Delete only the exact managed directory belonging to one record, after
-     * acquiring its last-writer lease. Flat legacy sidecars have no such proof
-     * and remain protected even when a durable row references them.
+     * Delete only the three exact sidecars belonging to one record. This
+     * intentionally does not scan the background directory: a row may clean up
+     * only its own .log/.status/.pid siblings after their paths are verified as
+     * direct children of it.
      *
      * @return bool false when paths are not the expected exact sibling set or
      *              an existing sidecar cannot be removed
      */
     public function deleteExactRecordSidecars(string $logPath, string $statusPath): bool
     {
-        $root = realpath($this->config->storageDir);
+        if (!str_ends_with($logPath, '.log')) {
+            return false;
+        }
+
         $directory = \dirname($logPath);
-        if (false === $root || \dirname($directory) !== $root
-            || 1 !== preg_match('/^managed-([a-f0-9]{16})$/D', basename($directory), $match)
-            || $match[1].'.log' !== basename($logPath)
-            || $statusPath !== $directory.'/'.$match[1].'.status') {
+        $prefix = substr(basename($logPath), 0, -4);
+        $expectedStatusPath = $directory.'/'.$prefix.'.status';
+        $expectedPidPath = $directory.'/'.$prefix.'.pid';
+        if ('' === $prefix || $statusPath !== $expectedStatusPath) {
             return false;
         }
-        $removed = false;
-        $this->visitStoppedManagedArtifacts(static function (string $log, string $status) use ($logPath, $statusPath, &$removed): bool {
-            if ($log === $logPath && $status === $statusPath) {
-                $removed = true;
 
-                return true;
+        $configuredStorageDir = $this->config->storageDir;
+        if (is_dir($configuredStorageDir)) {
+            $canonicalStorageDir = realpath($configuredStorageDir);
+            $canonicalRecordDirectory = realpath($directory);
+            if (false === $canonicalStorageDir || false === $canonicalRecordDirectory || $canonicalRecordDirectory !== $canonicalStorageDir) {
+                return false;
+            }
+        } elseif ($directory !== $configuredStorageDir) {
+            return false;
+        } else {
+            foreach ([$logPath, $statusPath, $expectedPidPath] as $path) {
+                if (is_file($path) || is_link($path)) {
+                    return false;
+                }
             }
 
-            return false;
-        });
-
-        return $removed || (!file_exists($directory) && !is_link($directory));
-    }
-
-    /** @return array{nonce: string, session_id: string}|null */
-    private function managedOwner(string $root, string $directory): ?array
-    {
-        if (\dirname($directory) !== $root || realpath($directory) !== $directory || is_link($directory)
-            || 1 !== preg_match('/^managed-([a-f0-9]{16})$/D', basename($directory), $match)
-            || !is_file($directory.'/owner.json') || is_link($directory.'/owner.json')) {
-            return null;
+            return true;
         }
-        $owner = json_decode((string) file_get_contents($directory.'/owner.json'), true);
-        if (!\is_array($owner) || ($owner['nonce'] ?? null) !== $match[1] || !\is_string($owner['session_id'] ?? null)) {
-            return null;
-        }
-        // A symlink sidecar is not evidence for removing a managed writer scope.
-        foreach (['pid', 'log', 'status'] as $suffix) {
-            if (is_link($directory.'/'.$owner['nonce'].'.'.$suffix)) {
-                return null;
+
+        foreach ([$logPath, $statusPath, $expectedPidPath] as $path) {
+            if ((is_file($path) || is_link($path)) && !@unlink($path)) {
+                return false;
             }
         }
 
-        return ['nonce' => $match[1], 'session_id' => $owner['session_id']];
-    }
-
-    /** @template T
-     * @param \Closure(string): T $operation
-     *
-     * @return T
-     */
-    private function withManagedStorage(\Closure $operation): mixed
-    {
-        $root = realpath($this->ensureStorageDir());
-        if (false === $root) {
-            throw new \RuntimeException('Background storage cannot be resolved.');
-        }
-        // Every managed lease opener and remover participates. Never unlink this
-        // coordinator: contenders may already have opened its permanent inode.
-        $lock = (new LockFactory(new FlockStore($root)))->createLock('background-artifact-lifecycle', ttl: null);
-        $lock->acquire(blocking: true);
-        try {
-            return $operation($root);
-        } finally {
-            $lock->release();
-        }
+        return true;
     }
 
     private function incompleteSuffixLength(string $content): int

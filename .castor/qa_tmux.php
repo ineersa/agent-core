@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace CastorTasks;
 
-use Symfony\Component\Process\Process;
-
 /**
  * QA-run-owned tmux session inventory and teardown for castor check TUI lanes.
  *
@@ -21,61 +19,6 @@ use Symfony\Component\Process\Process;
 function qa_tmux_session_ownership_option(): string
 {
     return '@hatfield_qa_run_id';
-}
-
-function artifact_tmux_session_ownership_option(): string
-{
-    return '@hatfield_test_artifact_owner';
-}
-
-/** @return list<string>|null null means inspection failed, not an empty inventory. */
-function inventory_artifact_owner_tmux_sessions(string $ownerId, ?string $qaRunId = null): ?array
-{
-    // new-session -e installs the token during creation, before the session
-    // option is tagged. Inspect both to cover a producer crash in that window.
-    // ASCII separators survive tmux's C-locale control-character sanitization.
-    // Session IDs, unlike user-selected names, cannot contain that separator.
-    $format = '#{session_id}|#{'.artifact_tmux_session_ownership_option().'}|#{HATFIELD_TEST_ARTIFACT_OWNER}|#{'.qa_tmux_session_ownership_option().'}|#{HATFIELD_QA_RUN_ID}';
-    $process = new Process(['tmux', 'list-sessions', '-F', $format], env: ['LC_ALL' => 'C'], timeout: 3);
-    try {
-        $process->run();
-    } catch (\Throwable $exception) {
-        fwrite(\STDERR, 'test_artifact.tmux_inventory_failed exception='.$exception::class."\n");
-
-        return null;
-    }
-    if (!$process->isSuccessful()) {
-        // tmux has no sessions when the socket does not exist or the server
-        // explicitly reports it has stopped. Other failures are uncertain.
-        $error = trim($process->getErrorOutput());
-        if (1 === $process->getExitCode()
-            && (str_starts_with($error, 'no server running on ')
-                || (str_starts_with($error, 'error connecting to ') && str_ends_with($error, '(No such file or directory)')))) {
-            return [];
-        }
-        fwrite(\STDERR, 'test_artifact.tmux_inventory_failed exit_code='.$process->getExitCode()."\n");
-
-        return null;
-    }
-    $sessions = [];
-    foreach (explode("\n", rtrim($process->getOutput(), "\r\n")) as $line) {
-        if ('' === $line) {
-            continue;
-        }
-        $parts = explode('|', $line);
-        if (5 !== \count($parts) || 1 !== preg_match('/^\$\d+$/D', $parts[0])) {
-            fwrite(\STDERR, "test_artifact.tmux_inventory_failed malformed_output\n");
-
-            return null;
-        }
-        if ($parts[1] === $ownerId || $parts[2] === $ownerId
-            || (null !== $qaRunId && ($parts[3] === $qaRunId || $parts[4] === $qaRunId))) {
-            $sessions[] = $parts[0];
-        }
-    }
-    sort($sessions);
-
-    return array_values(array_unique($sessions));
 }
 
 /**
@@ -193,30 +136,13 @@ function collect_qa_check_run_leaked_tmux_sessions(string $runId): array
 }
 
 /**
- * Standalone castor test:tui: assign a run id when not already under castor check.
+ * Standalone castor test:tui uses the same run scopes and finalizers as other tests.
  */
 function ensure_standalone_tui_qa_run_id(): string
 {
-    $existing = getenv('HATFIELD_QA_RUN_ID');
-    if (false !== $existing && '' !== trim((string) $existing)) {
-        TestArtifactLifecycle::current(project_root_dir());
-        TestArtifactLifecycle::registerCurrentTmuxOwner();
+    initialize_standalone_qa_run();
 
-        return (string) $existing;
-    }
-
-    $random = bin2hex(random_bytes(4));
-    $id = sanitize_qa_run_id_segment(\sprintf('tui-%s-%d-%s', date('Ymd-His'), getmypid(), $random));
-    putenv('HATFIELD_QA_RUN_ID='.$id);
-    $_ENV['HATFIELD_QA_RUN_ID'] = $id;
-    $_SERVER['HATFIELD_QA_RUN_ID'] = $id;
-
-    // The Castor parent owns run-scoped resources even if its detached worker
-    // survives a lane timeout outside the parent's process namespace.
-    TestArtifactLifecycle::current(project_root_dir());
-    TestArtifactLifecycle::registerCurrentTmuxOwner();
-
-    return $id;
+    return (string) getenv('HATFIELD_QA_RUN_ID');
 }
 
 /**

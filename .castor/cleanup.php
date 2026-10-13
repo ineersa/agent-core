@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-/** Recover conclusively abandoned test artifacts and enforce QA report retention. */
+/** Recover only completed QA scopes; active and unknown resources are retained. */
 
 use Castor\Attribute\AsTask;
 
@@ -10,11 +10,9 @@ require_once __DIR__.'/../vendor/autoload.php';
 require_once __DIR__.'/helpers.php';
 require_once __DIR__.'/shared.php';
 
-#[AsTask(name: 'cleanup', namespace: 'clean', description: 'Recover abandoned owned test artifacts and retain the latest 10 completed QA reports')]
+#[AsTask(name: 'cleanup', namespace: 'clean', description: 'Recover completed QA scopes and retain ten completed reports')]
 function cleanup(): void
 {
-    $root = (false !== ($_rp = realpath(__DIR__.'/..')) ? $_rp : __DIR__.'/..');
-    $removed = (new CastorTasks\TestArtifactLifecycle($root))->recover();
-    echo 'Recovered '.count($removed)." owned test artifact(s); QA report retention checked.\n";
-    echo "Active and unmarked artifacts, build staging, session data and lock files are retained.\n";
+    \CastorTasks\prune_completed_qa_reports(\CastorTasks\project_root_dir());
+    echo "Completed QA scopes reclaimed; active, unmarked and unrelated artifacts retained.\n";
 }

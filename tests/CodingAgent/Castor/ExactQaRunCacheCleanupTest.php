@@ -87,4 +87,34 @@ final class ExactQaRunCacheCleanupTest extends TestCase
             TestDirectoryIsolation::removeDirectory($work);
         }
     }
+
+    public function testCompletedReportRetentionRecoversExactScopesButProtectsUnknownRuns(): void
+    {
+        require_once ProjectDir::get().'/.castor/helpers.php';
+        $work = TestDirectoryIsolation::createProjectTempDir('qa-retention');
+        $filesystem = new \Symfony\Component\Filesystem\Filesystem();
+        try {
+            foreach (range(1, 12) as $number) {
+                $id = 'qa-20260101-000000-'.$number.'-deadbeef';
+                $filesystem->dumpFile($work.'/var/reports/'.$id.'/.completed', json_encode([$id, $number], \JSON_THROW_ON_ERROR));
+                $filesystem->mkdir([$work.'/var/tmp/'.$id, $work.'/.hatfield/cache-'.$id]);
+            }
+            $activeId = 'qa-20260101-000000-98-deadbeef';
+            $active = $work.'/var/reports/'.$activeId;
+            $invalid = $work.'/var/reports/qa-20260101-000000-99-deadbeef';
+            $filesystem->mkdir([$active, $work.'/var/tmp/'.$activeId, $work.'/.hatfield/cache-'.$activeId]);
+            $filesystem->dumpFile($invalid.'/.completed', 'invalid');
+            \CastorTasks\prune_completed_qa_reports($work);
+            \CastorTasks\prune_completed_qa_reports($work);
+            $this->assertCount(11, glob($work.'/var/reports/qa-*/.completed') ?: [], 'Ten completed runs plus the protected invalid marker.');
+            $this->assertDirectoryDoesNotExist($work.'/var/reports/qa-20260101-000000-1-deadbeef');
+            $this->assertDirectoryExists($work.'/var/reports/qa-20260101-000000-12-deadbeef');
+            $this->assertDirectoryExists($active);
+            $this->assertDirectoryExists($invalid);
+            $this->assertSame([$work.'/var/tmp/'.$activeId], glob($work.'/var/tmp/qa-*') ?: []);
+            $this->assertSame([$work.'/.hatfield/cache-'.$activeId], glob($work.'/.hatfield/cache-*') ?: []);
+        } finally {
+            TestDirectoryIsolation::removeDirectory($work);
+        }
+    }
 }

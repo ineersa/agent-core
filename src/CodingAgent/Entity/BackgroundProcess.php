@@ -42,9 +42,8 @@ class BackgroundProcess
      * OS process ID. Non-unique because records may outlive their processes
      * and the OS reuses PIDs after a process exits. Finished provisional
      * (backgrounded_at IS NULL) rows are removed by
-     * BackgroundProcessCleanupTask; accepted rows are removed by controller
-     * lifecycle cleanup or managed recovery after the actual owner exits.
-     * Either kind can retain a PID temporarily.
+     * BackgroundProcessProvisionalCleanupTask; accepted rows are removed by
+     * controller lifecycle cleanup. Either kind can retain a PID temporarily.
      *
      * The @ORM\Index on 'pid' is intentionally non-unique. Prefer the
      * auto-increment $id as the authoritative lifecycle key.

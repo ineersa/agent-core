@@ -121,13 +121,9 @@ grant authority over an arbitrary host process.
 
 ```mermaid
 flowchart TD
-    Scheduler["scheduler_default<br/>every 300 seconds"] --> Cleanup[BackgroundProcessCleanupTask]
-    Cleanup --> Private[Finished private foreground rows]
+    Scheduler["scheduler_default<br/>every 300 seconds"] --> Provisional[BackgroundProcessProvisionalCleanupTask]
+    Provisional --> Private[Finished private foreground rows]
     Private --> DeletePrivate[Remove exact row-owned sidecars and row]
-    Cleanup --> Orphans[Stopped managed scopes without a row]
-    Orphans --> DeleteScope[Remove the owned managed scope]
-    Cleanup --> Abandoned[Completed accepted jobs with an absent controller]
-    Abandoned --> DeletePrivate
     Startup[Controller startup after owner lock] --> Lifecycle[BackgroundProcessControllerSessionLifecycleListener]
     Shutdown[Controller shutdown] --> Lifecycle
     Lifecycle --> Scope[Accepted jobs for owned parent and child scopes]

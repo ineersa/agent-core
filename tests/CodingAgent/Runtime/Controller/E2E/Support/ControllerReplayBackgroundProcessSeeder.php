@@ -40,10 +40,10 @@ final class ControllerReplayBackgroundProcessSeeder
 
             /** @var ProcessLifecycle $lifecycle */
             $lifecycle = $container->get(ProcessLifecycle::class);
-            $launch = $lifecycle->allocateManagedLaunch($sessionId);
-            $logPath = $launch->logPath;
-            $statusPath = $launch->statusPath;
-            $pidPath = $launch->pidPath;
+            $basePath = $lifecycle->ensureStorageDir().'/'.$prefix;
+            $logPath = $basePath.'.log';
+            $statusPath = $basePath.'.status';
+            $pidPath = $basePath.'.pid';
             file_put_contents($logPath, 'seeded output');
             file_put_contents($statusPath, '0');
             file_put_contents($pidPath, '999999');
@@ -54,7 +54,7 @@ final class ControllerReplayBackgroundProcessSeeder
                 'pid' => 999999,
                 'pgid' => null,
                 'session_id' => $sessionId,
-                'command' => 'seeded fixture '.$prefix,
+                'command' => 'seeded fixture',
                 'log_path' => $logPath,
                 'status_path' => $statusPath,
                 'started_at' => new \DateTimeImmutable(),
@@ -69,10 +69,6 @@ final class ControllerReplayBackgroundProcessSeeder
             /** @var BackgroundProcessManager $manager */
             $manager = $container->get(BackgroundProcessManager::class);
             $manager->markBackgroundedForRecord($id, $sessionId);
-
-            // This completed fixture has no writer. Closing its lease lets the
-            // real controller exercise managed cleanup rather than legacy retention.
-            unset($launch);
 
             return [
                 'id' => $id,

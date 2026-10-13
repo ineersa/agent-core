@@ -5,14 +5,15 @@ declare(strict_types=1);
 namespace CastorTasks;
 
 use Castor\Context;
+use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Filesystem\Path;
+use Symfony\Component\Finder\Finder;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\LockInterface;
 use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Process\Process;
 
 use function Castor\run;
-
-require_once __DIR__.'/TestArtifactLifecycle.php';
 
 const REPORTS_DIR = __DIR__.'/../var/reports';
 
@@ -221,7 +222,7 @@ function maybe_reexec_castor_task_under_pi_bwrap(string $taskName): void
  * Sets process env via putenv() so command builders and child shells inherit
  * run-scoped report/tmp/cache/DB paths.  Returns the generated run id.
  */
-function initialize_qa_check_run(): string
+function initialize_qa_check_run(bool $keepOverrides = false): string
 {
     $random = bin2hex(random_bytes(4));
     $id = sanitize_qa_run_id_segment(\sprintf('qa-%s-%d-%s', date('Ymd-His'), getmypid(), $random));
@@ -241,18 +242,21 @@ function initialize_qa_check_run(): string
         'HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH' => $transportDbFile,
     ];
 
+    if ($keepOverrides) {
+        // Preserve standalone shared/explicit DBs; only full check namespaces them.
+        unset($vars['HATFIELD_TEST_DATABASE_PATH'], $vars['HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH']);
+    }
     foreach ($vars as $name => $value) {
+        $existing = getenv($name);
+        if ($keepOverrides && 'HATFIELD_QA_RUN_ID' !== $name && false !== $existing && '' !== $existing) {
+            $value = $existing;
+        }
         putenv($name.'='.$value);
         $_ENV[$name] = $value;
         $_SERVER[$name] = $value;
     }
 
     $projectRoot = project_root_dir();
-    $artifacts = TestArtifactLifecycle::current($projectRoot);
-    $artifacts->recover();
-    $artifacts->own($projectRoot.'/'.$tmpRel);
-    $artifacts->own($projectRoot.'/'.$cacheRel);
-    $artifacts->report($projectRoot.'/'.$reportsRel);
     foreach ([$reportsRel, $tmpRel, $cacheRel, 'var/test'] as $relative) {
         $path = $projectRoot.'/'.$relative;
         if (!is_dir($path) && !mkdir($path, 0777, true) && !is_dir($path)) {
@@ -261,6 +265,71 @@ function initialize_qa_check_run(): string
     }
 
     return $id;
+}
+
+/** Publish completion only after exact-run process/tmux shutdown is proved. */
+function complete_qa_run(string $id, string $root): void
+{
+    $temporary = $root.'/var/tmp/'.$id;
+    if (getenv('HATFIELD_KEEP_TMP') && is_dir($temporary)) {
+        // FIFOs and sockets are coordination resources, not persisted diagnostics.
+        $entries = (new Finder())->in($temporary)->ignoreDotFiles(false)->ignoreVCS(false)
+            ->filter(static fn (\SplFileInfo $entry): bool => $entry->isFile() || $entry->isDir() || $entry->isLink());
+        (new Filesystem())->mirror($temporary, $root.'/var/reports/'.$id.'/diagnostics', iterator: $entries);
+    }
+    (new Filesystem())->dumpFile($root.'/var/reports/'.$id.'/.completed', json_encode([$id, microtime(true)], \JSON_THROW_ON_ERROR));
+    prune_completed_qa_reports($root);
+}
+
+/** Recover completed-run residue and retain ten completed reports; unknown runs stay. */
+function prune_completed_qa_reports(string $root): void
+{
+    $reports = $root.'/var/reports';
+    if (realpath($reports) !== $reports) {
+        return;
+    }
+    $lock = (new LockFactory(new FlockStore($reports)))->createLock('qa-report-retention', ttl: null);
+    $lock->acquire(blocking: true);
+    try {
+        $completed = [];
+        $markers = glob($reports.'/qa-*/.completed');
+        foreach (false === $markers ? [] : $markers as $marker) {
+            $directory = \dirname($marker);
+            $id = basename($directory);
+            if (realpath($directory) !== $directory || is_link($marker)
+                || 1 !== preg_match('/^qa-\d{8}-\d{6}-\d+-[a-f0-9]{8}$/D', $id)) {
+                continue;
+            }
+            $data = json_decode((string) file_get_contents($marker), true);
+            if (!\is_array($data) || !array_is_list($data) || 2 !== \count($data) || $data[0] !== $id
+                || (!\is_int($data[1]) && !\is_float($data[1])) || !is_finite((float) $data[1])) {
+                continue;
+            }
+            cleanup_exact_qa_run_cache_roots($id, $root);
+            $temporary = $root.'/var/tmp/'.$id;
+            if (realpath($temporary) === $temporary) {
+                (new Filesystem())->remove($temporary);
+            }
+            $completed[$directory] = $data[1];
+        }
+        arsort($completed, \SORT_NUMERIC);
+        (new Filesystem())->remove(\array_slice(array_keys($completed), 10));
+    } finally {
+        $lock->release();
+    }
+}
+
+/** Standalone tests share the existing exact-run finalizers, including failure exits. */
+function initialize_standalone_qa_run(): void
+{
+    if (getenv('HATFIELD_QA_RUN_ID')) {
+        return;
+    }
+    $id = initialize_qa_check_run(keepOverrides: true);
+    register_shutdown_function(static function () use ($id): void {
+        assert_castor_check_run_no_process_leaks($id);
+        complete_qa_run($id, project_root_dir());
+    });
 }
 
 /**
@@ -291,8 +360,7 @@ function qa_test_home_dir(): string
         $segment = sanitize_qa_run_id_segment((string) $runId);
         $resolved = $projectRoot.'/var/tmp/'.$segment.'/qa-home';
     } else {
-        $resolved = $projectRoot.'/var/tmp/qa-home/pid-'.getmypid().'-'.bin2hex(random_bytes(8));
-        TestArtifactLifecycle::current($projectRoot)->own($resolved);
+        $resolved = $projectRoot.'/var/tmp/qa-home/pid-'.getmypid();
     }
 
     $hatfieldDir = $resolved.'/.hatfield';
@@ -335,11 +403,10 @@ function qa_standalone_test_cache_dir(): string
         $segment = sanitize_qa_run_id_segment((string) $runId);
         $resolved = '.hatfield/cache-'.$segment;
     } else {
-        $resolved = '.hatfield/cache-test-pid-'.getmypid().'-'.bin2hex(random_bytes(8));
+        $resolved = '.hatfield/cache-test-pid-'.getmypid();
     }
 
     $path = $projectRoot.'/'.$resolved;
-    TestArtifactLifecycle::current($projectRoot)->own($path);
     if (!is_dir($path) && !mkdir($path, 0777, true) && !is_dir($path)) {
         throw new \RuntimeException(\sprintf('Unable to create standalone test cache directory "%s".', $path));
     }
@@ -358,10 +425,12 @@ function qa_test_home_shell_prefix(): string
 {
     $home = qa_test_home_dir();
     $cache = qa_standalone_test_cache_dir();
+    $temporary = getenv('HATFIELD_QA_TMP_DIR');
 
     return 'HOME='.escapeshellarg($home)
         .' HATFIELD_QA_TEST_HOME='.escapeshellarg($home)
         .' HATFIELD_CACHE_DIR='.escapeshellarg($cache)
+        .' TMPDIR='.escapeshellarg(Path::makeAbsolute(false !== $temporary && '' !== $temporary ? $temporary : 'var/tmp', project_root_dir()))
         // Disable Xdebug features in QA children unless debugging or coverage was requested.
         .' XDEBUG_MODE='.escapeshellarg(false === getenv('XDEBUG_MODE') ? 'off' : getenv('XDEBUG_MODE'));
 }
@@ -1208,8 +1277,8 @@ function hatfield_phar_session_copies_dir(): string
  * another launch after a rebuild cannot replace a live session's artifact.
  *
  * Same build reuses the immutable copy. A corrupt existing copy fails closed
- * rather than replacing bytes under a live process. Test-artifact recovery
- * retains these unmarked runtime copies; it never removes a live session's PHAR.
+ * rather than replacing bytes under a live process. Swept by
+ * `castor clean:cleanup` (removes the whole var/tmp/phar tree).
  *
  * @param string      $pharPath    canonical artifact to copy from
  * @param string|null $sessionsDir override root for session copies (tests)
@@ -1225,7 +1294,7 @@ function phar_materialize_session_copy(string $pharPath, ?string $sessionsDir = 
     }
 
     $dest = $sessionsDir.'/'.$hash.'/hatfield.phar';
-    $filesystem = new \Symfony\Component\Filesystem\Filesystem();
+    $filesystem = new Filesystem();
     $filesystem->mkdir(\dirname($dest));
     $lock = (new LockFactory(new FlockStore($sessionsDir)))->createLock($hash);
     $lock->acquire(true);
@@ -2228,10 +2297,6 @@ function cleanup_exact_qa_run_cache_roots(string $qaRunId, ?string $projectRoot 
     }
 
     if ([] !== $removed) {
-        $artifacts = TestArtifactLifecycle::current(project_root_dir());
-        foreach ($removed as $path) {
-            $artifacts->forgetRemovedPath($path);
-        }
         echo 'QA run cache cleanup: removed '.\count($removed)." exact-run cache root(s) for HATFIELD_QA_RUN_ID={$segment}\n";
     }
 

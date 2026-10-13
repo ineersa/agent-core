@@ -609,11 +609,6 @@ services:
       # Project-scoped factory only — not the global default LockFactory.
       $sessionOwnerLockFactory: '@hatfield.controller.session_owner.lock_factory'
 
-  Ineersa\CodingAgent\Runtime\Controller\BackgroundProcessCleanupTask:
-    arguments:
-      $runtimeCwd: '%app.cwd%'
-      $sessionOwnerLockFactory: '@hatfield.controller.session_owner.lock_factory'
-
   Ineersa\CodingAgent\Config\RuntimeConfig:
     factory: ['Ineersa\CodingAgent\Config\RuntimeConfig', 'fromAppConfig']
     arguments:

@@ -47,14 +47,6 @@ final class ControllerSessionOwnerLockStore implements PersistingStoreInterface
         });
     }
 
-    /** Shared identity for controller acquisition and owner-absent cleanup. */
-    public static function resourceForSession(string $cwd, string $sessionId): string
-    {
-        $canonicalCwd = realpath($cwd);
-
-        return 'hatfield.controller.session.'.hash('sha256', (false !== $canonicalCwd ? $canonicalCwd : $cwd)."\0".$sessionId);
-    }
-
     public function delete(Key $key): void
     {
         $this->synchronized(function () use ($key): void {
@@ -70,15 +62,8 @@ final class ControllerSessionOwnerLockStore implements PersistingStoreInterface
 
     public function exists(Key $key): bool
     {
-        return $this->synchronized(function () use ($key): bool {
-            $directory = $this->directory((string) $key);
-            if (!file_exists($directory) && !is_link($directory)) {
-                return false;
-            }
-            $this->requireOwnedDirectory($directory, (string) $key);
-
-            return (new FlockStore($directory))->exists($key);
-        });
+        // FlockStore checks the acquired key only; it does not open a file.
+        return (new FlockStore($this->root))->exists($key);
     }
 
     public function putOffExpiration(Key $key, float $ttl): void
@@ -141,19 +126,15 @@ final class ControllerSessionOwnerLockStore implements PersistingStoreInterface
         }
     }
 
-    /** @template T
-     * @param \Closure(): T $operation
-     *
-     * @return T
-     */
-    private function synchronized(\Closure $operation): mixed
+    /** @param \Closure(): void $operation */
+    private function synchronized(\Closure $operation): void
     {
         // Never unlink this permanent coordinator inode. It protects opens as
         // well as reclamation; session locks remain independent after opening.
         $lock = $this->coordinator->createLock('controller-session-directory-lifecycle', ttl: null);
         $lock->acquire(blocking: true);
         try {
-            return $operation();
+            $operation();
         } finally {
             $lock->release();
         }

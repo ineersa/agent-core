@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller\E2E;
 
-use CastorTasks\TestArtifactLifecycle;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
@@ -38,7 +37,6 @@ final class ControllerReplaySafeGuardApprovalTest extends ControllerReplayE2eTes
         parent::setUp();
         $this->relativeWritePath = '../sg-'.$this->sessionId.'.txt';
         $this->targetOutsidePath = \dirname($this->tempDir).'/sg-'.$this->sessionId.'.txt';
-        TestArtifactLifecycle::current($this->projectDir)->own($this->targetOutsidePath);
         @unlink($this->targetOutsidePath);
         // Fixtures need session-scoped path; rebuild after setUp assigns sessionId/tempDir.
         $this->replayFixtures = $this->replayFixtures();

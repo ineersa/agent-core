@@ -76,13 +76,11 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
     protected function tearDown(): void
     {
         $this->stopProcess();
-        // Retain explicitly requested forensic proof in the bounded QA report,
-        // not in an indefinitely live temporary fixture tree.
+        // Keep failing fixtures when debugging controller-replay failures.
+        // Parent tearDown always removes tempDir; clear it first when keeping
+        // so the parent lifecycle cannot delete retained artifacts.
         $keepTmp = false !== getenv('HATFIELD_KEEP_TMP') && '' !== getenv('HATFIELD_KEEP_TMP');
-        if (isset($this->tempDir) && '' !== $this->tempDir) {
-            if ($keepTmp) {
-                TestDirectoryIsolation::preserveDirectory($this->tempDir);
-            }
+        if (!$keepTmp && isset($this->tempDir) && '' !== $this->tempDir) {
             TestDirectoryIsolation::removeDirectory($this->tempDir);
         }
         $this->tempDir = '';

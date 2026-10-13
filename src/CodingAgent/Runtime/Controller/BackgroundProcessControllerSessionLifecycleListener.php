@@ -65,16 +65,11 @@ final class BackgroundProcessControllerSessionLifecycleListener
             try {
                 foreach ($this->store->fetchBackgrounded($sessionId) as $entity) {
                     try {
-                        if (!$this->lifecycle->cleanupManagedRecordSidecars(
-                            $entity->logPath,
-                            $entity->statusPath,
-                            $sessionId,
-                            function () use ($entity, $sessionId): void {
-                                if (null === $entity->finishedAt) {
-                                    $this->manager->stopByRecordId($entity->id, $sessionId);
-                                }
-                            },
-                        )) {
+                        if (null === $entity->finishedAt) {
+                            $this->manager->stopByRecordId($entity->id, $sessionId);
+                        }
+
+                        if (!$this->lifecycle->deleteExactRecordSidecars($entity->logPath, $entity->statusPath)) {
                             ++$failed;
                             $this->logger->warning('background_process.session_cleanup_row_failed', [
                                 'component' => 'tool.background_process',

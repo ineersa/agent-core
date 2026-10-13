@@ -66,19 +66,6 @@ final class RunOperationalProjectionRepository extends ServiceEntityRepository i
         return new RunOperationalStatusDTO($state->status, $state->lastEventSequence);
     }
 
-    /** Cleanup must not infer ownership from a stale Doctrine identity-map row. */
-    public function findOwnerSessionId(string $runId): ?string
-    {
-        $owners = $this->createQueryBuilder('state')
-            ->select('state.ownerSessionId')
-            ->where('state.runId = :run_id')
-            ->setParameter('run_id', $runId)
-            ->getQuery()
-            ->getSingleColumnResult();
-
-        return isset($owners[0]) ? (string) $owners[0] : null;
-    }
-
     public function deleteForOwnerSession(string $ownerSessionId): int
     {
         $states = $this->findBy(['ownerSessionId' => $ownerSessionId]);

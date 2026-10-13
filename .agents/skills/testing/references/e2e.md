@@ -29,4 +29,4 @@
 
 `castor test:tui` ensures a PHAR for `TuiArtifactBootE2eTest`, but behavioral cases remain source-based. Run `castor phar:ensure` before snapshot updates when artifact boot is needed. Use `castor test --filter=PharSmokeTest` for focused packaged boot.
 
-Save ANSI snapshots with `saveAnsiSnapshot`. Passing and failed snapshots are archived under `var/reports/qa-*/diagnostics/` within the latest 10 completed QA runs. Remove temporary fixture trees after their consumers finish. Inspect collected events, session artifacts, controller stderr, and transport queues on failure.
+Save ANSI snapshots with `saveAnsiSnapshot` under `var/reports/qa-*/diagnostics/`. Keep the latest 10 completed QA runs, regardless of result; unproved interrupted runs remain protected. Inspect collected events, session artifacts, controller stderr, and transport queues on failure.

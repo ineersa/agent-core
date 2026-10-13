@@ -2,38 +2,32 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Tests\Runtime\Controller;
+namespace Ineersa\CodingAgent\Tests\Tool;
 
-use Ineersa\AgentCore\Domain\Run\RunState;
-use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
-use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
-use Ineersa\CodingAgent\Runtime\Controller\BackgroundProcessCleanupTask;
-use Ineersa\CodingAgent\Runtime\Controller\ControllerSessionOwnerLockStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
+use Ineersa\CodingAgent\Tool\BackgroundProcessProvisionalCleanupTask;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\Clock\Clock;
 use Symfony\Component\Clock\MockClock;
-use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Scheduler\Attribute\AsPeriodicTask;
 
-#[CoversClass(BackgroundProcessCleanupTask::class)]
+#[CoversClass(BackgroundProcessProvisionalCleanupTask::class)]
 #[CoversClass(BackgroundProcessManager::class)]
-final class BackgroundProcessCleanupTaskTest extends IsolatedKernelTestCase
+final class BackgroundProcessProvisionalCleanupTaskTest extends IsolatedKernelTestCase
 {
     private string $tmpDir;
     private ProcessStore $store;
     private BackgroundProcessManager $manager;
     private ProcessLifecycle $lifecycle;
-    private BackgroundProcessCleanupTask $task;
+    private BackgroundProcessProvisionalCleanupTask $task;
     private TestLogger $logger;
-    private LockFactory $ownerLocks;
     private \DateTimeImmutable $now;
     private \Symfony\Component\Clock\ClockInterface $originalClock;
 
@@ -49,7 +43,6 @@ final class BackgroundProcessCleanupTaskTest extends IsolatedKernelTestCase
         $config = new BackgroundProcessConfig(storageDir: $this->tmpDir);
         $this->store = static::getContainer()->get(ProcessStore::class);
         $this->logger = new TestLogger();
-        $this->ownerLocks = new LockFactory(new ControllerSessionOwnerLockStore($this->tmpDir.'/controller-locks'));
         $this->lifecycle = new ProcessLifecycle($config, $this->logger);
         $this->manager = new BackgroundProcessManager(
             $this->store,
@@ -57,7 +50,7 @@ final class BackgroundProcessCleanupTaskTest extends IsolatedKernelTestCase
             $config,
             $this->logger,
         );
-        $this->task = new BackgroundProcessCleanupTask($this->manager, $this->store, $this->lifecycle, $this->logger, static::getContainer()->get(RunOperationalProjectionRepository::class), $this->ownerLocks, $this->tmpDir);
+        $this->task = new BackgroundProcessProvisionalCleanupTask($this->manager, $this->store, $this->lifecycle, $this->logger);
     }
 
     protected function tearDown(): void
@@ -71,12 +64,12 @@ final class BackgroundProcessCleanupTaskTest extends IsolatedKernelTestCase
     #[Test]
     public function schedulerRegistrationRunsEveryFiveMinutes(): void
     {
-        $attributes = (new \ReflectionClass(BackgroundProcessCleanupTask::class))
+        $attributes = (new \ReflectionClass(BackgroundProcessProvisionalCleanupTask::class))
             ->getAttributes(AsPeriodicTask::class);
 
         $this->assertCount(1, $attributes);
         $task = $attributes[0]->newInstance();
-        $this->assertSame(BackgroundProcessCleanupTask::INTERVAL_SECONDS, $task->frequency);
+        $this->assertSame(BackgroundProcessProvisionalCleanupTask::INTERVAL_SECONDS, $task->frequency);
         $this->assertSame('default', $task->schedule);
     }
 
@@ -127,7 +120,7 @@ final class BackgroundProcessCleanupTaskTest extends IsolatedKernelTestCase
     }
 
     #[Test]
-    public function handlerRetainsUnprovenFlatRowWhenConfiguredStorageDirectoryIsAlreadyMissing(): void
+    public function handlerDeletesOldProvisionalRowWhenConfiguredStorageDirectoryIsAlreadyMissing(): void
     {
         $missingStorageDir = $this->tmpDir.'/missing-storage';
         $this->rebuildTask($missingStorageDir);
@@ -138,7 +131,7 @@ final class BackgroundProcessCleanupTaskTest extends IsolatedKernelTestCase
 
         ($this->task)();
 
-        $this->assertTrue($this->store->existsByRecordId($old), 'Missing storage does not establish last-writer ownership for a flat row.');
+        $this->assertFalse($this->store->existsByRecordId($old));
         $this->assertFileExists($outside);
     }
 
@@ -179,115 +172,12 @@ final class BackgroundProcessCleanupTaskTest extends IsolatedKernelTestCase
 
         $records = array_values(array_filter(
             $this->logger->records,
-            static fn (array $record): bool => 'background_process.cleanup_completed' === $record['message'],
+            static fn (array $record): bool => 'background_process.provisional_cleanup_completed' === $record['message'],
         ));
         $this->assertCount(1, $records);
-        $this->assertSame(['run_id', 'session_id', 'component', 'event_type', 'cleaned_count', 'failed_count'], array_keys($records[0]['context']));
+        $this->assertSame(['component', 'event_type', 'cleaned_count', 'failed_count'], array_keys($records[0]['context']));
         $this->assertSame(1, $records[0]['context']['cleaned_count']);
         $this->assertSame(0, $records[0]['context']['failed_count']);
-    }
-
-    #[Test]
-    public function managedLaunchWithoutPidIsProtectedUntilProducerStops(): void
-    {
-        $launch = $this->lifecycle->allocateManagedLaunch('launching');
-        $directory = \dirname($launch->logPath);
-        $this->assertFileExists($directory.'/owner.json');
-        $this->assertFileDoesNotExist($launch->pidPath);
-        ($this->task)();
-        $this->assertDirectoryExists($directory, 'No PID or database row is not proof of abandonment.');
-        unset($launch);
-        ($this->task)();
-        ($this->task)();
-        $this->assertDirectoryDoesNotExist($directory);
-    }
-
-    #[Test]
-    public function managedAcceptedChildrenUseActualParentOwnerAndUnknownOwnersRemain(): void
-    {
-        $projection = static::getContainer()->get(RunOperationalProjectionRepository::class);
-        $projection->replace(new RunState('child-one', RunStatus::Running, parentRunId: 'parent'));
-        $projection->replace(new RunState('child-two', RunStatus::Running, parentRunId: 'parent'));
-        $first = $this->createManagedRecord('child-one', accepted: true);
-        $second = $this->createManagedRecord('child-two', accepted: true);
-        $unknown = $this->createManagedRecord('unknown', accepted: true);
-        $owner = $this->ownerLocks->createLock(ControllerSessionOwnerLockStore::resourceForSession($this->tmpDir, 'parent'), ttl: null);
-        $this->assertTrue($owner->acquire(false));
-        try {
-            ($this->task)();
-            foreach ([$first, $second, $unknown] as $record) {
-                $this->assertTrue($this->store->existsByRecordId($record['id']));
-                $this->assertFileExists($record['log']);
-            }
-        } finally {
-            $owner->release();
-        }
-        ($this->task)();
-        ($this->task)();
-        foreach ([$first, $second] as $record) {
-            $this->assertFalse($this->store->existsByRecordId($record['id']));
-            $this->assertDirectoryDoesNotExist(\dirname($record['log']));
-        }
-        $this->assertTrue($this->store->existsByRecordId($unknown['id']));
-        $this->assertFileExists($unknown['log']);
-    }
-
-    #[Test]
-    public function managedRecoveryPreservesGracePeriodAndInvalidOrLegacyScopes(): void
-    {
-        $old = $this->createManagedRecord('old-managed');
-        $recent = $this->createManagedRecord('recent-managed', minutes: 4);
-        $invalid = $this->lifecycle->allocateManagedLaunch('invalid');
-        $invalidDirectory = \dirname($invalid->logPath);
-        file_put_contents($invalidDirectory.'/owner.json', '{"nonce":"invalid"}');
-        unset($invalid);
-        $linked = $this->lifecycle->allocateManagedLaunch('linked');
-        $linkedDirectory = \dirname($linked->logPath);
-        $outside = $this->tmpDir.'/outside';
-        file_put_contents($outside, 'unrelated');
-        symlink($outside, $linked->statusPath);
-        unset($linked);
-        $legacy = $this->tmpDir.'/0123456789abcdef.status';
-        file_put_contents($legacy, '0');
-        $legacyLog = $this->tmpDir.'/0123456789abcdef.log';
-        file_put_contents($legacyLog, 'legacy');
-        $legacyId = $this->createFinishedRecord($legacyLog, $legacy, $this->now->modify('-6 minutes'));
-        ($this->task)();
-        $this->assertFalse($this->store->existsByRecordId($old['id']));
-        $this->assertDirectoryDoesNotExist(\dirname($old['log']));
-        $this->assertTrue($this->store->existsByRecordId($recent['id']));
-        $this->assertFileExists($recent['log']);
-        $this->assertDirectoryExists($invalidDirectory);
-        $this->assertDirectoryExists($linkedDirectory);
-        $this->assertSame('unrelated', file_get_contents($outside));
-        $this->assertFileExists($legacy);
-        $this->assertTrue($this->store->existsByRecordId($legacyId), 'A flat row has no last-writer lease proof.');
-    }
-
-    /** @return array{id: int, log: string, status: string} */
-    private function createManagedRecord(string $sessionId, bool $accepted = false, int $minutes = 6): array
-    {
-        $launch = $this->lifecycle->allocateManagedLaunch($sessionId);
-        file_put_contents($launch->logPath, 'fixture');
-        file_put_contents($launch->statusPath, '0');
-        $finishedAt = $this->now->modify('-'.$minutes.' minutes');
-        $id = $this->store->insertRecord([
-            'pid' => 999999,
-            'session_id' => $sessionId,
-            'command' => 'fixture',
-            'log_path' => $launch->logPath,
-            'status_path' => $launch->statusPath,
-            'started_at' => $finishedAt,
-        ]);
-        $entity = $this->store->fetchByRecordId($id);
-        $this->assertNotNull($entity);
-        $entity->finish(0, $finishedAt);
-        $this->store->flush();
-        if ($accepted) {
-            $this->manager->markBackgroundedForRecord($id, $sessionId);
-        }
-
-        return ['id' => $id, 'log' => $launch->logPath, 'status' => $launch->statusPath];
     }
 
     /**
@@ -326,7 +216,7 @@ final class BackgroundProcessCleanupTaskTest extends IsolatedKernelTestCase
             $config,
             $this->logger,
         );
-        $this->task = new BackgroundProcessCleanupTask($this->manager, $this->store, $this->lifecycle, $this->logger, static::getContainer()->get(RunOperationalProjectionRepository::class), $this->ownerLocks, $this->tmpDir);
+        $this->task = new BackgroundProcessProvisionalCleanupTask($this->manager, $this->store, $this->lifecycle, $this->logger);
     }
 
     private function createFinishedRecord(string $logPath, string $statusPath, \DateTimeImmutable $finishedAt): int
@@ -369,14 +259,13 @@ final class BackgroundProcessCleanupTaskTest extends IsolatedKernelTestCase
      */
     private function createSidecars(string $prefix, ?string $directory = null, bool $includeStatus = true): array
     {
-        $lifecycle = new ProcessLifecycle(new BackgroundProcessConfig(storageDir: $directory ?? $this->tmpDir), $this->logger);
-        $launch = $lifecycle->allocateManagedLaunch('run-'.$prefix);
-        file_put_contents($launch->logPath, 'output');
+        $base = ($directory ?? $this->tmpDir).'/'.$prefix;
+        file_put_contents($base.'.log', 'output');
         if ($includeStatus) {
-            file_put_contents($launch->statusPath, '0');
+            file_put_contents($base.'.status', '0');
         }
-        file_put_contents($launch->pidPath, (string) getmypid());
+        file_put_contents($base.'.pid', (string) getmypid());
 
-        return ['log' => $launch->logPath, 'status' => $launch->statusPath, 'pid' => $launch->pidPath];
+        return ['log' => $base.'.log', 'status' => $base.'.status', 'pid' => $base.'.pid'];
     }
 }

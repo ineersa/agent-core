@@ -126,6 +126,7 @@ function build_test_tui_phpunit_command(?string $filter = null): string
 #[AsTask(name: 'test:llm-real', description: 'Run real LLM smoke tests')]
 function test_llm_real(?string $filter = null): void
 {
+    \CastorTasks\initialize_standalone_qa_run();
     check_llm_generation_ready();
 
     $cmd = build_test_llm_real_phpunit_command($filter);
@@ -222,6 +223,7 @@ function test_tui(?string $filter = null): void
 #[AsTask(name: 'test:tui-update', description: 'Update TUI E2E snapshot baselines')]
 function test_tui_update(): void
 {
+    \CastorTasks\initialize_standalone_qa_run();
     check_tmux();
 
     echo 'Running TUI E2E tests with snapshot update (replay-backed)...
@@ -254,6 +256,7 @@ TUI snapshot update complete (exit code %d).
 #[AsTask(name: 'test:controller', description: 'Run controller E2E smoke tests (live LLM, opt-in)')]
 function test_controller(): void
 {
+    \CastorTasks\initialize_standalone_qa_run();
     check_llm_generation_ready();
 
     @mkdir('var/test', 0755, true);
@@ -317,6 +320,7 @@ OK (%.1fs)
 )]
 function test_controller_replay(): void
 {
+    \CastorTasks\initialize_standalone_qa_run();
     @mkdir('var/test', 0755, true);
     $migrate = run_test_db_migrate_bounded(
         qa_test_home_shell_prefix().' APP_ENV=test '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'

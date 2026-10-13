@@ -39,6 +39,5 @@ castor check             # full gate; TUI lane includes PHAR ensure
 ## Related
 
 - Standards: `tests/AGENTS.md`, `.agents/skills/testing/SKILL.md`
-- Fixture cleanup, diagnostic archives and retention: [test-artifacts.md](test-artifacts.md)
 - LLM fixtures: [llm-replay.md](llm-replay.md)
 - Architecture: [tui-architecture.md](tui-architecture.md)

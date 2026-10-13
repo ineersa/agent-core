@@ -15,7 +15,6 @@ use Ineersa\CodingAgent\Infrastructure\SymfonyAi\Http\LlmCancelAwareHttpClient;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressChildRowDTO;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressParallelSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingleSnapshotDTO;
-use Ineersa\CodingAgent\Tool\BackgroundProcess\ManagedBackgroundProcessLaunchDTO;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionContextInterface;
 use Ineersa\Tui\Theme\ThemeColorEnum;
@@ -33,7 +32,6 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
  * - published ExtensionApi contracts
  * - theme YAML palette tokens
  * - proven Symfony Serializer / durable projection / event payload types
- * - the background launch descriptor's lifetime anchor
  *
  * No class-wide internal-interface exemptions. Native call analysis covers
  * production interface methods; test-only interface members stay deletable.
@@ -111,14 +109,6 @@ final class HatfieldDeadCodeUsageProvider extends ReflectionBasedMemberUsageProv
 
         if (\in_array($className, self::SERIALIZED_PROPERTY_CLASSES, true)) {
             return VirtualUsageData::withNote('Symfony Serializer / durable projection / event payload property');
-        }
-
-        // Retaining this reference keeps the producer's flock descriptor open
-        // until shell writers inherit it. Removing an unread lifetime anchor
-        // closes the descriptor early and invalidates stopped-writer proof.
-        if (ManagedBackgroundProcessLaunchDTO::class === $className
-            && 'writerLease' === $property->getName()) {
-            return VirtualUsageData::withNote('Background launch flock descriptor lifetime anchor');
         }
 
         // PHP stream wrappers expose a public $context filled by the engine.
