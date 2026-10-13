@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 require $argv[1].'/vendor/autoload.php';
 
-$kernel = new Ineersa\CodingAgent\Kernel('test', false);
+$kernel = new Ineersa\CodingAgent\Kernel('test', true);
 $kernel->boot();
 $container = $kernel->getContainer()->get('test.service_container');
 ($container->get(Ineersa\CodingAgent\Migrations\StartupDatabaseMigrator::class))();
