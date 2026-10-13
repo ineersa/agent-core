@@ -168,14 +168,13 @@ final class BackgroundProcessManager
      */
     public function start(string $command, ?string $sessionId = null): StartResult
     {
-        // Ensure storage directory exists
-        $bgDir = $this->lifecycle->ensureStorageDir();
-
-        // Generate unique file prefix and file paths
-        $filePrefix = bin2hex(random_bytes(8));
-        $pidFile = $bgDir.'/'.$filePrefix.'.pid';
-        $statusFile = $bgDir.'/'.$filePrefix.'.status';
-        $logFile = $bgDir.'/'.$filePrefix.'.log';
+        // The durable scope owns the launch even before a PID or database row
+        // exists. Producer failure closes only its descriptor; inherited shell
+        // writers keep reclamation blocked through their final sidecar write.
+        $launch = $this->lifecycle->allocateManagedLaunch($sessionId ?? '');
+        $pidFile = $launch->pidPath;
+        $statusFile = $launch->statusPath;
+        $logFile = $launch->logPath;
 
         $now = Clock::get()->now();
 
@@ -185,15 +184,36 @@ final class BackgroundProcessManager
         $pgid = $launchResult['pgid'];
 
         // Persist entity with auto-increment DB id
-        $dbId = $this->store->insertRecord([
-            'pid' => $pid,
-            'pgid' => $pgid,
-            'session_id' => $sessionId ?? '',
-            'command' => $command,
-            'log_path' => $logFile,
-            'status_path' => $statusFile,
-            'started_at' => $now,
-        ]);
+        try {
+            $dbId = $this->store->insertRecord([
+                'pid' => $pid,
+                'pgid' => $pgid,
+                'session_id' => $sessionId ?? '',
+                'command' => $command,
+                'log_path' => $logFile,
+                'status_path' => $statusFile,
+                'started_at' => $now,
+            ]);
+        } catch (\Throwable $exception) {
+            // This wrapper was just positively launched by this invocation.
+            // Stop it without relying on a row or an unusable EntityManager.
+            try {
+                if (null === $launchResult['start_identity'] && null === $this->lifecycle->readStatusFile($statusFile) && $this->lifecycle->isAlive($pid)) {
+                    throw new \RuntimeException('Failed launch has no verifiable process start identity.');
+                }
+                $this->lifecycle->stopOwnedProcess($pid, $pgid, $statusFile, $this->config->stopGraceSeconds, $launchResult['start_identity']);
+            } catch (\Throwable $cleanupException) {
+                // Keep the durable scope for lease-checked Scheduler recovery.
+                $this->logger->warning('background_process.failed_launch_cleanup_failed', [
+                    'run_id' => $sessionId,
+                    'session_id' => $sessionId,
+                    'component' => 'tool.background_process',
+                    'event_type' => 'background_process.failed_launch_cleanup_failed',
+                    'exception_class' => $cleanupException::class,
+                ]);
+            }
+            throw $exception;
+        }
 
         // Track for instance-scoped shutdown only after the durable row exists.
         // Ownership is the immutable record ID, never the reusable OS PID.
@@ -599,33 +619,8 @@ final class BackgroundProcessManager
         $pgid = $entity->pgid;
         $graceSeconds = $this->config->stopGraceSeconds;
 
-        // TERM signal — target process group (negative PGID)
-        $signalSent = 'term';
-        $this->lifecycle->sendTerm($pid, $pgid);
-
-        // Poll until cooperative exit or grace deadline, then KILL if still alive.
-        // Wrapper trap writes .status before /proc fully disappears; treat that as done.
-        // ponytail: 50ms poll loop (matches ProcessLifecycle::resolvePgid); waitpid/eventfd if stop latency becomes a hot path
         $statusPath = $entity->statusPath;
-        if ($graceSeconds > 0) {
-            $deadlineNs = hrtime(true) + ($graceSeconds * 1_000_000_000);
-            while (hrtime(true) < $deadlineNs) {
-                if (null !== $this->lifecycle->readStatusFile($statusPath)) {
-                    break;
-                }
-                if (!$this->lifecycle->isAlive($pid)) {
-                    break;
-                }
-                usleep(50_000);
-            }
-        }
-
-        // Prefer status-file proof of cooperative exit over /proc residual.
-        $cooperativelyExited = null !== $this->lifecycle->readStatusFile($statusPath);
-        if (!$cooperativelyExited && $this->lifecycle->isAlive($pid)) {
-            $signalSent = 'term+kill';
-            $this->lifecycle->sendKill($pid, $pgid);
-        }
+        $signalSent = $this->lifecycle->stopOwnedProcess($pid, $pgid, $statusPath, $graceSeconds);
 
         $this->logger->info('background_process.stopped', [
             'component' => 'tool.background_process',
@@ -638,14 +633,6 @@ final class BackgroundProcessManager
 
         $now = Clock::get()->now();
         $entity->markStopped($now);
-
-        // Write -1 to the status file only when the wrapper did not
-        // already write a real exit code (KILL path). When TERM succeeds
-        // the wrapper's trap handler writes the child's real exit code
-        // before exiting; overwriting would corrupt forensic evidence.
-        if ('' !== $statusPath) {
-            $this->lifecycle->writeStopMarker($statusPath);
-        }
 
         $this->store->flush();
 

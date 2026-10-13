@@ -99,6 +99,18 @@ final class RunOperationalProjectionRepositoryTest extends IsolatedKernelTestCas
         $this->assertSame(RunStatus::Cancelling, $refreshed?->status);
     }
 
+    public function testOwnerLookupDoesNotTrustAnEntityCachedBeforeProjectionDeletion(): void
+    {
+        $this->repository->replace(new RunState('child-owner', RunStatus::Running, parentRunId: 'controller-owner'));
+        $this->assertNotNull($this->repository->find('child-owner'));
+        $this->assertSame('controller-owner', $this->repository->findOwnerSessionId('child-owner'));
+        // Simulate another owner's permanent projection removal while this
+        // scheduler still has the old entity in its Doctrine identity map.
+        $this->connection->delete('run_operational_state', ['run_id' => 'child-owner']);
+        $this->assertNull($this->repository->findOwnerSessionId('child-owner'));
+        $this->assertNull($this->repository->findOwnerSessionId('unknown-owner'));
+    }
+
     public function testParentRunIdFromRunStateMapsOwnershipWithoutMetadataReader(): void
     {
         $this->repository->replace(new RunState('child', RunStatus::Running, parentRunId: 'parent'));

@@ -12,6 +12,10 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
+use Symfony\Component\Process\InputStream;
+use Symfony\Component\Process\Process;
 
 /**
  * Thesis: isAlive must not treat PHP-stat-cached /proc rows or unreaped
@@ -91,6 +95,148 @@ final class ProcessLifecycleTest extends TestCase
 
         $this->assertSame(0, $this->lifecycle->readStatusFile($statusFile));
         $this->assertStringContainsString('done', (string) file_get_contents($logFile));
+    }
+
+    #[Test]
+    public function shellWrapperRetainsLeaseAfterProducerClosesItsDescriptor(): void
+    {
+        $factory = new LockFactory(new FlockStore($this->tmpDir));
+        $producer = $factory->createLock('writer', ttl: null, autoRelease: false);
+        $this->assertTrue($producer->acquire(false));
+        $server = stream_socket_server('tcp://127.0.0.1:0');
+        $this->assertIsResource($server);
+        $address = stream_socket_get_name($server, false);
+        $command = escapeshellarg(\PHP_BINARY).' -r '.escapeshellarg(
+            '$s = stream_socket_client("tcp://'.$address.'"); fwrite($s, "r"); fread($s, 1);',
+        );
+        $statusPath = $this->tmpDir.'/lease.status';
+        $launch = $this->lifecycle->launchProcess($command, $this->tmpDir.'/lease.pid', $this->tmpDir.'/lease.log', $statusPath);
+        $connection = null;
+        $probe = $factory->createLock('writer', ttl: null);
+        try {
+            $connection = stream_socket_accept($server, 2);
+            $this->assertIsResource($connection);
+            $this->assertSame('r', fread($connection, 1));
+            $producer = null;
+            $this->assertFalse($probe->acquire(false), 'The actual setsid/bash writer must retain the inherited lease.');
+            fwrite($connection, 'x');
+            fclose($connection);
+            $connection = null;
+            $deadline = hrtime(true) + 2_000_000_000;
+            while (!$probe->acquire(false) && hrtime(true) < $deadline) {
+                usleep(1_000);
+            }
+            $this->assertTrue($probe->isAcquired(), 'Lease must become available after the last shell writer exits.');
+            $this->assertSame(0, $this->lifecycle->readStatusFile($statusPath));
+        } finally {
+            $probe->release();
+            $producer = null;
+            if (\is_resource($connection)) {
+                fwrite($connection, 'x');
+                fclose($connection);
+            }
+            fclose($server);
+            if ($this->lifecycle->isAlive($launch['pid'])) {
+                $this->lifecycle->sendKill($launch['pid'], $launch['pgid']);
+            }
+        }
+    }
+
+    #[Test]
+    public function failedLaunchStopRejectsMismatchedStartIdentityWithoutSignaling(): void
+    {
+        $server = stream_socket_server('tcp://127.0.0.1:0');
+        $this->assertIsResource($server);
+        $address = stream_socket_get_name($server, false);
+        $command = escapeshellarg(\PHP_BINARY).' -r '.escapeshellarg('$s = stream_socket_client("tcp://'.$address.'"); fwrite($s, "r"); fread($s, 1);');
+        $status = $this->tmpDir.'/identity.status';
+        $launch = $this->lifecycle->launchProcess($command, $this->tmpDir.'/identity.pid', $this->tmpDir.'/identity.log', $status);
+        $connection = null;
+        try {
+            $connection = stream_socket_accept($server, 2);
+            $this->assertIsResource($connection);
+            $this->assertSame('r', fread($connection, 1));
+            $this->assertNotNull($launch['start_identity']);
+            $this->expectException(\RuntimeException::class);
+            $this->expectExceptionMessage('Failed launch process identity is no longer verifiable.');
+            $this->lifecycle->stopOwnedProcess($launch['pid'], $launch['pgid'], $status, 0, $launch['start_identity'].'0');
+        } finally {
+            $stillAlive = $this->lifecycle->isAlive($launch['pid']);
+            if (\is_resource($connection)) {
+                fwrite($connection, 'x');
+                fclose($connection);
+            }
+            fclose($server);
+            $deadline = hrtime(true) + 2_000_000_000;
+            while (null === $this->lifecycle->readStatusFile($status) && hrtime(true) < $deadline) {
+                usleep(1_000);
+            }
+            $this->assertTrue($stillAlive, 'An identity mismatch must leave the unrelated generation untouched.');
+        }
+    }
+
+    #[Test]
+    public function producerDeathBeforeRowInsertionRetainsActualShellUntilLastWrite(): void
+    {
+        $server = stream_socket_server('tcp://127.0.0.1:0');
+        $this->assertIsResource($server);
+        $address = stream_socket_get_name($server, false);
+        $command = escapeshellarg(\PHP_BINARY).' -r '.escapeshellarg('$s = stream_socket_client("tcp://'.$address.'"); fwrite($s, "r"); fread($s, 1); echo "last write";');
+        $script = $this->tmpDir.'/producer.php';
+        file_put_contents($script, '<?php require '.var_export(\dirname(__DIR__, 4).'/vendor/autoload.php', true).';'.<<<'PHP'
+$lifecycle = new \Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle(new \Ineersa\CodingAgent\Config\BackgroundProcessConfig(storageDir: $argv[1]), new \Psr\Log\NullLogger());
+$launch = $lifecycle->allocateManagedLaunch('failed-producer');
+$lifecycle->launchProcess($argv[2], $launch->pidPath, $launch->logPath, $launch->statusPath);
+echo json_encode(['log' => $launch->logPath, 'status' => $launch->statusPath]), "\n";
+fread(STDIN, 1);
+exit(67);
+PHP);
+        $input = new InputStream();
+        $producer = new Process([\PHP_BINARY, $script, $this->tmpDir, $command], env: ['HATFIELD_SESSION_ID' => false], input: $input, timeout: 5);
+        $connection = null;
+        try {
+            $producer->start();
+            $this->assertTrue($producer->waitUntil(static fn (): bool => str_contains($producer->getOutput(), "\n")), $producer->getErrorOutput());
+            $paths = json_decode(trim($producer->getOutput()), true, flags: \JSON_THROW_ON_ERROR);
+            $connection = stream_socket_accept($server, 2);
+            $this->assertIsResource($connection);
+            $this->assertSame('r', fread($connection, 1));
+            $input->write('x');
+            $this->assertSame(67, $producer->wait());
+            $removed = 0;
+            $visitor = function (string $log, string $status) use (&$removed): bool {
+                $this->assertSame(0, $this->lifecycle->readStatusFile($status));
+                $this->assertSame('last write', file_get_contents($log));
+                ++$removed;
+
+                return true;
+            };
+            $this->lifecycle->visitStoppedManagedArtifacts($visitor);
+            $this->assertSame(0, $removed, 'Producer death cannot reclaim the surviving shell writer.');
+            $this->assertNull($this->lifecycle->readStatusFile($paths['status']));
+            fwrite($connection, 'x');
+            fclose($connection);
+            $connection = null;
+            $deadline = hrtime(true) + 2_000_000_000;
+            do {
+                $this->lifecycle->visitStoppedManagedArtifacts($visitor);
+                if (0 === $removed) {
+                    usleep(1_000);
+                }
+            } while (0 === $removed && hrtime(true) < $deadline);
+            $this->assertSame(1, $removed);
+            $this->assertDirectoryDoesNotExist(\dirname($paths['log']));
+        } finally {
+            $input->close();
+            if (\is_resource($connection)) {
+                fwrite($connection, 'x');
+                fclose($connection);
+            }
+            fclose($server);
+            if ($producer->isRunning()) {
+                $producer->stop(0);
+            }
+        }
     }
 
     #[Test]

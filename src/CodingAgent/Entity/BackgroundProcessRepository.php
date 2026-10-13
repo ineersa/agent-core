@@ -73,6 +73,19 @@ final class BackgroundProcessRepository extends ServiceEntityRepository
             ->getSingleScalarResult();
     }
 
+    /** Match a managed launch by immutable, cryptographically allocated paths. */
+    public function findByArtifactPaths(string $logPath, string $statusPath): ?BackgroundProcess
+    {
+        return $this->createQueryBuilder('bp')
+            ->where('bp.logPath = :log')
+            ->andWhere('bp.statusPath = :status')
+            ->setParameter('log', $logPath)
+            ->setParameter('status', $statusPath)
+            ->getQuery()
+            ->setHint(Query::HINT_REFRESH, true)
+            ->getOneOrNullResult();
+    }
+
     /**
      * Find all unfinished processes (finishedAt IS NULL), optionally filtered by session.
      *

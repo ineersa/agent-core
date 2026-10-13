@@ -47,6 +47,14 @@ final class ControllerSessionOwnerLockStore implements PersistingStoreInterface
         });
     }
 
+    /** Shared identity for controller acquisition and owner-absent cleanup. */
+    public static function resourceForSession(string $cwd, string $sessionId): string
+    {
+        $canonicalCwd = realpath($cwd);
+
+        return 'hatfield.controller.session.'.hash('sha256', (false !== $canonicalCwd ? $canonicalCwd : $cwd)."\0".$sessionId);
+    }
+
     public function delete(Key $key): void
     {
         $this->synchronized(function () use ($key): void {

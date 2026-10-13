@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool;
 
+use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
+use Ineersa\CodingAgent\Entity\BackgroundProcess;
+use Ineersa\CodingAgent\Entity\BackgroundProcessRepository;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\LogTailResult;
@@ -68,6 +71,101 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $this->assertFileExists($result->logPath);
 
         $this->manager->shutdownCleanup();
+    }
+
+    public function testInsertionFailureStopsOwnedShellWithoutDependingOnTheFailedStore(): void
+    {
+        $this->logger = new TestLogger();
+        $config = new BackgroundProcessConfig(storageDir: $this->tmpDir);
+        $lifecycle = new ProcessLifecycle($config, $this->logger);
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $paths = null;
+        $entityManager->expects($this->once())->method('persist')->willReturnCallback(function (object $entity) use (&$paths): void {
+            $this->assertInstanceOf(BackgroundProcess::class, $entity);
+            $paths = [$entity->logPath, $entity->statusPath];
+            $this->assertFileExists(\dirname($entity->logPath).'/owner.json');
+            $this->assertGreaterThan(0, $entity->pid);
+        });
+        $store = new ProcessStore($entityManager, static::getContainer()->get(BackgroundProcessRepository::class), $this->logger);
+        $this->manager = new BackgroundProcessManager($store, $lifecycle, $config, $this->logger);
+        $server = stream_socket_server('tcp://127.0.0.1:0');
+        $this->assertIsResource($server);
+        $address = stream_socket_get_name($server, false);
+        $command = escapeshellarg(\PHP_BINARY).' -r '.escapeshellarg('$s = stream_socket_client("tcp://'.$address.'"); fread($s, 1); echo "done";');
+        $connection = null;
+        $entityManager->expects($this->once())->method('flush')->willReturnCallback(function () use ($server, $lifecycle, &$connection): void {
+            $connection = stream_socket_accept($server, 2);
+            $this->assertIsResource($connection, 'The actual shell workload must be ready before persistence fails.');
+            $visited = 0;
+            $lifecycle->visitStoppedManagedArtifacts(static function () use (&$visited): bool {
+                ++$visited;
+
+                return true;
+            });
+            $this->assertSame(0, $visited, 'The in-flight producer and shell protect the durable scope.');
+            throw new \RuntimeException('insertion failed');
+        });
+        try {
+            try {
+                $this->manager->start($command, self::TEST_SESSION);
+                $this->fail('Insertion must fail.');
+            } catch (\RuntimeException $exception) {
+                $this->assertSame('insertion failed', $exception->getMessage());
+                $this->logger->debug('test.expected_insertion_failure');
+            }
+            $this->assertNotNull($paths);
+            $this->assertNotNull($lifecycle->readStatusFile($paths[1]), 'The wrapper records termination even though no row was inserted.');
+            $removed = 0;
+            $visitor = static function () use (&$removed): bool {
+                ++$removed;
+
+                return true;
+            };
+            $deadline = hrtime(true) + 2_000_000_000;
+            do {
+                $lifecycle->visitStoppedManagedArtifacts($visitor);
+                if (0 === $removed) {
+                    usleep(1_000);
+                }
+            } while (0 === $removed && hrtime(true) < $deadline);
+            $this->assertSame(1, $removed);
+            $this->assertDirectoryDoesNotExist(\dirname($paths[0]));
+        } finally {
+            if (\is_resource($connection)) {
+                fclose($connection);
+            }
+            fclose($server);
+        }
+    }
+
+    public function testLaunchFailureRetainsDurableUnstartedOwnershipForRecovery(): void
+    {
+        $this->createManager();
+        $path = getenv('PATH');
+        try {
+            putenv('PATH='.$this->tmpDir.'/no-executables');
+            try {
+                $this->manager->start('echo never-launched', self::TEST_SESSION);
+                $this->fail('Missing setsid must reject launch.');
+            } catch (\RuntimeException $exception) {
+                $this->assertSame('setsid is required but not found on this platform.', $exception->getMessage());
+                $this->logger->debug('test.expected_launch_failure');
+            }
+        } finally {
+            putenv(false === $path ? 'PATH' : 'PATH='.$path);
+        }
+        $lifecycle = new ProcessLifecycle(new BackgroundProcessConfig(storageDir: $this->tmpDir), $this->logger);
+        $recovered = 0;
+        $lifecycle->visitStoppedManagedArtifacts(function (string $log, string $status, string $sessionId) use (&$recovered): bool {
+            $this->assertSame(self::TEST_SESSION, $sessionId);
+            $this->assertFileDoesNotExist($log);
+            $this->assertFileDoesNotExist($status);
+            $this->assertFileDoesNotExist(substr($log, 0, -4).'.pid');
+            ++$recovered;
+
+            return true;
+        });
+        $this->assertSame(1, $recovered);
     }
 
     /* ── list() ── */
@@ -349,7 +447,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $result = $this->manager->start('echo "completed"', self::TEST_SESSION);
         $this->waitUntilFinished($result->pid);
 
-        $events = static::getContainer()->get(\Doctrine\ORM\EntityManagerInterface::class)->getEventManager();
+        $events = static::getContainer()->get(EntityManagerInterface::class)->getEventManager();
         $listener = new class {
             public function onFlush(): void
             {

@@ -45,7 +45,7 @@ Deferred subagent batch timeout interruption uses durable `run_control` delivery
 The controller launches `scheduler_default` for Symfony Scheduler work on the `default` schedule. Current recurring owners:
 
 - File-mention completion index refresh every **30s** (`completion:file-index:refresh`).
-- Provisional foreground bash supervision cleanup every **300s** (`BackgroundProcessProvisionalCleanupTask`).
+- Foreground bash supervision and abandoned managed background-artifact cleanup every **300s** (`BackgroundProcessCleanupTask`). Completed accepted jobs use their actual controller owner's lock; live writers and unknown owners remain protected.
 
 Those tasks are generated/in-memory schedule work for the live controller process. Durable deferred-batch deadlines stay on `run_control` with `DelayStamp`.
 

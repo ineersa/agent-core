@@ -532,12 +532,7 @@ final class HeadlessController
 
     private function sessionOwnerLockResource(): string
     {
-        $canonicalCwd = realpath($this->runtimeCwd);
-        if (false === $canonicalCwd) {
-            $canonicalCwd = $this->runtimeCwd;
-        }
-
-        return 'hatfield.controller.session.'.hash('sha256', $canonicalCwd."\0".$this->sessionId);
+        return ControllerSessionOwnerLockStore::resourceForSession($this->runtimeCwd, $this->sessionId);
     }
 
     /**

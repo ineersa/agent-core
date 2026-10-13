@@ -111,6 +111,11 @@ final class ProcessStore
         return $this->repository->findFreshById($id);
     }
 
+    public function fetchByArtifactPaths(string $logPath, string $statusPath): ?BackgroundProcess
+    {
+        return $this->repository->findByArtifactPaths($logPath, $statusPath);
+    }
+
     /**
      * Check whether a row exists for the given PID.
      *
