@@ -14,8 +14,7 @@ namespace Ineersa\CodingAgent\Mcp\Client;
  * so the existing ToolExecutor pipeline can produce a failed
  * {@see \Ineersa\AgentCore\Contract\Tool\ToolResult}.
  *
- * This isolation keeps the AppMcpClient layer free of AgentCore
- * imports and respects the Depfile boundary.
+ * The tool layer owns retryability and the AgentCore tool-error mapping.
  */
 class McpClientInvocationException extends \RuntimeException
 {
