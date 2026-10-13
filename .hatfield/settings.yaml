@@ -13,7 +13,6 @@ extensions:
         - Ineersa\HatfieldExt\TaskWorkflow\TaskWorkflowExtension
         - Ineersa\HatfieldExt\FileRewind\FileRewindExtension
         - Ineersa\HatfieldExt\ObservationalMemory\ObservationalMemoryExtension
-        - Ineersa\HatfieldExt\Jbcontext\JbcontextExtension
     settings:
         file_rewind:
             enabled: false

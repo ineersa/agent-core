@@ -26,6 +26,5 @@ parameters:
         - .hatfield/extensions/task-workflow/tests/*
         - .hatfield/extensions/file-rewind/tests/*
         - .hatfield/extensions/observational-memory/tests/*
-        - .hatfield/extensions/jbcontext/tests/*
     parallel:
         maximumNumberOfProcesses: 1
