@@ -118,8 +118,10 @@ transport establishes execution ownership, not framework ownership.
 flowchart TB
     Clock["Symfony Scheduler<br/>Live in-memory default schedule"]
     Clock -->|Every 30 seconds| Index[completion:file-index:refresh]
-    Clock -->|Every 300 seconds| Cleanup[BackgroundProcessProvisionalCleanupTask]
-    Cleanup --> Private[Finished private foreground rows and sidecars]
+    Clock -->|Every 300 seconds| Cleanup[BackgroundProcessCleanupTask]
+    Cleanup --> Private[Finished private foreground rows and managed sidecars]
+    Cleanup --> Orphans[Stopped managed scopes without a row]
+    Cleanup --> Accepted[Completed accepted jobs with an absent controller]
 ```
 
 ```mermaid
@@ -130,8 +132,9 @@ flowchart TB
     Interrupt --> Children[Interrupt unfinished children and settle parent wait]
 ```
 
-The scheduler is not the durable deadline store. Accepted background processes are
-not the provisional cleanup task's target.
+The scheduler is not the durable deadline store. Background recovery requires a
+released last-writer lease. Completed accepted jobs also require proof that their
+actual parent controller is absent.
 
 ## Shutdown and crashes
 
