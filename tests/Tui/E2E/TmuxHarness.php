@@ -120,12 +120,15 @@ final class TmuxHarness
         $session = \sprintf('%s-%d-%d', $prefix, $this->pid, \count($this->sessionNames));
         $this->sessionNames[] = $session;
 
-        // Propagate HATFIELD_QA_RUN_ID into the pane shell and descendants. The global
-        // tmux server may not inherit the ParaTest worker environ on abnormal lane timeout
-        // (SIGKILL before tearDown), so explicit export keeps /proc leak scans attributable.
+        // The shared tmux server predates the worker environment. Export ownership
+        // and scoped OS allocation into each pane, never into the global server.
+        // Ownership keeps /proc leak scans attributable after abnormal lane timeout.
         $paneEnvPrefix = '';
-        if ('' !== $qaRunId) {
-            $paneEnvPrefix = 'export HATFIELD_QA_RUN_ID='.escapeshellarg($qaRunId).'; ';
+        foreach (['HATFIELD_QA_RUN_ID', 'TMPDIR'] as $name) {
+            $value = getenv($name);
+            if (false !== $value && '' !== $value) {
+                $paneEnvPrefix .= 'export '.$name.'='.escapeshellarg($value).'; ';
+            }
         }
 
         $innerCmd = \sprintf(

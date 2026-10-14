@@ -275,6 +275,13 @@ function initialize_qa_check_run(bool $keepOverrides = false): string
     (new Filesystem())->mkdir($anchor.'.d');
     (new Filesystem())->dumpFile($projectRoot.'/'.$reportsRel.'/.os-temp', json_encode([$projectRoot, $anchor], \JSON_THROW_ON_ERROR));
 
+    // The allocator owns shutdown on exceptions and exit(), including full-check preflight.
+    register_shutdown_function(static function () use ($id, $projectRoot, $reportsRel): void {
+        if (!is_file($projectRoot.'/'.$reportsRel.'/.completed')) {
+            complete_qa_run($id, $projectRoot);
+        }
+    });
+
     return $id;
 }
 
@@ -361,8 +368,7 @@ function initialize_standalone_qa_run(): void
     if (getenv('HATFIELD_QA_RUN_ID')) {
         return;
     }
-    $id = initialize_qa_check_run(keepOverrides: true);
-    register_shutdown_function(__NAMESPACE__.'\complete_qa_run', $id, project_root_dir());
+    initialize_qa_check_run(keepOverrides: true);
 }
 
 /**

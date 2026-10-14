@@ -6,7 +6,10 @@ namespace Ineersa\CodingAgent\Tests\Castor;
 
 use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use PHPUnit\Framework\Attributes\TestWith;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Process\InputStream;
+use Symfony\Component\Process\Process;
 
 /**
  * Thesis: castor check finalization may delete only the exact-run QA cache
@@ -118,48 +121,73 @@ final class ExactQaRunCacheCleanupTest extends TestCase
         }
     }
 
-    public function testOutsideTemporaryScopeRequiresOwnershipAndConsumerCompletion(): void
+    #[TestWith(['exit'])]
+    #[TestWith(['exception'])]
+    public function testPreflightFailureFinalizesOwnedScopesWithoutDiscardingFailure(string $mode): void
     {
-        require_once ProjectDir::get().'/.castor/helpers.php';
+        require_once ProjectDir::get().'/.castor/shared.php';
         require_once ProjectDir::get().'/.castor/qa_tmux.php';
-        $work = TestDirectoryIsolation::createProjectTempDir('qa-os-retention');
-        $id = 'qa-20260101-000000-77-deadbeef';
-        $base = TestDirectoryIsolation::createOsTempDir('qa-os-base');
+        $root = ProjectDir::get();
         $filesystem = new \Symfony\Component\Filesystem\Filesystem();
-        $anchor = (string) realpath($filesystem->tempnam($base, $id.'-'));
-        $os = $anchor.'.d';
-        $filesystem->mkdir($os);
-        $marker = $work.'/var/reports/'.$id.'/.os-temp';
-        $keep = getenv('HATFIELD_KEEP_TMP');
+        $input = new InputStream();
+        $process = new Process([
+            \CastorTasks\castor_cli_executable(), '--castor-file='.$root.'/tests/CodingAgent/Fixtures/CastorPreflightFailure.php',
+            'preflight-failure', '--mode='.$mode,
+        ], $root, ['HATFIELD_KEEP_TMP' => '1', 'HATFIELD_SESSION_ID' => false]);
+        $process->setTimeout(5);
+        $process->setInput($input);
+        $id = null;
         try {
-            $filesystem->dumpFile($marker, json_encode([$work, $anchor], \JSON_THROW_ON_ERROR));
-            $filesystem->dumpFile($os.'/proof.txt', 'OS diagnostic');
-            \CastorTasks\prune_completed_qa_reports($work);
-            $this->assertDirectoryExists($os, 'An allocation record without consumer completion is not deletion authority.');
-            $filesystem->remove($marker);
-            $filesystem->symlink($os.'/proof.txt', $marker);
-            $this->assertNull(\CastorTasks\qa_os_temporary_directory($id, $work));
-            $filesystem->remove($marker);
-            $filesystem->dumpFile($marker, json_encode([$work, \dirname($os)], \JSON_THROW_ON_ERROR));
-            $this->assertNull(\CastorTasks\qa_os_temporary_directory($id, $work), 'The external base is not the allocated child scope.');
-            $filesystem->dumpFile($marker, json_encode([$work, $anchor], \JSON_THROW_ON_ERROR));
-            $filesystem->rename($os, $os.'.saved');
-            $filesystem->symlink($os.'.saved', $os);
-            $this->assertNull(\CastorTasks\qa_os_temporary_directory($id, $work), 'Symlinked scope directories are not deletion authority.');
-            $filesystem->remove($os);
-            $filesystem->rename($os.'.saved', $os);
-            putenv('HATFIELD_KEEP_TMP=1');
-            \CastorTasks\complete_qa_run($id, $work);
-            $this->assertFileExists($work.'/var/reports/'.$id.'/diagnostics/'.basename($os).'/proof.txt');
+            $process->start();
+            $this->assertTrue($process->waitUntil(static fn ($type, $output) => str_contains($output, 'ALLOCATED')));
+            $this->assertTrue($process->isRunning());
+            $this->assertSame(1, preg_match('/^ALLOCATED (.+)$/m', $process->getOutput(), $match));
+            [$id, $os] = json_decode($match[1], true, flags: \JSON_THROW_ON_ERROR);
+            $report = $root.'/var/reports/'.$id;
+            $marker = $report.'/.os-temp';
+            $allocation = (string) file_get_contents($marker);
+            \CastorTasks\prune_completed_qa_reports($root);
+            $this->assertDirectoryExists($os, 'An allocation without consumer completion is not deletion authority.');
+            try {
+                $filesystem->remove($marker);
+                $filesystem->symlink($os.'/proof.txt', $marker);
+                $this->assertNull(\CastorTasks\qa_os_temporary_directory($id, $root));
+                $filesystem->remove($marker);
+                $filesystem->dumpFile($marker, json_encode([$root, \dirname($os)], \JSON_THROW_ON_ERROR));
+                $this->assertNull(\CastorTasks\qa_os_temporary_directory($id, $root), 'The external base is not the allocated scope.');
+                $filesystem->dumpFile($marker, $allocation);
+                $filesystem->rename($os, $os.'.saved');
+                $filesystem->symlink($os.'.saved', $os);
+                $this->assertNull(\CastorTasks\qa_os_temporary_directory($id, $root), 'Symlinked scopes are not deletion authority.');
+            } finally {
+                $filesystem->remove($marker);
+                $filesystem->dumpFile($marker, $allocation);
+                if (is_dir($os.'.saved')) {
+                    $filesystem->remove($os);
+                    $filesystem->rename($os.'.saved', $os);
+                }
+            }
+            $input->close();
+            $process->wait();
+            $this->assertSame(1, $process->getExitCode(), $process->getOutput().$process->getErrorOutput());
+            $this->assertStringContainsString('controlled preflight failure', $process->getOutput().$process->getErrorOutput());
+            $this->assertFileExists($report.'/.completed');
+            $this->assertFileExists($report.'/preflight.log');
+            $this->assertFileExists($report.'/diagnostics/'.basename($os).'/proof.txt');
             $this->assertDirectoryDoesNotExist($os);
-            $this->assertFileDoesNotExist($anchor);
-            $this->assertDirectoryExists($base, 'Only the allocated child scope is owned, not its external base.');
-            \CastorTasks\prune_completed_qa_reports($work);
-            $this->assertFileExists($work.'/var/reports/'.$id.'/.completed');
+            $this->assertFileDoesNotExist(substr($os, 0, -2));
+            $this->assertDirectoryExists(\dirname($os), 'The external base is never owned.');
+            $this->assertDirectoryDoesNotExist($root.'/var/tmp/'.$id);
+            $this->assertDirectoryDoesNotExist($root.'/.hatfield/cache-'.$id);
+            \CastorTasks\prune_completed_qa_reports($root);
+            $this->assertFileExists($report.'/.completed', 'Failed runs participate in completed-report retention.');
         } finally {
-            false === $keep ? putenv('HATFIELD_KEEP_TMP') : putenv('HATFIELD_KEEP_TMP='.$keep);
-            TestDirectoryIsolation::removeDirectory($base);
-            TestDirectoryIsolation::removeDirectory($work);
+            $input->close();
+            $process->wait();
+            if (null !== $id) {
+                \CastorTasks\complete_qa_run($id, $root);
+                TestDirectoryIsolation::removeDirectory($root.'/var/reports/'.$id);
+            }
         }
     }
 }
