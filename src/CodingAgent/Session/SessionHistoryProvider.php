@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Session;
 
 use Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface;
-use Ineersa\CodingAgent\Runtime\Protocol\HistoryPromptView;
+use Ineersa\CodingAgent\Runtime\Protocol\HistoryEntryView;
 use Ineersa\CodingAgent\Runtime\Protocol\HistoryView;
 
-/** Bounded indexed human-prompt pages. Full text is read only on selection. */
+/** Bounded indexed conversation pages. Full text is read only on selection. */
 final readonly class SessionHistoryProvider implements HistoryProviderInterface
 {
     public function __construct(private SessionRunEventStore $eventStore, private RunHistoryIndex $historyIndex)
@@ -18,19 +18,19 @@ final readonly class SessionHistoryProvider implements HistoryProviderInterface
     public function forSession(string $runId, ?int $before = null, ?int $after = null): HistoryView
     {
         $source = $this->eventStore->historySource($runId);
-        $page = $this->historyIndex->promptPage($source->log, $source->path, $runId, $before, $after);
-        $prompts = [];
+        $page = $this->historyIndex->entryPage($source->log, $source->path, $runId, $before, $after);
+        $entries = [];
         foreach ($page['rows'] as $row) {
-            $prompts[] = new HistoryPromptView($row['turn_no'], $row['preview'], $row['anchor']);
+            $entries[] = new HistoryEntryView($row['turn_no'], $row['preview'], $row['anchor'], $row['role']);
         }
 
-        return new HistoryView($prompts, $page['selected'], $page['older'], $page['newer']);
+        return new HistoryView($entries, $page['selected'], $page['older'], $page['newer'], $page['selected_role']);
     }
 
     public function promptText(string $runId, int $turnNo): string
     {
         $source = $this->eventStore->historySource($runId);
 
-        return $this->historyIndex->selectPrompt($source->log, $source->path, $runId, $turnNo)['text'];
+        return $this->historyIndex->selectEntry($source->log, $source->path, $runId, $turnNo)['text'];
     }
 }

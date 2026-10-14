@@ -284,7 +284,7 @@ final class RuntimeEventPoller
                                 $this->eventApplier->hydrateProjectedTranscript([]);
                             }
 
-                            if ('' !== $editorPromptText) {
+                            if (\array_key_exists('editor_prompt_text', $runtimeEvent->payload)) {
                                 $state->pendingEditorPromptText = $editorPromptText;
                             }
                         } else {

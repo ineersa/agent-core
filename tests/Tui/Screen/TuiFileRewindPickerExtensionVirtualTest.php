@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Screen;
 
 use Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface;
-use Ineersa\CodingAgent\Runtime\Protocol\HistoryPromptView;
+use Ineersa\CodingAgent\Runtime\Protocol\HistoryEntryView;
 use Ineersa\CodingAgent\Runtime\Protocol\HistoryView;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\HatfieldExt\FileRewind\FileRewindCheckpointKindEnum;
@@ -110,11 +110,11 @@ final class TuiFileRewindPickerExtensionVirtualTest extends TestCase
     }
 
     /**
-     * Thesis: public ExtensionApi turnRowsInDisplayOrder and /history both consume the
-     * provider-filtered HistoryView (user prompts only). Bridge/picker do not re-filter roles.
+     * The published rewind contract keeps user prompts and complete titles even
+     * though native /history also lists assistant answers.
      */
     #[Test]
-    public function testTurnRowsInDisplayOrderAndHistoryAreUserPromptOnly(): void
+    public function testTurnRowsInDisplayOrderExcludesAssistantEntriesFromMixedHistory(): void
     {
         $sessionId = 'rewind-ext-rows';
         $history = $this->sampleUserPromptHistory($sessionId);
@@ -136,9 +136,10 @@ final class TuiFileRewindPickerExtensionVirtualTest extends TestCase
 
         $this->assertSame([1, 3], array_column($rows, 'turnNo'));
         $this->assertSame(['user', 'user'], array_column($rows, 'displayRole'));
+        $this->assertSame(['Create file', 'Append line'], array_column($rows, 'title'));
 
-        $historyTurnNos = array_map(static fn ($prompt): int => $prompt->turnNo, $history->prompts);
-        $this->assertSame([1, 3], $historyTurnNos);
+        $historyTurnNos = array_map(static fn ($prompt): int => $prompt->turnNo, $history->entries);
+        $this->assertSame([1, 1, 3, 3], $historyTurnNos);
     }
 
     #[Test]
@@ -206,9 +207,11 @@ final class TuiFileRewindPickerExtensionVirtualTest extends TestCase
     private function sampleUserPromptHistory(string $sessionId): HistoryView
     {
         return new HistoryView(
-            prompts: [
-                new HistoryPromptView(1, 'Create file', 1),
-                new HistoryPromptView(3, 'Append line', 3),
+            entries: [
+                new HistoryEntryView(1, 'Create file', 1),
+                new HistoryEntryView(1, 'File created', 1, 'assistant'),
+                new HistoryEntryView(3, 'Append line', 3),
+                new HistoryEntryView(3, 'Line appended', 3, 'assistant'),
             ],
             selectedAnchor: 3,
         );

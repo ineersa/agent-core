@@ -36,7 +36,7 @@ use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecution
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchIdentityFactory;
 use Ineersa\CodingAgent\Application\Message\AttachRun;
 use Ineersa\CodingAgent\Application\Message\RepairSession;
-use Ineersa\CodingAgent\Application\Message\SelectHistoryPrompt;
+use Ineersa\CodingAgent\Application\Message\SelectHistoryEntry;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\CompactionConfig;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
@@ -420,7 +420,7 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         $this->assertSame($before, $store->latestSequenceFor($run));
         $this->assertSame([], $emitted);
         $queued = self::getContainer()->get('messenger.transport.run_control')->getSent()[0];
-        $this->assertInstanceOf(SelectHistoryPrompt::class, $queued->getMessage());
+        $this->assertInstanceOf(SelectHistoryEntry::class, $queued->getMessage());
         $handled = self::getContainer()->get('agent.command.bus')->dispatch($queued->with(new ReceivedStamp('run_control')));
         $result = $handled->last(HandledStamp::class)->getResult();
         $this->assertInstanceOf(RuntimeEvent::class, $result);
@@ -802,7 +802,7 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         $registry->loadRecovered($replay->rebuildIfStale(RunState::queued($run), $run)->rebuiltState);
         $maintenance = $container->get(\Ineersa\CodingAgent\Application\Pipeline\SessionMaintenanceHandler::class);
         $attach = new AttachRun($run, [], 'attach-before-discard');
-        $selection = new SelectHistoryPrompt($run, 2, 'selection-before-discard');
+        $selection = new SelectHistoryEntry($run, 2, 'selection-before-discard');
         $maintenance->attach($attach);
         $this->assertSame(RuntimeEventTypeEnum::RunHistoryPositionChanged->value, $maintenance->select($selection)->type);
         $processor = $container->get(\Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor::class);

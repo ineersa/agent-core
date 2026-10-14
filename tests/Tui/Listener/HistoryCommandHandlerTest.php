@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Listener;
 
 use Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface;
-use Ineersa\CodingAgent\Runtime\Protocol\HistoryPromptView;
+use Ineersa\CodingAgent\Runtime\Protocol\HistoryEntryView;
 use Ineersa\CodingAgent\Runtime\Protocol\HistoryView;
 use Ineersa\Tui\Command\NoOp;
 use Ineersa\Tui\Command\SlashCommand;
@@ -52,8 +52,8 @@ final class HistoryCommandHandlerTest extends TestCase
     private function openablePicker(): HistoryPickerController
     {
         $history = new HistoryView(
-            prompts: [
-                new HistoryPromptView(turnNo: 1, promptText: 'Root turn', anchor: 1),
+            entries: [
+                new HistoryEntryView(turnNo: 1, text: 'Root turn', anchor: 1),
             ],
             selectedAnchor: 1,
         );

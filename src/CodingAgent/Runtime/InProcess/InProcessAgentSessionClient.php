@@ -12,7 +12,7 @@ use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
 use Ineersa\CodingAgent\Application\Message\RepairSession;
-use Ineersa\CodingAgent\Application\Message\SelectHistoryPrompt;
+use Ineersa\CodingAgent\Application\Message\SelectHistoryEntry;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Mcp\McpSessionLifecycleDispatcher;
@@ -477,7 +477,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
     {
         $targetTurnNo = (int) ($command->payload['turn_no'] ?? 0);
 
-        $this->commandBus->dispatch(new SelectHistoryPrompt($runId, $targetTurnNo, \Symfony\Component\Uid\Uuid::v4()->toRfc4122()));
+        $this->commandBus->dispatch(new SelectHistoryEntry($runId, $targetTurnNo, \Symfony\Component\Uid\Uuid::v4()->toRfc4122(), (string) ($command->payload['role'] ?? 'user')));
     }
 
     /**

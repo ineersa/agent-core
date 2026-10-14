@@ -23,11 +23,12 @@ use Psr\Log\LoggerInterface;
  * Selecting user prompt turn N is non-destructive:
  *  - Appends history_position_set with position = predecessor(N) (or 0 for first)
  *  - Rebuilds RunState for that boundary (context immediately before N)
- *  - Returns selected_prompt_turn_no = N for editor/picker UX
+ *  - Returns selected_prompt_turn_no = N for the editor
  *  - Forward turns remain active until a context-mutating action discards them
  *
- * Target must be a sparse human prompt; predecessor is computed over ALL retained
- * anchors so a hidden internal turn can be the correct boundary.
+ * Selecting a final answer keeps its turn and prefills the next retained human
+ * prompt, or clears the editor when there is none. User predecessors and next
+ * prompts follow immutable retained anchor order, including hidden internal turns.
  */
 final readonly class HistorySelectionService implements HistorySelectionServiceInterface
 {
@@ -48,12 +49,12 @@ final readonly class HistorySelectionService implements HistorySelectionServiceI
      * @throws RunStateDuplicateSequenceReplayException
      * @throws \RuntimeException
      */
-    public function selectPrompt(string $runId, int $targetPromptTurnNo, string $commandId): array
+    public function selectEntry(string $runId, int $targetTurnNo, string $commandId, string $role = 'user'): array
     {
-        return $this->lockManager->synchronized($runId, function () use ($runId, $targetPromptTurnNo): array {
+        return $this->lockManager->synchronized($runId, function () use ($runId, $targetTurnNo, $role): array {
             $this->runCommit->assertTransitionReady($runId);
             $source = $this->eventStore->historySource($runId);
-            $prompt = $this->historyIndex->selectPrompt($source->log, $source->path, $runId, $targetPromptTurnNo);
+            $prompt = $this->historyIndex->selectEntry($source->log, $source->path, $runId, $targetTurnNo, $role);
             $state = $this->activeRunContext->requireLoaded($runId);
             $previousPosition = $prompt['position'];
             $positionTurnNo = $prompt['predecessor'];
@@ -67,7 +68,7 @@ final readonly class HistorySelectionService implements HistorySelectionServiceI
                 payload: [
                     'position_turn_no' => $positionTurnNo,
                     'previous_position_turn_no' => $previousPosition,
-                    'selected_prompt_turn_no' => $targetPromptTurnNo,
+                    'selected_prompt_turn_no' => $prompt['selectedPromptTurnNo'],
                     'reason' => 'history_select',
                 ],
                 createdAt: new \DateTimeImmutable(),
@@ -85,18 +86,21 @@ final readonly class HistorySelectionService implements HistorySelectionServiceI
 
             $this->logger->info('run_history.selected', [
                 'run_id' => $runId,
-                'selected_prompt_turn_no' => $targetPromptTurnNo,
+                'selected_prompt_turn_no' => $prompt['selectedPromptTurnNo'],
+                'selected_entry_turn_no' => $targetTurnNo,
+                'selected_entry_role' => $role,
                 'position_turn_no' => $positionTurnNo,
                 'previous_position_turn_no' => $previousPosition,
                 'position_event_seq' => $newSeq,
                 'component' => 'history',
+                'session_id' => $runId,
                 'event_type' => 'history_position_set',
             ]);
 
             return [
                 'rebuiltState' => $rebuiltState,
                 'positionEventSeq' => $newSeq,
-                'selectedPromptTurnNo' => $targetPromptTurnNo,
+                'selectedPromptTurnNo' => $prompt['selectedPromptTurnNo'],
                 'editorPromptText' => $editorPromptText,
             ];
         });

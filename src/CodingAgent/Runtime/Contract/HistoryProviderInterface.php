@@ -7,12 +7,12 @@ namespace Ineersa\CodingAgent\Runtime\Contract;
 use Ineersa\CodingAgent\Runtime\Protocol\HistoryView;
 
 /**
- * Provides bounded retained prompt pages and explicit canonical text lookup.
+ * Provides bounded retained conversation pages and explicit canonical text lookup.
  */
 interface HistoryProviderInterface
 {
     /**
-     * @return HistoryView one page, empty when no retained human prompts
+     * @return HistoryView one page, empty when no retained conversation entries
      */
     public function forSession(string $runId, ?int $before = null, ?int $after = null): HistoryView;
 

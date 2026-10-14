@@ -269,7 +269,7 @@ final class TickPollListener implements TuiListenerRegistrar
                 }
             }
 
-            // /history selection: populate editor with the selected user prompt once.
+            // /history selection: load the selected or following user prompt once.
             if (null !== $state->pendingEditorPromptText) {
                 $screen->promptEditor()->replaceText($state->pendingEditorPromptText);
                 $state->pendingEditorPromptText = null;

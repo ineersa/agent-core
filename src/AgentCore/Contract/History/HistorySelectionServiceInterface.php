@@ -9,7 +9,7 @@ use Ineersa\AgentCore\Domain\Run\RunState;
 interface HistorySelectionServiceInterface
 {
     /**
-     * Position history for selected user prompt turn (non-destructive).
+     * Position before a user prompt or after a final assistant answer (non-destructive).
      *
      * @return array{
      *     rebuiltState: RunState,
@@ -18,5 +18,5 @@ interface HistorySelectionServiceInterface
      *     editorPromptText: string
      * }
      */
-    public function selectPrompt(string $runId, int $targetPromptTurnNo, string $commandId): array;
+    public function selectEntry(string $runId, int $targetTurnNo, string $commandId, string $role = 'user'): array;
 }

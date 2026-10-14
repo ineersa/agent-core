@@ -11,7 +11,7 @@ final class RunHistoryPositionChangedEventFactory
 {
     /**
      * @param int    $positionTurnNo       Active tip after select (0 = before first turn)
-     * @param int    $selectedPromptTurnNo User prompt row that was selected (for editor)
+     * @param int    $selectedPromptTurnNo User prompt loaded into the editor (0 = none)
      * @param string $editorPromptText     Original prompt text to populate the editor
      */
     public static function create(

@@ -139,21 +139,30 @@ New session creation uses atomic exclusive `mkdir` of the leaf session path and 
 
 ## History (`/history`)
 
-`/history` is **conversation-only** (user-prompt rows). It supports navigating retained history / undo-redo semantics for the active session’s linear history model. File restore is **not** mixed into `/history` (extension-owned `/rewind` is separate and package-local).
+`/history` lists user prompts and final assistant answers in retained conversation
+order, with a role prefix on each row. Reasoning, commentary and intermediate
+tool-call responses are not selectable answers. File restore remains separate in
+the extension-owned `/rewind` command.
 
 Selected history position and retained-history replay are derived from the canonical event stream; details of projection live in the TUI/runtime implementation.
 
-The picker opens near the selected position and loads at most 32 prompt previews,
-each capped at 240 UTF-8 bytes. Select `Older prompts...` or `Newer prompts...` with
-Enter to navigate pages. Internal turns are not selectable rows, but they remain
-valid predecessors. Selecting a prompt restores its complete original text to the
-editor without discarding forward history or starting a model turn.
+The picker opens near the selected position and loads at most 32 entry previews,
+each capped at 240 UTF-8 bytes. Select `Older entries...` or `Newer entries...` with
+Enter to navigate pages. Internal turns remain valid predecessors, not picker rows.
+Selecting a user prompt positions context before it and restores its complete
+original text to the editor. Selecting an assistant answer positions context after
+it and before the following user prompt, which is loaded into the editor. If there
+is no following prompt, the editor is empty. The answer stays in context and the
+transcript. Selection does not discard forward history or start a model turn;
+later context-mutating actions discard forward history as before. The same
+positions and editor text are available after session resume.
 
 The disposable `history-index.sqlite` stores stable anchors, bounded previews and
 canonical record locations, not full prompt bodies. Missing, invalid or obsolete
 indexes rebuild from `events.jsonl`. Warm page reads validate the indexed boundary;
 exact prompt lookup reads its canonical record. The published extension history
-API still returns its complete title array and reads prompt records explicitly.
+API still returns only user prompts with complete titles and reads their records
+explicitly.
 
 ## Concurrency and locking
 

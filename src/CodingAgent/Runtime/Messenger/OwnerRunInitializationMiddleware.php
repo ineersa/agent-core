@@ -17,7 +17,7 @@ use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
 use Ineersa\CodingAgent\Application\Message\AttachRun;
 use Ineersa\CodingAgent\Application\Message\RepairSession;
-use Ineersa\CodingAgent\Application\Message\SelectHistoryPrompt;
+use Ineersa\CodingAgent\Application\Message\SelectHistoryEntry;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Middleware\MiddlewareInterface;
@@ -49,7 +49,7 @@ final readonly class OwnerRunInitializationMiddleware implements MiddlewareInter
         $message = $envelope->getMessage();
         $runId = match (true) {
             $message instanceof AbstractAgentBusMessage => $message->runId(),
-            $message instanceof AttachRun, $message instanceof RepairSession, $message instanceof SelectHistoryPrompt => $message->runId,
+            $message instanceof AttachRun, $message instanceof RepairSession, $message instanceof SelectHistoryEntry => $message->runId,
             default => null,
         };
         if (null === $runId) {
@@ -59,7 +59,7 @@ final readonly class OwnerRunInitializationMiddleware implements MiddlewareInter
         return $this->locks->synchronized($runId, function () use ($runId, $message, $envelope, $stack): Envelope {
             // Attach prepares state and display together before applying its policy.
             // Other maintenance performs recovery inside its response boundary.
-            if (!$message instanceof RepairSession && !$message instanceof SelectHistoryPrompt && !$message instanceof AttachRun) {
+            if (!$message instanceof RepairSession && !$message instanceof SelectHistoryEntry && !$message instanceof AttachRun) {
                 $this->initializeForOwner($runId, $message);
             }
 
@@ -96,7 +96,7 @@ final readonly class OwnerRunInitializationMiddleware implements MiddlewareInter
                 // This is the audited owner-entry boundary. Unknown identities never
                 // become queued runs; worker replacement uses the actual envelope ID.
                 if (!$this->sessions->exists($runId) && null === $this->children->locate($runId)) {
-                    if ($message instanceof RepairSession || $message instanceof SelectHistoryPrompt) {
+                    if ($message instanceof RepairSession || $message instanceof SelectHistoryEntry) {
                         // Maintenance retains its narrow no-events/refusal response,
                         // without admitting unknown identities into the registry.
                         return;
@@ -104,7 +104,7 @@ final readonly class OwnerRunInitializationMiddleware implements MiddlewareInter
                     throw new \RuntimeException('Owner initialization refused unregistered run: '.$runId);
                 }
                 if (null === $this->events->latestSequenceFor($runId)) {
-                    if ($message instanceof RepairSession || $message instanceof SelectHistoryPrompt) {
+                    if ($message instanceof RepairSession || $message instanceof SelectHistoryEntry) {
                         return;
                     }
                     // Reservation alone does not authorize ordinary commands to

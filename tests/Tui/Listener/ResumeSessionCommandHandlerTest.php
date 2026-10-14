@@ -123,7 +123,7 @@ final class ResumeSessionCommandHandlerTest extends IsolatedKernelTestCase
             ): void {
             }
 
-            public function selectHistoryTurn(int $targetTurnNo): void
+            public function selectHistoryTurn(int $targetTurnNo, string $role = 'user'): void
             {
                 // No-op: this test does not exercise history selection.
             }
