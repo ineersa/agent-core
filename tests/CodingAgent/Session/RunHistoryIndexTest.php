@@ -96,6 +96,36 @@ final class RunHistoryIndexTest extends IsolatedKernelTestCase
         $index->selectEntry($this->log, $this->path, 'indexed', 4, 'assistant');
     }
 
+    public function testMixedPageQueriesSeekTheAssistantIndexWithoutTemporaryOrdering(): void
+    {
+        $this->write(1, 1, 'turn_advanced', ['turn_no' => 1]);
+        $this->write(2, 1, 'llm_step_completed', ['assistant_message' => ['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'Answer']]]]);
+        $index = new RunHistoryIndex(static::getContainer()->get(LockFactory::class), $this->logger);
+        $index->entryPage($this->log, $this->path, 'indexed', after: 0);
+        // Bind the plan proof to the actual mixed paging UNION, not a simplified
+        // answer-only SELECT that could conceal a scan or sort in the real page.
+        $entries = "(SELECT anchor, anchor AS cursor, turn_no, prompt_preview AS preview, 'user' AS role FROM turn_anchor WHERE retained = 1 AND prompt_seq IS NOT NULL UNION ALL SELECT anchor, answer_seq AS cursor, turn_no, answer_preview AS preview, 'assistant' AS role FROM turn_anchor WHERE retained = 1 AND answer_seq IS NOT NULL)";
+        $file = (new \ReflectionClass(RunHistoryIndex::class))->getFileName();
+        $this->assertIsString($file);
+        $source = file_get_contents($file);
+        $this->assertIsString($source);
+        $this->assertStringContainsString('$entries = "'.$entries.'";', $source);
+        $db = $this->db();
+        try {
+            foreach (['<' => 'DESC', '>' => 'ASC'] as $operator => $direction) {
+                foreach (['SELECT * FROM '.$entries.' WHERE cursor '.$operator.' ? ORDER BY cursor '.$direction.' LIMIT '.RunHistoryIndex::PAGE_SIZE,
+                    'SELECT cursor FROM '.$entries.' WHERE cursor '.$operator.' ? LIMIT 1'] as $sql) {
+                    $plan = implode("\n", array_column($db->fetchAllAssociative('EXPLAIN QUERY PLAN '.$sql, [2]), 'detail'));
+                    $this->assertMatchesRegularExpression('/SEARCH turn_anchor USING (?:COVERING )?INDEX turn_answers \(answer_seq[<>]/', $plan, $sql."\n".$plan);
+                    $this->assertStringNotContainsString('SCAN turn_anchor', $plan, $sql."\n".$plan);
+                    $this->assertStringNotContainsString('TEMP B-TREE', $plan, $sql."\n".$plan);
+                }
+            }
+        } finally {
+            $db->close();
+        }
+    }
+
     public function testColdRebuildWarmSeekAndSuffixBytesArePhysical(): void
     {
         $bytes = 0;
@@ -120,6 +150,32 @@ final class RunHistoryIndexTest extends IsolatedKernelTestCase
             $this->assertSame($bytes + $suffix, (int) $db->fetchOne('SELECT end_offset FROM index_meta'));
         } finally {
             $db->close();
+        }
+    }
+
+    public function testAnswerSeekIndexRebuildsDisposableSchemasWithAndWithoutAnswerColumns(): void
+    {
+        $this->write(1, 1, 'turn_advanced', ['turn_no' => 1]);
+        $this->write(2, 1, 'llm_step_completed', ['assistant_message' => ['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'Answer']]]]);
+        $index = new RunHistoryIndex(static::getContainer()->get(LockFactory::class), $this->logger);
+        $expected = $index->entryPage($this->log, $this->path, 'indexed', after: 0)['rows'];
+        foreach ([4, 3] as $version) {
+            $db = $this->db();
+            $db->executeStatement('DROP INDEX turn_answers');
+            $db->executeStatement('UPDATE index_meta SET version = ?', [$version]);
+            if (3 === $version) {
+                $db->executeStatement('ALTER TABLE turn_anchor DROP COLUMN answer_seq');
+                $db->executeStatement('ALTER TABLE turn_anchor DROP COLUMN answer_preview');
+            }
+            $db->close();
+            $this->assertSame($expected, $index->entryPage($this->log, $this->path, 'indexed', after: 0)['rows']);
+            $db = $this->db();
+            try {
+                $this->assertSame(5, (int) $db->fetchOne('SELECT version FROM index_meta'));
+                $this->assertSame('CREATE INDEX turn_answers ON turn_anchor (answer_seq) WHERE retained = 1 AND answer_seq IS NOT NULL', $db->fetchOne("SELECT sql FROM sqlite_master WHERE name = 'turn_answers'"));
+            } finally {
+                $db->close();
+            }
         }
     }
 

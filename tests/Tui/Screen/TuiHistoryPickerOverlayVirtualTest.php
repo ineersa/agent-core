@@ -14,6 +14,7 @@ use Ineersa\Tui\Picker\HistoryPickerController;
 use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
@@ -21,6 +22,74 @@ use PHPUnit\Framework\Attributes\Test;
  */
 final class TuiHistoryPickerOverlayVirtualTest extends PerMethodIsolatedKernelTestCase
 {
+    #[DataProvider('coldHistorySelections')]
+    public function testColdAttachRestoresFollowingPromptIntoANewEditor(int $turn, string $role, bool $mutate): void
+    {
+        $container = static::getContainer();
+        $run = $container->get(\Ineersa\CodingAgent\Session\HatfieldSessionStore::class)->createSession('cold editor selection');
+        $store = $container->get(\Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface::class);
+        $next = str_repeat('Full canonical U2 to edit. ', 24);
+        $message = static fn (string $role, string $text): array => ['role' => $role, 'content' => [['type' => 'text', 'text' => $text]]];
+        \Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder::appendMany($store, [
+            \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($run, 0, 'run_started', ['payload' => ['messages' => [$message('user', 'U1')]]]),
+            \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($run, 1, 'turn_advanced', ['turn_no' => 1, 'step_id' => 'one']),
+            \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($run, 1, 'llm_step_completed', ['step_id' => 'one', 'assistant_message' => $message('assistant', 'A1')]),
+            \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($run, 1, 'agent_end', ['reason' => 'completed']),
+            \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($run, 1, 'agent_command_applied', ['kind' => 'follow_up', 'message' => $message('user', $next)]),
+            \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($run, 2, 'turn_advanced', ['turn_no' => 2, 'step_id' => 'two']),
+            \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($run, 2, 'llm_step_completed', ['step_id' => 'two', 'assistant_message' => $message('assistant', 'A2')]),
+            \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($run, 2, 'agent_end', ['reason' => 'completed']),
+        ]);
+        [$oldTui, $oldState, $oldTicks, $oldClient] = $this->virtualSession($run);
+        $oldState->handle = new \Ineersa\CodingAgent\Runtime\Contract\RunHandle($run, 'attached');
+        $oldState->lastSeq = $store->latestSequenceFor($run);
+        $oldState->sessionReady = true;
+        $oldClient->send($run, new \Ineersa\CodingAgent\Runtime\Contract\UserCommand(type: 'select_history_turn', payload: ['turn_no' => $turn, 'role' => $role]));
+        $this->consumeMaintenance();
+        $oldTicks->dispatch(new \Symfony\Component\Tui\Event\TickEvent());
+        $expected = 'user' === $role ? 'U1' : (1 === $turn ? $next : '');
+        $this->assertSame($expected, $oldTui->screen()->editorText());
+        if ($mutate) {
+            $container->get(\Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor::class)->process('test', new \Ineersa\AgentCore\Domain\Message\ApplyCommand($run, 1, 'edit-next', 1, 'edit-next', 'follow_up', ['message' => $message('user', 'U2_EDITED')]));
+            $this->assertContains('history_tail_discarded', array_column($store->allFor($run), 'type'));
+            $expected = 'LOCAL_DRAFT';
+        }
+        // Release the old execution owner and every client/TUI object. The new
+        // attach must derive editor text from canonical storage, not the reply.
+        $container->get(\Ineersa\AgentCore\Contract\ActiveRunContextInterface::class)->release($run);
+        iterator_to_array($container->get(\Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink::class)->drain($run));
+        unset($oldTui, $oldState, $oldTicks, $oldClient);
+        gc_collect_cycles();
+        [$freshTui, $freshState, $freshTicks, $freshClient] = $this->virtualSession($run);
+        $freshTui->screen()->promptEditor()->replaceText('LOCAL_DRAFT');
+        $freshState->handle = $freshClient->attach($run);
+        $freshState->sessionReady = false;
+        $this->consumeMaintenance();
+        for ($i = 0; $i < 8 && !$freshState->sessionReady; ++$i) {
+            $freshState->lastPoll = 0.0;
+            $freshTicks->dispatch(new \Symfony\Component\Tui\Event\TickEvent());
+        }
+        $this->assertTrue($freshState->bootstrapMounted, $freshState->bootstrapError ?? $freshState->lastRuntimePollError);
+        $this->assertTrue($freshState->sessionReady);
+        if ('assistant' === $role) {
+            $this->assertContains('A1', array_column($freshState->transcript, 'text'));
+        }
+        if (1 === $turn) {
+            $this->assertNotContains($next, array_column($freshState->transcript, 'text'));
+            $this->assertNotContains('A2', array_column($freshState->transcript, 'text'));
+        }
+        $this->assertSame($expected, $freshTui->screen()->editorText(), 'A fresh owner/client/editor must restore only the current canonical selection after the verified bootstrap mount.');
+        $freshClient->cancelBootstrap($run);
+    }
+
+    public static function coldHistorySelections(): iterable
+    {
+        yield 'following prompt' => [1, 'assistant', false];
+        yield 'last answer clears' => [2, 'assistant', false];
+        yield 'user selection' => [1, 'user', false];
+        yield 'edited branch does not resurrect old prompt' => [1, 'assistant', true];
+    }
+
     public function testAssistantSelectionPrefillsNextPromptAndRetainsAnswerThroughColdReplayAndEditing(): void
     {
         $container = static::getContainer();
@@ -235,6 +304,34 @@ final class TuiHistoryPickerOverlayVirtualTest extends PerMethodIsolatedKernelTe
             $container->get(\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapProducer::class),
             $container->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class),
         ));
+    }
+
+    /** @return array{VirtualTuiHarness, TuiSessionState, \Ineersa\Tui\Runtime\TuiTickDispatcher, \Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient} */
+    private function virtualSession(string $run): array
+    {
+        $container = static::getContainer();
+        $harness = new VirtualTuiHarness(sessionId: $run);
+        $state = new TuiSessionState($run);
+        $client = clone $container->get(\Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient::class);
+        $services = $container->get(\Ineersa\Tui\Application\TuiSessionCompositionFactory::class)->create($harness->tui(), $harness->screen(), $state, $client);
+        $ticks = new \Ineersa\Tui\Runtime\TuiTickDispatcher();
+        $context = new \Ineersa\Tui\Runtime\TuiRuntimeContext($harness->tui(), $client, $state, $harness->screen(), $container->get(\Ineersa\CodingAgent\Session\HatfieldSessionStore::class), $ticks, $services->switch, new \Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher(), $container->get(HistoryProviderInterface::class), $services);
+        (new \Ineersa\Tui\Listener\TickPollListener(new \Ineersa\Tui\Listener\RuntimeQuestionEventHandler()))->register($context);
+
+        return [$harness, $state, $ticks, $client];
+    }
+
+    private function consumeMaintenance(): void
+    {
+        $container = static::getContainer();
+        $sent = $container->get('messenger.transport.run_control')->getSent();
+        $handled = $container->get('agent.command.bus')->dispatch($sent[array_key_last($sent)]->with(new \Symfony\Component\Messenger\Stamp\ReceivedStamp('run_control')));
+        $reply = $handled->last(\Symfony\Component\Messenger\Stamp\HandledStamp::class)->getResult();
+        if ($sent[array_key_last($sent)]->getMessage() instanceof \Ineersa\CodingAgent\Application\Message\AttachRun) {
+            $this->assertNull($reply);
+        } else {
+            $this->assertSame('run.history_position_changed', $reply->type, json_encode($reply->payload, \JSON_THROW_ON_ERROR));
+        }
     }
 
     private function sampleHistory(): HistoryView

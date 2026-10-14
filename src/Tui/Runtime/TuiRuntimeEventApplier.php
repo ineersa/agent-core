@@ -57,6 +57,9 @@ final readonly class TuiRuntimeEventApplier
             || $data['turn_no'] < 0 || !\is_array($data['usage'] ?? null) || !\is_array($data['queued_messages'] ?? null)) {
             throw new RuntimeTransportException('Invalid bootstrap resume metadata.');
         }
+        if (\array_key_exists('editor_prompt_text', $data) && !\is_string($data['editor_prompt_text'])) {
+            throw new RuntimeTransportException('Invalid bootstrap editor prompt.');
+        }
         $usage = new UsageProjection();
         foreach (['inputTokens', 'outputTokens', 'turnOutputTokens', 'latestInputTokens', 'cacheReadTokens', 'cacheCreationTokens'] as $key) {
             if (!\is_int($data['usage'][$key] ?? null) || $data['usage'][$key] < 0) {
@@ -92,6 +95,9 @@ final readonly class TuiRuntimeEventApplier
         $state->usage = $usage;
         $state->subagentLiveCatalog = $catalog;
         $state->queuedUserMessages = $data['queued_messages'];
+        if (\array_key_exists('editor_prompt_text', $data)) {
+            $state->pendingEditorPromptText = $data['editor_prompt_text'];
+        }
         $state->isShellRun = $data['is_shell_run'];
         $state->activity = match ($runStatus) {
             RunStatus::Queued => RunActivityStateEnum::Starting,

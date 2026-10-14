@@ -863,6 +863,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
     public function testInvalidOrDisconnectedTransferNeverMountsAndCancels(string $fault): void
     {
         [$state, $harness, $poller] = $this->scope();
+        $state->pendingEditorPromptText = 'Unchanged pending editor text';
         [$cut, $available, $frame, $end] = $this->transfer();
         if ('checksum' === $fault) {
             $frame = new RuntimeEvent($frame->type, '42', 0, $frame->payload + []);
@@ -871,10 +872,14 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
             $frame = new RuntimeEvent($frame->type, '42', 0, array_replace($frame->payload, ['index' => 1]));
         } elseif ('cut' === $fault) {
             $end = new RuntimeEvent($end->type, '42', 0, array_replace($end->payload, ['canonical_seq' => 14]));
-        } elseif ('metadata' === $fault) {
+        } elseif (\in_array($fault, ['metadata', 'editor'], true)) {
             $lines = explode("\n", base64_decode($frame->payload['data'], true));
             $resume = json_decode($lines[0], true, 512, \JSON_THROW_ON_ERROR);
-            $resume['data']['queued_messages'] = array_fill_keys(array_map(static fn (int $index): string => 'q'.$index, range(0, 2000)), 'Input');
+            if ('metadata' === $fault) {
+                $resume['data']['queued_messages'] = array_fill_keys(array_map(static fn (int $index): string => 'q'.$index, range(0, 2000)), 'Input');
+            } else {
+                $resume['data']['editor_prompt_text'] = ['not text'];
+            }
             $bytes = json_encode($resume, \JSON_THROW_ON_ERROR)."\n".$lines[1]."\n";
             $this->assertLessThanOrEqual(\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapSpoolStore::FRAME_BYTES, \strlen($bytes));
             $cut = SessionBootstrapDescriptorDTO::fromArray(array_replace($cut->toArray(), ['bytes' => \strlen($bytes), 'checksum' => hash('sha256', $bytes)]));
@@ -899,6 +904,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
         $this->assertSame(0, $state->lastSeq);
         $this->assertStringContainsString('Previous mounted view', $harness->plainScreenText());
         $this->assertNotNull($state->bootstrapError);
+        $this->assertSame('Unchanged pending editor text', $state->pendingEditorPromptText, 'An invalid transfer cannot mutate pending editor input before atomic mount.');
     }
 
     public static function invalidTransfers(): iterable
@@ -907,6 +913,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
         yield 'frame order' => ['order'];
         yield 'mismatching cut' => ['cut'];
         yield 'oversized metadata' => ['metadata'];
+        yield 'invalid editor text with valid checksum' => ['editor'];
         yield 'disconnected' => ['disconnect'];
     }
 

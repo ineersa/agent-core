@@ -156,13 +156,18 @@ is no following prompt, the editor is empty. The answer stays in context and the
 transcript. Selection does not discard forward history or start a model turn;
 later context-mutating actions discard forward history as before. The same
 positions and editor text are available after session resume.
+Cold attach restores the current selection's editor text from one indexed
+canonical prompt lookup, then applies it with the verified bootstrap view.
+Once a context-mutating action consumes the selection, later attaches do not
+restore that old prompt.
 
 The disposable `history-index.sqlite` stores stable anchors, bounded previews and
 canonical record locations, not full prompt bodies. Missing, invalid or obsolete
 indexes rebuild from `events.jsonl`. Warm page reads validate the indexed boundary;
-exact prompt lookup reads its canonical record. The published extension history
-API still returns only user prompts with complete titles and reads their records
-explicitly.
+assistant pages seek a partial index on retained answer sequences without sorting
+the full history. Exact prompt lookup reads its canonical record. The published
+extension history API still returns only user prompts with complete titles and
+reads their records explicitly.
 
 ## Concurrency and locking
 
