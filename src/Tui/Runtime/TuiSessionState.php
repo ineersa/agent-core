@@ -131,8 +131,8 @@ final class TuiSessionState
     public bool $isCompacting = false;
 
     /**
-     * Original user prompt text from /history selection, applied once by TickPollListener
-     * into the editor after RunHistoryPositionChanged rebuild. Null when nothing pending.
+     * Selected or following user prompt from /history, applied once by TickPollListener
+     * after RunHistoryPositionChanged rebuild. Empty clears the editor; null means nothing pending.
      */
     public ?string $pendingEditorPromptText = null;
 
