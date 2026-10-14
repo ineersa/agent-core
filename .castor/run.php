@@ -31,8 +31,8 @@ require_once __DIR__.'/shared.php';
  * var/tmp/phar/sessions/<sha256>/hatfield.phar. Overlapping launches reuse
  * identical builds without replacing an older session's artifact. The
  * canonical artifact therefore has no long-lived holder: castor test/check
- * rebuild it freely even while a session is live. Swept by
- * `castor clean:cleanup` (whole var/tmp/phar tree) — no runtime GC by design.
+ * rebuild it freely even while a session is live. `castor clean:cleanup`
+ * retains these copies because it cannot prove their consumers have stopped.
  * CastorTasks\phar_ensure() rebuilds the PHAR when source is newer than the last build.
  *
  * @param string $extraArgs Extra args appended after `agent` (e.g. '--model=...').

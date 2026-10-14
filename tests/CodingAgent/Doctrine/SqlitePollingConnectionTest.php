@@ -51,7 +51,7 @@ final class SqlitePollingConnectionTest extends TestCase
     {
         $directory = TestDirectoryIsolation::createProjectTempDir('sqlite-polling');
         TestDirectoryIsolation::createHatfieldTree($directory);
-        $dbDirectory = '../tmp/'.basename($directory);
+        $dbDirectory = \Symfony\Component\Filesystem\Path::makeRelative($directory, ProjectDir::get().'/var/test');
         $env = [
             'APP_ENV' => 'test',
             'APP_DEBUG' => '0',

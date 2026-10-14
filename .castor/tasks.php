@@ -69,7 +69,6 @@ use function CastorTasks\begin_castor_check_llama_proxy_cache_guard;
 use function CastorTasks\castor_check_lock_enabled;
 use function CastorTasks\castor_cli_executable;
 use function CastorTasks\check_llm_generation_ready;
-use function CastorTasks\cleanup_exact_qa_run_cache_roots;
 use function CastorTasks\finalize_qa_run_tui_tmux_sessions;
 use function CastorTasks\initialize_qa_check_run;
 use function CastorTasks\release_castor_check_lock;
@@ -333,7 +332,7 @@ function _run_castor_check_body(string $root, string $qaRunId, float $checkWallD
  * Ordering is intentional:
  * 1. lane artifact integrity
  * 2. exact-run process/tmux leak assertion (fail_quality never returns on failure)
- * 3. delete exact current QA cache roots (only after leak assertion returns)
+ * 3. publish completion and reclaim exact QA scopes (only after leak assertion returns)
  * 4. absolute wall check (post-cleanup)
  * 5. llama-proxy cache guard
  * 6. lane-failure quality result or quality ok
@@ -356,7 +355,7 @@ function finalize_castor_check_run(
     // On leak failure assert_castor_check_run_no_process_leaks exits via fail_quality
     // and never returns, so cleanup below is skipped and caches remain for diagnosis.
     assert_castor_check_run_no_process_leaks($qaRunId);
-    cleanup_exact_qa_run_cache_roots($qaRunId);
+    \CastorTasks\complete_qa_run($qaRunId, \CastorTasks\project_root_dir());
 
     // Post-lane quality guards after cleanup: wall/cache growth must still fail the
     // gate, but must not strand exact-run cache trees when those guards fire.

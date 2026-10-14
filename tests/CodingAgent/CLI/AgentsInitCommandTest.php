@@ -87,7 +87,8 @@ final class AgentsInitCommandTest extends TestCase
         $this->assertSame(Command::FAILURE, $exitCode, $tester->getDisplay());
         $display = $tester->getDisplay();
         $this->assertStringContainsString('Refusing to overwrite existing agent definition(s)', $display);
-        $this->assertStringContainsString($destination.'/scout.md', $display);
+        $withoutConsoleWhitespace = static fn (string $text): string => str_replace(["\r", "\n", ' '], '', $text);
+        $this->assertStringContainsString($withoutConsoleWhitespace($destination.'/scout.md'), $withoutConsoleWhitespace($display));
         $this->assertStringContainsString('--force', $display);
         $this->assertSame($staleBefore, (string) file_get_contents($destination.'/scout.md'));
         $this->assertFileDoesNotExist($destination.'/reviewer.md');

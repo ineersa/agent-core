@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Support;
 
+use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Filesystem\Path;
+
 /**
  * Shared temporary-directory creation and cleanup for tests.
  *
@@ -27,7 +30,11 @@ final class TestDirectoryIsolation
     public static function createProjectTempDir(string $prefix = 'test', int $permissions = 0o750): string
     {
         $projectDir = ProjectDir::get();
-        $dir = $projectDir.'/var/tmp/'.$prefix.'-'.bin2hex(random_bytes(8));
+        $temporary = Path::canonicalize('var/tmp/'.(getenv('HATFIELD_QA_RUN_ID') ?: ''));
+        if (!Path::isBasePath('var/tmp', $temporary)) {
+            throw new \InvalidArgumentException('QA temporary root must be project-local.');
+        }
+        $dir = $projectDir.'/'.$temporary.'/'.$prefix.'-'.bin2hex(random_bytes(8));
         mkdir($dir, $permissions, true);
 
         return $dir;
@@ -129,14 +136,13 @@ YAML
     /**
      * Recursively remove a directory tree.
      *
-     * Normalizes file permissions to ensure writability before unlinking,
-     * matching the robustness pattern used in E2E test cleanup.
+     * Normalize permissions without following symlinks, then use framework removal.
      *
      * @param string $dir path to the directory to remove
      */
     public static function removeDirectory(string $dir): void
     {
-        if (!is_dir($dir)) {
+        if (!is_dir($dir) && !is_link($dir)) {
             return;
         }
 
@@ -151,6 +157,12 @@ YAML
 
     private static function removeDirectoryOnce(string $dir): void
     {
+        $filesystem = new Filesystem();
+        if (is_link($dir)) {
+            $filesystem->remove($dir);
+
+            return;
+        }
         if (!is_dir($dir)) {
             return;
         }
@@ -162,22 +174,13 @@ YAML
 
         foreach ($iterator as $file) {
             $path = $file->getPathname();
-            if ($file->isDir()) {
-                @chmod($path, 0755);
-                if (!@rmdir($path) && is_dir($path)) {
-                    throw new \RuntimeException(\sprintf('Failed to remove directory "%s".', $path));
-                }
-            } else {
-                @chmod($path, 0644);
-                if (!@unlink($path) && is_file($path)) {
-                    throw new \RuntimeException(\sprintf('Failed to unlink "%s".', $path));
-                }
+            if (!$file->isLink()) {
+                @chmod($path, $file->isDir() ? 0755 : 0644);
             }
+            $filesystem->remove($path);
         }
 
         @chmod($dir, 0755);
-        if (!@rmdir($dir) && is_dir($dir)) {
-            throw new \RuntimeException(\sprintf('Failed to remove directory "%s".', $dir));
-        }
+        $filesystem->remove($dir);
     }
 }

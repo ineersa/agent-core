@@ -136,22 +136,13 @@ function collect_qa_check_run_leaked_tmux_sessions(string $runId): array
 }
 
 /**
- * Standalone castor test:tui: assign a run id when not already under castor check.
+ * Standalone castor test:tui uses the same run scopes and finalizers as other tests.
  */
 function ensure_standalone_tui_qa_run_id(): string
 {
-    $existing = getenv('HATFIELD_QA_RUN_ID');
-    if (false !== $existing && '' !== trim((string) $existing)) {
-        return (string) $existing;
-    }
+    initialize_standalone_qa_run();
 
-    $random = bin2hex(random_bytes(4));
-    $id = sanitize_qa_run_id_segment(\sprintf('tui-%s-%d-%s', date('Ymd-His'), getmypid(), $random));
-    putenv('HATFIELD_QA_RUN_ID='.$id);
-    $_ENV['HATFIELD_QA_RUN_ID'] = $id;
-    $_SERVER['HATFIELD_QA_RUN_ID'] = $id;
-
-    return $id;
+    return (string) getenv('HATFIELD_QA_RUN_ID');
 }
 
 /**
