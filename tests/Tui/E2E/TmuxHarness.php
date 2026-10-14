@@ -120,12 +120,15 @@ final class TmuxHarness
         $session = \sprintf('%s-%d-%d', $prefix, $this->pid, \count($this->sessionNames));
         $this->sessionNames[] = $session;
 
-        // Propagate HATFIELD_QA_RUN_ID into the pane shell and descendants. The global
-        // tmux server may not inherit the ParaTest worker environ on abnormal lane timeout
-        // (SIGKILL before tearDown), so explicit export keeps /proc leak scans attributable.
+        // The shared tmux server predates the worker environment. Export ownership
+        // and scoped OS allocation into each pane, never into the global server.
+        // Ownership keeps /proc leak scans attributable after abnormal lane timeout.
         $paneEnvPrefix = '';
-        if ('' !== $qaRunId) {
-            $paneEnvPrefix = 'export HATFIELD_QA_RUN_ID='.escapeshellarg($qaRunId).'; ';
+        foreach (['HATFIELD_QA_RUN_ID', 'TMPDIR'] as $name) {
+            $value = getenv($name);
+            if (false !== $value && '' !== $value) {
+                $paneEnvPrefix .= 'export '.$name.'='.escapeshellarg($value).'; ';
+            }
         }
 
         $innerCmd = \sprintf(
@@ -230,11 +233,16 @@ final class TmuxHarness
     }
 
     /**
-     * Point ANSI smoke artifacts at `<testProjectDir>/.hatfield/tmp/tui/smoke`.
+     * Save ANSI proof under the current QA report, not the disposable fixture tree.
      */
     public function setSnapshotDir(string $testProjectDir): void
     {
-        $this->snapshotDir = rtrim($testProjectDir, '/').'/.hatfield/tmp/tui/smoke';
+        $reports = getenv('HATFIELD_QA_REPORTS_DIR');
+        if (false === $reports || '' === $reports) {
+            throw new \RuntimeException('ANSI snapshots require a Castor QA report scope.');
+        }
+        $reports = str_starts_with($reports, '/') ? $reports : $this->root.'/'.$reports;
+        $this->snapshotDir = $reports.'/diagnostics/'.basename($testProjectDir);
         @mkdir($this->snapshotDir, 0o777, true);
     }
 

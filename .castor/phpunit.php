@@ -81,6 +81,7 @@ function build_sequential_phpunit_command(string $pharEnv): string
 #[AsTask(name: 'test', description: 'Run unit/integration tests (ParaTest parallel by default)')]
 function test(?string $filter = null, ?string $suite = null): void
 {
+    \CastorTasks\initialize_standalone_qa_run();
     // Test DB schema readiness (bounded setup; session-reaped on hang).
     @mkdir('var/test', 0755, true);
     $migrate = run_test_db_migrate_bounded(

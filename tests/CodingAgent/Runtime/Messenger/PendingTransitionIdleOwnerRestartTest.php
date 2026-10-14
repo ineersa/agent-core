@@ -26,7 +26,7 @@ final class PendingTransitionIdleOwnerRestartTest extends TestCase
     {
         $directory = TestDirectoryIsolation::createProjectTempDir('idle-owner-pending');
         TestDirectoryIsolation::createHatfieldTree($directory, withSessions: true);
-        $dbDirectory = '../tmp/'.basename($directory);
+        $dbDirectory = \Symfony\Component\Filesystem\Path::makeRelative($directory, ProjectDir::get().'/var/test');
         $marker = $directory.'/recovery.json';
         $process = new Process([
             \PHP_BINARY,

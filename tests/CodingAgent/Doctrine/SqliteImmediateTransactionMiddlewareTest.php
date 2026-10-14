@@ -177,7 +177,7 @@ final class SqliteImmediateTransactionMiddlewareTest extends IsolatedKernelTestC
      */
     private function kernelWorkerEnv(): array
     {
-        $relativeDatabaseDir = '../tmp/'.basename($this->workerDatabaseDir);
+        $relativeDatabaseDir = \Symfony\Component\Filesystem\Path::makeRelative($this->workerDatabaseDir, ProjectDir::get().'/var/test');
 
         return array_merge($_ENV, [
             'APP_ENV' => 'test',

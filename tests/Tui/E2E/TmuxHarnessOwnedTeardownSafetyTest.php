@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Process\Process;
 
 /**
  * TmuxHarness teardown must obey root AGENTS.md: never signal root-owned or
@@ -96,6 +97,51 @@ final class TmuxHarnessOwnedTeardownSafetyTest extends TestCase
         $this->assertTrue($this->invokePrivate($harness, 'isProtectedProcess', [$pid]));
         $this->assertFalse($this->invokePrivate($harness, 'isUntaggedOwnedProcess', [$pid]));
         $this->assertSame('environ-empty', $this->invokePrivate($harness, 'protectedProcessReason', [$pid]));
+    }
+
+    #[Test]
+    #[Group('tui-e2e-replay')]
+    public function scopedTemporaryDirectoryReachesPaneOnPreExistingServer(): void
+    {
+        require_once \Ineersa\CodingAgent\Tests\Support\ProjectDir::get().'/.castor/helpers.php';
+        $this->tempDir = TestDirectoryIsolation::createOsTempDir('tmux-old-server');
+        $socket = $this->tempDir.'/socket';
+        $tmux = 'tmux -S '.escapeshellarg($socket);
+        $scope = \CastorTasks\qa_os_temporary_directory((string) getenv('HATFIELD_QA_RUN_ID'), \CastorTasks\project_root_dir());
+        $this->assertNotNull($scope, 'The pane must use the recorded QA allocation.');
+        $environment = ['TMPDIR' => $this->tempDir, 'HATFIELD_SESSION_ID' => false];
+        $server = new Process(['tmux', '-S', $socket, '-f', '/dev/null', 'new-session', '-d', '-s', 'keeper',
+            'php', '-r', 'fwrite(STDOUT, "ready\\n"); fread(STDIN, 1);'], env: $environment);
+        $originalTmux = getenv('TMUX');
+        $originalTemporary = getenv('TMPDIR');
+        $harness = new TmuxHarness();
+        $pane = null;
+        try {
+            $server->mustRun();
+            $before = $this->invokePrivate($harness, 'runTmux', [$tmux.' show-environment -g TMPDIR']);
+            putenv('TMUX='.$socket.',1,0');
+            putenv('TMPDIR='.$scope);
+            $pane = $harness->startDetached('exec env -u HATFIELD_SESSION_ID php -r '.escapeshellarg(
+                'fwrite(STDOUT, "root=".sys_get_temp_dir()."\\nready\\n"); fread(STDIN, 1);'
+            ));
+            $harness->waitForCaptureContains($pane, 'ready', 2.0);
+            $this->assertStringContainsString('root='.$scope."\n", $harness->capturePlain($pane));
+            $after = $this->invokePrivate($harness, 'runTmux', [$tmux.' show-environment -g TMPDIR']);
+            $this->assertSame('TMPDIR='.$this->tempDir, $before);
+            $this->assertSame($before, $after, 'Never change the shared server environment.');
+        } finally {
+            try {
+                if (null !== $pane && $harness->paneExists($pane)) {
+                    $harness->sendKey($pane, 'C-d');
+                    $harness->waitUntilPaneExits($pane, 2.0);
+                }
+                $harness->killAll();
+            } finally {
+                $this->invokePrivate($harness, 'runTmux', [$tmux.' kill-server']);
+                false === $originalTmux ? putenv('TMUX') : putenv('TMUX='.$originalTmux);
+                false === $originalTemporary ? putenv('TMPDIR') : putenv('TMPDIR='.$originalTemporary);
+            }
+        }
     }
 
     #[Test]

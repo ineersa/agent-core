@@ -15,6 +15,7 @@ use PHPUnit\Framework\TestCase;
 final class TaskBoardStoreTest extends TestCase
 {
     private string $boardRoot;
+    private string $codeRoot;
     private TaskBoardStore $store;
 
     protected function setUp(): void
@@ -23,9 +24,9 @@ final class TaskBoardStoreTest extends TestCase
         foreach (TaskStatusEnum::all() as $s) {
             mkdir($this->boardRoot.'/'.$s->value, 0o755, true);
         }
-        $codeRoot = TestDirectoryIsolation::createProjectTempDir('tw-code');
+        $this->codeRoot = TestDirectoryIsolation::createProjectTempDir('tw-code');
         putenv('HATFIELD_TASK_WORKFLOW_ROOT='.$this->boardRoot);
-        $this->store = new TaskBoardStore($codeRoot,
+        $this->store = new TaskBoardStore($this->codeRoot,
             new TaskWorkflowSettings(taskRoot: $this->boardRoot),
         );
     }
@@ -34,6 +35,7 @@ final class TaskBoardStoreTest extends TestCase
     {
         putenv('HATFIELD_TASK_WORKFLOW_ROOT');
         TestDirectoryIsolation::removeDirectory($this->boardRoot);
+        TestDirectoryIsolation::removeDirectory($this->codeRoot ?? '');
     }
 
     #[Test]
