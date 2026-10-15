@@ -154,6 +154,67 @@ final class ConsumerStdoutPollerTest extends TestCase
         ));
     }
 
+    public function testPreservesLargeCanonicalEventAcrossPipeSplitsBeyondFormer64KiBCap(): void
+    {
+        $text = str_repeat('A', 70_000);
+        $large = $this->line('assistant.message_completed', ['text' => $text], seq: 12);
+        $this->assertGreaterThan(65_536, \strlen($large));
+
+        $prefix = substr($large, 0, 50_000);
+        $middle = substr($large, 50_000, 20_000);
+        $suffix = substr($large, 70_000);
+        $this->assertSame($large, $prefix.$middle.$suffix);
+        $this->assertStringNotContainsString("\n", $prefix.$middle);
+        $this->assertGreaterThan(65_536, \strlen($prefix) + \strlen($middle));
+
+        $source = new FakeConsumerStdoutSource([
+            'llm#0' => $this->line('turn.started', ['turn' => 1], seq: 11).$prefix,
+            'tool#0' => $this->line('tool_execution.started', ['tool_call_id' => 'tc-1'], seq: 1),
+        ]);
+        $emitter = $this->createEmitter();
+        $emitter->openStdout();
+        $this->replaceStdoutWithMemory($emitter);
+        $poller = new ConsumerStdoutPoller(
+            $source,
+            $emitter,
+            new RuntimeExceptionBoundary(new EventDispatcher()),
+            $this->createStub(LoggerInterface::class),
+        );
+
+        $poller->pollOnce();
+        $this->assertSame(['turn.started', 'tool_execution.started'], array_map(
+            static fn (RuntimeEvent $event): string => $event->type,
+            $this->eventsFromStdout($emitter),
+        ));
+
+        $source->chunks = [
+            'llm#0' => $middle,
+            'tool#0' => $this->line('tool_execution.completed', ['tool_call_id' => 'tc-1'], seq: 2),
+        ];
+        $poller->pollOnce();
+        $this->assertSame(
+            ['turn.started', 'tool_execution.started', 'tool_execution.completed'],
+            array_map(static fn (RuntimeEvent $event): string => $event->type, $this->eventsFromStdout($emitter)),
+        );
+
+        $source->chunks = [
+            'llm#0' => $suffix.$this->line('turn.completed', ['turn' => 1], seq: 13),
+        ];
+        $poller->pollOnce();
+
+        $events = $this->eventsFromStdout($emitter);
+        $this->assertSame([
+            'turn.started',
+            'tool_execution.started',
+            'tool_execution.completed',
+            'assistant.message_completed',
+            'turn.completed',
+        ], array_map(static fn (RuntimeEvent $event): string => $event->type, $events));
+        $this->assertSame(12, $events[3]->seq);
+        $this->assertSame($text, $events[3]->payload['text']);
+        $this->assertSame(13, $events[4]->seq);
+    }
+
     /** @param array<string, mixed> $payload */
     private function line(string $type, array $payload, int $seq = 0): string
     {

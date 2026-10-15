@@ -20,6 +20,7 @@ use Psr\Log\NullLogger;
 use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
+use Symfony\Component\Process\Process;
 use Symfony\Component\Validator\Validation;
 
 /**
@@ -193,6 +194,44 @@ final class ReadFileToolTest extends TestCase
         $message = (string) $result->getResult();
         $this->assertStringContainsString('offset 500000 exceeds file length', $message);
         $this->assertStringContainsString('200000 lines', $message);
+    }
+
+    public function testSelectedRangeFromLargeFileAvoidsArchiveSizedResidentAllocation(): void
+    {
+        $directory = TestDirectoryIsolation::createOsTempDir('read-file-selected-range-memory');
+        try {
+            $process = new Process(
+                [\PHP_BINARY, '-d', 'memory_limit=128M', __DIR__.'/Fixtures/read-file-selected-range-memory.php', $directory],
+                \dirname(__DIR__, 3),
+                ['HATFIELD_SESSION_ID' => false],
+                timeout: 8,
+            );
+            $process->mustRun();
+            $metrics = json_decode($process->getOutput(), true, 512, \JSON_THROW_ON_ERROR);
+
+            $this->assertGreaterThan(70 * 1024 * 1024, $metrics['archive_bytes']);
+            $this->assertTrue($metrics['result_matches']);
+            $this->assertFalse($metrics['contains_unselected']);
+            $this->assertLessThan(16 * 1024 * 1024, $metrics['peak_bytes'] - $metrics['before_bytes']);
+            $this->assertLessThan(128 * 1024 * 1024, $metrics['peak_bytes']);
+            fwrite(\STDERR, 'read selected-range memory: '.json_encode($metrics, \JSON_THROW_ON_ERROR)."\n");
+        } finally {
+            TestDirectoryIsolation::removeDirectory($directory);
+        }
+    }
+
+    public function testReadPreservesCrlfAndFinalLineWithoutTrailingNewline(): void
+    {
+        $targetPath = $this->tmpDir.'/crlf_and_final.txt';
+        // file(..., FILE_IGNORE_NEW_LINES) keeps CR that is not the single
+        // CR immediately before LF, including a final CR with no LF.
+        file_put_contents($targetPath, "one\r\r\ntwo\r\nthree\r");
+        $oracle = file($targetPath, \FILE_IGNORE_NEW_LINES);
+        $this->assertSame(["one\r", 'two', "three\r"], $oracle);
+
+        $result = ($this->readFileTool)(new ReadFileArgumentsDTO(path: $targetPath));
+
+        $this->assertSame(implode("\n", $oracle)."\n", $result);
     }
 
     public function testReadEmptyFile(): void

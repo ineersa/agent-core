@@ -27,6 +27,7 @@ use Symfony\Component\Validator\Exception\UnexpectedTypeException;
 final class ReadFileTargetValidator extends ConstraintValidator
 {
     private const int INSPECTION_SAMPLE_BYTES = 8192;
+    private const int LINE_COUNT_CHUNK_BYTES = 8192;
 
     /** Maximum additional bytes needed after INSPECTION_SAMPLE_BYTES to complete a UTF-8 multi-byte prefix. */
     private const int LOOKAHEAD_BYTES = 3;
@@ -251,11 +252,9 @@ final class ReadFileTargetValidator extends ConstraintValidator
             return;
         }
 
-        // Stream the file line by line instead of loading it whole (file()):
-        // counting stops as soon as the offset is proven to be in range, so
-        // memory stays bounded even for very large files. The handle is
-        // always closed, and read failures (as opposed to EOF) defer to the
-        // handler exactly like the previous file() false result did.
+        // Count logical lines with bounded reads, including giant unselected
+        // lines. Stop once the offset is in range. Read failures still defer
+        // to the handler, and the handle closes on every exit path.
         $fh = @fopen($resolvedPath, 'rb');
         if (false === $fh) {
             return; // Race/operational read failure — the handler reports it
@@ -263,7 +262,18 @@ final class ReadFileTargetValidator extends ConstraintValidator
 
         $totalLines = 0;
         try {
-            while (false !== ($line = fgets($fh))) {
+            while (false !== ($line = fgets($fh, self::LINE_COUNT_CHUNK_BYTES + 1))) {
+                while (!str_ends_with($line, "\n") && !feof($fh)) {
+                    $line = fgets($fh, self::LINE_COUNT_CHUNK_BYTES + 1);
+                    if (false === $line) {
+                        if (!feof($fh)) {
+                            return; // Read error before EOF — the handler reports it
+                        }
+
+                        break;
+                    }
+                }
+
                 ++$totalLines;
                 if ($totalLines >= $offset) {
                     return; // offset is within the file; no violation

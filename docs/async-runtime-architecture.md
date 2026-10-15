@@ -55,7 +55,7 @@ Controller-owned messenger consumers use these invariants:
 
 - Doctrine claim semantics: session Doctrine DSNs set `redeliver_timeout=315360000` (~ten 365-day years) and consumers launch without `--keepalive`. Claimed rows stay unavailable until that finite horizon; rows older than the horizon can reclaim. Restarting the same session reuses the same queue and does not reset `delivered_at` age. Explicit `/repair` redrives current effects as fresh unclaimed envelopes; it does not clear the abandoned claimed row.
 - Restart budget: max **3** restarts per consumer key within a **60s** window, initial restart delay **1s**; beyond budget the consumer is abandoned and the controller can surface a diagnostic.
-- Shared consumer graceful shutdown grace defaults to **5s**; partial stdout line buffer max **65_536** bytes; stderr tail retained for crash diagnostics (**16_384** bytes).
+- Shared consumer graceful shutdown grace defaults to **5s**; stderr tail retained for crash diagnostics (**16_384** bytes). Incomplete consumer stdout JSONL lines are retained until their newline arrives so large valid events survive pipe segmentation.
 - Consumer memory recycle threshold **256M** via Messenger worker options.
 
 Other notes:
