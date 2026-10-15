@@ -12,9 +12,11 @@ use Ineersa\AgentCore\Application\Pipeline\RunMessageHandler;
 use Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor;
 use Ineersa\AgentCore\Contract\History\HistoryTailDiscardInterface;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
+use Ineersa\AgentCore\Contract\RunContextNotLoadedException;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory;
@@ -61,6 +63,77 @@ final class RunMessageProcessorTest extends TestCase
         $processor->process('test', $message);
         $commands->markApplied('run', 'same');
         $processor->process('test', $message);
+    }
+
+    public function testNoOpHandlerReleasesRecoveredTerminalChild(): void
+    {
+        $active = new TestActiveRunContext();
+        $child = new RunState(
+            runId: 'child-run',
+            status: RunStatus::Completed,
+            turnNo: 1,
+            lastSeq: 4,
+            model: 'test-model',
+            parentRunId: 'parent-run',
+        );
+        $active->loadRecovered($child);
+        $handler = $this->createMock(RunMessageHandler::class);
+        $handler->method('supports')->willReturn(true);
+        $handler->expects($this->once())->method('handle')->willReturn(new HandlerResult());
+        $store = $this->createMock(PreparedTransitionEventStoreInterface::class);
+        $store->expects($this->never())->method('appendTransition');
+        $dispatcher = new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new \Ineersa\AgentCore\Tests\Support\TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher());
+        $commit = new RunCommit(
+            activeRunContext: $active,
+            eventStore: $store,
+            logger: new NullLogger(),
+            finalizer: TestTransitionFinalizerFactory::create($store, $dispatcher),
+        );
+        $processor = new RunMessageProcessor($active, new RunLockManager(new LockFactory(new InMemoryStore())), $commit, [$handler], new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore());
+
+        $processor->process('test', new AdvanceRun('child-run', 1, 'step', 1, 'identity'));
+
+        $this->expectException(RunContextNotLoadedException::class);
+        $active->requireLoaded('child-run');
+    }
+
+    public function testNoOpHandlerKeepsActiveChildAndParentLoaded(): void
+    {
+        $active = new TestActiveRunContext();
+        $active->loadRecovered(new RunState(
+            runId: 'child-run',
+            status: RunStatus::WaitingHuman,
+            turnNo: 1,
+            lastSeq: 3,
+            model: 'test-model',
+            parentRunId: 'parent-run',
+        ));
+        $active->loadRecovered(new RunState(
+            runId: 'parent-run',
+            status: RunStatus::Completed,
+            turnNo: 2,
+            lastSeq: 8,
+            model: 'test-model',
+        ));
+        $handler = $this->createMock(RunMessageHandler::class);
+        $handler->expects($this->exactly(2))->method('supports')->willReturn(true);
+        $handler->expects($this->exactly(2))->method('handle')->willReturn(new HandlerResult());
+        $store = $this->createMock(PreparedTransitionEventStoreInterface::class);
+        $store->expects($this->never())->method('appendTransition');
+        $dispatcher = new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new \Ineersa\AgentCore\Tests\Support\TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher());
+        $commit = new RunCommit(
+            activeRunContext: $active,
+            eventStore: $store,
+            logger: new NullLogger(),
+            finalizer: TestTransitionFinalizerFactory::create($store, $dispatcher),
+        );
+        $processor = new RunMessageProcessor($active, new RunLockManager(new LockFactory(new InMemoryStore())), $commit, [$handler], new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore());
+
+        $processor->process('test', new AdvanceRun('child-run', 1, 'step', 1, 'child-identity'));
+        $processor->process('test', new AdvanceRun('parent-run', 2, 'step', 1, 'parent-identity'));
+
+        $this->assertSame(RunStatus::WaitingHuman, $active->requireLoaded('child-run')->status);
+        $this->assertSame(RunStatus::Completed, $active->requireLoaded('parent-run')->status);
     }
 
     private function exerciseDiscard(bool $failAppend): void

@@ -7,9 +7,6 @@ namespace Ineersa\AgentCore\Tests\Application\Pipeline;
 use Ineersa\AgentCore\Application\Handler\HookDispatcher;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
-use Ineersa\AgentCore\Contract\CanonicalSequenceBoundActionInterface;
-use Ineersa\AgentCore\Contract\CoordinationActionValidatorInterface;
-use Ineersa\AgentCore\Contract\Extension\EssentialAfterTurnHookInterface;
 use Ineersa\AgentCore\Contract\Extension\HookSubscriberInterface;
 use Ineersa\AgentCore\Contract\RunContextNotLoadedException;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
@@ -21,6 +18,7 @@ use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -82,91 +80,54 @@ final class RunCommitAfterTurnCommitPersistedSeqTest extends TestCase
 
         // The assigned-sequence bump (input seq 0 -> persisted seq 2) must
         $persisted = $activeRunContext->requireLoaded('child-run-1');
+        $this->assertSame(2, $persisted->lastSeq);
     }
-}
 
-final class RunCommitFinishedChildReleaseTest extends TestCase
-{
-    #[\PHPUnit\Framework\Attributes\DataProvider('terminalStatuses')]
-    public function testTerminalChildWithCapturedAfterTurnActionsLeavesOwnerRegistry(RunStatus $status): void
+    #[DataProvider('terminalStatuses')]
+    public function testTerminalChildLeavesOwnerRegistryAfterVerifiedFinalization(RunStatus $status): void
     {
-        $action = new class implements CanonicalSequenceBoundActionInterface {
-            public function bindCanonicalSequences(array $sequences): object
-            {
-                return $this;
-            }
-        };
-        $subscriber = new class($action) implements EssentialAfterTurnHookInterface {
-            public function __construct(private object $action)
-            {
-            }
-
-            public function prepareAfterTurnCommit(AfterTurnCommitHookContext $context, int $predecessorSequence): array
-            {
-                return [$this->action];
-            }
-        };
-
         $activeRunContext = new TestActiveRunContext();
         $previous = new RunState(
             runId: 'child-run-1',
             status: RunStatus::Running,
             turnNo: 1,
-            lastSeq: 1,
+            lastSeq: 0,
             model: 'test-model',
             parentRunId: 'parent-run-1',
         );
         $activeRunContext->loadRecovered($previous);
         $held = \WeakReference::create($previous);
         $eventStore = new InMemoryEventStore();
-        $commandBus = new TestMessageBus();
-
         $commit = new RunCommit(
             activeRunContext: $activeRunContext,
             eventStore: $eventStore,
             logger: new TestLogger(),
-            hookDispatcher: new HookDispatcher([$subscriber]),
             finalizer: TestTransitionFinalizerFactory::create(
                 $eventStore,
-                new StepDispatcher($commandBus, new TestMessageBus(), new TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher()),
+                new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher()),
             ),
-            actionValidator: new \Ineersa\AgentCore\Application\Handler\CoordinationActionValidator([
-                new class implements CoordinationActionValidatorInterface {
-                    public function supports(object $action): bool
-                    {
-                        return $action instanceof CanonicalSequenceBoundActionInterface;
-                    }
-
-                    public function validate(object $action): void
-                    {
-                    }
-                },
-            ]),
         );
 
         $next = $previous->with(['status' => $status]);
-        $events = [
-            new RunEvent('child-run-1', 0, 1, 'agent_end', ['reason' => $status->value]),
-        ];
+        $committed = $commit->commit(
+            $previous,
+            $next,
+            [new RunEvent('child-run-1', 0, 1, 'agent_end', ['reason' => $status->value])],
+        );
 
-        $committed = $commit->commit($previous, $next, $events, []);
         $this->assertSame($status, $committed->status);
-        $this->assertSame(2, $committed->lastSeq);
-        $this->assertCount(1, $commandBus->messages);
-        $this->assertSame($action, $commandBus->messages[0]);
-
+        $this->assertSame(1, $committed->lastSeq);
+        $this->expectException(RunContextNotLoadedException::class);
         try {
             $activeRunContext->requireLoaded('child-run-1');
-            $this->fail('Finished child must leave the owner registry after durable after-turn capture.');
-        } catch (RunContextNotLoadedException) {
+        } finally {
+            unset($previous, $next, $committed);
+            gc_collect_cycles();
+            $this->assertNull($held->get(), 'Released child RunState must become unreachable.');
         }
-
-        unset($previous, $next, $committed);
-        gc_collect_cycles();
-        $this->assertNull($held->get(), 'Released child RunState must become unreachable.');
     }
 
-    public function testActiveChildAndParentTerminalWithoutAfterTurnActionsRemainLoaded(): void
+    public function testActiveChildAndParentRemainLoaded(): void
     {
         $activeRunContext = new TestActiveRunContext();
         $eventStore = new InMemoryEventStore();
@@ -184,7 +145,7 @@ final class RunCommitFinishedChildReleaseTest extends TestCase
             runId: 'child-run-active',
             status: RunStatus::Running,
             turnNo: 1,
-            lastSeq: 1,
+            lastSeq: 0,
             model: 'test-model',
             parentRunId: 'parent-run-1',
         );
@@ -212,6 +173,57 @@ final class RunCommitFinishedChildReleaseTest extends TestCase
         $this->assertSame(RunStatus::Completed, $activeRunContext->requireLoaded('parent-run-1')->status);
     }
 
+    public function testFailedFinalizationKeepsFinishedChildLoaded(): void
+    {
+        $activeRunContext = new TestActiveRunContext();
+        $previous = new RunState(
+            runId: 'child-run-1',
+            status: RunStatus::Running,
+            turnNo: 1,
+            lastSeq: 0,
+            model: 'test-model',
+            parentRunId: 'parent-run-1',
+        );
+        $activeRunContext->loadRecovered($previous);
+        $store = $this->createMock(\Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface::class);
+        $store->expects($this->atLeastOnce())->method('assertTransitionReady');
+        $store->expects($this->once())->method('appendTransition')->willReturnCallback(static function (array $events, array $work): array {
+            return [new RunEvent($work['run_id'], 1, 1, $events[0]->type, $events[0]->payload)];
+        });
+        $store->expects($this->atLeastOnce())->method('verifiedPendingTransition')->willReturn(new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(
+            'identity',
+            ['run_id' => 'child-run-1', 'predecessor_seq' => 0, 'effects' => [], 'post_commit_effects' => [], 'actions' => [], 'after_turn_actions' => []],
+            [1],
+        ));
+        $store->expects($this->once())->method('finalizeVerifiedTransition')->willThrowException(new \RuntimeException('finalize failed'));
+
+        $commit = new RunCommit(
+            activeRunContext: $activeRunContext,
+            eventStore: $store,
+            logger: new TestLogger(),
+            finalizer: TestTransitionFinalizerFactory::create(
+                $store,
+                new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher()),
+            ),
+        );
+
+        try {
+            $commit->commit(
+                $previous,
+                $previous->with(['status' => RunStatus::Completed]),
+                [new RunEvent('child-run-1', 0, 1, 'agent_end', ['reason' => 'completed'])],
+            );
+            $this->fail('Failed finalization must propagate.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('finalize failed', $exception->getMessage());
+        }
+
+        $this->assertSame(RunStatus::Completed, $activeRunContext->requireLoaded('child-run-1')->status);
+    }
+
+    /**
+     * @return iterable<string, array{0: RunStatus}>
+     */
     public static function terminalStatuses(): iterable
     {
         yield 'completed' => [RunStatus::Completed];

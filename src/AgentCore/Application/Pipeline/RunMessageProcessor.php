@@ -77,6 +77,11 @@ final readonly class RunMessageProcessor
                     if (null === $result->nextState) {
                         if ([] !== $result->postCommitEffects || [] !== $result->postCommitActions) {
                             $this->runCommit->commit($state, $state, [], dispatchAfterTurnHooks: false, postCommitEffects: $result->postCommitEffects, postCommitActions: $result->postCommitActions);
+                        } elseif (null !== $state->parentRunId && $state->status->isTerminal()) {
+                            // Owner recovery can rehydrate a finished child for a late
+                            // no-op envelope. The durable outcome already exists, so do
+                            // not keep that recovered execution graph resident.
+                            $this->activeRunContext->release($runId);
                         }
 
                         return;
