@@ -470,7 +470,7 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         $this->assertNull($result->refusalReason);
         $this->assertCount($completedOrdinaryTool ? 2 : 1, $tools->getSent(), 'Do not launch or requeue another fork.');
         foreach ($expected as $childId) {
-            $this->assertSame(RunStatus::Cancelled, $registry->requireLoaded($childId)->status);
+            $this->assertSame(RunStatus::Cancelled, $container->get(\Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface::class)->findOperationalStatus($childId)->status);
             $cold = $container->get(RunStateRebuilderInterface::class)->rebuildIfStale(RunState::queued($childId), $childId)->rebuiltState;
             $this->assertSame(RunStatus::Cancelled, $cold->status, 'Cancellation must survive owner recreation.');
             $this->assertNull($cold->currentOperation);
@@ -528,7 +528,7 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         }
         $this->assertSame([], iterator_to_array($owner->get()), 'Owner completion messages must drain without a cycle.');
         $this->assertSame([], $registry->requireLoaded($run)->pendingToolCalls);
-        $this->assertSame(RunStatus::Cancelled, $registry->requireLoaded($children[0])->status);
+        $this->assertSame(RunStatus::Cancelled, $container->get(\Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface::class)->findOperationalStatus($children[0])->status);
         $this->assertSame(RunStatus::Running, $registry->requireLoaded($run)->status, 'Repair must not cancel the parent.');
         $this->assertNotNull($container->get(DeferredSubagentBatchRepository::class)->findByLifecycleId($batchId)->terminalCompletionEnqueuedAt);
         $next = iterator_to_array($llm->get());
@@ -593,7 +593,7 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
             $this->assertEquals($events, $store->allFor((string) $id));
         }
         $this->assertSame(RunStatus::WaitingHuman, $registry->requireLoaded($human)->status);
-        $this->assertSame(RunStatus::Completed, $registry->requireLoaded($completed)->status);
+        $this->assertSame(RunStatus::Completed, $c->get(\Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface::class)->findOperationalStatus($completed)->status);
         foreach ([$run, $human, $completed, $active] as $id) {
             $registry->release($id);
         }
@@ -608,8 +608,8 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         $applyHandled = $bus->dispatch($apply->with(new ReceivedStamp('run_control')));
         $this->assertStringContainsString('cancelled', $applyHandled->last(HandledStamp::class)->getResult()->message);
         $this->assertSame(RunStatus::WaitingHuman, $registry->requireLoaded($human)->status);
-        $this->assertSame(RunStatus::Completed, $registry->requireLoaded($completed)->status);
-        $this->assertSame(RunStatus::Cancelled, $registry->requireLoaded($active)->status);
+        $this->assertSame(RunStatus::Completed, $c->get(\Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface::class)->findOperationalStatus($completed)->status);
+        $this->assertSame(RunStatus::Cancelled, $c->get(\Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface::class)->findOperationalStatus($active)->status);
         $this->assertEquals($before[(string) $completed], $store->allFor($completed));
         for ($i = 0; $i < 16 && [] !== ($pending = iterator_to_array($c->get('messenger.transport.run_control')->get())); ++$i) {
             foreach ($pending as $envelope) {
