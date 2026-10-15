@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Agent\Execution\Subagent\Batch\Deferred\Lifecycle;
 
 use Ineersa\AgentCore\Application\Handler\CompleteDeferredToolCallHandler;
+use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
+use Ineersa\AgentCore\Contract\RunContextNotLoadedException;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Domain\Event\DeferredToolCompletionRegisteredEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -739,6 +741,16 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $repo->applyLaunchSuccessState($parent, $tool, $lifecycle, new \DateTimeImmutable(), [1]);
         $this->ensureArtifactReserved($parent, $c1['childRunId'], $c1['artifactId'], 's-nat', 'Do work');
 
+        $active = self::getContainer()->get(ActiveRunContextInterface::class);
+        $active->loadRecovered(new RunState(
+            runId: $c1['childRunId'],
+            status: RunStatus::Running,
+            turnNo: 2,
+            lastSeq: 1,
+            model: 'deepseek/deepseek-v4-flash',
+            parentRunId: $parent,
+        ));
+
         $handler = new ObserveDeferredSubagentBatchChildTurnHandler(
             $repo,
             self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class),
@@ -767,6 +779,16 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
                 new AfterTurnCommitEventSummary(1, RunEventTypeEnum::LlmStepCompleted->value, ['assistant_message' => ['content' => [['type' => 'text', 'text' => 'stop']]]]),
                 new AfterTurnCommitEventSummary(2, RunEventTypeEnum::AgentEnd->value, ['reason' => 'cancelled']),
             ]));
+        }
+
+        // Observation persists the durable child projection used for later delivery.
+        // Production RunCommit releases the child after that capture; prove delivery
+        // still succeeds when the owner registry no longer holds the finished child.
+        $active->release($c1['childRunId']);
+        try {
+            $active->requireLoaded($c1['childRunId']);
+            $this->fail('Finished child must leave the owner registry before parent delivery.');
+        } catch (RunContextNotLoadedException) {
         }
 
         $appended = [];
@@ -1620,7 +1642,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $this->assertSame([], $completionBus->messages);
         $this->assertFileExists($inputPath);
         // A retry may queue the same command; only owner consumption commits it.
-        $active = self::getContainer()->get(\Ineersa\AgentCore\Contract\ActiveRunContextInterface::class);
+        $active = self::getContainer()->get(ActiveRunContextInterface::class);
         $active->loadRecovered(\Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder::running($parent)->withTurnNo(2)->withPendingToolCalls([$tool => false])->build());
         if ($superseded) {
             if (null !== $kind) {

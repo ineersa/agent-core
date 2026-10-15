@@ -83,6 +83,16 @@ final readonly class RunCommit
                 $afterTurnActions,
             );
 
+            // Child runs leave owner memory once the terminal transition and its
+            // durable after-turn coordination are captured. Parent delivery and
+            // sibling completion reuse those durable products, not this RunState.
+            if (null !== $committedState->parentRunId
+                && $committedState->status->isTerminal()
+                && [] !== $afterTurnActions
+            ) {
+                $this->activeRunContext->release($committedState->runId);
+            }
+
             if (!$dispatchAfterTurnHooks) {
                 return $committedState;
             }
