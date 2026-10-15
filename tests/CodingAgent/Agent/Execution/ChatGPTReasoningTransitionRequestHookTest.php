@@ -144,6 +144,81 @@ final class ChatGPTReasoningTransitionRequestHookTest extends IsolatedKernelTest
         $this->assertSame($this->bodies[2], $this->bodies[3]);
     }
 
+    #[\PHPUnit\Framework\Attributes\DataProvider('providerMetadataRewriteProvider')]
+    public function testProviderMetadataRewriteResetsControls(string $field, string $value): void
+    {
+        $store = $this->startCanonicalReasoningEpoch(withToolExchange: true);
+        $before = $this->coldReplay($store)->messages;
+        $this->assertSame(['user', 'assistant', 'tool', 'user'], array_column($before, 'role'));
+        $this->assertCount(1, $this->sessions->listReasoningTransitions($this->sessionId, 'openai-codex/gpt-6-sol'));
+        $metadata = $before[1]->metadata;
+        if ('source_model' === $field) {
+            $metadata['source_model'] = $value;
+        } elseif ('command' === $field) {
+            $metadata['tool_calls'][0]['arguments']['command'] = $value;
+        } else {
+            $metadata['tool_calls'][0][$field] = $value;
+        }
+        $rewritten = AgentMessage::fromPayload([...$before[1]->toArray(), 'metadata' => $metadata]);
+        $this->assertNotNull($rewritten);
+        $after = $before;
+        $after[1] = $rewritten;
+        foreach (array_keys($before) as $index) {
+            $this->assertSame(
+                ChatGPTReasoningTransitionTransformHook::messageKeyInHistory($before, $index),
+                ChatGPTReasoningTransitionTransformHook::messageKeyInHistory($after, $index),
+            );
+        }
+
+        $this->invoke($after, 'high');
+        $this->assertSame('high', $this->bodies[2]['reasoning']['effort']);
+        $this->assertSame([], self::controls($this->bodies[2]));
+        $this->assertSame([], $this->sessions->listReasoningTransitions($this->sessionId, 'openai-codex/gpt-6-sol'));
+        $calls = array_values(array_filter($this->bodies[2]['input'], static fn (array $item): bool => 'function_call' === ($item['type'] ?? null)));
+        $this->assertCount(1, $calls);
+        $this->assertSame(
+            ['command' => 'command' === $field ? $value : 'touch /tmp/a'],
+            json_decode($calls[0]['arguments'], true, flags: \JSON_THROW_ON_ERROR),
+        );
+    }
+
+    /** @return iterable<string, array{string, string}> */
+    public static function providerMetadataRewriteProvider(): iterable
+    {
+        yield 'tool arguments' => ['command', 'touch /tmp/b'];
+        yield 'tool name' => ['name', 'other_tool'];
+        yield 'source model' => ['source_model', 'openai-codex/ordinary'];
+    }
+
+    public function testUnchangedAssistantToolExchangePreservesControlsOnColdReplay(): void
+    {
+        $store = $this->startCanonicalReasoningEpoch(withToolExchange: true);
+        $before = $this->bodies[1];
+        $transitions = $this->sessions->listReasoningTransitions($this->sessionId, 'openai-codex/gpt-6-sol');
+        $messages = $this->coldReplay($store)->messages;
+        $this->assertSame(['user', 'assistant', 'tool', 'user'], array_column($messages, 'role'));
+        $this->assertSame('openai-codex/gpt-6-sol', $messages[1]->metadata['source_model']);
+        $this->assertSame('touch /tmp/a', $messages[1]->metadata['tool_calls'][0]['arguments']['command']);
+        $this->invoke($messages, 'high');
+        $this->assertSame($before, $this->bodies[2]);
+        $this->assertSame('low', $this->bodies[2]['reasoning']['effort']);
+        $this->assertSame(['high'], self::controls($this->bodies[2]));
+        $this->assertSame($transitions, $this->sessions->listReasoningTransitions($this->sessionId, 'openai-codex/gpt-6-sol'));
+        foreach ($messages as $index => $message) {
+            $key = ChatGPTReasoningTransitionTransformHook::messageKeyInHistory($messages, $index);
+            $marked = AgentMessage::fromPayload([...$message->toArray(), 'metadata' => [
+                ...array_reverse($message->metadata, true),
+                \Ineersa\CodingAgent\Agent\Execution\ChatGPTReasoningTransitionMetadata::KEY => 'max',
+                \Ineersa\CodingAgent\Agent\Execution\ChatGPTReasoningTransitionMetadata::MESSAGE_KEY => $key,
+            ]]);
+            $this->assertNotNull($marked);
+            $messages[$index] = $marked;
+        }
+        $this->invoke($messages, 'high');
+        $this->assertSame($before, $this->bodies[3]);
+        $this->assertSame($transitions, $this->sessions->listReasoningTransitions($this->sessionId, 'openai-codex/gpt-6-sol'));
+    }
+
     public function testContextRefreshResetsControlsWhenEveryAnchorSurvives(): void
     {
         $store = $this->startCanonicalReasoningEpoch();
@@ -277,7 +352,7 @@ final class ChatGPTReasoningTransitionRequestHookTest extends IsolatedKernelTest
         $this->assertSame($this->bodies[2], $this->bodies[3]);
     }
 
-    private function startCanonicalReasoningEpoch(string $effort = 'high'): \Ineersa\CodingAgent\Session\SessionRunEventStore
+    private function startCanonicalReasoningEpoch(string $effort = 'high', bool $withToolExchange = false): \Ineersa\CodingAgent\Session\SessionRunEventStore
     {
         $store = new \Ineersa\CodingAgent\Session\SessionRunEventStore($this->sessions, new \Ineersa\AgentCore\Schema\EventPayloadNormalizer(), new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()), new NullLogger(), new \Ineersa\CodingAgent\Session\FileRunSequenceAllocator());
         $append = fn (int $turn, string $type, array $payload) => \Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder::append($store, \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($this->sessionId, $turn, $type, $payload));
@@ -285,6 +360,29 @@ final class ChatGPTReasoningTransitionRequestHookTest extends IsolatedKernelTest
         $append(1, 'turn_advanced', ['turn_no' => 1, 'step_id' => 'first']);
         $append(1, 'history_position_set', ['position_turn_no' => 1]);
         $this->invoke($this->coldReplay($store)->messages, 'low');
+        if ($withToolExchange) {
+            $append(1, 'llm_step_completed', [
+                'step_id' => 'first',
+                'model' => 'openai-codex/gpt-6-sol',
+                'assistant_message' => [
+                    'role' => 'assistant',
+                    'content' => [['type' => 'tool_call', 'tool_call_index' => 0]],
+                    'tool_calls' => [['id' => 'call_fixture', 'name' => 'bash', 'arguments' => ['command' => 'touch /tmp/a']]],
+                ],
+            ]);
+            $codec = new \Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer());
+            $append(1, 'tool_execution_end', $codec->toEventPayload(new \Ineersa\AgentCore\Domain\Message\ToolCallResult(
+                runId: $this->sessionId,
+                turnNo: 1,
+                stepId: 'first',
+                attempt: 1,
+                idempotencyKey: 'call_fixture',
+                toolCallId: 'call_fixture',
+                orderIndex: 0,
+                result: ['tool_name' => 'bash', 'content' => [['type' => 'text', 'text' => 'unchanged result']]],
+            )));
+            $append(1, 'tool_batch_committed', ['count' => 1]);
+        }
         $append(2, 'turn_advanced', ['turn_no' => 2, 'step_id' => 'second']);
         $append(2, 'agent_command_applied', ['kind' => 'follow_up', 'idempotency_key' => 'follow-up', 'message' => self::user('second')->toArray()]);
         $append(2, 'history_position_set', ['position_turn_no' => 2]);

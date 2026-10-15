@@ -115,9 +115,16 @@ final class SessionAwareModelResolver implements ModelResolverInterface
                     // must degrade the fingerprint, never fail model resolution. Key order
                     // is part of the fingerprint, so content producers must build parts
                     // with a consistent key order.
+                    // Tool-call content parts reference metadata by index, and source
+                    // identity controls native replay. Include those provider inputs,
+                    // not request-local reasoning-transition markers.
                     $encoded = json_encode([
                         $message->role, $message->content, $message->name,
                         $message->toolCallId, $message->toolName, $message->details, $message->isError,
+                        [
+                            'tool_calls' => $message->metadata['tool_calls'] ?? [],
+                            'source_model' => $message->metadata['source_model'] ?? null,
+                        ],
                     ], \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
                     $context = hash('sha256', $context.(false === $encoded ? '{}' : $encoded));
                     $key = ChatGPTReasoningTransitionTransformHook::messageKeyInHistory($input->messages, $index);
