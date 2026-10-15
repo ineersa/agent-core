@@ -161,12 +161,14 @@ final class RuntimeEventPoller
                         $this->eventApplier->releaseBootstrap();
                         $this->pendingEvents = [];
                         $state->handle = new RunHandle($runtimeEvent->runId, 'bootstrapping', $requestId);
-                        // Same unfinished attach may reconnect under a new request id.
-                        // Preserve a draft typed before that replacement; ready-session
-                        // reconnect and genuine fresh attach still reset tracking.
-                        $preserveDirty = !$state->sessionReady && $state->editorChangedSinceAttach;
+                        // Automatic recovery of the same session must keep the current
+                        // editor, including ready-session drafts that never set the
+                        // attach dirty flag. Genuine fresh attach still resets via
+                        // InteractiveMode::beginBootstrapAttach().
+                        $preserveEditor = $state->sessionReady
+                            || $state->editorChangedSinceAttach;
                         $state->beginBootstrapAttach();
-                        if ($preserveDirty) {
+                        if ($preserveEditor) {
                             $state->editorChangedSinceAttach = true;
                         }
                         $this->deferredInputReady = false;

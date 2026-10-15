@@ -4,15 +4,20 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Listener;
 
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapDescriptorDTO;
+use Ineersa\CodingAgent\Session\Replay\SessionResumeMetadataProjection;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\Editor\PromptEditor;
@@ -35,6 +40,7 @@ use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -146,22 +152,59 @@ final class TickPollListenerTest extends TestCase
         $this->assertSame('LOCAL DRAFT', $harness->screen()->editorText());
     }
 
-    public function testReadySessionReconnectResetsDirtyEditorGuard(): void
-    {
+    /**
+     * Automatic recovery of a ready session must keep the current editor through
+     * verified replacement bootstrap mount. Ready-session native edits are not
+     * tracked by editorChangedSinceAttach, so preserving only that flag is not
+     * enough. Replaces the old ready-reset expectation that only asserted the
+     * dirty flag after session.restoring.
+     *
+     * @param list<string> $nativeKeys
+     */
+    #[DataProvider('readySessionRecoveryEditorCases')]
+    public function testReadySessionRecoveryPreservesCurrentEditorThroughReplacementMount(
+        string $initialEditor,
+        array $nativeKeys,
+        string $historicalPrefill,
+        string $expectedEditor,
+    ): void {
         $state = new TuiSessionState('parent');
         $state->sessionReady = true;
+        $state->bootstrapMounted = true;
+        $state->lastSeq = 13;
         $state->handle = new RunHandle('parent', 'attached', 'old-request');
-        $state->editorChangedSinceAttach = true;
-        $state->pendingEditorPromptText = 'Stale pending from earlier attach';
+        $state->editorChangedSinceAttach = false;
         $harness = new VirtualTuiHarness(sessionId: 'parent');
-        $harness->screen()->promptEditor()->replaceText('Ready draft');
+        $harness->startInputLoop();
+        $harness->screen()->promptEditor()->replaceText($initialEditor);
+        foreach ($nativeKeys as $keys) {
+            $harness->sendInput($keys);
+        }
+        $this->assertSame($expectedEditor, $harness->screen()->editorText());
+        $this->assertFalse($state->editorChangedSinceAttach, 'Ready-session native edits do not set the attach dirty guard.');
+
+        [$available, $frame, $end, $ready] = $this->replacementBootstrapTransfer(
+            requestId: 'new-request',
+            editorPromptText: $historicalPrefill,
+        );
         $client = $this->createMock(AgentSessionClient::class);
-        $client->expects($this->atLeastOnce())->method('events')->willReturn([new RuntimeEvent('session.restoring', 'parent', 0, [
-            'previous_command_id' => 'old-request',
-            'command_id' => 'new-request',
-        ])]);
+        $client->expects($this->exactly(2))->method('events')->willReturnOnConsecutiveCalls(
+            [
+                new RuntimeEvent('session.restoring', 'parent', 0, [
+                    'previous_command_id' => 'old-request',
+                    'command_id' => 'new-request',
+                ]),
+                $available,
+                $frame,
+                $end,
+                $ready,
+            ],
+            [],
+        );
+        $client->expects($this->once())->method('acknowledgeBootstrap');
         $poller = new RuntimeEventPoller(new TuiRuntimeEventApplier(
-            new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), SubagentProgressSerializerTestSupport::denormalizer()),
+            new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
+            AttributeSerializerValidatorTestFactory::create(true)[0]),
             new NullLogger(), new RuntimeExceptionBoundary(new EventDispatcher()), $this->createStub(SessionTranscriptProviderInterface::class));
         $services = $this->createSessionServices(tui: $harness->tui(), screen: $harness->screen(), state: $state,
             client: $client, parentPoller: $poller, childPoller: $this->createIsolatedSubagentLiveChildPoller(),
@@ -170,13 +213,42 @@ final class TickPollListenerTest extends TestCase
             ->withClient($client)->withSessionServices($services)->build();
         $this->createTickPollListener()->register($context);
 
+        $state->lastPoll = 0.0;
         $context->ticks->dispatch(new \Symfony\Component\Tui\Event\TickEvent());
 
-        $this->assertFalse($state->sessionReady);
+        $this->assertTrue($state->bootstrapMounted);
+        $this->assertTrue($state->sessionReady);
         $this->assertSame('new-request', $state->handle->bootstrapRequestId);
-        $this->assertFalse($state->editorChangedSinceAttach);
         $this->assertNull($state->pendingEditorPromptText);
-        $this->assertSame('Ready draft', $harness->screen()->editorText());
+        $this->assertSame($expectedEditor, $harness->screen()->editorText());
+
+        $state->lastPoll = 0.0;
+        $context->ticks->dispatch(new \Symfony\Component\Tui\Event\TickEvent());
+        $this->assertSame($expectedEditor, $harness->screen()->editorText());
+        $harness->stopInputLoop();
+    }
+
+    /** @return iterable<string, array{0: string, 1: list<string>, 2: string, 3: string}> */
+    public static function readySessionRecoveryEditorCases(): iterable
+    {
+        yield 'edited following prompt survives nonempty historical prefill' => [
+            'Canonical following prompt U2',
+            [' edited'],
+            'Canonical following prompt U2',
+            'Canonical following prompt U2 edited',
+        ];
+        yield 'intentionally emptied draft survives nonempty historical prefill' => [
+            'Canonical following prompt U2',
+            [str_repeat("\x7f", \strlen('Canonical following prompt U2'))],
+            'Canonical following prompt U2',
+            '',
+        ];
+        yield 'last-answer empty historical prefill leaves current editor alone' => [
+            'keep-local-after-last-answer',
+            [],
+            '',
+            'keep-local-after-last-answer',
+        ];
     }
 
     /**
@@ -1020,7 +1092,7 @@ final class TickPollListenerTest extends TestCase
         ];
     }
 
-    #[\PHPUnit\Framework\Attributes\DataProvider('activeRuntimeTickHintProvider')]
+    #[DataProvider('activeRuntimeTickHintProvider')]
     public function testTickHandlerReturnsBusyHintForActiveRuntimeStates(
         RunActivityStateEnum $activity,
         bool $withHandle,
@@ -1164,9 +1236,9 @@ final class TickPollListenerTest extends TestCase
         $state->handle = new RunHandle($runId);
         $state->lastPoll = 0.0;
         $state->replaceTranscript([
-            new \Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock(
+            new TranscriptBlock(
                 id: 'u1',
-                kind: \Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum::UserMessage,
+                kind: TranscriptBlockKindEnum::UserMessage,
                 runId: $runId,
                 seq: 1,
                 text: 'hello',
@@ -1241,9 +1313,9 @@ final class TickPollListenerTest extends TestCase
         $state->handle = new RunHandle($runId);
         $state->lastPoll = 0.0;
         $state->replaceTranscript([
-            new \Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock(
+            new TranscriptBlock(
                 id: 'u1',
-                kind: \Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum::UserMessage,
+                kind: TranscriptBlockKindEnum::UserMessage,
                 runId: $runId,
                 seq: 1,
                 text: 'hello',
@@ -1900,15 +1972,65 @@ final class TickPollListenerTest extends TestCase
 
     private function createNoOpPoller(): RuntimeEventPoller
     {
-        $eventApplier = (new \ReflectionClass(TuiRuntimeEventApplier::class))->newInstanceWithoutConstructor();
-        $boundary = (new \ReflectionClass(RuntimeExceptionBoundary::class))->newInstanceWithoutConstructor();
-
         return new RuntimeEventPoller(
-            $eventApplier,
+            new TuiRuntimeEventApplier(
+                new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
+                SubagentProgressSerializerTestSupport::denormalizer(),
+            ),
             new NullLogger(),
-            $boundary,
+            new RuntimeExceptionBoundary(new EventDispatcher()),
             $this->createStub(SessionTranscriptProviderInterface::class),
         );
+    }
+
+    /**
+     * Checksum-valid replacement bootstrap carrying historical editor prefill.
+     *
+     * @return array{0: RuntimeEvent, 1: RuntimeEvent, 2: RuntimeEvent, 3: RuntimeEvent}
+     */
+    private function replacementBootstrapTransfer(string $requestId, string $editorPromptText): array
+    {
+        $serializer = AttributeSerializerValidatorTestFactory::create(true)[0];
+        $resume = (new SessionResumeMetadataProjection())->toArray();
+        $resume['usage']['inputTokens'] = 41;
+        $resume['queued_messages'] = [];
+        $resume += [
+            'status' => 'completed',
+            'model' => 'provider/model',
+            'turn_no' => 2,
+            'editor_prompt_text' => $editorPromptText,
+        ];
+        $block = new TranscriptBlock('answer', TranscriptBlockKindEnum::AssistantMessage, 'parent', 13, 'Owner-projected answer');
+        $bytes = $serializer->serialize(['kind' => 'resume', 'data' => $resume], 'json')."\n";
+        $bytes .= '{"kind":"block","data":'.$serializer->serialize($block, 'json')."}\n";
+        $cut = new SessionBootstrapDescriptorDTO(
+            'parent',
+            str_repeat('a', 32),
+            3,
+            13,
+            500,
+            7,
+            2,
+            \strlen($bytes),
+            hash('sha256', $bytes),
+        );
+
+        return [
+            new RuntimeEvent('bootstrap.available', 'parent', 0, $cut->toArray() + ['command_id' => $requestId]),
+            new RuntimeEvent('bootstrap.frame', 'parent', 0, [
+                'bootstrap_id' => $cut->bootstrapId,
+                'view_epoch' => $cut->viewEpoch,
+                'index' => 0,
+                'data' => base64_encode($bytes),
+            ]),
+            new RuntimeEvent('bootstrap.end', 'parent', 0, $cut->toArray() + ['frames' => 1]),
+            new RuntimeEvent('session.ready', 'parent', 0, [
+                'bootstrap_id' => $cut->bootstrapId,
+                'view_epoch' => $cut->viewEpoch,
+                'canonical_seq' => $cut->canonicalSeq,
+                'end_offset' => $cut->endOffset,
+            ]),
+        ];
     }
 
     private function createTickPollListener(): TickPollListener

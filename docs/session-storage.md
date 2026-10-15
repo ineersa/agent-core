@@ -160,6 +160,9 @@ Cold attach restores the current selection's editor text from one indexed
 canonical prompt lookup, then applies it with the verified bootstrap view.
 If the user edits the editor after attach begins and before that mount, the
 local draft is kept and the bootstrap restore or clear is skipped.
+Automatic recovery of an already-ready session keeps the current editor,
+including an intentionally emptied draft, instead of reapplying historical
+prefill from the replacement bootstrap.
 Once a context-mutating action consumes the selection, later attaches do not
 restore that old prompt.
 
