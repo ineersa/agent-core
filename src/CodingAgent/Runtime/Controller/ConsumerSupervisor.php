@@ -52,8 +52,6 @@ use Symfony\Component\Process\Process;
  */
 final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
 {
-    /** Max partial stdout line retained by the poller when JSONL spans reads. */
-    public const int PARTIAL_STDOUT_MAX_BYTES = 65_536;
     private const int MAX_RESTARTS = 3;
     private const int RESTART_WINDOW_SECONDS = 60;
     private const int INITIAL_RESTART_DELAY_MS = 1000;
