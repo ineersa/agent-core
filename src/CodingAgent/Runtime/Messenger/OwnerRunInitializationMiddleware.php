@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\RunContextNotLoadedException;
+use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Message\ApplyShellCommand;
@@ -37,6 +38,7 @@ final readonly class OwnerRunInitializationMiddleware implements MiddlewareInter
         private \Psr\Log\LoggerInterface $logger,
         private \Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry $artifacts,
         private \Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery $transitionRecovery,
+        private RunOperationalStatusReaderInterface $operationalStatus,
     ) {
     }
 
@@ -68,7 +70,8 @@ final readonly class OwnerRunInitializationMiddleware implements MiddlewareInter
             // StartRun; deterministic launch redelivery can safely reach here again.
             if ($message instanceof StartRun && null !== $this->events->latestSequenceFor($runId)) {
                 $child = $this->children->locate($runId);
-                if (null !== $child && \Ineersa\AgentCore\Domain\Run\RunStatus::Running === $this->registry->requireLoaded($runId)->status) {
+                $status = $this->operationalStatus->findOperationalStatus($runId)?->status;
+                if (null !== $child && \Ineersa\AgentCore\Domain\Run\RunStatus::Running === $status) {
                     try {
                         $entry = $this->artifacts->promoteToRunningForwardOnly($child->parentRunId, $child->artifactId, new \DateTimeImmutable());
                         if (null !== $entry) {
@@ -77,6 +80,13 @@ final readonly class OwnerRunInitializationMiddleware implements MiddlewareInter
                     } catch (\Throwable $exception) {
                         $this->logger->warning('child_run.artifact_running_persist_failed', ['run_id' => $runId, 'parent_run_id' => $child->parentRunId, 'artifact_id' => $child->artifactId, 'component' => 'run_control', 'event_type' => 'child_run.artifact_running_persist_failed', 'exception_class' => $exception::class]);
                     }
+                }
+
+                // Owner StartRun post-handling is done. Drop a finished child that this
+                // envelope recovered only for a late no-op/redelivery, including cancel-
+                // before-start recovery that may lack parentRunId on the rebuilt state.
+                if (null !== $child && null !== $status && $status->isTerminal()) {
+                    $this->registry->release($runId);
                 }
             }
 
