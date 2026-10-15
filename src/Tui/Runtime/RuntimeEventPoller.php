@@ -164,7 +164,7 @@ final class RuntimeEventPoller
                         // Automatic recovery of the same session must keep the current
                         // editor, including ready-session drafts that never set the
                         // attach dirty flag. Genuine fresh attach still resets via
-                        // InteractiveMode::beginBootstrapAttach().
+                        // TuiSessionState::beginBootstrapAttach() in InteractiveMode.
                         $preserveEditor = $state->sessionReady
                             || $state->editorChangedSinceAttach;
                         $state->beginBootstrapAttach();

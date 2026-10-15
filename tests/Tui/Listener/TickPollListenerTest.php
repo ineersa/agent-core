@@ -153,35 +153,31 @@ final class TickPollListenerTest extends TestCase
     }
 
     /**
-     * Automatic recovery of a ready session must keep the current editor through
-     * verified replacement bootstrap mount. Ready-session native edits are not
-     * tracked by editorChangedSinceAttach, so preserving only that flag is not
-     * enough. Replaces the old ready-reset expectation that only asserted the
-     * dirty flag after session.restoring.
+     * Recovery keeps a ready editor, including native edits that never set the
+     * attach dirty flag. An untouched first attach must still receive historical
+     * prefill or clearing through the verified replacement bootstrap mount.
      *
      * @param list<string> $nativeKeys
      */
-    #[DataProvider('readySessionRecoveryEditorCases')]
-    public function testReadySessionRecoveryPreservesCurrentEditorThroughReplacementMount(
+    #[DataProvider('sessionRecoveryEditorCases')]
+    public function testSessionRecoveryAppliesEditorPolicyThroughReplacementMount(
+        bool $initiallyReady,
         string $initialEditor,
         array $nativeKeys,
         string $historicalPrefill,
+        string $expectedBeforeRecovery,
         string $expectedEditor,
     ): void {
         $state = new TuiSessionState('parent');
-        $state->sessionReady = true;
-        $state->bootstrapMounted = true;
+        $state->beginBootstrapAttach();
+        $state->sessionReady = $initiallyReady;
+        $state->bootstrapMounted = $initiallyReady;
         $state->lastSeq = 13;
         $state->handle = new RunHandle('parent', 'attached', 'old-request');
         $state->editorChangedSinceAttach = false;
         $harness = new VirtualTuiHarness(sessionId: 'parent');
         $harness->startInputLoop();
         $harness->screen()->promptEditor()->replaceText($initialEditor);
-        foreach ($nativeKeys as $keys) {
-            $harness->sendInput($keys);
-        }
-        $this->assertSame($expectedEditor, $harness->screen()->editorText());
-        $this->assertFalse($state->editorChangedSinceAttach, 'Ready-session native edits do not set the attach dirty guard.');
 
         [$available, $frame, $end, $ready] = $this->replacementBootstrapTransfer(
             requestId: 'new-request',
@@ -213,11 +209,18 @@ final class TickPollListenerTest extends TestCase
             ->withClient($client)->withSessionServices($services)->build();
         $this->createTickPollListener()->register($context);
 
+        foreach ($nativeKeys as $keys) {
+            $harness->sendInput($keys);
+        }
+        $this->assertSame($expectedBeforeRecovery, $harness->screen()->editorText());
+        $this->assertFalse($state->editorChangedSinceAttach, 'Ready-session edits and untouched initial attachment both start recovery without the dirty guard.');
+
         $state->lastPoll = 0.0;
         $context->ticks->dispatch(new \Symfony\Component\Tui\Event\TickEvent());
 
         $this->assertTrue($state->bootstrapMounted);
         $this->assertTrue($state->sessionReady);
+        $this->assertSame($initiallyReady, $state->editorChangedSinceAttach);
         $this->assertSame('new-request', $state->handle->bootstrapRequestId);
         $this->assertNull($state->pendingEditorPromptText);
         $this->assertSame($expectedEditor, $harness->screen()->editorText());
@@ -228,26 +231,48 @@ final class TickPollListenerTest extends TestCase
         $harness->stopInputLoop();
     }
 
-    /** @return iterable<string, array{0: string, 1: list<string>, 2: string, 3: string}> */
-    public static function readySessionRecoveryEditorCases(): iterable
+    /** @return iterable<string, array{0: bool, 1: string, 2: list<string>, 3: string, 4: string, 5: string}> */
+    public static function sessionRecoveryEditorCases(): iterable
     {
         yield 'edited following prompt survives nonempty historical prefill' => [
+            true,
             'Canonical following prompt U2',
             [' edited'],
             'Canonical following prompt U2',
             'Canonical following prompt U2 edited',
+            'Canonical following prompt U2 edited',
         ];
         yield 'intentionally emptied draft survives nonempty historical prefill' => [
+            true,
             'Canonical following prompt U2',
             [str_repeat("\x7f", \strlen('Canonical following prompt U2'))],
             'Canonical following prompt U2',
             '',
+            '',
         ];
         yield 'last-answer empty historical prefill leaves current editor alone' => [
+            true,
             'keep-local-after-last-answer',
             [],
             '',
             'keep-local-after-last-answer',
+            'keep-local-after-last-answer',
+        ];
+        yield 'unready untouched editor receives historical prefill' => [
+            false,
+            'Untouched pre-attach editor',
+            [],
+            'Canonical following prompt U2',
+            'Untouched pre-attach editor',
+            'Canonical following prompt U2',
+        ];
+        yield 'unready untouched editor receives last-answer clearing' => [
+            false,
+            'Untouched pre-attach editor',
+            [],
+            '',
+            'Untouched pre-attach editor',
+            '',
         ];
     }
 
